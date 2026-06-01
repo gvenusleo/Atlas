@@ -27,8 +27,9 @@ Run the TUI:
 go run ./cmd/atlas
 ```
 
-The TUI keeps a compact transcript, fixed composer/status rows, and summarized
-tool output previews. Press `Enter` to send, `Esc` or `Ctrl+C` to quit.
+The TUI keeps a compact transcript, fixed composer/status rows, summarized tool
+output previews, and scrollback with `Up`/`Down`, `PgUp`/`PgDown`, or the mouse
+wheel. Press `Enter` to send, `Esc` or `Ctrl+C` to quit.
 
 Run a single prompt without the TUI:
 

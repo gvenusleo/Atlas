@@ -17,7 +17,7 @@ import (
 // Run starts the Atlas terminal UI.
 func Run(ctx context.Context, atlas *agent.Agent) error {
 	model := newModel(ctx, atlas)
-	_, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 
@@ -31,6 +31,7 @@ type model struct {
 	errs      <-chan error
 	streaming bool
 	status    string
+	scroll    int
 	width     int
 	height    int
 	err       error
@@ -67,7 +68,7 @@ func newModel(ctx context.Context, atlas *agent.Agent) model {
 		status: "starting",
 		entries: []entry{
 			{kind: entryMeta, title: "Atlas", body: "Coding agent, full local access, DeepSeek"},
-			{kind: entryMeta, title: "Help", body: "Enter sends, Esc/Ctrl+C quits"},
+			{kind: entryMeta, title: "Help", body: "Enter sends, PgUp/PgDown scroll, Esc quits"},
 		},
 	}
 }
@@ -89,6 +90,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.clampScroll()
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -103,12 +105,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.input.Reset()
-			m.entries = append(m.entries, entry{kind: entryUser, title: "You", body: text})
-			m.entries = append(m.entries, entry{kind: entryAssistant, title: "Atlas", running: true})
+			m.scroll = 0
+			m.appendEntry(entry{kind: entryUser, title: "You", body: text})
+			m.appendEntry(entry{kind: entryAssistant, title: "Atlas", running: true})
 			m.streaming = true
 			m.status = "running"
 			m.events, m.errs = m.agent.RunTurn(m.ctx, m.session.ID, text)
 			return m, m.nextAgentMessage()
+		case tea.KeyUp:
+			m.scrollTranscript(1)
+		case tea.KeyDown:
+			m.scrollTranscript(-1)
+		case tea.KeyPgUp:
+			m.scrollTranscript(m.pageScrollSize())
+		case tea.KeyPgDown:
+			m.scrollTranscript(-m.pageScrollSize())
 		case tea.KeyBackspace:
 			m.deleteLastInputRune()
 		default:
@@ -116,10 +127,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.WriteString(msg.String())
 			}
 		}
+	case tea.MouseMsg:
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			m.scrollTranscript(3)
+		case tea.MouseWheelDown:
+			m.scrollTranscript(-3)
+		}
 	case sessionCreatedMsg:
 		m.session = storage.Session(msg)
 		m.status = "ready"
-		m.entries = append(m.entries, entry{kind: entryMeta, title: "Session", body: m.session.ID})
+		m.appendEntry(entry{kind: entryMeta, title: "Session", body: m.session.ID})
 	case agentEventMsg:
 		event := agent.Event(msg)
 		m.appendEvent(event)
@@ -137,7 +155,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "ready"
 	case errMsg:
 		m.err = error(msg)
-		m.entries = append(m.entries, entry{kind: entryError, title: "Error", body: m.err.Error(), failed: true})
+		m.appendEntry(entry{kind: entryError, title: "Error", body: m.err.Error(), failed: true})
 		m.streaming = false
 		m.status = "error"
 	}
@@ -146,14 +164,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders a compact Codex-style transcript with a bottom prompt.
 func (m model) View() string {
-	bodyHeight := m.height - 5
-	if bodyHeight < 5 {
-		bodyHeight = 5
-	}
-	width := m.width
-	if width <= 0 {
-		width = 96
-	}
+	bodyHeight := m.bodyHeight()
+	width := m.viewWidth()
 	body := m.renderTranscript(width, bodyHeight)
 	status := m.renderStatus(width)
 	prompt := m.renderPrompt(width)
@@ -199,7 +211,7 @@ func (m *model) appendEvent(event agent.Event) {
 		m.appendAssistantDelta(event.Text)
 	case agent.EventToolStarted:
 		m.finishAssistant()
-		m.entries = append(m.entries, entry{kind: entryTool, title: event.ToolName, body: "running", running: true})
+		m.appendEntry(entry{kind: entryTool, title: event.ToolName, body: "running", running: true})
 	case agent.EventToolFinished:
 		m.finishTool(event)
 	case agent.EventTurnFinished:
@@ -207,7 +219,7 @@ func (m *model) appendEvent(event agent.Event) {
 		m.status = "ready"
 	case agent.EventError:
 		m.finishAssistant()
-		m.entries = append(m.entries, entry{kind: entryError, title: "Error", body: event.Text, failed: true})
+		m.appendEntry(entry{kind: entryError, title: "Error", body: event.Text, failed: true})
 		m.status = "error"
 	}
 }
@@ -224,6 +236,7 @@ func (m *model) deleteLastInputRune() {
 
 // appendAssistantDelta appends streamed assistant text to the active response.
 func (m *model) appendAssistantDelta(delta string) {
+	before := m.transcriptLineCount()
 	idx := m.activeAssistantIndex()
 	if idx < 0 {
 		m.entries = append(m.entries, entry{kind: entryAssistant, title: "Atlas"})
@@ -231,21 +244,25 @@ func (m *model) appendAssistantDelta(delta string) {
 	}
 	m.entries[idx].body += delta
 	m.entries[idx].running = true
+	m.keepScrollPosition(before)
 }
 
 // finishAssistant marks the active assistant message as complete.
 func (m *model) finishAssistant() {
+	before := m.transcriptLineCount()
 	idx := m.activeAssistantIndex()
 	if idx >= 0 {
 		m.entries[idx].running = false
 		if strings.TrimSpace(m.entries[idx].body) == "" {
 			m.entries = append(m.entries[:idx], m.entries[idx+1:]...)
 		}
+		m.keepScrollPosition(before)
 	}
 }
 
 // finishTool replaces the latest running tool entry with a compact result.
 func (m *model) finishTool(event agent.Event) {
+	before := m.transcriptLineCount()
 	idx := -1
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		if m.entries[i].kind == entryTool && m.entries[i].title == event.ToolName && m.entries[i].running {
@@ -257,9 +274,10 @@ func (m *model) finishTool(event agent.Event) {
 	next := entry{kind: entryTool, title: event.ToolName, body: body, failed: event.Error}
 	if idx >= 0 {
 		m.entries[idx] = next
+		m.keepScrollPosition(before)
 		return
 	}
-	m.entries = append(m.entries, next)
+	m.appendEntry(next)
 }
 
 // activeAssistantIndex returns the trailing assistant entry, if one is active.
@@ -271,14 +289,100 @@ func (m model) activeAssistantIndex() int {
 	return -1
 }
 
-// renderTranscript renders the scrollback window at a fixed width.
-func (m model) renderTranscript(width int, maxLines int) string {
+// appendEntry adds transcript content while preserving the user's scroll view.
+func (m *model) appendEntry(item entry) {
+	before := m.transcriptLineCount()
+	m.entries = append(m.entries, item)
+	m.keepScrollPosition(before)
+}
+
+// scrollTranscript moves the conversation viewport without changing input.
+func (m *model) scrollTranscript(delta int) {
+	m.scroll += delta
+	m.clampScroll()
+}
+
+// clampScroll keeps the scroll offset inside the rendered transcript bounds.
+func (m *model) clampScroll() {
+	max := m.maxScroll()
+	if m.scroll > max {
+		m.scroll = max
+	}
+	if m.scroll < 0 {
+		m.scroll = 0
+	}
+}
+
+// keepScrollPosition prevents background output from moving a manual scroll.
+func (m *model) keepScrollPosition(beforeLineCount int) {
+	if m.scroll > 0 {
+		m.scroll += m.transcriptLineCount() - beforeLineCount
+	}
+	m.clampScroll()
+}
+
+// transcriptLineCount returns the number of rendered transcript rows.
+func (m model) transcriptLineCount() int {
+	return len(m.transcriptLines(m.viewWidth()))
+}
+
+// maxScroll returns how many lines can be hidden below the transcript viewport.
+func (m model) maxScroll() int {
+	lines := m.transcriptLineCount()
+	overflow := lines - m.bodyHeight()
+	if overflow < 0 {
+		return 0
+	}
+	return overflow
+}
+
+// pageScrollSize returns a conservative page step for keyboard scrolling.
+func (m model) pageScrollSize() int {
+	size := m.bodyHeight() - 1
+	if size < 1 {
+		return 1
+	}
+	return size
+}
+
+// bodyHeight is the fixed transcript height above status and composer rows.
+func (m model) bodyHeight() int {
+	bodyHeight := m.height - 5
+	if bodyHeight < 5 {
+		bodyHeight = 5
+	}
+	return bodyHeight
+}
+
+// viewWidth returns a stable render width before the terminal reports size.
+func (m model) viewWidth() int {
+	if m.width <= 0 {
+		return 96
+	}
+	return m.width
+}
+
+// transcriptLines renders every transcript line before viewport clipping.
+func (m model) transcriptLines(width int) []string {
 	var lines []string
 	for _, item := range m.entries {
 		lines = append(lines, renderEntry(item, width)...)
 	}
+	return lines
+}
+
+// renderTranscript renders the scrollback window at a fixed width.
+func (m model) renderTranscript(width int, maxLines int) string {
+	lines := m.transcriptLines(width)
 	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
+		end := len(lines) - m.scroll
+		if end > len(lines) {
+			end = len(lines)
+		}
+		if end < maxLines {
+			end = maxLines
+		}
+		lines = lines[end-maxLines : end]
 	}
 	for len(lines) < maxLines {
 		lines = append(lines, "")
@@ -307,12 +411,13 @@ func (m model) renderPrompt(width int) string {
 	value := m.input.String()
 	if m.streaming {
 		value = "waiting for Atlas..."
+		return promptStyle.Width(width).Render(prefix + fitLine(value, width-utf8.RuneCountInString(prefix)))
 	}
 	available := width - utf8.RuneCountInString(prefix)
 	if available < 1 {
 		available = 1
 	}
-	return promptStyle.Width(width).Render(prefix + tailFit(value, available))
+	return promptStyle.Width(width).Render(prefix + renderInputWithCursor(value, available))
 }
 
 // renderEntry converts one transcript entry into styled terminal lines.
@@ -440,6 +545,17 @@ func tailFit(text string, width int) string {
 	return "…" + string(runes[len(runes)-width+1:])
 }
 
+// renderInputWithCursor keeps the cursor visible inside the composer row.
+func renderInputWithCursor(text string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	if width == 1 {
+		return cursorStyle.Render(" ")
+	}
+	return tailFit(text, width-1) + cursorStyle.Render(" ")
+}
+
 // spinnerFrame returns a stable minimal activity glyph.
 func spinnerFrame() string {
 	return "·"
@@ -453,4 +569,5 @@ var (
 	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	statusStyle = lipgloss.NewStyle().Faint(true).Border(lipgloss.NormalBorder(), true, false, false, false).PaddingTop(1)
 	promptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	cursorStyle = lipgloss.NewStyle().Reverse(true)
 )

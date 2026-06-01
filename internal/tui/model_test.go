@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,7 +76,45 @@ func TestPromptKeepsTailOfLongInput(t *testing.T) {
 	m := model{width: 16}
 	m.input.WriteString("abcdefghijklmnopqrstuvwxyz")
 	got := m.renderPrompt(16)
-	if !strings.Contains(got, "…stuvwxyz") {
+	if !strings.Contains(got, "…tuvwxyz") {
 		t.Fatalf("prompt should keep input tail: %q", got)
+	}
+}
+
+func TestPromptShowsCursorWhenEditable(t *testing.T) {
+	got := renderInputWithCursor("abc", 8)
+	if !strings.Contains(got, "abc") || !strings.Contains(got, " ") {
+		t.Fatalf("prompt should include input and cursor cell: %q", got)
+	}
+}
+
+func TestRenderTranscriptUsesScrollOffset(t *testing.T) {
+	m := model{width: 80, height: 10}
+	for i := 0; i < 8; i++ {
+		m.entries = append(m.entries, entry{kind: entryMeta, title: "line " + strconv.Itoa(i)})
+	}
+	bottom := m.renderTranscript(80, 3)
+	m.scrollTranscript(2)
+	scrolled := m.renderTranscript(80, 3)
+
+	if bottom == scrolled {
+		t.Fatalf("scroll should change transcript window: %q", bottom)
+	}
+	if !strings.Contains(scrolled, "line 3") || strings.Contains(scrolled, "line 7") {
+		t.Fatalf("unexpected scrolled transcript: %q", scrolled)
+	}
+}
+
+func TestScrolledTranscriptDoesNotJumpOnNewOutput(t *testing.T) {
+	m := model{width: 80, height: 10}
+	for i := 0; i < 8; i++ {
+		m.entries = append(m.entries, entry{kind: entryMeta, title: "line " + strconv.Itoa(i)})
+	}
+	m.scrollTranscript(2)
+	m.appendEntry(entry{kind: entryMeta, title: "new"})
+
+	got := m.renderTranscript(80, 3)
+	if !strings.Contains(got, "line 3") || strings.Contains(got, "new") {
+		t.Fatalf("new output should not move manual scroll: %q", got)
 	}
 }
