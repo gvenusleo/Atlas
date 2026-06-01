@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/liuyuxin/atlas/internal/model"
@@ -33,6 +34,23 @@ func (p *scriptedProvider) StreamChat(_ context.Context, _ model.ChatRequest) (<
 			return
 		}
 		events <- model.StreamEvent{TextDelta: "done"}
+		events <- model.StreamEvent{Done: true}
+	}()
+	return events, errs
+}
+
+type captureProvider struct {
+	last model.ChatRequest
+}
+
+func (p *captureProvider) StreamChat(_ context.Context, req model.ChatRequest) (<-chan model.StreamEvent, <-chan error) {
+	events := make(chan model.StreamEvent, 2)
+	errs := make(chan error, 1)
+	p.last = req
+	go func() {
+		defer close(events)
+		defer close(errs)
+		events <- model.StreamEvent{TextDelta: "ok"}
 		events <- model.StreamEvent{Done: true}
 	}()
 	return events, errs
@@ -82,5 +100,55 @@ func TestAgentRunsToolLoopUntilFinalText(t *testing.T) {
 	}
 	if len(messages) < 4 {
 		t.Fatalf("expected persisted loop messages, got %d", len(messages))
+	}
+}
+
+func TestAgentInjectsMentionedSkillIntoRequest(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, ".agents", "skills", "think")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillBody := "---\nname: think\ndescription: Plan before coding\n---\n\nUse a plan first.\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	provider := &captureProvider{}
+	agent := New(store, provider, tool.NewRuntime(), Config{
+		Workdir:    dir,
+		Model:      "test-model",
+		SkillRoots: []string{filepath.Join(dir, ".agents", "skills")},
+	})
+	session, err := agent.CreateSession(context.Background(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, errs := agent.RunTurn(context.Background(), session.ID, "$think make a plan")
+	for range events {
+	}
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(provider.last.System, "<skills_instructions>") ||
+		!strings.Contains(provider.last.System, "Plan before coding") {
+		t.Fatalf("request system prompt should include available skills: %q", provider.last.System)
+	}
+	var found bool
+	for _, message := range provider.last.Messages {
+		if strings.Contains(message.Content, "<skill>") && strings.Contains(message.Content, "Use a plan first.") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("request messages should include full skill content: %#v", provider.last.Messages)
 	}
 }

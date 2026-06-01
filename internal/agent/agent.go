@@ -14,6 +14,7 @@ import (
 
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
+	"github.com/liuyuxin/atlas/internal/skills"
 	"github.com/liuyuxin/atlas/internal/storage"
 	"github.com/liuyuxin/atlas/internal/tool"
 )
@@ -40,6 +41,9 @@ func New(store storage.Store, provider model.Provider, tools *tool.Runtime, conf
 	}
 	if abs, err := filepath.Abs(config.Workdir); err == nil {
 		config.Workdir = abs
+	}
+	if len(config.SkillRoots) == 0 {
+		config.SkillRoots = skills.DefaultRoots(config.Workdir)
 	}
 	return &Agent{
 		store:    store,
@@ -109,7 +113,7 @@ func (a *Agent) runTurn(ctx context.Context, sessionID string, userInput string,
 
 	emit(events, Event{Type: EventTurnStarted, SessionID: session.ID})
 	for step := 0; step < a.config.MaxSteps; step++ {
-		result, err := a.runModelStep(ctx, session, events)
+		result, err := a.runModelStep(ctx, session, userInput, events)
 		if err != nil {
 			return err
 		}
@@ -130,12 +134,13 @@ func (a *Agent) runTurn(ctx context.Context, sessionID string, userInput string,
 }
 
 // runModelStep performs one provider call and assembles streamed output.
-func (a *Agent) runModelStep(ctx context.Context, session storage.Session, events chan<- Event) (model.AssistantResult, error) {
+func (a *Agent) runModelStep(ctx context.Context, session storage.Session, userInput string, events chan<- Event) (model.AssistantResult, error) {
 	messages, err := a.store.Messages(session.ID, 0)
 	if err != nil {
 		return model.AssistantResult{}, err
 	}
-	system, modelMessages := a.prompts.Build(session, messages)
+	extra := a.skillPromptContext(userInput)
+	system, modelMessages := a.prompts.Build(session, messages, extra)
 	req := model.ChatRequest{
 		Model:       session.Model,
 		System:      system,
@@ -172,6 +177,16 @@ func (a *Agent) runModelStep(ctx context.Context, session storage.Session, event
 		}
 	}
 	return result, nil
+}
+
+// skillPromptContext builds transient skills context for one user turn.
+func (a *Agent) skillPromptContext(userInput string) prompt.ExtraContext {
+	catalog := skills.Load(a.config.SkillRoots)
+	context := skills.BuildPromptContext(catalog, userInput)
+	return prompt.ExtraContext{
+		AvailableSkills: context.Available,
+		SkillBlocks:     skills.RenderInjections(context.Injected, context.Warnings),
+	}
 }
 
 // persistAssistant writes assistant text and structured tool calls to storage.

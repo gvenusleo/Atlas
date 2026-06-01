@@ -8,6 +8,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/provider/deepseek"
+	"github.com/liuyuxin/atlas/internal/skills"
 	"github.com/liuyuxin/atlas/internal/storage"
 	"github.com/liuyuxin/atlas/internal/tool"
 )
@@ -18,6 +19,7 @@ type Config struct {
 	Workdir     string
 	Model       string
 	DeepSeekKey string
+	SkillRoots  []string
 }
 
 // App owns the long-lived dependencies for one Atlas process.
@@ -48,6 +50,7 @@ func New(config Config) (*App, error) {
 	if workdir == "" {
 		workdir, _ = os.Getwd()
 	}
+	skillRoots := append(skills.DefaultRoots(workdir), config.SkillRoots...)
 	provider := deepseek.New(deepseek.Config{APIKey: config.DeepSeekKey})
 	runtime := tool.NewRuntime(
 		tool.ListFiles{},
@@ -58,9 +61,10 @@ func New(config Config) (*App, error) {
 	)
 	return &App{
 		Agent: agent.New(store, provider, runtime, agent.Config{
-			Workdir:  workdir,
-			Model:    modelName,
-			MaxSteps: 16,
+			Workdir:    workdir,
+			Model:      modelName,
+			MaxSteps:   16,
+			SkillRoots: skillRoots,
 		}),
 		Store: store,
 	}, nil

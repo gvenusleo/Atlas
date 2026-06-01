@@ -42,6 +42,18 @@ By default Atlas stores data in `~/.atlas/atlas.db`. Override it with
 
 The default DeepSeek model is `deepseek-v4-flash`; use `-model` to override it.
 
+## Skills
+
+Atlas can load local skills from `SKILL.md` files. By default it scans:
+
+- `<workdir>/.agents/skills`
+- `~/.agents/skills`
+- `~/.atlas/skills`
+
+Add more roots with repeated `-skill-root` flags. A skill is triggered for a
+turn when the prompt names it, for example `$think`, or links directly to a
+skill file with `[$think](skill:///absolute/path/SKILL.md)`.
+
 ## Development
 
 ```sh

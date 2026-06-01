@@ -22,8 +22,14 @@ type Builder struct {
 	MaxMessages  int
 }
 
+// ExtraContext contains transient prompt fragments that should not be persisted.
+type ExtraContext struct {
+	AvailableSkills string
+	SkillBlocks     []string
+}
+
 // Build creates the system prompt and recent model messages.
-func (b Builder) Build(session storage.Session, messages []storage.Message) (string, []model.Message) {
+func (b Builder) Build(session storage.Session, messages []storage.Message, extra ExtraContext) (string, []model.Message) {
 	system := b.SystemPrompt
 	if strings.TrimSpace(system) == "" {
 		system = defaultSystemPrompt
@@ -33,7 +39,14 @@ func (b Builder) Build(session storage.Session, messages []storage.Message) (str
 		session.Workdir,
 		session.Model,
 	)
+	if strings.TrimSpace(extra.AvailableSkills) != "" {
+		system += "\n\n" + strings.TrimSpace(extra.AvailableSkills)
+	}
+	return b.buildMessages(system, messages, extra)
+}
 
+// buildMessages appends recent history and transient context to model input.
+func (b Builder) buildMessages(system string, messages []storage.Message, extra ExtraContext) (string, []model.Message) {
 	maxMessages := b.MaxMessages
 	if maxMessages <= 0 {
 		maxMessages = 80
@@ -42,8 +55,22 @@ func (b Builder) Build(session storage.Session, messages []storage.Message) (str
 		messages = messages[len(messages)-maxMessages:]
 	}
 
-	out := make([]model.Message, 0, len(messages))
-	for _, message := range messages {
+	blocks := cleanSkillBlocks(extra.SkillBlocks)
+	insertAt := len(messages)
+	if len(blocks) > 0 {
+		for i := len(messages) - 1; i >= 0; i-- {
+			if model.Role(messages[i].Role) == model.RoleUser {
+				insertAt = i
+				break
+			}
+		}
+	}
+
+	out := make([]model.Message, 0, len(messages)+len(blocks))
+	for i, message := range messages {
+		if i == insertAt {
+			out = append(out, blocks...)
+		}
 		item := model.Message{
 			Role:       model.Role(message.Role),
 			Content:    message.Content,
@@ -54,7 +81,25 @@ func (b Builder) Build(session storage.Session, messages []storage.Message) (str
 		}
 		out = append(out, item)
 	}
+	if insertAt == len(messages) {
+		out = append(out, blocks...)
+	}
 	return system, out
+}
+
+// cleanSkillBlocks converts non-empty skill fragments into transient user messages.
+func cleanSkillBlocks(blocks []string) []model.Message {
+	out := make([]model.Message, 0, len(blocks))
+	for _, block := range blocks {
+		if strings.TrimSpace(block) == "" {
+			continue
+		}
+		out = append(out, model.Message{
+			Role:    model.RoleUser,
+			Content: block,
+		})
+	}
+	return out
 }
 
 // DefaultDBPath returns the local database path used by the CLI and TUI.

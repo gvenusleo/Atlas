@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/agent"
@@ -24,15 +25,18 @@ func run() error {
 	var config app.Config
 	var prompt string
 	var noTUI bool
+	var skillRoots multiFlag
 	flag.StringVar(&config.DBPath, "db", "", "SQLite database path")
 	flag.StringVar(&config.Workdir, "workdir", "", "workspace directory")
 	flag.StringVar(&config.Model, "model", "", "DeepSeek model")
 	flag.StringVar(&prompt, "prompt", "", "single prompt to run without TUI")
 	flag.BoolVar(&noTUI, "no-tui", false, "run without the terminal UI")
+	flag.Var(&skillRoots, "skill-root", "additional skills root to scan")
 	flag.Parse()
 	if prompt == "" && flag.NArg() > 0 {
 		prompt = strings.Join(flag.Args(), " ")
 	}
+	config.SkillRoots = cleanSkillRoots(skillRoots)
 
 	atlas, err := app.New(config)
 	if err != nil {
@@ -92,4 +96,32 @@ func printEvent(event agent.Event) {
 	case agent.EventTurnFinished:
 		fmt.Println()
 	}
+}
+
+// multiFlag collects repeatable string flags.
+type multiFlag []string
+
+func (m *multiFlag) String() string {
+	return strings.Join(*m, ",")
+}
+
+func (m *multiFlag) Set(value string) error {
+	*m = append(*m, value)
+	return nil
+}
+
+// cleanSkillRoots normalizes explicitly configured skills roots.
+func cleanSkillRoots(values []string) []string {
+	var roots []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(value); err == nil {
+			value = abs
+		}
+		roots = append(roots, value)
+	}
+	return roots
 }
