@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultBaseURL = "https://api.deepseek.com"
-	defaultModel   = "deepseek-chat"
+	defaultModel   = "deepseek-v4-flash"
 )
 
 // Client streams responses from DeepSeek's OpenAI-compatible chat API.
