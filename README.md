@@ -42,6 +42,16 @@ By default Atlas stores data in `~/.atlas/atlas.db`. Override it with
 
 The default DeepSeek model is `deepseek-v4-flash`; use `-model` to override it.
 
+Enable local debug logs with `-debug`:
+
+```sh
+go run ./cmd/atlas -debug
+```
+
+Debug mode writes one JSONL file per session to `<workdir>/.atlas/debug/`.
+Those logs include prompts, model requests, streamed deltas, tool calls, tool
+results, and turn errors.
+
 ## Skills
 
 Atlas can load local skills from `SKILL.md` files. By default it scans:

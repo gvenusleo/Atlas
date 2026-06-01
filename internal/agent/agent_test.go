@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,4 +152,99 @@ func TestAgentInjectsMentionedSkillIntoRequest(t *testing.T) {
 	if !found {
 		t.Fatalf("request messages should include full skill content: %#v", provider.last.Messages)
 	}
+}
+
+func TestAgentWritesDebugSessionLogWhenEnabled(t *testing.T) {
+	dir := t.TempDir()
+	readme := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(readme, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	debugDir := filepath.Join(dir, "debug")
+	provider := &scriptedProvider{path: readme}
+	agent := New(store, provider, tool.NewRuntime(tool.ReadFile{}), Config{
+		Workdir:    dir,
+		Model:      "test-model",
+		SkillRoots: []string{filepath.Join(dir, ".agents", "skills")},
+		Debug:      true,
+		DebugDir:   debugDir,
+	})
+	session, err := agent.CreateSession(context.Background(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, errs := agent.RunTurn(context.Background(), session.ID, "hello")
+	for range events {
+	}
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(debugDir, session.ID+".jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var eventsSeen []string
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var entry struct {
+			Event string `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("invalid debug entry %q: %v", line, err)
+		}
+		eventsSeen = append(eventsSeen, entry.Event)
+	}
+	for _, want := range []string{"session_created", "turn_started", "model_request", "model_tool_call", "assistant_result", "tool_started", "tool_finished", "model_text_delta", "turn_finished"} {
+		if !contains(eventsSeen, want) {
+			t.Fatalf("debug log missing %q in %v", want, eventsSeen)
+		}
+	}
+}
+
+func TestAgentDoesNotWriteDebugLogWhenDisabled(t *testing.T) {
+	dir := t.TempDir()
+	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	debugDir := filepath.Join(dir, "debug")
+	agent := New(store, &captureProvider{}, tool.NewRuntime(), Config{
+		Workdir:    dir,
+		Model:      "test-model",
+		SkillRoots: []string{filepath.Join(dir, ".agents", "skills")},
+		DebugDir:   debugDir,
+	})
+	session, err := agent.CreateSession(context.Background(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, errs := agent.RunTurn(context.Background(), session.ID, "hello")
+	for range events {
+	}
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(debugDir, session.ID+".jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("disabled debug mode should not create a log file, err=%v", err)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

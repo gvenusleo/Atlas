@@ -31,6 +31,7 @@ func run() error {
 	flag.StringVar(&config.Model, "model", "", "DeepSeek model")
 	flag.StringVar(&prompt, "prompt", "", "single prompt to run without TUI")
 	flag.BoolVar(&noTUI, "no-tui", false, "run without the terminal UI")
+	flag.BoolVar(&config.Debug, "debug", false, "write detailed session logs to .atlas/debug")
 	flag.Var(&skillRoots, "skill-root", "additional skills root to scan")
 	flag.Parse()
 	if prompt == "" && flag.NArg() > 0 {

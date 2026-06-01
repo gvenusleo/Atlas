@@ -37,6 +37,8 @@ type Config struct {
 	MaxSteps    int
 	Temperature float64
 	SkillRoots  []string
+	Debug       bool
+	DebugDir    string
 }
 
 // TurnResult captures the final assistant response and tool calls.

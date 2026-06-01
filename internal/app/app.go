@@ -20,6 +20,7 @@ type Config struct {
 	Model       string
 	DeepSeekKey string
 	SkillRoots  []string
+	Debug       bool
 }
 
 // App owns the long-lived dependencies for one Atlas process.
@@ -50,6 +51,14 @@ func New(config Config) (*App, error) {
 	if workdir == "" {
 		workdir, _ = os.Getwd()
 	}
+	debugDir := ""
+	if config.Debug {
+		debugDir = filepath.Join(workdir, ".atlas", "debug")
+		if err := os.MkdirAll(debugDir, 0o755); err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("create debug directory: %w", err)
+		}
+	}
 	skillRoots := append(skills.DefaultRoots(workdir), config.SkillRoots...)
 	provider := deepseek.New(deepseek.Config{APIKey: config.DeepSeekKey})
 	runtime := tool.NewRuntime(
@@ -65,6 +74,8 @@ func New(config Config) (*App, error) {
 			Model:      modelName,
 			MaxSteps:   16,
 			SkillRoots: skillRoots,
+			Debug:      config.Debug,
+			DebugDir:   debugDir,
 		}),
 		Store: store,
 	}, nil

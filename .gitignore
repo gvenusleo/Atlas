@@ -4,6 +4,7 @@
 *.db-*
 *.sqlite
 *.sqlite-*
+.atlas/debug/
 /atlas
 bin/
 dist/
