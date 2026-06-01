@@ -41,3 +41,27 @@ func TestReadSSEStreamsTextAndToolCalls(t *testing.T) {
 		t.Fatal("expected done event")
 	}
 }
+
+func TestToolAccumulatorFlushesInIndexOrder(t *testing.T) {
+	acc := newToolAccumulator()
+	acc.add(toolCallDelta{Index: 1, ID: "call_b", Function: struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{Name: "b", Arguments: "{}"}})
+	acc.add(toolCallDelta{Index: 0, ID: "call_a", Function: struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{Name: "a", Arguments: "{}"}})
+
+	events := make(chan model.StreamEvent, 2)
+	acc.flush(events)
+	close(events)
+
+	var names []string
+	for event := range events {
+		names = append(names, event.ToolCall.Name)
+	}
+	if strings.Join(names, ",") != "a,b" {
+		t.Fatalf("unexpected order: %v", names)
+	}
+}

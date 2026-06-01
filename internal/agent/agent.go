@@ -87,6 +87,7 @@ func (a *Agent) RunTurn(ctx context.Context, sessionID string, userInput string)
 	return events, errs
 }
 
+// runTurn executes one complete user turn, including follow-up tool steps.
 func (a *Agent) runTurn(ctx context.Context, sessionID string, userInput string, events chan<- Event) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -128,6 +129,7 @@ func (a *Agent) runTurn(ctx context.Context, sessionID string, userInput string,
 	return fmt.Errorf("max steps reached (%d)", a.config.MaxSteps)
 }
 
+// runModelStep performs one provider call and assembles streamed output.
 func (a *Agent) runModelStep(ctx context.Context, session storage.Session, events chan<- Event) (model.AssistantResult, error) {
 	messages, err := a.store.Messages(session.ID, 0)
 	if err != nil {
@@ -172,6 +174,7 @@ func (a *Agent) runModelStep(ctx context.Context, session storage.Session, event
 	return result, nil
 }
 
+// persistAssistant writes assistant text and structured tool calls to storage.
 func (a *Agent) persistAssistant(sessionID string, result model.AssistantResult) error {
 	toolCalls := ""
 	if len(result.ToolCalls) > 0 {
@@ -189,6 +192,7 @@ func (a *Agent) persistAssistant(sessionID string, result model.AssistantResult)
 	})
 }
 
+// executeToolCall runs a local tool and persists the result message.
 func (a *Agent) executeToolCall(ctx context.Context, sessionID string, call model.ToolCall, events chan<- Event) error {
 	emit(events, Event{Type: EventToolStarted, SessionID: sessionID, ToolName: call.Name, ToolCallID: call.ID})
 	result := a.tools.Execute(ctx, call.Name, call.Arguments)
@@ -211,6 +215,7 @@ func (a *Agent) executeToolCall(ctx context.Context, sessionID string, call mode
 	return nil
 }
 
+// modelToolDefinitions adapts tool runtime definitions to model definitions.
 func (a *Agent) modelToolDefinitions() []model.ToolDefinition {
 	defs := a.tools.Definitions()
 	out := make([]model.ToolDefinition, 0, len(defs))
@@ -224,11 +229,13 @@ func (a *Agent) modelToolDefinitions() []model.ToolDefinition {
 	return out
 }
 
+// emit timestamps an event before sending it to consumers.
 func emit(events chan<- Event, event Event) {
 	event.CreatedAt = time.Now()
 	events <- event
 }
 
+// fallbackTitle normalizes empty session titles.
 func fallbackTitle(title string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
@@ -237,6 +244,7 @@ func fallbackTitle(title string) string {
 	return title
 }
 
+// newID creates a compact random identifier with a stable prefix.
 func newID(prefix string) string {
 	var buf [8]byte
 	if _, err := rand.Read(buf[:]); err != nil {

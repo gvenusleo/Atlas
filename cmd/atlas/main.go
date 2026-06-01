@@ -19,6 +19,7 @@ func main() {
 	}
 }
 
+// run parses flags and dispatches to TUI or one-shot CLI mode.
 func run() error {
 	var config app.Config
 	var prompt string
@@ -46,6 +47,7 @@ func run() error {
 	return tui.Run(ctx, atlas.Agent)
 }
 
+// runOnce runs a single prompt and prints streamed output.
 func runOnce(ctx context.Context, atlas *agent.Agent, prompt string) error {
 	if strings.TrimSpace(prompt) == "" {
 		return fmt.Errorf("prompt is required when using -no-tui")
@@ -76,6 +78,7 @@ func runOnce(ctx context.Context, atlas *agent.Agent, prompt string) error {
 	return nil
 }
 
+// printEvent renders non-TUI event output.
 func printEvent(event agent.Event) {
 	switch event.Type {
 	case agent.EventTextDelta:

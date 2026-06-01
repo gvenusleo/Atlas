@@ -38,6 +38,7 @@ type agentEventMsg agent.Event
 type errMsg error
 type turnDoneMsg struct{}
 
+// newModel initializes the visible transcript and process dependencies.
 func newModel(ctx context.Context, atlas *agent.Agent) model {
 	return model{
 		ctx:   ctx,
@@ -46,6 +47,7 @@ func newModel(ctx context.Context, atlas *agent.Agent) model {
 	}
 }
 
+// Init creates the first durable session for this TUI process.
 func (m model) Init() tea.Cmd {
 	return func() tea.Msg {
 		session, err := m.agent.CreateSession(m.ctx, "TUI session")
@@ -56,6 +58,7 @@ func (m model) Init() tea.Cmd {
 	}
 }
 
+// Update handles keyboard input, session creation, and streamed agent events.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -80,11 +83,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.events, m.errs = m.agent.RunTurn(m.ctx, m.session.ID, text)
 			return m, m.nextAgentMessage()
 		case tea.KeyBackspace:
-			value := m.input.String()
-			if len(value) > 0 {
-				m.input.Reset()
-				m.input.WriteString(value[:len(value)-1])
-			}
+			m.deleteLastInputRune()
 		default:
 			if msg.Type == tea.KeyRunes {
 				m.input.WriteString(msg.String())
@@ -115,6 +114,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders a compact Codex-style transcript with a bottom prompt.
 func (m model) View() string {
 	bodyHeight := m.height - 4
 	if bodyHeight < 5 {
@@ -137,6 +137,7 @@ func (m model) View() string {
 	)
 }
 
+// nextAgentMessage waits for the next event from the active turn.
 func (m model) nextAgentMessage() tea.Cmd {
 	return func() tea.Msg {
 		events := m.events
@@ -163,6 +164,7 @@ func (m model) nextAgentMessage() tea.Cmd {
 	}
 }
 
+// appendEvent folds one agent event into the visible transcript.
 func (m *model) appendEvent(event agent.Event) {
 	switch event.Type {
 	case agent.EventTextDelta:
@@ -183,6 +185,16 @@ func (m *model) appendEvent(event agent.Event) {
 	case agent.EventError:
 		m.lines = append(m.lines, errorStyle.Render(event.Text))
 	}
+}
+
+// deleteLastInputRune removes one user-visible rune from the input buffer.
+func (m *model) deleteLastInputRune() {
+	runes := []rune(m.input.String())
+	if len(runes) == 0 {
+		return
+	}
+	m.input.Reset()
+	m.input.WriteString(string(runes[:len(runes)-1]))
 }
 
 var (

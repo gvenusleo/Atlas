@@ -32,6 +32,7 @@ func OpenSQLite(path string) (*SQLiteStore, error) {
 	return store, nil
 }
 
+// migrate creates and upgrades the local database schema.
 func (s *SQLiteStore) migrate(ctx context.Context) error {
 	const schema = `
 PRAGMA journal_mode = WAL;
@@ -215,6 +216,7 @@ type sessionRow struct {
 	UpdatedAt string
 }
 
+// toSession converts SQLite text columns into a domain session.
 func (r sessionRow) toSession() (Session, error) {
 	created, err := parseTime(r.CreatedAt)
 	if err != nil {
@@ -244,6 +246,7 @@ type messageRow struct {
 	CreatedAt  string
 }
 
+// toMessage converts SQLite text columns into a domain message.
 func (r messageRow) toMessage() (Message, error) {
 	created, err := parseTime(r.CreatedAt)
 	if err != nil {
@@ -260,10 +263,12 @@ func (r messageRow) toMessage() (Message, error) {
 	}, nil
 }
 
+// isDuplicateColumn detects idempotent SQLite ALTER TABLE migrations.
 func isDuplicateColumn(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "duplicate column")
 }
 
+// formatTime serializes times in stable UTC form.
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		t = time.Now()
@@ -271,6 +276,7 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+// parseTime reads values produced by formatTime.
 func parseTime(value string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {

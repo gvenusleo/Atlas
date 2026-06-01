@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
@@ -72,6 +73,7 @@ func (c *Client) StreamChat(ctx context.Context, req model.ChatRequest) (<-chan 
 	return events, errs
 }
 
+// stream performs the HTTP request and forwards decoded SSE events.
 func (c *Client) stream(ctx context.Context, req model.ChatRequest, events chan<- model.StreamEvent) error {
 	if c.apiKey == "" {
 		return fmt.Errorf("DEEPSEEK_API_KEY is required")
@@ -100,6 +102,7 @@ func (c *Client) stream(ctx context.Context, req model.ChatRequest, events chan<
 	return readSSE(resp.Body, events)
 }
 
+// requestBody converts Atlas chat input to DeepSeek's request shape.
 func (c *Client) requestBody(req model.ChatRequest) map[string]any {
 	modelName := req.Model
 	if strings.TrimSpace(modelName) == "" {
@@ -120,6 +123,7 @@ func (c *Client) requestBody(req model.ChatRequest) map[string]any {
 	return body
 }
 
+// encodeMessages converts Atlas messages to OpenAI-compatible chat messages.
 func encodeMessages(system string, messages []model.Message) []map[string]any {
 	out := make([]map[string]any, 0, len(messages)+1)
 	if strings.TrimSpace(system) != "" {
@@ -144,6 +148,7 @@ func encodeMessages(system string, messages []model.Message) []map[string]any {
 	return out
 }
 
+// encodeToolCalls converts stored assistant tool calls back to provider format.
 func encodeToolCalls(calls []model.ToolCall) []map[string]any {
 	out := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
@@ -159,6 +164,7 @@ func encodeToolCalls(calls []model.ToolCall) []map[string]any {
 	return out
 }
 
+// encodeTools exposes Atlas tool definitions as function tools.
 func encodeTools(tools []model.ToolDefinition) []map[string]any {
 	out := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
@@ -174,6 +180,7 @@ func encodeTools(tools []model.ToolDefinition) []map[string]any {
 	return out
 }
 
+// readSSE decodes DeepSeek's server-sent event stream.
 func readSSE(body io.Reader, events chan<- model.StreamEvent) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -249,6 +256,7 @@ func newToolAccumulator() *toolAccumulator {
 	return &toolAccumulator{byIndex: make(map[int]*partialToolCall)}
 }
 
+// add applies one streaming tool-call delta.
 func (a *toolAccumulator) add(delta toolCallDelta) *model.ToolCall {
 	call := a.byIndex[delta.Index]
 	if call == nil {
@@ -267,8 +275,15 @@ func (a *toolAccumulator) add(delta toolCallDelta) *model.ToolCall {
 	return nil
 }
 
+// flush emits complete tool calls in provider index order.
 func (a *toolAccumulator) flush(events chan<- model.StreamEvent) {
-	for index, call := range a.byIndex {
+	indexes := make([]int, 0, len(a.byIndex))
+	for index := range a.byIndex {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	for _, index := range indexes {
+		call := a.byIndex[index]
 		if call.name == "" {
 			continue
 		}
