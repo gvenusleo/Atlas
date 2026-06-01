@@ -1,14 +1,18 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/storage"
@@ -16,8 +20,10 @@ import (
 
 // Run starts the Atlas terminal UI.
 func Run(ctx context.Context, atlas *agent.Agent) error {
-	model := newModel(ctx, atlas)
-	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	cursor := &cursorState{}
+	model := newModel(ctx, atlas, cursor)
+	output := &cursorWriter{File: os.Stdout, cursor: cursor}
+	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(output)).Run()
 	return err
 }
 
@@ -35,6 +41,7 @@ type model struct {
 	width     int
 	height    int
 	err       error
+	cursor    *cursorState
 }
 
 type entryKind int
@@ -61,10 +68,11 @@ type errMsg error
 type turnDoneMsg struct{}
 
 // newModel initializes the visible transcript and process dependencies.
-func newModel(ctx context.Context, atlas *agent.Agent) model {
+func newModel(ctx context.Context, atlas *agent.Agent, cursor *cursorState) model {
 	return model{
 		ctx:    ctx,
 		agent:  atlas,
+		cursor: cursor,
 		status: "starting",
 		entries: []entry{
 			{kind: entryMeta, title: "Atlas", body: "Coding agent, full local access, DeepSeek"},
@@ -75,13 +83,14 @@ func newModel(ctx context.Context, atlas *agent.Agent) model {
 
 // Init creates the first durable session for this TUI process.
 func (m model) Init() tea.Cmd {
-	return func() tea.Msg {
+	createSession := func() tea.Msg {
 		session, err := m.agent.CreateSession(m.ctx, "TUI session")
 		if err != nil {
 			return errMsg(err)
 		}
 		return sessionCreatedMsg(session)
 	}
+	return tea.Batch(tea.ShowCursor, createSession)
 }
 
 // Update handles keyboard input, session creation, and streamed agent events.
@@ -95,6 +104,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
+			m.syncCursor(0, 0, false)
 			return m, tea.Quit
 		case tea.KeyEnter:
 			if m.streaming {
@@ -122,6 +132,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollTranscript(-m.pageScrollSize())
 		case tea.KeyBackspace:
 			m.deleteLastInputRune()
+		case tea.KeySpace:
+			m.input.WriteRune(' ')
 		default:
 			if msg.Type == tea.KeyRunes {
 				m.input.WriteString(msg.String())
@@ -168,13 +180,15 @@ func (m model) View() string {
 	width := m.viewWidth()
 	body := m.renderTranscript(width, bodyHeight)
 	status := m.renderStatus(width)
-	prompt := m.renderPrompt(width)
-	return lipgloss.JoinVertical(
+	prompt, cursorCol, cursorVisible := m.renderPromptLine(width)
+	view := lipgloss.JoinVertical(
 		lipgloss.Left,
 		body,
 		status,
 		prompt,
 	)
+	m.syncCursor(strings.Count(view, "\n")+1, cursorCol, cursorVisible)
+	return view
 }
 
 // nextAgentMessage waits for the next event from the active turn.
@@ -405,19 +419,27 @@ func (m model) renderStatus(width int) string {
 	return statusStyle.Width(width).Render(fitLine(text, width))
 }
 
-// renderPrompt renders the composer row.
-func (m model) renderPrompt(width int) string {
+// renderPromptLine renders the composer row and returns the desired cursor cell.
+func (m model) renderPromptLine(width int) (string, int, bool) {
 	prefix := "atlas> "
 	value := m.input.String()
+	prefixWidth := lipgloss.Width(prefix)
 	if m.streaming {
 		value = "waiting for Atlas..."
-		return promptStyle.Width(width).Render(prefix + fitLine(value, width-utf8.RuneCountInString(prefix)))
+		line := prefix + fitLine(value, width-prefixWidth)
+		return promptStyle.Width(width).Render(line), 0, false
 	}
-	available := width - utf8.RuneCountInString(prefix)
-	if available < 1 {
-		available = 1
+	available := width - prefixWidth - 1
+	if available < 0 {
+		available = 0
 	}
-	return promptStyle.Width(width).Render(prefix + renderInputWithCursor(value, available))
+	visible := tailFit(value, available)
+	line := prefix + visible
+	cursorCol := prefixWidth + lipgloss.Width(visible) + 1
+	if cursorCol > width {
+		cursorCol = width
+	}
+	return promptStyle.Width(width).Render(line), cursorCol, true
 }
 
 // renderEntry converts one transcript entry into styled terminal lines.
@@ -535,25 +557,82 @@ func tailFit(text string, width int) string {
 	if width < 1 {
 		return ""
 	}
-	runes := []rune(text)
-	if len(runes) <= width {
+	if lipgloss.Width(text) <= width {
 		return text
 	}
 	if width == 1 {
 		return "…"
 	}
-	return "…" + string(runes[len(runes)-width+1:])
+	limit := width - lipgloss.Width("…")
+	runes := []rune(text)
+	out := make([]rune, 0, len(runes))
+	used := 0
+	for i := len(runes) - 1; i >= 0; i-- {
+		cellWidth := lipgloss.Width(string(runes[i]))
+		if used+cellWidth > limit {
+			break
+		}
+		out = append(out, runes[i])
+		used += cellWidth
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return "…" + string(out)
 }
 
-// renderInputWithCursor keeps the cursor visible inside the composer row.
-func renderInputWithCursor(text string, width int) string {
-	if width < 1 {
-		return ""
+// syncCursor records the terminal cursor target after a render.
+func (m model) syncCursor(row int, col int, visible bool) {
+	if m.cursor == nil {
+		return
 	}
-	if width == 1 {
-		return cursorStyle.Render(" ")
+	m.cursor.Set(row, col, visible)
+}
+
+// cursorState stores the real terminal cursor target for IME composition.
+type cursorState struct {
+	mu      sync.Mutex
+	row     int
+	col     int
+	visible bool
+}
+
+// Set updates the desired cursor location for the next terminal write.
+func (s *cursorState) Set(row int, col int, visible bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.row = row
+	s.col = col
+	s.visible = visible
+}
+
+// Sequence returns the ANSI sequence needed after Bubble Tea resets the cursor.
+func (s *cursorState) Sequence() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.visible || s.row <= 0 || s.col <= 0 {
+		return ansi.HideCursor
 	}
-	return tailFit(text, width-1) + cursorStyle.Render(" ")
+	return ansi.ShowCursor + ansi.CursorPosition(s.col, s.row)
+}
+
+// cursorWriter restores the real terminal cursor after Bubble Tea renders.
+type cursorWriter struct {
+	*os.File
+	cursor *cursorState
+}
+
+// Write forwards Bubble Tea output and then positions the real cursor for IME.
+func (w *cursorWriter) Write(p []byte) (int, error) {
+	n, err := w.File.Write(p)
+	if err != nil || w.cursor == nil || !bytes.Contains(p, []byte("atlas> ")) {
+		return n, err
+	}
+	_, cursorErr := w.File.WriteString(w.cursor.Sequence())
+	if err == nil {
+		err = cursorErr
+	}
+	return n, err
 }
 
 // spinnerFrame returns a stable minimal activity glyph.
@@ -569,5 +648,4 @@ var (
 	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	statusStyle = lipgloss.NewStyle().Faint(true).Border(lipgloss.NormalBorder(), true, false, false, false).PaddingTop(1)
 	promptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	cursorStyle = lipgloss.NewStyle().Reverse(true)
 )

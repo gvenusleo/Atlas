@@ -4,6 +4,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/liuyuxin/atlas/internal/agent"
 )
@@ -75,16 +79,41 @@ func TestRenderTranscriptPadsToFixedHeight(t *testing.T) {
 func TestPromptKeepsTailOfLongInput(t *testing.T) {
 	m := model{width: 16}
 	m.input.WriteString("abcdefghijklmnopqrstuvwxyz")
-	got := m.renderPrompt(16)
+	got, _, _ := m.renderPromptLine(16)
 	if !strings.Contains(got, "…tuvwxyz") {
 		t.Fatalf("prompt should keep input tail: %q", got)
 	}
 }
 
-func TestPromptShowsCursorWhenEditable(t *testing.T) {
-	got := renderInputWithCursor("abc", 8)
-	if !strings.Contains(got, "abc") || !strings.Contains(got, " ") {
-		t.Fatalf("prompt should include input and cursor cell: %q", got)
+func TestPromptReturnsCursorAfterCommittedInput(t *testing.T) {
+	m := model{width: 24}
+	m.input.WriteString("yi xia 与 rust比较")
+	got, col, visible := m.renderPromptLine(24)
+	if strings.Count(got, "\n") != 0 {
+		t.Fatalf("prompt should stay on one line: %q", got)
+	}
+	if !strings.Contains(got, "atlas> …xia 与 rust比较") {
+		t.Fatalf("prompt should keep committed input on prompt line: %q", got)
+	}
+	if !visible || col <= utf8.RuneCountInString("atlas> ") {
+		t.Fatalf("cursor should be after prompt prefix: visible=%v col=%d", visible, col)
+	}
+}
+
+func TestTailFitUsesDisplayWidth(t *testing.T) {
+	got := tailFit("yi xia 与 rust比较", 16)
+	if lipgloss.Width(got) > 16 {
+		t.Fatalf("tail should fit display width: width=%d text=%q", lipgloss.Width(got), got)
+	}
+}
+
+func TestUpdateAcceptsSpaceKey(t *testing.T) {
+	m := model{}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	next := updated.(model)
+	got := next.input.String()
+	if got != " " {
+		t.Fatalf("space key was not appended: %q", got)
 	}
 }
 
