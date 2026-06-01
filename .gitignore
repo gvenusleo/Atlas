@@ -4,8 +4,7 @@
 *.db-*
 *.sqlite
 *.sqlite-*
-atlas
+/atlas
 bin/
 dist/
 .DS_Store
-

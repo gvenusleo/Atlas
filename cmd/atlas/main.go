@@ -1,0 +1,92 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/app"
+	"github.com/liuyuxin/atlas/internal/tui"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "atlas:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	var config app.Config
+	var prompt string
+	var noTUI bool
+	flag.StringVar(&config.DBPath, "db", "", "SQLite database path")
+	flag.StringVar(&config.Workdir, "workdir", "", "workspace directory")
+	flag.StringVar(&config.Model, "model", "", "DeepSeek model")
+	flag.StringVar(&prompt, "prompt", "", "single prompt to run without TUI")
+	flag.BoolVar(&noTUI, "no-tui", false, "run without the terminal UI")
+	flag.Parse()
+	if prompt == "" && flag.NArg() > 0 {
+		prompt = strings.Join(flag.Args(), " ")
+	}
+
+	atlas, err := app.New(config)
+	if err != nil {
+		return err
+	}
+	defer atlas.Close()
+
+	ctx := context.Background()
+	if noTUI || prompt != "" {
+		return runOnce(ctx, atlas.Agent, prompt)
+	}
+	return tui.Run(ctx, atlas.Agent)
+}
+
+func runOnce(ctx context.Context, atlas *agent.Agent, prompt string) error {
+	if strings.TrimSpace(prompt) == "" {
+		return fmt.Errorf("prompt is required when using -no-tui")
+	}
+	session, err := atlas.CreateSession(ctx, "CLI session")
+	if err != nil {
+		return err
+	}
+	events, errs := atlas.RunTurn(ctx, session.ID, prompt)
+	for events != nil || errs != nil {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			printEvent(event)
+		case err, ok := <-errs:
+			if !ok {
+				errs = nil
+				continue
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func printEvent(event agent.Event) {
+	switch event.Type {
+	case agent.EventTextDelta:
+		fmt.Print(event.Text)
+	case agent.EventToolStarted:
+		fmt.Printf("\n[%s]\n", event.ToolName)
+	case agent.EventToolFinished:
+		if event.Error {
+			fmt.Printf("[tool failed]\n%s\n", event.Text)
+		}
+	case agent.EventTurnFinished:
+		fmt.Println()
+	}
+}
