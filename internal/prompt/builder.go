@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -43,11 +44,15 @@ func (b Builder) Build(session storage.Session, messages []storage.Message) (str
 
 	out := make([]model.Message, 0, len(messages))
 	for _, message := range messages {
-		out = append(out, model.Message{
+		item := model.Message{
 			Role:       model.Role(message.Role),
 			Content:    message.Content,
 			ToolCallID: message.ToolCallID,
-		})
+		}
+		if message.ToolCalls != "" {
+			_ = json.Unmarshal([]byte(message.ToolCalls), &item.ToolCalls)
+		}
+		out = append(out, item)
 	}
 	return system, out
 }

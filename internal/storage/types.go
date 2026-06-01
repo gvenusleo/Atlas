@@ -19,6 +19,7 @@ type Message struct {
 	Role       string
 	Content    string
 	ToolCallID string
+	ToolCalls  string
 	CreatedAt  time.Time
 }
 

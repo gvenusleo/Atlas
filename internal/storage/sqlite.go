@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   tool_call_id TEXT NOT NULL DEFAULT '',
+  tool_calls TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
 
@@ -59,6 +61,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_id_id ON messages(session_id, id
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {
 		return fmt.Errorf("migrate sqlite: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE messages ADD COLUMN tool_calls TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumn(err) {
+		return fmt.Errorf("migrate messages tool_calls: %w", err)
 	}
 	return nil
 }
@@ -139,12 +144,13 @@ func (s *SQLiteStore) AddMessage(message Message) error {
 		created = time.Now()
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO messages (session_id, role, content, tool_call_id, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
 		message.SessionID,
 		message.Role,
 		message.Content,
 		message.ToolCallID,
+		message.ToolCalls,
 		formatTime(created),
 	); err != nil {
 		return fmt.Errorf("insert message: %w", err)
@@ -164,7 +170,7 @@ func (s *SQLiteStore) AddMessage(message Message) error {
 
 // Messages returns session messages in chronological order.
 func (s *SQLiteStore) Messages(sessionID string, limit int) ([]Message, error) {
-	query := `SELECT id, session_id, role, content, tool_call_id, created_at
+	query := `SELECT id, session_id, role, content, tool_call_id, tool_calls, created_at
 	          FROM messages WHERE session_id = ? ORDER BY id ASC`
 	args := []any{sessionID}
 	if limit > 0 {
@@ -180,7 +186,7 @@ func (s *SQLiteStore) Messages(sessionID string, limit int) ([]Message, error) {
 	var messages []Message
 	for rows.Next() {
 		var row messageRow
-		if err := rows.Scan(&row.ID, &row.SessionID, &row.Role, &row.Content, &row.ToolCallID, &row.CreatedAt); err != nil {
+		if err := rows.Scan(&row.ID, &row.SessionID, &row.Role, &row.Content, &row.ToolCallID, &row.ToolCalls, &row.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}
 		message, err := row.toMessage()
@@ -234,6 +240,7 @@ type messageRow struct {
 	Role       string
 	Content    string
 	ToolCallID string
+	ToolCalls  string
 	CreatedAt  string
 }
 
@@ -248,8 +255,13 @@ func (r messageRow) toMessage() (Message, error) {
 		Role:       r.Role,
 		Content:    r.Content,
 		ToolCallID: r.ToolCallID,
+		ToolCalls:  r.ToolCalls,
 		CreatedAt:  created,
 	}, nil
+}
+
+func isDuplicateColumn(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column")
 }
 
 func formatTime(t time.Time) string {

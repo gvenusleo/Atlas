@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -172,21 +173,19 @@ func (a *Agent) runModelStep(ctx context.Context, session storage.Session, event
 }
 
 func (a *Agent) persistAssistant(sessionID string, result model.AssistantResult) error {
-	content := result.Content
+	toolCalls := ""
 	if len(result.ToolCalls) > 0 {
-		var lines []string
-		for _, call := range result.ToolCalls {
-			lines = append(lines, fmt.Sprintf("tool_call %s %s %s", call.ID, call.Name, call.Arguments))
+		data, err := json.Marshal(result.ToolCalls)
+		if err != nil {
+			return fmt.Errorf("marshal tool calls: %w", err)
 		}
-		if content != "" {
-			content += "\n"
-		}
-		content += strings.Join(lines, "\n")
+		toolCalls = string(data)
 	}
 	return a.store.AddMessage(storage.Message{
 		SessionID: sessionID,
 		Role:      string(model.RoleAssistant),
-		Content:   content,
+		Content:   result.Content,
+		ToolCalls: toolCalls,
 	})
 }
 
