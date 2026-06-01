@@ -1,0 +1,11 @@
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+atlas
+bin/
+dist/
+.DS_Store
+
