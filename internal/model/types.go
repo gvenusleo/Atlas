@@ -41,6 +41,12 @@ type StreamEvent struct {
 	Done      bool
 }
 
+// AssistantResult is the completed assistant message assembled by the agent loop.
+type AssistantResult struct {
+	Content   string
+	ToolCalls []ToolCall
+}
+
 // ChatRequest is the complete input for a single model step.
 type ChatRequest struct {
 	Model       string
