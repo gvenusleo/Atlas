@@ -474,6 +474,9 @@ func renderEntry(item entry, width int) []string {
 			}
 			return nil
 		}
+		if lines, err := renderMarkdown(item.body, width); err == nil && len(lines) > 0 {
+			return lines
+		}
 		return wrapAndIndent(item.body, width, "")
 	case entryTool:
 		marker := "✓ "
