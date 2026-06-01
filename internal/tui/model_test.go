@@ -4,12 +4,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/storage"
 )
 
 func TestSummarizeToolOutputLimitsPreview(t *testing.T) {
@@ -24,14 +24,26 @@ func TestSummarizeToolOutputLimitsPreview(t *testing.T) {
 
 func TestDeleteLastInputRuneHandlesChinese(t *testing.T) {
 	m := model{}
-	m.input.WriteString("测试a")
+	m.composer.WriteString("测试a")
 	m.deleteLastInputRune()
-	if got := m.input.String(); got != "测试" {
+	if got := m.composer.String(); got != "测试" {
 		t.Fatalf("unexpected input after delete: %q", got)
 	}
 	m.deleteLastInputRune()
-	if got := m.input.String(); got != "测" {
+	if got := m.composer.String(); got != "测" {
 		t.Fatalf("unexpected input after delete: %q", got)
+	}
+}
+
+func TestNewModelStartsWithEmptyTranscript(t *testing.T) {
+	m := newModel(nil, nil, nil)
+	if len(m.entries) != 0 {
+		t.Fatalf("startup transcript should be empty: %#v", m.entries)
+	}
+	updated, _ := m.Update(sessionCreatedMsg(storage.Session{ID: "session-123456", Model: "deepseek"}))
+	next := updated.(model)
+	if len(next.entries) != 0 {
+		t.Fatalf("session creation should not append transcript entries: %#v", next.entries)
 	}
 }
 
@@ -76,34 +88,39 @@ func TestRenderTranscriptPadsToFixedHeight(t *testing.T) {
 	}
 }
 
-func TestPromptKeepsTailOfLongInput(t *testing.T) {
+func TestPromptWrapsLongInput(t *testing.T) {
 	m := model{width: 16}
-	m.input.WriteString("abcdefghijklmnopqrstuvwxyz")
-	got, _, _ := m.renderPromptLine(16)
-	if !strings.Contains(got, "…tuvwxyz") {
-		t.Fatalf("prompt should keep input tail: %q", got)
+	m.composer.WriteString("abcdefghijklmnopqrstuvwxyz")
+	got, _, _, _ := m.renderPromptLine(16)
+	if strings.Count(got, "\n") < 1 {
+		t.Fatalf("prompt should wrap long input: %q", got)
+	}
+	if !strings.Contains(got, "> abcdefghijklmn") || !strings.Contains(got, "  opqrstuvwxyz") {
+		t.Fatalf("prompt should render wrapped prompt lines: %q", got)
 	}
 }
 
 func TestPromptReturnsCursorAfterCommittedInput(t *testing.T) {
-	m := model{width: 24}
-	m.input.WriteString("yi xia 与 rust比较")
-	got, col, visible := m.renderPromptLine(24)
+	m := model{width: 32}
+	m.composer.WriteString("yi xia 与 rust比较")
+	got, row, col, visible := m.renderPromptLine(32)
 	if strings.Count(got, "\n") != 0 {
 		t.Fatalf("prompt should stay on one line: %q", got)
 	}
-	if !strings.Contains(got, "atlas> …xia 与 rust比较") {
+	if !strings.Contains(got, "> yi xia 与 rust比较") {
 		t.Fatalf("prompt should keep committed input on prompt line: %q", got)
 	}
-	if !visible || col <= utf8.RuneCountInString("atlas> ") {
-		t.Fatalf("cursor should be after prompt prefix: visible=%v col=%d", visible, col)
+	if row != 1 || !visible || col <= lipgloss.Width(promptPrefix) {
+		t.Fatalf("cursor should be after prompt prefix: row=%d visible=%v col=%d", row, visible, col)
 	}
 }
 
-func TestTailFitUsesDisplayWidth(t *testing.T) {
-	got := tailFit("yi xia 与 rust比较", 16)
-	if lipgloss.Width(got) > 16 {
-		t.Fatalf("tail should fit display width: width=%d text=%q", lipgloss.Width(got), got)
+func TestWrapDisplayLineUsesDisplayWidth(t *testing.T) {
+	got := wrapDisplayLine("yi xia 与 rust比较", 16)
+	for _, line := range got {
+		if lipgloss.Width(line) > 16 {
+			t.Fatalf("wrapped line should fit display width: width=%d text=%q", lipgloss.Width(line), line)
+		}
 	}
 }
 
@@ -111,9 +128,115 @@ func TestUpdateAcceptsSpaceKey(t *testing.T) {
 	m := model{}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	next := updated.(model)
-	got := next.input.String()
+	got := next.composer.String()
 	if got != " " {
 		t.Fatalf("space key was not appended: %q", got)
+	}
+}
+
+func TestCtrlJInsertsComposerNewline(t *testing.T) {
+	m := model{}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("one")})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("two")})
+	m = updated.(model)
+
+	if got := m.composer.String(); got != "one\ntwo" {
+		t.Fatalf("unexpected composer text: %q", got)
+	}
+}
+
+func TestMultilineComposerCapsAtTenRows(t *testing.T) {
+	var c composerState
+	for i := 0; i < 12; i++ {
+		if i > 0 {
+			c.WriteRune('\n')
+		}
+		c.WriteString("line " + strconv.Itoa(i))
+	}
+	if got := c.Height(80, false); got != maxComposerRows {
+		t.Fatalf("composer height should cap at %d: %d", maxComposerRows, got)
+	}
+	rendered, row, _, visible := c.Render(80)
+	if lines := strings.Count(rendered, "\n") + 1; lines != maxComposerRows {
+		t.Fatalf("rendered composer should have %d rows, got %d in %q", maxComposerRows, lines, rendered)
+	}
+	if !strings.Contains(rendered, "line 11") || strings.Contains(rendered, "line 0") {
+		t.Fatalf("composer should show the bottom window by default: %q", rendered)
+	}
+	if row != maxComposerRows || !visible {
+		t.Fatalf("cursor should be on final visible row at bottom: row=%d visible=%v", row, visible)
+	}
+}
+
+func TestComposerScrollsInsideOverflow(t *testing.T) {
+	var c composerState
+	for i := 0; i < 12; i++ {
+		if i > 0 {
+			c.WriteRune('\n')
+		}
+		c.WriteString("line " + strconv.Itoa(i))
+	}
+	if !c.Scroll(1, 80) {
+		t.Fatal("expected composer scroll to consume the key")
+	}
+	rendered, _, _, visible := c.Render(80)
+	if !strings.Contains(rendered, "line 1") || strings.Contains(rendered, "line 11") {
+		t.Fatalf("unexpected scrolled composer window: %q", rendered)
+	}
+	if visible {
+		t.Fatal("cursor should hide while composer is scrolled away from bottom")
+	}
+}
+
+func TestUpdateScrollsComposerWhenOverflowed(t *testing.T) {
+	m := model{width: 80}
+	for i := 0; i < 12; i++ {
+		if i > 0 {
+			m.composer.WriteRune('\n')
+		}
+		m.composer.WriteString("line " + strconv.Itoa(i))
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	next := updated.(model)
+	if next.composer.scroll != 1 {
+		t.Fatalf("up should scroll overflowing composer, got %d", next.composer.scroll)
+	}
+	if next.scroll != 0 {
+		t.Fatalf("transcript scroll should not move while composer consumes up: %d", next.scroll)
+	}
+
+	updated, _ = next.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next = updated.(model)
+	if next.composer.scroll != 0 {
+		t.Fatalf("down should scroll composer back to bottom, got %d", next.composer.scroll)
+	}
+}
+
+func TestBodyHeightShrinksForMultilineComposer(t *testing.T) {
+	short := model{width: 80, height: 20}
+	tall := model{width: 80, height: 20}
+	for i := 0; i < 5; i++ {
+		if i > 0 {
+			tall.composer.WriteRune('\n')
+		}
+		tall.composer.WriteString("line")
+	}
+	if short.bodyHeight() <= tall.bodyHeight() {
+		t.Fatalf("body should shrink when composer grows: short=%d tall=%d", short.bodyHeight(), tall.bodyHeight())
+	}
+}
+
+func TestRenderEntryOmitsRoleLabels(t *testing.T) {
+	user := strings.Join(renderEntry(entry{kind: entryUser, body: "hello"}, 80), "\n")
+	assistant := strings.Join(renderEntry(entry{kind: entryAssistant, body: "hi"}, 80), "\n")
+	if strings.Contains(user, "You") || strings.Contains(assistant, "Atlas") {
+		t.Fatalf("role labels should be omitted: user=%q assistant=%q", user, assistant)
+	}
+	if !strings.Contains(user, "› hello") || !strings.Contains(assistant, "hi") {
+		t.Fatalf("unexpected rendered entries: user=%q assistant=%q", user, assistant)
 	}
 }
 

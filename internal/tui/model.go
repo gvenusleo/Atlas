@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,7 +30,7 @@ type model struct {
 	ctx       context.Context
 	agent     *agent.Agent
 	session   storage.Session
-	input     strings.Builder
+	composer  composerState
 	entries   []entry
 	events    <-chan agent.Event
 	errs      <-chan error
@@ -62,6 +61,17 @@ type entry struct {
 	failed  bool
 }
 
+type composerState struct {
+	text   string
+	scroll int
+}
+
+const (
+	promptPrefix       = "> "
+	promptContinuation = "  "
+	maxComposerRows    = 10
+)
+
 type sessionCreatedMsg storage.Session
 type agentEventMsg agent.Event
 type errMsg error
@@ -74,10 +84,6 @@ func newModel(ctx context.Context, atlas *agent.Agent, cursor *cursorState) mode
 		agent:  atlas,
 		cursor: cursor,
 		status: "starting",
-		entries: []entry{
-			{kind: entryMeta, title: "Atlas", body: "Coding agent, full local access, DeepSeek"},
-			{kind: entryMeta, title: "Help", body: "Enter sends, PgUp/PgDown scroll, Esc quits"},
-		},
 	}
 }
 
@@ -99,6 +105,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.composer.Clamp(promptContentWidth(m.viewWidth()))
 		m.clampScroll()
 		return m, nil
 	case tea.KeyMsg:
@@ -106,26 +113,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.syncCursor(0, 0, false)
 			return m, tea.Quit
+		case tea.KeyCtrlJ:
+			if !m.streaming {
+				m.composer.WriteRune('\n')
+				m.composer.ScrollToBottom()
+				m.clampScroll()
+			}
 		case tea.KeyEnter:
 			if m.streaming {
 				return m, nil
 			}
-			text := strings.TrimSpace(m.input.String())
+			text := strings.TrimSpace(m.composer.String())
 			if text == "" || m.session.ID == "" {
 				return m, nil
 			}
-			m.input.Reset()
+			m.composer.Reset()
 			m.scroll = 0
-			m.appendEntry(entry{kind: entryUser, title: "You", body: text})
-			m.appendEntry(entry{kind: entryAssistant, title: "Atlas", running: true})
+			m.appendEntry(entry{kind: entryUser, body: text})
+			m.appendEntry(entry{kind: entryAssistant, running: true})
 			m.streaming = true
 			m.status = "running"
 			m.events, m.errs = m.agent.RunTurn(m.ctx, m.session.ID, text)
 			return m, m.nextAgentMessage()
 		case tea.KeyUp:
-			m.scrollTranscript(1)
+			if !m.composer.Scroll(1, promptContentWidth(m.viewWidth())) {
+				m.scrollTranscript(1)
+			}
 		case tea.KeyDown:
-			m.scrollTranscript(-1)
+			if !m.composer.Scroll(-1, promptContentWidth(m.viewWidth())) {
+				m.scrollTranscript(-1)
+			}
 		case tea.KeyPgUp:
 			m.scrollTranscript(m.pageScrollSize())
 		case tea.KeyPgDown:
@@ -133,10 +150,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyBackspace:
 			m.deleteLastInputRune()
 		case tea.KeySpace:
-			m.input.WriteRune(' ')
+			m.composer.WriteRune(' ')
+			m.composer.ScrollToBottom()
 		default:
 			if msg.Type == tea.KeyRunes {
-				m.input.WriteString(msg.String())
+				m.composer.WriteString(msg.String())
+				m.composer.ScrollToBottom()
 			}
 		}
 	case tea.MouseMsg:
@@ -149,7 +168,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionCreatedMsg:
 		m.session = storage.Session(msg)
 		m.status = "ready"
-		m.appendEntry(entry{kind: entryMeta, title: "Session", body: m.session.ID})
 	case agentEventMsg:
 		event := agent.Event(msg)
 		m.appendEvent(event)
@@ -176,18 +194,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders a compact Codex-style transcript with a bottom prompt.
 func (m model) View() string {
-	bodyHeight := m.bodyHeight()
 	width := m.viewWidth()
-	body := m.renderTranscript(width, bodyHeight)
 	status := m.renderStatus(width)
-	prompt, cursorCol, cursorVisible := m.renderPromptLine(width)
+	prompt, promptCursorRow, cursorCol, cursorVisible := m.renderPromptLine(width)
+	bodyHeight := m.bodyHeight()
+	body := m.renderTranscript(width, bodyHeight)
 	view := lipgloss.JoinVertical(
 		lipgloss.Left,
 		body,
 		status,
 		prompt,
 	)
-	m.syncCursor(strings.Count(view, "\n")+1, cursorCol, cursorVisible)
+	cursorRow := renderedLineCount(body) + renderedLineCount(status) + promptCursorRow
+	m.syncCursor(cursorRow, cursorCol, cursorVisible)
 	return view
 }
 
@@ -240,12 +259,9 @@ func (m *model) appendEvent(event agent.Event) {
 
 // deleteLastInputRune removes one user-visible rune from the input buffer.
 func (m *model) deleteLastInputRune() {
-	runes := []rune(m.input.String())
-	if len(runes) == 0 {
-		return
-	}
-	m.input.Reset()
-	m.input.WriteString(string(runes[:len(runes)-1]))
+	m.composer.DeleteLastRune()
+	m.composer.ScrollToBottom()
+	m.composer.Clamp(promptContentWidth(m.viewWidth()))
 }
 
 // appendAssistantDelta appends streamed assistant text to the active response.
@@ -253,7 +269,7 @@ func (m *model) appendAssistantDelta(delta string) {
 	before := m.transcriptLineCount()
 	idx := m.activeAssistantIndex()
 	if idx < 0 {
-		m.entries = append(m.entries, entry{kind: entryAssistant, title: "Atlas"})
+		m.entries = append(m.entries, entry{kind: entryAssistant})
 		idx = len(m.entries) - 1
 	}
 	m.entries[idx].body += delta
@@ -359,11 +375,12 @@ func (m model) pageScrollSize() int {
 	return size
 }
 
-// bodyHeight is the fixed transcript height above status and composer rows.
+// bodyHeight returns the transcript height left after status and composer rows.
 func (m model) bodyHeight() int {
-	bodyHeight := m.height - 5
-	if bodyHeight < 5 {
-		bodyHeight = 5
+	width := m.viewWidth()
+	bodyHeight := m.height - m.statusHeight(width) - m.composer.Height(promptContentWidth(width), m.streaming)
+	if bodyHeight < 1 {
+		bodyHeight = 1
 	}
 	return bodyHeight
 }
@@ -419,27 +436,19 @@ func (m model) renderStatus(width int) string {
 	return statusStyle.Width(width).Render(fitLine(text, width))
 }
 
-// renderPromptLine renders the composer row and returns the desired cursor cell.
-func (m model) renderPromptLine(width int) (string, int, bool) {
-	prefix := "atlas> "
-	value := m.input.String()
-	prefixWidth := lipgloss.Width(prefix)
+// statusHeight returns the visible height of the status strip.
+func (m model) statusHeight(width int) int {
+	return renderedLineCount(m.renderStatus(width))
+}
+
+// renderPromptLine renders the composer and returns the cursor row and cell.
+func (m model) renderPromptLine(width int) (string, int, int, bool) {
 	if m.streaming {
-		value = "waiting for Atlas..."
-		line := prefix + fitLine(value, width-prefixWidth)
-		return promptStyle.Width(width).Render(line), 0, false
+		prefixWidth := lipgloss.Width(promptPrefix)
+		line := promptPrefix + fitLine("waiting for Atlas...", width-prefixWidth)
+		return promptStyle.Width(width).Render(line), 1, 0, false
 	}
-	available := width - prefixWidth - 1
-	if available < 0 {
-		available = 0
-	}
-	visible := tailFit(value, available)
-	line := prefix + visible
-	cursorCol := prefixWidth + lipgloss.Width(visible) + 1
-	if cursorCol > width {
-		cursorCol = width
-	}
-	return promptStyle.Width(width).Render(line), cursorCol, true
+	return m.composer.Render(width)
 }
 
 // renderEntry converts one transcript entry into styled terminal lines.
@@ -453,9 +462,19 @@ func renderEntry(item entry, width int) []string {
 	case entryMeta:
 		head = mutedStyle.Render("• " + label)
 	case entryUser:
-		head = userStyle.Render("› " + label)
+		lines := wrapAndPrefix(item.body, width, "› ", "  ")
+		for i := range lines {
+			lines[i] = userStyle.Render(lines[i])
+		}
+		return lines
 	case entryAssistant:
-		head = titleStyle.Render("● " + label)
+		if strings.TrimSpace(item.body) == "" {
+			if item.running {
+				return []string{mutedStyle.Render(spinnerFrame())}
+			}
+			return nil
+		}
+		return wrapAndIndent(item.body, width, "")
 	case entryTool:
 		marker := "✓ "
 		style := toolStyle
@@ -476,39 +495,228 @@ func renderEntry(item entry, width int) []string {
 	return append([]string{head}, body...)
 }
 
+// String returns the raw composer draft.
+func (c *composerState) String() string {
+	return c.text
+}
+
+// WriteRune appends one rune to the composer draft.
+func (c *composerState) WriteRune(r rune) {
+	c.text += string(r)
+}
+
+// WriteString appends text to the composer draft.
+func (c *composerState) WriteString(text string) {
+	c.text += text
+}
+
+// Reset clears the composer draft and viewport.
+func (c *composerState) Reset() {
+	c.text = ""
+	c.scroll = 0
+}
+
+// DeleteLastRune removes one user-visible rune from the draft.
+func (c *composerState) DeleteLastRune() {
+	runes := []rune(c.text)
+	if len(runes) == 0 {
+		return
+	}
+	c.text = string(runes[:len(runes)-1])
+}
+
+// Height returns the visible composer row count, capped at maxComposerRows.
+func (c composerState) Height(width int, streaming bool) int {
+	if streaming {
+		return 1
+	}
+	lines := c.visualLines(width)
+	if len(lines) < 1 {
+		return 1
+	}
+	if len(lines) > maxComposerRows {
+		return maxComposerRows
+	}
+	return len(lines)
+}
+
+// Render draws the composer and returns the cursor row and column.
+func (c composerState) Render(width int) (string, int, int, bool) {
+	lines := c.visualLines(promptContentWidth(width))
+	visible := c.visibleLines(lines, promptContentWidth(width))
+	rendered := make([]string, 0, len(visible))
+	for i, line := range visible {
+		prefix := promptContinuation
+		if i == 0 {
+			prefix = promptPrefix
+		}
+		rendered = append(rendered, promptStyle.Width(width).Render(prefix+line))
+	}
+	if len(rendered) == 0 {
+		rendered = append(rendered, promptStyle.Width(width).Render(promptPrefix))
+	}
+
+	cursorRow := len(visible)
+	lastLine := ""
+	if len(visible) > 0 {
+		lastLine = visible[len(visible)-1]
+	}
+	cursorPrefix := promptContinuation
+	if len(visible) == 1 {
+		cursorPrefix = promptPrefix
+	}
+	cursorCol := lipgloss.Width(cursorPrefix) + lipgloss.Width(lastLine) + 1
+	if cursorCol > width {
+		cursorCol = width
+	}
+	return strings.Join(rendered, "\n"), cursorRow, cursorCol, c.scroll == 0
+}
+
+// Scroll moves the composer viewport when the draft exceeds maxComposerRows.
+func (c *composerState) Scroll(delta int, width int) bool {
+	lines := c.visualLines(width)
+	if len(lines) <= maxComposerRows {
+		c.scroll = 0
+		return false
+	}
+	before := c.scroll
+	c.scroll += delta
+	c.Clamp(width)
+	return c.scroll != before
+}
+
+// ScrollToBottom makes newly typed content visible.
+func (c *composerState) ScrollToBottom() {
+	c.scroll = 0
+}
+
+// Clamp keeps the composer viewport inside the wrapped draft.
+func (c *composerState) Clamp(width int) {
+	max := c.maxScroll(width)
+	if c.scroll > max {
+		c.scroll = max
+	}
+	if c.scroll < 0 {
+		c.scroll = 0
+	}
+}
+
+func (c composerState) maxScroll(width int) int {
+	lines := c.visualLines(width)
+	if len(lines) <= maxComposerRows {
+		return 0
+	}
+	return len(lines) - maxComposerRows
+}
+
+func (c composerState) visibleLines(lines []string, width int) []string {
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	maxScroll := 0
+	if len(lines) > maxComposerRows {
+		maxScroll = len(lines) - maxComposerRows
+	}
+	scroll := c.scroll
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	end := len(lines) - scroll
+	start := end - maxComposerRows
+	if start < 0 {
+		start = 0
+	}
+	return lines[start:end]
+}
+
+func (c composerState) visualLines(width int) []string {
+	return visualLines(c.text, width)
+}
+
 // wrapAndIndent wraps text to the available terminal width.
 func wrapAndIndent(text string, width int, indent string) []string {
-	available := width - utf8.RuneCountInString(indent)
-	if available < 1 {
-		available = 1
-	}
+	return wrapAndPrefix(text, width, indent, indent)
+}
+
+// wrapAndPrefix wraps text with separate first-line and continuation prefixes.
+func wrapAndPrefix(text string, width int, firstIndent string, nextIndent string) []string {
 	var out []string
+	first := true
 	for _, paragraph := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		indent := nextIndent
+		if first {
+			indent = firstIndent
+		}
 		if paragraph == "" {
-			out = append(out, "")
+			out = append(out, indent)
+			first = false
 			continue
 		}
-		out = append(out, wrapLine(paragraph, available, indent)...)
+		out = append(out, wrapParagraph(paragraph, width, firstIndent, nextIndent, first)...)
+		first = false
 	}
 	return out
 }
 
-// wrapLine wraps one line on rune count boundaries.
-func wrapLine(line string, width int, indent string) []string {
-	runes := []rune(line)
-	if len(runes) <= width {
-		return []string{indent + line}
-	}
+// wrapParagraph wraps one logical line using display width.
+func wrapParagraph(line string, width int, firstIndent string, nextIndent string, useFirst bool) []string {
 	var out []string
-	for len(runes) > 0 {
-		n := width
-		if len(runes) < n {
-			n = len(runes)
-		}
-		out = append(out, indent+string(runes[:n]))
-		runes = runes[n:]
+	indent := nextIndent
+	if useFirst {
+		indent = firstIndent
+	}
+	for _, chunk := range wrapDisplayLine(line, contentWidth(width, indent)) {
+		out = append(out, indent+chunk)
+		indent = nextIndent
 	}
 	return out
+}
+
+// wrapDisplayLine wraps a single line by terminal cell width.
+func wrapDisplayLine(line string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var out []string
+	var chunk strings.Builder
+	used := 0
+	for _, r := range line {
+		cellWidth := lipgloss.Width(string(r))
+		if used > 0 && used+cellWidth > width {
+			out = append(out, chunk.String())
+			chunk.Reset()
+			used = 0
+		}
+		chunk.WriteRune(r)
+		used += cellWidth
+	}
+	if chunk.Len() > 0 || len(out) == 0 {
+		out = append(out, chunk.String())
+	}
+	return out
+}
+
+// visualLines converts explicit newlines and wrapped rows into composer rows.
+func visualLines(text string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	parts := strings.Split(text, "\n")
+	lines := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			lines = append(lines, "")
+			continue
+		}
+		lines = append(lines, wrapDisplayLine(part, width)...)
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
 }
 
 // summarizeToolOutput returns a compact, readable preview for tool output.
@@ -552,33 +760,26 @@ func fitLine(text string, width int) string {
 	return string(runes[:width-1]) + "…"
 }
 
-// tailFit keeps the visible end of user input inside the composer row.
-func tailFit(text string, width int) string {
-	if width < 1 {
-		return ""
+// contentWidth returns the available terminal cells after a prefix is applied.
+func contentWidth(width int, prefix string) int {
+	available := width - lipgloss.Width(prefix)
+	if available < 1 {
+		return 1
 	}
-	if lipgloss.Width(text) <= width {
-		return text
+	return available
+}
+
+// promptContentWidth returns the editable width inside the composer prompt.
+func promptContentWidth(width int) int {
+	return contentWidth(width, promptPrefix)
+}
+
+// renderedLineCount returns the number of terminal rows in a rendered block.
+func renderedLineCount(text string) int {
+	if text == "" {
+		return 0
 	}
-	if width == 1 {
-		return "…"
-	}
-	limit := width - lipgloss.Width("…")
-	runes := []rune(text)
-	out := make([]rune, 0, len(runes))
-	used := 0
-	for i := len(runes) - 1; i >= 0; i-- {
-		cellWidth := lipgloss.Width(string(runes[i]))
-		if used+cellWidth > limit {
-			break
-		}
-		out = append(out, runes[i])
-		used += cellWidth
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return "…" + string(out)
+	return strings.Count(text, "\n") + 1
 }
 
 // syncCursor records the terminal cursor target after a render.
@@ -625,7 +826,7 @@ type cursorWriter struct {
 // Write forwards Bubble Tea output and then positions the real cursor for IME.
 func (w *cursorWriter) Write(p []byte) (int, error) {
 	n, err := w.File.Write(p)
-	if err != nil || w.cursor == nil || !bytes.Contains(p, []byte("atlas> ")) {
+	if err != nil || w.cursor == nil || !bytes.Contains(p, []byte(promptPrefix)) {
 		return n, err
 	}
 	_, cursorErr := w.File.WriteString(w.cursor.Sequence())
@@ -641,7 +842,6 @@ func spinnerFrame() string {
 }
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true)
 	userStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	toolStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	mutedStyle  = lipgloss.NewStyle().Faint(true)
