@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 	"testing"
@@ -188,6 +189,22 @@ func TestComposerScrollsInsideOverflow(t *testing.T) {
 	}
 	if visible {
 		t.Fatal("cursor should hide while composer is scrolled away from bottom")
+	}
+}
+
+func TestCursorWriterRestoresCursorEvenWhenPromptLineIsSkipped(t *testing.T) {
+	var buf bytes.Buffer
+	cursor := &cursorState{}
+	cursor.Set(3, 4, true)
+	writer := &cursorWriter{output: &buf, cursor: cursor}
+
+	if _, err := writer.Write([]byte("status only")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[?25h") || !strings.Contains(got, "\x1b[3;4H") {
+		t.Fatalf("cursor sequence should be restored after skipped prompt render: %q", got)
 	}
 }
 

@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -21,7 +21,7 @@ import (
 func Run(ctx context.Context, atlas *agent.Agent) error {
 	cursor := &cursorState{}
 	model := newModel(ctx, atlas, cursor)
-	output := &cursorWriter{File: os.Stdout, cursor: cursor}
+	output := &cursorWriter{output: os.Stdout, cursor: cursor}
 	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(output)).Run()
 	return err
 }
@@ -822,17 +822,17 @@ func (s *cursorState) Sequence() string {
 
 // cursorWriter restores the real terminal cursor after Bubble Tea renders.
 type cursorWriter struct {
-	*os.File
+	output io.Writer
 	cursor *cursorState
 }
 
 // Write forwards Bubble Tea output and then positions the real cursor for IME.
 func (w *cursorWriter) Write(p []byte) (int, error) {
-	n, err := w.File.Write(p)
-	if err != nil || w.cursor == nil || !bytes.Contains(p, []byte(promptPrefix)) {
+	n, err := w.output.Write(p)
+	if err != nil || w.cursor == nil {
 		return n, err
 	}
-	_, cursorErr := w.File.WriteString(w.cursor.Sequence())
+	_, cursorErr := io.WriteString(w.output, w.cursor.Sequence())
 	if err == nil {
 		err = cursorErr
 	}
