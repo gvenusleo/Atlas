@@ -1,17 +1,13 @@
 package tui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/storage"
@@ -19,10 +15,8 @@ import (
 
 // Run starts the Atlas terminal UI.
 func Run(ctx context.Context, atlas *agent.Agent) error {
-	cursor := &cursorState{}
-	model := newModel(ctx, atlas, cursor)
-	output := &cursorWriter{File: os.Stdout, cursor: cursor}
-	_, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(output)).Run()
+	model := newModel(ctx, atlas)
+	_, err := tea.NewProgram(model).Run()
 	return err
 }
 
@@ -40,7 +34,6 @@ type model struct {
 	width     int
 	height    int
 	err       error
-	cursor    *cursorState
 }
 
 type entryKind int
@@ -78,11 +71,10 @@ type errMsg error
 type turnDoneMsg struct{}
 
 // newModel initializes the visible transcript and process dependencies.
-func newModel(ctx context.Context, atlas *agent.Agent, cursor *cursorState) model {
+func newModel(ctx context.Context, atlas *agent.Agent) model {
 	return model{
 		ctx:    ctx,
 		agent:  atlas,
-		cursor: cursor,
 		status: "starting",
 	}
 }
@@ -96,7 +88,7 @@ func (m model) Init() tea.Cmd {
 		}
 		return sessionCreatedMsg(session)
 	}
-	return tea.Batch(tea.ShowCursor, createSession)
+	return createSession
 }
 
 // Update handles keyboard input, session creation, and streamed agent events.
@@ -108,18 +100,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.composer.Clamp(promptContentWidth(m.viewWidth()))
 		m.clampScroll()
 		return m, nil
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			m.syncCursor(0, 0, false)
+	case tea.KeyPressMsg:
+		key := msg.Key()
+		switch {
+		case isCtrlKey(key, 'c') || key.Code == tea.KeyEsc:
 			return m, tea.Quit
-		case tea.KeyCtrlJ:
+		case isCtrlKey(key, 'j'):
 			if !m.streaming {
 				m.composer.WriteRune('\n')
 				m.composer.ScrollToBottom()
 				m.clampScroll()
 			}
-		case tea.KeyEnter:
+		case key.Code == tea.KeyEnter || key.Code == tea.KeyKpEnter:
 			if m.streaming {
 				return m, nil
 			}
@@ -135,31 +127,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "running"
 			m.events, m.errs = m.agent.RunTurn(m.ctx, m.session.ID, text)
 			return m, m.nextAgentMessage()
-		case tea.KeyUp:
+		case key.Code == tea.KeyUp:
 			if !m.composer.Scroll(1, promptContentWidth(m.viewWidth())) {
 				m.scrollTranscript(1)
 			}
-		case tea.KeyDown:
+		case key.Code == tea.KeyDown:
 			if !m.composer.Scroll(-1, promptContentWidth(m.viewWidth())) {
 				m.scrollTranscript(-1)
 			}
-		case tea.KeyPgUp:
+		case key.Code == tea.KeyPgUp:
 			m.scrollTranscript(m.pageScrollSize())
-		case tea.KeyPgDown:
+		case key.Code == tea.KeyPgDown:
 			m.scrollTranscript(-m.pageScrollSize())
-		case tea.KeyBackspace:
+		case key.Code == tea.KeyBackspace:
 			m.deleteLastInputRune()
-		case tea.KeySpace:
-			m.composer.WriteRune(' ')
-			m.composer.ScrollToBottom()
 		default:
-			if msg.Type == tea.KeyRunes {
-				m.composer.WriteString(msg.String())
+			if key.Text != "" {
+				m.composer.WriteString(key.Text)
 				m.composer.ScrollToBottom()
 			}
 		}
-	case tea.MouseMsg:
-		switch msg.Type {
+	case tea.MouseWheelMsg:
+		switch msg.Button {
 		case tea.MouseWheelUp:
 			m.scrollTranscript(3)
 		case tea.MouseWheelDown:
@@ -193,7 +182,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders a compact Codex-style transcript with a bottom prompt.
-func (m model) View() string {
+func (m model) View() tea.View {
 	width := m.viewWidth()
 	status := m.renderStatus(width)
 	prompt, promptCursorRow, cursorCol, cursorVisible := m.renderPromptLine(width)
@@ -206,8 +195,18 @@ func (m model) View() string {
 		prompt,
 	)
 	cursorRow := renderedLineCount(body) + renderedLineCount(status) + promptCursorRow
-	m.syncCursor(cursorRow, cursorCol, cursorVisible)
-	return view
+	result := tea.NewView(view)
+	result.AltScreen = true
+	result.MouseMode = tea.MouseModeCellMotion
+	if cursorVisible {
+		result.Cursor = tea.NewCursor(cursorCol-1, cursorRow-1)
+	}
+	return result
+}
+
+// isCtrlKey reports whether a key press is the requested Ctrl chord.
+func isCtrlKey(key tea.Key, code rune) bool {
+	return key.Mod.Contains(tea.ModCtrl) && key.Code == code
 }
 
 // nextAgentMessage waits for the next event from the active turn.
@@ -783,60 +782,6 @@ func renderedLineCount(text string) int {
 		return 0
 	}
 	return strings.Count(text, "\n") + 1
-}
-
-// syncCursor records the terminal cursor target after a render.
-func (m model) syncCursor(row int, col int, visible bool) {
-	if m.cursor == nil {
-		return
-	}
-	m.cursor.Set(row, col, visible)
-}
-
-// cursorState stores the real terminal cursor target for IME composition.
-type cursorState struct {
-	mu      sync.Mutex
-	row     int
-	col     int
-	visible bool
-}
-
-// Set updates the desired cursor location for the next terminal write.
-func (s *cursorState) Set(row int, col int, visible bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.row = row
-	s.col = col
-	s.visible = visible
-}
-
-// Sequence returns the ANSI sequence needed after Bubble Tea resets the cursor.
-func (s *cursorState) Sequence() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.visible || s.row <= 0 || s.col <= 0 {
-		return ansi.HideCursor
-	}
-	return ansi.ShowCursor + ansi.CursorPosition(s.col, s.row)
-}
-
-// cursorWriter restores the real terminal cursor after Bubble Tea renders.
-type cursorWriter struct {
-	*os.File
-	cursor *cursorState
-}
-
-// Write forwards Bubble Tea output and then positions the real cursor for IME.
-func (w *cursorWriter) Write(p []byte) (int, error) {
-	n, err := w.File.Write(p)
-	if err != nil || w.cursor == nil || !bytes.Contains(p, []byte(promptPrefix)) {
-		return n, err
-	}
-	_, cursorErr := w.File.WriteString(w.cursor.Sequence())
-	if err == nil {
-		err = cursorErr
-	}
-	return n, err
 }
 
 // spinnerFrame returns a stable minimal activity glyph.

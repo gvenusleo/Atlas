@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/storage"
@@ -36,7 +36,7 @@ func TestDeleteLastInputRuneHandlesChinese(t *testing.T) {
 }
 
 func TestNewModelStartsWithEmptyTranscript(t *testing.T) {
-	m := newModel(nil, nil, nil)
+	m := newModel(nil, nil)
 	if len(m.entries) != 0 {
 		t.Fatalf("startup transcript should be empty: %#v", m.entries)
 	}
@@ -126,7 +126,7 @@ func TestWrapDisplayLineUsesDisplayWidth(t *testing.T) {
 
 func TestUpdateAcceptsSpaceKey(t *testing.T) {
 	m := model{}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: " ", Code: tea.KeySpace}))
 	next := updated.(model)
 	got := next.composer.String()
 	if got != " " {
@@ -136,11 +136,11 @@ func TestUpdateAcceptsSpaceKey(t *testing.T) {
 
 func TestCtrlJInsertsComposerNewline(t *testing.T) {
 	m := model{}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("one")})
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "one"}))
 	m = updated.(model)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Mod: tea.ModCtrl, Code: 'j'}))
 	m = updated.(model)
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("two")})
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "two"}))
 	m = updated.(model)
 
 	if got := m.composer.String(); got != "one\ntwo" {
@@ -199,7 +199,7 @@ func TestUpdateScrollsComposerWhenOverflowed(t *testing.T) {
 		}
 		m.composer.WriteString("line " + strconv.Itoa(i))
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
 	next := updated.(model)
 	if next.composer.scroll != 1 {
 		t.Fatalf("up should scroll overflowing composer, got %d", next.composer.scroll)
@@ -208,7 +208,7 @@ func TestUpdateScrollsComposerWhenOverflowed(t *testing.T) {
 		t.Fatalf("transcript scroll should not move while composer consumes up: %d", next.scroll)
 	}
 
-	updated, _ = next.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	next = updated.(model)
 	if next.composer.scroll != 0 {
 		t.Fatalf("down should scroll composer back to bottom, got %d", next.composer.scroll)
