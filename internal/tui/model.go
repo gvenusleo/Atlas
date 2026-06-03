@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -16,8 +17,90 @@ import (
 // Run starts the Atlas terminal UI.
 func Run(ctx context.Context, atlas *agent.Agent) error {
 	model := newModel(ctx, atlas)
-	_, err := tea.NewProgram(model).Run()
+	output := &cursorShapePreservingWriter{File: os.Stdout}
+	_, err := tea.NewProgram(model, tea.WithOutput(output)).Run()
 	return err
+}
+
+// cursorShapePreservingWriter prevents the TUI from changing the user's cursor shape.
+type cursorShapePreservingWriter struct {
+	*os.File
+	pending []byte
+}
+
+// Write forwards output while filtering DECSCUSR cursor-shape sequences.
+func (w *cursorShapePreservingWriter) Write(p []byte) (int, error) {
+	if w.File == nil {
+		return len(p), nil
+	}
+	out := filterCursorShapeSequences(append(w.pending, p...))
+	w.pending = out.tail
+	if len(out.body) == 0 {
+		return len(p), nil
+	}
+	_, err := w.File.Write(out.body)
+	return len(p), err
+}
+
+type filteredOutput struct {
+	body []byte
+	tail []byte
+}
+
+// filterCursorShapeSequences removes CSI Ps SP q sequences while preserving split tails.
+func filterCursorShapeSequences(input []byte) filteredOutput {
+	var body []byte
+	for i := 0; i < len(input); {
+		if input[i] != '\x1b' {
+			body = append(body, input[i])
+			i++
+			continue
+		}
+		end, complete, matched := cursorShapeSequenceEnd(input[i:])
+		if matched {
+			if complete {
+				i += end
+				continue
+			}
+			return filteredOutput{body: body, tail: append([]byte(nil), input[i:]...)}
+		}
+		body = append(body, input[i])
+		i++
+	}
+	return filteredOutput{body: body}
+}
+
+// cursorShapeSequenceEnd parses ESC [ Ps SP q and reports its byte length.
+func cursorShapeSequenceEnd(b []byte) (int, bool, bool) {
+	if len(b) == 0 || b[0] != '\x1b' {
+		return 0, false, false
+	}
+	if len(b) == 1 {
+		return 0, false, true
+	}
+	if b[1] != '[' {
+		return 0, false, false
+	}
+	if len(b) == 2 {
+		return 0, false, true
+	}
+	i := 2
+	for i < len(b) && b[i] >= '0' && b[i] <= '9' {
+		i++
+	}
+	if i == len(b) {
+		return 0, false, true
+	}
+	if b[i] != ' ' {
+		return 0, false, false
+	}
+	if i+1 == len(b) {
+		return 0, false, true
+	}
+	if b[i+1] != 'q' {
+		return 0, false, false
+	}
+	return i + 2, true, true
 }
 
 type model struct {

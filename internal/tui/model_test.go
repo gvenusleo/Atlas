@@ -270,3 +270,21 @@ func TestScrolledTranscriptDoesNotJumpOnNewOutput(t *testing.T) {
 		t.Fatalf("new output should not move manual scroll: %q", got)
 	}
 }
+
+func TestFilterCursorShapeSequences(t *testing.T) {
+	got := filterCursorShapeSequences([]byte("a\x1b[5 qb\x1b[?25hc"))
+	if string(got.body) != "ab\x1b[?25hc" || len(got.tail) != 0 {
+		t.Fatalf("unexpected filtered output: body=%q tail=%q", got.body, got.tail)
+	}
+}
+
+func TestFilterCursorShapeSequencesKeepsSplitTail(t *testing.T) {
+	first := filterCursorShapeSequences([]byte("a\x1b[5"))
+	if string(first.body) != "a" || string(first.tail) != "\x1b[5" {
+		t.Fatalf("unexpected first filter: body=%q tail=%q", first.body, first.tail)
+	}
+	second := filterCursorShapeSequences(append(first.tail, []byte(" qb")...))
+	if string(second.body) != "b" || len(second.tail) != 0 {
+		t.Fatalf("unexpected second filter: body=%q tail=%q", second.body, second.tail)
+	}
+}
