@@ -1,74 +1,35 @@
 # Atlas
 
-Atlas is a Go coding agent prototype.
+Atlas 正在从一个干净的 Go module 重新开始开发。
 
-The core is intentionally small:
+## 配置
 
-- session state persisted locally
-- turn loop for model, tool, and context orchestration
-- DeepSeek chat API provider
-- built-in code tools with full local access
-- terminal UI over a stream of agent events
+Atlas 从用户主目录下的 `.atlas/config.json` 读取 Provider 配置：
 
-Atlas does not implement a permission system. Tools run with the same filesystem
-and process access as the user running the program.
-
-## Usage
-
-Set a DeepSeek API key:
-
-```sh
-export DEEPSEEK_API_KEY=...
+```json
+{
+  "provider": {
+    "base_url": "https://api.deepseek.com",
+    "api_key": "sk-...",
+    "model": "deepseek-v4-flash"
+  },
+  "agent": {
+    "max_steps": 8,
+    "temperature": 0.2
+  }
+}
 ```
 
-Run the TUI:
+Atlas 默认拥有当前进程的完整本地访问权限，工具可以读写文件并执行 shell 命令。
+
+## 使用
 
 ```sh
-go run ./cmd/atlas
+go run ./cmd/atlas "读取 README 并总结"
 ```
 
-The TUI keeps a compact transcript, fixed composer/status rows, summarized tool
-output previews, and scrollback with `Up`/`Down`, `PgUp`/`PgDown`, or the mouse
-wheel. Press `Enter` to send, `Esc` or `Ctrl+C` to quit.
-
-Run a single prompt without the TUI:
+## 开发
 
 ```sh
-go run ./cmd/atlas -no-tui "list the files in this repository"
-```
-
-By default Atlas stores data in `~/.atlas/atlas.db`. Override it with
-`ATLAS_DB` or `-db`.
-
-The default DeepSeek model is `deepseek-v4-flash`; use `-model` to override it.
-
-Enable local debug logs with `-debug`:
-
-```sh
-go run ./cmd/atlas -debug
-```
-
-Debug mode writes one JSONL file per session to `<workdir>/.atlas/debug/`.
-Those logs include prompts, model requests, streamed deltas, tool calls, tool
-results, and turn errors.
-
-## Skills
-
-Atlas can load local skills from `SKILL.md` files. By default it scans:
-
-- `<workdir>/.agents/skills`
-- `~/.agents/skills`
-- `~/.atlas/skills`
-
-Add more roots with repeated `-skill-root` flags. A skill is triggered for a
-turn when the prompt names it, for example `$think`, or links directly to a
-skill file with `[$think](skill:///absolute/path/SKILL.md)`.
-
-## Development
-
-```sh
-go fmt ./...
 go test ./...
-go vet ./...
-go build ./cmd/atlas
 ```

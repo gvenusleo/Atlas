@@ -1,2 +1,2 @@
-// Package prompt builds model-ready prompts from session history and workspace state.
+// Package prompt 构造 Atlas 的模型系统提示词。
 package prompt

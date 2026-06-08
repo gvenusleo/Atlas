@@ -2,249 +2,348 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/liuyuxin/atlas/internal/model"
-	"github.com/liuyuxin/atlas/internal/storage"
 	"github.com/liuyuxin/atlas/internal/tool"
+	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
-type scriptedProvider struct {
-	calls int
-	path  string
+type fakeProvider struct {
+	responses []model.ChatResponse
+	err       error
+	requests  []model.ChatRequest
 }
 
-func (p *scriptedProvider) StreamChat(_ context.Context, _ model.ChatRequest) (<-chan model.StreamEvent, <-chan error) {
-	events := make(chan model.StreamEvent, 4)
-	errs := make(chan error, 1)
-	p.calls++
-	go func() {
-		defer close(events)
-		defer close(errs)
-		if p.calls == 1 {
-			events <- model.StreamEvent{ToolCall: &model.ToolCall{
-				ID:        "call_1",
-				Name:      "read_file",
-				Arguments: `{"path":"` + p.path + `"}`,
-			}}
-			events <- model.StreamEvent{Done: true}
-			return
-		}
-		events <- model.StreamEvent{TextDelta: "done"}
-		events <- model.StreamEvent{Done: true}
-	}()
-	return events, errs
-}
-
-type captureProvider struct {
-	last model.ChatRequest
-}
-
-func (p *captureProvider) StreamChat(_ context.Context, req model.ChatRequest) (<-chan model.StreamEvent, <-chan error) {
-	events := make(chan model.StreamEvent, 2)
-	errs := make(chan error, 1)
-	p.last = req
-	go func() {
-		defer close(events)
-		defer close(errs)
-		events <- model.StreamEvent{TextDelta: "ok"}
-		events <- model.StreamEvent{Done: true}
-	}()
-	return events, errs
-}
-
-func TestAgentRunsToolLoopUntilFinalText(t *testing.T) {
-	dir := t.TempDir()
-	readme := filepath.Join(dir, "README.md")
-	if err := os.WriteFile(readme, []byte("hello"), 0o644); err != nil {
-		t.Fatal(err)
+func (p *fakeProvider) Chat(_ context.Context, req model.ChatRequest) (model.ChatResponse, error) {
+	p.requests = append(p.requests, req)
+	if p.err != nil {
+		return model.ChatResponse{}, p.err
 	}
+	if len(p.responses) == 0 {
+		return model.ChatResponse{}, errors.New("unexpected chat call")
+	}
+	resp := p.responses[0]
+	p.responses = p.responses[1:]
+	return resp, nil
+}
 
-	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
+type fakeTool struct {
+	definition model.ToolDefinition
+	result     string
+	err        error
+}
+
+func (t fakeTool) Definition() model.ToolDefinition {
+	return t.definition
+}
+
+func (t fakeTool) Run(_ context.Context, _ string) (string, error) {
+	return t.result, t.err
+}
+
+func TestRunTurnTextResponse(t *testing.T) {
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{{Content: "hello"}},
+	}
+	agent, err := New(Config{Provider: provider, System: "system"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("New() error = %v", err)
 	}
-	defer store.Close()
 
-	rt := tool.NewRuntime(tool.ReadFile{})
-	agent := New(store, &scriptedProvider{path: readme}, rt, Config{Workdir: dir, Model: "test-model"})
-	session, err := agent.CreateSession(context.Background(), "test")
+	got, err := agent.RunTurn(context.Background(), "hi")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("RunTurn() error = %v", err)
 	}
-
-	events, errs := agent.RunTurn(context.Background(), session.ID, "start")
-	var sawTool bool
-	var sawDone bool
-	for event := range events {
-		if event.Type == EventToolFinished {
-			sawTool = true
-		}
-		if event.Type == EventTurnFinished {
-			sawDone = true
-		}
+	if got != "hello" {
+		t.Fatalf("RunTurn() = %q, want %q", got, "hello")
 	}
-	if err := <-errs; err != nil {
-		t.Fatal(err)
+	if len(provider.requests) != 1 {
+		t.Fatalf("chat calls = %d, want 1", len(provider.requests))
 	}
-	if !sawTool || !sawDone {
-		t.Fatalf("expected tool and done events, sawTool=%v sawDone=%v", sawTool, sawDone)
-	}
-
-	messages, err := store.Messages(session.ID, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(messages) < 4 {
-		t.Fatalf("expected persisted loop messages, got %d", len(messages))
+	if provider.requests[0].System != "system" {
+		t.Fatalf("request system = %q, want %q", provider.requests[0].System, "system")
 	}
 }
 
-func TestAgentInjectsMentionedSkillIntoRequest(t *testing.T) {
-	dir := t.TempDir()
-	skillDir := filepath.Join(dir, ".agents", "skills", "think")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillBody := "---\nname: think\ndescription: Plan before coding\n---\n\nUse a plan first.\n"
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillBody), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-
-	provider := &captureProvider{}
-	agent := New(store, provider, tool.NewRuntime(), Config{
-		Workdir:    dir,
-		Model:      "test-model",
-		SkillRoots: []string{filepath.Join(dir, ".agents", "skills")},
+func TestRunTurnToolThenFinalResponse(t *testing.T) {
+	registry, err := tool.NewRegistry(fakeTool{
+		definition: model.ToolDefinition{Name: "fake"},
+		result:     "tool result",
 	})
-	session, err := agent.CreateSession(context.Background(), "test")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
+			{Content: "done"},
+		},
+	}
+	agent, err := New(Config{Provider: provider, Tools: registry})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
 	}
 
-	events, errs := agent.RunTurn(context.Background(), session.ID, "$think make a plan")
-	for range events {
+	got, err := agent.RunTurn(context.Background(), "use tool")
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
 	}
-	if err := <-errs; err != nil {
-		t.Fatal(err)
+	if got != "done" {
+		t.Fatalf("RunTurn() = %q, want %q", got, "done")
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("chat calls = %d, want 2", len(provider.requests))
+	}
+	lastMessages := provider.requests[1].Messages
+	last := lastMessages[len(lastMessages)-1]
+	if last.Role != model.RoleTool || last.Content != "tool result" || last.ToolCallID != "call_1" {
+		t.Fatalf("last message = %#v", last)
+	}
+}
+
+func TestRunTurnEmitsEventsInOrder(t *testing.T) {
+	registry, err := tool.NewRegistry(fakeTool{
+		definition: model.ToolDefinition{Name: "fake"},
+		result:     "tool result",
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
+			{Content: "done"},
+		},
+	}
+	var events []Event
+	agent, err := New(Config{
+		Provider: provider,
+		Tools:    registry,
+		Observer: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
 	}
 
-	if !strings.Contains(provider.last.System, "<skills_instructions>") ||
-		!strings.Contains(provider.last.System, "Plan before coding") {
-		t.Fatalf("request system prompt should include available skills: %q", provider.last.System)
+	got, err := agent.RunTurn(context.Background(), "use tool")
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got != "done" {
+		t.Fatalf("RunTurn() = %q", got)
+	}
+
+	wantTypes := []EventType{
+		EventTurnStarted,
+		EventModelResponse,
+		EventToolStarted,
+		EventToolFinished,
+		EventModelResponse,
+		EventTurnFinished,
+	}
+	if len(events) != len(wantTypes) {
+		t.Fatalf("events = %#v", events)
+	}
+	for i, want := range wantTypes {
+		if events[i].Type != want {
+			t.Fatalf("event %d type = %q, want %q", i, events[i].Type, want)
+		}
+	}
+	if events[2].ToolCall.Name != "fake" {
+		t.Fatalf("tool started = %#v", events[2])
+	}
+	if events[3].ToolResult != "tool result" || events[3].ToolError {
+		t.Fatalf("tool finished = %#v", events[3])
+	}
+	if events[5].Content != "done" {
+		t.Fatalf("turn finished = %#v", events[5])
+	}
+}
+
+func TestRunTurnEmitsToolErrorEvent(t *testing.T) {
+	registry, err := tool.NewRegistry(fakeTool{
+		definition: model.ToolDefinition{Name: "fake"},
+		err:        errors.New("tool failed"),
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
+			{Content: "done"},
+		},
+	}
+	var events []Event
+	agent, err := New(Config{
+		Provider: provider,
+		Tools:    registry,
+		Observer: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "use tool"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
 	}
 	var found bool
-	for _, message := range provider.last.Messages {
-		if strings.Contains(message.Content, "<skill>") && strings.Contains(message.Content, "Use a plan first.") {
+	for _, event := range events {
+		if event.Type == EventToolFinished {
 			found = true
+			if !event.ToolError || event.ToolResult != "tool failed" {
+				t.Fatalf("tool event = %#v", event)
+			}
 		}
 	}
 	if !found {
-		t.Fatalf("request messages should include full skill content: %#v", provider.last.Messages)
+		t.Fatalf("events = %#v", events)
 	}
 }
 
-func TestAgentWritesDebugSessionLogWhenEnabled(t *testing.T) {
-	dir := t.TempDir()
-	readme := filepath.Join(dir, "README.md")
-	if err := os.WriteFile(readme, []byte("hello"), 0o644); err != nil {
-		t.Fatal(err)
+func TestRunTurnUnknownToolIsVisibleToModel(t *testing.T) {
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "missing", Arguments: `{}`}}},
+			{Content: "recovered"},
+		},
 	}
-	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
+	agent, err := New(Config{Provider: provider})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("New() error = %v", err)
 	}
-	defer store.Close()
 
-	debugDir := filepath.Join(dir, "debug")
-	provider := &scriptedProvider{path: readme}
-	agent := New(store, provider, tool.NewRuntime(tool.ReadFile{}), Config{
-		Workdir:    dir,
-		Model:      "test-model",
-		SkillRoots: []string{filepath.Join(dir, ".agents", "skills")},
-		Debug:      true,
-		DebugDir:   debugDir,
+	if _, err := agent.RunTurn(context.Background(), "use missing"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	messages := provider.requests[1].Messages
+	last := messages[len(messages)-1]
+	if last.Role != model.RoleTool || last.ToolCallID != "call_1" {
+		t.Fatalf("last message = %#v", last)
+	}
+	if last.Content == "" {
+		t.Fatal("tool error content is empty")
+	}
+}
+
+func TestRunTurnToolResultOrder(t *testing.T) {
+	registry, err := tool.NewRegistry(
+		fakeTool{definition: model.ToolDefinition{Name: "first"}, result: "one"},
+		fakeTool{definition: model.ToolDefinition{Name: "second"}, result: "two"},
+	)
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{
+				{ID: "a", Name: "first", Arguments: `{}`},
+				{ID: "b", Name: "second", Arguments: `{}`},
+			}},
+			{Content: "done"},
+		},
+	}
+	agent, err := New(Config{Provider: provider, Tools: registry})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "use tools"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	messages := provider.requests[1].Messages
+	if messages[len(messages)-2].Content != "one" || messages[len(messages)-1].Content != "two" {
+		t.Fatalf("tool result order = %#v", messages[len(messages)-2:])
+	}
+}
+
+func TestRunTurnMaxSteps(t *testing.T) {
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "missing", Arguments: `{}`}}},
+		},
+	}
+	agent, err := New(Config{Provider: provider, MaxSteps: 1})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "loop"); err == nil {
+		t.Fatal("RunTurn() error = nil, want max steps error")
+	}
+}
+
+func TestRunTurnProviderError(t *testing.T) {
+	want := errors.New("provider failed")
+	var events []Event
+	agent, err := New(Config{
+		Provider: &fakeProvider{err: want},
+		Observer: func(event Event) {
+			events = append(events, event)
+		},
 	})
-	session, err := agent.CreateSession(context.Background(), "test")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("New() error = %v", err)
 	}
 
-	events, errs := agent.RunTurn(context.Background(), session.ID, "hello")
-	for range events {
+	_, err = agent.RunTurn(context.Background(), "hi")
+	if !errors.Is(err, want) {
+		t.Fatalf("RunTurn() error = %v, want %v", err, want)
 	}
-	if err := <-errs; err != nil {
-		t.Fatal(err)
+	if len(events) != 2 {
+		t.Fatalf("events = %#v", events)
 	}
-
-	data, err := os.ReadFile(filepath.Join(debugDir, session.ID+".jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var eventsSeen []string
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		var entry struct {
-			Event string `json:"event"`
-		}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			t.Fatalf("invalid debug entry %q: %v", line, err)
-		}
-		eventsSeen = append(eventsSeen, entry.Event)
-	}
-	for _, want := range []string{"session_created", "turn_started", "model_request", "model_tool_call", "assistant_result", "tool_started", "tool_finished", "model_text_delta", "turn_finished"} {
-		if !contains(eventsSeen, want) {
-			t.Fatalf("debug log missing %q in %v", want, eventsSeen)
-		}
+	if events[1].Type != EventTurnFinished || !errors.Is(events[1].Err, want) {
+		t.Fatalf("finish event = %#v", events[1])
 	}
 }
 
-func TestAgentDoesNotWriteDebugLogWhenDisabled(t *testing.T) {
-	dir := t.TempDir()
-	store, err := storage.OpenSQLite(filepath.Join(dir, "atlas.db"))
+func TestRunTurnContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	agent, err := New(Config{Provider: &cancelProvider{}})
 	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-
-	debugDir := filepath.Join(dir, "debug")
-	agent := New(store, &captureProvider{}, tool.NewRuntime(), Config{
-		Workdir:    dir,
-		Model:      "test-model",
-		SkillRoots: []string{filepath.Join(dir, ".agents", "skills")},
-		DebugDir:   debugDir,
-	})
-	session, err := agent.CreateSession(context.Background(), "test")
-	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("New() error = %v", err)
 	}
 
-	events, errs := agent.RunTurn(context.Background(), session.ID, "hello")
-	for range events {
-	}
-	if err := <-errs; err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := os.Stat(filepath.Join(debugDir, session.ID+".jsonl")); !os.IsNotExist(err) {
-		t.Fatalf("disabled debug mode should not create a log file, err=%v", err)
+	_, err = agent.RunTurn(ctx, "hi")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunTurn() error = %v, want %v", err, context.Canceled)
 	}
 }
 
-func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
+func TestNewRequiresProvider(t *testing.T) {
+	if _, err := New(Config{}); err == nil {
+		t.Fatal("New() error = nil, want provider error")
 	}
-	return false
+}
+
+func TestNewUsesProvidedTranscript(t *testing.T) {
+	trans := transcript.New()
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{{Content: "hello"}},
+	}
+	agent, err := New(Config{Provider: provider, Transcript: trans})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "hi"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if len(trans.Messages()) != 2 {
+		t.Fatalf("transcript messages = %d, want 2", len(trans.Messages()))
+	}
+}
+
+type cancelProvider struct{}
+
+func (cancelProvider) Chat(ctx context.Context, _ model.ChatRequest) (model.ChatResponse, error) {
+	return model.ChatResponse{}, ctx.Err()
 }
