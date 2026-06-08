@@ -95,6 +95,15 @@ CLI input
 - 公共接口接收 `context.Context`，用于 cancellation。
 - agent loop 暴露最小 observer 事件，供 CLI、测试和后续 UI 观察执行过程。
 
+## 取舍原则
+
+Atlas 追求极简、可理解、可验证，不追求覆盖所有 provider、终端、平台和边缘场景。当前真实使用路径优先于理论完整性。
+
+- 不提前做兼容矩阵。遇到真实 provider 差异后，用最小测试固定行为，再做局部适配。
+- 不为了“可能以后”保留两套接口、fallback 或配置开关。
+- 不为单一调用点创建抽象。
+- 不把上游大型 agent 的完整架构搬进 Atlas，只吸收能让当前核心更小、更清楚的做法。
+
 ## Provider 边界
 
 `model.Provider` 是 agent 与模型后端之间的唯一接口。Provider 只暴露流式调用，具体实现负责处理连接信息、鉴权、模型名、请求格式、SSE 解析和响应格式转换。
