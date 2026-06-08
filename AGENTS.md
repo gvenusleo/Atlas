@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-Atlas 是一个用 Go 编写的本地 coding agent。核心是可测试的 headless agent loop；CLI、TUI 或其他界面都是调用核心能力的外壳。
+Atlas 是一个用 Go 编写的本地 coding agent。核心是可测试的 headless agent loop；CLI、TUI 或其他界面都通过 `internal/runtime` 调用核心能力。
 
 Atlas 的核心职责：
 
@@ -67,6 +67,7 @@ internal/config
 internal/model
 internal/prompt
 internal/provider/openai
+internal/runtime
 internal/session
 internal/tool
 internal/transcript
@@ -76,6 +77,7 @@ internal/transcript
 
 ```text
 CLI input
+  -> runtime.RunTurn
   -> Agent.RunTurn
   -> build model.ChatRequest from transcript
   -> provider.Stream
@@ -133,7 +135,7 @@ Transcript 不负责持久化、压缩或摘要。`internal/session` 负责把 t
 
 Atlas 使用 SQLite 保存本地会话，默认路径为 `~/.atlas/atlas.db`。`session.db_path` 可以在应用配置中覆盖。
 
-CLI 默认每次调用创建新的 session ID；传入 `--session <id>` 时恢复或创建指定 session。session ID 只允许字母、数字、`.`、`_` 和 `-`。
+`atlas run` 默认每次调用创建新的 session ID；传入 `--session <id>` 时恢复或创建指定 session。裸 `atlas` 和 `atlas --session <id>` 是交互模式入口，TUI 接入前只输出占位提示。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
 当前 session 能力覆盖创建、恢复、保存 transcript、列出最近会话、查看会话详情和删除会话。历史全文搜索、摘要和迁移框架不提前实现。
 

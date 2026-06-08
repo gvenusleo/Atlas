@@ -1,0 +1,268 @@
+package runtime
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/config"
+	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/prompt"
+	"github.com/liuyuxin/atlas/internal/provider/openai"
+	"github.com/liuyuxin/atlas/internal/session"
+	"github.com/liuyuxin/atlas/internal/tool"
+	"github.com/liuyuxin/atlas/internal/transcript"
+)
+
+// Dependencies 定义 Runtime 需要的外部依赖，测试可以替换其中任意一项。
+type Dependencies struct {
+	LoadConfig       func() (config.Config, error)
+	NewProvider      func(config.ProviderConfig) (model.Provider, error)
+	Getwd            func() (string, error)
+	LoadInstructions func(string) ([]prompt.InstructionFile, error)
+	NewSessionID     func(time.Time) (string, error)
+	Now              func() time.Time
+}
+
+// Runtime 是 CLI 和后续交互界面共享的 Atlas 执行入口。
+type Runtime struct {
+	deps Dependencies
+}
+
+// TurnOptions 描述一次用户输入的执行参数。
+type TurnOptions struct {
+	SessionID string
+	Prompt    string
+	Observer  agent.Observer
+}
+
+// TurnResult 描述一次用户输入完成后的结果。
+type TurnResult struct {
+	SessionID string
+	Content   string
+}
+
+// DefaultDependencies 返回真实命令行运行时使用的依赖。
+func DefaultDependencies() Dependencies {
+	return Dependencies{
+		LoadConfig: config.LoadDefault,
+		NewProvider: func(cfg config.ProviderConfig) (model.Provider, error) {
+			return openai.New(openai.Config{
+				BaseURL: cfg.BaseURL,
+				APIKey:  cfg.APIKey,
+				Model:   cfg.Model,
+			})
+		},
+		Getwd: os.Getwd,
+		LoadInstructions: func(cwd string) ([]prompt.InstructionFile, error) {
+			return prompt.LoadInstructions(cwd)
+		},
+		NewSessionID: session.NewID,
+		Now:          time.Now,
+	}
+}
+
+// New 创建 Runtime，并为未指定的依赖填入默认实现。
+func New(deps Dependencies) *Runtime {
+	return &Runtime{deps: completeDependencies(deps)}
+}
+
+// RunTurn 恢复或创建 session，执行一次 agent turn，并保存 transcript。
+func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, error) {
+	if strings.TrimSpace(opts.Prompt) == "" {
+		return TurnResult{}, fmt.Errorf("prompt is required")
+	}
+
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return TurnResult{}, err
+	}
+	provider, err := r.deps.NewProvider(cfg.Provider)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	registry, err := buildToolRegistry()
+	if err != nil {
+		return TurnResult{}, err
+	}
+	cwd, err := r.deps.Getwd()
+	if err != nil {
+		return TurnResult{}, err
+	}
+	instructions, err := r.deps.LoadInstructions(cwd)
+	if err != nil {
+		return TurnResult{}, err
+	}
+
+	sessionID := opts.SessionID
+	resumeSession := sessionID != ""
+	if sessionID == "" {
+		sessionID, err = r.deps.NewSessionID(r.deps.Now())
+		if err != nil {
+			return TurnResult{}, err
+		}
+	}
+	if err := session.ValidateID(sessionID); err != nil {
+		return TurnResult{}, err
+	}
+
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	defer store.Close()
+
+	trans := transcript.New()
+	if resumeSession {
+		trans, err = store.LoadTranscript(ctx, sessionID)
+		if err != nil {
+			return TurnResult{}, err
+		}
+	}
+	a, err := agent.New(agent.Config{
+		Provider:   provider,
+		Tools:      registry,
+		Transcript: trans,
+		System: prompt.BuildSystem(prompt.Options{
+			WorkingDir:   cwd,
+			Now:          r.deps.Now(),
+			Instructions: instructions,
+		}),
+		MaxSteps:    cfg.Agent.MaxSteps,
+		Temperature: cfg.Agent.Temperature,
+		Observer:    opts.Observer,
+	})
+	if err != nil {
+		return TurnResult{}, err
+	}
+
+	content, err := a.RunTurn(ctx, opts.Prompt)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	if err := store.SaveTranscript(ctx, sessionID, cwd, trans.Messages()); err != nil {
+		return TurnResult{}, err
+	}
+	return TurnResult{
+		SessionID: sessionID,
+		Content:   content,
+	}, nil
+}
+
+// ListSessions 返回最近更新的本地会话。
+func (r *Runtime) ListSessions(ctx context.Context, limit int) ([]session.Session, error) {
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	return store.ListSessions(ctx, limit)
+}
+
+// ShowSession 返回指定会话的元数据和 transcript。
+func (r *Runtime) ShowSession(ctx context.Context, sessionID string) (session.Session, *transcript.Transcript, error) {
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	defer store.Close()
+
+	info, err := store.GetSession(ctx, sessionID)
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	trans, err := store.LoadTranscript(ctx, sessionID)
+	if err != nil {
+		return session.Session{}, nil, err
+	}
+	return info, trans, nil
+}
+
+// DeleteSession 删除指定本地会话。
+func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return err
+	}
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.DeleteSession(ctx, sessionID)
+}
+
+func completeDependencies(deps Dependencies) Dependencies {
+	defaults := DefaultDependencies()
+	if deps.LoadConfig == nil {
+		deps.LoadConfig = defaults.LoadConfig
+	}
+	if deps.NewProvider == nil {
+		deps.NewProvider = defaults.NewProvider
+	}
+	if deps.Getwd == nil {
+		deps.Getwd = defaults.Getwd
+	}
+	if deps.LoadInstructions == nil {
+		deps.LoadInstructions = defaults.LoadInstructions
+	}
+	if deps.NewSessionID == nil {
+		deps.NewSessionID = defaults.NewSessionID
+	}
+	if deps.Now == nil {
+		deps.Now = defaults.Now
+	}
+	return deps
+}
+
+func buildToolRegistry() (*tool.Registry, error) {
+	return tool.NewRegistry(
+		tool.ListFiles{},
+		tool.ReadFile{},
+		tool.SearchText{},
+		tool.WriteFile{},
+		tool.RunShell{},
+	)
+}
+
+func openSessionStore(ctx context.Context, cfg config.SessionConfig) (*session.Store, error) {
+	dbPath, err := sessionDBPath(cfg)
+	if err != nil {
+		return nil, err
+	}
+	store, err := session.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.EnsureSchema(ctx); err != nil {
+		store.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func sessionDBPath(cfg config.SessionConfig) (string, error) {
+	if cfg.DBPath == "" {
+		return session.DefaultPath()
+	}
+	if strings.HasPrefix(cfg.DBPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, cfg.DBPath[2:]), nil
+	}
+	return cfg.DBPath, nil
+}

@@ -12,14 +12,45 @@ import (
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
+	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
 )
 
-func TestRunRequiresPrompt(t *testing.T) {
-	err := run(context.Background(), nil)
-	if err == nil {
-		t.Fatal("run() error = nil")
+func TestRunWithDependenciesShowsInteractivePlaceholder(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := runWithDependencies(context.Background(), nil, runDependencies{stdout: &stdout}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "usage: atlas [--session <id>] <prompt>") {
+	if !strings.Contains(stdout.String(), "interactive mode is not implemented yet") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunWithDependenciesShowsInteractivePlaceholderWithSession(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := runWithDependencies(context.Background(), []string{"--session", "work"}, runDependencies{stdout: &stdout}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Requested session: work") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunWithDependenciesRejectsInvalidInteractiveSession(t *testing.T) {
+	err := runWithDependencies(context.Background(), []string{"--session", "bad id"}, runDependencies{})
+	if err == nil {
+		t.Fatal("runWithDependencies() error = nil")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestRunWithDependenciesRequiresRunCommandForPrompt(t *testing.T) {
+	err := runWithDependencies(context.Background(), []string{"hello"}, runDependencies{})
+	if err == nil {
+		t.Fatal("runWithDependencies() error = nil")
+	}
+	if !strings.Contains(err.Error(), "atlas run") {
 		t.Fatalf("error = %q", err)
 	}
 }
@@ -31,35 +62,11 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 
-	err := runWithDependencies(context.Background(), []string{"hello"}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return config.Config{
-				Provider: config.ProviderConfig{
-					BaseURL: "https://api.example.com",
-					APIKey:  "sk-test",
-					Model:   "test-model",
-				},
-				Agent: config.AgentConfig{
-					MaxSteps:    4,
-					Temperature: 0.2,
-				},
-				Session: config.SessionConfig{
-					DBPath: filepath.Join(t.TempDir(), "atlas.db"),
-				},
-			}, nil
-		},
-		newProvider: func(config.ProviderConfig) (model.Provider, error) {
-			return provider, nil
-		},
-		getwd: func() (string, error) { return "/tmp/atlas-work", nil },
-		loadInstructions: func(string) ([]prompt.InstructionFile, error) {
-			return []prompt.InstructionFile{
-				{Path: "/tmp/atlas-work/AGENTS.md", Content: "project rules"},
-			}, nil
-		},
-		newSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
-		now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
-		stdout:       &stdout,
+	err := runWithDependencies(context.Background(), []string{"run", "hello"}, runDependencies{
+		runtime: testRuntime(filepath.Join(t.TempDir(), "atlas.db"), provider, []prompt.InstructionFile{
+			{Path: "/tmp/atlas-work/AGENTS.md", Content: "project rules"},
+		}),
+		stdout: &stdout,
 	})
 	if err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
@@ -95,25 +102,14 @@ func TestRunWithDependenciesResumesSession(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	deps := runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		newProvider: func(config.ProviderConfig) (model.Provider, error) {
-			return provider, nil
-		},
-		getwd: func() (string, error) { return "/tmp/atlas-work", nil },
-		loadInstructions: func(string) ([]prompt.InstructionFile, error) {
-			return nil, nil
-		},
-		newSessionID: func(time.Time) (string, error) { return "unused", nil },
-		now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
-		stdout:       &stdout,
+		runtime: testRuntime(dbPath, provider, nil),
+		stdout:  &stdout,
 	}
 
-	if err := runWithDependencies(context.Background(), []string{"--session", "work", "first"}, deps); err != nil {
+	if err := runWithDependencies(context.Background(), []string{"run", "--session", "work", "first"}, deps); err != nil {
 		t.Fatalf("first runWithDependencies() error = %v", err)
 	}
-	if err := runWithDependencies(context.Background(), []string{"--session", "work", "second"}, deps); err != nil {
+	if err := runWithDependencies(context.Background(), []string{"run", "--session", "work", "second"}, deps); err != nil {
 		t.Fatalf("second runWithDependencies() error = %v", err)
 	}
 
@@ -134,20 +130,9 @@ func TestRunWithDependenciesCreatesNewSessionByDefault(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 
-	if err := runWithDependencies(context.Background(), []string{"hello"}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		newProvider: func(config.ProviderConfig) (model.Provider, error) {
-			return provider, nil
-		},
-		getwd: func() (string, error) { return "/tmp/atlas-work", nil },
-		loadInstructions: func(string) ([]prompt.InstructionFile, error) {
-			return nil, nil
-		},
-		newSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
-		now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
-		stdout:       &stdout,
+	if err := runWithDependencies(context.Background(), []string{"run", "hello"}, runDependencies{
+		runtime: testRuntime(dbPath, provider, nil),
+		stdout:  &stdout,
 	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
@@ -167,14 +152,8 @@ func TestRunWithDependenciesListsSessions(t *testing.T) {
 	provider := &recordingProvider{}
 
 	if err := runWithDependencies(context.Background(), []string{"sessions", "--limit", "5"}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		newProvider: func(config.ProviderConfig) (model.Provider, error) {
-			provider.called = true
-			return provider, nil
-		},
-		stdout: &stdout,
+		runtime: testRuntime(dbPath, provider, nil),
+		stdout:  &stdout,
 	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
@@ -197,10 +176,8 @@ func TestRunWithDependenciesShowsSession(t *testing.T) {
 	stdout.Reset()
 
 	if err := runWithDependencies(context.Background(), []string{"session", "show", "work"}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		stdout: &stdout,
+		runtime: testRuntime(dbPath, nil, nil),
+		stdout:  &stdout,
 	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
@@ -217,10 +194,8 @@ func TestRunWithDependenciesDeletesSession(t *testing.T) {
 	stdout.Reset()
 
 	if err := runWithDependencies(context.Background(), []string{"session", "delete", "work"}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		stdout: &stdout,
+		runtime: testRuntime(dbPath, nil, nil),
+		stdout:  &stdout,
 	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
@@ -230,10 +205,8 @@ func TestRunWithDependenciesDeletesSession(t *testing.T) {
 
 	stdout.Reset()
 	if err := runWithDependencies(context.Background(), []string{"sessions"}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		stdout: &stdout,
+		runtime: testRuntime(dbPath, nil, nil),
+		stdout:  &stdout,
 	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
@@ -344,25 +317,34 @@ func saveTestSession(t *testing.T, dbPath, sessionID, content string) bytes.Buff
 	t.Helper()
 
 	var stdout bytes.Buffer
-	if err := runWithDependencies(context.Background(), []string{"--session", sessionID, content}, runDependencies{
-		loadConfig: func() (config.Config, error) {
-			return testConfig(dbPath), nil
-		},
-		newProvider: func(config.ProviderConfig) (model.Provider, error) {
-			return &recordingProvider{
-				events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-				response: model.ChatResponse{Content: "ok"},
-			}, nil
-		},
-		getwd: func() (string, error) { return "/tmp/atlas-work", nil },
-		loadInstructions: func(string) ([]prompt.InstructionFile, error) {
-			return nil, nil
-		},
-		newSessionID: func(time.Time) (string, error) { return "unused", nil },
-		now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
-		stdout:       &stdout,
+	if err := runWithDependencies(context.Background(), []string{"run", "--session", sessionID, content}, runDependencies{
+		runtime: testRuntime(dbPath, &recordingProvider{
+			events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+			response: model.ChatResponse{Content: "ok"},
+		}, nil),
+		stdout: &stdout,
 	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
 	return stdout
+}
+
+func testRuntime(dbPath string, provider model.Provider, instructions []prompt.InstructionFile) *atlasruntime.Runtime {
+	return atlasruntime.New(atlasruntime.Dependencies{
+		LoadConfig: func() (config.Config, error) {
+			return testConfig(dbPath), nil
+		},
+		NewProvider: func(config.ProviderConfig) (model.Provider, error) {
+			if provider == nil {
+				return &recordingProvider{}, nil
+			}
+			return provider, nil
+		},
+		Getwd: func() (string, error) { return "/tmp/atlas-work", nil },
+		LoadInstructions: func(string) ([]prompt.InstructionFile, error) {
+			return instructions, nil
+		},
+		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
+		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
+	})
 }
