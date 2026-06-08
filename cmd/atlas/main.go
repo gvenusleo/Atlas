@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,7 +16,9 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/provider/openai"
+	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/tool"
+	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
 func main() {
@@ -38,8 +42,9 @@ func run(ctx context.Context, args []string) error {
 		loadInstructions: func(cwd string) ([]prompt.InstructionFile, error) {
 			return prompt.LoadInstructions(cwd)
 		},
-		now:    time.Now,
-		stdout: os.Stdout,
+		newSessionID: session.NewID,
+		now:          time.Now,
+		stdout:       os.Stdout,
 	})
 }
 
@@ -48,14 +53,15 @@ type runDependencies struct {
 	newProvider      func(config.ProviderConfig) (model.Provider, error)
 	getwd            func() (string, error)
 	loadInstructions func(string) ([]prompt.InstructionFile, error)
+	newSessionID     func(time.Time) (string, error)
 	now              func() time.Time
 	stdout           io.Writer
 }
 
 func runWithDependencies(ctx context.Context, args []string, deps runDependencies) error {
-	promptText := strings.TrimSpace(strings.Join(args, " "))
-	if promptText == "" {
-		return errors.New("usage: atlas <prompt>")
+	parsed, err := parseArgs(args)
+	if err != nil {
+		return err
 	}
 
 	cfg, err := deps.loadConfig()
@@ -84,9 +90,40 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	if err != nil {
 		return err
 	}
+	sessionID := parsed.sessionID
+	resumeSession := sessionID != ""
+	if sessionID == "" {
+		sessionID, err = deps.newSessionID(deps.now())
+		if err != nil {
+			return err
+		}
+	}
+	if err := session.ValidateID(sessionID); err != nil {
+		return err
+	}
+	dbPath, err := sessionDBPath(cfg.Session)
+	if err != nil {
+		return err
+	}
+	sessionStore, err := session.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer sessionStore.Close()
+	if err := sessionStore.EnsureSchema(ctx); err != nil {
+		return err
+	}
+	trans := transcript.New()
+	if resumeSession {
+		trans, err = sessionStore.LoadTranscript(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+	}
 	a, err := agent.New(agent.Config{
-		Provider: provider,
-		Tools:    registry,
+		Provider:   provider,
+		Tools:      registry,
+		Transcript: trans,
 		System: prompt.BuildSystem(prompt.Options{
 			WorkingDir:   cwd,
 			Now:          deps.now(),
@@ -100,8 +137,50 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return err
 	}
 
-	_, err = a.RunTurn(ctx, promptText)
-	return err
+	if _, err := a.RunTurn(ctx, parsed.prompt); err != nil {
+		return err
+	}
+	if err := sessionStore.SaveTranscript(ctx, sessionID, cwd, trans.Messages()); err != nil {
+		return err
+	}
+	fmt.Fprintf(deps.stdout, "[session] %s\n", sessionID)
+	return nil
+}
+
+type parsedArgs struct {
+	sessionID string
+	prompt    string
+}
+
+func parseArgs(args []string) (parsedArgs, error) {
+	flags := flag.NewFlagSet("atlas", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	sessionID := flags.String("session", "", "session id")
+	if err := flags.Parse(args); err != nil {
+		return parsedArgs{}, err
+	}
+	promptText := strings.TrimSpace(strings.Join(flags.Args(), " "))
+	if promptText == "" {
+		return parsedArgs{}, errors.New("usage: atlas [--session <id>] <prompt>")
+	}
+	return parsedArgs{
+		sessionID: *sessionID,
+		prompt:    promptText,
+	}, nil
+}
+
+func sessionDBPath(cfg config.SessionConfig) (string, error) {
+	if cfg.DBPath == "" {
+		return session.DefaultPath()
+	}
+	if strings.HasPrefix(cfg.DBPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, cfg.DBPath[2:]), nil
+	}
+	return cfg.DBPath, nil
 }
 
 func printEvent(out io.Writer) agent.Observer {

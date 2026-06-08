@@ -19,6 +19,7 @@ const (
 type Config struct {
 	Provider ProviderConfig `json:"provider"`
 	Agent    AgentConfig    `json:"agent"`
+	Session  SessionConfig  `json:"session"`
 }
 
 // ProviderConfig 描述一个 OpenAI-compatible provider。
@@ -32,6 +33,11 @@ type ProviderConfig struct {
 type AgentConfig struct {
 	MaxSteps    int     `json:"max_steps"`
 	Temperature float64 `json:"temperature"`
+}
+
+// SessionConfig 描述本地会话存储参数。
+type SessionConfig struct {
+	DBPath string `json:"db_path"`
 }
 
 // DefaultPath 返回当前用户主目录下的 Atlas 配置路径。

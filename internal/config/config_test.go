@@ -16,6 +16,9 @@ func TestLoadFile(t *testing.T) {
 		"agent": {
 			"max_steps": 3,
 			"temperature": 0.2
+		},
+		"session": {
+			"db_path": "/tmp/atlas.db"
 		}
 	}`)
 
@@ -37,6 +40,9 @@ func TestLoadFile(t *testing.T) {
 	}
 	if cfg.Agent.Temperature != 0.2 {
 		t.Fatalf("Temperature = %f", cfg.Agent.Temperature)
+	}
+	if cfg.Session.DBPath != "/tmp/atlas.db" {
+		t.Fatalf("Session.DBPath = %q", cfg.Session.DBPath)
 	}
 }
 
