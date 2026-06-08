@@ -28,8 +28,7 @@ type ToolCall struct {
 type ToolDefinition struct {
 	Name        string
 	Description string
-	// Parameters 是 JSON Schema 对象。model 包保持弱类型，避免为了 schema
-	// 在第一版引入额外依赖。
+	// Parameters 是 JSON Schema 对象。model 包保持弱类型，避免为 schema 引入额外依赖。
 	Parameters map[string]any
 }
 
@@ -62,6 +61,20 @@ type Usage struct {
 	InputTokens  int
 	OutputTokens int
 	TotalTokens  int
+}
+
+// StreamEventType 表示 provider stream 中的增量事件类型。
+type StreamEventType string
+
+const (
+	// StreamTextDelta 表示 assistant 文本增量。
+	StreamTextDelta StreamEventType = "text_delta"
+)
+
+// StreamEvent 是 provider 在一次模型 step 中产生的实时事件。
+type StreamEvent struct {
+	Type  StreamEventType
+	Delta string
 }
 
 // ChatRequest 是一次模型 step 的完整通用输入。

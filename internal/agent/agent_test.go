@@ -12,17 +12,26 @@ import (
 
 type fakeProvider struct {
 	responses []model.ChatResponse
+	events    [][]model.StreamEvent
 	err       error
 	requests  []model.ChatRequest
 }
 
-func (p *fakeProvider) Chat(_ context.Context, req model.ChatRequest) (model.ChatResponse, error) {
+func (p *fakeProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
 	p.requests = append(p.requests, req)
 	if p.err != nil {
 		return model.ChatResponse{}, p.err
 	}
 	if len(p.responses) == 0 {
-		return model.ChatResponse{}, errors.New("unexpected chat call")
+		return model.ChatResponse{}, errors.New("unexpected stream call")
+	}
+	if len(p.events) > 0 {
+		for _, event := range p.events[0] {
+			if err := emit(event); err != nil {
+				return model.ChatResponse{}, err
+			}
+		}
+		p.events = p.events[1:]
 	}
 	resp := p.responses[0]
 	p.responses = p.responses[1:]
@@ -60,7 +69,7 @@ func TestRunTurnTextResponse(t *testing.T) {
 		t.Fatalf("RunTurn() = %q, want %q", got, "hello")
 	}
 	if len(provider.requests) != 1 {
-		t.Fatalf("chat calls = %d, want 1", len(provider.requests))
+		t.Fatalf("stream calls = %d, want 1", len(provider.requests))
 	}
 	if provider.requests[0].System != "system" {
 		t.Fatalf("request system = %q, want %q", provider.requests[0].System, "system")
@@ -94,7 +103,7 @@ func TestRunTurnToolThenFinalResponse(t *testing.T) {
 		t.Fatalf("RunTurn() = %q, want %q", got, "done")
 	}
 	if len(provider.requests) != 2 {
-		t.Fatalf("chat calls = %d, want 2", len(provider.requests))
+		t.Fatalf("stream calls = %d, want 2", len(provider.requests))
 	}
 	lastMessages := provider.requests[1].Messages
 	last := lastMessages[len(lastMessages)-1]
@@ -161,6 +170,43 @@ func TestRunTurnEmitsEventsInOrder(t *testing.T) {
 	}
 	if events[5].Content != "done" {
 		t.Fatalf("turn finished = %#v", events[5])
+	}
+}
+
+func TestRunTurnEmitsModelDeltas(t *testing.T) {
+	provider := &fakeProvider{
+		events: [][]model.StreamEvent{{
+			{Type: model.StreamTextDelta, Delta: "hel"},
+			{Type: model.StreamTextDelta, Delta: "lo"},
+		}},
+		responses: []model.ChatResponse{{Content: "hello"}},
+	}
+	var events []Event
+	agent, err := New(Config{
+		Provider: provider,
+		Observer: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	got, err := agent.RunTurn(context.Background(), "hi")
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got != "hello" {
+		t.Fatalf("RunTurn() = %q, want %q", got, "hello")
+	}
+	var deltas []string
+	for _, event := range events {
+		if event.Type == EventModelDelta {
+			deltas = append(deltas, event.Content)
+		}
+	}
+	if len(deltas) != 2 || deltas[0] != "hel" || deltas[1] != "lo" {
+		t.Fatalf("deltas = %#v", deltas)
 	}
 }
 
@@ -344,6 +390,6 @@ func TestNewUsesProvidedTranscript(t *testing.T) {
 
 type cancelProvider struct{}
 
-func (cancelProvider) Chat(ctx context.Context, _ model.ChatRequest) (model.ChatResponse, error) {
+func (cancelProvider) Stream(ctx context.Context, _ model.ChatRequest, _ func(model.StreamEvent) error) (model.ChatResponse, error) {
 	return model.ChatResponse{}, ctx.Err()
 }

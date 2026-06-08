@@ -10,7 +10,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
+func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
 	var gotAuth string
 	var gotReq chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,14 +21,10 @@ func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatal(err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"choices": [{
-				"message": {"role": "assistant", "content": "done"},
-				"finish_reason": "stop"
-			}],
-			"usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
-		}`))
+		writeSSE(w,
+			`{"choices":[{"delta":{"content":"done"},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`,
+		)
 	}))
 	defer server.Close()
 
@@ -41,7 +37,8 @@ func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := provider.Chat(context.Background(), model.ChatRequest{
+	var deltas []string
+	resp, err := provider.Stream(context.Background(), model.ChatRequest{
 		System: "system prompt",
 		Messages: []model.Message{
 			{Role: model.RoleUser, Content: "hi"},
@@ -52,9 +49,12 @@ func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
 			Parameters:  map[string]any{"type": "object"},
 		}},
 		Temperature: 0.2,
+	}, func(event model.StreamEvent) error {
+		deltas = append(deltas, event.Delta)
+		return nil
 	})
 	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
+		t.Fatalf("Stream() error = %v", err)
 	}
 
 	if gotAuth != "Bearer sk-test" {
@@ -62,6 +62,9 @@ func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
 	}
 	if gotReq.Model != "deepseek-v4-flash" {
 		t.Fatalf("Model = %q", gotReq.Model)
+	}
+	if !gotReq.Stream {
+		t.Fatal("stream = false")
 	}
 	if len(gotReq.Messages) != 2 {
 		t.Fatalf("messages = %d", len(gotReq.Messages))
@@ -81,6 +84,9 @@ func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
 	if resp.Content != "done" {
 		t.Fatalf("Content = %q", resp.Content)
 	}
+	if len(deltas) != 1 || deltas[0] != "done" {
+		t.Fatalf("deltas = %#v", deltas)
+	}
 	if resp.StopReason != model.StopEndTurn {
 		t.Fatalf("StopReason = %q", resp.StopReason)
 	}
@@ -89,23 +95,18 @@ func TestChatSendsOpenAICompatibleRequest(t *testing.T) {
 	}
 }
 
-func TestChatSendsToolMessages(t *testing.T) {
+func TestStreamSendsToolMessages(t *testing.T) {
 	var gotReq chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{
-			"choices": [{
-				"message": {"role": "assistant", "content": "done"},
-				"finish_reason": "stop"
-			}]
-		}`))
+		writeSSE(w, `{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
 	}))
 	defer server.Close()
 
 	provider := newTestProvider(t, server.URL)
-	_, err := provider.Chat(context.Background(), model.ChatRequest{
+	_, err := provider.Stream(context.Background(), model.ChatRequest{
 		Messages: []model.Message{
 			{
 				Role:    model.RoleAssistant,
@@ -122,9 +123,9 @@ func TestChatSendsToolMessages(t *testing.T) {
 				ToolCallID: "call-1",
 			},
 		},
-	})
+	}, nil)
 	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
+		t.Fatalf("Stream() error = %v", err)
 	}
 	if len(gotReq.Messages) != 2 {
 		t.Fatalf("messages = %d", len(gotReq.Messages))
@@ -148,32 +149,20 @@ func TestChatSendsToolMessages(t *testing.T) {
 	}
 }
 
-func TestChatParsesToolCalls(t *testing.T) {
+func TestStreamParsesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{
-			"choices": [{
-				"message": {
-					"role": "assistant",
-					"content": "",
-					"tool_calls": [{
-						"id": "call-1",
-						"type": "function",
-						"function": {
-							"name": "read_file",
-							"arguments": "{\"path\":\"README.md\"}"
-						}
-					}]
-				},
-				"finish_reason": "tool_calls"
-			}]
-		}`))
+		writeSSE(w,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read_file","arguments":"{\"path\""}}]},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"README.md\"}"}}]},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+		)
 	}))
 	defer server.Close()
 
 	provider := newTestProvider(t, server.URL)
-	resp, err := provider.Chat(context.Background(), model.ChatRequest{})
+	resp, err := provider.Stream(context.Background(), model.ChatRequest{}, nil)
 	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
+		t.Fatalf("Stream() error = %v", err)
 	}
 	if resp.StopReason != model.StopToolUse {
 		t.Fatalf("StopReason = %q", resp.StopReason)
@@ -189,27 +178,27 @@ func TestChatParsesToolCalls(t *testing.T) {
 	}
 }
 
-func TestChatReturnsHTTPError(t *testing.T) {
+func TestStreamReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 	}))
 	defer server.Close()
 
 	provider := newTestProvider(t, server.URL)
-	if _, err := provider.Chat(context.Background(), model.ChatRequest{}); err == nil {
-		t.Fatal("Chat() error = nil")
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{}, nil); err == nil {
+		t.Fatal("Stream() error = nil")
 	}
 }
 
-func TestChatRejectsNoChoices(t *testing.T) {
+func TestStreamRejectsNoChoices(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"choices":[]}`))
+		writeSSE(w, `{"choices":[]}`)
 	}))
 	defer server.Close()
 
 	provider := newTestProvider(t, server.URL)
-	if _, err := provider.Chat(context.Background(), model.ChatRequest{}); err == nil {
-		t.Fatal("Chat() error = nil")
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{}, nil); err == nil {
+		t.Fatal("Stream() error = nil")
 	}
 }
 
@@ -245,4 +234,12 @@ func newTestProvider(t *testing.T, baseURL string) *Provider {
 		t.Fatal(err)
 	}
 	return provider
+}
+
+func writeSSE(w http.ResponseWriter, events ...string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	for _, event := range events {
+		_, _ = w.Write([]byte("data: " + event + "\n\n"))
+	}
+	_, _ = w.Write([]byte("data: [DONE]\n\n"))
 }

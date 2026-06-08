@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -58,8 +59,8 @@ func New(config Config) (*Provider, error) {
 	}, nil
 }
 
-// Chat 执行一次非流式聊天请求。
-func (p *Provider) Chat(ctx context.Context, req model.ChatRequest) (model.ChatResponse, error) {
+// Stream 执行一次流式聊天请求，并返回累计后的完整响应。
+func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
 	body, err := json.Marshal(p.buildRequest(req))
 	if err != nil {
 		return model.ChatResponse{}, err
@@ -78,22 +79,14 @@ func (p *Provider) Chat(ctx context.Context, req model.ChatRequest) (model.ChatR
 	}
 	defer httpResp.Body.Close()
 
-	respBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return model.ChatResponse{}, err
-	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		respBody, err := io.ReadAll(httpResp.Body)
+		if err != nil {
+			return model.ChatResponse{}, err
+		}
 		return model.ChatResponse{}, fmt.Errorf("chat completion failed: status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
-
-	var apiResp chatResponse
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return model.ChatResponse{}, err
-	}
-	if len(apiResp.Choices) == 0 {
-		return model.ChatResponse{}, fmt.Errorf("chat completion returned no choices")
-	}
-	return toModelResponse(apiResp.Choices[0], apiResp.Usage), nil
+	return parseStream(httpResp.Body, emit)
 }
 
 func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
@@ -102,6 +95,7 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 		Messages:    toAPIMessages(req),
 		Tools:       toAPITools(req.Tools),
 		Temperature: req.Temperature,
+		Stream:      true,
 	}
 	if len(apiReq.Tools) == 0 {
 		apiReq.Tools = nil
@@ -114,6 +108,7 @@ type chatRequest struct {
 	Messages    []apiMessage `json:"messages"`
 	Tools       []apiTool    `json:"tools,omitempty"`
 	Temperature float64      `json:"temperature,omitempty"`
+	Stream      bool         `json:"stream"`
 }
 
 type apiMessage struct {
@@ -145,20 +140,37 @@ type apiToolFunction struct {
 	Arguments string `json:"arguments"`
 }
 
-type chatResponse struct {
-	Choices []choice `json:"choices"`
-	Usage   apiUsage `json:"usage"`
-}
-
-type choice struct {
-	Message      apiMessage `json:"message"`
-	FinishReason string     `json:"finish_reason"`
-}
-
 type apiUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+}
+
+type streamChunk struct {
+	Choices []streamChoice `json:"choices"`
+	Usage   apiUsage       `json:"usage"`
+}
+
+type streamChoice struct {
+	Delta        streamDelta `json:"delta"`
+	FinishReason string      `json:"finish_reason"`
+}
+
+type streamDelta struct {
+	Content   string                `json:"content"`
+	ToolCalls []streamToolCallDelta `json:"tool_calls"`
+}
+
+type streamToolCallDelta struct {
+	Index    int                         `json:"index"`
+	ID       string                      `json:"id"`
+	Type     string                      `json:"type"`
+	Function streamToolCallFunctionDelta `json:"function"`
+}
+
+type streamToolCallFunctionDelta struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 func toAPIMessages(req model.ChatRequest) []apiMessage {
@@ -212,30 +224,137 @@ func toAPITools(tools []model.ToolDefinition) []apiTool {
 	return apiTools
 }
 
-func toModelResponse(choice choice, usage apiUsage) model.ChatResponse {
+func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
+	var content strings.Builder
+	var finishReason string
+	var usage apiUsage
+	var sawChoice bool
+	var toolCalls []toolCallAccumulator
+
+	reader := bufio.NewReader(body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return model.ChatResponse{}, err
+		}
+		if line != "" {
+			done, err := parseStreamLine(line, emit, &content, &toolCalls, &finishReason, &usage, &sawChoice)
+			if err != nil {
+				return model.ChatResponse{}, err
+			}
+			if done {
+				break
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+	}
+	if !sawChoice {
+		return model.ChatResponse{}, fmt.Errorf("chat completion stream returned no choices")
+	}
 	return model.ChatResponse{
-		Content:    choice.Message.Content,
-		ToolCalls:  toModelToolCalls(choice.Message.ToolCalls),
-		StopReason: toStopReason(choice.FinishReason),
-		RawFinish:  choice.FinishReason,
-		Usage: model.Usage{
-			InputTokens:  usage.PromptTokens,
-			OutputTokens: usage.CompletionTokens,
-			TotalTokens:  usage.TotalTokens,
-		},
+		Content:    content.String(),
+		ToolCalls:  toModelToolCallsFromAccumulators(toolCalls),
+		StopReason: toStopReason(finishReason),
+		RawFinish:  finishReason,
+		Usage:      toModelUsage(usage),
+	}, nil
+}
+
+func parseStreamLine(
+	line string,
+	emit func(model.StreamEvent) error,
+	content *strings.Builder,
+	toolCalls *[]toolCallAccumulator,
+	finishReason *string,
+	usage *apiUsage,
+	sawChoice *bool,
+) (bool, error) {
+	line = strings.TrimSpace(line)
+	if line == "" || !strings.HasPrefix(line, "data:") {
+		return false, nil
+	}
+	data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	if data == "[DONE]" {
+		return true, nil
+	}
+
+	var chunk streamChunk
+	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		return false, err
+	}
+	if chunk.Usage.TotalTokens != 0 || chunk.Usage.PromptTokens != 0 || chunk.Usage.CompletionTokens != 0 {
+		*usage = chunk.Usage
+	}
+	if len(chunk.Choices) == 0 {
+		return false, nil
+	}
+	*sawChoice = true
+	choice := chunk.Choices[0]
+	if choice.FinishReason != "" {
+		*finishReason = choice.FinishReason
+	}
+	if choice.Delta.Content != "" {
+		content.WriteString(choice.Delta.Content)
+		if emit != nil {
+			if err := emit(model.StreamEvent{
+				Type:  model.StreamTextDelta,
+				Delta: choice.Delta.Content,
+			}); err != nil {
+				return false, err
+			}
+		}
+	}
+	for _, delta := range choice.Delta.ToolCalls {
+		appendToolCallDelta(toolCalls, delta)
+	}
+	return false, nil
+}
+
+type toolCallAccumulator struct {
+	id        string
+	name      string
+	arguments string
+}
+
+func appendToolCallDelta(toolCalls *[]toolCallAccumulator, delta streamToolCallDelta) {
+	for len(*toolCalls) <= delta.Index {
+		*toolCalls = append(*toolCalls, toolCallAccumulator{})
+	}
+	call := &(*toolCalls)[delta.Index]
+	if delta.ID != "" {
+		call.id = delta.ID
+	}
+	if delta.Function.Name != "" {
+		call.name += delta.Function.Name
+	}
+	if delta.Function.Arguments != "" {
+		call.arguments += delta.Function.Arguments
 	}
 }
 
-func toModelToolCalls(calls []apiToolCall) []model.ToolCall {
+func toModelToolCallsFromAccumulators(calls []toolCallAccumulator) []model.ToolCall {
 	toolCalls := make([]model.ToolCall, 0, len(calls))
 	for _, call := range calls {
+		if call.id == "" && call.name == "" && call.arguments == "" {
+			continue
+		}
 		toolCalls = append(toolCalls, model.ToolCall{
-			ID:        call.ID,
-			Name:      call.Function.Name,
-			Arguments: call.Function.Arguments,
+			ID:        call.id,
+			Name:      call.name,
+			Arguments: call.arguments,
 		})
 	}
 	return toolCalls
+}
+
+func toModelUsage(usage apiUsage) model.Usage {
+	return model.Usage{
+		InputTokens:  usage.PromptTokens,
+		OutputTokens: usage.CompletionTokens,
+		TotalTokens:  usage.TotalTokens,
+	}
 }
 
 func toStopReason(finishReason string) model.StopReason {

@@ -100,22 +100,31 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return err
 	}
 
-	result, err := a.RunTurn(ctx, promptText)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(deps.stdout, result)
-	return nil
+	_, err = a.RunTurn(ctx, promptText)
+	return err
 }
 
 func printEvent(out io.Writer) agent.Observer {
+	needsLineBreak := false
 	return func(event agent.Event) {
 		switch event.Type {
+		case agent.EventModelDelta:
+			fmt.Fprint(out, event.Content)
+			needsLineBreak = !strings.HasSuffix(event.Content, "\n")
 		case agent.EventToolStarted:
+			if needsLineBreak {
+				fmt.Fprintln(out)
+				needsLineBreak = false
+			}
 			fmt.Fprintf(out, "[tool] %s\n", event.ToolCall.Name)
 		case agent.EventToolFinished:
 			if event.ToolError {
 				fmt.Fprintf(out, "[tool failed] %s\n", event.ToolCall.Name)
+			}
+		case agent.EventTurnFinished:
+			if event.Content != "" && needsLineBreak {
+				fmt.Fprintln(out)
+				needsLineBreak = false
 			}
 		}
 	}

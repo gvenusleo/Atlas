@@ -8,6 +8,8 @@ type EventType string
 const (
 	// EventTurnStarted 表示一个用户 turn 已进入 agent loop。
 	EventTurnStarted EventType = "turn_started"
+	// EventModelDelta 表示模型返回了一段文本增量。
+	EventModelDelta EventType = "model_delta"
 	// EventModelResponse 表示一次模型 step 已返回。
 	EventModelResponse EventType = "model_response"
 	// EventToolStarted 表示一个工具调用即将执行。

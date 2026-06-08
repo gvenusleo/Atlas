@@ -77,7 +77,8 @@ internal/transcript
 CLI input
   -> Agent.RunTurn
   -> build model.ChatRequest from transcript
-  -> provider.Chat
+  -> provider.Stream
+  -> emit model text deltas
   -> append assistant message
   -> run requested tools
   -> append tool results
@@ -96,9 +97,9 @@ CLI input
 
 ## Provider 边界
 
-`model.Provider` 是 agent 与模型后端之间的唯一接口。具体 Provider 负责处理连接信息、鉴权、模型名、请求格式和响应格式转换。
+`model.Provider` 是 agent 与模型后端之间的唯一接口。Provider 只暴露流式调用，具体实现负责处理连接信息、鉴权、模型名、请求格式、SSE 解析和响应格式转换。
 
-`model.ChatRequest` 表达 Atlas 的通用聊天协议：系统提示词、消息、工具定义和通用生成参数。Provider 负责把它转换成具体后端 API 请求。
+`model.ChatRequest` 表达 Atlas 的通用聊天协议：系统提示词、消息、工具定义和通用生成参数。Provider 负责把它转换成具体后端 API 请求，并在 stream 结束后返回累计完成的 `model.ChatResponse`。
 
 ## Tool 边界
 

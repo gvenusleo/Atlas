@@ -78,11 +78,20 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 	})
 
 	for step := 0; step < a.maxSteps; step++ {
-		resp, err := a.provider.Chat(ctx, model.ChatRequest{
+		resp, err := a.provider.Stream(ctx, model.ChatRequest{
 			System:      a.system,
 			Messages:    a.transcript.Messages(),
 			Tools:       a.tools.Definitions(),
 			Temperature: a.temperature,
+		}, func(event model.StreamEvent) error {
+			if event.Type == model.StreamTextDelta && event.Delta != "" {
+				a.emit(Event{
+					Type:    EventModelDelta,
+					Step:    step,
+					Content: event.Delta,
+				})
+			}
+			return nil
 		})
 		if err != nil {
 			a.emit(Event{

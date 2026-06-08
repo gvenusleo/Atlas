@@ -70,7 +70,7 @@ func LoadFile(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Validate 校验配置中第一版必须明确提供的字段。
+// Validate 校验 Atlas 运行所需的配置字段。
 func (c Config) Validate() error {
 	if c.Provider.BaseURL == "" {
 		return fmt.Errorf("provider.base_url is required")

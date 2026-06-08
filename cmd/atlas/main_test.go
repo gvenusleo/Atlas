@@ -25,6 +25,7 @@ func TestRunRequiresPrompt(t *testing.T) {
 
 func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
 		response: model.ChatResponse{Content: "ok"},
 	}
 	var stdout bytes.Buffer
@@ -82,15 +83,38 @@ func TestPrintEventWritesToolStatus(t *testing.T) {
 	var out bytes.Buffer
 	observer := printEvent(&out)
 
+	observer(agentEventModelDelta("hi"))
 	observer(agentEventToolStarted("read_file"))
 	observer(agentEventToolFinished("read_file", true))
 
 	got := out.String()
+	if !strings.Contains(got, "hi") {
+		t.Fatalf("output = %q", got)
+	}
 	if !strings.Contains(got, "[tool] read_file") {
 		t.Fatalf("output = %q", got)
 	}
 	if !strings.Contains(got, "[tool failed] read_file") {
 		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestPrintEventBreaksLineBeforeToolStatus(t *testing.T) {
+	var out bytes.Buffer
+	observer := printEvent(&out)
+
+	observer(agentEventModelDelta("hello"))
+	observer(agentEventToolStarted("read_file"))
+
+	if got := out.String(); got != "hello\n[tool] read_file\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func agentEventModelDelta(content string) agent.Event {
+	return agent.Event{
+		Type:    agent.EventModelDelta,
+		Content: content,
 	}
 }
 
@@ -111,10 +135,16 @@ func agentEventToolFinished(name string, failed bool) agent.Event {
 
 type recordingProvider struct {
 	request  model.ChatRequest
+	events   []model.StreamEvent
 	response model.ChatResponse
 }
 
-func (p *recordingProvider) Chat(_ context.Context, req model.ChatRequest) (model.ChatResponse, error) {
+func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
 	p.request = req
+	for _, event := range p.events {
+		if err := emit(event); err != nil {
+			return model.ChatResponse{}, err
+		}
+	}
 	return p.response, nil
 }

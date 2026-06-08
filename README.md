@@ -1,6 +1,6 @@
 # Atlas
 
-Atlas 是一个本地 coding agent。它通过 OpenAI-compatible Chat Completions Provider 调用模型，在 headless agent loop 中维护 transcript、执行工具，并把工具结果继续交给模型，直到得到最终回复或达到最大步数。
+Atlas 是一个本地 coding agent。它通过 OpenAI-compatible Chat Completions Provider 流式调用模型，在 headless agent loop 中维护 transcript、执行工具，并把工具结果继续交给模型，直到得到最终回复或达到最大步数。
 
 ## 行为边界
 
@@ -39,7 +39,7 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 go run ./cmd/atlas "读取 README 并总结"
 ```
 
-CLI 会为每次调用创建一个 agent，读取配置和指令文件，注册内置工具，并执行一次 `Agent.RunTurn`。
+CLI 会为每次调用创建一个 agent，读取配置和指令文件，注册内置工具，并执行一次 `Agent.RunTurn`。模型文本增量会实时输出。
 
 ## 内置工具
 
