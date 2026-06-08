@@ -87,6 +87,62 @@ func TestStoreSaveTranscriptReplacesMessages(t *testing.T) {
 	}
 }
 
+func TestStoreListGetAndDeleteSessions(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	if err := store.SaveTranscript(ctx, "first", "/tmp/first", []model.Message{
+		{Role: model.RoleUser, Content: "first title"},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	if err := store.SaveTranscript(ctx, "second", "/tmp/second", []model.Message{
+		{Role: model.RoleUser, Content: "second title"},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+
+	sessions, err := store.ListSessions(ctx, 1)
+	if err != nil {
+		t.Fatalf("ListSessions() error = %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+
+	info, err := store.GetSession(ctx, "first")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.ID != "first" || info.Title != "first title" || info.CWD != "/tmp/first" {
+		t.Fatalf("session = %#v", info)
+	}
+
+	if err := store.DeleteSession(ctx, "first"); err != nil {
+		t.Fatalf("DeleteSession() error = %v", err)
+	}
+	if _, err := store.GetSession(ctx, "first"); err == nil {
+		t.Fatal("GetSession() error = nil")
+	}
+	trans, err := store.LoadTranscript(ctx, "first")
+	if err != nil {
+		t.Fatalf("LoadTranscript() error = %v", err)
+	}
+	if len(trans.Messages()) != 0 {
+		t.Fatalf("messages = %#v", trans.Messages())
+	}
+}
+
+func TestStoreRejectsMissingDelete(t *testing.T) {
+	store := openTestStore(t)
+	defer store.Close()
+
+	if err := store.DeleteSession(context.Background(), "missing"); err == nil {
+		t.Fatal("DeleteSession() error = nil")
+	}
+}
+
 func TestStoreRejectsInvalidSessionID(t *testing.T) {
 	store := openTestStore(t)
 	defer store.Close()

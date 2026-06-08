@@ -59,6 +59,18 @@ type runDependencies struct {
 }
 
 func runWithDependencies(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "sessions":
+			return runSessionsCommand(ctx, args[1:], deps)
+		case "session":
+			return runSessionCommand(ctx, args[1:], deps)
+		}
+	}
+	return runPrompt(ctx, args, deps)
+}
+
+func runPrompt(ctx context.Context, args []string, deps runDependencies) error {
 	parsed, err := parseArgs(args)
 	if err != nil {
 		return err
@@ -145,6 +157,126 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	}
 	fmt.Fprintf(deps.stdout, "[session] %s\n", sessionID)
 	return nil
+}
+
+func runSessionsCommand(ctx context.Context, args []string, deps runDependencies) error {
+	flags := flag.NewFlagSet("atlas sessions", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	limit := flags.Int("limit", 20, "session limit")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("usage: atlas sessions [--limit <n>]")
+	}
+
+	store, err := openSessionStore(ctx, deps)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	sessions, err := store.ListSessions(ctx, *limit)
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		fmt.Fprintln(deps.stdout, "no sessions")
+		return nil
+	}
+	fmt.Fprintln(deps.stdout, "ID\tUPDATED\tTITLE\tCWD")
+	for _, session := range sessions {
+		fmt.Fprintf(
+			deps.stdout,
+			"%s\t%s\t%s\t%s\n",
+			session.ID,
+			session.UpdatedAt.Format(time.RFC3339),
+			session.Title,
+			session.CWD,
+		)
+	}
+	return nil
+}
+
+func runSessionCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) == 0 {
+		return errors.New("usage: atlas session <show|delete> <id>")
+	}
+	switch args[0] {
+	case "show":
+		return runSessionShowCommand(ctx, args[1:], deps)
+	case "delete":
+		return runSessionDeleteCommand(ctx, args[1:], deps)
+	default:
+		return errors.New("usage: atlas session <show|delete> <id>")
+	}
+}
+
+func runSessionShowCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 1 {
+		return errors.New("usage: atlas session show <id>")
+	}
+	store, err := openSessionStore(ctx, deps)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	info, err := store.GetSession(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	trans, err := store.LoadTranscript(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(deps.stdout, "id: %s\n", info.ID)
+	fmt.Fprintf(deps.stdout, "title: %s\n", info.Title)
+	fmt.Fprintf(deps.stdout, "cwd: %s\n", info.CWD)
+	fmt.Fprintf(deps.stdout, "created_at: %s\n", info.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(deps.stdout, "updated_at: %s\n", info.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintln(deps.stdout, "messages:")
+	for _, msg := range trans.Messages() {
+		fmt.Fprintf(deps.stdout, "[%s] %s\n", msg.Role, msg.Content)
+	}
+	return nil
+}
+
+func runSessionDeleteCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 1 {
+		return errors.New("usage: atlas session delete <id>")
+	}
+	store, err := openSessionStore(ctx, deps)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	if err := store.DeleteSession(ctx, args[0]); err != nil {
+		return err
+	}
+	fmt.Fprintf(deps.stdout, "deleted session %s\n", args[0])
+	return nil
+}
+
+func openSessionStore(ctx context.Context, deps runDependencies) (*session.Store, error) {
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	dbPath, err := sessionDBPath(cfg.Session)
+	if err != nil {
+		return nil, err
+	}
+	store, err := session.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.EnsureSchema(ctx); err != nil {
+		store.Close()
+		return nil, err
+	}
+	return store, nil
 }
 
 type parsedArgs struct {

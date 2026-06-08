@@ -160,6 +160,97 @@ func TestRunWithDependenciesCreatesNewSessionByDefault(t *testing.T) {
 	}
 }
 
+func TestRunWithDependenciesListsSessions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	stdout := saveTestSession(t, dbPath, "work", "hello")
+	stdout.Reset()
+	provider := &recordingProvider{}
+
+	if err := runWithDependencies(context.Background(), []string{"sessions", "--limit", "5"}, runDependencies{
+		loadConfig: func() (config.Config, error) {
+			return testConfig(dbPath), nil
+		},
+		newProvider: func(config.ProviderConfig) (model.Provider, error) {
+			provider.called = true
+			return provider, nil
+		},
+		stdout: &stdout,
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "ID\tUPDATED\tTITLE\tCWD") {
+		t.Fatalf("stdout = %q", got)
+	}
+	if !strings.Contains(got, "work") || !strings.Contains(got, "hello") {
+		t.Fatalf("stdout = %q", got)
+	}
+	if provider.called {
+		t.Fatal("newProvider called for sessions command")
+	}
+}
+
+func TestRunWithDependenciesShowsSession(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	stdout := saveTestSession(t, dbPath, "work", "hello")
+	stdout.Reset()
+
+	if err := runWithDependencies(context.Background(), []string{"session", "show", "work"}, runDependencies{
+		loadConfig: func() (config.Config, error) {
+			return testConfig(dbPath), nil
+		},
+		stdout: &stdout,
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+
+	got := stdout.String()
+	if !strings.Contains(got, "id: work") || !strings.Contains(got, "[user] hello") {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
+func TestRunWithDependenciesDeletesSession(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	stdout := saveTestSession(t, dbPath, "work", "hello")
+	stdout.Reset()
+
+	if err := runWithDependencies(context.Background(), []string{"session", "delete", "work"}, runDependencies{
+		loadConfig: func() (config.Config, error) {
+			return testConfig(dbPath), nil
+		},
+		stdout: &stdout,
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "deleted session work") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	if err := runWithDependencies(context.Background(), []string{"sessions"}, runDependencies{
+		loadConfig: func() (config.Config, error) {
+			return testConfig(dbPath), nil
+		},
+		stdout: &stdout,
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if strings.TrimSpace(stdout.String()) != "no sessions" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunWithDependenciesRejectsSessionCommandUsage(t *testing.T) {
+	if err := runWithDependencies(context.Background(), []string{"session"}, runDependencies{}); err == nil {
+		t.Fatal("runWithDependencies() error = nil")
+	}
+	if err := runWithDependencies(context.Background(), []string{"sessions", "extra"}, runDependencies{}); err == nil {
+		t.Fatal("runWithDependencies() error = nil")
+	}
+}
+
 func TestPrintEventWritesToolStatus(t *testing.T) {
 	var out bytes.Buffer
 	observer := printEvent(&out)
@@ -218,9 +309,11 @@ type recordingProvider struct {
 	request  model.ChatRequest
 	events   []model.StreamEvent
 	response model.ChatResponse
+	called   bool
 }
 
 func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
+	p.called = true
 	p.request = req
 	for _, event := range p.events {
 		if err := emit(event); err != nil {
@@ -245,4 +338,31 @@ func testConfig(dbPath string) config.Config {
 			DBPath: dbPath,
 		},
 	}
+}
+
+func saveTestSession(t *testing.T, dbPath, sessionID, content string) bytes.Buffer {
+	t.Helper()
+
+	var stdout bytes.Buffer
+	if err := runWithDependencies(context.Background(), []string{"--session", sessionID, content}, runDependencies{
+		loadConfig: func() (config.Config, error) {
+			return testConfig(dbPath), nil
+		},
+		newProvider: func(config.ProviderConfig) (model.Provider, error) {
+			return &recordingProvider{
+				events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+				response: model.ChatResponse{Content: "ok"},
+			}, nil
+		},
+		getwd: func() (string, error) { return "/tmp/atlas-work", nil },
+		loadInstructions: func(string) ([]prompt.InstructionFile, error) {
+			return nil, nil
+		},
+		newSessionID: func(time.Time) (string, error) { return "unused", nil },
+		now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
+		stdout:       &stdout,
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	return stdout
 }

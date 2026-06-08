@@ -41,13 +41,16 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 ```sh
 go run ./cmd/atlas "读取 README 并总结"
 go run ./cmd/atlas --session 20260608-153012-a1b2c3d4 "继续刚才的问题"
+go run ./cmd/atlas sessions
+go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
+go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
 ```
 
 CLI 会为每次调用创建一个 agent，读取配置和指令文件，注册内置工具，并执行一次 `Agent.RunTurn`。模型文本增量会实时输出。
 
 默认不传 `--session` 时，Atlas 会创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
-Atlas 使用 SQLite 保存本地会话。当前只支持按 ID 恢复，不提供历史搜索、清理命令或会话列表。
+Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情和删除会话；不提供全文搜索。
 
 ## 内置工具
 
