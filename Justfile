@@ -24,6 +24,7 @@ build:
 
 install: build
     mkdir -p {{ quote(install_dir) }}
+    rm -f {{ quote(install_dir + "/" + binary) }}
     cp {{ quote(build_dir + "/" + binary) }} {{ quote(install_dir + "/" + binary) }}
     chmod +x {{ quote(install_dir + "/" + binary) }}
 
