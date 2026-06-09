@@ -37,6 +37,7 @@ type Runtime struct {
 type TurnOptions struct {
 	SessionID string
 	Prompt    string
+	CWD       string
 	Observer  agent.Observer
 }
 
@@ -89,9 +90,12 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	cwd, err := r.deps.Getwd()
-	if err != nil {
-		return TurnResult{}, err
+	cwd := opts.CWD
+	if cwd == "" {
+		cwd, err = r.deps.Getwd()
+		if err != nil {
+			return TurnResult{}, err
+		}
 	}
 	instructions, err := r.deps.LoadInstructions(cwd)
 	if err != nil {
@@ -167,6 +171,23 @@ func (r *Runtime) ListSessions(ctx context.Context, limit int) ([]session.Sessio
 	return store.ListSessions(ctx, limit)
 }
 
+// ListSessionsForCWD 返回指定工作目录下最近更新的本地会话。
+func (r *Runtime) ListSessionsForCWD(ctx context.Context, cwd string, limit int) ([]session.Session, error) {
+	if cwd == "" {
+		return r.ListSessions(ctx, limit)
+	}
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	return store.ListSessionsForCWD(ctx, cwd, limit)
+}
+
 // ShowSession 返回指定会话的元数据和 transcript。
 func (r *Runtime) ShowSession(ctx context.Context, sessionID string) (session.Session, *transcript.Transcript, error) {
 	cfg, err := r.deps.LoadConfig()
@@ -202,6 +223,15 @@ func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 	}
 	defer store.Close()
 	return store.DeleteSession(ctx, sessionID)
+}
+
+// DeleteSessionIfExists 删除指定本地会话，并忽略不存在的会话。
+func (r *Runtime) DeleteSessionIfExists(ctx context.Context, sessionID string) error {
+	err := r.DeleteSession(ctx, sessionID)
+	if err != nil && strings.Contains(err.Error(), "not found") {
+		return nil
+	}
+	return err
 }
 
 func completeDependencies(deps Dependencies) Dependencies {

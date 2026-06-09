@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	atlasacp "github.com/liuyuxin/atlas/internal/acp"
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
@@ -142,6 +143,45 @@ func TestRunWithDependenciesCreatesNewSessionByDefault(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "[session] 20260608-120000-test") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunWithDependenciesStartsACP(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	var stdin strings.Reader
+	var stdout bytes.Buffer
+	rt := testRuntime(dbPath, nil, nil)
+	called := false
+
+	if err := runWithDependencies(context.Background(), []string{"acp"}, runDependencies{
+		runtime: rt,
+		stdin:   &stdin,
+		stdout:  &stdout,
+		runACP: func(_ context.Context, opts atlasacp.Options) error {
+			called = true
+			if opts.Runtime != rt {
+				t.Fatalf("runtime = %#v", opts.Runtime)
+			}
+			if opts.Input != &stdin {
+				t.Fatalf("input = %#v", opts.Input)
+			}
+			if opts.Output != &stdout {
+				t.Fatalf("output = %#v", opts.Output)
+			}
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if !called {
+		t.Fatal("ACP runner was not called")
+	}
+}
+
+func TestRunWithDependenciesRejectsACPUsage(t *testing.T) {
+	err := runWithDependencies(context.Background(), []string{"acp", "extra"}, runDependencies{})
+	if err == nil || !strings.Contains(err.Error(), "usage: atlas acp") {
+		t.Fatalf("runWithDependencies() error = %v", err)
 	}
 }
 

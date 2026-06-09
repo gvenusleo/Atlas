@@ -134,6 +134,41 @@ func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	}
 }
 
+func TestStoreListSessionsForCWD(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	if err := store.SaveTranscript(ctx, "first", "/tmp/shared", []model.Message{
+		{Role: model.RoleUser, Content: "first title"},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	if err := store.SaveTranscript(ctx, "second", "/tmp/other", []model.Message{
+		{Role: model.RoleUser, Content: "second title"},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	if err := store.SaveTranscript(ctx, "third", "/tmp/shared", []model.Message{
+		{Role: model.RoleUser, Content: "third title"},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+
+	sessions, err := store.ListSessionsForCWD(ctx, "/tmp/shared", 10)
+	if err != nil {
+		t.Fatalf("ListSessionsForCWD() error = %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+	for _, sess := range sessions {
+		if sess.CWD != "/tmp/shared" {
+			t.Fatalf("session = %#v", sess)
+		}
+	}
+}
+
 func TestStoreRejectsMissingDelete(t *testing.T) {
 	store := openTestStore(t)
 	defer store.Close()

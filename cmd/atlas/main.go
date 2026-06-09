@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	atlasacp "github.com/liuyuxin/atlas/internal/acp"
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
@@ -25,13 +26,17 @@ func main() {
 func run(ctx context.Context, args []string) error {
 	return runWithDependencies(ctx, args, runDependencies{
 		runtime: runtime.New(runtime.DefaultDependencies()),
+		stdin:   os.Stdin,
 		stdout:  os.Stdout,
+		runACP:  atlasacp.Run,
 	})
 }
 
 type runDependencies struct {
 	runtime *runtime.Runtime
+	stdin   io.Reader
 	stdout  io.Writer
+	runACP  func(context.Context, atlasacp.Options) error
 }
 
 func runWithDependencies(ctx context.Context, args []string, deps runDependencies) error {
@@ -42,12 +47,14 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	switch args[0] {
 	case "run":
 		return runPrompt(ctx, args[1:], deps)
+	case "acp":
+		return runACPCommand(ctx, args[1:], deps)
 	case "sessions":
 		return runSessionsCommand(ctx, args[1:], deps)
 	case "session":
 		return runSessionCommand(ctx, args[1:], deps)
 	default:
-		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] <prompt>")
+		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] <prompt> | atlas acp")
 	}
 }
 
@@ -67,6 +74,17 @@ func runPrompt(ctx context.Context, args []string, deps runDependencies) error {
 	}
 	fmt.Fprintf(deps.stdout, "[session] %s\n", result.SessionID)
 	return nil
+}
+
+func runACPCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas acp")
+	}
+	return deps.runACP(ctx, atlasacp.Options{
+		Runtime: deps.runtime,
+		Input:   deps.stdin,
+		Output:  deps.stdout,
+	})
 }
 
 func runInteractivePlaceholder(_ context.Context, args []string, deps runDependencies) error {
@@ -204,8 +222,14 @@ func completeRunDependencies(deps runDependencies) runDependencies {
 	if deps.runtime == nil {
 		deps.runtime = runtime.New(runtime.DefaultDependencies())
 	}
+	if deps.stdin == nil {
+		deps.stdin = strings.NewReader("")
+	}
 	if deps.stdout == nil {
 		deps.stdout = io.Discard
+	}
+	if deps.runACP == nil {
+		deps.runACP = atlasacp.Run
 	}
 	return deps
 }

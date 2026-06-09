@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,79 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	}
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
+	}
+}
+
+func TestRunTurnUsesCWDOverride(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "hello",
+		CWD:       "/tmp/acp-work",
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if !strings.Contains(provider.request.System, "Working directory: /tmp/acp-work") {
+		t.Fatalf("system prompt = %q", provider.request.System)
+	}
+	info, _, err := r.ShowSession(context.Background(), result.SessionID)
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if info.CWD != "/tmp/acp-work" {
+		t.Fatalf("cwd = %q", info.CWD)
+	}
+}
+
+func TestListSessionsForCWD(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	for _, tc := range []struct {
+		id  string
+		cwd string
+	}{
+		{id: "one", cwd: "/tmp/shared"},
+		{id: "two", cwd: "/tmp/other"},
+		{id: "three", cwd: "/tmp/shared"},
+	} {
+		if _, err := r.RunTurn(context.Background(), TurnOptions{
+			SessionID: tc.id,
+			Prompt:    tc.id,
+			CWD:       tc.cwd,
+		}); err != nil {
+			t.Fatalf("RunTurn(%s) error = %v", tc.id, err)
+		}
+	}
+
+	sessions, err := r.ListSessionsForCWD(context.Background(), "/tmp/shared", 10)
+	if err != nil {
+		t.Fatalf("ListSessionsForCWD() error = %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+	for _, sess := range sessions {
+		if sess.CWD != "/tmp/shared" {
+			t.Fatalf("session = %#v", sess)
+		}
+	}
+}
+
+func TestDeleteSessionIfExistsIgnoresMissingSession(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+
+	if err := r.DeleteSessionIfExists(context.Background(), "missing"); err != nil {
+		t.Fatalf("DeleteSessionIfExists() error = %v", err)
 	}
 }
 

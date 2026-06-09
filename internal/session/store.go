@@ -180,6 +180,36 @@ limit ?`, limit)
 	return sessions, nil
 }
 
+// ListSessionsForCWD 按最近更新时间倒序返回指定工作目录的会话列表。
+func (s *Store) ListSessionsForCWD(ctx context.Context, cwd string, limit int) ([]Session, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+select id, title, cwd, created_at, updated_at
+from sessions
+where cwd = ?
+order by updated_at desc, id
+limit ?`, cwd, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []Session
+	for rows.Next() {
+		session, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // GetSession 返回指定 session 的元数据。
 func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, error) {
 	if err := ValidateID(sessionID); err != nil {
