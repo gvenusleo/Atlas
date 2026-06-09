@@ -47,9 +47,12 @@ go run ./cmd/atlas sessions
 go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
 go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
 go run ./cmd/atlas acp
+go run ./cmd/atlas version
 ```
 
 裸 `atlas` 是交互模式入口；当前版本暂未实现 TUI，会提示使用 `atlas run`。`atlas run` 会创建一个 agent，读取配置和指令文件，注册内置工具，并执行一次 `Agent.RunTurn`。模型文本增量会实时输出。
+
+当前版本是 `0.0.1`。CLI 可通过 `atlas version`、`atlas --version` 或 `atlas -v` 查看版本；ACP 会在 initialize 响应的 `AgentInfo.Version` 中报告同一版本。
 
 `atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 

@@ -72,6 +72,7 @@ internal/runtime
 internal/session
 internal/tool
 internal/transcript
+internal/version
 ```
 
 核心流程：

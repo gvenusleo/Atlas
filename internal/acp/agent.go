@@ -16,6 +16,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/transcript"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 const (
@@ -114,7 +115,7 @@ func (a *Agent) Initialize(context.Context, acpsdk.InitializeRequest) (acpsdk.In
 		AgentInfo: &acpsdk.Implementation{
 			Name:    "atlas",
 			Title:   &title,
-			Version: "0.0.0",
+			Version: version.Current,
 		},
 		AuthMethods: []acpsdk.AuthMethod{},
 	}, nil

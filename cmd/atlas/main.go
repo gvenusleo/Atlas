@@ -14,6 +14,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 func main() {
@@ -41,6 +42,9 @@ type runDependencies struct {
 
 func runWithDependencies(ctx context.Context, args []string, deps runDependencies) error {
 	deps = completeRunDependencies(deps)
+	if isVersionCommand(args) {
+		return runVersionCommand(nil, deps)
+	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return runInteractivePlaceholder(ctx, args, deps)
 	}
@@ -53,9 +57,23 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return runSessionsCommand(ctx, args[1:], deps)
 	case "session":
 		return runSessionCommand(ctx, args[1:], deps)
+	case "version":
+		return runVersionCommand(args[1:], deps)
 	default:
-		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] <prompt> | atlas acp")
+		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] <prompt> | atlas acp | atlas version")
 	}
+}
+
+func isVersionCommand(args []string) bool {
+	return len(args) == 1 && (args[0] == "--version" || args[0] == "-v")
+}
+
+func runVersionCommand(args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas version")
+	}
+	fmt.Fprintf(deps.stdout, "atlas %s\n", version.Current)
+	return nil
 }
 
 func runPrompt(ctx context.Context, args []string, deps runDependencies) error {

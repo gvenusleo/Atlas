@@ -14,6 +14,7 @@ import (
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/transcript"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 func TestInitializeReportsSupportedCapabilities(t *testing.T) {
@@ -28,6 +29,9 @@ func TestInitializeReportsSupportedCapabilities(t *testing.T) {
 	}
 	if resp.AgentInfo == nil || resp.AgentInfo.Name != "atlas" {
 		t.Fatalf("agent info = %#v", resp.AgentInfo)
+	}
+	if resp.AgentInfo.Version != version.Current {
+		t.Fatalf("agent version = %q", resp.AgentInfo.Version)
 	}
 	caps := resp.AgentCapabilities.SessionCapabilities
 	if caps.Close == nil || caps.Delete == nil || caps.List == nil || caps.Resume == nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 func TestRunWithDependenciesShowsInteractivePlaceholder(t *testing.T) {
@@ -43,6 +44,25 @@ func TestRunWithDependenciesRejectsInvalidInteractiveSession(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid characters") {
 		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestRunWithDependenciesShowsVersion(t *testing.T) {
+	for _, args := range [][]string{{"version"}, {"--version"}, {"-v"}} {
+		var stdout bytes.Buffer
+		if err := runWithDependencies(context.Background(), args, runDependencies{stdout: &stdout}); err != nil {
+			t.Fatalf("runWithDependencies(%v) error = %v", args, err)
+		}
+		if got := stdout.String(); got != "atlas "+version.Current+"\n" {
+			t.Fatalf("runWithDependencies(%v) stdout = %q", args, got)
+		}
+	}
+}
+
+func TestRunWithDependenciesRejectsVersionUsage(t *testing.T) {
+	err := runWithDependencies(context.Background(), []string{"version", "extra"}, runDependencies{})
+	if err == nil || !strings.Contains(err.Error(), "usage: atlas version") {
+		t.Fatalf("runWithDependencies() error = %v", err)
 	}
 }
 
