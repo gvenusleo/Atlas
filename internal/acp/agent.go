@@ -22,7 +22,7 @@ const (
 	defaultSessionListLimit = 100
 )
 
-// Runtime is the Atlas execution surface required by the ACP adapter.
+// Runtime 是 ACP 适配层需要的 Atlas 执行入口。
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
 	ShowSession(context.Context, string) (session.Session, *transcript.Transcript, error)
@@ -31,7 +31,7 @@ type Runtime interface {
 	DeleteSessionIfExists(context.Context, string) error
 }
 
-// Options describes how to run the ACP stdio server.
+// Options 描述启动 ACP 标准输入输出服务所需参数。
 type Options struct {
 	Runtime Runtime
 	Input   io.Reader
@@ -39,7 +39,7 @@ type Options struct {
 	Logger  *slog.Logger
 }
 
-// Run starts an ACP agent connection and blocks until the client disconnects.
+// Run 启动 ACP agent 连接，并阻塞直到客户端断开。
 func Run(ctx context.Context, opts Options) error {
 	if opts.Runtime == nil {
 		return fmt.Errorf("acp runtime is required")
@@ -71,7 +71,7 @@ type sessionState struct {
 	turn   int
 }
 
-// Agent adapts Atlas runtime turns to ACP agent methods.
+// Agent 将 Atlas runtime 适配为 ACP agent 方法。
 type Agent struct {
 	rt         Runtime
 	sendUpdate func(context.Context, acpsdk.SessionNotification) error
@@ -80,7 +80,7 @@ type Agent struct {
 	sessions map[string]sessionState
 }
 
-// NewAgent creates an ACP agent backed by an Atlas runtime.
+// NewAgent 创建由 Atlas runtime 驱动的 ACP agent。
 func NewAgent(rt Runtime) *Agent {
 	return &Agent{
 		rt:       rt,
@@ -88,7 +88,7 @@ func NewAgent(rt Runtime) *Agent {
 	}
 }
 
-// SetAgentConnection attaches the SDK connection used for session/update notifications.
+// SetAgentConnection 绑定用于发送 session/update 通知的 SDK 连接。
 func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	if conn == nil {
 		a.sendUpdate = nil
@@ -97,7 +97,7 @@ func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	a.sendUpdate = conn.SessionUpdate
 }
 
-// Initialize reports Atlas' supported ACP v1 capabilities.
+// Initialize 返回 Atlas 支持的 ACP v1 能力。
 func (a *Agent) Initialize(context.Context, acpsdk.InitializeRequest) (acpsdk.InitializeResponse, error) {
 	title := "Atlas"
 	return acpsdk.InitializeResponse{
@@ -120,7 +120,7 @@ func (a *Agent) Initialize(context.Context, acpsdk.InitializeRequest) (acpsdk.In
 	}, nil
 }
 
-// NewSession creates an active ACP session bound to a cwd.
+// NewSession 创建绑定到 cwd 的活动 ACP session。
 func (a *Agent) NewSession(_ context.Context, params acpsdk.NewSessionRequest) (acpsdk.NewSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.NewSessionResponse{}, err
@@ -133,7 +133,7 @@ func (a *Agent) NewSession(_ context.Context, params acpsdk.NewSessionRequest) (
 	return acpsdk.NewSessionResponse{SessionId: acpsdk.SessionId(sessionID)}, nil
 }
 
-// Prompt runs one Atlas turn for an ACP session.
+// Prompt 为指定 ACP session 执行一次 Atlas turn。
 func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk.PromptResponse, error) {
 	state, ok := a.getSession(string(params.SessionId))
 	if !ok {
@@ -170,13 +170,13 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
 }
 
-// Cancel stops any active prompt for the session.
+// Cancel 停止指定 session 中正在运行的 prompt。
 func (a *Agent) Cancel(_ context.Context, params acpsdk.CancelNotification) error {
 	a.cancelSession(string(params.SessionId))
 	return nil
 }
 
-// ResumeSession records an existing Atlas session as active without replaying history.
+// ResumeSession 将已有 Atlas session 标记为活动状态，不回放历史消息。
 func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRequest) (acpsdk.ResumeSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
@@ -192,7 +192,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	return acpsdk.ResumeSessionResponse{}, nil
 }
 
-// ListSessions exposes Atlas' local SQLite session history.
+// ListSessions 返回 Atlas 本地 SQLite session 历史。
 func (a *Agent) ListSessions(ctx context.Context, params acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
 	if params.Cursor != nil && *params.Cursor != "" {
 		return acpsdk.ListSessionsResponse{}, fmt.Errorf("session/list cursor is not supported")
@@ -227,13 +227,13 @@ func (a *Agent) ListSessions(ctx context.Context, params acpsdk.ListSessionsRequ
 	return acpsdk.ListSessionsResponse{Sessions: infos}, nil
 }
 
-// CloseSession cancels the active turn and forgets local session state.
+// CloseSession 取消正在运行的 turn，并清除本地活动 session 状态。
 func (a *Agent) CloseSession(_ context.Context, params acpsdk.CloseSessionRequest) (acpsdk.CloseSessionResponse, error) {
 	a.deleteSessionState(string(params.SessionId))
 	return acpsdk.CloseSessionResponse{}, nil
 }
 
-// UnstableDeleteSession implements the SDK's current session/delete hook.
+// UnstableDeleteSession 实现 SDK 当前的 session/delete 钩子。
 func (a *Agent) UnstableDeleteSession(ctx context.Context, params acpsdk.UnstableDeleteSessionRequest) (acpsdk.UnstableDeleteSessionResponse, error) {
 	a.deleteSessionState(string(params.SessionId))
 	if err := a.rt.DeleteSessionIfExists(ctx, string(params.SessionId)); err != nil {
@@ -242,22 +242,22 @@ func (a *Agent) UnstableDeleteSession(ctx context.Context, params acpsdk.Unstabl
 	return acpsdk.UnstableDeleteSessionResponse{}, nil
 }
 
-// Authenticate is unsupported because Atlas does not implement ACP auth.
+// Authenticate 不受支持，因为 Atlas 尚未实现 ACP auth。
 func (a *Agent) Authenticate(context.Context, acpsdk.AuthenticateRequest) (acpsdk.AuthenticateResponse, error) {
 	return acpsdk.AuthenticateResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodAuthenticate)
 }
 
-// Logout is unsupported because Atlas does not implement ACP auth.
+// Logout 不受支持，因为 Atlas 尚未实现 ACP auth。
 func (a *Agent) Logout(context.Context, acpsdk.LogoutRequest) (acpsdk.LogoutResponse, error) {
 	return acpsdk.LogoutResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodLogout)
 }
 
-// SetSessionConfigOption is unsupported because Atlas has no per-session ACP config.
+// SetSessionConfigOption 不受支持，因为 Atlas 没有 ACP session 级配置。
 func (a *Agent) SetSessionConfigOption(context.Context, acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
 	return acpsdk.SetSessionConfigOptionResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionSetConfigOption)
 }
 
-// SetSessionMode is unsupported because Atlas has no ACP session modes.
+// SetSessionMode 不受支持，因为 Atlas 没有 ACP session mode。
 func (a *Agent) SetSessionMode(context.Context, acpsdk.SetSessionModeRequest) (acpsdk.SetSessionModeResponse, error) {
 	return acpsdk.SetSessionModeResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionSetMode)
 }

@@ -62,6 +62,7 @@ Atlas 只加载两个附加指令文件：
 
 ```text
 cmd/atlas
+internal/acp
 internal/agent
 internal/config
 internal/model
@@ -89,6 +90,8 @@ CLI input
   -> save transcript to session store
 ```
 
+ACP 输入通过 `internal/acp` 走同一个 `internal/runtime`。ACP 适配层只负责协议方法、session/update 通知和活动 session 状态；不复制 agent loop、工具执行或 transcript 持久化逻辑。
+
 保持 loop 可预测：
 
 - 一个 turn 内包含编号 step。
@@ -98,6 +101,7 @@ CLI input
 - `max_steps` 限制一次 turn 的模型调用次数。
 - 公共接口接收 `context.Context`，用于 cancellation。
 - agent loop 暴露最小 observer 事件，供 CLI、测试和后续 UI 观察执行过程。
+- UI 和 ACP 必须按 observer 事件发生顺序渲染模型文本和工具调用状态。
 
 ## 取舍原则
 
@@ -154,6 +158,8 @@ Atlas 使用 SQLite 保存本地会话，默认路径为 `~/.atlas/atlas.db`。`
 - 系统提示词加载全局和当前目录指令。
 - session 保存和恢复 transcript。
 - session 列表、查看和删除命令。
+- ACP 初始化、session 创建、prompt、取消、关闭、恢复、列表和删除能力。
+- ACP session/update 事件顺序与 agent observer 事件顺序一致。
 
 交付前运行：
 
