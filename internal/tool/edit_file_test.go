@@ -8,20 +8,23 @@ import (
 	"testing"
 )
 
-func TestEditFileRun(t *testing.T) {
+func TestEditFileRunAppliesMultipleEdits(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")
-	if err := os.WriteFile(path, []byte("hello old world"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("alpha\nbeta\ngamma\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := (EditFile{}).Run(context.Background(), editFileArgs(path, "old", "new"))
+	got, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "alpha", NewText: stringPtr("one")},
+		editFileReplacement{OldText: "gamma", NewText: stringPtr("three")},
+	))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !strings.Contains(got, "replaced 1 block") {
+	if !strings.Contains(got, "replaced 2 blocks") {
 		t.Fatalf("Run() = %q, want success message", got)
 	}
-	assertFileContent(t, path, "hello new world")
+	assertFileContent(t, path, "one\nbeta\nthree\n")
 }
 
 func TestEditFileRunAllowsEmptyNewText(t *testing.T) {
@@ -30,22 +33,27 @@ func TestEditFileRunAllowsEmptyNewText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := (EditFile{}).Run(context.Background(), editFileArgs(path, " old", "")); err != nil {
+	if _, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: " old", NewText: stringPtr("")},
+	)); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	assertFileContent(t, path, "hello world")
 }
 
-func TestEditFileRunOldTextNotFound(t *testing.T) {
+func TestEditFileRunOldTextNotFoundDoesNotWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")
 	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path, "missing", "new"))
+	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "missing", NewText: stringPtr("new")},
+	))
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("Run() error = %v, want not found error", err)
 	}
+	assertFileContent(t, path, "hello")
 }
 
 func TestEditFileRunRejectsNonUniqueOldText(t *testing.T) {
@@ -54,9 +62,77 @@ func TestEditFileRunRejectsNonUniqueOldText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path, "old", "new"))
+	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "old", NewText: stringPtr("new")},
+	))
 	if err == nil || !strings.Contains(err.Error(), "not unique") {
 		t.Fatalf("Run() error = %v, want non-unique error", err)
+	}
+}
+
+func TestEditFileRunRejectsOverlappingOccurrences(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("aaa"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "aa", NewText: stringPtr("b")},
+	))
+	if err == nil || !strings.Contains(err.Error(), "not unique") {
+		t.Fatalf("Run() error = %v, want non-unique error", err)
+	}
+	assertFileContent(t, path, "aaa")
+}
+
+func TestEditFileRunRejectsOverlappingEdits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("abcdef"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "abc", NewText: stringPtr("x")},
+		editFileReplacement{OldText: "bcd", NewText: stringPtr("y")},
+	))
+	if err == nil || !strings.Contains(err.Error(), "overlaps") {
+		t.Fatalf("Run() error = %v, want overlap error", err)
+	}
+	assertFileContent(t, path, "abcdef")
+}
+
+func TestEditFileRunMissingNewTextDoesNotWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "old"},
+	))
+	if err == nil || !strings.Contains(err.Error(), "new_text is required") {
+		t.Fatalf("Run() error = %v, want missing new_text error", err)
+	}
+	assertFileContent(t, path, "old")
+}
+
+func TestEditFileRunPreservesFileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "script.sh")
+	if err := os.WriteFile(path, []byte("echo old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
+		editFileReplacement{OldText: "old", NewText: stringPtr("new")},
+	)); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("file mode = %v, want %v", got, os.FileMode(0o755))
 	}
 }
 
@@ -67,22 +143,22 @@ func TestEditFileRunInvalidArguments(t *testing.T) {
 }
 
 func TestEditFileRunMissingPath(t *testing.T) {
-	if _, err := (EditFile{}).Run(context.Background(), `{"old_text":"old","new_text":"new"}`); err == nil {
+	if _, err := (EditFile{}).Run(context.Background(), `{"edits":[]}`); err == nil {
 		t.Fatal("Run() error = nil, want missing path error")
 	}
 }
 
-func TestEditFileRunMissingOldTextArgument(t *testing.T) {
+func TestEditFileRunMissingEdits(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")
-	if _, err := (EditFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"new_text":"new"}`); err == nil {
-		t.Fatal("Run() error = nil, want missing old_text error")
+	if _, err := (EditFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`}`); err == nil {
+		t.Fatal("Run() error = nil, want missing edits error")
 	}
 }
 
-func TestEditFileRunMissingNewText(t *testing.T) {
+func TestEditFileRunRejectsLegacyTopLevelEditFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")
-	if _, err := (EditFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"old_text":"old"}`); err == nil {
-		t.Fatal("Run() error = nil, want missing new_text error")
+	if _, err := (EditFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"old_text":"old","new_text":"new"}`); err == nil {
+		t.Fatal("Run() error = nil, want missing edits error")
 	}
 }
 
@@ -96,6 +172,21 @@ func TestEditFileDefinition(t *testing.T) {
 	}
 }
 
-func editFileArgs(path, oldText, newText string) string {
-	return `{"path":` + quoteJSON(path) + `,"old_text":` + quoteJSON(oldText) + `,"new_text":` + quoteJSON(newText) + `}`
+func editFileArgs(path string, edits ...editFileReplacement) string {
+	result := `{"path":` + quoteJSON(path) + `,"edits":[`
+	for i, edit := range edits {
+		if i > 0 {
+			result += ","
+		}
+		result += `{"old_text":` + quoteJSON(edit.OldText)
+		if edit.NewText != nil {
+			result += `,"new_text":` + quoteJSON(*edit.NewText)
+		}
+		result += `}`
+	}
+	return result + `]}`
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

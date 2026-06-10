@@ -5,19 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// EditFile replaces one unique text block in an existing local file.
+// EditFile 替换本地文件中的一个或多个唯一文本块。
 type EditFile struct{}
+
+type editFileReplacement struct {
+	OldText string  `json:"old_text"`
+	NewText *string `json:"new_text"`
+}
+
+type editFileMatch struct {
+	start   int
+	end     int
+	newText string
+}
 
 // Definition 返回 edit_file 的模型可见定义。
 func (EditFile) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "edit_file",
-		Description: "Replace one unique text block in an existing local file.",
+		Description: "Replace one or more unique text blocks in an existing local file.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -25,26 +37,35 @@ func (EditFile) Definition() model.ToolDefinition {
 					"type":        "string",
 					"description": "Path to edit.",
 				},
-				"old_text": map[string]any{
-					"type":        "string",
-					"description": "Exact text to replace. Must appear exactly once.",
-				},
-				"new_text": map[string]any{
-					"type":        "string",
-					"description": "Replacement text. Use an empty string to delete old_text.",
+				"edits": map[string]any{
+					"type":        "array",
+					"description": "Replacements to apply to the original file content. Each old_text must appear exactly once and replacements must not overlap.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"old_text": map[string]any{
+								"type":        "string",
+								"description": "Exact text to replace. Must appear exactly once in the original file.",
+							},
+							"new_text": map[string]any{
+								"type":        "string",
+								"description": "Replacement text. Use an empty string to delete old_text.",
+							},
+						},
+						"required": []string{"old_text", "new_text"},
+					},
 				},
 			},
-			"required": []string{"path", "old_text", "new_text"},
+			"required": []string{"path", "edits"},
 		},
 	}
 }
 
-// Run 使用 JSON 参数中的 path、old_text 和 new_text 修改文件。
+// Run 使用 JSON 参数中的 path 和 edits 修改文件。
 func (EditFile) Run(ctx context.Context, arguments string) (string, error) {
 	var args struct {
-		Path    string  `json:"path"`
-		OldText string  `json:"old_text"`
-		NewText *string `json:"new_text"`
+		Path  string                `json:"path"`
+		Edits []editFileReplacement `json:"edits"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return "", fmt.Errorf("invalid edit_file arguments: %w", err)
@@ -52,16 +73,13 @@ func (EditFile) Run(ctx context.Context, arguments string) (string, error) {
 	if args.Path == "" {
 		return "", fmt.Errorf("edit_file path is required")
 	}
-	if args.OldText == "" {
-		return "", fmt.Errorf("edit_file old_text is required")
+	if len(args.Edits) == 0 {
+		return "", fmt.Errorf("edit_file edits must contain at least one replacement")
 	}
-	if args.NewText == nil {
-		return "", fmt.Errorf("edit_file new_text is required")
-	}
-	return editFileContent(ctx, args.Path, args.OldText, *args.NewText)
+	return editFileContent(ctx, args.Path, args.Edits)
 }
 
-func editFileContent(ctx context.Context, path, oldText, newText string) (string, error) {
+func editFileContent(ctx context.Context, path string, edits []editFileReplacement) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -77,16 +95,70 @@ func editFileContent(ctx context.Context, path, oldText, newText string) (string
 		return "", err
 	}
 	content := string(data)
-	count := strings.Count(content, oldText)
-	if count == 0 {
-		return "", fmt.Errorf("edit_file old_text not found")
+	matches, err := editFileMatches(content, edits)
+	if err != nil {
+		return "", err
 	}
-	if count > 1 {
-		return "", fmt.Errorf("edit_file old_text is not unique: found %d matches", count)
-	}
-	updated := strings.Replace(content, oldText, newText, 1)
+	updated := applyEditFileMatches(content, matches)
 	if err := os.WriteFile(path, []byte(updated), info.Mode().Perm()); err != nil {
 		return "", err
 	}
-	return "replaced 1 block in " + path, nil
+	return fmt.Sprintf("replaced %d blocks in %s", len(matches), path), nil
+}
+
+func editFileMatches(content string, edits []editFileReplacement) ([]editFileMatch, error) {
+	matches := make([]editFileMatch, 0, len(edits))
+	for i, edit := range edits {
+		if edit.OldText == "" {
+			return nil, fmt.Errorf("edit_file edits[%d].old_text is required", i)
+		}
+		if edit.NewText == nil {
+			return nil, fmt.Errorf("edit_file edits[%d].new_text is required", i)
+		}
+		start, count := editFileOccurrence(content, edit.OldText)
+		if start < 0 {
+			return nil, fmt.Errorf("edit_file edits[%d].old_text not found", i)
+		}
+		if count > 1 {
+			return nil, fmt.Errorf("edit_file edits[%d].old_text is not unique", i)
+		}
+		end := start + len(edit.OldText)
+		for _, match := range matches {
+			if start < match.end && end > match.start {
+				return nil, fmt.Errorf("edit_file edits[%d].old_text overlaps another replacement", i)
+			}
+		}
+		matches = append(matches, editFileMatch{start: start, end: end, newText: *edit.NewText})
+	}
+	return matches, nil
+}
+
+func editFileOccurrence(content, oldText string) (int, int) {
+	first := -1
+	count := 0
+	offset := 0
+	for {
+		index := strings.Index(content[offset:], oldText)
+		if index < 0 {
+			return first, count
+		}
+		start := offset + index
+		if first < 0 {
+			first = start
+		}
+		count++
+		offset = start + 1
+	}
+}
+
+func applyEditFileMatches(content string, matches []editFileMatch) string {
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].start < matches[j].start
+	})
+	updated := content
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		updated = updated[:match.start] + match.newText + updated[match.end:]
+	}
+	return updated
 }
