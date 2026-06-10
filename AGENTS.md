@@ -42,9 +42,9 @@ Provider 配置包括：
 - `default_model`
 - `models`
 
-这些字段属于具体 Provider 的连接配置，不进入 `model.ChatRequest`，也不由 `agent` 包直接关心。`agent` 只依赖 `model.Provider` 接口。
+`base_url`、`api_key`、`default_model` 和模型 `value` 属于具体 Provider 的连接配置，不进入 `model.ChatRequest`，也不由 `agent` 包直接关心。`agent` 只依赖 `model.Provider` 接口和通用生成参数。
 
-`models` 中每个模型至少包含 `value` 和 `name`；`value` 是传给 Provider 的模型名，`name` 是展示名。`default_model` 必须匹配其中一个 `value`。
+`models` 中每个模型至少包含 `value`、`name`、`context_window` 和 `max_tokens`；`value` 是传给 Provider 的模型名，`name` 是展示名，`context_window` 是模型上下文窗口，`max_tokens` 是每次模型请求使用的最大输出 token 数。`default_model` 必须匹配其中一个 `value`。
 
 ## 系统提示词
 

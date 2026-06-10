@@ -56,7 +56,11 @@ func TestRunTurnTextResponse(t *testing.T) {
 	provider := &fakeProvider{
 		responses: []model.ChatResponse{{Content: "hello"}},
 	}
-	agent, err := New(Config{Provider: provider, System: "system"})
+	agent, err := New(Config{
+		Provider:  provider,
+		System:    "system",
+		MaxTokens: 384000,
+	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -73,6 +77,9 @@ func TestRunTurnTextResponse(t *testing.T) {
 	}
 	if provider.requests[0].System != "system" {
 		t.Fatalf("request system = %q, want %q", provider.requests[0].System, "system")
+	}
+	if provider.requests[0].MaxTokens != 384000 {
+		t.Fatalf("max tokens = %d", provider.requests[0].MaxTokens)
 	}
 }
 

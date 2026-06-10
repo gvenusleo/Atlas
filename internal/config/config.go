@@ -36,7 +36,8 @@ type ProviderModel struct {
 	Value         string `json:"value"`
 	Name          string `json:"name"`
 	Description   string `json:"description,omitempty"`
-	ContextLength int    `json:"context_length,omitempty"`
+	ContextWindow int    `json:"context_window"`
+	MaxTokens     int    `json:"max_tokens"`
 }
 
 // AgentConfig 描述 agent turn loop 的运行参数。
@@ -113,8 +114,14 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(model.Name) == "" {
 			return fmt.Errorf("provider.models[%d].name is required", i)
 		}
-		if model.ContextLength < 0 {
-			return fmt.Errorf("provider.models[%d].context_length must be non-negative", i)
+		if model.ContextWindow <= 0 {
+			return fmt.Errorf("provider.models[%d].context_window must be positive", i)
+		}
+		if model.MaxTokens <= 0 {
+			return fmt.Errorf("provider.models[%d].max_tokens must be positive", i)
+		}
+		if model.MaxTokens > model.ContextWindow {
+			return fmt.Errorf("provider.models[%d].max_tokens must be less than or equal to context_window", i)
 		}
 		if _, ok := seen[model.Value]; ok {
 			return fmt.Errorf("provider.models contains duplicate value %q", model.Value)

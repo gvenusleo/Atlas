@@ -82,6 +82,7 @@ type ChatRequest struct {
 	System      string
 	Messages    []Message
 	Tools       []ToolDefinition
+	MaxTokens   int
 	Temperature float64
 }
 

@@ -18,6 +18,7 @@ type Config struct {
 	Transcript  *transcript.Transcript
 	System      string
 	MaxSteps    int
+	MaxTokens   int
 	Temperature float64
 	Observer    Observer
 }
@@ -29,6 +30,7 @@ type Agent struct {
 	transcript  *transcript.Transcript
 	system      string
 	maxSteps    int
+	maxTokens   int
 	temperature float64
 	observer    Observer
 }
@@ -61,6 +63,7 @@ func New(config Config) (*Agent, error) {
 		transcript:  trans,
 		system:      config.System,
 		maxSteps:    maxSteps,
+		maxTokens:   config.MaxTokens,
 		temperature: config.Temperature,
 		observer:    config.Observer,
 	}, nil
@@ -82,6 +85,7 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 			System:      a.system,
 			Messages:    a.transcript.Messages(),
 			Tools:       a.tools.Definitions(),
+			MaxTokens:   a.maxTokens,
 			Temperature: a.temperature,
 		}, func(event model.StreamEvent) error {
 			if event.Type == model.StreamTextDelta && event.Delta != "" {

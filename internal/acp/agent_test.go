@@ -381,8 +381,8 @@ func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, 
 	return atlasruntime.ModelOptions{
 		Default: "test-model",
 		Models: []atlasruntime.ModelOption{
-			{Value: "test-model", Name: "Test Model", ContextLength: 64000},
-			{Value: "other-model", Name: "Other Model", Description: "alternate", ContextLength: 32000},
+			{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
+			{Value: "other-model", Name: "Other Model", Description: "alternate", ContextWindow: 1000000, MaxTokens: 128000},
 		},
 	}, nil
 }

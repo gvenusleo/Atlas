@@ -29,12 +29,14 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
       {
         "value": "deepseek-v4-flash",
         "name": "DeepSeek V4 Flash",
-        "context_length": 64000
+        "context_window": 1000000,
+        "max_tokens": 384000
       },
       {
         "value": "deepseek-v4-pro",
         "name": "DeepSeek V4 Pro",
-        "context_length": 32000
+        "context_window": 1000000,
+        "max_tokens": 384000
       }
     ]
   },
@@ -48,7 +50,7 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 }
 ```
 
-`provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
+`provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`context_window` 描述模型上下文窗口，`max_tokens` 会作为每次模型请求的最大输出 token 数发送给 Provider。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
 
 ## 使用
 

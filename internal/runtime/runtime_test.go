@@ -59,6 +59,9 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", provider.request.Temperature)
 	}
+	if provider.request.MaxTokens != 384000 {
+		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
+	}
 	if len(provider.request.Tools) != 6 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
@@ -114,7 +117,7 @@ func TestModelOptions(t *testing.T) {
 	if options.Default != "test-model" {
 		t.Fatalf("default = %q", options.Default)
 	}
-	if len(options.Models) != 2 || options.Models[1].Value != "other-model" || options.Models[1].ContextLength != 32000 {
+	if len(options.Models) != 2 || options.Models[1].Value != "other-model" || options.Models[1].ContextWindow != 1000000 || options.Models[1].MaxTokens != 128000 {
 		t.Fatalf("models = %#v", options.Models)
 	}
 }
@@ -275,8 +278,8 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 					APIKey:       "sk-test",
 					DefaultModel: "test-model",
 					Models: []config.ProviderModel{
-						{Value: "test-model", Name: "Test Model", ContextLength: 64000},
-						{Value: "other-model", Name: "Other Model", ContextLength: 32000},
+						{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
+						{Value: "other-model", Name: "Other Model", ContextWindow: 1000000, MaxTokens: 128000},
 					},
 				},
 				Agent: config.AgentConfig{

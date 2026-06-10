@@ -94,6 +94,7 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 		Model:       p.model,
 		Messages:    toAPIMessages(req),
 		Tools:       toAPITools(req.Tools),
+		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
 		Stream:      true,
 	}
@@ -107,6 +108,7 @@ type chatRequest struct {
 	Model       string       `json:"model"`
 	Messages    []apiMessage `json:"messages"`
 	Tools       []apiTool    `json:"tools,omitempty"`
+	MaxTokens   int          `json:"max_tokens,omitempty"`
 	Temperature float64      `json:"temperature,omitempty"`
 	Stream      bool         `json:"stream"`
 }

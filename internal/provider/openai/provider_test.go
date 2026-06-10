@@ -48,6 +48,7 @@ func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
 			Description: "Read a file.",
 			Parameters:  map[string]any{"type": "object"},
 		}},
+		MaxTokens:   384000,
 		Temperature: 0.2,
 	}, func(event model.StreamEvent) error {
 		deltas = append(deltas, event.Delta)
@@ -80,6 +81,9 @@ func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
 	}
 	if gotReq.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", gotReq.Temperature)
+	}
+	if gotReq.MaxTokens != 384000 {
+		t.Fatalf("max tokens = %d", gotReq.MaxTokens)
 	}
 	if resp.Content != "done" {
 		t.Fatalf("Content = %q", resp.Content)

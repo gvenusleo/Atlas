@@ -387,8 +387,8 @@ func testConfig(dbPath string) config.Config {
 			APIKey:       "sk-test",
 			DefaultModel: "test-model",
 			Models: []config.ProviderModel{
-				{Value: "test-model", Name: "Test Model"},
-				{Value: "other-model", Name: "Other Model"},
+				{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
+				{Value: "other-model", Name: "Other Model", ContextWindow: 1000000, MaxTokens: 128000},
 			},
 		},
 		Agent: config.AgentConfig{

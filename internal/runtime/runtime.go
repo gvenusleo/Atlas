@@ -55,7 +55,8 @@ type ModelOption struct {
 	Value         string
 	Name          string
 	Description   string
-	ContextLength int
+	ContextWindow int
+	MaxTokens     int
 }
 
 // ModelOptions 描述当前配置的模型选择状态。
@@ -164,6 +165,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			Skills:       promptSkillSummaries(skills),
 		}),
 		MaxSteps:    cfg.Agent.MaxSteps,
+		MaxTokens:   selectedModel.MaxTokens,
 		Temperature: cfg.Agent.Temperature,
 		Observer:    opts.Observer,
 	})
@@ -197,7 +199,8 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 			Value:         model.Value,
 			Name:          model.Name,
 			Description:   model.Description,
-			ContextLength: model.ContextLength,
+			ContextWindow: model.ContextWindow,
+			MaxTokens:     model.MaxTokens,
 		})
 	}
 	return ModelOptions{
