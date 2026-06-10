@@ -62,7 +62,7 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
-	if len(provider.request.Tools) != 6 {
+	if len(provider.request.Tools) != 7 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
 	if provider.request.System == "" {

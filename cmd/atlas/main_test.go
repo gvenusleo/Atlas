@@ -111,7 +111,7 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if provider.request.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", provider.request.Temperature)
 	}
-	if len(provider.request.Tools) != 6 {
+	if len(provider.request.Tools) != 7 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
 	if provider.providerModel != "test-model" {

@@ -462,7 +462,7 @@ func toolKind(name string) acpsdk.ToolKind {
 	switch name {
 	case "read_file":
 		return acpsdk.ToolKindRead
-	case "write_file":
+	case "edit_file", "write_file":
 		return acpsdk.ToolKindEdit
 	case "list_files", "search_text":
 		return acpsdk.ToolKindSearch

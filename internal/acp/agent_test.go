@@ -42,6 +42,23 @@ func TestInitializeReportsSupportedCapabilities(t *testing.T) {
 	}
 }
 
+func TestToolKindClassifiesBuiltInTools(t *testing.T) {
+	tests := map[string]acpsdk.ToolKind{
+		"read_file":   acpsdk.ToolKindRead,
+		"edit_file":   acpsdk.ToolKindEdit,
+		"write_file":  acpsdk.ToolKindEdit,
+		"list_files":  acpsdk.ToolKindSearch,
+		"search_text": acpsdk.ToolKindSearch,
+		"run_shell":   acpsdk.ToolKindExecute,
+		"custom":      acpsdk.ToolKindOther,
+	}
+	for name, want := range tests {
+		if got := toolKind(name); got != want {
+			t.Fatalf("toolKind(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 

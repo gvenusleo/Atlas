@@ -260,6 +260,48 @@ func TestRunTurnEmitsToolErrorEvent(t *testing.T) {
 	}
 }
 
+func TestRunTurnKeepsToolResultWhenToolReturnsError(t *testing.T) {
+	registry, err := tool.NewRegistry(fakeTool{
+		definition: model.ToolDefinition{Name: "fake"},
+		result:     "partial output",
+		err:        errors.New("tool failed"),
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
+			{Content: "done"},
+		},
+	}
+	var events []Event
+	agent, err := New(Config{
+		Provider: provider,
+		Tools:    registry,
+		Observer: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "use tool"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	messages := provider.requests[1].Messages
+	last := messages[len(messages)-1]
+	if last.Content != "partial output\ntool failed" {
+		t.Fatalf("tool result content = %q, want partial output and error", last.Content)
+	}
+	for _, event := range events {
+		if event.Type == EventToolFinished && (!event.ToolError || event.ToolResult != "partial output\ntool failed") {
+			t.Fatalf("tool event = %#v", event)
+		}
+	}
+}
+
 func TestRunTurnUnknownToolIsVisibleToModel(t *testing.T) {
 	provider := &fakeProvider{
 		responses: []model.ChatResponse{

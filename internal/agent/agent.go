@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/tool"
@@ -134,7 +135,7 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 			result, err := a.tools.Run(ctx, call)
 			toolError := err != nil
 			if err != nil {
-				result = err.Error()
+				result = toolErrorResult(result, err)
 			}
 			a.transcript.Append(model.Message{
 				Role:       model.RoleTool,
@@ -164,4 +165,14 @@ func (a *Agent) emit(event Event) {
 	if a.observer != nil {
 		a.observer(event)
 	}
+}
+
+func toolErrorResult(result string, err error) string {
+	if result == "" {
+		return err.Error()
+	}
+	if strings.Contains(result, err.Error()) {
+		return result
+	}
+	return result + "\n" + err.Error()
 }

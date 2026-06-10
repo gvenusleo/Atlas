@@ -316,6 +316,7 @@ func buildToolRegistry(skills *skill.Catalog) (*tool.Registry, error) {
 	return tool.NewRegistry(
 		tool.ListFiles{},
 		tool.ReadFile{},
+		tool.EditFile{},
 		tool.SearchText{},
 		tool.WriteFile{},
 		tool.RunShell{},

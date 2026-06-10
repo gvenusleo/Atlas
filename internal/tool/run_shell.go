@@ -3,8 +3,10 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/liuyuxin/atlas/internal/model"
@@ -63,19 +65,27 @@ func (RunShell) Run(ctx context.Context, arguments string) (string, error) {
 }
 
 func runShellCommand(ctx context.Context, command, workdir string, timeout time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", command)
 	if workdir != "" {
 		cmd.Dir = workdir
 	}
 	output, err := cmd.CombinedOutput()
 	content := truncateShellOutput(output)
-	if ctx.Err() == context.DeadlineExceeded {
-		return content, fmt.Errorf("command timed out: %w", ctx.Err())
+	if runCtx.Err() == context.DeadlineExceeded {
+		status := fmt.Sprintf("command timed out after %s", timeout)
+		return appendShellStatus(content, status), fmt.Errorf("%s", status)
+	}
+	if ctx.Err() != nil {
+		return content, ctx.Err()
 	}
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return appendShellStatus(content, fmt.Sprintf("command exited with code %d", exitErr.ExitCode())), fmt.Errorf("command exited with code %d", exitErr.ExitCode())
+		}
 		return content, fmt.Errorf("command failed: %w", err)
 	}
 	return content, nil
@@ -95,5 +105,16 @@ func truncateShellOutput(output []byte) string {
 	if len(output) <= maxShellOutputBytes {
 		return string(output)
 	}
-	return string(output[:maxShellOutputBytes]) + "\n[output truncated]"
+	return "[output truncated]\n" + string(output[len(output)-maxShellOutputBytes:])
+}
+
+func appendShellStatus(output, status string) string {
+	status = "[" + status + "]"
+	if output == "" {
+		return status
+	}
+	if strings.HasSuffix(output, "\n") {
+		return output + status
+	}
+	return output + "\n" + status
 }

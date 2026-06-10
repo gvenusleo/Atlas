@@ -50,8 +50,39 @@ func TestReadFileRunLargeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`}`); err == nil {
-		t.Fatal("Run() error = nil, want large file error")
+	got, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(got, "byte output limit") {
+		t.Fatalf("Run() = %q, want byte limit notice", got)
+	}
+}
+
+func TestReadFileRunOffsetAndLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"offset":2,"limit":1}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(got, "two\n") || !strings.Contains(got, "Use offset=3 to continue") {
+		t.Fatalf("Run() = %q, want selected line and continuation", got)
+	}
+}
+
+func TestReadFileRunOffsetBeyondEnd(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"offset":3}`)
+	if err == nil || !strings.Contains(err.Error(), "beyond end of file") {
+		t.Fatalf("Run() error = %v, want offset error", err)
 	}
 }
 

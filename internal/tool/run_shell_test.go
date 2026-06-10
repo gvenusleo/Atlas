@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -24,8 +23,8 @@ func TestRunShellRunFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run() error = nil, want command failure")
 	}
-	if got != "fail" {
-		t.Fatalf("Run() = %q, want %q", got, "fail")
+	if !strings.Contains(got, "fail") || !strings.Contains(got, "command exited with code 7") {
+		t.Fatalf("Run() = %q, want output and exit code", got)
 	}
 }
 
@@ -57,23 +56,22 @@ func TestRunShellRunMissingCommand(t *testing.T) {
 }
 
 func TestRunShellRunTimeout(t *testing.T) {
-	_, err := (RunShell{}).Run(context.Background(), `{"command":"sleep 2","timeout_seconds":1}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"command":"printf before; sleep 2","timeout_seconds":1}`)
 	if err == nil {
 		t.Fatal("Run() error = nil, want timeout error")
 	}
-	if !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("Run() error = %v, want timeout error", err)
+	if !strings.Contains(got, "before") || !strings.Contains(got, "command timed out") {
+		t.Fatalf("Run() = %q, want output and timeout status", got)
 	}
 }
 
 func TestRunShellRunTruncatesOutput(t *testing.T) {
-	command := "yes x | head -c " + quoteShellInt(maxShellOutputBytes+1)
-	got, err := runShellCommand(context.Background(), command, "", normalizeShellTimeout(0))
-	if err != nil {
-		t.Fatalf("runShellCommand() error = %v", err)
-	}
+	got := truncateShellOutput([]byte("prefix" + strings.Repeat("x", maxShellOutputBytes) + "suffix"))
 	if !strings.Contains(got, "[output truncated]") {
-		t.Fatalf("runShellCommand() = %q, want truncated marker", got[len(got)-64:])
+		t.Fatalf("truncateShellOutput() = %q, want truncated marker", got[:64])
+	}
+	if strings.Contains(got, "prefix") || !strings.Contains(got, "suffix") {
+		t.Fatalf("truncateShellOutput() should keep tail, got prefix=%v suffix=%v", strings.Contains(got, "prefix"), strings.Contains(got, "suffix"))
 	}
 }
 
@@ -85,8 +83,4 @@ func TestRunShellDefinition(t *testing.T) {
 	if def.Parameters == nil {
 		t.Fatal("Definition().Parameters = nil")
 	}
-}
-
-func quoteShellInt(value int) string {
-	return strconv.Itoa(value)
 }
