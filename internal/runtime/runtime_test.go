@@ -10,6 +10,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
+	"github.com/liuyuxin/atlas/internal/skill"
 )
 
 func TestRunTurnSavesAndResumesSession(t *testing.T) {
@@ -58,11 +59,63 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", provider.request.Temperature)
 	}
-	if len(provider.request.Tools) != 5 {
+	if len(provider.request.Tools) != 6 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
+	}
+}
+
+func TestRunTurnIncludesSkillSummaries(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	catalog, err := skill.NewCatalog([]skill.Skill{{
+		Name:        "write",
+		Description: "polish prose",
+		Content:     "# Write\nfull body",
+	}})
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	r := newTestRuntime(t, provider)
+	r.deps.LoadSkills = func(string) (*skill.Catalog, error) {
+		return catalog, nil
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "hello"}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if !strings.Contains(provider.request.System, "`write`: polish prose") {
+		t.Fatalf("system prompt = %q", provider.request.System)
+	}
+	if strings.Contains(provider.request.System, "# Write") {
+		t.Fatalf("system prompt includes skill body: %q", provider.request.System)
+	}
+}
+
+func TestRunTurnUsesCWDForSkillLoading(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+	var gotCWD string
+	r.deps.LoadSkills = func(cwd string) (*skill.Catalog, error) {
+		gotCWD = cwd
+		return skill.NewCatalog(nil)
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		Prompt: "hello",
+		CWD:    "/tmp/acp-work",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if gotCWD != "/tmp/acp-work" {
+		t.Fatalf("LoadSkills cwd = %q", gotCWD)
 	}
 }
 
@@ -184,6 +237,9 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 			return []prompt.InstructionFile{
 				{Path: "/tmp/atlas-work/AGENTS.md", Content: "project rules"},
 			}, nil
+		},
+		LoadSkills: func(string) (*skill.Catalog, error) {
+			return skill.NewCatalog(nil)
 		},
 		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
 		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },

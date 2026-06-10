@@ -60,3 +60,26 @@ func TestBuildSystemIncludesInstructions(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSystemIncludesOnlySkillSummaries(t *testing.T) {
+	result := BuildSystem(Options{
+		WorkingDir: "/tmp/atlas-work",
+		Now:        time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
+		Skills: []SkillSummary{
+			{Name: "write", Description: "polish prose"},
+		},
+	})
+
+	for _, check := range []string{
+		"## Available Skills",
+		"`write`: polish prose",
+		"call load_skill with the skill name",
+	} {
+		if !strings.Contains(result, check) {
+			t.Fatalf("system prompt missing %q", check)
+		}
+	}
+	if strings.Contains(result, "# Write") {
+		t.Fatalf("system prompt includes skill body: %q", result)
+	}
+}

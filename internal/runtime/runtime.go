@@ -14,6 +14,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/provider/openai"
 	"github.com/liuyuxin/atlas/internal/session"
+	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
@@ -24,6 +25,7 @@ type Dependencies struct {
 	NewProvider      func(config.ProviderConfig) (model.Provider, error)
 	Getwd            func() (string, error)
 	LoadInstructions func(string) ([]prompt.InstructionFile, error)
+	LoadSkills       func(string) (*skill.Catalog, error)
 	NewSessionID     func(time.Time) (string, error)
 	Now              func() time.Time
 }
@@ -62,6 +64,7 @@ func DefaultDependencies() Dependencies {
 		LoadInstructions: func(cwd string) ([]prompt.InstructionFile, error) {
 			return prompt.LoadInstructions(cwd)
 		},
+		LoadSkills:   skill.Load,
 		NewSessionID: session.NewID,
 		Now:          time.Now,
 	}
@@ -86,10 +89,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	registry, err := buildToolRegistry()
-	if err != nil {
-		return TurnResult{}, err
-	}
 	cwd := opts.CWD
 	if cwd == "" {
 		cwd, err = r.deps.Getwd()
@@ -98,6 +97,14 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	instructions, err := r.deps.LoadInstructions(cwd)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	skills, err := r.deps.LoadSkills(cwd)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	registry, err := buildToolRegistry(skills)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -135,6 +142,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			WorkingDir:   cwd,
 			Now:          r.deps.Now(),
 			Instructions: instructions,
+			Skills:       promptSkillSummaries(skills),
 		}),
 		MaxSteps:    cfg.Agent.MaxSteps,
 		Temperature: cfg.Agent.Temperature,
@@ -248,6 +256,9 @@ func completeDependencies(deps Dependencies) Dependencies {
 	if deps.LoadInstructions == nil {
 		deps.LoadInstructions = defaults.LoadInstructions
 	}
+	if deps.LoadSkills == nil {
+		deps.LoadSkills = defaults.LoadSkills
+	}
 	if deps.NewSessionID == nil {
 		deps.NewSessionID = defaults.NewSessionID
 	}
@@ -257,14 +268,27 @@ func completeDependencies(deps Dependencies) Dependencies {
 	return deps
 }
 
-func buildToolRegistry() (*tool.Registry, error) {
+func buildToolRegistry(skills *skill.Catalog) (*tool.Registry, error) {
 	return tool.NewRegistry(
 		tool.ListFiles{},
 		tool.ReadFile{},
 		tool.SearchText{},
 		tool.WriteFile{},
 		tool.RunShell{},
+		tool.LoadSkill{Skills: skills},
 	)
+}
+
+func promptSkillSummaries(catalog *skill.Catalog) []prompt.SkillSummary {
+	summaries := catalog.Summaries()
+	result := make([]prompt.SkillSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		result = append(result, prompt.SkillSummary{
+			Name:        summary.Name,
+			Description: summary.Description,
+		})
+	}
+	return result
 }
 
 func openSessionStore(ctx context.Context, cfg config.SessionConfig) (*session.Store, error) {

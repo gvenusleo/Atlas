@@ -14,6 +14,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
+	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/version"
 )
 
@@ -110,7 +111,7 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if provider.request.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", provider.request.Temperature)
 	}
-	if len(provider.request.Tools) != 5 {
+	if len(provider.request.Tools) != 6 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
 }
@@ -403,6 +404,9 @@ func testRuntime(dbPath string, provider model.Provider, instructions []prompt.I
 		Getwd: func() (string, error) { return "/tmp/atlas-work", nil },
 		LoadInstructions: func(string) ([]prompt.InstructionFile, error) {
 			return instructions, nil
+		},
+		LoadSkills: func(string) (*skill.Catalog, error) {
+			return skill.NewCatalog(nil)
 		},
 		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
 		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },

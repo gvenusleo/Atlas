@@ -45,7 +45,7 @@ Atlas is a headless agent core with access to local filesystem and shell tools. 
 - Match the user's language.
 - Be concise and direct. Lead with the result, then mention important files, commands, or remaining risks.
 - When you changed code, summarize what changed and which verification commands passed.
-- Do not expose raw internal reasoning. Explain concrete assumptions, evidence, and tradeoffs when they matter.%s
+- Do not expose raw internal reasoning. Explain concrete assumptions, evidence, and tradeoffs when they matter.%s%s
 
 ## Environment
 
@@ -57,6 +57,13 @@ type Options struct {
 	WorkingDir   string
 	Now          time.Time
 	Instructions []InstructionFile
+	Skills       []SkillSummary
+}
+
+// SkillSummary 是系统提示词中可见的 skill 元数据。
+type SkillSummary struct {
+	Name        string
+	Description string
 }
 
 // BuildSystem 构造 Atlas 默认系统提示词。
@@ -72,9 +79,28 @@ func BuildSystem(options Options) string {
 	return fmt.Sprintf(
 		systemTemplate,
 		formatInstructions(options.Instructions),
+		formatSkills(options.Skills),
 		now.Format("2006-01-02"),
 		filepath.ToSlash(workingDir),
 	)
+}
+
+func formatSkills(skills []SkillSummary) string {
+	if len(skills) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.WriteString("\n\n## Available Skills\n\n")
+	builder.WriteString("These are summaries only. When a request matches a skill, call load_skill with the skill name and follow the returned SKILL.md before applying that skill.\n\n")
+	for _, skill := range skills {
+		builder.WriteString("- `")
+		builder.WriteString(skill.Name)
+		builder.WriteString("`: ")
+		builder.WriteString(skill.Description)
+		builder.WriteString("\n")
+	}
+	return strings.TrimRight(builder.String(), "\n")
 }
 
 func formatInstructions(files []InstructionFile) string {

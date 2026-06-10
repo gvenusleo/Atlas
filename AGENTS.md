@@ -49,12 +49,14 @@ Provider 配置包括：
 
 工具 JSON schema 由 `tool.Registry` 发送给 Provider。系统提示词只说明工具使用原则，不重复 schema。
 
-Atlas 只加载两个附加指令文件：
+Atlas 只加载两个附加 `AGENTS.md` 指令文件：
 
 - `~/.atlas/AGENTS.md`
 - 当前工作目录下的 `AGENTS.md`
 
 当前用户请求优先于指令文件，当前目录指令优先于全局指令。Atlas 不递归查找父目录或子目录中的 `AGENTS.md`。
+
+Atlas 会扫描用户级和当前目录级 skill，但系统提示词只注入 `name` / `description` 摘要。完整 `SKILL.md` 只能通过 `load_skill` 工具按需加载；Atlas 不递归查找父目录中的 skill。
 
 ## 架构边界
 
@@ -70,6 +72,7 @@ internal/prompt
 internal/provider/openai
 internal/runtime
 internal/session
+internal/skill
 internal/tool
 internal/transcript
 internal/version
