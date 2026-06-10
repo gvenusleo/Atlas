@@ -39,9 +39,12 @@ Provider 配置包括：
 
 - `base_url`
 - `api_key`
-- `model`
+- `default_model`
+- `models`
 
 这些字段属于具体 Provider 的连接配置，不进入 `model.ChatRequest`，也不由 `agent` 包直接关心。`agent` 只依赖 `model.Provider` 接口。
+
+`models` 中每个模型至少包含 `value` 和 `name`；`value` 是传给 Provider 的模型名，`name` 是展示名。`default_model` 必须匹配其中一个 `value`。
 
 ## 系统提示词
 

@@ -24,7 +24,19 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
   "provider": {
     "base_url": "https://api.deepseek.com",
     "api_key": "sk-...",
-    "model": "deepseek-v4-flash"
+    "default_model": "deepseek-v4-flash",
+    "models": [
+      {
+        "value": "deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "context_length": 64000
+      },
+      {
+        "value": "deepseek-v4-pro",
+        "name": "DeepSeek V4 Pro",
+        "context_length": 32000
+      }
+    ]
   },
   "agent": {
     "max_steps": 8,
@@ -36,7 +48,7 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 }
 ```
 
-`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
+`provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
 
 ## 使用
 
@@ -44,6 +56,7 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 go run ./cmd/atlas
 go run ./cmd/atlas --session 20260608-153012-a1b2c3d4
 go run ./cmd/atlas run "读取 README 并总结"
+go run ./cmd/atlas run --model deepseek-v4-pro "用 Pro 模型分析这个问题"
 go run ./cmd/atlas run --session 20260608-153012-a1b2c3d4 "继续刚才的问题"
 go run ./cmd/atlas sessions
 go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
@@ -54,9 +67,9 @@ go run ./cmd/atlas version
 
 裸 `atlas` 是交互模式入口；当前版本暂未实现 TUI，会提示使用 `atlas run`。`atlas run` 执行一次模型请求，并实时输出模型文本。
 
-`atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。session ID 只允许字母、数字、`.`、`_` 和 `-`。
+`atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。传入 `--model <value>` 时，本轮使用该模型。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
-`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、列表和删除；不支持 ACP auth、权限请求、MCP 连接、多模态输入和历史消息回放。
+`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、列表、删除和模型切换；不支持 ACP auth、权限请求、MCP 连接、多模态输入和历史消息回放。
 
 Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情和删除会话；不提供全文搜索。
 

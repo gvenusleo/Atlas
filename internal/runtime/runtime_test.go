@@ -65,6 +65,58 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
 	}
+	if provider.providerModel != "test-model" {
+		t.Fatalf("provider model = %q", provider.providerModel)
+	}
+}
+
+func TestRunTurnUsesRequestedModel(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		Prompt: "hello",
+		Model:  "other-model",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.providerModel != "other-model" {
+		t.Fatalf("provider model = %q", provider.providerModel)
+	}
+}
+
+func TestRunTurnRejectsUnknownModel(t *testing.T) {
+	provider := &recordingProvider{}
+	r := newTestRuntime(t, provider)
+
+	_, err := r.RunTurn(context.Background(), TurnOptions{
+		Prompt: "hello",
+		Model:  "missing-model",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.called {
+		t.Fatal("provider was called")
+	}
+}
+
+func TestModelOptions(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+
+	options, err := r.ModelOptions(context.Background())
+	if err != nil {
+		t.Fatalf("ModelOptions() error = %v", err)
+	}
+	if options.Default != "test-model" {
+		t.Fatalf("default = %q", options.Default)
+	}
+	if len(options.Models) != 2 || options.Models[1].Value != "other-model" || options.Models[1].ContextLength != 32000 {
+		t.Fatalf("models = %#v", options.Models)
+	}
 }
 
 func TestRunTurnIncludesSkillSummaries(t *testing.T) {
@@ -193,12 +245,15 @@ func TestDeleteSessionIfExistsIgnoresMissingSession(t *testing.T) {
 }
 
 type recordingProvider struct {
-	request  model.ChatRequest
-	events   []model.StreamEvent
-	response model.ChatResponse
+	request       model.ChatRequest
+	events        []model.StreamEvent
+	response      model.ChatResponse
+	providerModel string
+	called        bool
 }
 
 func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
+	p.called = true
 	p.request = req
 	for _, event := range p.events {
 		if err := emit(event); err != nil {
@@ -216,9 +271,13 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 		LoadConfig: func() (config.Config, error) {
 			return config.Config{
 				Provider: config.ProviderConfig{
-					BaseURL: "https://api.example.com",
-					APIKey:  "sk-test",
-					Model:   "test-model",
+					BaseURL:      "https://api.example.com",
+					APIKey:       "sk-test",
+					DefaultModel: "test-model",
+					Models: []config.ProviderModel{
+						{Value: "test-model", Name: "Test Model", ContextLength: 64000},
+						{Value: "other-model", Name: "Other Model", ContextLength: 32000},
+					},
 				},
 				Agent: config.AgentConfig{
 					MaxSteps:    4,
@@ -229,7 +288,10 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 				},
 			}, nil
 		},
-		NewProvider: func(config.ProviderConfig) (model.Provider, error) {
+		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
+			if provider, ok := provider.(*recordingProvider); ok {
+				provider.providerModel = selected.Value
+			}
 			return provider, nil
 		},
 		Getwd: func() (string, error) { return "/tmp/atlas-work", nil },

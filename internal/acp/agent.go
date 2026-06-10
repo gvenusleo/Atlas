@@ -21,11 +21,13 @@ import (
 
 const (
 	defaultSessionListLimit = 100
+	modelConfigID           = "model"
 )
 
 // Runtime 是 ACP 适配层需要的 Atlas 执行入口。
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
+	ModelOptions(context.Context) (runtime.ModelOptions, error)
 	ShowSession(context.Context, string) (session.Session, *transcript.Transcript, error)
 	ListSessions(context.Context, int) ([]session.Session, error)
 	ListSessionsForCWD(context.Context, string, int) ([]session.Session, error)
@@ -68,6 +70,7 @@ func Run(ctx context.Context, opts Options) error {
 
 type sessionState struct {
 	cwd    string
+	model  string
 	cancel context.CancelFunc
 	turn   int
 }
@@ -122,16 +125,23 @@ func (a *Agent) Initialize(context.Context, acpsdk.InitializeRequest) (acpsdk.In
 }
 
 // NewSession 创建绑定到 cwd 的活动 ACP session。
-func (a *Agent) NewSession(_ context.Context, params acpsdk.NewSessionRequest) (acpsdk.NewSessionResponse, error) {
+func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest) (acpsdk.NewSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
+		return acpsdk.NewSessionResponse{}, err
+	}
+	models, err := a.rt.ModelOptions(ctx)
+	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
 	sessionID, err := session.NewID(time.Now())
 	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
-	a.setSession(sessionID, params.Cwd)
-	return acpsdk.NewSessionResponse{SessionId: acpsdk.SessionId(sessionID)}, nil
+	a.setSession(sessionID, params.Cwd, models.Default)
+	return acpsdk.NewSessionResponse{
+		SessionId:     acpsdk.SessionId(sessionID),
+		ConfigOptions: modelConfigOptions(models, models.Default),
+	}, nil
 }
 
 // Prompt 为指定 ACP session 执行一次 Atlas turn。
@@ -156,6 +166,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	_, err = a.rt.RunTurn(turnCtx, runtime.TurnOptions{
 		SessionID: string(params.SessionId),
 		Prompt:    promptText,
+		Model:     state.model,
 		CWD:       state.cwd,
 		Observer:  a.observe(turnCtx, params.SessionId),
 	})
@@ -189,8 +200,14 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	if sess.CWD != params.Cwd {
 		return acpsdk.ResumeSessionResponse{}, fmt.Errorf("session %q cwd mismatch: %s", params.SessionId, params.Cwd)
 	}
-	a.setSession(string(params.SessionId), params.Cwd)
-	return acpsdk.ResumeSessionResponse{}, nil
+	models, err := a.rt.ModelOptions(ctx)
+	if err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
+	a.setSession(string(params.SessionId), params.Cwd, models.Default)
+	return acpsdk.ResumeSessionResponse{
+		ConfigOptions: modelConfigOptions(models, models.Default),
+	}, nil
 }
 
 // ListSessions 返回 Atlas 本地 SQLite session 历史。
@@ -253,9 +270,31 @@ func (a *Agent) Logout(context.Context, acpsdk.LogoutRequest) (acpsdk.LogoutResp
 	return acpsdk.LogoutResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodLogout)
 }
 
-// SetSessionConfigOption 不受支持，因为 Atlas 没有 ACP session 级配置。
-func (a *Agent) SetSessionConfigOption(context.Context, acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
-	return acpsdk.SetSessionConfigOptionResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionSetConfigOption)
+// SetSessionConfigOption 更新 ACP session 级模型配置。
+func (a *Agent) SetSessionConfigOption(ctx context.Context, params acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
+	if params.ValueId == nil {
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("model config requires a value id")
+	}
+	req := params.ValueId
+	if req.ConfigId != acpsdk.SessionConfigId(modelConfigID) {
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option: %s", req.ConfigId)
+	}
+	if _, ok := a.getSession(string(req.SessionId)); !ok {
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("session %q not found", req.SessionId)
+	}
+	models, err := a.rt.ModelOptions(ctx)
+	if err != nil {
+		return acpsdk.SetSessionConfigOptionResponse{}, err
+	}
+	if !hasModelValue(models, string(req.Value)) {
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("provider model %q is not configured", req.Value)
+	}
+	if !a.setSessionModel(string(req.SessionId), string(req.Value)) {
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("session %q not found", req.SessionId)
+	}
+	return acpsdk.SetSessionConfigOptionResponse{
+		ConfigOptions: modelConfigOptions(models, string(req.Value)),
+	}, nil
 }
 
 // SetSessionMode 不受支持，因为 Atlas 没有 ACP session mode。
@@ -306,12 +345,25 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 	}
 }
 
-func (a *Agent) setSession(id, cwd string) {
+func (a *Agent) setSession(id, cwd, model string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	state := a.sessions[id]
 	state.cwd = cwd
+	state.model = model
 	a.sessions[id] = state
+}
+
+func (a *Agent) setSessionModel(id, model string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, ok := a.sessions[id]
+	if !ok {
+		return false
+	}
+	state.model = model
+	a.sessions[id] = state
+	return true
 }
 
 func (a *Agent) getSession(id string) (sessionState, bool) {
@@ -430,4 +482,40 @@ func rawToolInput(arguments string) any {
 		return parsed
 	}
 	return arguments
+}
+
+func modelConfigOptions(options runtime.ModelOptions, current string) []acpsdk.SessionConfigOption {
+	category := acpsdk.SessionConfigOptionCategoryModel
+	ungrouped := make(acpsdk.SessionConfigSelectOptionsUngrouped, 0, len(options.Models))
+	for _, model := range options.Models {
+		option := acpsdk.SessionConfigSelectOption{
+			Name:  model.Name,
+			Value: acpsdk.SessionConfigValueId(model.Value),
+		}
+		if model.Description != "" {
+			description := model.Description
+			option.Description = &description
+		}
+		ungrouped = append(ungrouped, option)
+	}
+	return []acpsdk.SessionConfigOption{{
+		Select: &acpsdk.SessionConfigOptionSelect{
+			Category:     &category,
+			CurrentValue: acpsdk.SessionConfigValueId(current),
+			Id:           acpsdk.SessionConfigId(modelConfigID),
+			Name:         "Model",
+			Options: acpsdk.SessionConfigSelectOptions{
+				Ungrouped: &ungrouped,
+			},
+		},
+	}}
+}
+
+func hasModelValue(options runtime.ModelOptions, value string) bool {
+	for _, model := range options.Models {
+		if model.Value == value {
+			return true
+		}
+	}
+	return false
 }

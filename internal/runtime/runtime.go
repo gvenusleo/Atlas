@@ -22,7 +22,7 @@ import (
 // Dependencies 定义 Runtime 需要的外部依赖，测试可以替换其中任意一项。
 type Dependencies struct {
 	LoadConfig       func() (config.Config, error)
-	NewProvider      func(config.ProviderConfig) (model.Provider, error)
+	NewProvider      func(config.ProviderConfig, config.ProviderModel) (model.Provider, error)
 	Getwd            func() (string, error)
 	LoadInstructions func(string) ([]prompt.InstructionFile, error)
 	LoadSkills       func(string) (*skill.Catalog, error)
@@ -39,6 +39,7 @@ type Runtime struct {
 type TurnOptions struct {
 	SessionID string
 	Prompt    string
+	Model     string
 	CWD       string
 	Observer  agent.Observer
 }
@@ -49,15 +50,29 @@ type TurnResult struct {
 	Content   string
 }
 
+// ModelOption 描述 runtime 对外暴露的可选模型。
+type ModelOption struct {
+	Value         string
+	Name          string
+	Description   string
+	ContextLength int
+}
+
+// ModelOptions 描述当前配置的模型选择状态。
+type ModelOptions struct {
+	Default string
+	Models  []ModelOption
+}
+
 // DefaultDependencies 返回真实命令行运行时使用的依赖。
 func DefaultDependencies() Dependencies {
 	return Dependencies{
 		LoadConfig: config.LoadDefault,
-		NewProvider: func(cfg config.ProviderConfig) (model.Provider, error) {
+		NewProvider: func(cfg config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			return openai.New(openai.Config{
 				BaseURL: cfg.BaseURL,
 				APIKey:  cfg.APIKey,
-				Model:   cfg.Model,
+				Model:   selected.Value,
 			})
 		},
 		Getwd: os.Getwd,
@@ -85,7 +100,11 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	provider, err := r.deps.NewProvider(cfg.Provider)
+	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -162,6 +181,28 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	return TurnResult{
 		SessionID: sessionID,
 		Content:   content,
+	}, nil
+}
+
+// ModelOptions 返回当前配置文件中可供选择的模型。
+func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return ModelOptions{}, err
+	}
+	models := cfg.Provider.ModelOptions()
+	options := make([]ModelOption, 0, len(models))
+	for _, model := range models {
+		options = append(options, ModelOption{
+			Value:         model.Value,
+			Name:          model.Name,
+			Description:   model.Description,
+			ContextLength: model.ContextLength,
+		})
+	}
+	return ModelOptions{
+		Default: cfg.Provider.DefaultModel,
+		Models:  options,
 	}, nil
 }
 

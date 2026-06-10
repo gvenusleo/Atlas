@@ -114,6 +114,28 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if len(provider.request.Tools) != 6 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
+	if provider.providerModel != "test-model" {
+		t.Fatalf("provider model = %q", provider.providerModel)
+	}
+}
+
+func TestRunWithDependenciesPassesModelFlag(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	var stdout bytes.Buffer
+
+	err := runWithDependencies(context.Background(), []string{"run", "--model", "other-model", "hello"}, runDependencies{
+		runtime: testRuntime(filepath.Join(t.TempDir(), "atlas.db"), provider, nil),
+		stdout:  &stdout,
+	})
+	if err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if provider.providerModel != "other-model" {
+		t.Fatalf("provider model = %q", provider.providerModel)
+	}
 }
 
 func TestRunWithDependenciesResumesSession(t *testing.T) {
@@ -340,10 +362,11 @@ func agentEventToolFinished(name string, failed bool) agent.Event {
 }
 
 type recordingProvider struct {
-	request  model.ChatRequest
-	events   []model.StreamEvent
-	response model.ChatResponse
-	called   bool
+	request       model.ChatRequest
+	events        []model.StreamEvent
+	response      model.ChatResponse
+	providerModel string
+	called        bool
 }
 
 func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
@@ -360,9 +383,13 @@ func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emi
 func testConfig(dbPath string) config.Config {
 	return config.Config{
 		Provider: config.ProviderConfig{
-			BaseURL: "https://api.example.com",
-			APIKey:  "sk-test",
-			Model:   "test-model",
+			BaseURL:      "https://api.example.com",
+			APIKey:       "sk-test",
+			DefaultModel: "test-model",
+			Models: []config.ProviderModel{
+				{Value: "test-model", Name: "Test Model"},
+				{Value: "other-model", Name: "Other Model"},
+			},
 		},
 		Agent: config.AgentConfig{
 			MaxSteps:    4,
@@ -395,9 +422,12 @@ func testRuntime(dbPath string, provider model.Provider, instructions []prompt.I
 		LoadConfig: func() (config.Config, error) {
 			return testConfig(dbPath), nil
 		},
-		NewProvider: func(config.ProviderConfig) (model.Provider, error) {
+		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			if provider == nil {
-				return &recordingProvider{}, nil
+				return &recordingProvider{providerModel: selected.Value}, nil
+			}
+			if provider, ok := provider.(*recordingProvider); ok {
+				provider.providerModel = selected.Value
 			}
 			return provider, nil
 		},

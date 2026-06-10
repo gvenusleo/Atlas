@@ -11,7 +11,11 @@ func TestLoadFile(t *testing.T) {
 		"provider": {
 			"base_url": "https://api.deepseek.com",
 			"api_key": "sk-test",
-			"model": "deepseek-v4-flash"
+			"default_model": "deepseek-v4-flash",
+			"models": [
+				{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_length": 64000},
+				{"value": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "description": "pro model"}
+			]
 		},
 		"agent": {
 			"max_steps": 3,
@@ -32,8 +36,14 @@ func TestLoadFile(t *testing.T) {
 	if cfg.Provider.APIKey != "sk-test" {
 		t.Fatalf("APIKey = %q", cfg.Provider.APIKey)
 	}
-	if cfg.Provider.Model != "deepseek-v4-flash" {
-		t.Fatalf("Model = %q", cfg.Provider.Model)
+	if cfg.Provider.DefaultModel != "deepseek-v4-flash" {
+		t.Fatalf("DefaultModel = %q", cfg.Provider.DefaultModel)
+	}
+	if len(cfg.Provider.Models) != 2 {
+		t.Fatalf("Models = %#v", cfg.Provider.Models)
+	}
+	if cfg.Provider.Models[0].ContextLength != 64000 {
+		t.Fatalf("ContextLength = %d", cfg.Provider.Models[0].ContextLength)
 	}
 	if cfg.Agent.MaxSteps != 3 {
 		t.Fatalf("MaxSteps = %d", cfg.Agent.MaxSteps)
@@ -51,7 +61,8 @@ func TestLoadFileDefaultsMaxSteps(t *testing.T) {
 		"provider": {
 			"base_url": "https://api.deepseek.com",
 			"api_key": "sk-test",
-			"model": "deepseek-v4-flash"
+			"default_model": "deepseek-v4-flash",
+			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
 		}
 	}`)
 
@@ -72,31 +83,88 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 		{
 			name: "missing base url",
 			content: `{
-				"provider": {"api_key": "sk-test", "model": "deepseek-v4-flash"}
+				"provider": {
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
+				}
 			}`,
 		},
 		{
 			name: "invalid base url",
 			content: `{
-				"provider": {"base_url": ":", "api_key": "sk-test", "model": "deepseek-v4-flash"}
+				"provider": {
+					"base_url": ":",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
+				}
 			}`,
 		},
 		{
 			name: "missing api key",
 			content: `{
-				"provider": {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"}
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
+				}
 			}`,
 		},
 		{
-			name: "missing model",
+			name: "missing default model",
 			content: `{
-				"provider": {"base_url": "https://api.deepseek.com", "api_key": "sk-test"}
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
+				}
+			}`,
+		},
+		{
+			name: "missing models",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash"
+				}
+			}`,
+		},
+		{
+			name: "default model not configured",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-pro",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
+				}
+			}`,
+		},
+		{
+			name: "duplicate model value",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [
+						{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"},
+						{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash Copy"}
+					]
+				}
 			}`,
 		},
 		{
 			name: "invalid temperature",
 			content: `{
-				"provider": {"base_url": "https://api.deepseek.com", "api_key": "sk-test", "model": "deepseek-v4-flash"},
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"}]
+				},
 				"agent": {"temperature": 3}
 			}`,
 		},
@@ -109,6 +177,36 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 				t.Fatal("LoadFile() error = nil")
 			}
 		})
+	}
+}
+
+func TestProviderConfigResolveModel(t *testing.T) {
+	provider := ProviderConfig{
+		DefaultModel: "default",
+		Models: []ProviderModel{
+			{Value: "default", Name: "Default"},
+			{Value: "other", Name: "Other"},
+		},
+	}
+
+	got, err := provider.ResolveModel("")
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if got.Value != "default" {
+		t.Fatalf("model = %#v", got)
+	}
+
+	got, err = provider.ResolveModel("other")
+	if err != nil {
+		t.Fatalf("ResolveModel(other) error = %v", err)
+	}
+	if got.Name != "Other" {
+		t.Fatalf("model = %#v", got)
+	}
+
+	if _, err := provider.ResolveModel("missing"); err == nil {
+		t.Fatal("ResolveModel(missing) error = nil")
 	}
 }
 

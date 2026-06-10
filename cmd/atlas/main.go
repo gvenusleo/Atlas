@@ -60,7 +60,7 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	case "version":
 		return runVersionCommand(args[1:], deps)
 	default:
-		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] <prompt> | atlas acp | atlas version")
+		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas acp | atlas version")
 	}
 }
 
@@ -85,6 +85,7 @@ func runPrompt(ctx context.Context, args []string, deps runDependencies) error {
 	result, err := deps.runtime.RunTurn(ctx, runtime.TurnOptions{
 		SessionID: parsed.sessionID,
 		Prompt:    parsed.prompt,
+		Model:     parsed.model,
 		Observer:  printEvent(deps.stdout),
 	})
 	if err != nil {
@@ -203,6 +204,7 @@ func runSessionDeleteCommand(ctx context.Context, args []string, deps runDepende
 
 type parsedArgs struct {
 	sessionID string
+	model     string
 	prompt    string
 }
 
@@ -210,15 +212,17 @@ func parseArgs(args []string) (parsedArgs, error) {
 	flags := flag.NewFlagSet("atlas", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	sessionID := flags.String("session", "", "session id")
+	model := flags.String("model", "", "model value")
 	if err := flags.Parse(args); err != nil {
 		return parsedArgs{}, err
 	}
 	promptText := strings.TrimSpace(strings.Join(flags.Args(), " "))
 	if promptText == "" {
-		return parsedArgs{}, errors.New("usage: atlas run [--session <id>] <prompt>")
+		return parsedArgs{}, errors.New("usage: atlas run [--session <id>] [--model <value>] <prompt>")
 	}
 	return parsedArgs{
 		sessionID: *sessionID,
+		model:     *model,
 		prompt:    promptText,
 	}, nil
 }

@@ -59,6 +59,19 @@ func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	if state.cwd != "/tmp/work" {
 		t.Fatalf("cwd = %q", state.cwd)
 	}
+	if state.model != "test-model" {
+		t.Fatalf("model = %q", state.model)
+	}
+	if got := currentModelValue(resp.ConfigOptions); got != "test-model" {
+		t.Fatalf("current model = %q", got)
+	}
+	modelOption := resp.ConfigOptions[0].Select
+	if modelOption.Id != modelSessionConfigID() || modelOption.Category == nil || *modelOption.Category != acpsdk.SessionConfigOptionCategoryModel {
+		t.Fatalf("model option = %#v", modelOption)
+	}
+	if modelOption.Options.Ungrouped == nil || len(*modelOption.Options.Ungrouped) != 2 || (*modelOption.Options.Ungrouped)[1].Name != "Other Model" {
+		t.Fatalf("model options = %#v", modelOption.Options)
+	}
 }
 
 func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
@@ -84,7 +97,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "done"}, nil
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work")
+	a.setSession("sess", "/tmp/work", "other-model")
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -101,7 +114,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	if resp.StopReason != acpsdk.StopReasonEndTurn {
 		t.Fatalf("stop reason = %q", resp.StopReason)
 	}
-	if rt.runOptions.SessionID != "sess" || rt.runOptions.Prompt != "hi" || rt.runOptions.CWD != "/tmp/work" {
+	if rt.runOptions.SessionID != "sess" || rt.runOptions.Prompt != "hi" || rt.runOptions.CWD != "/tmp/work" || rt.runOptions.Model != "other-model" {
 		t.Fatalf("turn options = %#v", rt.runOptions)
 	}
 	if len(updates) != 3 {
@@ -126,7 +139,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 func TestPromptResourceLinkText(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work")
+	a.setSession("sess", "/tmp/work", "test-model")
 
 	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -145,7 +158,7 @@ func TestPromptResourceLinkText(t *testing.T) {
 
 func TestPromptUnsupportedContent(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work")
+	a.setSession("sess", "/tmp/work", "test-model")
 
 	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -166,7 +179,7 @@ func TestPromptReturnsCancelledWhenContextStops(t *testing.T) {
 		return atlasruntime.TurnResult{}, ctx.Err()
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work")
+	a.setSession("sess", "/tmp/work", "test-model")
 
 	done := make(chan acpsdk.PromptResponse, 1)
 	errCh := make(chan error, 1)
@@ -202,11 +215,15 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	}
 	a := NewAgent(rt)
 
-	if _, err := a.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
+	resume, err := a.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
 		SessionId: "sess",
 		Cwd:       "/tmp/work",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ResumeSession() error = %v", err)
+	}
+	if got := currentModelValue(resume.ConfigOptions); got != "test-model" {
+		t.Fatalf("current model = %q", got)
 	}
 	cwd := "/tmp/work"
 	list, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cwd: &cwd})
@@ -251,6 +268,74 @@ func TestResumeSessionRejectsCWDMismatch(t *testing.T) {
 	}
 }
 
+func TestSetSessionConfigOptionUpdatesModel(t *testing.T) {
+	rt := &fakeRuntime{}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model")
+
+	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: "sess",
+			ConfigId:  modelSessionConfigID(),
+			Value:     "other-model",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+	if got := currentModelValue(resp.ConfigOptions); got != "other-model" {
+		t.Fatalf("current model = %q", got)
+	}
+	state, ok := a.getSession("sess")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if state.model != "other-model" {
+		t.Fatalf("session model = %q", state.model)
+	}
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
+	}); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if rt.runOptions.Model != "other-model" {
+		t.Fatalf("turn model = %q", rt.runOptions.Model)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsInvalidModel(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.setSession("sess", "/tmp/work", "test-model")
+
+	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: "sess",
+			ConfigId:  modelSessionConfigID(),
+			Value:     "missing-model",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsUnsupportedOption(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.setSession("sess", "/tmp/work", "test-model")
+
+	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: "sess",
+			ConfigId:  "mode",
+			Value:     "other-model",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported session config option") {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+}
+
 func TestListSessionsRejectsCursor(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	cursor := "next"
@@ -292,6 +377,16 @@ func (f *fakeRuntime) RunTurn(ctx context.Context, opts atlasruntime.TurnOptions
 	return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "ok"}, nil
 }
 
+func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, error) {
+	return atlasruntime.ModelOptions{
+		Default: "test-model",
+		Models: []atlasruntime.ModelOption{
+			{Value: "test-model", Name: "Test Model", ContextLength: 64000},
+			{Value: "other-model", Name: "Other Model", Description: "alternate", ContextLength: 32000},
+		},
+	}, nil
+}
+
 func (f *fakeRuntime) ShowSession(_ context.Context, sessionID string) (session.Session, *transcript.Transcript, error) {
 	if f.showErr != nil {
 		return session.Session{}, nil, f.showErr
@@ -314,4 +409,15 @@ func (f *fakeRuntime) ListSessionsForCWD(_ context.Context, cwd string, _ int) (
 func (f *fakeRuntime) DeleteSessionIfExists(_ context.Context, sessionID string) error {
 	f.deleted = append(f.deleted, sessionID)
 	return nil
+}
+
+func currentModelValue(options []acpsdk.SessionConfigOption) string {
+	if len(options) != 1 || options[0].Select == nil {
+		return ""
+	}
+	return string(options[0].Select.CurrentValue)
+}
+
+func modelSessionConfigID() acpsdk.SessionConfigId {
+	return acpsdk.SessionConfigId(modelConfigID)
 }
