@@ -51,7 +51,7 @@ func (ListFiles) Definition() model.ToolDefinition {
 				},
 				"respect_gitignore": map[string]any{
 					"type":        "boolean",
-					"description": "When true, ignore paths matched by .gitignore in the listed directory.",
+					"description": "Defaults to true. Set to false to include files ignored by .gitignore.",
 				},
 			},
 			"required": []string{"path"},
@@ -66,7 +66,7 @@ func (ListFiles) Run(ctx context.Context, arguments string) (string, error) {
 		MaxFiles         int    `json:"max_files"`
 		Depth            int    `json:"depth"`
 		Include          string `json:"include"`
-		RespectGitignore bool   `json:"respect_gitignore"`
+		RespectGitignore *bool  `json:"respect_gitignore"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return "", fmt.Errorf("invalid list_files arguments: %w", err)
@@ -74,9 +74,13 @@ func (ListFiles) Run(ctx context.Context, arguments string) (string, error) {
 	if args.Path == "" {
 		return "", fmt.Errorf("list_files path is required")
 	}
+	respectGitignore := true
+	if args.RespectGitignore != nil {
+		respectGitignore = *args.RespectGitignore
+	}
 	limit := normalizeListFilesLimit(args.MaxFiles)
 	depth := normalizeListFilesDepth(args.Depth)
-	return listFilePaths(ctx, args.Path, limit, depth, args.Include, args.RespectGitignore)
+	return listFilePaths(ctx, args.Path, limit, depth, args.Include, respectGitignore)
 }
 
 func listFilePaths(ctx context.Context, root string, limit, maxDepth int, include string, respectGitignore bool) (string, error) {

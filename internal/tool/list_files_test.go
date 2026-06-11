@@ -88,13 +88,29 @@ func TestListFilesRunGitignoreTrailingDoubleStarKeepsDirectory(t *testing.T) {
 	}
 }
 
-func TestListFilesRunDoesNotRespectGitignoreByDefault(t *testing.T) {
+func TestListFilesRunRespectsGitignoreByDefault(t *testing.T) {
 	dir := t.TempDir()
 	writeTextFile(t, filepath.Join(dir, ".gitignore"), "ignored.txt\n")
 	writeTestFile(t, filepath.Join(dir, "ignored.txt"))
 	writeTestFile(t, filepath.Join(dir, "keep.txt"))
 
 	got, err := (ListFiles{}).Run(context.Background(), `{"path":`+quoteJSON(dir)+`}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := ".gitignore\nkeep.txt"
+	if got != want {
+		t.Fatalf("Run() = %q, want %q", got, want)
+	}
+}
+
+func TestListFilesRunExplicitlyDisablesGitignoreRespect(t *testing.T) {
+	dir := t.TempDir()
+	writeTextFile(t, filepath.Join(dir, ".gitignore"), "ignored.txt\n")
+	writeTestFile(t, filepath.Join(dir, "ignored.txt"))
+	writeTestFile(t, filepath.Join(dir, "keep.txt"))
+
+	got, err := (ListFiles{}).Run(context.Background(), `{"path":`+quoteJSON(dir)+`,"respect_gitignore":false}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
