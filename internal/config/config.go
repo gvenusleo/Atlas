@@ -13,7 +13,8 @@ const (
 	configDirName  = ".atlas"
 	configFileName = "config.json"
 
-	defaultMaxSteps = 8
+	defaultMaxSteps      = 8
+	defaultTavilyBaseURL = "https://api.tavily.com"
 )
 
 // Config 是 Atlas CLI 启动时需要的应用配置。
@@ -21,6 +22,7 @@ type Config struct {
 	Provider ProviderConfig `json:"provider"`
 	Agent    AgentConfig    `json:"agent"`
 	Session  SessionConfig  `json:"session"`
+	Services ServicesConfig `json:"services"`
 }
 
 // ProviderConfig 描述一个 OpenAI-compatible provider。
@@ -49,6 +51,17 @@ type AgentConfig struct {
 // SessionConfig 描述本地会话存储参数。
 type SessionConfig struct {
 	DBPath string `json:"db_path"`
+}
+
+// ServicesConfig 描述 Atlas 可选接入的外部服务。
+type ServicesConfig struct {
+	Tavily TavilyConfig `json:"tavily"`
+}
+
+// TavilyConfig 描述 Tavily 搜索和网页提取服务配置。
+type TavilyConfig struct {
+	BaseURL string `json:"base_url"`
+	APIKey  string `json:"api_key"`
 }
 
 // DefaultPath 返回当前用户主目录下的 Atlas 配置路径。
@@ -137,6 +150,14 @@ func (c Config) Validate() error {
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return fmt.Errorf("agent.temperature must be between 0 and 2")
 	}
+	if c.Services.Tavily.APIKey != "" {
+		tavilyURL, err := url.Parse(c.Services.Tavily.BaseURL)
+		if err != nil || tavilyURL.Scheme == "" || tavilyURL.Host == "" || !isHTTPURL(tavilyURL) {
+			return fmt.Errorf("services.tavily.base_url is invalid")
+		}
+	} else if c.Services.Tavily.BaseURL != "" && c.Services.Tavily.BaseURL != defaultTavilyBaseURL {
+		return fmt.Errorf("services.tavily.api_key is required when services.tavily.base_url is set")
+	}
 	return nil
 }
 
@@ -164,4 +185,11 @@ func (c *Config) applyDefaults() {
 	if c.Agent.MaxSteps <= 0 {
 		c.Agent.MaxSteps = defaultMaxSteps
 	}
+	if c.Services.Tavily.BaseURL == "" {
+		c.Services.Tavily.BaseURL = defaultTavilyBaseURL
+	}
+}
+
+func isHTTPURL(u *url.URL) bool {
+	return u.Scheme == "http" || u.Scheme == "https"
 }

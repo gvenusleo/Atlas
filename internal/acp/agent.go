@@ -464,8 +464,10 @@ func toolKind(name string) acpsdk.ToolKind {
 		return acpsdk.ToolKindRead
 	case "edit_file", "write_file":
 		return acpsdk.ToolKindEdit
-	case "list_files", "search_text":
+	case "list_files", "search_text", "web_search":
 		return acpsdk.ToolKindSearch
+	case "web_fetch":
+		return acpsdk.ToolKindFetch
 	case "run_shell":
 		return acpsdk.ToolKindExecute
 	default:

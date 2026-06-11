@@ -73,6 +73,35 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	}
 }
 
+func TestRunTurnRegistersTavilyToolsWhenConfigured(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	r.deps.LoadConfig = func() (config.Config, error) {
+		cfg := testConfig(dbPath)
+		cfg.Services.Tavily.APIKey = "tvly-test"
+		cfg.Services.Tavily.BaseURL = "https://api.tavily.com"
+		return cfg, nil
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "hello"}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if len(provider.request.Tools) != 9 {
+		t.Fatalf("tools = %d", len(provider.request.Tools))
+	}
+	names := make(map[string]bool, len(provider.request.Tools))
+	for _, definition := range provider.request.Tools {
+		names[definition.Name] = true
+	}
+	if !names["web_search"] || !names["web_fetch"] {
+		t.Fatalf("tools = %#v", provider.request.Tools)
+	}
+}
+
 func TestRunTurnUsesRequestedModel(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
@@ -272,24 +301,7 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 	dbPath := filepath.Join(t.TempDir(), "atlas.db")
 	return New(Dependencies{
 		LoadConfig: func() (config.Config, error) {
-			return config.Config{
-				Provider: config.ProviderConfig{
-					BaseURL:      "https://api.example.com",
-					APIKey:       "sk-test",
-					DefaultModel: "test-model",
-					Models: []config.ProviderModel{
-						{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
-						{Value: "other-model", Name: "Other Model", ContextWindow: 1000000, MaxTokens: 128000},
-					},
-				},
-				Agent: config.AgentConfig{
-					MaxSteps:    4,
-					Temperature: 0.2,
-				},
-				Session: config.SessionConfig{
-					DBPath: dbPath,
-				},
-			}, nil
+			return testConfig(dbPath), nil
 		},
 		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			if provider, ok := provider.(*recordingProvider); ok {
@@ -309,4 +321,25 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
 		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
 	})
+}
+
+func testConfig(dbPath string) config.Config {
+	return config.Config{
+		Provider: config.ProviderConfig{
+			BaseURL:      "https://api.example.com",
+			APIKey:       "sk-test",
+			DefaultModel: "test-model",
+			Models: []config.ProviderModel{
+				{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
+				{Value: "other-model", Name: "Other Model", ContextWindow: 1000000, MaxTokens: 128000},
+			},
+		},
+		Agent: config.AgentConfig{
+			MaxSteps:    4,
+			Temperature: 0.2,
+		},
+		Session: config.SessionConfig{
+			DBPath: dbPath,
+		},
+	}
 }

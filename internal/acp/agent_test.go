@@ -49,6 +49,8 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 		"write_file":  acpsdk.ToolKindEdit,
 		"list_files":  acpsdk.ToolKindSearch,
 		"search_text": acpsdk.ToolKindSearch,
+		"web_search":  acpsdk.ToolKindSearch,
+		"web_fetch":   acpsdk.ToolKindFetch,
 		"run_shell":   acpsdk.ToolKindExecute,
 		"custom":      acpsdk.ToolKindOther,
 	}

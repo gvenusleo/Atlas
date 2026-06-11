@@ -124,7 +124,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	registry, err := buildToolRegistry(skills)
+	registry, err := buildToolRegistry(skills, cfg.Services)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -312,8 +312,8 @@ func completeDependencies(deps Dependencies) Dependencies {
 	return deps
 }
 
-func buildToolRegistry(skills *skill.Catalog) (*tool.Registry, error) {
-	return tool.NewRegistry(
+func buildToolRegistry(skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
+	tools := []tool.Tool{
 		tool.ListFiles{},
 		tool.ReadFile{},
 		tool.EditFile{},
@@ -321,7 +321,18 @@ func buildToolRegistry(skills *skill.Catalog) (*tool.Registry, error) {
 		tool.WriteFile{},
 		tool.RunShell{},
 		tool.LoadSkill{Skills: skills},
-	)
+	}
+	if services.Tavily.APIKey != "" {
+		client, err := tool.NewTavilyClient(services.Tavily.BaseURL, services.Tavily.APIKey, nil)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools,
+			tool.TavilySearch{Client: client},
+			tool.TavilyFetch{Client: client},
+		)
+	}
+	return tool.NewRegistry(tools...)
 }
 
 func promptSkillSummaries(catalog *skill.Catalog) []prompt.SkillSummary {

@@ -78,6 +78,33 @@ func TestLoadFileDefaultsMaxSteps(t *testing.T) {
 	}
 }
 
+func TestLoadFileDefaultsTavilyBaseURL(t *testing.T) {
+	path := writeTestConfig(t, `{
+		"provider": {
+			"base_url": "https://api.deepseek.com",
+			"api_key": "sk-test",
+			"default_model": "deepseek-v4-flash",
+			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+		},
+		"services": {
+			"tavily": {
+				"api_key": "tvly-test"
+			}
+		}
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if cfg.Services.Tavily.BaseURL != defaultTavilyBaseURL {
+		t.Fatalf("Tavily.BaseURL = %q", cfg.Services.Tavily.BaseURL)
+	}
+	if cfg.Services.Tavily.APIKey != "tvly-test" {
+		t.Fatalf("Tavily.APIKey = %q", cfg.Services.Tavily.APIKey)
+	}
+}
+
 func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -202,6 +229,56 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
 				},
 				"agent": {"temperature": 3}
+			}`,
+		},
+		{
+			name: "invalid tavily base url",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"services": {
+					"tavily": {
+						"base_url": ":",
+						"api_key": "tvly-test"
+					}
+				}
+			}`,
+		},
+		{
+			name: "unsupported tavily base url scheme",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"services": {
+					"tavily": {
+						"base_url": "ftp://api.tavily.com",
+						"api_key": "tvly-test"
+					}
+				}
+			}`,
+		},
+		{
+			name: "custom tavily base url without api key",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"services": {
+					"tavily": {
+						"base_url": "https://tavily.example.com"
+					}
+				}
 			}`,
 		},
 	}
