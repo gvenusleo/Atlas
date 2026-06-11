@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -22,28 +24,36 @@ const (
 
 var errStopSearchText = errors.New("stop searching text")
 
-// SearchText 在本地目录中搜索字面量文本。
+// SearchText 在本地文件或目录中搜索文本。
 type SearchText struct{}
 
 // Definition 返回 search_text 的模型可见定义。
 func (SearchText) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "search_text",
-		Description: "Search files under a local directory for literal text.",
+		Description: "Search files under a local path for literal text or a regular expression.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "Directory to search.",
+					"description": "File or directory to search.",
 				},
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Literal text to find.",
+					"description": "Literal text or regular expression to find.",
 				},
 				"max_lines": map[string]any{
 					"type":        "integer",
 					"description": "Maximum number of matching lines to return.",
+				},
+				"regex": map[string]any{
+					"type":        "boolean",
+					"description": "When true, treat query as a Go regular expression.",
+				},
+				"include": map[string]any{
+					"type":        "string",
+					"description": "Optional glob pattern for files to search.",
 				},
 			},
 			"required": []string{"path", "query"},
@@ -57,6 +67,8 @@ func (SearchText) Run(ctx context.Context, arguments string) (string, error) {
 		Path     string `json:"path"`
 		Query    string `json:"query"`
 		MaxLines int    `json:"max_lines"`
+		Regex    bool   `json:"regex"`
+		Include  string `json:"include"`
 	}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return "", fmt.Errorf("invalid search_text arguments: %w", err)
@@ -68,16 +80,35 @@ func (SearchText) Run(ctx context.Context, arguments string) (string, error) {
 		return "", fmt.Errorf("search_text query is required")
 	}
 	limit := normalizeSearchTextLimit(args.MaxLines)
-	return searchText(ctx, args.Path, args.Query, limit)
+	return searchText(ctx, args.Path, args.Query, limit, args.Regex, args.Include)
 }
 
-func searchText(ctx context.Context, root, query string, limit int) (string, error) {
+func searchText(ctx context.Context, root, query string, limit int, useRegex bool, include string) (string, error) {
 	info, err := os.Stat(root)
 	if err != nil {
 		return "", err
 	}
+
+	matcher, err := newTextMatcher(query, useRegex)
+	if err != nil {
+		return "", err
+	}
+	if err := validateSearchInclude(include); err != nil {
+		return "", err
+	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("search_text path is not a directory: %s", root)
+		matched, err := matchesSearchInclude(filepath.Base(root), include)
+		if err != nil {
+			return "", err
+		}
+		if !matched {
+			return "No matches found", nil
+		}
+		matches, err := searchTextFile(filepath.Dir(root), root, matcher)
+		if err != nil {
+			return "", err
+		}
+		return formatSearchTextMatches(matches, false), nil
 	}
 
 	var matches []string
@@ -92,7 +123,18 @@ func searchText(ctx context.Context, root, query string, limit int) (string, err
 		if entry.IsDir() {
 			return nil
 		}
-		fileMatches, err := searchTextFile(root, path, query)
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		matched, err := matchesSearchInclude(filepath.ToSlash(rel), include)
+		if err != nil {
+			return err
+		}
+		if !matched {
+			return nil
+		}
+		fileMatches, err := searchTextFile(root, path, matcher)
 		if err != nil {
 			return nil
 		}
@@ -110,17 +152,27 @@ func searchText(ctx context.Context, root, query string, limit int) (string, err
 	}
 
 	sort.Strings(matches)
-	result := strings.Join(matches, "\n")
-	if truncated {
-		if result != "" {
-			result += "\n"
-		}
-		result += "[output truncated]"
-	}
-	return result, nil
+	return formatSearchTextMatches(matches, truncated), nil
 }
 
-func searchTextFile(root, path, query string) ([]string, error) {
+type textMatcher func(string) bool
+
+// newTextMatcher 创建字面量或正则匹配器。
+func newTextMatcher(query string, useRegex bool) (textMatcher, error) {
+	if !useRegex {
+		return func(line string) bool {
+			return strings.Contains(line, query)
+		}, nil
+	}
+	re, err := regexp.Compile(query)
+	if err != nil {
+		return nil, fmt.Errorf("invalid search_text regex: %w", err)
+	}
+	return re.MatchString, nil
+}
+
+// searchTextFile 返回单个文件中的匹配行。
+func searchTextFile(root, path string, matcher textMatcher) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -139,7 +191,7 @@ func searchTextFile(root, path, query string) ([]string, error) {
 	for scanner.Scan() {
 		lineNumber++
 		line := scanner.Text()
-		if strings.Contains(line, query) {
+		if matcher(line) {
 			matches = append(matches, fmt.Sprintf("%s:%d:%s", rel, lineNumber, line))
 		}
 	}
@@ -147,6 +199,49 @@ func searchTextFile(root, path, query string) ([]string, error) {
 		return nil, err
 	}
 	return matches, nil
+}
+
+// validateSearchInclude 在遍历前校验 include glob，避免空目录吞掉坏参数。
+func validateSearchInclude(include string) error {
+	if include == "" {
+		return nil
+	}
+	if _, err := path.Match(include, ""); err != nil {
+		return fmt.Errorf("invalid search_text include glob: %w", err)
+	}
+	return nil
+}
+
+// matchesSearchInclude 用相对路径和文件名两种方式匹配 include glob。
+func matchesSearchInclude(rel, include string) (bool, error) {
+	if include == "" {
+		return true, nil
+	}
+	if matched, err := path.Match(include, rel); err != nil {
+		return false, fmt.Errorf("invalid search_text include glob: %w", err)
+	} else if matched {
+		return true, nil
+	}
+	matched, err := path.Match(include, path.Base(rel))
+	if err != nil {
+		return false, fmt.Errorf("invalid search_text include glob: %w", err)
+	}
+	return matched, nil
+}
+
+// formatSearchTextMatches 统一格式化匹配结果、空结果和截断提示。
+func formatSearchTextMatches(matches []string, truncated bool) string {
+	result := strings.Join(matches, "\n")
+	if result == "" {
+		result = "No matches found"
+	}
+	if truncated {
+		if result != "" {
+			result += "\n"
+		}
+		result += "[output truncated]"
+	}
+	return result
 }
 
 func normalizeSearchTextLimit(limit int) int {
