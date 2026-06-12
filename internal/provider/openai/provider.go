@@ -91,12 +91,13 @@ func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(
 
 func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 	apiReq := chatRequest{
-		Model:       p.model,
-		Messages:    toAPIMessages(req),
-		Tools:       toAPITools(req.Tools),
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		Stream:      true,
+		Model:           p.model,
+		Messages:        toAPIMessages(req),
+		Tools:           toAPITools(req.Tools),
+		MaxTokens:       req.MaxTokens,
+		Temperature:     req.Temperature,
+		ReasoningEffort: req.ReasoningEffort,
+		Stream:          true,
 	}
 	if len(apiReq.Tools) == 0 {
 		apiReq.Tools = nil
@@ -105,19 +106,21 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 }
 
 type chatRequest struct {
-	Model       string       `json:"model"`
-	Messages    []apiMessage `json:"messages"`
-	Tools       []apiTool    `json:"tools,omitempty"`
-	MaxTokens   int          `json:"max_tokens,omitempty"`
-	Temperature float64      `json:"temperature,omitempty"`
-	Stream      bool         `json:"stream"`
+	Model           string       `json:"model"`
+	Messages        []apiMessage `json:"messages"`
+	Tools           []apiTool    `json:"tools,omitempty"`
+	MaxTokens       int          `json:"max_tokens,omitempty"`
+	Temperature     float64      `json:"temperature,omitempty"`
+	ReasoningEffort string       `json:"reasoning_effort,omitempty"`
+	Stream          bool         `json:"stream"`
 }
 
 type apiMessage struct {
-	Role       string        `json:"role"`
-	Content    string        `json:"content"`
-	ToolCallID string        `json:"tool_call_id,omitempty"`
-	ToolCalls  []apiToolCall `json:"tool_calls,omitempty"`
+	Role             string        `json:"role"`
+	Content          string        `json:"content"`
+	ReasoningContent string        `json:"reasoning_content,omitempty"`
+	ToolCallID       string        `json:"tool_call_id,omitempty"`
+	ToolCalls        []apiToolCall `json:"tool_calls,omitempty"`
 }
 
 type apiTool struct {
@@ -159,8 +162,9 @@ type streamChoice struct {
 }
 
 type streamDelta struct {
-	Content   string                `json:"content"`
-	ToolCalls []streamToolCallDelta `json:"tool_calls"`
+	Content          string                `json:"content"`
+	ReasoningContent string                `json:"reasoning_content"`
+	ToolCalls        []streamToolCallDelta `json:"tool_calls"`
 }
 
 type streamToolCallDelta struct {
@@ -191,9 +195,10 @@ func toAPIMessages(req model.ChatRequest) []apiMessage {
 
 func toAPIMessage(msg model.Message) apiMessage {
 	apiMsg := apiMessage{
-		Role:       string(msg.Role),
-		Content:    msg.Content,
-		ToolCallID: msg.ToolCallID,
+		Role:             string(msg.Role),
+		Content:          msg.Content,
+		ReasoningContent: msg.ReasoningContent,
+		ToolCallID:       msg.ToolCallID,
 	}
 	if len(msg.ToolCalls) > 0 {
 		apiMsg.ToolCalls = make([]apiToolCall, 0, len(msg.ToolCalls))
@@ -228,6 +233,7 @@ func toAPITools(tools []model.ToolDefinition) []apiTool {
 
 func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
 	var content strings.Builder
+	var reasoningContent strings.Builder
 	var finishReason string
 	var usage apiUsage
 	var sawChoice bool
@@ -240,7 +246,7 @@ func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.Chat
 			return model.ChatResponse{}, err
 		}
 		if line != "" {
-			done, err := parseStreamLine(line, emit, &content, &toolCalls, &finishReason, &usage, &sawChoice)
+			done, err := parseStreamLine(line, emit, &content, &reasoningContent, &toolCalls, &finishReason, &usage, &sawChoice)
 			if err != nil {
 				return model.ChatResponse{}, err
 			}
@@ -256,11 +262,12 @@ func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.Chat
 		return model.ChatResponse{}, fmt.Errorf("chat completion stream returned no choices")
 	}
 	return model.ChatResponse{
-		Content:    content.String(),
-		ToolCalls:  toModelToolCallsFromAccumulators(toolCalls),
-		StopReason: toStopReason(finishReason),
-		RawFinish:  finishReason,
-		Usage:      toModelUsage(usage),
+		Content:          content.String(),
+		ReasoningContent: reasoningContent.String(),
+		ToolCalls:        toModelToolCallsFromAccumulators(toolCalls),
+		StopReason:       toStopReason(finishReason),
+		RawFinish:        finishReason,
+		Usage:            toModelUsage(usage),
 	}, nil
 }
 
@@ -268,6 +275,7 @@ func parseStreamLine(
 	line string,
 	emit func(model.StreamEvent) error,
 	content *strings.Builder,
+	reasoningContent *strings.Builder,
 	toolCalls *[]toolCallAccumulator,
 	finishReason *string,
 	usage *apiUsage,
@@ -296,6 +304,17 @@ func parseStreamLine(
 	choice := chunk.Choices[0]
 	if choice.FinishReason != "" {
 		*finishReason = choice.FinishReason
+	}
+	if choice.Delta.ReasoningContent != "" {
+		reasoningContent.WriteString(choice.Delta.ReasoningContent)
+		if emit != nil {
+			if err := emit(model.StreamEvent{
+				Type:  model.StreamReasoningDelta,
+				Delta: choice.Delta.ReasoningContent,
+			}); err != nil {
+				return false, err
+			}
+		}
 	}
 	if choice.Delta.Content != "" {
 		content.WriteString(choice.Delta.Content)

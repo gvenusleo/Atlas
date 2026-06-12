@@ -44,8 +44,9 @@ type ProviderModel struct {
 
 // AgentConfig 描述 agent turn loop 的运行参数。
 type AgentConfig struct {
-	MaxSteps    int     `json:"max_steps"`
-	Temperature float64 `json:"temperature"`
+	MaxSteps        int     `json:"max_steps"`
+	Temperature     float64 `json:"temperature"`
+	ReasoningEffort string  `json:"reasoning_effort"`
 }
 
 // SessionConfig 描述本地会话存储参数。
@@ -150,6 +151,9 @@ func (c Config) Validate() error {
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return fmt.Errorf("agent.temperature must be between 0 and 2")
 	}
+	if !validReasoningEffort(c.Agent.ReasoningEffort) {
+		return fmt.Errorf("agent.reasoning_effort must be empty, high, or max")
+	}
 	if c.Services.Tavily.APIKey != "" {
 		tavilyURL, err := url.Parse(c.Services.Tavily.BaseURL)
 		if err != nil || tavilyURL.Scheme == "" || tavilyURL.Host == "" || !isHTTPURL(tavilyURL) {
@@ -192,4 +196,13 @@ func (c *Config) applyDefaults() {
 
 func isHTTPURL(u *url.URL) bool {
 	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+func validReasoningEffort(effort string) bool {
+	switch effort {
+	case "", "high", "max":
+		return true
+	default:
+		return false
+	}
 }

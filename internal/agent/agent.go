@@ -21,19 +21,22 @@ type Config struct {
 	MaxSteps    int
 	MaxTokens   int
 	Temperature float64
-	Observer    Observer
+	// ReasoningEffort 控制支持该参数的模型的思考深度。
+	ReasoningEffort string
+	Observer        Observer
 }
 
 // Agent 串联模型、工具和 transcript，执行一个 headless turn。
 type Agent struct {
-	provider    model.Provider
-	tools       *tool.Registry
-	transcript  *transcript.Transcript
-	system      string
-	maxSteps    int
-	maxTokens   int
-	temperature float64
-	observer    Observer
+	provider        model.Provider
+	tools           *tool.Registry
+	transcript      *transcript.Transcript
+	system          string
+	maxSteps        int
+	maxTokens       int
+	temperature     float64
+	reasoningEffort string
+	observer        Observer
 }
 
 // New 创建一个 Agent。
@@ -59,14 +62,15 @@ func New(config Config) (*Agent, error) {
 	}
 
 	return &Agent{
-		provider:    config.Provider,
-		tools:       tools,
-		transcript:  trans,
-		system:      config.System,
-		maxSteps:    maxSteps,
-		maxTokens:   config.MaxTokens,
-		temperature: config.Temperature,
-		observer:    config.Observer,
+		provider:        config.Provider,
+		tools:           tools,
+		transcript:      trans,
+		system:          config.System,
+		maxSteps:        maxSteps,
+		maxTokens:       config.MaxTokens,
+		temperature:     config.Temperature,
+		reasoningEffort: config.ReasoningEffort,
+		observer:        config.Observer,
 	}, nil
 }
 
@@ -83,15 +87,23 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 
 	for step := 0; step < a.maxSteps; step++ {
 		resp, err := a.provider.Stream(ctx, model.ChatRequest{
-			System:      a.system,
-			Messages:    a.transcript.Messages(),
-			Tools:       a.tools.Definitions(),
-			MaxTokens:   a.maxTokens,
-			Temperature: a.temperature,
+			System:          a.system,
+			Messages:        a.transcript.Messages(),
+			Tools:           a.tools.Definitions(),
+			MaxTokens:       a.maxTokens,
+			Temperature:     a.temperature,
+			ReasoningEffort: a.reasoningEffort,
 		}, func(event model.StreamEvent) error {
-			if event.Type == model.StreamTextDelta && event.Delta != "" {
+			switch {
+			case event.Type == model.StreamTextDelta && event.Delta != "":
 				a.emit(Event{
 					Type:    EventModelDelta,
+					Step:    step,
+					Content: event.Delta,
+				})
+			case event.Type == model.StreamReasoningDelta && event.Delta != "":
+				a.emit(Event{
+					Type:    EventModelReasoningDelta,
 					Step:    step,
 					Content: event.Delta,
 				})
@@ -108,9 +120,10 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 		}
 
 		a.transcript.Append(model.Message{
-			Role:      model.RoleAssistant,
-			Content:   resp.Content,
-			ToolCalls: resp.ToolCalls,
+			Role:             model.RoleAssistant,
+			Content:          resp.Content,
+			ReasoningContent: resp.ReasoningContent,
+			ToolCalls:        resp.ToolCalls,
 		})
 		a.emit(Event{
 			Type:    EventModelResponse,

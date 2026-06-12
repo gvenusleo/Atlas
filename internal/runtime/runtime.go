@@ -37,11 +37,14 @@ type Runtime struct {
 
 // TurnOptions 描述一次用户输入的执行参数。
 type TurnOptions struct {
-	SessionID string
-	Prompt    string
-	Model     string
-	CWD       string
-	Observer  agent.Observer
+	SessionID       string
+	Prompt          string
+	Model           string
+	ReasoningEffort string
+	// ReasoningEffortSet 表示 ReasoningEffort 是调用方显式选择的值，即使它为空。
+	ReasoningEffortSet bool
+	CWD                string
+	Observer           agent.Observer
 }
 
 // TurnResult 描述一次用户输入完成后的结果。
@@ -61,8 +64,9 @@ type ModelOption struct {
 
 // ModelOptions 描述当前配置的模型选择状态。
 type ModelOptions struct {
-	Default string
-	Models  []ModelOption
+	Default         string
+	ReasoningEffort string
+	Models          []ModelOption
 }
 
 // DefaultDependencies 返回真实命令行运行时使用的依赖。
@@ -164,10 +168,11 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			Instructions: instructions,
 			Skills:       promptSkillSummaries(skills),
 		}),
-		MaxSteps:    cfg.Agent.MaxSteps,
-		MaxTokens:   selectedModel.MaxTokens,
-		Temperature: cfg.Agent.Temperature,
-		Observer:    opts.Observer,
+		MaxSteps:        cfg.Agent.MaxSteps,
+		MaxTokens:       selectedModel.MaxTokens,
+		Temperature:     cfg.Agent.Temperature,
+		ReasoningEffort: selectedReasoningEffort(opts.ReasoningEffort, opts.ReasoningEffortSet, cfg.Agent.ReasoningEffort),
+		Observer:        opts.Observer,
 	})
 	if err != nil {
 		return TurnResult{}, err
@@ -204,8 +209,9 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 		})
 	}
 	return ModelOptions{
-		Default: cfg.Provider.DefaultModel,
-		Models:  options,
+		Default:         cfg.Provider.DefaultModel,
+		ReasoningEffort: cfg.Agent.ReasoningEffort,
+		Models:          options,
 	}, nil
 }
 
@@ -375,4 +381,11 @@ func sessionDBPath(cfg config.SessionConfig) (string, error) {
 		return filepath.Join(home, cfg.DBPath[2:]), nil
 	}
 	return cfg.DBPath, nil
+}
+
+func selectedReasoningEffort(override string, overrideSet bool, configured string) string {
+	if overrideSet {
+		return override
+	}
+	return configured
 }

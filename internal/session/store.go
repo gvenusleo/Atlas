@@ -82,6 +82,7 @@ create table if not exists messages (
 	session_id text not null,
 	role text not null,
 	content text not null,
+	reasoning_content text not null default '',
 	tool_call_id text not null default '',
 	tool_calls_json text not null default '',
 	created_at text not null,
@@ -119,7 +120,7 @@ func (s *Store) LoadTranscript(ctx context.Context, sessionID string) (*transcri
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select role, content, tool_call_id, tool_calls_json
+select role, content, reasoning_content, tool_call_id, tool_calls_json
 from messages
 where session_id = ?
 order by id`, sessionID)
@@ -130,8 +131,8 @@ order by id`, sessionID)
 
 	trans := transcript.New()
 	for rows.Next() {
-		var role, content, toolCallID, toolCallsJSON string
-		if err := rows.Scan(&role, &content, &toolCallID, &toolCallsJSON); err != nil {
+		var role, content, reasoningContent, toolCallID, toolCallsJSON string
+		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON); err != nil {
 			return nil, err
 		}
 		toolCalls, err := decodeToolCalls(toolCallsJSON)
@@ -139,10 +140,11 @@ order by id`, sessionID)
 			return nil, err
 		}
 		trans.Append(model.Message{
-			Role:       model.Role(role),
-			Content:    content,
-			ToolCallID: toolCallID,
-			ToolCalls:  toolCalls,
+			Role:             model.Role(role),
+			Content:          content,
+			ReasoningContent: reasoningContent,
+			ToolCallID:       toolCallID,
+			ToolCalls:        toolCalls,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -286,8 +288,8 @@ on conflict(id) do update set
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
-insert into messages(session_id, role, content, tool_call_id, tool_calls_json, created_at)
-values(?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ToolCallID, toolCallsJSON, now); err != nil {
+insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, created_at)
+values(?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, now); err != nil {
 			return err
 		}
 	}

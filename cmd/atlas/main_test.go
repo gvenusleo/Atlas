@@ -111,6 +111,9 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if provider.request.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", provider.request.Temperature)
 	}
+	if provider.request.ReasoningEffort != "high" {
+		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
+	}
 	if len(provider.request.Tools) != 7 {
 		t.Fatalf("tools = %d", len(provider.request.Tools))
 	}
@@ -392,8 +395,9 @@ func testConfig(dbPath string) config.Config {
 			},
 		},
 		Agent: config.AgentConfig{
-			MaxSteps:    4,
-			Temperature: 0.2,
+			MaxSteps:        4,
+			Temperature:     0.2,
+			ReasoningEffort: "high",
 		},
 		Session: config.SessionConfig{
 			DBPath: dbPath,

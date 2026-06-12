@@ -48,8 +48,9 @@ func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
 			Description: "Read a file.",
 			Parameters:  map[string]any{"type": "object"},
 		}},
-		MaxTokens:   384000,
-		Temperature: 0.2,
+		MaxTokens:       384000,
+		Temperature:     0.2,
+		ReasoningEffort: "high",
 	}, func(event model.StreamEvent) error {
 		deltas = append(deltas, event.Delta)
 		return nil
@@ -85,6 +86,9 @@ func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
 	if gotReq.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", gotReq.MaxTokens)
 	}
+	if gotReq.ReasoningEffort != "high" {
+		t.Fatalf("reasoning effort = %q", gotReq.ReasoningEffort)
+	}
 	if resp.Content != "done" {
 		t.Fatalf("Content = %q", resp.Content)
 	}
@@ -113,8 +117,9 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	_, err := provider.Stream(context.Background(), model.ChatRequest{
 		Messages: []model.Message{
 			{
-				Role:    model.RoleAssistant,
-				Content: "reading",
+				Role:             model.RoleAssistant,
+				Content:          "reading",
+				ReasoningContent: "need file",
 				ToolCalls: []model.ToolCall{{
 					ID:        "call-1",
 					Name:      "read_file",
@@ -138,6 +143,9 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	if len(assistant.ToolCalls) != 1 {
 		t.Fatalf("tool calls = %#v", assistant.ToolCalls)
 	}
+	if assistant.ReasoningContent != "need file" {
+		t.Fatalf("reasoning content = %q", assistant.ReasoningContent)
+	}
 	if assistant.ToolCalls[0].ID != "call-1" {
 		t.Fatalf("tool call id = %q", assistant.ToolCalls[0].ID)
 	}
@@ -150,6 +158,45 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	tool := gotReq.Messages[1]
 	if tool.Role != "tool" || tool.ToolCallID != "call-1" || tool.Content != "content" {
 		t.Fatalf("tool message = %#v", tool)
+	}
+}
+
+func TestStreamParsesReasoningDeltas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(w,
+			`{"choices":[{"delta":{"reasoning_content":"think "},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{"reasoning_content":"more","content":"done"},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	var events []model.StreamEvent
+	resp, err := provider.Stream(context.Background(), model.ChatRequest{}, func(event model.StreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if resp.ReasoningContent != "think more" {
+		t.Fatalf("ReasoningContent = %q", resp.ReasoningContent)
+	}
+	if resp.Content != "done" {
+		t.Fatalf("Content = %q", resp.Content)
+	}
+	if len(events) != 3 {
+		t.Fatalf("events = %#v", events)
+	}
+	if events[0].Type != model.StreamReasoningDelta || events[0].Delta != "think " {
+		t.Fatalf("event 0 = %#v", events[0])
+	}
+	if events[1].Type != model.StreamReasoningDelta || events[1].Delta != "more" {
+		t.Fatalf("event 1 = %#v", events[1])
+	}
+	if events[2].Type != model.StreamTextDelta || events[2].Delta != "done" {
+		t.Fatalf("event 2 = %#v", events[2])
 	}
 }
 

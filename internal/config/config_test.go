@@ -19,7 +19,8 @@ func TestLoadFile(t *testing.T) {
 		},
 		"agent": {
 			"max_steps": 3,
-			"temperature": 0.2
+			"temperature": 0.2,
+			"reasoning_effort": "high"
 		},
 		"session": {
 			"db_path": "/tmp/atlas.db"
@@ -53,6 +54,9 @@ func TestLoadFile(t *testing.T) {
 	}
 	if cfg.Agent.Temperature != 0.2 {
 		t.Fatalf("Temperature = %f", cfg.Agent.Temperature)
+	}
+	if cfg.Agent.ReasoningEffort != "high" {
+		t.Fatalf("ReasoningEffort = %q", cfg.Agent.ReasoningEffort)
 	}
 	if cfg.Session.DBPath != "/tmp/atlas.db" {
 		t.Fatalf("Session.DBPath = %q", cfg.Session.DBPath)
@@ -229,6 +233,18 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
 				},
 				"agent": {"temperature": 3}
+			}`,
+		},
+		{
+			name: "invalid reasoning effort",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"agent": {"reasoning_effort": "medium"}
 			}`,
 		},
 		{

@@ -59,6 +59,9 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.Temperature != 0.2 {
 		t.Fatalf("temperature = %f", provider.request.Temperature)
 	}
+	if provider.request.ReasoningEffort != "high" {
+		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
+	}
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
@@ -120,6 +123,44 @@ func TestRunTurnUsesRequestedModel(t *testing.T) {
 	}
 }
 
+func TestRunTurnUsesReasoningEffortOverride(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		Prompt:             "hello",
+		ReasoningEffort:    "max",
+		ReasoningEffortSet: true,
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.request.ReasoningEffort != "max" {
+		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
+	}
+}
+
+func TestRunTurnAllowsEmptyReasoningEffortOverride(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		Prompt:             "hello",
+		ReasoningEffort:    "",
+		ReasoningEffortSet: true,
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.request.ReasoningEffort != "" {
+		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
+	}
+}
+
 func TestRunTurnRejectsUnknownModel(t *testing.T) {
 	provider := &recordingProvider{}
 	r := newTestRuntime(t, provider)
@@ -145,6 +186,9 @@ func TestModelOptions(t *testing.T) {
 	}
 	if options.Default != "test-model" {
 		t.Fatalf("default = %q", options.Default)
+	}
+	if options.ReasoningEffort != "high" {
+		t.Fatalf("reasoning effort = %q", options.ReasoningEffort)
 	}
 	if len(options.Models) != 2 || options.Models[1].Value != "other-model" || options.Models[1].ContextWindow != 1000000 || options.Models[1].MaxTokens != 128000 {
 		t.Fatalf("models = %#v", options.Models)
@@ -335,8 +379,9 @@ func testConfig(dbPath string) config.Config {
 			},
 		},
 		Agent: config.AgentConfig{
-			MaxSteps:    4,
-			Temperature: 0.2,
+			MaxSteps:        4,
+			Temperature:     0.2,
+			ReasoningEffort: "high",
 		},
 		Session: config.SessionConfig{
 			DBPath: dbPath,

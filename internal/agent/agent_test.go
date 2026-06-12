@@ -57,9 +57,10 @@ func TestRunTurnTextResponse(t *testing.T) {
 		responses: []model.ChatResponse{{Content: "hello"}},
 	}
 	agent, err := New(Config{
-		Provider:  provider,
-		System:    "system",
-		MaxTokens: 384000,
+		Provider:        provider,
+		System:          "system",
+		MaxTokens:       384000,
+		ReasoningEffort: "high",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -81,6 +82,9 @@ func TestRunTurnTextResponse(t *testing.T) {
 	if provider.requests[0].MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.requests[0].MaxTokens)
 	}
+	if provider.requests[0].ReasoningEffort != "high" {
+		t.Fatalf("reasoning effort = %q", provider.requests[0].ReasoningEffort)
+	}
 }
 
 func TestRunTurnToolThenFinalResponse(t *testing.T) {
@@ -93,7 +97,7 @@ func TestRunTurnToolThenFinalResponse(t *testing.T) {
 	}
 	provider := &fakeProvider{
 		responses: []model.ChatResponse{
-			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
+			{ReasoningContent: "need tool", ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
 			{Content: "done"},
 		},
 	}
@@ -116,6 +120,9 @@ func TestRunTurnToolThenFinalResponse(t *testing.T) {
 	last := lastMessages[len(lastMessages)-1]
 	if last.Role != model.RoleTool || last.Content != "tool result" || last.ToolCallID != "call_1" {
 		t.Fatalf("last message = %#v", last)
+	}
+	if lastMessages[1].ReasoningContent != "need tool" {
+		t.Fatalf("assistant reasoning content = %q", lastMessages[1].ReasoningContent)
 	}
 }
 
@@ -183,6 +190,7 @@ func TestRunTurnEmitsEventsInOrder(t *testing.T) {
 func TestRunTurnEmitsModelDeltas(t *testing.T) {
 	provider := &fakeProvider{
 		events: [][]model.StreamEvent{{
+			{Type: model.StreamReasoningDelta, Delta: "think"},
 			{Type: model.StreamTextDelta, Delta: "hel"},
 			{Type: model.StreamTextDelta, Delta: "lo"},
 		}},
@@ -207,13 +215,20 @@ func TestRunTurnEmitsModelDeltas(t *testing.T) {
 		t.Fatalf("RunTurn() = %q, want %q", got, "hello")
 	}
 	var deltas []string
+	var reasoningDeltas []string
 	for _, event := range events {
 		if event.Type == EventModelDelta {
 			deltas = append(deltas, event.Content)
 		}
+		if event.Type == EventModelReasoningDelta {
+			reasoningDeltas = append(reasoningDeltas, event.Content)
+		}
 	}
 	if len(deltas) != 2 || deltas[0] != "hel" || deltas[1] != "lo" {
 		t.Fatalf("deltas = %#v", deltas)
+	}
+	if len(reasoningDeltas) != 1 || reasoningDeltas[0] != "think" {
+		t.Fatalf("reasoning deltas = %#v", reasoningDeltas)
 	}
 }
 

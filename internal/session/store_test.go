@@ -18,8 +18,9 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	messages := []model.Message{
 		{Role: model.RoleUser, Content: "hello"},
 		{
-			Role:    model.RoleAssistant,
-			Content: "reading",
+			Role:             model.RoleAssistant,
+			Content:          "reading",
+			ReasoningContent: "need file",
 			ToolCalls: []model.ToolCall{{
 				ID:        "call-1",
 				Name:      "read_file",
@@ -42,6 +43,9 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	}
 	if got[1].ToolCalls[0].Name != "read_file" {
 		t.Fatalf("tool calls = %#v", got[1].ToolCalls)
+	}
+	if got[1].ReasoningContent != "need file" {
+		t.Fatalf("reasoning content = %q", got[1].ReasoningContent)
 	}
 	if got[2].ToolCallID != "call-1" {
 		t.Fatalf("tool call id = %q", got[2].ToolCallID)

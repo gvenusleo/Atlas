@@ -81,8 +81,14 @@ func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	if state.model != "test-model" {
 		t.Fatalf("model = %q", state.model)
 	}
+	if state.reasoningEffort != "high" {
+		t.Fatalf("reasoning effort = %q", state.reasoningEffort)
+	}
 	if got := currentModelValue(resp.ConfigOptions); got != "test-model" {
 		t.Fatalf("current model = %q", got)
+	}
+	if got := currentReasoningEffortValue(resp.ConfigOptions); got != "high" {
+		t.Fatalf("current reasoning effort = %q", got)
 	}
 	modelOption := resp.ConfigOptions[0].Select
 	if modelOption.Id != modelSessionConfigID() || modelOption.Category == nil || *modelOption.Category != acpsdk.SessionConfigOptionCategoryModel {
@@ -97,6 +103,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	rt := &fakeRuntime{}
 	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
 		rt.runOptions = opts
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventModelReasoningDelta, Content: "thinking"})
 		opts.Observer(agentpkg.Event{Type: agentpkg.EventModelDelta, Content: "hello"})
 		opts.Observer(agentpkg.Event{
 			Type: agentpkg.EventToolStarted,
@@ -116,7 +123,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "done"}, nil
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "other-model")
+	a.setSession("sess", "/tmp/work", "other-model", "max")
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -133,32 +140,35 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	if resp.StopReason != acpsdk.StopReasonEndTurn {
 		t.Fatalf("stop reason = %q", resp.StopReason)
 	}
-	if rt.runOptions.SessionID != "sess" || rt.runOptions.Prompt != "hi" || rt.runOptions.CWD != "/tmp/work" || rt.runOptions.Model != "other-model" {
+	if rt.runOptions.SessionID != "sess" || rt.runOptions.Prompt != "hi" || rt.runOptions.CWD != "/tmp/work" || rt.runOptions.Model != "other-model" || rt.runOptions.ReasoningEffort != "max" || !rt.runOptions.ReasoningEffortSet {
 		t.Fatalf("turn options = %#v", rt.runOptions)
 	}
-	if len(updates) != 3 {
+	if len(updates) != 4 {
 		t.Fatalf("updates = %#v", updates)
 	}
-	if updates[0].Update.AgentMessageChunk == nil || updates[0].Update.AgentMessageChunk.Content.Text.Text != "hello" {
+	if updates[0].Update.AgentThoughtChunk == nil || updates[0].Update.AgentThoughtChunk.Content.Text.Text != "thinking" {
 		t.Fatalf("first update = %#v", updates[0].Update)
 	}
-	start := updates[1].Update.ToolCall
+	if updates[1].Update.AgentMessageChunk == nil || updates[1].Update.AgentMessageChunk.Content.Text.Text != "hello" {
+		t.Fatalf("second update = %#v", updates[1].Update)
+	}
+	start := updates[2].Update.ToolCall
 	if start == nil || start.ToolCallId != "call_1" || start.Kind != acpsdk.ToolKindRead || start.Status != acpsdk.ToolCallStatusInProgress {
-		t.Fatalf("tool start = %#v", updates[1].Update)
+		t.Fatalf("tool start = %#v", updates[2].Update)
 	}
 	if got := start.RawInput.(map[string]any)["path"]; got != "README.md" {
 		t.Fatalf("raw input = %#v", start.RawInput)
 	}
-	finish := updates[2].Update.ToolCallUpdate
+	finish := updates[3].Update.ToolCallUpdate
 	if finish == nil || finish.ToolCallId != "call_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted {
-		t.Fatalf("tool finish = %#v", updates[2].Update)
+		t.Fatalf("tool finish = %#v", updates[3].Update)
 	}
 }
 
 func TestPromptResourceLinkText(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model")
+	a.setSession("sess", "/tmp/work", "test-model", "")
 
 	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -177,7 +187,7 @@ func TestPromptResourceLinkText(t *testing.T) {
 
 func TestPromptUnsupportedContent(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model")
+	a.setSession("sess", "/tmp/work", "test-model", "")
 
 	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -198,7 +208,7 @@ func TestPromptReturnsCancelledWhenContextStops(t *testing.T) {
 		return atlasruntime.TurnResult{}, ctx.Err()
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model")
+	a.setSession("sess", "/tmp/work", "test-model", "")
 
 	done := make(chan acpsdk.PromptResponse, 1)
 	errCh := make(chan error, 1)
@@ -290,7 +300,7 @@ func TestResumeSessionRejectsCWDMismatch(t *testing.T) {
 func TestSetSessionConfigOptionUpdatesModel(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model")
+	a.setSession("sess", "/tmp/work", "test-model", "")
 
 	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -323,9 +333,61 @@ func TestSetSessionConfigOptionUpdatesModel(t *testing.T) {
 	}
 }
 
+func TestSetSessionConfigOptionUpdatesReasoningEffort(t *testing.T) {
+	rt := &fakeRuntime{}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "")
+
+	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: "sess",
+			ConfigId:  reasoningEffortSessionConfigID(),
+			Value:     "max",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+	if got := currentReasoningEffortValue(resp.ConfigOptions); got != "max" {
+		t.Fatalf("current reasoning effort = %q", got)
+	}
+	state, ok := a.getSession("sess")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if state.reasoningEffort != "max" {
+		t.Fatalf("session reasoning effort = %q", state.reasoningEffort)
+	}
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
+	}); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if rt.runOptions.ReasoningEffort != "max" {
+		t.Fatalf("turn reasoning effort = %q", rt.runOptions.ReasoningEffort)
+	}
+}
+
+func TestSetSessionConfigOptionRejectsInvalidReasoningEffort(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.setSession("sess", "/tmp/work", "test-model", "")
+
+	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: "sess",
+			ConfigId:  reasoningEffortSessionConfigID(),
+			Value:     "medium",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+}
+
 func TestSetSessionConfigOptionRejectsInvalidModel(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model")
+	a.setSession("sess", "/tmp/work", "test-model", "")
 
 	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -341,7 +403,7 @@ func TestSetSessionConfigOptionRejectsInvalidModel(t *testing.T) {
 
 func TestSetSessionConfigOptionRejectsUnsupportedOption(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model")
+	a.setSession("sess", "/tmp/work", "test-model", "")
 
 	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -398,7 +460,8 @@ func (f *fakeRuntime) RunTurn(ctx context.Context, opts atlasruntime.TurnOptions
 
 func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, error) {
 	return atlasruntime.ModelOptions{
-		Default: "test-model",
+		Default:         "test-model",
+		ReasoningEffort: "high",
 		Models: []atlasruntime.ModelOption{
 			{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
 			{Value: "other-model", Name: "Other Model", Description: "alternate", ContextWindow: 1000000, MaxTokens: 128000},
@@ -431,12 +494,26 @@ func (f *fakeRuntime) DeleteSessionIfExists(_ context.Context, sessionID string)
 }
 
 func currentModelValue(options []acpsdk.SessionConfigOption) string {
-	if len(options) != 1 || options[0].Select == nil {
-		return ""
+	return currentConfigValue(options, modelSessionConfigID())
+}
+
+func currentReasoningEffortValue(options []acpsdk.SessionConfigOption) string {
+	return currentConfigValue(options, reasoningEffortSessionConfigID())
+}
+
+func currentConfigValue(options []acpsdk.SessionConfigOption, id acpsdk.SessionConfigId) string {
+	for _, option := range options {
+		if option.Select != nil && option.Select.Id == id {
+			return string(option.Select.CurrentValue)
+		}
 	}
-	return string(options[0].Select.CurrentValue)
+	return ""
 }
 
 func modelSessionConfigID() acpsdk.SessionConfigId {
 	return acpsdk.SessionConfigId(modelConfigID)
+}
+
+func reasoningEffortSessionConfigID() acpsdk.SessionConfigId {
+	return acpsdk.SessionConfigId(reasoningEffortConfigID)
 }

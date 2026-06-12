@@ -36,6 +36,8 @@ type ToolDefinition struct {
 type Message struct {
 	Role    Role
 	Content string
+	// ReasoningContent 只对 assistant 消息有意义，用于支持 provider 的思维链续接。
+	ReasoningContent string
 	// ToolCalls 只对 assistant 消息有意义。
 	ToolCalls []ToolCall
 	// ToolCallID 只对 tool 消息有意义，用来关联对应的工具调用。
@@ -69,6 +71,8 @@ type StreamEventType string
 const (
 	// StreamTextDelta 表示 assistant 文本增量。
 	StreamTextDelta StreamEventType = "text_delta"
+	// StreamReasoningDelta 表示 assistant 思维链增量。
+	StreamReasoningDelta StreamEventType = "reasoning_delta"
 )
 
 // StreamEvent 是 provider 在一次模型 step 中产生的实时事件。
@@ -79,19 +83,21 @@ type StreamEvent struct {
 
 // ChatRequest 是一次模型 step 的完整通用输入。
 type ChatRequest struct {
-	System      string
-	Messages    []Message
-	Tools       []ToolDefinition
-	MaxTokens   int
-	Temperature float64
+	System          string
+	Messages        []Message
+	Tools           []ToolDefinition
+	MaxTokens       int
+	Temperature     float64
+	ReasoningEffort string
 }
 
 // ChatResponse 是一次模型 step 的完整通用输出。
 type ChatResponse struct {
-	Content    string
-	ToolCalls  []ToolCall
-	StopReason StopReason
-	Usage      Usage
+	Content          string
+	ReasoningContent string
+	ToolCalls        []ToolCall
+	StopReason       StopReason
+	Usage            Usage
 	// RawFinish 保留 provider 的原始结束原因，方便调试。
 	RawFinish string
 }

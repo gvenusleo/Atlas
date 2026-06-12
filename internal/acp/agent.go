@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	defaultSessionListLimit = 100
-	modelConfigID           = "model"
+	defaultSessionListLimit            = 100
+	modelConfigID                      = "model"
+	reasoningEffortConfigID            = "reasoning_effort"
+	providerDefaultReasoningEffortName = "Provider default"
 )
 
 // Runtime 是 ACP 适配层需要的 Atlas 执行入口。
@@ -69,10 +71,11 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 type sessionState struct {
-	cwd    string
-	model  string
-	cancel context.CancelFunc
-	turn   int
+	cwd             string
+	model           string
+	reasoningEffort string
+	cancel          context.CancelFunc
+	turn            int
 }
 
 // Agent 将 Atlas runtime 适配为 ACP agent 方法。
@@ -137,10 +140,10 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
-	a.setSession(sessionID, params.Cwd, models.Default)
+	a.setSession(sessionID, params.Cwd, models.Default, models.ReasoningEffort)
 	return acpsdk.NewSessionResponse{
 		SessionId:     acpsdk.SessionId(sessionID),
-		ConfigOptions: modelConfigOptions(models, models.Default),
+		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
 }
 
@@ -164,11 +167,13 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	defer a.clearSessionCancel(string(params.SessionId), turn)
 
 	_, err = a.rt.RunTurn(turnCtx, runtime.TurnOptions{
-		SessionID: string(params.SessionId),
-		Prompt:    promptText,
-		Model:     state.model,
-		CWD:       state.cwd,
-		Observer:  a.observe(turnCtx, params.SessionId),
+		SessionID:          string(params.SessionId),
+		Prompt:             promptText,
+		Model:              state.model,
+		ReasoningEffort:    state.reasoningEffort,
+		ReasoningEffortSet: true,
+		CWD:                state.cwd,
+		Observer:           a.observe(turnCtx, params.SessionId),
 	})
 	if err != nil {
 		if turnCtx.Err() != nil {
@@ -204,9 +209,9 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	if err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
-	a.setSession(string(params.SessionId), params.Cwd, models.Default)
+	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort)
 	return acpsdk.ResumeSessionResponse{
-		ConfigOptions: modelConfigOptions(models, models.Default),
+		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
 }
 
@@ -270,15 +275,12 @@ func (a *Agent) Logout(context.Context, acpsdk.LogoutRequest) (acpsdk.LogoutResp
 	return acpsdk.LogoutResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodLogout)
 }
 
-// SetSessionConfigOption 更新 ACP session 级模型配置。
+// SetSessionConfigOption 更新 ACP session 级配置。
 func (a *Agent) SetSessionConfigOption(ctx context.Context, params acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
 	if params.ValueId == nil {
-		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("model config requires a value id")
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("session config requires a value id")
 	}
 	req := params.ValueId
-	if req.ConfigId != acpsdk.SessionConfigId(modelConfigID) {
-		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option: %s", req.ConfigId)
-	}
 	if _, ok := a.getSession(string(req.SessionId)); !ok {
 		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("session %q not found", req.SessionId)
 	}
@@ -286,14 +288,27 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acpsdk.SetSes
 	if err != nil {
 		return acpsdk.SetSessionConfigOptionResponse{}, err
 	}
-	if !hasModelValue(models, string(req.Value)) {
-		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("provider model %q is not configured", req.Value)
-	}
-	if !a.setSessionModel(string(req.SessionId), string(req.Value)) {
+	state, ok := a.getSession(string(req.SessionId))
+	if !ok {
 		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("session %q not found", req.SessionId)
 	}
+	switch req.ConfigId {
+	case acpsdk.SessionConfigId(modelConfigID):
+		if !hasModelValue(models, string(req.Value)) {
+			return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("provider model %q is not configured", req.Value)
+		}
+		state.model = string(req.Value)
+	case acpsdk.SessionConfigId(reasoningEffortConfigID):
+		if !hasReasoningEffortValue(string(req.Value)) {
+			return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("reasoning effort %q is not supported", req.Value)
+		}
+		state.reasoningEffort = string(req.Value)
+	default:
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option: %s", req.ConfigId)
+	}
+	a.setSessionState(string(req.SessionId), state)
 	return acpsdk.SetSessionConfigOptionResponse{
-		ConfigOptions: modelConfigOptions(models, string(req.Value)),
+		ConfigOptions: sessionConfigOptions(models, state.model, state.reasoningEffort),
 	}, nil
 }
 
@@ -314,6 +329,11 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 				return
 			}
 			update = acpsdk.UpdateAgentMessageText(event.Content)
+		case agent.EventModelReasoningDelta:
+			if event.Content == "" {
+				return
+			}
+			update = acpsdk.UpdateAgentThoughtText(event.Content)
 		case agent.EventToolStarted:
 			update = acpsdk.StartToolCall(
 				toolCallID(event),
@@ -345,25 +365,20 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 	}
 }
 
-func (a *Agent) setSession(id, cwd, model string) {
+func (a *Agent) setSession(id, cwd, model, reasoningEffort string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	state := a.sessions[id]
 	state.cwd = cwd
 	state.model = model
+	state.reasoningEffort = reasoningEffort
 	a.sessions[id] = state
 }
 
-func (a *Agent) setSessionModel(id, model string) bool {
+func (a *Agent) setSessionState(id string, state sessionState) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	state, ok := a.sessions[id]
-	if !ok {
-		return false
-	}
-	state.model = model
 	a.sessions[id] = state
-	return true
 }
 
 func (a *Agent) getSession(id string) (sessionState, bool) {
@@ -486,7 +501,14 @@ func rawToolInput(arguments string) any {
 	return arguments
 }
 
-func modelConfigOptions(options runtime.ModelOptions, current string) []acpsdk.SessionConfigOption {
+func sessionConfigOptions(options runtime.ModelOptions, currentModel, currentReasoningEffort string) []acpsdk.SessionConfigOption {
+	return []acpsdk.SessionConfigOption{
+		modelConfigOption(options, currentModel),
+		reasoningEffortConfigOption(currentReasoningEffort),
+	}
+}
+
+func modelConfigOption(options runtime.ModelOptions, current string) acpsdk.SessionConfigOption {
 	category := acpsdk.SessionConfigOptionCategoryModel
 	ungrouped := make(acpsdk.SessionConfigSelectOptionsUngrouped, 0, len(options.Models))
 	for _, model := range options.Models {
@@ -500,7 +522,7 @@ func modelConfigOptions(options runtime.ModelOptions, current string) []acpsdk.S
 		}
 		ungrouped = append(ungrouped, option)
 	}
-	return []acpsdk.SessionConfigOption{{
+	return acpsdk.SessionConfigOption{
 		Select: &acpsdk.SessionConfigOptionSelect{
 			Category:     &category,
 			CurrentValue: acpsdk.SessionConfigValueId(current),
@@ -510,7 +532,29 @@ func modelConfigOptions(options runtime.ModelOptions, current string) []acpsdk.S
 				Ungrouped: &ungrouped,
 			},
 		},
-	}}
+	}
+}
+
+func reasoningEffortConfigOption(current string) acpsdk.SessionConfigOption {
+	category := acpsdk.SessionConfigOptionCategoryThoughtLevel
+	description := "Controls model reasoning depth when supported by the provider."
+	ungrouped := acpsdk.SessionConfigSelectOptionsUngrouped{
+		{Name: providerDefaultReasoningEffortName, Value: ""},
+		{Name: "High", Value: "high"},
+		{Name: "Max", Value: "max"},
+	}
+	return acpsdk.SessionConfigOption{
+		Select: &acpsdk.SessionConfigOptionSelect{
+			Category:     &category,
+			CurrentValue: acpsdk.SessionConfigValueId(current),
+			Description:  &description,
+			Id:           acpsdk.SessionConfigId(reasoningEffortConfigID),
+			Name:         "Reasoning effort",
+			Options: acpsdk.SessionConfigSelectOptions{
+				Ungrouped: &ungrouped,
+			},
+		},
+	}
 }
 
 func hasModelValue(options runtime.ModelOptions, value string) bool {
@@ -520,4 +564,13 @@ func hasModelValue(options runtime.ModelOptions, value string) bool {
 		}
 	}
 	return false
+}
+
+func hasReasoningEffortValue(value string) bool {
+	switch value {
+	case "", "high", "max":
+		return true
+	default:
+		return false
+	}
 }

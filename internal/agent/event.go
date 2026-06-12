@@ -10,6 +10,8 @@ const (
 	EventTurnStarted EventType = "turn_started"
 	// EventModelDelta 表示模型返回了一段文本增量。
 	EventModelDelta EventType = "model_delta"
+	// EventModelReasoningDelta 表示模型返回了一段思维链增量。
+	EventModelReasoningDelta EventType = "model_reasoning_delta"
 	// EventModelResponse 表示一次模型 step 已返回。
 	EventModelResponse EventType = "model_response"
 	// EventToolStarted 表示一个工具调用即将执行。
