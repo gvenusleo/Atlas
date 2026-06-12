@@ -13,8 +13,9 @@ const (
 	configDirName  = ".atlas"
 	configFileName = "config.json"
 
-	defaultMaxSteps      = 8
-	defaultTavilyBaseURL = "https://api.tavily.com"
+	defaultMaxSteps               = 8
+	defaultCompactionTriggerRatio = 0.8
+	defaultTavilyBaseURL          = "https://api.tavily.com"
 )
 
 // Config 是 Atlas CLI 启动时需要的应用配置。
@@ -44,9 +45,10 @@ type ProviderModel struct {
 
 // AgentConfig 描述 agent turn loop 的运行参数。
 type AgentConfig struct {
-	MaxSteps        int     `json:"max_steps"`
-	Temperature     float64 `json:"temperature"`
-	ReasoningEffort string  `json:"reasoning_effort"`
+	MaxSteps               int     `json:"max_steps"`
+	Temperature            float64 `json:"temperature"`
+	ReasoningEffort        string  `json:"reasoning_effort"`
+	CompactionTriggerRatio float64 `json:"compaction_trigger_ratio"`
 }
 
 // SessionConfig 描述本地会话存储参数。
@@ -151,6 +153,9 @@ func (c Config) Validate() error {
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return fmt.Errorf("agent.temperature must be between 0 and 2")
 	}
+	if c.Agent.CompactionTriggerRatio <= 0 || c.Agent.CompactionTriggerRatio >= 1 {
+		return fmt.Errorf("agent.compaction_trigger_ratio must be greater than 0 and less than 1")
+	}
 	if !validReasoningEffort(c.Agent.ReasoningEffort) {
 		return fmt.Errorf("agent.reasoning_effort must be empty, high, or max")
 	}
@@ -188,6 +193,9 @@ func (p ProviderConfig) ModelOptions() []ProviderModel {
 func (c *Config) applyDefaults() {
 	if c.Agent.MaxSteps <= 0 {
 		c.Agent.MaxSteps = defaultMaxSteps
+	}
+	if c.Agent.CompactionTriggerRatio == 0 {
+		c.Agent.CompactionTriggerRatio = defaultCompactionTriggerRatio
 	}
 	if c.Services.Tavily.BaseURL == "" {
 		c.Services.Tavily.BaseURL = defaultTavilyBaseURL

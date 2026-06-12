@@ -30,14 +30,17 @@ type Store struct {
 
 // Session 描述一个本地会话的元数据。
 type Session struct {
-	ID               string
-	Title            string
-	CWD              string
-	LastInputTokens  int
-	LastOutputTokens int
-	LastTotalTokens  int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                    string
+	Title                 string
+	CWD                   string
+	ContextSummary        string
+	CompactedMessageCount int
+	CompactedInputTokens  int
+	LastInputTokens       int
+	LastOutputTokens      int
+	LastTotalTokens       int
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // DefaultPath 返回用户主目录下的默认会话数据库路径。
@@ -76,6 +79,9 @@ create table if not exists sessions (
 	id text primary key,
 	title text not null default '',
 	cwd text not null,
+	context_summary text not null default '',
+	compacted_message_count integer not null default 0,
+	compacted_input_tokens integer not null default 0,
 	last_input_tokens integer not null default 0,
 	last_output_tokens integer not null default 0,
 	last_total_tokens integer not null default 0,
@@ -170,7 +176,7 @@ func (s *Store) ListSessions(ctx context.Context, limit int) ([]Session, error) 
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
+	select id, title, cwd, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
 from sessions
 order by updated_at desc, id
 limit ?`, limit)
@@ -199,7 +205,7 @@ func (s *Store) ListSessionsForCWD(ctx context.Context, cwd string, limit int) (
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
+select id, title, cwd, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
 from sessions
 where cwd = ?
 order by updated_at desc, id
@@ -229,7 +235,7 @@ func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, erro
 		return Session{}, err
 	}
 	row := s.db.QueryRowContext(ctx, `
-select id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
+select id, title, cwd, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
 from sessions
 where id = ?`, sessionID)
 	session, err := scanSession(row)
@@ -265,6 +271,38 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SaveCompaction 保存指定 session 的上下文压缩摘要和边界。
+func (s *Store) SaveCompaction(ctx context.Context, sessionID string, summary string, compactedMessageCount int, compactedInputTokens int) error {
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+	if compactedMessageCount < 0 {
+		return fmt.Errorf("compacted message count must be non-negative")
+	}
+	if compactedInputTokens < 0 {
+		return fmt.Errorf("compacted input tokens must be non-negative")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := s.db.ExecContext(ctx, `
+update sessions
+set context_summary = ?,
+	compacted_message_count = ?,
+	compacted_input_tokens = ?,
+	updated_at = ?
+where id = ?`, summary, compactedMessageCount, compactedInputTokens, now, sessionID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	return nil
 }
 
 // SaveTranscript 用给定消息快照覆盖保存指定 session。
@@ -318,7 +356,7 @@ type sessionScanner interface {
 func scanSession(scanner sessionScanner) (Session, error) {
 	var session Session
 	var createdAt, updatedAt string
-	if err := scanner.Scan(&session.ID, &session.Title, &session.CWD, &session.LastInputTokens, &session.LastOutputTokens, &session.LastTotalTokens, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&session.ID, &session.Title, &session.CWD, &session.ContextSummary, &session.CompactedMessageCount, &session.CompactedInputTokens, &session.LastInputTokens, &session.LastOutputTokens, &session.LastTotalTokens, &createdAt, &updatedAt); err != nil {
 		return Session{}, err
 	}
 	var err error

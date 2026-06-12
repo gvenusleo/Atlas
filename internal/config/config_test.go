@@ -20,7 +20,8 @@ func TestLoadFile(t *testing.T) {
 		"agent": {
 			"max_steps": 3,
 			"temperature": 0.2,
-			"reasoning_effort": "high"
+			"reasoning_effort": "high",
+			"compaction_trigger_ratio": 0.7
 		},
 		"session": {
 			"db_path": "/tmp/atlas.db"
@@ -58,6 +59,9 @@ func TestLoadFile(t *testing.T) {
 	if cfg.Agent.ReasoningEffort != "high" {
 		t.Fatalf("ReasoningEffort = %q", cfg.Agent.ReasoningEffort)
 	}
+	if cfg.Agent.CompactionTriggerRatio != 0.7 {
+		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
+	}
 	if cfg.Session.DBPath != "/tmp/atlas.db" {
 		t.Fatalf("Session.DBPath = %q", cfg.Session.DBPath)
 	}
@@ -79,6 +83,9 @@ func TestLoadFileDefaultsMaxSteps(t *testing.T) {
 	}
 	if cfg.Agent.MaxSteps != defaultMaxSteps {
 		t.Fatalf("MaxSteps = %d", cfg.Agent.MaxSteps)
+	}
+	if cfg.Agent.CompactionTriggerRatio != defaultCompactionTriggerRatio {
+		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
 	}
 }
 
@@ -245,6 +252,18 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
 				},
 				"agent": {"reasoning_effort": "medium"}
+			}`,
+		},
+		{
+			name: "invalid compaction trigger ratio",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"agent": {"compaction_trigger_ratio": 1}
 			}`,
 		},
 		{

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/compact"
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
@@ -52,6 +53,28 @@ type TurnOptions struct {
 type TurnResult struct {
 	SessionID string
 	Content   string
+}
+
+// CompactOptions 描述一次手动上下文压缩请求。
+type CompactOptions struct {
+	SessionID          string
+	Model              string
+	ReasoningEffort    string
+	ReasoningEffortSet bool
+	CWD                string
+	Instruction        string
+}
+
+// CompactResult 描述上下文压缩完成后的结果。
+type CompactResult struct {
+	SessionID    string
+	Compacted    bool
+	CompactCount int
+	KeepCount    int
+	TokensBefore int
+	TokensAfter  int
+	Summary      string
+	Reason       string
 }
 
 // ModelOption 描述 runtime 对外暴露的可选模型。
@@ -187,13 +210,38 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	defer store.Close()
 
-	trans := transcript.New()
+	fullTrans := transcript.New()
+	var sessionInfo session.Session
 	if resumeSession {
-		trans, err = store.LoadTranscript(ctx, sessionID)
+		fullTrans, err = store.LoadTranscript(ctx, sessionID)
 		if err != nil {
 			return TurnResult{}, err
 		}
+		sessionInfo, err = store.GetSession(ctx, sessionID)
+		if err != nil && !isSessionNotFound(err) {
+			return TurnResult{}, err
+		}
+		if err != nil {
+			sessionInfo = session.Session{}
+		}
+		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), opts.Prompt, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
+			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
+			if err != nil {
+				return TurnResult{}, err
+			}
+			if result.Compacted {
+				sessionInfo.ContextSummary = result.Summary
+				sessionInfo.CompactedMessageCount = result.CompactCount
+				sessionInfo.CompactedInputTokens = result.TokensBefore
+			}
+		}
 	}
+	activeMessages := compact.BuildActiveMessages(sessionInfo.ContextSummary, sessionInfo.CompactedMessageCount, fullTrans.Messages())
+	trans := transcript.New()
+	for _, msg := range activeMessages {
+		trans.Append(msg)
+	}
+	initialActiveLen := len(activeMessages)
 	a, err := agent.New(agent.Config{
 		Provider:   provider,
 		Tools:      registry,
@@ -218,13 +266,138 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	if err := store.SaveTranscript(ctx, sessionID, cwd, trans.Messages()); err != nil {
+	activeAfter := trans.Messages()
+	if initialActiveLen > len(activeAfter) {
+		initialActiveLen = len(activeAfter)
+	}
+	fullMessages := append(fullTrans.Messages(), activeAfter[initialActiveLen:]...)
+	if err := store.SaveTranscript(ctx, sessionID, cwd, fullMessages); err != nil {
 		return TurnResult{}, err
 	}
 	return TurnResult{
 		SessionID: sessionID,
 		Content:   content,
 	}, nil
+}
+
+// CompactSession 手动压缩指定 session 的 active context。
+func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (CompactResult, error) {
+	if err := session.ValidateID(opts.SessionID); err != nil {
+		return CompactResult{}, err
+	}
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return CompactResult{}, err
+	}
+	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	defer store.Close()
+
+	info, err := store.GetSession(ctx, opts.SessionID)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	if opts.CWD != "" && info.CWD != opts.CWD {
+		return CompactResult{}, fmt.Errorf("session %q cwd mismatch: %s", opts.SessionID, info.CWD)
+	}
+	trans, err := store.LoadTranscript(ctx, opts.SessionID)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	return r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, opts.SessionID, info, trans.Messages(), opts.Instruction, opts.ReasoningEffort, opts.ReasoningEffortSet, true)
+}
+
+// compactLoadedSession 对已加载的完整 transcript 执行一次摘要压缩。
+func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store, provider model.Provider, cfg config.Config, selectedModel config.ProviderModel, sessionID string, info session.Session, messages []model.Message, instruction string, reasoningEffort string, reasoningEffortSet bool, manual bool) (CompactResult, error) {
+	keepRecentTokens := autoKeepRecentTokens(selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio)
+	plan, ok := compact.SelectPlan(messages, info.CompactedMessageCount, keepRecentTokens)
+	if manual {
+		plan, ok = compact.SelectManualPlan(messages, info.CompactedMessageCount)
+	}
+	if !ok {
+		return CompactResult{
+			SessionID: sessionID,
+			Reason:    "no safe compaction boundary",
+		}, nil
+	}
+	start := info.CompactedMessageCount
+	if start < 0 {
+		start = 0
+	}
+	if start > len(messages) {
+		start = len(messages)
+	}
+	resp, err := provider.Stream(ctx, model.ChatRequest{
+		Messages:        compact.BuildSummaryMessages(info.ContextSummary, messages[start:plan.CompactCount], instruction),
+		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
+		Temperature:     cfg.Agent.Temperature,
+		ReasoningEffort: selectedReasoningEffort(reasoningEffort, reasoningEffortSet, cfg.Agent.ReasoningEffort),
+	}, nil)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	summary := strings.TrimSpace(resp.Content)
+	if summary == "" {
+		return CompactResult{}, fmt.Errorf("compaction summary is empty")
+	}
+	if err := store.SaveCompaction(ctx, sessionID, summary, plan.CompactCount, plan.TokensBefore); err != nil {
+		return CompactResult{}, err
+	}
+	return CompactResult{
+		SessionID:    sessionID,
+		Compacted:    true,
+		CompactCount: plan.CompactCount,
+		KeepCount:    plan.KeepCount,
+		TokensBefore: plan.TokensBefore,
+		TokensAfter:  plan.TokensAfter + compact.EstimateMessage(compact.SummaryMessage(summary)),
+		Summary:      summary,
+	}, nil
+}
+
+// shouldAutoCompact 判断追加当前用户输入后是否需要自动压缩。
+func shouldAutoCompact(info session.Session, messages []model.Message, promptText string, contextWindow int, triggerRatio float64) bool {
+	inputTokens := info.LastInputTokens
+	if inputTokens <= 0 {
+		active := compact.BuildActiveMessages(info.ContextSummary, info.CompactedMessageCount, messages)
+		inputTokens = compact.EstimateMessages(active)
+	}
+	inputTokens += compact.EstimateMessage(model.Message{Role: model.RoleUser, Content: promptText})
+	return compact.ShouldAutoCompact(inputTokens, contextWindow, triggerRatio)
+}
+
+// summaryMaxTokens 返回摘要请求可用的最大输出 token 数。
+func summaryMaxTokens(maxTokens int) int {
+	if maxTokens <= 0 || maxTokens > 4096 {
+		return 4096
+	}
+	return maxTokens
+}
+
+// autoKeepRecentTokens 返回自动压缩时保留最近上下文的 token 目标。
+func autoKeepRecentTokens(contextWindow int, triggerRatio float64) int {
+	if contextWindow <= 0 {
+		return compact.DefaultKeepRecentTokens
+	}
+	budget := int(float64(contextWindow) * triggerRatio)
+	if budget <= 0 {
+		return compact.DefaultKeepRecentTokens
+	}
+	return min(budget, compact.DefaultKeepRecentTokens)
+}
+
+// isSessionNotFound 判断错误是否表示 session 不存在。
+func isSessionNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not found")
 }
 
 // ModelOptions 返回当前配置文件中可供选择的模型。
@@ -267,7 +440,7 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 	}
 	report.add("config", DoctorStatusOK, configPath)
 	report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, default %s, %d models", cfg.Provider.BaseURL, cfg.Provider.DefaultModel, len(cfg.Provider.Models)))
-	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, reasoning_effort %s", cfg.Agent.MaxSteps, cfg.Agent.Temperature, displayReasoningEffort(cfg.Agent.ReasoningEffort)))
+	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, reasoning_effort %s, compaction_trigger_ratio %.2f", cfg.Agent.MaxSteps, cfg.Agent.Temperature, displayReasoningEffort(cfg.Agent.ReasoningEffort), cfg.Agent.CompactionTriggerRatio))
 	report.addSession(ctx, cfg.Session)
 	report.addTavily(cfg.Services.Tavily)
 	report.addShell()

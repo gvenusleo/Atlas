@@ -353,6 +353,34 @@ func TestRunWithDependenciesDeletesSession(t *testing.T) {
 	}
 }
 
+func TestRunWithDependenciesCompactsSession(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "old response"},
+			{Content: "recent response"},
+			{Content: "summary"},
+		},
+	}
+	rt := testRuntime(dbPath, provider, nil)
+	var stdout bytes.Buffer
+
+	if err := runWithDependencies(context.Background(), []string{"run", "--session", "work", "old"}, runDependencies{runtime: rt, stdout: &stdout}); err != nil {
+		t.Fatalf("first runWithDependencies() error = %v", err)
+	}
+	stdout.Reset()
+	if err := runWithDependencies(context.Background(), []string{"run", "--session", "work", "recent"}, runDependencies{runtime: rt, stdout: &stdout}); err != nil {
+		t.Fatalf("second runWithDependencies() error = %v", err)
+	}
+	stdout.Reset()
+	if err := runWithDependencies(context.Background(), []string{"session", "compact", "work"}, runDependencies{runtime: rt, stdout: &stdout}); err != nil {
+		t.Fatalf("compact runWithDependencies() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "compacted session work") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
 func TestRunWithDependenciesRejectsSessionCommandUsage(t *testing.T) {
 	if err := runWithDependencies(context.Background(), []string{"session"}, runDependencies{}); err == nil {
 		t.Fatal("runWithDependencies() error = nil")
@@ -428,11 +456,34 @@ func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emi
 	p.called = true
 	p.request = req
 	for _, event := range p.events {
-		if err := emit(event); err != nil {
-			return model.ChatResponse{}, err
+		if emit != nil {
+			if err := emit(event); err != nil {
+				return model.ChatResponse{}, err
+			}
 		}
 	}
 	return p.response, nil
+}
+
+type sequenceProvider struct {
+	requests      []model.ChatRequest
+	responses     []model.ChatResponse
+	providerModel string
+}
+
+func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
+	p.requests = append(p.requests, req)
+	if len(p.responses) == 0 {
+		return model.ChatResponse{}, context.Canceled
+	}
+	resp := p.responses[0]
+	p.responses = p.responses[1:]
+	if emit != nil && resp.Content != "" {
+		if err := emit(model.StreamEvent{Type: model.StreamTextDelta, Delta: resp.Content}); err != nil {
+			return model.ChatResponse{}, err
+		}
+	}
+	return resp, nil
 }
 
 func testConfig(dbPath string) config.Config {
@@ -447,9 +498,10 @@ func testConfig(dbPath string) config.Config {
 			},
 		},
 		Agent: config.AgentConfig{
-			MaxSteps:        4,
-			Temperature:     0.2,
-			ReasoningEffort: "high",
+			MaxSteps:               4,
+			Temperature:            0.2,
+			ReasoningEffort:        "high",
+			CompactionTriggerRatio: 0.8,
 		},
 		Session: config.SessionConfig{
 			DBPath: dbPath,
@@ -486,6 +538,9 @@ func testRuntime(dbPath string, provider model.Provider, instructions []prompt.I
 				return &recordingProvider{providerModel: selected.Value}, nil
 			}
 			if provider, ok := provider.(*recordingProvider); ok {
+				provider.providerModel = selected.Value
+			}
+			if provider, ok := provider.(*sequenceProvider); ok {
 				provider.providerModel = selected.Value
 			}
 			return provider, nil

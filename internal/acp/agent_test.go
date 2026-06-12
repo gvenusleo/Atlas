@@ -127,6 +127,33 @@ func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	}
 }
 
+func TestNewSessionSendsCompactCommand(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: "/tmp/work"})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("updates = %#v", updates)
+	}
+	if updates[0].SessionId != resp.SessionId {
+		t.Fatalf("session id = %#v", updates[0])
+	}
+	commands := updates[0].Update.AvailableCommandsUpdate
+	if commands == nil || len(commands.AvailableCommands) != 1 || commands.AvailableCommands[0].Name != "compact" {
+		t.Fatalf("commands = %#v", updates[0].Update)
+	}
+	if commands.AvailableCommands[0].Input == nil || commands.AvailableCommands[0].Input.Unstructured == nil {
+		t.Fatalf("command input = %#v", commands.AvailableCommands[0].Input)
+	}
+}
+
 func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	rt := &fakeRuntime{}
 	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
@@ -190,6 +217,74 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	finish := updates[3].Update.ToolCallUpdate
 	if finish == nil || finish.ToolCallId != "call_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted {
 		t.Fatalf("tool finish = %#v", updates[3].Update)
+	}
+}
+
+func TestPromptCompactCommandRunsCompaction(t *testing.T) {
+	rt := &fakeRuntime{}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "other-model", "max")
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("/compact keep files")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("stop reason = %q", resp.StopReason)
+	}
+	if rt.runOptions.SessionID != "" {
+		t.Fatalf("RunTurn should not be called: %#v", rt.runOptions)
+	}
+	if rt.compactOptions.SessionID != "sess" || rt.compactOptions.Model != "other-model" || rt.compactOptions.ReasoningEffort != "max" || rt.compactOptions.Instruction != "keep files" {
+		t.Fatalf("compact options = %#v", rt.compactOptions)
+	}
+	if len(updates) != 1 || updates[0].Update.AgentMessageChunk == nil || !strings.Contains(updates[0].Update.AgentMessageChunk.Content.Text.Text, "Context compacted") {
+		t.Fatalf("updates = %#v", updates)
+	}
+}
+
+func TestPromptOnlyInterceptsCompactCommand(t *testing.T) {
+	tests := []struct {
+		name            string
+		prompt          string
+		wantInstruction string
+		wantCompact     bool
+	}{
+		{name: "compact without instruction", prompt: "/compact", wantCompact: true},
+		{name: "compact with instruction", prompt: "/compact keep files", wantInstruction: "keep files", wantCompact: true},
+		{name: "compact prefix is normal prompt", prompt: "/compactness matters", wantCompact: false},
+		{name: "other slash prompt is normal prompt", prompt: "/help", wantCompact: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := &fakeRuntime{}
+			a := NewAgent(rt)
+			a.setSession("sess", "/tmp/work", "test-model", "")
+
+			if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+				SessionId: "sess",
+				Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock(tt.prompt)},
+			}); err != nil {
+				t.Fatalf("Prompt() error = %v", err)
+			}
+			if tt.wantCompact {
+				if rt.compactOptions.SessionID != "sess" || rt.compactOptions.Instruction != tt.wantInstruction {
+					t.Fatalf("compact options = %#v", rt.compactOptions)
+				}
+				return
+			}
+			if rt.runOptions.Prompt != tt.prompt {
+				t.Fatalf("run options = %#v", rt.runOptions)
+			}
+		})
 	}
 }
 
@@ -357,7 +452,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	if !ok || state.cwd != "/tmp/work" || state.model != "test-model" || state.reasoningEffort != "high" {
 		t.Fatalf("session state = %#v, %t", state, ok)
 	}
-	if len(updates) != 6 {
+	if len(updates) != 7 {
 		t.Fatalf("updates = %#v", updates)
 	}
 	if updates[0].SessionId != "sess" || updates[0].Update.UserMessageChunk == nil || updates[0].Update.UserMessageChunk.Content.Text.Text != "hi" {
@@ -385,6 +480,9 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	}
 	if updates[5].Update.AgentMessageChunk == nil || updates[5].Update.AgentMessageChunk.Content.Text.Text != "done" {
 		t.Fatalf("final update = %#v", updates[5].Update)
+	}
+	if updates[6].Update.AvailableCommandsUpdate == nil || len(updates[6].Update.AvailableCommandsUpdate.AvailableCommands) != 1 || updates[6].Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
+		t.Fatalf("commands update = %#v", updates[6].Update)
 	}
 }
 
@@ -610,6 +708,8 @@ type fakeRuntime struct {
 	run func(context.Context, atlasruntime.TurnOptions) (atlasruntime.TurnResult, error)
 
 	runOptions      atlasruntime.TurnOptions
+	compactOptions  atlasruntime.CompactOptions
+	compactResult   atlasruntime.CompactResult
 	listedCWDs      []string
 	deleted         []string
 	sessions        []session.Session
@@ -625,6 +725,14 @@ func (f *fakeRuntime) RunTurn(ctx context.Context, opts atlasruntime.TurnOptions
 		return f.run(ctx, opts)
 	}
 	return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "ok"}, nil
+}
+
+func (f *fakeRuntime) CompactSession(_ context.Context, opts atlasruntime.CompactOptions) (atlasruntime.CompactResult, error) {
+	f.compactOptions = opts
+	if !f.compactResult.Compacted && f.compactResult.Reason == "" {
+		return atlasruntime.CompactResult{SessionID: opts.SessionID, Compacted: true, KeepCount: 2}, nil
+	}
+	return f.compactResult, nil
 }
 
 func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, error) {

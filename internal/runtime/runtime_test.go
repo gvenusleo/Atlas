@@ -77,6 +77,129 @@ func TestRunTurnPersistsProviderUsage(t *testing.T) {
 	}
 }
 
+func TestCompactSessionSummarizesOldTurnsAndRunTurnUsesActiveContext(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "old one", Usage: model.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
+			{Content: "old two", Usage: model.Usage{InputTokens: 120, OutputTokens: 2, TotalTokens: 122}},
+			{Content: "summary"},
+			{Content: "new response", Usage: model.Usage{InputTokens: 50, OutputTokens: 2, TotalTokens: 52}},
+		},
+	}
+	r := newTestRuntime(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "first"}); err != nil {
+		t.Fatalf("first RunTurn() error = %v", err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "second"}); err != nil {
+		t.Fatalf("second RunTurn() error = %v", err)
+	}
+	result, err := r.CompactSession(context.Background(), CompactOptions{SessionID: "work", Instruction: "focus decisions"})
+	if err != nil {
+		t.Fatalf("CompactSession() error = %v", err)
+	}
+	if !result.Compacted || result.CompactCount != 2 || result.KeepCount != 2 {
+		t.Fatalf("compact result = %#v", result)
+	}
+	info, trans, err := r.ShowSession(context.Background(), "work")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if info.ContextSummary != "summary" || info.CompactedMessageCount != 2 {
+		t.Fatalf("session info = %#v", info)
+	}
+	if len(trans.Messages()) != 4 {
+		t.Fatalf("full transcript = %#v", trans.Messages())
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "third"}); err != nil {
+		t.Fatalf("third RunTurn() error = %v", err)
+	}
+	if len(provider.requests) != 4 {
+		t.Fatalf("requests = %#v", provider.requests)
+	}
+	messages := provider.requests[3].Messages
+	if len(messages) != 4 {
+		t.Fatalf("active messages = %#v", messages)
+	}
+	if !strings.Contains(messages[0].Content, "summary") || messages[1].Content != "second" || messages[3].Content != "third" {
+		t.Fatalf("active messages = %#v", messages)
+	}
+	_, full, err := r.ShowSession(context.Background(), "work")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if len(full.Messages()) != 6 {
+		t.Fatalf("full transcript after run = %#v", full.Messages())
+	}
+}
+
+func TestCompactSessionReturnsNotCompactedWithoutSafeBoundary(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{{Content: "only response"}},
+	}
+	r := newTestRuntime(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "only"}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	result, err := r.CompactSession(context.Background(), CompactOptions{SessionID: "work"})
+	if err != nil {
+		t.Fatalf("CompactSession() error = %v", err)
+	}
+	if result.Compacted || result.Reason == "" {
+		t.Fatalf("compact result = %#v", result)
+	}
+}
+
+func TestRunTurnAutoCompactsWhenThresholdExceeded(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "old one", Usage: model.Usage{InputTokens: 80, OutputTokens: 2, TotalTokens: 82}},
+			{Content: "old two", Usage: model.Usage{InputTokens: 90, OutputTokens: 2, TotalTokens: 92}},
+			{Content: "auto summary"},
+			{Content: "new response"},
+		},
+	}
+	r := newTestRuntime(t, provider)
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	r.deps.LoadConfig = func() (config.Config, error) {
+		cfg := testConfig(dbPath)
+		cfg.Provider.Models[0].ContextWindow = 100
+		cfg.Provider.Models[0].MaxTokens = 100
+		cfg.Agent.CompactionTriggerRatio = 0.8
+		return cfg, nil
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "first"}); err != nil {
+		t.Fatalf("first RunTurn() error = %v", err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "second"}); err != nil {
+		t.Fatalf("second RunTurn() error = %v", err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "third"}); err != nil {
+		t.Fatalf("third RunTurn() error = %v", err)
+	}
+	if len(provider.requests) != 4 {
+		t.Fatalf("requests = %#v", provider.requests)
+	}
+	if !strings.Contains(provider.requests[2].Messages[0].Content, "Conversation to summarize") {
+		t.Fatalf("summary request = %#v", provider.requests[2])
+	}
+	if !strings.Contains(provider.requests[3].Messages[0].Content, "auto summary") {
+		t.Fatalf("active request = %#v", provider.requests[3].Messages)
+	}
+}
+
+func TestAutoKeepRecentTokensUsesModelThresholdAsCeiling(t *testing.T) {
+	if got := autoKeepRecentTokens(10000, 0.8); got != 8000 {
+		t.Fatalf("autoKeepRecentTokens() = %d, want 8000", got)
+	}
+	if got := autoKeepRecentTokens(200000, 0.8); got != 20000 {
+		t.Fatalf("autoKeepRecentTokens() = %d, want 20000", got)
+	}
+}
+
 func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
@@ -431,11 +554,34 @@ func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emi
 	p.called = true
 	p.request = req
 	for _, event := range p.events {
-		if err := emit(event); err != nil {
-			return model.ChatResponse{}, err
+		if emit != nil {
+			if err := emit(event); err != nil {
+				return model.ChatResponse{}, err
+			}
 		}
 	}
 	return p.response, nil
+}
+
+type sequenceProvider struct {
+	requests      []model.ChatRequest
+	responses     []model.ChatResponse
+	providerModel string
+}
+
+func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
+	p.requests = append(p.requests, req)
+	if len(p.responses) == 0 {
+		return model.ChatResponse{}, fmt.Errorf("missing response")
+	}
+	resp := p.responses[0]
+	p.responses = p.responses[1:]
+	if emit != nil && resp.Content != "" {
+		if err := emit(model.StreamEvent{Type: model.StreamTextDelta, Delta: resp.Content}); err != nil {
+			return model.ChatResponse{}, err
+		}
+	}
+	return resp, nil
 }
 
 func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
@@ -451,6 +597,9 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 		},
 		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			if provider, ok := provider.(*recordingProvider); ok {
+				provider.providerModel = selected.Value
+			}
+			if provider, ok := provider.(*sequenceProvider); ok {
 				provider.providerModel = selected.Value
 			}
 			return provider, nil
@@ -481,9 +630,10 @@ func testConfig(dbPath string) config.Config {
 			},
 		},
 		Agent: config.AgentConfig{
-			MaxSteps:        4,
-			Temperature:     0.2,
-			ReasoningEffort: "high",
+			MaxSteps:               4,
+			Temperature:            0.2,
+			ReasoningEffort:        "high",
+			CompactionTriggerRatio: 0.8,
 		},
 		Session: config.SessionConfig{
 			DBPath: dbPath,

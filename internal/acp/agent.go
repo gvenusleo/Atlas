@@ -25,11 +25,13 @@ const (
 	modelConfigID              = "model"
 	reasoningEffortConfigID    = "reasoning_effort"
 	defaultReasoningEffortName = "Default"
+	compactCommandName         = "compact"
 )
 
 // Runtime 是 ACP 适配层需要的 Atlas 执行入口。
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
+	CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error)
 	ModelOptions(context.Context) (runtime.ModelOptions, error)
 	ShowSession(context.Context, string) (session.Session, *transcript.Transcript, error)
 	ListSessions(context.Context, int) ([]session.Session, error)
@@ -142,6 +144,9 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 		return acpsdk.NewSessionResponse{}, err
 	}
 	a.setSession(sessionID, params.Cwd, models.Default, models.ReasoningEffort)
+	if err := a.sendAvailableCommands(ctx, acpsdk.SessionId(sessionID)); err != nil {
+		return acpsdk.NewSessionResponse{}, err
+	}
 	return acpsdk.NewSessionResponse{
 		SessionId:     acpsdk.SessionId(sessionID),
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
@@ -157,6 +162,9 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	promptText, err := promptToText(params.Prompt)
 	if err != nil {
 		return acpsdk.PromptResponse{}, err
+	}
+	if instruction, ok := compactCommandInstruction(promptText); ok {
+		return a.runCommandPrompt(ctx, params.SessionId, state, instruction)
 	}
 	a.cancelSession(string(params.SessionId))
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -208,6 +216,9 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 		return acpsdk.LoadSessionResponse{}, err
 	}
 	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort)
+	if err := a.sendAvailableCommands(ctx, params.SessionId); err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
 	return acpsdk.LoadSessionResponse{
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
@@ -236,6 +247,9 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 		return acpsdk.ResumeSessionResponse{}, err
 	}
 	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort)
+	if err := a.sendAvailableCommands(ctx, params.SessionId); err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
@@ -448,6 +462,62 @@ func (a *Agent) sendSessionUpdate(ctx context.Context, sessionID acpsdk.SessionI
 	})
 }
 
+// sendAvailableCommands 通知客户端当前 session 可用的 slash command。
+func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.SessionId) error {
+	return a.sendSessionUpdate(ctx, sessionID, acpsdk.SessionUpdate{
+		AvailableCommandsUpdate: &acpsdk.SessionAvailableCommandsUpdate{
+			AvailableCommands: []acpsdk.AvailableCommand{compactAvailableCommand()},
+		},
+	})
+}
+
+// compactAvailableCommand 返回 ACP 客户端展示的手动压缩命令定义。
+func compactAvailableCommand() acpsdk.AvailableCommand {
+	return acpsdk.AvailableCommand{
+		Name:        compactCommandName,
+		Description: "Compact earlier conversation context.",
+		Input: &acpsdk.AvailableCommandInput{
+			Unstructured: &acpsdk.UnstructuredCommandInput{
+				Hint: "optional instruction",
+			},
+		},
+	}
+}
+
+// runCommandPrompt 执行不进入模型 turn 的 ACP slash command。
+func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId, state sessionState, instruction string) (acpsdk.PromptResponse, error) {
+	a.cancelSession(string(sessionID))
+	turnCtx, cancel := context.WithCancel(ctx)
+	turn, ok := a.setSessionCancel(string(sessionID), cancel)
+	if !ok {
+		cancel()
+		return acpsdk.PromptResponse{}, fmt.Errorf("session %q not found", sessionID)
+	}
+	defer a.clearSessionCancel(string(sessionID), turn)
+	result, err := a.rt.CompactSession(turnCtx, runtime.CompactOptions{
+		SessionID:          string(sessionID),
+		Model:              state.model,
+		ReasoningEffort:    state.reasoningEffort,
+		ReasoningEffortSet: true,
+		CWD:                state.cwd,
+		Instruction:        instruction,
+	})
+	if err != nil {
+		if turnCtx.Err() != nil {
+			return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}, nil
+		}
+		return acpsdk.PromptResponse{}, err
+	}
+	message := "No safe context to compact."
+	if result.Compacted {
+		message = fmt.Sprintf("Context compacted. Kept %d recent messages.", result.KeepCount)
+	}
+	if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateAgentMessageText(message)); err != nil {
+		return acpsdk.PromptResponse{}, err
+	}
+	return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
+}
+
 func (a *Agent) setSession(id, cwd, model, reasoningEffort string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -544,6 +614,19 @@ func promptToText(blocks []acpsdk.ContentBlock) (string, error) {
 		return "", fmt.Errorf("prompt is required")
 	}
 	return text, nil
+}
+
+// compactCommandInstruction 解析 `/compact` 命令及其可选指令。
+func compactCommandInstruction(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	if text == "/"+compactCommandName {
+		return "", true
+	}
+	prefix := "/" + compactCommandName
+	if strings.HasPrefix(text, prefix+" ") || strings.HasPrefix(text, prefix+"\t") || strings.HasPrefix(text, prefix+"\n") {
+		return strings.TrimSpace(strings.TrimPrefix(text, prefix)), true
+	}
+	return "", false
 }
 
 func toolCallID(event agent.Event) acpsdk.ToolCallId {

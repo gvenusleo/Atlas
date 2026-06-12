@@ -177,15 +177,17 @@ func runSessionsCommand(ctx context.Context, args []string, deps runDependencies
 
 func runSessionCommand(ctx context.Context, args []string, deps runDependencies) error {
 	if len(args) == 0 {
-		return errors.New("usage: atlas session <show|delete> <id>")
+		return errors.New("usage: atlas session <show|delete|compact> <id>")
 	}
 	switch args[0] {
 	case "show":
 		return runSessionShowCommand(ctx, args[1:], deps)
 	case "delete":
 		return runSessionDeleteCommand(ctx, args[1:], deps)
+	case "compact":
+		return runSessionCompactCommand(ctx, args[1:], deps)
 	default:
-		return errors.New("usage: atlas session <show|delete> <id>")
+		return errors.New("usage: atlas session <show|delete|compact> <id>")
 	}
 }
 
@@ -217,6 +219,22 @@ func runSessionDeleteCommand(ctx context.Context, args []string, deps runDepende
 		return err
 	}
 	fmt.Fprintf(deps.stdout, "deleted session %s\n", args[0])
+	return nil
+}
+
+func runSessionCompactCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 1 {
+		return errors.New("usage: atlas session compact <id>")
+	}
+	result, err := deps.runtime.CompactSession(ctx, runtime.CompactOptions{SessionID: args[0]})
+	if err != nil {
+		return err
+	}
+	if !result.Compacted {
+		fmt.Fprintf(deps.stdout, "session %s not compacted: %s\n", args[0], result.Reason)
+		return nil
+	}
+	fmt.Fprintf(deps.stdout, "compacted session %s: compacted %d messages, kept %d messages\n", args[0], result.CompactCount, result.KeepCount)
 	return nil
 }
 

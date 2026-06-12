@@ -43,7 +43,8 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
   "agent": {
     "max_steps": 8,
     "temperature": 0.2,
-    "reasoning_effort": "high"
+    "reasoning_effort": "high",
+    "compaction_trigger_ratio": 0.8
   },
   "session": {
     "db_path": "~/.atlas/atlas.db"
@@ -56,7 +57,7 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 }
 ```
 
-`provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`context_window` 描述模型上下文窗口，`max_tokens` 会作为每次模型请求的最大输出 token 数发送给 Provider。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`agent.reasoning_effort` 可省略，支持 `high` 和 `max`，会作为 `reasoning_effort` 发送给支持该参数的 OpenAI-compatible Provider。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
+`provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`context_window` 描述模型上下文窗口，`max_tokens` 会作为每次模型请求的最大输出 token 数发送给 Provider。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`agent.reasoning_effort` 可省略，支持 `high` 和 `max`，会作为 `reasoning_effort` 发送给支持该参数的 OpenAI-compatible Provider。`agent.compaction_trigger_ratio` 可省略，默认 `0.8`，表示上下文输入 token 达到模型 `context_window` 的 80% 时自动压缩早期对话。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
 
 `services.tavily` 可省略。配置 `services.tavily.api_key` 后，Atlas 会注册 `web_search` 和 `web_fetch`，默认调用 `https://api.tavily.com`。使用这两个工具时，搜索查询或网页 URL 会发送给 Tavily。
 
@@ -72,6 +73,7 @@ go run ./cmd/atlas doctor
 go run ./cmd/atlas sessions
 go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
 go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
+go run ./cmd/atlas session compact 20260608-153012-a1b2c3d4
 go run ./cmd/atlas acp
 go run ./cmd/atlas version
 ```
@@ -82,9 +84,9 @@ go run ./cmd/atlas version
 
 `atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。传入 `--model <value>` 时，本轮使用该模型。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
-`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表、删除、模型切换、思考强度切换和思维链流式更新；不支持 ACP auth、权限请求、MCP 连接和多模态输入。
+`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表、删除、模型切换、思考强度切换、思维链流式更新和 `/compact` 上下文压缩命令；不支持 ACP auth、权限请求、MCP 连接和多模态输入。
 
-Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情和删除会话；不提供全文搜索。
+Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供全文搜索。
 
 ## 内置工具
 

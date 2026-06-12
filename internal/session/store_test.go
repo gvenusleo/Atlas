@@ -110,6 +110,50 @@ func TestStoreSaveTranscriptReplacesMessages(t *testing.T) {
 	}
 }
 
+func TestStoreSaveCompactionPreservesFullTranscript(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	messages := []model.Message{
+		{Role: model.RoleUser, Content: "old"},
+		{Role: model.RoleAssistant, Content: "old response"},
+		{Role: model.RoleUser, Content: "recent"},
+		{Role: model.RoleAssistant, Content: "recent response"},
+	}
+	if err := store.SaveTranscript(ctx, "work", "/tmp/work", messages); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	if err := store.SaveCompaction(ctx, "work", "summary", 2, 100); err != nil {
+		t.Fatalf("SaveCompaction() error = %v", err)
+	}
+
+	info, err := store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.ContextSummary != "summary" || info.CompactedMessageCount != 2 || info.CompactedInputTokens != 100 {
+		t.Fatalf("session compaction = %#v", info)
+	}
+	full, err := store.LoadTranscript(ctx, "work")
+	if err != nil {
+		t.Fatalf("LoadTranscript() error = %v", err)
+	}
+	if len(full.Messages()) != len(messages) {
+		t.Fatalf("full messages = %#v", full.Messages())
+	}
+	if err := store.SaveTranscript(ctx, "work", "/tmp/work", append(messages, model.Message{Role: model.RoleUser, Content: "new"})); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	info, err = store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.ContextSummary != "summary" || info.CompactedMessageCount != 2 || info.CompactedInputTokens != 100 {
+		t.Fatalf("session compaction after save = %#v", info)
+	}
+}
+
 func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
