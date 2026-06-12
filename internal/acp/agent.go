@@ -111,7 +111,7 @@ func (a *Agent) Initialize(context.Context, acpsdk.InitializeRequest) (acpsdk.In
 	return acpsdk.InitializeResponse{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		AgentCapabilities: acpsdk.AgentCapabilities{
-			LoadSession: false,
+			LoadSession: true,
 			SessionCapabilities: acpsdk.SessionCapabilities{
 				Close:  &acpsdk.SessionCloseCapabilities{},
 				Delete: &acpsdk.SessionDeleteCapabilities{},
@@ -186,6 +186,31 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}, nil
 	}
 	return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
+}
+
+// LoadSession 恢复已有 Atlas session，并通过 session/update 回放历史消息。
+func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
+	if err := requireAbsoluteCWD(params.Cwd); err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	sess, trans, err := a.rt.ShowSession(ctx, string(params.SessionId))
+	if err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	if sess.CWD != params.Cwd {
+		return acpsdk.LoadSessionResponse{}, fmt.Errorf("session %q cwd mismatch: %s", params.SessionId, params.Cwd)
+	}
+	models, err := a.rt.ModelOptions(ctx)
+	if err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	if err := a.replayTranscript(ctx, params.SessionId, trans); err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort)
+	return acpsdk.LoadSessionResponse{
+		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
+	}, nil
 }
 
 // Cancel 停止指定 session 中正在运行的 prompt。
@@ -359,11 +384,68 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 		default:
 			return
 		}
-		_ = a.sendUpdate(ctx, acpsdk.SessionNotification{
-			SessionId: sessionID,
-			Update:    update,
-		})
+		_ = a.sendSessionUpdate(ctx, sessionID, update)
 	}
+}
+
+func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId, trans *transcript.Transcript) error {
+	if a.sendUpdate == nil || trans == nil {
+		return nil
+	}
+	var pendingToolIDs []acpsdk.ToolCallId
+	for messageIndex, msg := range trans.Messages() {
+		switch msg.Role {
+		case model.RoleUser:
+			if msg.Content != "" {
+				if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateUserMessageText(msg.Content)); err != nil {
+					return err
+				}
+			}
+		case model.RoleAssistant:
+			if msg.ReasoningContent != "" {
+				if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateAgentThoughtText(msg.ReasoningContent)); err != nil {
+					return err
+				}
+			}
+			if msg.Content != "" {
+				if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateAgentMessageText(msg.Content)); err != nil {
+					return err
+				}
+			}
+			for toolIndex, call := range msg.ToolCalls {
+				toolID := replayToolCallID(messageIndex, toolIndex, call.ID)
+				pendingToolIDs = append(pendingToolIDs, toolID)
+				if err := a.sendSessionUpdate(ctx, sessionID, replayToolStart(toolID, call)); err != nil {
+					return err
+				}
+			}
+		case model.RoleTool:
+			toolID := acpsdk.ToolCallId(msg.ToolCallID)
+			if toolID == "" && len(pendingToolIDs) > 0 {
+				toolID = pendingToolIDs[0]
+			}
+			if len(pendingToolIDs) > 0 {
+				pendingToolIDs = pendingToolIDs[1:]
+			}
+			if toolID == "" {
+				continue
+			}
+			if err := a.sendSessionUpdate(ctx, sessionID, replayToolResult(toolID, msg)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (a *Agent) sendSessionUpdate(ctx context.Context, sessionID acpsdk.SessionId, update acpsdk.SessionUpdate) error {
+	if a.sendUpdate == nil {
+		return nil
+	}
+	return a.sendUpdate(ctx, acpsdk.SessionNotification{
+		SessionId: sessionID,
+		Update:    update,
+	})
 }
 
 func (a *Agent) setSession(id, cwd, model, reasoningEffort string) {
@@ -472,6 +554,34 @@ func toolCallID(event agent.Event) acpsdk.ToolCallId {
 		return acpsdk.ToolCallId(fmt.Sprintf("tool_%d_%s", event.Step, event.ToolCall.Name))
 	}
 	return acpsdk.ToolCallId(fmt.Sprintf("tool_%d", event.Step))
+}
+
+func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall) acpsdk.SessionUpdate {
+	return acpsdk.StartToolCall(
+		toolID,
+		toolTitle(call),
+		acpsdk.WithStartKind(toolKind(call.Name)),
+		acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
+		acpsdk.WithStartRawInput(rawToolInput(call.Arguments)),
+	)
+}
+
+func replayToolResult(toolID acpsdk.ToolCallId, msg model.Message) acpsdk.SessionUpdate {
+	return acpsdk.UpdateToolCall(
+		toolID,
+		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusCompleted),
+		acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{
+			acpsdk.ToolContent(acpsdk.TextBlock(msg.Content)),
+		}),
+		acpsdk.WithUpdateRawOutput(msg.Content),
+	)
+}
+
+func replayToolCallID(messageIndex, toolIndex int, id string) acpsdk.ToolCallId {
+	if id != "" {
+		return acpsdk.ToolCallId(id)
+	}
+	return acpsdk.ToolCallId(fmt.Sprintf("tool_%d_%d", messageIndex, toolIndex))
 }
 
 func toolKind(name string) acpsdk.ToolKind {

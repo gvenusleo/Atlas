@@ -37,8 +37,8 @@ func TestInitializeReportsSupportedCapabilities(t *testing.T) {
 	if caps.Close == nil || caps.Delete == nil || caps.List == nil || caps.Resume == nil {
 		t.Fatalf("session capabilities = %#v", caps)
 	}
-	if resp.AgentCapabilities.LoadSession {
-		t.Fatal("LoadSession capability should be disabled")
+	if !resp.AgentCapabilities.LoadSession {
+		t.Fatal("LoadSession capability should be enabled")
 	}
 }
 
@@ -282,6 +282,10 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	if got := currentModelValue(resume.ConfigOptions); got != "test-model" {
 		t.Fatalf("current model = %q", got)
 	}
+	state, ok := a.getSession("sess")
+	if !ok || state.cwd != "/tmp/work" {
+		t.Fatalf("session state = %#v, %t", state, ok)
+	}
 	cwd := "/tmp/work"
 	list, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cwd: &cwd})
 	if err != nil {
@@ -305,6 +309,142 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(rt.deleted, []string{"sess"}) {
 		t.Fatalf("deleted = %#v", rt.deleted)
+	}
+}
+
+func TestLoadSessionReplaysTranscript(t *testing.T) {
+	trans := transcript.New()
+	trans.Append(model.Message{Role: model.RoleUser, Content: "hi"})
+	trans.Append(model.Message{
+		Role:             model.RoleAssistant,
+		ReasoningContent: "thinking",
+		Content:          "I will check",
+		ToolCalls: []model.ToolCall{{
+			ID:        "call_1",
+			Name:      "run_shell",
+			Arguments: `{"command":"just check"}`,
+		}},
+	})
+	trans.Append(model.Message{Role: model.RoleTool, Content: "ok", ToolCallID: "call_1"})
+	trans.Append(model.Message{Role: model.RoleAssistant, Content: "done"})
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: "/tmp/work"},
+		},
+		showTranscripts: map[string]*transcript.Transcript{
+			"sess": trans,
+		},
+	}
+	a := NewAgent(rt)
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	resp, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+		SessionId:  "sess",
+		Cwd:        "/tmp/work",
+		McpServers: []acpsdk.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if got := currentModelValue(resp.ConfigOptions); got != "test-model" {
+		t.Fatalf("current model = %q", got)
+	}
+	state, ok := a.getSession("sess")
+	if !ok || state.cwd != "/tmp/work" || state.model != "test-model" || state.reasoningEffort != "high" {
+		t.Fatalf("session state = %#v, %t", state, ok)
+	}
+	if len(updates) != 6 {
+		t.Fatalf("updates = %#v", updates)
+	}
+	if updates[0].SessionId != "sess" || updates[0].Update.UserMessageChunk == nil || updates[0].Update.UserMessageChunk.Content.Text.Text != "hi" {
+		t.Fatalf("user update = %#v", updates[0])
+	}
+	if updates[1].Update.AgentThoughtChunk == nil || updates[1].Update.AgentThoughtChunk.Content.Text.Text != "thinking" {
+		t.Fatalf("thought update = %#v", updates[1].Update)
+	}
+	if updates[2].Update.AgentMessageChunk == nil || updates[2].Update.AgentMessageChunk.Content.Text.Text != "I will check" {
+		t.Fatalf("agent update = %#v", updates[2].Update)
+	}
+	start := updates[3].Update.ToolCall
+	if start == nil || start.ToolCallId != "call_1" || start.Title != "Run: just check" || start.Kind != acpsdk.ToolKindExecute || start.Status != acpsdk.ToolCallStatusInProgress {
+		t.Fatalf("tool start = %#v", updates[3].Update)
+	}
+	if got := start.RawInput.(map[string]any)["command"]; got != "just check" {
+		t.Fatalf("raw input = %#v", start.RawInput)
+	}
+	finish := updates[4].Update.ToolCallUpdate
+	if finish == nil || finish.ToolCallId != "call_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted || finish.RawOutput != "ok" {
+		t.Fatalf("tool finish = %#v", updates[4].Update)
+	}
+	if len(finish.Content) != 1 || finish.Content[0].Content.Content.Text.Text != "ok" {
+		t.Fatalf("tool content = %#v", finish.Content)
+	}
+	if updates[5].Update.AgentMessageChunk == nil || updates[5].Update.AgentMessageChunk.Content.Text.Text != "done" {
+		t.Fatalf("final update = %#v", updates[5].Update)
+	}
+}
+
+func TestLoadSessionRejectsCWDMismatch(t *testing.T) {
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: "/tmp/work"},
+		},
+	}
+	a := NewAgent(rt)
+
+	_, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+		SessionId:  "sess",
+		Cwd:        "/tmp/other",
+		McpServers: []acpsdk.McpServer{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cwd mismatch") {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+}
+
+func TestLoadSessionRejectsRelativeCWD(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+
+	_, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+		SessionId:  "sess",
+		Cwd:        "relative",
+		McpServers: []acpsdk.McpServer{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cwd must be absolute") {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+}
+
+func TestLoadSessionReturnsReplayError(t *testing.T) {
+	trans := transcript.New()
+	trans.Append(model.Message{Role: model.RoleUser, Content: "hi"})
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: "/tmp/work"},
+		},
+		showTranscripts: map[string]*transcript.Transcript{
+			"sess": trans,
+		},
+	}
+	a := NewAgent(rt)
+	a.sendUpdate = func(context.Context, acpsdk.SessionNotification) error {
+		return errors.New("send failed")
+	}
+
+	_, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+		SessionId:  "sess",
+		Cwd:        "/tmp/work",
+		McpServers: []acpsdk.McpServer{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "send failed") {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if _, ok := a.getSession("sess"); ok {
+		t.Fatal("session should not be active after replay failure")
 	}
 }
 
@@ -469,13 +609,14 @@ func TestUnsupportedAgentMethodsReturnMethodNotFound(t *testing.T) {
 type fakeRuntime struct {
 	run func(context.Context, atlasruntime.TurnOptions) (atlasruntime.TurnResult, error)
 
-	runOptions     atlasruntime.TurnOptions
-	listedCWDs     []string
-	deleted        []string
-	sessions       []session.Session
-	sessionsForCWD []session.Session
-	showSessions   map[string]session.Session
-	showErr        error
+	runOptions      atlasruntime.TurnOptions
+	listedCWDs      []string
+	deleted         []string
+	sessions        []session.Session
+	sessionsForCWD  []session.Session
+	showSessions    map[string]session.Session
+	showTranscripts map[string]*transcript.Transcript
+	showErr         error
 }
 
 func (f *fakeRuntime) RunTurn(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
@@ -502,6 +643,9 @@ func (f *fakeRuntime) ShowSession(_ context.Context, sessionID string) (session.
 		return session.Session{}, nil, f.showErr
 	}
 	if sess, ok := f.showSessions[sessionID]; ok {
+		if trans, ok := f.showTranscripts[sessionID]; ok {
+			return sess, trans, nil
+		}
 		return sess, transcript.New(), nil
 	}
 	return session.Session{}, nil, errors.New("session not found")
