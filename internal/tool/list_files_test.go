@@ -39,17 +39,20 @@ func TestListFilesRunDepth(t *testing.T) {
 	}
 }
 
-func TestListFilesRunIncludesHiddenAndDependencyDirectories(t *testing.T) {
+func TestListFilesRunSkipsVCSMetadata(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "keep.txt"))
 	writeTestFile(t, filepath.Join(dir, ".git", "config"))
+	writeTestFile(t, filepath.Join(dir, ".hg", "store"))
+	writeTestFile(t, filepath.Join(dir, ".svn", "entries"))
+	writeTestFile(t, filepath.Join(dir, ".github", "workflows", "ci.yml"))
 	writeTestFile(t, filepath.Join(dir, "node_modules", "pkg", "index.js"))
 
 	got, err := (ListFiles{}).Run(context.Background(), `{"path":`+quoteJSON(dir)+`,"depth":2}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	want := ".git/\n.git/config\nkeep.txt\nnode_modules/\nnode_modules/pkg/\nnode_modules/pkg/index.js"
+	want := ".github/\n.github/workflows/\n.github/workflows/ci.yml\nkeep.txt\nnode_modules/\nnode_modules/pkg/\nnode_modules/pkg/index.js"
 	if got != want {
 		t.Fatalf("Run() = %q, want %q", got, want)
 	}

@@ -120,6 +120,12 @@ func listFilePaths(ctx context.Context, root string, limit, maxDepth int, includ
 
 		rel = filepath.ToSlash(rel)
 		isDir := entry.IsDir()
+		if isListFilesVCSMetadata(rel) {
+			if isDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if isGitIgnored(ignorer, rel, isDir) {
 			if isDir {
 				return filepath.SkipDir
@@ -166,6 +172,17 @@ func listFilePaths(ctx context.Context, root string, limit, maxDepth int, includ
 		result += "[output truncated]"
 	}
 	return result, nil
+}
+
+// isListFilesVCSMetadata 判断路径是否位于版本控制系统的内部元数据目录。
+func isListFilesVCSMetadata(rel string) bool {
+	first, _, _ := strings.Cut(strings.Trim(rel, "/"), "/")
+	switch first {
+	case ".git", ".hg", ".svn":
+		return true
+	default:
+		return false
+	}
 }
 
 // validateListInclude 在遍历前校验 include glob，避免空目录吞掉坏参数。
