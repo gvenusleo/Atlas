@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	defaultSessionListLimit            = 100
-	modelConfigID                      = "model"
-	reasoningEffortConfigID            = "reasoning_effort"
-	providerDefaultReasoningEffortName = "Provider default"
+	defaultSessionListLimit    = 100
+	modelConfigID              = "model"
+	reasoningEffortConfigID    = "reasoning_effort"
+	defaultReasoningEffortName = "Default"
 )
 
 // Runtime 是 ACP 适配层需要的 Atlas 执行入口。
@@ -539,7 +539,7 @@ func reasoningEffortConfigOption(current string) acpsdk.SessionConfigOption {
 	category := acpsdk.SessionConfigOptionCategoryThoughtLevel
 	description := "Controls model reasoning depth when supported by the provider."
 	ungrouped := acpsdk.SessionConfigSelectOptionsUngrouped{
-		{Name: providerDefaultReasoningEffortName, Value: ""},
+		{Name: defaultReasoningEffortName, Value: ""},
 		{Name: "High", Value: "high"},
 		{Name: "Max", Value: "max"},
 	}
