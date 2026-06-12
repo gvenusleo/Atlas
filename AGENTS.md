@@ -80,6 +80,7 @@ internal/skill
 internal/tool
 internal/transcript
 internal/version
+internal/weixin
 ```
 
 核心流程：
@@ -99,6 +100,8 @@ CLI input
 ```
 
 ACP 输入通过 `internal/acp` 走同一个 `internal/runtime`。ACP 适配层只负责协议方法、session/update 通知和活动 session 状态；不复制 agent loop、工具执行或 transcript 持久化逻辑。
+
+微信远程控制输入通过 `internal/weixin` 走同一个 `internal/runtime`。微信适配层只负责 iLink Bot 登录、消息轮询、typing 状态、斜杠命令、发送回复和发送人与本地 session 的轻量绑定；不复制 agent loop、工具执行或 transcript 持久化逻辑。
 
 保持 loop 可预测：
 
@@ -170,6 +173,7 @@ Atlas 使用 SQLite 保存本地会话，默认路径为 `~/.atlas/atlas.db`。`
 - ACP 初始化、session 创建、prompt、取消、关闭、恢复、列表和删除能力。
 - ACP `/compact` slash command 暴露和手动压缩能力。
 - ACP session/update 事件顺序与 agent observer 事件顺序一致。
+- 微信通道扫码登录、账号保存、typing 状态、文本回复、工作目录切换、会话列表、会话恢复、上下文压缩和取消能力。
 
 交付前运行：
 

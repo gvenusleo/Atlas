@@ -16,6 +16,7 @@ import (
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/version"
+	"github.com/liuyuxin/atlas/internal/weixin"
 )
 
 func TestRunWithDependenciesShowsInteractivePlaceholder(t *testing.T) {
@@ -280,6 +281,55 @@ func TestRunWithDependenciesRejectsDoctorUsage(t *testing.T) {
 	err := runWithDependencies(context.Background(), []string{"doctor", "extra"}, runDependencies{})
 	if err == nil || !strings.Contains(err.Error(), "usage: atlas doctor") {
 		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+}
+
+func TestRunWithDependenciesListsWeixinAccounts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	store, err := weixin.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if err := store.SaveAccount(weixin.Account{
+		ID:        "bot-1",
+		Token:     "token",
+		BaseURL:   "https://weixin.example.com",
+		UserID:    "user-1",
+		UpdatedAt: time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveAccount() error = %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := runWithDependencies(context.Background(), []string{"weixin", "accounts"}, runDependencies{stdout: &stdout}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "bot-1") || !strings.Contains(got, "user-1") {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
+func TestRunWithDependenciesLogsOutWeixinAccount(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	store, err := weixin.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if err := store.SaveAccount(weixin.Account{ID: "bot-1", Token: "token", BaseURL: "https://weixin.example.com", UserID: "user-1"}); err != nil {
+		t.Fatalf("SaveAccount() error = %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := runWithDependencies(context.Background(), []string{"weixin", "logout", "bot-1"}, runDependencies{stdout: &stdout}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "logged out weixin account bot-1") {
+		t.Fatalf("stdout = %q", got)
+	}
+	if _, err := store.LoadAccount("bot-1"); err == nil {
+		t.Fatal("LoadAccount() error = nil")
 	}
 }
 

@@ -100,6 +100,9 @@ func TestLoadFileDefaultsTavilyBaseURL(t *testing.T) {
 		"services": {
 			"tavily": {
 				"api_key": "tvly-test"
+			},
+			"weixin": {
+				"default_cwd": "/tmp/atlas-work"
 			}
 		}
 	}`)
@@ -113,6 +116,12 @@ func TestLoadFileDefaultsTavilyBaseURL(t *testing.T) {
 	}
 	if cfg.Services.Tavily.APIKey != "tvly-test" {
 		t.Fatalf("Tavily.APIKey = %q", cfg.Services.Tavily.APIKey)
+	}
+	if cfg.Services.Weixin.BaseURL != defaultWeixinBaseURL {
+		t.Fatalf("Weixin.BaseURL = %q", cfg.Services.Weixin.BaseURL)
+	}
+	if cfg.Services.Weixin.DefaultCWD != "/tmp/atlas-work" {
+		t.Fatalf("Weixin.DefaultCWD = %q", cfg.Services.Weixin.DefaultCWD)
 	}
 }
 
@@ -312,6 +321,38 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 				"services": {
 					"tavily": {
 						"base_url": "https://tavily.example.com"
+					}
+				}
+			}`,
+		},
+		{
+			name: "invalid weixin base url",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"services": {
+					"weixin": {
+						"base_url": ":"
+					}
+				}
+			}`,
+		},
+		{
+			name: "unsupported weixin base url scheme",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"services": {
+					"weixin": {
+						"base_url": "ftp://ilinkai.weixin.qq.com"
 					}
 				}
 			}`,

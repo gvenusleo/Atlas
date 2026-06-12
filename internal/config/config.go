@@ -16,6 +16,7 @@ const (
 	defaultMaxSteps               = 8
 	defaultCompactionTriggerRatio = 0.8
 	defaultTavilyBaseURL          = "https://api.tavily.com"
+	defaultWeixinBaseURL          = "https://ilinkai.weixin.qq.com"
 )
 
 // Config 是 Atlas CLI 启动时需要的应用配置。
@@ -59,12 +60,19 @@ type SessionConfig struct {
 // ServicesConfig 描述 Atlas 可选接入的外部服务。
 type ServicesConfig struct {
 	Tavily TavilyConfig `json:"tavily"`
+	Weixin WeixinConfig `json:"weixin"`
 }
 
 // TavilyConfig 描述 Tavily 搜索和网页提取服务配置。
 type TavilyConfig struct {
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
+}
+
+// WeixinConfig 描述微信远程控制通道配置。
+type WeixinConfig struct {
+	BaseURL    string `json:"base_url"`
+	DefaultCWD string `json:"default_cwd"`
 }
 
 // DefaultPath 返回当前用户主目录下的 Atlas 配置路径。
@@ -167,6 +175,12 @@ func (c Config) Validate() error {
 	} else if c.Services.Tavily.BaseURL != "" && c.Services.Tavily.BaseURL != defaultTavilyBaseURL {
 		return fmt.Errorf("services.tavily.api_key is required when services.tavily.base_url is set")
 	}
+	if c.Services.Weixin.BaseURL != "" {
+		weixinURL, err := url.Parse(c.Services.Weixin.BaseURL)
+		if err != nil || weixinURL.Scheme == "" || weixinURL.Host == "" || !isHTTPURL(weixinURL) {
+			return fmt.Errorf("services.weixin.base_url is invalid")
+		}
+	}
 	return nil
 }
 
@@ -199,6 +213,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Services.Tavily.BaseURL == "" {
 		c.Services.Tavily.BaseURL = defaultTavilyBaseURL
+	}
+	if c.Services.Weixin.BaseURL == "" {
+		c.Services.Weixin.BaseURL = defaultWeixinBaseURL
 	}
 }
 

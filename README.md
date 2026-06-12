@@ -52,6 +52,9 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
   "services": {
     "tavily": {
       "api_key": "tvly-..."
+    },
+    "weixin": {
+      "default_cwd": "/Users/liuyuxin/Documents/agents/Atlas"
     }
   }
 }
@@ -60,6 +63,8 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 `provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`context_window` 描述模型上下文窗口，`max_tokens` 会作为每次模型请求的最大输出 token 数发送给 Provider。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`agent.reasoning_effort` 可省略，支持 `high` 和 `max`，会作为 `reasoning_effort` 发送给支持该参数的 OpenAI-compatible Provider。`agent.compaction_trigger_ratio` 可省略，默认 `0.8`，表示上下文输入 token 达到模型 `context_window` 的 80% 时自动压缩早期对话。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
 
 `services.tavily` 可省略。配置 `services.tavily.api_key` 后，Atlas 会注册 `web_search` 和 `web_fetch`，默认调用 `https://api.tavily.com`。使用这两个工具时，搜索查询或网页 URL 会发送给 Tavily。
+
+`services.weixin` 可省略。`services.weixin.base_url` 默认使用 `https://ilinkai.weixin.qq.com`；`services.weixin.default_cwd` 用于微信远程控制首次收到消息时的工作目录。微信通道只允许扫码登录的微信用户本人控制 Atlas。
 
 ## 使用
 
@@ -74,6 +79,10 @@ go run ./cmd/atlas sessions
 go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
 go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
 go run ./cmd/atlas session compact 20260608-153012-a1b2c3d4
+go run ./cmd/atlas weixin login
+go run ./cmd/atlas weixin serve
+go run ./cmd/atlas weixin accounts
+go run ./cmd/atlas weixin logout <account-id>
 go run ./cmd/atlas acp
 go run ./cmd/atlas version
 ```
@@ -87,6 +96,22 @@ go run ./cmd/atlas version
 `atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表、删除、模型切换、思考强度切换、思维链流式更新和 `/compact` 上下文压缩命令；不支持 ACP auth、权限请求、MCP 连接和多模态输入。
 
 Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供全文搜索。
+
+`atlas weixin login` 使用微信扫码登录并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本消息并调用本地 Atlas runtime；它拥有与本机运行 Atlas 相同的文件和 shell 权限。当前微信通道不支持群聊、媒体消息或添加其他控制人。
+
+微信聊天中支持这些斜杠命令：
+
+- `/help`：查看命令。
+- `/status`：查看当前工作目录和 session。
+- `/cwd`：查看当前工作目录。
+- `/cwd /absolute/path`：切换工作目录，并让下一条普通消息开启新对话。
+- `/cwd -`：切回上一个工作目录。
+- `/new`：在当前工作目录开启新对话。
+- `/sessions`：查看当前工作目录最近会话。
+- `/sessions all`：查看全局最近会话。
+- `/resume <session-id>`：恢复指定会话，并切换到该会话的工作目录。
+- `/compact`：压缩当前会话上下文。
+- `/cancel`：取消当前正在运行的 turn。
 
 ## 内置工具
 

@@ -12,9 +12,11 @@ import (
 
 	atlasacp "github.com/liuyuxin/atlas/internal/acp"
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/version"
+	"github.com/liuyuxin/atlas/internal/weixin"
 )
 
 func main() {
@@ -55,6 +57,8 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return runACPCommand(ctx, args[1:], deps)
 	case "doctor":
 		return runDoctorCommand(ctx, args[1:], deps)
+	case "weixin":
+		return runWeixinCommand(ctx, args[1:], deps)
 	case "sessions":
 		return runSessionsCommand(ctx, args[1:], deps)
 	case "session":
@@ -62,7 +66,7 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	case "version":
 		return runVersionCommand(args[1:], deps)
 	default:
-		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas doctor | atlas acp | atlas version")
+		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas doctor | atlas weixin <login|serve|accounts|logout> | atlas acp | atlas version")
 	}
 }
 
@@ -124,6 +128,117 @@ func runDoctorCommand(ctx context.Context, args []string, deps runDependencies) 
 	return nil
 }
 
+func runWeixinCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) == 0 {
+		return errors.New("usage: atlas weixin <login|serve|accounts|logout>")
+	}
+	switch args[0] {
+	case "login":
+		return runWeixinLoginCommand(ctx, args[1:], deps)
+	case "serve":
+		return runWeixinServeCommand(ctx, args[1:], deps)
+	case "accounts":
+		return runWeixinAccountsCommand(args[1:], deps)
+	case "logout":
+		return runWeixinLogoutCommand(args[1:], deps)
+	default:
+		return errors.New("usage: atlas weixin <login|serve|accounts|logout>")
+	}
+}
+
+func runWeixinLoginCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas weixin login")
+	}
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		return err
+	}
+	store, client, err := newWeixinLoginClient(cfg.Services.Weixin)
+	if err != nil {
+		return err
+	}
+	result, err := weixin.Login(ctx, weixin.LoginOptions{
+		Store:  store,
+		Client: client,
+		Output: deps.stdout,
+	})
+	if err != nil {
+		return err
+	}
+	if result.AlreadyConnected {
+		fmt.Fprintln(deps.stdout, "weixin account already connected")
+		return nil
+	}
+	fmt.Fprintf(deps.stdout, "logged in weixin account %s\n", result.Account.ID)
+	return nil
+}
+
+func runWeixinServeCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas weixin serve")
+	}
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		return err
+	}
+	store, client, account, err := newWeixinServeRuntime()
+	if err != nil {
+		return err
+	}
+	server, err := weixin.NewServer(weixin.ServerOptions{
+		Runtime: deps.runtime,
+		Store:   store,
+		Client:  client,
+		Account: account,
+		Config:  cfg.Services.Weixin,
+		Output:  deps.stdout,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(deps.stdout, "weixin serving account %s\n", account.ID)
+	return server.Run(ctx)
+}
+
+func runWeixinAccountsCommand(args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas weixin accounts")
+	}
+	store, err := weixin.NewStore("")
+	if err != nil {
+		return err
+	}
+	accounts, err := store.ListAccounts()
+	if err != nil {
+		return err
+	}
+	if len(accounts) == 0 {
+		fmt.Fprintln(deps.stdout, "no weixin accounts")
+		return nil
+	}
+	fmt.Fprintln(deps.stdout, "ID\tUSER\tUPDATED")
+	for _, account := range accounts {
+		fmt.Fprintf(deps.stdout, "%s\t%s\t%s\n", account.ID, account.UserID, account.UpdatedAt.Format(time.RFC3339))
+	}
+	return nil
+}
+
+func runWeixinLogoutCommand(args []string, deps runDependencies) error {
+	if len(args) != 1 {
+		return errors.New("usage: atlas weixin logout <account-id>")
+	}
+	store, err := weixin.NewStore("")
+	if err != nil {
+		return err
+	}
+	if err := store.DeleteAccount(args[0]); err != nil {
+		return err
+	}
+	fmt.Fprintf(deps.stdout, "logged out weixin account %s\n", args[0])
+	return nil
+}
+
 func runInteractivePlaceholder(_ context.Context, args []string, deps runDependencies) error {
 	parsed, err := parseInteractiveArgs(args)
 	if err != nil {
@@ -140,6 +255,39 @@ func runInteractivePlaceholder(_ context.Context, args []string, deps runDepende
 	}
 	fmt.Fprintf(deps.stdout, "Atlas interactive mode is not implemented yet. Requested session: %s\n", parsed.sessionID)
 	return nil
+}
+
+func newWeixinLoginClient(cfg config.WeixinConfig) (*weixin.Store, *weixin.Client, error) {
+	store, err := weixin.NewStore("")
+	if err != nil {
+		return nil, nil, err
+	}
+	client, err := weixin.NewClient(weixin.ClientOptions{
+		BaseURL: cfg.BaseURL,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return store, client, nil
+}
+
+func newWeixinServeRuntime() (*weixin.Store, *weixin.Client, weixin.Account, error) {
+	store, err := weixin.NewStore("")
+	if err != nil {
+		return nil, nil, weixin.Account{}, err
+	}
+	account, err := store.LoadAccount("")
+	if err != nil {
+		return nil, nil, weixin.Account{}, err
+	}
+	client, err := weixin.NewClient(weixin.ClientOptions{
+		BaseURL: account.BaseURL,
+		Token:   account.Token,
+	})
+	if err != nil {
+		return nil, nil, weixin.Account{}, err
+	}
+	return store, client, account, nil
 }
 
 func runSessionsCommand(ctx context.Context, args []string, deps runDependencies) error {
