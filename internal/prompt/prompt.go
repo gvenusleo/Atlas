@@ -3,6 +3,7 @@ package prompt
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -14,6 +15,7 @@ Atlas is a headless agent core with access to local filesystem and shell tools. 
 ## Operating Principles
 
 - Treat tool results and file contents as the source of truth. Inspect the workspace before making claims about code behavior.
+- For simple greetings or questions that do not need workspace or internet context, answer directly. For code, file, or command tasks, use tools to inspect and act instead of only describing a solution.
 - Prefer the smallest change that fully solves the user's request. Do not add unrelated features, abstractions, or refactors.
 - When requirements are ambiguous, state your assumption briefly. Ask a clarifying question only when choosing silently would be risky.
 - Keep going until the requested task is handled, including verification when the project provides a reasonable test or build command.
@@ -35,10 +37,12 @@ Atlas is a headless agent core with access to local filesystem and shell tools. 
 
 ## Tool Use
 
-- Use file listing, file reading, text search, file writing, and shell execution tools as needed.
+- Use only the tools that Atlas exposes in the current tool list. Do not claim access to unavailable tools or invent tool names.
+- Use file listing, file reading, text search, file writing, web search, web fetch, and shell execution tools as needed.
 - Prefer search tools or rg through the shell for code discovery.
 - Before overwriting a file, read its current content unless you are creating a new file.
 - Shell commands should be non-interactive. Include the working directory when it matters.
+- Do not treat command completion alone as proof. If expected output is missing or a task changes files, verify the observable result with an appropriate follow-up check.
 
 ## Responses
 
@@ -49,12 +53,15 @@ Atlas is a headless agent core with access to local filesystem and shell tools. 
 
 ## Environment
 
+- Working directory: %s
 - Current date: %s
-- Working directory: %s`
+- Platform: %s
+- Shell: /bin/sh`
 
 // Options 是构造系统提示词所需的动态上下文。
 type Options struct {
 	WorkingDir   string
+	Platform     string
 	Now          time.Time
 	Instructions []InstructionFile
 	Skills       []SkillSummary
@@ -72,6 +79,10 @@ func BuildSystem(options Options) string {
 	if workingDir == "" {
 		workingDir = "."
 	}
+	platform := options.Platform
+	if platform == "" {
+		platform = runtime.GOOS
+	}
 	now := options.Now
 	if now.IsZero() {
 		now = time.Now()
@@ -80,8 +91,9 @@ func BuildSystem(options Options) string {
 		systemTemplate,
 		formatInstructions(options.Instructions),
 		formatSkills(options.Skills),
-		now.Format("2006-01-02"),
 		filepath.ToSlash(workingDir),
+		now.Format("2006-01-02"),
+		platform,
 	)
 }
 
@@ -110,13 +122,13 @@ func formatInstructions(files []InstructionFile) string {
 
 	var builder strings.Builder
 	builder.WriteString("\n\n## Loaded Instructions\n\n")
-	builder.WriteString("The following AGENTS.md files contain additional instructions. Current user requests take precedence over these files; current-directory instructions take precedence over global instructions.\n\n")
+	builder.WriteString("The following AGENTS.md files contain additional instructions. Current user requests take precedence over these files; current-directory instructions take precedence over global instructions. Treat each <instruction_file> block as instructions from that file only; the wrapper is not part of the file content.\n\n")
 	for _, file := range files {
-		builder.WriteString("### ")
+		builder.WriteString("<instruction_file path=\"")
 		builder.WriteString(filepath.ToSlash(file.Path))
-		builder.WriteString("\n")
+		builder.WriteString("\">\n")
 		builder.WriteString(strings.TrimSpace(file.Content))
-		builder.WriteString("\n\n")
+		builder.WriteString("\n</instruction_file>\n\n")
 	}
 	return strings.TrimRight(builder.String(), "\n")
 }
