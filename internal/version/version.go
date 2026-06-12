@@ -2,4 +2,4 @@
 package version
 
 // Current 是当前发布版本。
-const Current = "0.0.1"
+const Current = "0.1.0"
