@@ -61,6 +61,34 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 	}
 }
 
+func TestToolTitleUsesPrimaryArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		call model.ToolCall
+		want string
+	}{
+		{name: "read file", call: model.ToolCall{Name: "read_file", Arguments: `{"path":"README.md"}`}, want: "Read: README.md"},
+		{name: "write file", call: model.ToolCall{Name: "write_file", Arguments: `{"path":"notes.txt"}`}, want: "Write: notes.txt"},
+		{name: "edit file", call: model.ToolCall{Name: "edit_file", Arguments: `{"path":"main.go"}`}, want: "Edit: main.go"},
+		{name: "list files", call: model.ToolCall{Name: "list_files", Arguments: `{"path":"internal"}`}, want: "List: internal"},
+		{name: "search text", call: model.ToolCall{Name: "search_text", Arguments: `{"query":"Tool:"}`}, want: "Search: Tool:"},
+		{name: "web search", call: model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas acp"}`}, want: "WebSearch: atlas acp"},
+		{name: "web fetch", call: model.ToolCall{Name: "web_fetch", Arguments: `{"url":"https://example.com"}`}, want: "WebFetch: https://example.com"},
+		{name: "run shell", call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"just check"}`}, want: "Run: just check"},
+		{name: "invalid arguments", call: model.ToolCall{Name: "run_shell", Arguments: `{`}, want: "Tool: run_shell"},
+		{name: "empty argument", call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"   "}`}, want: "Tool: run_shell"},
+		{name: "unknown tool", call: model.ToolCall{Name: "custom", Arguments: `{"command":"ignored"}`}, want: "Tool: custom"},
+		{name: "missing name", call: model.ToolCall{}, want: "Tool"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toolTitle(tt.call); got != tt.want {
+				t.Fatalf("toolTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 
@@ -110,14 +138,14 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 			Step: 1,
 			ToolCall: model.ToolCall{
 				ID:        "call_1",
-				Name:      "read_file",
-				Arguments: `{"path":"README.md"}`,
+				Name:      "run_shell",
+				Arguments: `{"command":"just check"}`,
 			},
 		})
 		opts.Observer(agentpkg.Event{
 			Type:       agentpkg.EventToolFinished,
 			Step:       1,
-			ToolCall:   model.ToolCall{ID: "call_1", Name: "read_file"},
+			ToolCall:   model.ToolCall{ID: "call_1", Name: "run_shell"},
 			ToolResult: "content",
 		})
 		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "done"}, nil
@@ -153,10 +181,10 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 		t.Fatalf("second update = %#v", updates[1].Update)
 	}
 	start := updates[2].Update.ToolCall
-	if start == nil || start.ToolCallId != "call_1" || start.Kind != acpsdk.ToolKindRead || start.Status != acpsdk.ToolCallStatusInProgress {
+	if start == nil || start.ToolCallId != "call_1" || start.Kind != acpsdk.ToolKindExecute || start.Status != acpsdk.ToolCallStatusInProgress || start.Title != "Run: just check" {
 		t.Fatalf("tool start = %#v", updates[2].Update)
 	}
-	if got := start.RawInput.(map[string]any)["path"]; got != "README.md" {
+	if got := start.RawInput.(map[string]any)["command"]; got != "just check" {
 		t.Fatalf("raw input = %#v", start.RawInput)
 	}
 	finish := updates[3].Update.ToolCallUpdate

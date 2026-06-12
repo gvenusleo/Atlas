@@ -13,6 +13,7 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/transcript"
@@ -337,7 +338,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 		case agent.EventToolStarted:
 			update = acpsdk.StartToolCall(
 				toolCallID(event),
-				"Tool: "+event.ToolCall.Name,
+				toolTitle(event.ToolCall),
 				acpsdk.WithStartKind(toolKind(event.ToolCall.Name)),
 				acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
 				acpsdk.WithStartRawInput(rawToolInput(event.ToolCall.Arguments)),
@@ -488,6 +489,52 @@ func toolKind(name string) acpsdk.ToolKind {
 	default:
 		return acpsdk.ToolKindOther
 	}
+}
+
+// toolTitle 返回客户端折叠工具调用时优先展示的可读标题。
+func toolTitle(call model.ToolCall) string {
+	if title := primaryToolTitle(call); title != "" {
+		return title
+	}
+	if call.Name == "" {
+		return "Tool"
+	}
+	return "Tool: " + call.Name
+}
+
+// primaryToolTitle 返回内置工具最能说明本次调用意图的动作和参数。
+func primaryToolTitle(call model.ToolCall) string {
+	prefix, key := "", ""
+	switch call.Name {
+	case "read_file":
+		prefix, key = "Read: ", "path"
+	case "write_file":
+		prefix, key = "Write: ", "path"
+	case "edit_file":
+		prefix, key = "Edit: ", "path"
+	case "list_files":
+		prefix, key = "List: ", "path"
+	case "search_text":
+		prefix, key = "Search: ", "query"
+	case "web_search":
+		prefix, key = "WebSearch: ", "query"
+	case "web_fetch":
+		prefix, key = "WebFetch: ", "url"
+	case "run_shell":
+		prefix, key = "Run: ", "command"
+	default:
+		return ""
+	}
+
+	var args map[string]any
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		return ""
+	}
+	value, ok := args[key].(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return prefix + value
 }
 
 func rawToolInput(arguments string) any {
