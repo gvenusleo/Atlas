@@ -42,6 +42,8 @@ type Message struct {
 	ToolCalls []ToolCall
 	// ToolCallID 只对 tool 消息有意义，用来关联对应的工具调用。
 	ToolCallID string
+	// Usage 只对 assistant 消息有意义，记录 provider 返回的 token 用量。
+	Usage Usage
 }
 
 // StopReason 表示一次模型 step 结束的原因。

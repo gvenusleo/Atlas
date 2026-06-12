@@ -21,6 +21,7 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 			Role:             model.RoleAssistant,
 			Content:          "reading",
 			ReasoningContent: "need file",
+			Usage:            model.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13},
 			ToolCalls: []model.ToolCall{{
 				ID:        "call-1",
 				Name:      "read_file",
@@ -47,8 +48,18 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	if got[1].ReasoningContent != "need file" {
 		t.Fatalf("reasoning content = %q", got[1].ReasoningContent)
 	}
+	if got[1].Usage != (model.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13}) {
+		t.Fatalf("usage = %#v", got[1].Usage)
+	}
 	if got[2].ToolCallID != "call-1" {
 		t.Fatalf("tool call id = %q", got[2].ToolCallID)
+	}
+	info, err := store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.LastInputTokens != 10 || info.LastOutputTokens != 3 || info.LastTotalTokens != 13 {
+		t.Fatalf("session usage = %#v", info)
 	}
 }
 
@@ -72,6 +83,7 @@ func TestStoreSaveTranscriptReplacesMessages(t *testing.T) {
 
 	if err := store.SaveTranscript(ctx, "work", "/tmp/work", []model.Message{
 		{Role: model.RoleUser, Content: "old"},
+		{Role: model.RoleAssistant, Content: "old response", Usage: model.Usage{InputTokens: 5, OutputTokens: 2, TotalTokens: 7}},
 	}); err != nil {
 		t.Fatalf("SaveTranscript() error = %v", err)
 	}
@@ -89,6 +101,13 @@ func TestStoreSaveTranscriptReplacesMessages(t *testing.T) {
 	if len(got) != 1 || got[0].Content != "new" {
 		t.Fatalf("messages = %#v", got)
 	}
+	info, err := store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.LastTotalTokens != 0 {
+		t.Fatalf("session usage = %#v", info)
+	}
 }
 
 func TestStoreListGetAndDeleteSessions(t *testing.T) {
@@ -103,6 +122,7 @@ func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	}
 	if err := store.SaveTranscript(ctx, "second", "/tmp/second", []model.Message{
 		{Role: model.RoleUser, Content: "second title"},
+		{Role: model.RoleAssistant, Content: "second response", Usage: model.Usage{InputTokens: 20, OutputTokens: 4, TotalTokens: 24}},
 	}); err != nil {
 		t.Fatalf("SaveTranscript() error = %v", err)
 	}
@@ -121,6 +141,13 @@ func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	}
 	if info.ID != "first" || info.Title != "first title" || info.CWD != "/tmp/first" {
 		t.Fatalf("session = %#v", info)
+	}
+	second, err := store.GetSession(ctx, "second")
+	if err != nil {
+		t.Fatalf("GetSession(second) error = %v", err)
+	}
+	if second.LastInputTokens != 20 || second.LastOutputTokens != 4 || second.LastTotalTokens != 24 {
+		t.Fatalf("session usage = %#v", second)
 	}
 
 	if err := store.DeleteSession(ctx, "first"); err != nil {

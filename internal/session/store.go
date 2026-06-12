@@ -30,11 +30,14 @@ type Store struct {
 
 // Session 描述一个本地会话的元数据。
 type Session struct {
-	ID        string
-	Title     string
-	CWD       string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID               string
+	Title            string
+	CWD              string
+	LastInputTokens  int
+	LastOutputTokens int
+	LastTotalTokens  int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // DefaultPath 返回用户主目录下的默认会话数据库路径。
@@ -73,6 +76,9 @@ create table if not exists sessions (
 	id text primary key,
 	title text not null default '',
 	cwd text not null,
+	last_input_tokens integer not null default 0,
+	last_output_tokens integer not null default 0,
+	last_total_tokens integer not null default 0,
 	created_at text not null,
 	updated_at text not null
 );
@@ -85,6 +91,9 @@ create table if not exists messages (
 	reasoning_content text not null default '',
 	tool_call_id text not null default '',
 	tool_calls_json text not null default '',
+	input_tokens integer not null default 0,
+	output_tokens integer not null default 0,
+	total_tokens integer not null default 0,
 	created_at text not null,
 	foreign key(session_id) references sessions(id) on delete cascade
 );`)
@@ -120,7 +129,7 @@ func (s *Store) LoadTranscript(ctx context.Context, sessionID string) (*transcri
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select role, content, reasoning_content, tool_call_id, tool_calls_json
+select role, content, reasoning_content, tool_call_id, tool_calls_json, input_tokens, output_tokens, total_tokens
 from messages
 where session_id = ?
 order by id`, sessionID)
@@ -132,7 +141,8 @@ order by id`, sessionID)
 	trans := transcript.New()
 	for rows.Next() {
 		var role, content, reasoningContent, toolCallID, toolCallsJSON string
-		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON); err != nil {
+		var usage model.Usage
+		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
 			return nil, err
 		}
 		toolCalls, err := decodeToolCalls(toolCallsJSON)
@@ -145,6 +155,7 @@ order by id`, sessionID)
 			ReasoningContent: reasoningContent,
 			ToolCallID:       toolCallID,
 			ToolCalls:        toolCalls,
+			Usage:            usage,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -159,7 +170,7 @@ func (s *Store) ListSessions(ctx context.Context, limit int) ([]Session, error) 
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select id, title, cwd, created_at, updated_at
+select id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
 from sessions
 order by updated_at desc, id
 limit ?`, limit)
@@ -188,7 +199,7 @@ func (s *Store) ListSessionsForCWD(ctx context.Context, cwd string, limit int) (
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select id, title, cwd, created_at, updated_at
+select id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
 from sessions
 where cwd = ?
 order by updated_at desc, id
@@ -218,7 +229,7 @@ func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, erro
 		return Session{}, err
 	}
 	row := s.db.QueryRowContext(ctx, `
-select id, title, cwd, created_at, updated_at
+select id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
 from sessions
 where id = ?`, sessionID)
 	session, err := scanSession(row)
@@ -270,13 +281,17 @@ func (s *Store) SaveTranscript(ctx context.Context, sessionID, cwd string, messa
 	defer tx.Rollback()
 
 	title := titleFromMessages(messages)
+	usage := lastUsageFromMessages(messages)
 	if _, err := tx.ExecContext(ctx, `
-insert into sessions(id, title, cwd, created_at, updated_at)
-values(?, ?, ?, ?, ?)
+insert into sessions(id, title, cwd, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at)
+values(?, ?, ?, ?, ?, ?, ?, ?)
 on conflict(id) do update set
 	title = excluded.title,
 	cwd = excluded.cwd,
-	updated_at = excluded.updated_at`, sessionID, title, cwd, now, now); err != nil {
+	last_input_tokens = excluded.last_input_tokens,
+	last_output_tokens = excluded.last_output_tokens,
+	last_total_tokens = excluded.last_total_tokens,
+	updated_at = excluded.updated_at`, sessionID, title, cwd, usage.InputTokens, usage.OutputTokens, usage.TotalTokens, now, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `delete from messages where session_id = ?`, sessionID); err != nil {
@@ -288,8 +303,8 @@ on conflict(id) do update set
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
-insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, created_at)
-values(?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, now); err != nil {
+insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, input_tokens, output_tokens, total_tokens, created_at)
+values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
 			return err
 		}
 	}
@@ -303,7 +318,7 @@ type sessionScanner interface {
 func scanSession(scanner sessionScanner) (Session, error) {
 	var session Session
 	var createdAt, updatedAt string
-	if err := scanner.Scan(&session.ID, &session.Title, &session.CWD, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&session.ID, &session.Title, &session.CWD, &session.LastInputTokens, &session.LastOutputTokens, &session.LastTotalTokens, &createdAt, &updatedAt); err != nil {
 		return Session{}, err
 	}
 	var err error
@@ -347,6 +362,16 @@ func titleFromMessages(messages []model.Message) string {
 		}
 	}
 	return ""
+}
+
+func lastUsageFromMessages(messages []model.Message) model.Usage {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role == model.RoleAssistant && (msg.Usage.InputTokens != 0 || msg.Usage.OutputTokens != 0 || msg.Usage.TotalTokens != 0) {
+			return msg.Usage
+		}
+	}
+	return model.Usage{}
 }
 
 func firstLine(content string) string {

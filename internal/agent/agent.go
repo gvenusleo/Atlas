@@ -124,6 +124,7 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 			Content:          resp.Content,
 			ReasoningContent: resp.ReasoningContent,
 			ToolCalls:        resp.ToolCalls,
+			Usage:            resp.Usage,
 		})
 		a.emit(Event{
 			Type:    EventModelResponse,

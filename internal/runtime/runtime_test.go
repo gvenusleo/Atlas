@@ -44,6 +44,39 @@ func TestRunTurnSavesAndResumesSession(t *testing.T) {
 	}
 }
 
+func TestRunTurnPersistsProviderUsage(t *testing.T) {
+	provider := &recordingProvider{
+		events: []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{
+			Content: "ok",
+			Usage:   model.Usage{InputTokens: 11, OutputTokens: 4, TotalTokens: 15},
+		},
+	}
+	r := newTestRuntime(t, provider)
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "hello",
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	info, trans, err := r.ShowSession(context.Background(), result.SessionID)
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if info.LastInputTokens != 11 || info.LastOutputTokens != 4 || info.LastTotalTokens != 15 {
+		t.Fatalf("session usage = %#v", info)
+	}
+	messages := trans.Messages()
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	if messages[1].Usage != (model.Usage{InputTokens: 11, OutputTokens: 4, TotalTokens: 15}) {
+		t.Fatalf("message usage = %#v", messages[1].Usage)
+	}
+}
+
 func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
