@@ -68,6 +68,7 @@ go run ./cmd/atlas --session 20260608-153012-a1b2c3d4
 go run ./cmd/atlas run "读取 README 并总结"
 go run ./cmd/atlas run --model deepseek-v4-pro "用 Pro 模型分析这个问题"
 go run ./cmd/atlas run --session 20260608-153012-a1b2c3d4 "继续刚才的问题"
+go run ./cmd/atlas doctor
 go run ./cmd/atlas sessions
 go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
 go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
@@ -76,6 +77,8 @@ go run ./cmd/atlas version
 ```
 
 裸 `atlas` 是交互模式入口；当前版本暂未实现 TUI，会提示使用 `atlas run`。`atlas run` 执行一次模型请求，并实时输出模型文本。
+
+`atlas doctor` 执行离线配置诊断，检查配置文件、Provider 配置摘要、agent 参数、本地 session 数据库、Tavily 配置状态和 `/bin/sh` 可用性。它不会调用模型 Provider 或 Tavily API。
 
 `atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。传入 `--model <value>` 时，本轮使用该模型。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 

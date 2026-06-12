@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,6 +197,70 @@ func TestModelOptions(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsOfflineRuntimeChecks(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+
+	report := r.Doctor(context.Background())
+	if report.Failed() {
+		t.Fatalf("report failed: %#v", report.Checks)
+	}
+	assertDoctorCheck(t, report, "config", DoctorStatusOK, "config.json")
+	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "https://api.example.com, default test-model, 2 models")
+	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "reasoning_effort high")
+	assertDoctorCheck(t, report, "session", DoctorStatusOK, "atlas.db")
+	assertDoctorCheck(t, report, "tavily", DoctorStatusWarn, "disabled")
+	assertDoctorCheck(t, report, "shell", DoctorStatusOK, "/bin/sh")
+}
+
+func TestDoctorReportsTavilyWhenConfigured(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	r.deps.LoadConfig = func() (config.Config, error) {
+		cfg := testConfig(dbPath)
+		cfg.Services.Tavily.APIKey = "tvly-test"
+		cfg.Services.Tavily.BaseURL = "https://api.tavily.com"
+		return cfg, nil
+	}
+
+	report := r.Doctor(context.Background())
+	assertDoctorCheck(t, report, "tavily", DoctorStatusOK, "https://api.tavily.com")
+}
+
+func TestDoctorReportsConfigFailure(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+	r.deps.ConfigPath = func() (string, error) { return "/tmp/config.json", nil }
+	r.deps.LoadConfig = func() (config.Config, error) {
+		return config.Config{}, fmt.Errorf("provider.api_key is required")
+	}
+
+	report := r.Doctor(context.Background())
+	if !report.Failed() {
+		t.Fatalf("report did not fail: %#v", report.Checks)
+	}
+	if len(report.Checks) != 1 {
+		t.Fatalf("checks = %#v", report.Checks)
+	}
+	assertDoctorCheck(t, report, "config", DoctorStatusFail, "/tmp/config.json: provider.api_key is required")
+}
+
+func TestDoctorReportsSessionFailure(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "not-a-dir", "atlas.db")
+	if err := os.WriteFile(filepath.Dir(dbPath), []byte("file"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	r.deps.LoadConfig = func() (config.Config, error) {
+		return testConfig(dbPath), nil
+	}
+
+	report := r.Doctor(context.Background())
+	if !report.Failed() {
+		t.Fatalf("report did not fail: %#v", report.Checks)
+	}
+	assertDoctorCheck(t, report, "session", DoctorStatusFail, dbPath)
+}
+
 func TestRunTurnIncludesSkillSummaries(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
@@ -347,6 +413,9 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 		LoadConfig: func() (config.Config, error) {
 			return testConfig(dbPath), nil
 		},
+		ConfigPath: func() (string, error) {
+			return filepath.Join(t.TempDir(), "config.json"), nil
+		},
 		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			if provider, ok := provider.(*recordingProvider); ok {
 				provider.providerModel = selected.Value
@@ -387,4 +456,22 @@ func testConfig(dbPath string) config.Config {
 			DBPath: dbPath,
 		},
 	}
+}
+
+func assertDoctorCheck(t *testing.T, report DoctorReport, name string, status DoctorStatus, detail string) {
+	t.Helper()
+
+	for _, check := range report.Checks {
+		if check.Name != name {
+			continue
+		}
+		if check.Status != status {
+			t.Fatalf("%s status = %q, want %q", name, check.Status, status)
+		}
+		if !strings.Contains(check.Detail, detail) {
+			t.Fatalf("%s detail = %q, want substring %q", name, check.Detail, detail)
+		}
+		return
+	}
+	t.Fatalf("missing doctor check %q in %#v", name, report.Checks)
 }

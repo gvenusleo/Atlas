@@ -231,6 +231,58 @@ func TestRunWithDependenciesRejectsACPUsage(t *testing.T) {
 	}
 }
 
+func TestRunWithDependenciesRunsDoctor(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := runWithDependencies(context.Background(), []string{"doctor"}, runDependencies{
+		runtime: testRuntime(filepath.Join(t.TempDir(), "atlas.db"), nil, nil),
+		stdout:  &stdout,
+	}); err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+
+	got := stdout.String()
+	for _, want := range []string{
+		"OK config:",
+		"OK provider: https://api.example.com, default test-model, 2 models",
+		"OK session:",
+		"WARN tavily: disabled",
+		"OK shell: /bin/sh",
+		"doctor: ok",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestRunWithDependenciesReportsDoctorFailure(t *testing.T) {
+	var stdout bytes.Buffer
+	rt := atlasruntime.New(atlasruntime.Dependencies{
+		ConfigPath: func() (string, error) { return "/tmp/config.json", nil },
+		LoadConfig: func() (config.Config, error) {
+			return config.Config{}, context.Canceled
+		},
+	})
+
+	err := runWithDependencies(context.Background(), []string{"doctor"}, runDependencies{
+		runtime: rt,
+		stdout:  &stdout,
+	})
+	if err == nil || !strings.Contains(err.Error(), "doctor failed") {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "FAIL config: /tmp/config.json: context canceled") || !strings.Contains(got, "doctor: failed") {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
+func TestRunWithDependenciesRejectsDoctorUsage(t *testing.T) {
+	err := runWithDependencies(context.Background(), []string{"doctor", "extra"}, runDependencies{})
+	if err == nil || !strings.Contains(err.Error(), "usage: atlas doctor") {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+}
+
 func TestRunWithDependenciesListsSessions(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "atlas.db")
 	stdout := saveTestSession(t, dbPath, "work", "hello")
@@ -425,6 +477,9 @@ func testRuntime(dbPath string, provider model.Provider, instructions []prompt.I
 	return atlasruntime.New(atlasruntime.Dependencies{
 		LoadConfig: func() (config.Config, error) {
 			return testConfig(dbPath), nil
+		},
+		ConfigPath: func() (string, error) {
+			return filepath.Join(filepath.Dir(dbPath), "config.json"), nil
 		},
 		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			if provider == nil {

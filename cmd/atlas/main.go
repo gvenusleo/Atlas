@@ -53,6 +53,8 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return runPrompt(ctx, args[1:], deps)
 	case "acp":
 		return runACPCommand(ctx, args[1:], deps)
+	case "doctor":
+		return runDoctorCommand(ctx, args[1:], deps)
 	case "sessions":
 		return runSessionsCommand(ctx, args[1:], deps)
 	case "session":
@@ -60,7 +62,7 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	case "version":
 		return runVersionCommand(args[1:], deps)
 	default:
-		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas acp | atlas version")
+		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas doctor | atlas acp | atlas version")
 	}
 }
 
@@ -104,6 +106,22 @@ func runACPCommand(ctx context.Context, args []string, deps runDependencies) err
 		Input:   deps.stdin,
 		Output:  deps.stdout,
 	})
+}
+
+func runDoctorCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas doctor")
+	}
+	report := deps.runtime.Doctor(ctx)
+	for _, check := range report.Checks {
+		fmt.Fprintf(deps.stdout, "%s %s: %s\n", doctorStatusLabel(check.Status), check.Name, check.Detail)
+	}
+	if report.Failed() {
+		fmt.Fprintln(deps.stdout, "doctor: failed")
+		return errors.New("doctor failed")
+	}
+	fmt.Fprintln(deps.stdout, "doctor: ok")
+	return nil
 }
 
 func runInteractivePlaceholder(_ context.Context, args []string, deps runDependencies) error {
@@ -254,6 +272,19 @@ func completeRunDependencies(deps runDependencies) runDependencies {
 		deps.runACP = atlasacp.Run
 	}
 	return deps
+}
+
+func doctorStatusLabel(status runtime.DoctorStatus) string {
+	switch status {
+	case runtime.DoctorStatusOK:
+		return "OK"
+	case runtime.DoctorStatusWarn:
+		return "WARN"
+	case runtime.DoctorStatusFail:
+		return "FAIL"
+	default:
+		return strings.ToUpper(string(status))
+	}
 }
 
 func printEvent(out io.Writer) agent.Observer {

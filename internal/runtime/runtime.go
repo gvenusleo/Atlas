@@ -22,6 +22,7 @@ import (
 // Dependencies 定义 Runtime 需要的外部依赖，测试可以替换其中任意一项。
 type Dependencies struct {
 	LoadConfig       func() (config.Config, error)
+	ConfigPath       func() (string, error)
 	NewProvider      func(config.ProviderConfig, config.ProviderModel) (model.Provider, error)
 	Getwd            func() (string, error)
 	LoadInstructions func(string) ([]prompt.InstructionFile, error)
@@ -69,10 +70,45 @@ type ModelOptions struct {
 	Models          []ModelOption
 }
 
+// DoctorStatus 描述一项 doctor 诊断结果的严重程度。
+type DoctorStatus string
+
+const (
+	// DoctorStatusOK 表示检查通过。
+	DoctorStatusOK DoctorStatus = "ok"
+	// DoctorStatusWarn 表示能力不可用或配置缺失，但不阻止核心运行。
+	DoctorStatusWarn DoctorStatus = "warn"
+	// DoctorStatusFail 表示 Atlas 的核心运行前提不满足。
+	DoctorStatusFail DoctorStatus = "fail"
+)
+
+// DoctorCheck 描述 atlas doctor 输出中的一项诊断。
+type DoctorCheck struct {
+	Name   string
+	Status DoctorStatus
+	Detail string
+}
+
+// DoctorReport 汇总 atlas doctor 的全部诊断结果。
+type DoctorReport struct {
+	Checks []DoctorCheck
+}
+
+// Failed 返回报告中是否存在失败项。
+func (r DoctorReport) Failed() bool {
+	for _, check := range r.Checks {
+		if check.Status == DoctorStatusFail {
+			return true
+		}
+	}
+	return false
+}
+
 // DefaultDependencies 返回真实命令行运行时使用的依赖。
 func DefaultDependencies() Dependencies {
 	return Dependencies{
 		LoadConfig: config.LoadDefault,
+		ConfigPath: config.DefaultPath,
 		NewProvider: func(cfg config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
 			return openai.New(openai.Config{
 				BaseURL: cfg.BaseURL,
@@ -215,6 +251,29 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 	}, nil
 }
 
+// Doctor 运行离线配置和本地运行环境诊断。
+func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
+	var report DoctorReport
+	configPath, pathErr := r.deps.ConfigPath()
+	if pathErr != nil {
+		report.add("config", DoctorStatusFail, pathErr.Error())
+		return report
+	}
+
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		report.add("config", DoctorStatusFail, fmt.Sprintf("%s: %v", configPath, err))
+		return report
+	}
+	report.add("config", DoctorStatusOK, configPath)
+	report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, default %s, %d models", cfg.Provider.BaseURL, cfg.Provider.DefaultModel, len(cfg.Provider.Models)))
+	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, reasoning_effort %s", cfg.Agent.MaxSteps, cfg.Agent.Temperature, displayReasoningEffort(cfg.Agent.ReasoningEffort)))
+	report.addSession(ctx, cfg.Session)
+	report.addTavily(cfg.Services.Tavily)
+	report.addShell()
+	return report
+}
+
 // ListSessions 返回最近更新的本地会话。
 func (r *Runtime) ListSessions(ctx context.Context, limit int) ([]session.Session, error) {
 	cfg, err := r.deps.LoadConfig()
@@ -292,10 +351,61 @@ func (r *Runtime) DeleteSessionIfExists(ctx context.Context, sessionID string) e
 	return err
 }
 
+func (r *DoctorReport) add(name string, status DoctorStatus, detail string) {
+	r.Checks = append(r.Checks, DoctorCheck{
+		Name:   name,
+		Status: status,
+		Detail: detail,
+	})
+}
+
+func (r *DoctorReport) addSession(ctx context.Context, cfg config.SessionConfig) {
+	dbPath, err := sessionDBPath(cfg)
+	if err != nil {
+		r.add("session", DoctorStatusFail, err.Error())
+		return
+	}
+	store, err := session.Open(dbPath)
+	if err != nil {
+		r.add("session", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
+		return
+	}
+	defer store.Close()
+	if err := store.EnsureSchema(ctx); err != nil {
+		r.add("session", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
+		return
+	}
+	r.add("session", DoctorStatusOK, dbPath)
+}
+
+func (r *DoctorReport) addTavily(cfg config.TavilyConfig) {
+	if cfg.APIKey == "" {
+		r.add("tavily", DoctorStatusWarn, "disabled")
+		return
+	}
+	r.add("tavily", DoctorStatusOK, cfg.BaseURL)
+}
+
+func (r *DoctorReport) addShell() {
+	info, err := os.Stat("/bin/sh")
+	if err != nil {
+		r.add("shell", DoctorStatusFail, err.Error())
+		return
+	}
+	if info.IsDir() || info.Mode()&0o111 == 0 {
+		r.add("shell", DoctorStatusFail, "/bin/sh is not executable")
+		return
+	}
+	r.add("shell", DoctorStatusOK, "/bin/sh")
+}
+
 func completeDependencies(deps Dependencies) Dependencies {
 	defaults := DefaultDependencies()
 	if deps.LoadConfig == nil {
 		deps.LoadConfig = defaults.LoadConfig
+	}
+	if deps.ConfigPath == nil {
+		deps.ConfigPath = defaults.ConfigPath
 	}
 	if deps.NewProvider == nil {
 		deps.NewProvider = defaults.NewProvider
@@ -388,4 +498,11 @@ func selectedReasoningEffort(override string, overrideSet bool, configured strin
 		return override
 	}
 	return configured
+}
+
+func displayReasoningEffort(value string) string {
+	if value == "" {
+		return "Default"
+	}
+	return value
 }
