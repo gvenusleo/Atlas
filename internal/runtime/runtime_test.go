@@ -13,6 +13,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/skill"
+	"github.com/liuyuxin/atlas/internal/tool"
 )
 
 func TestRunTurnSavesAndResumesSession(t *testing.T) {
@@ -365,7 +366,7 @@ func TestDoctorReportsOfflineRuntimeChecks(t *testing.T) {
 	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "reasoning_effort high")
 	assertDoctorCheck(t, report, "session", DoctorStatusOK, "atlas.db")
 	assertDoctorCheck(t, report, "tavily", DoctorStatusWarn, "disabled")
-	assertDoctorCheck(t, report, "shell", DoctorStatusOK, "/bin/sh")
+	assertDoctorCheck(t, report, "shell", DoctorStatusOK, expectedShellDetail())
 }
 
 func TestDoctorReportsTavilyWhenConfigured(t *testing.T) {
@@ -657,4 +658,11 @@ func assertDoctorCheck(t *testing.T, report DoctorReport, name string, status Do
 		return
 	}
 	t.Fatalf("missing doctor check %q in %#v", name, report.Checks)
+}
+
+func expectedShellDetail() string {
+	if tool.DefaultShell().DisplayName == "" {
+		return "shell"
+	}
+	return tool.DefaultShell().DisplayName
 }

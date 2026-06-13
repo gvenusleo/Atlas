@@ -11,6 +11,7 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 	result := BuildSystem(Options{
 		WorkingDir: "/tmp/atlas-work",
 		Platform:   "test-os",
+		Shell:      "test-shell",
 		Now:        time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
 	})
 
@@ -26,12 +27,30 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 		"Current date: 2026-06-08",
 		"Working directory: /tmp/atlas-work",
 		"Platform: test-os",
-		"Shell: /bin/sh",
+		"Shell: test-shell",
 	}
 	for _, check := range checks {
 		if !strings.Contains(result, check) {
 			t.Fatalf("system prompt missing %q", check)
 		}
+	}
+}
+
+func TestBuildSystemDefaultsShellForPlatform(t *testing.T) {
+	windows := BuildSystem(Options{
+		Platform: "windows",
+		Now:      time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
+	})
+	if !strings.Contains(windows, "Shell: PowerShell") {
+		t.Fatalf("system prompt = %q", windows)
+	}
+
+	linux := BuildSystem(Options{
+		Platform: "linux",
+		Now:      time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
+	})
+	if !strings.Contains(linux, "Shell: /bin/sh") {
+		t.Fatalf("system prompt = %q", linux)
 	}
 }
 

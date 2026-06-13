@@ -249,6 +249,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		System: prompt.BuildSystem(prompt.Options{
 			WorkingDir:   cwd,
 			Now:          r.deps.Now(),
+			Shell:        tool.DefaultShell().DisplayName,
 			Instructions: instructions,
 			Skills:       promptSkillSummaries(skills),
 		}),
@@ -560,16 +561,12 @@ func (r *DoctorReport) addTavily(cfg config.TavilyConfig) {
 }
 
 func (r *DoctorReport) addShell() {
-	info, err := os.Stat("/bin/sh")
+	spec, err := tool.CheckDefaultShell()
 	if err != nil {
 		r.add("shell", DoctorStatusFail, err.Error())
 		return
 	}
-	if info.IsDir() || info.Mode()&0o111 == 0 {
-		r.add("shell", DoctorStatusFail, "/bin/sh is not executable")
-		return
-	}
-	r.add("shell", DoctorStatusOK, "/bin/sh")
+	r.add("shell", DoctorStatusOK, spec.DisplayName)
 }
 
 func completeDependencies(deps Dependencies) Dependencies {

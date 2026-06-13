@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -63,11 +64,12 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 
 func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
+	cwd := testCWD(t)
 
 	if _, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: "relative"}); err == nil {
 		t.Fatal("NewSession() error = nil")
 	}
-	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: "/tmp/work"})
+	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: cwd})
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
 	}
@@ -75,7 +77,7 @@ func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	if !ok {
 		t.Fatalf("session %q was not recorded", resp.SessionId)
 	}
-	if state.cwd != "/tmp/work" {
+	if state.cwd != cwd {
 		t.Fatalf("cwd = %q", state.cwd)
 	}
 	if state.model != "test-model" {
@@ -101,13 +103,14 @@ func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 
 func TestNewSessionSendsCompactCommand(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
+	cwd := testCWD(t)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
 		return nil
 	}
 
-	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: "/tmp/work"})
+	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: cwd})
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
 	}
@@ -329,19 +332,20 @@ func TestPromptReturnsCancelledWhenContextStops(t *testing.T) {
 
 func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	now := time.Date(2026, 6, 9, 10, 0, 0, 0, time.UTC)
+	cwd := testCWD(t)
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: "/tmp/work"},
+			"sess": {ID: "sess", CWD: cwd},
 		},
 		sessionsForCWD: []session.Session{
-			{ID: "sess", Title: "hello", CWD: "/tmp/work", UpdatedAt: now},
+			{ID: "sess", Title: "hello", CWD: cwd, UpdatedAt: now},
 		},
 	}
 	a := NewAgent(rt)
 
 	resume, err := a.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
 		SessionId: "sess",
-		Cwd:       "/tmp/work",
+		Cwd:       cwd,
 	})
 	if err != nil {
 		t.Fatalf("ResumeSession() error = %v", err)
@@ -350,10 +354,9 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 		t.Fatalf("current model = %q", got)
 	}
 	state, ok := a.getSession("sess")
-	if !ok || state.cwd != "/tmp/work" {
+	if !ok || state.cwd != cwd {
 		t.Fatalf("session state = %#v, %t", state, ok)
 	}
-	cwd := "/tmp/work"
 	list, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cwd: &cwd})
 	if err != nil {
 		t.Fatalf("ListSessions() error = %v", err)
@@ -361,7 +364,7 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	if len(list.Sessions) != 1 || list.Sessions[0].SessionId != "sess" || list.Sessions[0].UpdatedAt == nil {
 		t.Fatalf("sessions = %#v", list.Sessions)
 	}
-	if !reflect.DeepEqual(rt.listedCWDs, []string{"/tmp/work"}) {
+	if !reflect.DeepEqual(rt.listedCWDs, []string{cwd}) {
 		t.Fatalf("listed cwds = %#v", rt.listedCWDs)
 	}
 
@@ -380,6 +383,7 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 }
 
 func TestLoadSessionReplaysTranscript(t *testing.T) {
+	cwd := testCWD(t)
 	trans := transcript.New()
 	trans.Append(model.Message{Role: model.RoleUser, Content: "hi"})
 	trans.Append(model.Message{
@@ -396,7 +400,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	trans.Append(model.Message{Role: model.RoleAssistant, Content: "done"})
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: "/tmp/work"},
+			"sess": {ID: "sess", CWD: cwd},
 		},
 		showTranscripts: map[string]*transcript.Transcript{
 			"sess": trans,
@@ -411,7 +415,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 
 	resp, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
 		SessionId:  "sess",
-		Cwd:        "/tmp/work",
+		Cwd:        cwd,
 		McpServers: []acpsdk.McpServer{},
 	})
 	if err != nil {
@@ -421,7 +425,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 		t.Fatalf("current model = %q", got)
 	}
 	state, ok := a.getSession("sess")
-	if !ok || state.cwd != "/tmp/work" || state.model != "test-model" || state.reasoningEffort != "high" {
+	if !ok || state.cwd != cwd || state.model != "test-model" || state.reasoningEffort != "high" {
 		t.Fatalf("session state = %#v, %t", state, ok)
 	}
 	if len(updates) != 7 {
@@ -459,16 +463,18 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 }
 
 func TestLoadSessionRejectsCWDMismatch(t *testing.T) {
+	cwd := testCWD(t)
+	otherCWD := testCWD(t)
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: "/tmp/work"},
+			"sess": {ID: "sess", CWD: cwd},
 		},
 	}
 	a := NewAgent(rt)
 
 	_, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
 		SessionId:  "sess",
-		Cwd:        "/tmp/other",
+		Cwd:        otherCWD,
 		McpServers: []acpsdk.McpServer{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "cwd mismatch") {
@@ -490,11 +496,12 @@ func TestLoadSessionRejectsRelativeCWD(t *testing.T) {
 }
 
 func TestLoadSessionReturnsReplayError(t *testing.T) {
+	cwd := testCWD(t)
 	trans := transcript.New()
 	trans.Append(model.Message{Role: model.RoleUser, Content: "hi"})
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: "/tmp/work"},
+			"sess": {ID: "sess", CWD: cwd},
 		},
 		showTranscripts: map[string]*transcript.Transcript{
 			"sess": trans,
@@ -507,7 +514,7 @@ func TestLoadSessionReturnsReplayError(t *testing.T) {
 
 	_, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
 		SessionId:  "sess",
-		Cwd:        "/tmp/work",
+		Cwd:        cwd,
 		McpServers: []acpsdk.McpServer{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "send failed") {
@@ -519,16 +526,18 @@ func TestLoadSessionReturnsReplayError(t *testing.T) {
 }
 
 func TestResumeSessionRejectsCWDMismatch(t *testing.T) {
+	cwd := testCWD(t)
+	otherCWD := testCWD(t)
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: "/tmp/work"},
+			"sess": {ID: "sess", CWD: cwd},
 		},
 	}
 	a := NewAgent(rt)
 
 	_, err := a.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
 		SessionId: "sess",
-		Cwd:       "/tmp/other",
+		Cwd:       otherCWD,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cwd mismatch") {
 		t.Fatalf("ResumeSession() error = %v", err)
@@ -768,4 +777,9 @@ func modelSessionConfigID() acpsdk.SessionConfigId {
 
 func reasoningEffortSessionConfigID() acpsdk.SessionConfigId {
 	return acpsdk.SessionConfigId(reasoningEffortConfigID)
+}
+
+func testCWD(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "work")
 }

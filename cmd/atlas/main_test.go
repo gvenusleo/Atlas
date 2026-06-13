@@ -15,6 +15,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/prompt"
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/skill"
+	"github.com/liuyuxin/atlas/internal/tool"
 	"github.com/liuyuxin/atlas/internal/version"
 	"github.com/liuyuxin/atlas/internal/weixin"
 )
@@ -247,7 +248,7 @@ func TestRunWithDependenciesRunsDoctor(t *testing.T) {
 		"OK provider: https://api.example.com, default test-model, 2 models",
 		"OK session:",
 		"WARN tavily: disabled",
-		"OK shell: /bin/sh",
+		"OK shell: " + tool.DefaultShell().DisplayName,
 		"doctor: ok",
 	} {
 		if !strings.Contains(got, want) {
