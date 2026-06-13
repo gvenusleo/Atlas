@@ -232,6 +232,42 @@ func TestServerIgnoresUnknownMessageType(t *testing.T) {
 	}
 }
 
+func TestServerHelpCommandDescribesCommands(t *testing.T) {
+	var replies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ilink/bot/sendmessage" {
+			var req sendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			replies = append(replies, req.Message.Items[0].TextItem.Text)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	srv, _ := newTestServer(t, server.URL)
+	if err := srv.HandleMessage(context.Background(), textMessage("user-1", "/help")); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %#v", replies)
+	}
+	got := replies[0]
+	for _, want := range []string{
+		"/status - Show current cwd and session.",
+		"/cwd <absolute-path> - Switch cwd and start a new conversation.",
+		"/sessions - List recent sessions for the current cwd.",
+		"/resume <session-id> - Resume a session and switch to its cwd.",
+		"/compact - Compact the current session context.",
+		"/cancel - Cancel the running turn.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("help missing %q in %q", want, got)
+		}
+	}
+}
+
 func TestServerCWDCommandSwitchesDirectoryAndStartsNewSession(t *testing.T) {
 	var replies []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,12 +330,17 @@ func TestServerSessionsAndResumeCommands(t *testing.T) {
 		Title:     "hello",
 		CWD:       srv.cfg.DefaultCWD,
 		UpdatedAt: time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC),
+	}, {
+		ID:        "session-2",
+		Title:     "",
+		CWD:       srv.cfg.DefaultCWD,
+		UpdatedAt: time.Date(2026, 6, 13, 12, 1, 0, 0, time.UTC),
 	}})
 
 	if err := srv.HandleMessage(context.Background(), textMessage("user-1", "/sessions")); err != nil {
 		t.Fatalf("sessions HandleMessage() error = %v", err)
 	}
-	if len(replies) != 1 || !strings.Contains(replies[0], "session-1") {
+	if len(replies) != 1 || !strings.Contains(replies[0], "ID") || !strings.Contains(replies[0], "UPDATED") || !strings.Contains(replies[0], "TITLE") || !strings.Contains(replies[0], "session-1") || !strings.Contains(replies[0], "(untitled)") {
 		t.Fatalf("replies = %#v", replies)
 	}
 
@@ -312,6 +353,30 @@ func TestServerSessionsAndResumeCommands(t *testing.T) {
 	}
 	if state.Senders["user-1"].SessionID != "session-1" {
 		t.Fatalf("sender state = %#v", state.Senders["user-1"])
+	}
+}
+
+func TestFormatSessionListIncludesCWDForAllSessions(t *testing.T) {
+	got := formatSessionList([]session.Session{{
+		ID:        "session-1",
+		Title:     "hello\tworld",
+		CWD:       "/tmp/work",
+		UpdatedAt: time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC),
+	}}, true)
+	for _, want := range []string{
+		"Recent sessions (all):",
+		"ID",
+		"UPDATED",
+		"TITLE",
+		"CWD",
+		"session-1",
+		"2026-06-13 12:00",
+		"hello world",
+		"/tmp/work",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatSessionList() missing %q in %q", want, got)
+		}
 	}
 }
 

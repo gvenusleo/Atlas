@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"text/tabwriter"
 	"time"
 
 	"github.com/liuyuxin/atlas/internal/agent"
@@ -151,7 +152,7 @@ func (s *Server) handleSlash(ctx context.Context, msg WeixinMessage, body string
 	args := fields[1:]
 	switch command {
 	case "/help":
-		return s.reply(ctx, msg, "Commands: /status, /cwd, /cwd <absolute-path>, /cwd -, /new, /sessions, /sessions all, /resume <session-id>, /compact, /cancel")
+		return s.reply(ctx, msg, weixinHelpText())
 	case "/status":
 		state, err := s.senderState(msg.FromUserID)
 		if err != nil {
@@ -236,16 +237,7 @@ func (s *Server) handleSessions(ctx context.Context, msg WeixinMessage, all bool
 	if len(sessions) == 0 {
 		return s.reply(ctx, msg, "No sessions.")
 	}
-	lines := make([]string, 0, len(sessions)+1)
-	lines = append(lines, "Recent sessions:")
-	for _, item := range sessions {
-		title := strings.TrimSpace(item.Title)
-		if title == "" {
-			title = "(untitled)"
-		}
-		lines = append(lines, fmt.Sprintf("%s  %s  %s", item.ID, item.UpdatedAt.Format("2006-01-02 15:04"), title))
-	}
-	return s.reply(ctx, msg, strings.Join(lines, "\n"))
+	return s.reply(ctx, msg, formatSessionList(sessions, all))
 }
 
 // handleResume 把发送人的后续消息绑定到指定 Atlas session。
@@ -532,6 +524,56 @@ func displaySessionID(id string) string {
 		return "(new)"
 	}
 	return id
+}
+
+// weixinHelpText 返回微信 slash command 的简明说明。
+func weixinHelpText() string {
+	return strings.Join([]string{
+		"Atlas commands:",
+		"/status - Show current cwd and session.",
+		"/cwd - Show current cwd.",
+		"/cwd <absolute-path> - Switch cwd and start a new conversation.",
+		"/cwd - - Switch back to the previous cwd.",
+		"/new - Start a new conversation in the current cwd.",
+		"/sessions - List recent sessions for the current cwd.",
+		"/sessions all - List recent sessions across all cwd values.",
+		"/resume <session-id> - Resume a session and switch to its cwd.",
+		"/compact - Compact the current session context.",
+		"/cancel - Cancel the running turn.",
+	}, "\n")
+}
+
+// formatSessionList 把会话列表格式化为适合微信纯文本展示的表格。
+func formatSessionList(sessions []session.Session, includeCWD bool) string {
+	var b strings.Builder
+	if includeCWD {
+		b.WriteString("Recent sessions (all):\n")
+	} else {
+		b.WriteString("Recent sessions:\n")
+	}
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	if includeCWD {
+		fmt.Fprintln(w, "ID\tUPDATED\tTITLE\tCWD")
+		for _, item := range sessions {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", item.ID, item.UpdatedAt.Format("2006-01-02 15:04"), tableCell(item.Title, "(untitled)"), tableCell(item.CWD, "-"))
+		}
+	} else {
+		fmt.Fprintln(w, "ID\tUPDATED\tTITLE")
+		for _, item := range sessions {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", item.ID, item.UpdatedAt.Format("2006-01-02 15:04"), tableCell(item.Title, "(untitled)"))
+		}
+	}
+	_ = w.Flush()
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// tableCell 清理表格单元格中的连续空白。
+func tableCell(value, fallback string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 // sleepContext 在等待期间响应 ctx 取消。
