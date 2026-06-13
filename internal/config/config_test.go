@@ -100,9 +100,6 @@ func TestLoadFileDefaultsTavilyBaseURL(t *testing.T) {
 		"services": {
 			"tavily": {
 				"api_key": "tvly-test"
-			},
-			"weixin": {
-				"default_cwd": "/tmp/atlas-work"
 			}
 		}
 	}`)
@@ -119,9 +116,6 @@ func TestLoadFileDefaultsTavilyBaseURL(t *testing.T) {
 	}
 	if cfg.Services.Weixin.BaseURL != defaultWeixinBaseURL {
 		t.Fatalf("Weixin.BaseURL = %q", cfg.Services.Weixin.BaseURL)
-	}
-	if cfg.Services.Weixin.DefaultCWD != "/tmp/atlas-work" {
-		t.Fatalf("Weixin.DefaultCWD = %q", cfg.Services.Weixin.DefaultCWD)
 	}
 }
 

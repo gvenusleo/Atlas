@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/liuyuxin/atlas/internal/agent"
-	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/tool"
@@ -40,7 +39,6 @@ type ServerOptions struct {
 	Store     *Store
 	Client    *Client
 	Account   Account
-	Config    config.WeixinConfig
 	Output    io.Writer
 	PollDelay time.Duration
 }
@@ -51,7 +49,6 @@ type Server struct {
 	store     *Store
 	client    *Client
 	account   Account
-	cfg       config.WeixinConfig
 	output    io.Writer
 	pollDelay time.Duration
 
@@ -84,7 +81,6 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		store:     opts.Store,
 		client:    opts.Client,
 		account:   opts.Account,
-		cfg:       opts.Config,
 		output:    opts.Output,
 		pollDelay: opts.PollDelay,
 		active:    map[string]context.CancelFunc{},
@@ -480,9 +476,6 @@ func (s *Server) updateState(update func(*channelState)) error {
 
 // defaultCWD 返回微信通道首次对话使用的工作目录。
 func (s *Server) defaultCWD() string {
-	if s.cfg.DefaultCWD != "" {
-		return s.cfg.DefaultCWD
-	}
 	if wd, err := os.Getwd(); err == nil {
 		return wd
 	}

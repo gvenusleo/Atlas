@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/liuyuxin/atlas/internal/agent"
-	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
@@ -41,7 +40,7 @@ func TestServerRunsTurnWithTypingAndSavesSession(t *testing.T) {
 	}))
 	defer server.Close()
 
-	srv, rt := newTestServer(t, server.URL)
+	srv, rt, expectedCWD := newTestServerInCWD(t, server.URL)
 	if err := srv.HandleMessage(context.Background(), textMessage("user-1", "hello")); err != nil {
 		t.Fatalf("HandleMessage() error = %v", err)
 	}
@@ -51,12 +50,12 @@ func TestServerRunsTurnWithTypingAndSavesSession(t *testing.T) {
 		return containsPath(requests, "/ilink/bot/sendmessage")
 	})
 
-	prompt, cwd := rt.lastRun()
+	prompt, gotCWD := rt.lastRun()
 	if prompt != "hello" {
 		t.Fatalf("prompt = %q", prompt)
 	}
-	if cwd != srv.cfg.DefaultCWD {
-		t.Fatalf("cwd = %q", cwd)
+	if gotCWD != expectedCWD {
+		t.Fatalf("cwd = %q", gotCWD)
 	}
 	requestMu.Lock()
 	recordedRequests := append([]string(nil), requests...)
@@ -282,12 +281,12 @@ func TestServerCWDCommandSwitchesDirectoryAndStartsNewSession(t *testing.T) {
 	}))
 	defer server.Close()
 
-	srv, _ := newTestServer(t, server.URL)
+	srv, _, cwd := newTestServerInCWD(t, server.URL)
 	oldState, err := srv.store.loadState()
 	if err != nil {
 		t.Fatalf("loadState() error = %v", err)
 	}
-	oldState.Senders["user-1"] = SenderState{CWD: srv.cfg.DefaultCWD, SessionID: "old-session"}
+	oldState.Senders["user-1"] = SenderState{CWD: cwd, SessionID: "old-session"}
 	if err := srv.store.saveState(oldState); err != nil {
 		t.Fatalf("saveState() error = %v", err)
 	}
@@ -324,16 +323,16 @@ func TestServerSessionsAndResumeCommands(t *testing.T) {
 	}))
 	defer server.Close()
 
-	srv, rt := newTestServer(t, server.URL)
+	srv, rt, cwd := newTestServerInCWD(t, server.URL)
 	rt.setSessions([]session.Session{{
 		ID:        "session-1",
 		Title:     "hello",
-		CWD:       srv.cfg.DefaultCWD,
+		CWD:       cwd,
 		UpdatedAt: time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC),
 	}, {
 		ID:        "session-2",
 		Title:     "",
-		CWD:       srv.cfg.DefaultCWD,
+		CWD:       cwd,
 		UpdatedAt: time.Date(2026, 6, 13, 12, 1, 0, 0, time.UTC),
 	}})
 
@@ -457,6 +456,15 @@ func (f *fakeRuntime) setSessions(sessions []session.Session) {
 
 func newTestServer(t *testing.T, baseURL string) (*Server, *fakeRuntime) {
 	t.Helper()
+	srv, rt, _ := newTestServerInCWD(t, baseURL)
+	return srv, rt
+}
+
+func newTestServerInCWD(t *testing.T, baseURL string) (*Server, *fakeRuntime, string) {
+	t.Helper()
+
+	cwd := t.TempDir()
+	t.Chdir(cwd)
 
 	store, err := NewStore(filepath.Join(t.TempDir(), "weixin"))
 	if err != nil {
@@ -472,12 +480,11 @@ func newTestServer(t *testing.T, baseURL string) (*Server, *fakeRuntime) {
 		Store:   store,
 		Client:  client,
 		Account: Account{ID: "account-1", UserID: "user-1", Token: "token-1", BaseURL: baseURL},
-		Config:  config.WeixinConfig{DefaultCWD: t.TempDir()},
 	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
-	return srv, rt
+	return srv, rt, cwd
 }
 
 func textMessage(from, text string) WeixinMessage {

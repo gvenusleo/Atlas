@@ -52,9 +52,6 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
   "services": {
     "tavily": {
       "api_key": "tvly-..."
-    },
-    "weixin": {
-      "default_cwd": "/Users/liuyuxin/Documents/agents/Atlas"
     }
   }
 }
@@ -64,7 +61,7 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 
 `services.tavily` 可省略。配置 `services.tavily.api_key` 后，Atlas 会注册 `web_search` 和 `web_fetch`，默认调用 `https://api.tavily.com`。使用这两个工具时，搜索查询或网页 URL 会发送给 Tavily。
 
-`services.weixin` 可省略。`services.weixin.base_url` 默认使用 `https://ilinkai.weixin.qq.com`；`services.weixin.default_cwd` 用于微信远程控制首次收到消息时的工作目录。微信通道只允许扫码登录的微信用户本人控制 Atlas。
+`services.weixin` 可省略。`services.weixin.base_url` 默认使用 `https://ilinkai.weixin.qq.com`。微信远程控制首次收到消息时的工作目录使用 `atlas weixin serve` 进程启动时的当前目录。微信通道只允许扫码登录的微信用户本人控制 Atlas。
 
 ## 使用
 

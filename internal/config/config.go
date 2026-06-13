@@ -71,8 +71,7 @@ type TavilyConfig struct {
 
 // WeixinConfig 描述微信远程控制通道配置。
 type WeixinConfig struct {
-	BaseURL    string `json:"base_url"`
-	DefaultCWD string `json:"default_cwd"`
+	BaseURL string `json:"base_url"`
 }
 
 // DefaultPath 返回当前用户主目录下的 Atlas 配置路径。

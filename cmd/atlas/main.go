@@ -178,10 +178,6 @@ func runWeixinServeCommand(ctx context.Context, args []string, deps runDependenc
 	if len(args) != 0 {
 		return errors.New("usage: atlas weixin serve")
 	}
-	cfg, err := config.LoadDefault()
-	if err != nil {
-		return err
-	}
 	store, client, account, err := newWeixinServeRuntime()
 	if err != nil {
 		return err
@@ -191,7 +187,6 @@ func runWeixinServeCommand(ctx context.Context, args []string, deps runDependenc
 		Store:   store,
 		Client:  client,
 		Account: account,
-		Config:  cfg.Services.Weixin,
 		Output:  deps.stdout,
 	})
 	if err != nil {
