@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -133,20 +134,30 @@ func TestServerRunsTurnWhenTypingTicketFetchFails(t *testing.T) {
 }
 
 func TestServerSendsToolUpdatesToWeixin(t *testing.T) {
-	var replyMu sync.Mutex
+	var eventMu sync.Mutex
 	var replies []string
+	var events []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ilink/bot/getconfig":
-			_, _ = w.Write([]byte(`{"ret":1,"errmsg":"GetTypingTicket rpc failed"}`))
+			_, _ = w.Write([]byte(`{"typing_ticket":"ticket-1"}`))
+		case "/ilink/bot/sendtyping":
+			var req sendTypingRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			eventMu.Lock()
+			events = append(events, "typing:"+fmt.Sprint(req.Status))
+			eventMu.Unlock()
 		case "/ilink/bot/sendmessage":
 			var req sendMessageRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("Decode() error = %v", err)
 			}
-			replyMu.Lock()
+			eventMu.Lock()
 			replies = append(replies, req.Message.Items[0].TextItem.Text)
-			replyMu.Unlock()
+			events = append(events, "message:"+req.Message.Items[0].TextItem.Text)
+			eventMu.Unlock()
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -165,16 +176,27 @@ func TestServerSendsToolUpdatesToWeixin(t *testing.T) {
 		t.Fatalf("HandleMessage() error = %v", err)
 	}
 	waitFor(t, func() bool {
-		replyMu.Lock()
-		defer replyMu.Unlock()
-		return len(replies) >= 2
+		eventMu.Lock()
+		defer eventMu.Unlock()
+		return len(events) >= 5
 	})
 
-	replyMu.Lock()
+	eventMu.Lock()
 	got := append([]string(nil), replies...)
-	replyMu.Unlock()
+	gotEvents := append([]string(nil), events...)
+	eventMu.Unlock()
 	if got[0] != "Run: just check" || got[1] != "reply" {
 		t.Fatalf("replies = %#v", got)
+	}
+	wantEvents := []string{
+		"typing:1",
+		"message:Run: just check",
+		"typing:1",
+		"message:reply",
+		"typing:2",
+	}
+	if strings.Join(gotEvents, "\n") != strings.Join(wantEvents, "\n") {
+		t.Fatalf("events = %#v", gotEvents)
 	}
 }
 

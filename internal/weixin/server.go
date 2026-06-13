@@ -341,6 +341,7 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 					fmt.Fprintf(s.output, "weixin tool update failed: %v\n", err)
 				} else {
 					toolUpdatesSent = true
+					s.sendTyping(ctx, msg.FromUserID, true)
 				}
 			}
 		},
