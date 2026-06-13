@@ -15,6 +15,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
+	"github.com/liuyuxin/atlas/internal/tool"
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
@@ -326,15 +327,21 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 	defer s.sendTyping(context.Background(), msg.FromUserID, false)
 
 	var progress strings.Builder
+	toolUpdatesSent := false
 	result, err := s.rt.RunTurn(ctx, runtime.TurnOptions{
 		SessionID: state.SessionID,
 		Prompt:    prompt,
 		CWD:       state.CWD,
 		Observer: func(event agent.Event) {
 			if event.Type == agent.EventToolStarted && event.ToolCall.Name != "" {
-				progress.WriteString("[tool] ")
-				progress.WriteString(event.ToolCall.Name)
+				title := tool.DisplayTitle(event.ToolCall)
+				progress.WriteString(title)
 				progress.WriteString("\n")
+				if err := s.reply(context.Background(), msg, title); err != nil {
+					fmt.Fprintf(s.output, "weixin tool update failed: %v\n", err)
+				} else {
+					toolUpdatesSent = true
+				}
 			}
 		},
 	})
@@ -348,7 +355,7 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 		}
 	}
 	reply := strings.TrimSpace(result.Content)
-	if reply == "" {
+	if reply == "" && !toolUpdatesSent {
 		reply = strings.TrimSpace(progress.String())
 	}
 	if reply == "" {

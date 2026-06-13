@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/config"
+	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/transcript"
@@ -127,6 +129,52 @@ func TestServerRunsTurnWhenTypingTicketFetchFails(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "getconfig failed") {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestServerSendsToolUpdatesToWeixin(t *testing.T) {
+	var replyMu sync.Mutex
+	var replies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ilink/bot/getconfig":
+			_, _ = w.Write([]byte(`{"ret":1,"errmsg":"GetTypingTicket rpc failed"}`))
+		case "/ilink/bot/sendmessage":
+			var req sendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			replyMu.Lock()
+			replies = append(replies, req.Message.Items[0].TextItem.Text)
+			replyMu.Unlock()
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	srv, rt := newTestServer(t, server.URL)
+	rt.events = []agent.Event{{
+		Type: agent.EventToolStarted,
+		ToolCall: model.ToolCall{
+			Name:      "run_shell",
+			Arguments: `{"command":"just check"}`,
+		},
+	}}
+	if err := srv.HandleMessage(context.Background(), textMessage("user-1", "hello")); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+	waitFor(t, func() bool {
+		replyMu.Lock()
+		defer replyMu.Unlock()
+		return len(replies) >= 2
+	})
+
+	replyMu.Lock()
+	got := append([]string(nil), replies...)
+	replyMu.Unlock()
+	if got[0] != "Run: just check" || got[1] != "reply" {
+		t.Fatalf("replies = %#v", got)
 	}
 }
 
@@ -250,15 +298,22 @@ type fakeRuntime struct {
 	runCalled bool
 	prompt    string
 	cwd       string
+	events    []agent.Event
 	sessions  []session.Session
 }
 
 func (f *fakeRuntime) RunTurn(_ context.Context, opts runtime.TurnOptions) (runtime.TurnResult, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.runCalled = true
 	f.prompt = opts.Prompt
 	f.cwd = opts.CWD
+	events := append([]agent.Event(nil), f.events...)
+	f.mu.Unlock()
+	if opts.Observer != nil {
+		for _, event := range events {
+			opts.Observer(event)
+		}
+	}
 	return runtime.TurnResult{SessionID: "session-1", Content: "reply"}, nil
 }
 
