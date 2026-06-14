@@ -3,7 +3,7 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractiv
 
 binary := if os_family() == "windows" { "atlas.exe" } else { "atlas" }
 build_dir := "dist"
-install_dir := if os_family() == "windows" { env_var_or_default("USERPROFILE", ".") + "/.local/bin" } else { env_var_or_default("HOME", ".") + "/.local/bin" }
+install_dir := if os_family() == "windows" { env("USERPROFILE", ".") + "/.local/bin" } else { env("HOME", ".") + "/.local/bin" }
 
 default:
     @just --list
