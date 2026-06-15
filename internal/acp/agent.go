@@ -23,11 +23,12 @@ import (
 )
 
 const (
-	defaultSessionListLimit    = 100
-	modelConfigID              = "model"
-	reasoningEffortConfigID    = "reasoning_effort"
-	defaultReasoningEffortName = "Default"
-	compactCommandName         = "compact"
+	defaultSessionListLimit       = 100
+	modelConfigID                 = "model"
+	reasoningEffortConfigID       = "reasoning_effort"
+	defaultReasoningEffortName    = "Default"
+	compactCommandName            = "compact"
+	availableCommandsRefreshDelay = 0
 )
 
 var errClientTerminalUnavailable = errors.New("client terminal unavailable")
@@ -187,6 +188,7 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 	if err := a.sendSessionInfoUpdate(ctx, acpsdk.SessionId(sessionID), "", time.Now()); err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
+	a.refreshAvailableCommandsLater(acpsdk.SessionId(sessionID))
 	return acpsdk.NewSessionResponse{
 		SessionId:     acpsdk.SessionId(sessionID),
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
@@ -336,6 +338,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	if err := a.sendUsageUpdate(ctx, params.SessionId, sess.LastTotalTokens, modelContextWindow(models, models.Default)); err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
+	a.refreshAvailableCommandsLater(params.SessionId)
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
@@ -713,6 +716,21 @@ func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.Sess
 			AvailableCommands: []acpsdk.AvailableCommand{compactAvailableCommand()},
 		},
 	})
+}
+
+// refreshAvailableCommandsLater 在 new/session 响应返回后补发命令，兼容先注册 session 后接收通知的客户端。
+func (a *Agent) refreshAvailableCommandsLater(sessionID acpsdk.SessionId) {
+	if a.sendUpdate == nil {
+		return
+	}
+	go func() {
+		if availableCommandsRefreshDelay > 0 {
+			timer := time.NewTimer(availableCommandsRefreshDelay)
+			defer timer.Stop()
+			<-timer.C
+		}
+		_ = a.sendAvailableCommands(context.Background(), sessionID)
+	}()
 }
 
 // sendStoredSessionInfoUpdate 从本地 session 记录发送最新标题和更新时间。

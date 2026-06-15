@@ -131,9 +131,9 @@ func TestNewSessionStoresAdditionalDirectories(t *testing.T) {
 func TestNewSessionSendsCompactCommand(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	cwd := testCWD(t)
-	var updates []acpsdk.SessionNotification
+	updates := make(chan acpsdk.SessionNotification, 3)
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
-		updates = append(updates, update)
+		updates <- update
 		return nil
 	}
 
@@ -141,21 +141,35 @@ func TestNewSessionSendsCompactCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
 	}
-	if len(updates) != 2 {
-		t.Fatalf("updates = %#v", updates)
+	first := receiveSessionUpdate(t, updates)
+	second := receiveSessionUpdate(t, updates)
+	third := receiveSessionUpdate(t, updates)
+	if first.SessionId != resp.SessionId {
+		t.Fatalf("session id = %#v", first)
 	}
-	if updates[0].SessionId != resp.SessionId {
-		t.Fatalf("session id = %#v", updates[0])
-	}
-	commands := updates[0].Update.AvailableCommandsUpdate
+	commands := first.Update.AvailableCommandsUpdate
 	if commands == nil || len(commands.AvailableCommands) != 1 || commands.AvailableCommands[0].Name != "compact" {
-		t.Fatalf("commands = %#v", updates[0].Update)
+		t.Fatalf("commands = %#v", first.Update)
 	}
 	if commands.AvailableCommands[0].Input == nil || commands.AvailableCommands[0].Input.Unstructured == nil {
 		t.Fatalf("command input = %#v", commands.AvailableCommands[0].Input)
 	}
-	if updates[1].Update.SessionInfoUpdate == nil || updates[1].Update.SessionInfoUpdate.UpdatedAt == nil {
-		t.Fatalf("session info update = %#v", updates[1].Update)
+	if second.Update.SessionInfoUpdate == nil || second.Update.SessionInfoUpdate.UpdatedAt == nil {
+		t.Fatalf("session info update = %#v", second.Update)
+	}
+	if third.SessionId != resp.SessionId || third.Update.AvailableCommandsUpdate == nil || len(third.Update.AvailableCommandsUpdate.AvailableCommands) != 1 || third.Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
+		t.Fatalf("refreshed commands update = %#v", third)
+	}
+}
+
+func receiveSessionUpdate(t *testing.T, updates <-chan acpsdk.SessionNotification) acpsdk.SessionNotification {
+	t.Helper()
+	select {
+	case update := <-updates:
+		return update
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for session update")
+		return acpsdk.SessionNotification{}
 	}
 }
 
@@ -1048,13 +1062,18 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	cwd := testCWD(t)
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: cwd},
+			"sess": {ID: "sess", CWD: cwd, UpdatedAt: now},
 		},
 		sessionsForCWD: []session.Session{
 			{ID: "sess", Title: "hello", CWD: cwd, UpdatedAt: now},
 		},
 	}
 	a := NewAgent(rt)
+	updates := make(chan acpsdk.SessionNotification, 3)
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates <- update
+		return nil
+	}
 
 	resume, err := a.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
 		SessionId: "sess",
@@ -1069,6 +1088,18 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	state, ok := a.getSession("sess")
 	if !ok || state.cwd != cwd {
 		t.Fatalf("session state = %#v, %t", state, ok)
+	}
+	first := receiveSessionUpdate(t, updates)
+	second := receiveSessionUpdate(t, updates)
+	third := receiveSessionUpdate(t, updates)
+	if first.Update.AvailableCommandsUpdate == nil || first.Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
+		t.Fatalf("commands update = %#v", first.Update)
+	}
+	if second.Update.SessionInfoUpdate == nil {
+		t.Fatalf("session info update = %#v", second.Update)
+	}
+	if third.Update.AvailableCommandsUpdate == nil || third.Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
+		t.Fatalf("refreshed commands update = %#v", third.Update)
 	}
 	list, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cwd: &cwd})
 	if err != nil {
