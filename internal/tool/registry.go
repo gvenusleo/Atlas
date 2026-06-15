@@ -10,9 +10,13 @@ import (
 
 // Registry 按工具名分发模型发起的工具调用。
 type Registry struct {
-	tools map[string]Tool
-	order []string
+	tools  map[string]Tool
+	order  []string
+	runner RunFunc
 }
+
+// RunFunc 执行一次工具调用。
+type RunFunc func(context.Context, model.ToolCall) (string, error)
 
 // NewRegistry 创建一个工具注册表。
 // 工具名必须唯一，否则后续分发会变得不确定。
@@ -31,6 +35,18 @@ func NewRegistry(tools ...Tool) (*Registry, error) {
 	return r, nil
 }
 
+// WithRunner 返回使用自定义执行器的新注册表，工具定义保持不变。
+func (r *Registry) WithRunner(runner RunFunc) *Registry {
+	if runner == nil {
+		return r
+	}
+	return &Registry{
+		tools:  r.tools,
+		order:  r.order,
+		runner: runner,
+	}
+}
+
 // Definitions 按注册顺序返回工具定义。
 func (r *Registry) Definitions() []model.ToolDefinition {
 	defs := make([]model.ToolDefinition, 0, len(r.order))
@@ -42,6 +58,14 @@ func (r *Registry) Definitions() []model.ToolDefinition {
 
 // Run 执行一次模型请求的工具调用。
 func (r *Registry) Run(ctx context.Context, call model.ToolCall) (string, error) {
+	if r.runner != nil {
+		return r.runner(ctx, call)
+	}
+	return r.RunDefault(ctx, call)
+}
+
+// RunDefault 使用注册表中的工具实现执行一次调用。
+func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (string, error) {
 	tool, ok := r.tools[call.Name]
 	if !ok {
 		return "", fmt.Errorf("unknown tool %q", call.Name)

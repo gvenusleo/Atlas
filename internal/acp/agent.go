@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,6 +30,8 @@ const (
 	compactCommandName         = "compact"
 )
 
+var errClientTerminalUnavailable = errors.New("client terminal unavailable")
+
 // Runtime 是 ACP 适配层需要的 Atlas 执行入口。
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
@@ -38,6 +41,14 @@ type Runtime interface {
 	ListSessions(context.Context, int) ([]session.Session, error)
 	ListSessionsForCWD(context.Context, string, int) ([]session.Session, error)
 	DeleteSessionIfExists(context.Context, string) error
+}
+
+type terminalClient interface {
+	CreateTerminal(context.Context, acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error)
+	KillTerminal(context.Context, acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error)
+	TerminalOutput(context.Context, acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error)
+	ReleaseTerminal(context.Context, acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error)
+	WaitForTerminalExit(context.Context, acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error)
 }
 
 // Options 描述启动 ACP 标准输入输出服务所需参数。
@@ -84,18 +95,22 @@ type sessionState struct {
 
 // Agent 将 Atlas runtime 适配为 ACP agent 方法。
 type Agent struct {
-	rt         Runtime
-	sendUpdate func(context.Context, acpsdk.SessionNotification) error
+	rt                 Runtime
+	terminalClient     terminalClient
+	sendUpdate         func(context.Context, acpsdk.SessionNotification) error
+	clientCapabilities acpsdk.ClientCapabilities
 
-	mu       sync.Mutex
-	sessions map[string]sessionState
+	mu                sync.Mutex
+	sessions          map[string]sessionState
+	terminalToolCalls map[string]struct{}
 }
 
 // NewAgent 创建由 Atlas runtime 驱动的 ACP agent。
 func NewAgent(rt Runtime) *Agent {
 	return &Agent{
-		rt:       rt,
-		sessions: make(map[string]sessionState),
+		rt:                rt,
+		sessions:          make(map[string]sessionState),
+		terminalToolCalls: make(map[string]struct{}),
 	}
 }
 
@@ -103,13 +118,16 @@ func NewAgent(rt Runtime) *Agent {
 func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	if conn == nil {
 		a.sendUpdate = nil
+		a.terminalClient = nil
 		return
 	}
 	a.sendUpdate = conn.SessionUpdate
+	a.terminalClient = conn
 }
 
 // Initialize 返回 Atlas 支持的 ACP v1 能力。
-func (a *Agent) Initialize(context.Context, acpsdk.InitializeRequest) (acpsdk.InitializeResponse, error) {
+func (a *Agent) Initialize(_ context.Context, req acpsdk.InitializeRequest) (acpsdk.InitializeResponse, error) {
+	a.clientCapabilities = req.ClientCapabilities
 	title := "Atlas"
 	return acpsdk.InitializeResponse{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
@@ -184,6 +202,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		ReasoningEffortSet: true,
 		CWD:                state.cwd,
 		Observer:           a.observe(turnCtx, params.SessionId),
+		ToolRunner:         a.toolRunner(params.SessionId, state.cwd),
 	})
 	if err != nil {
 		if turnCtx.Err() != nil {
@@ -388,19 +407,182 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 			if event.ToolError {
 				status = acpsdk.ToolCallStatusFailed
 			}
+			opts := []acpsdk.ToolCallUpdateOpt{
+				acpsdk.WithUpdateStatus(status),
+				acpsdk.WithUpdateRawOutput(event.ToolResult),
+			}
+			if !a.takeTerminalToolCall(sessionID, toolCallID(event)) {
+				opts = append(opts, acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{
+					acpsdk.ToolContent(acpsdk.TextBlock(event.ToolResult)),
+				}))
+			}
 			update = acpsdk.UpdateToolCall(
 				toolCallID(event),
-				acpsdk.WithUpdateStatus(status),
-				acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{
-					acpsdk.ToolContent(acpsdk.TextBlock(event.ToolResult)),
-				}),
-				acpsdk.WithUpdateRawOutput(event.ToolResult),
+				opts...,
 			)
 		default:
 			return
 		}
 		_ = a.sendSessionUpdate(ctx, sessionID, update)
 	}
+}
+
+func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolRunner {
+	return func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (string, error) {
+		if call.Name == "run_shell" && a.clientCapabilities.Terminal && a.terminalClient != nil {
+			result, err := a.runShellInClientTerminal(ctx, sessionID, cwd, call)
+			if errors.Is(err, errClientTerminalUnavailable) {
+				return fallback(ctx, call)
+			}
+			return result, err
+		}
+		return fallback(ctx, call)
+	}
+}
+
+// runShellInClientTerminal 使用 ACP terminal 能力执行 run_shell 并返回最终输出。
+func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall) (string, error) {
+	args, err := tool.ParseShellArgs(call.Arguments)
+	if err != nil {
+		return "", err
+	}
+	spec := tool.DefaultShell()
+	terminalArgs := append([]string(nil), spec.Args...)
+	terminalArgs = append(terminalArgs, args.Command)
+	workdir := args.Workdir
+	if workdir == "" {
+		workdir = cwd
+	}
+	limit := 128 * 1024
+	createReq := acpsdk.CreateTerminalRequest{
+		SessionId:       sessionID,
+		Command:         spec.Command,
+		Args:            terminalArgs,
+		OutputByteLimit: &limit,
+	}
+	if workdir != "" {
+		createReq.Cwd = &workdir
+	}
+	terminal, err := a.terminalClient.CreateTerminal(ctx, createReq)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errClientTerminalUnavailable, err)
+	}
+	defer func() {
+		_, _ = a.terminalClient.ReleaseTerminal(context.Background(), acpsdk.ReleaseTerminalRequest{
+			SessionId:  sessionID,
+			TerminalId: terminal.TerminalId,
+		})
+	}()
+	if err := a.sendTerminalToolCallContent(ctx, sessionID, call, terminal.TerminalId); err != nil {
+		a.killClientTerminal(sessionID, terminal.TerminalId)
+		return "", err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, tool.ShellTimeout(args.TimeoutSeconds))
+	defer cancel()
+	exit, err := a.terminalClient.WaitForTerminalExit(waitCtx, acpsdk.WaitForTerminalExitRequest{
+		SessionId:  sessionID,
+		TerminalId: terminal.TerminalId,
+	})
+	if waitErr := waitCtx.Err(); waitErr != nil {
+		a.killClientTerminal(sessionID, terminal.TerminalId)
+		status := "command cancelled"
+		if waitErr == context.DeadlineExceeded {
+			status = fmt.Sprintf("command timed out after %s", tool.ShellTimeout(args.TimeoutSeconds))
+		}
+		output, outputErr := a.terminalOutputWithStatus(context.Background(), sessionID, terminal.TerminalId, status)
+		if waitErr == context.DeadlineExceeded && outputErr != nil {
+			return output, outputErr
+		}
+		return output, waitErr
+	}
+	if err != nil {
+		a.killClientTerminal(sessionID, terminal.TerminalId)
+		return "", err
+	}
+	status := terminalExitStatus(exit)
+	return a.terminalOutputWithStatus(ctx, sessionID, terminal.TerminalId, status)
+}
+
+func (a *Agent) killClientTerminal(sessionID acpsdk.SessionId, terminalID string) {
+	_, _ = a.terminalClient.KillTerminal(context.Background(), acpsdk.KillTerminalRequest{
+		SessionId:  sessionID,
+		TerminalId: terminalID,
+	})
+}
+
+func (a *Agent) sendTerminalToolCallContent(ctx context.Context, sessionID acpsdk.SessionId, call model.ToolCall, terminalID string) error {
+	if a.sendUpdate == nil {
+		return nil
+	}
+	status := acpsdk.ToolCallStatusInProgress
+	if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateToolCall(
+		acpsdk.ToolCallId(call.ID),
+		acpsdk.WithUpdateStatus(status),
+		acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(terminalID)}),
+	)); err != nil {
+		return err
+	}
+	a.markTerminalToolCall(sessionID, acpsdk.ToolCallId(call.ID))
+	return nil
+}
+
+func (a *Agent) terminalOutputWithStatus(ctx context.Context, sessionID acpsdk.SessionId, terminalID, status string) (string, error) {
+	output, err := a.terminalClient.TerminalOutput(ctx, acpsdk.TerminalOutputRequest{
+		SessionId:  sessionID,
+		TerminalId: terminalID,
+	})
+	if err != nil {
+		return "", err
+	}
+	content := output.Output
+	if output.Truncated {
+		content = "[output truncated]\n" + content
+	}
+	if status != "" {
+		content = appendToolStatus(content, status)
+		return content, fmt.Errorf("%s", status)
+	}
+	return content, nil
+}
+
+func terminalExitStatus(exit acpsdk.WaitForTerminalExitResponse) string {
+	if exit.Signal != nil && *exit.Signal != "" {
+		return "command terminated by signal " + *exit.Signal
+	}
+	if exit.ExitCode != nil && *exit.ExitCode != 0 {
+		return fmt.Sprintf("command exited with code %d", *exit.ExitCode)
+	}
+	return ""
+}
+
+func appendToolStatus(output, status string) string {
+	status = "[" + status + "]"
+	if output == "" {
+		return status
+	}
+	if strings.HasSuffix(output, "\n") {
+		return output + status
+	}
+	return output + "\n" + status
+}
+
+func (a *Agent) markTerminalToolCall(sessionID acpsdk.SessionId, toolCallID acpsdk.ToolCallId) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.terminalToolCalls[terminalToolCallKey(sessionID, toolCallID)] = struct{}{}
+}
+
+func (a *Agent) takeTerminalToolCall(sessionID acpsdk.SessionId, toolCallID acpsdk.ToolCallId) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	key := terminalToolCallKey(sessionID, toolCallID)
+	_, ok := a.terminalToolCalls[key]
+	delete(a.terminalToolCalls, key)
+	return ok
+}
+
+func terminalToolCallKey(sessionID acpsdk.SessionId, toolCallID acpsdk.ToolCallId) string {
+	return string(sessionID) + "\x00" + string(toolCallID)
 }
 
 func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId, trans *transcript.Transcript) error {

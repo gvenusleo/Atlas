@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -247,6 +248,254 @@ func TestPromptDirectShellStreamsToolUpdates(t *testing.T) {
 	finish := updates[1].Update.ToolCallUpdate
 	if finish == nil || finish.ToolCallId != "direct_shell_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted {
 		t.Fatalf("tool finish = %#v", updates[1].Update)
+	}
+}
+
+func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		rt.runOptions = opts
+		call := model.ToolCall{
+			ID:        "call_1",
+			Name:      "run_shell",
+			Arguments: `{"command":"pwd"}`,
+		}
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
+		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (string, error) {
+			return "", fmt.Errorf("fallback should not run")
+		})
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result, ToolError: err != nil})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result}, err
+	}
+	a := NewAgent(rt)
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	a.setSession("sess", "/tmp/work", "test-model", "high")
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+	client := &fakeTerminalClient{output: "terminal-output\n"}
+	a.terminalClient = client
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("run pwd")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("stop reason = %q", resp.StopReason)
+	}
+	if client.create.Command != "/bin/sh" || strings.Join(client.create.Args, " ") != "-c pwd" || client.create.Cwd == nil || *client.create.Cwd != "/tmp/work" {
+		t.Fatalf("create request = %#v", client.create)
+	}
+	if !client.waitCalled || !client.outputCalled || !client.releaseCalled {
+		t.Fatalf("terminal calls wait=%v output=%v release=%v", client.waitCalled, client.outputCalled, client.releaseCalled)
+	}
+	if len(updates) != 3 {
+		t.Fatalf("updates = %#v", updates)
+	}
+	if updates[0].Update.ToolCall == nil || updates[0].Update.ToolCall.Title != "Run: pwd" {
+		t.Fatalf("tool start = %#v", updates[0].Update)
+	}
+	terminalUpdate := updates[1].Update.ToolCallUpdate
+	if terminalUpdate == nil || len(terminalUpdate.Content) != 1 || terminalUpdate.Content[0].Terminal == nil || terminalUpdate.Content[0].Terminal.TerminalId != "term-1" {
+		t.Fatalf("terminal update = %#v", updates[1].Update)
+	}
+	finish := updates[2].Update.ToolCallUpdate
+	if finish == nil || finish.RawOutput != "terminal-output\n" {
+		t.Fatalf("finish update = %#v", updates[2].Update)
+	}
+	if len(finish.Content) != 0 {
+		t.Fatalf("finish should not replace terminal content: %#v", finish.Content)
+	}
+}
+
+func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		rt.runOptions = opts
+		call := model.ToolCall{
+			ID:        "direct_shell_1",
+			Name:      "run_shell",
+			Arguments: `{"command":"pwd"}`,
+		}
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
+		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (string, error) {
+			return "", fmt.Errorf("fallback should not run")
+		})
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result, ToolError: err != nil})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result}, err
+	}
+	a := NewAgent(rt)
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	a.setSession("sess", "/tmp/work", "test-model", "high")
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+	client := &fakeTerminalClient{output: "/tmp/work\n"}
+	a.terminalClient = client
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("!pwd")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("stop reason = %q", resp.StopReason)
+	}
+	if client.create.Command != "/bin/sh" || strings.Join(client.create.Args, " ") != "-c pwd" {
+		t.Fatalf("create request = %#v", client.create)
+	}
+	if len(updates) != 3 || updates[1].Update.ToolCallUpdate == nil || updates[1].Update.ToolCallUpdate.Content[0].Terminal == nil || len(updates[2].Update.ToolCallUpdate.Content) != 0 {
+		t.Fatalf("updates = %#v", updates)
+	}
+}
+
+func TestPromptFallsBackWhenClientTerminalUnsupported(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		if opts.ToolRunner == nil {
+			t.Fatal("ToolRunner is nil")
+		}
+		call := model.ToolCall{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}
+		got, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (string, error) {
+			return "fallback-output", nil
+		})
+		if err != nil || got != "fallback-output" {
+			t.Fatalf("ToolRunner() = %q, %v", got, err)
+		}
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: got}, nil
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "high")
+
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("read")},
+	}); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+}
+
+func TestToolRunnerReturnsClientTerminalExitErrorWithoutFallback(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	exitCode := 7
+	a.terminalClient = &fakeTerminalClient{output: "failed\n", exitCode: &exitCode}
+	runner := a.toolRunner("sess", "/tmp/work")
+	fallbackCalled := false
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "run_shell",
+		Arguments: `{"command":"false"}`,
+	}, func(context.Context, model.ToolCall) (string, error) {
+		fallbackCalled = true
+		return "fallback", nil
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "command exited with code 7") {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if !strings.Contains(got, "failed") || !strings.Contains(got, "[command exited with code 7]") {
+		t.Fatalf("ToolRunner() output = %q", got)
+	}
+	if fallbackCalled {
+		t.Fatal("fallback should not run after client terminal command exit")
+	}
+}
+
+func TestToolRunnerFallsBackWhenClientTerminalCreateFails(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	a.terminalClient = &fakeTerminalClient{createErr: errors.New("terminal unavailable")}
+	runner := a.toolRunner("sess", "/tmp/work")
+	fallbackCalled := false
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "run_shell",
+		Arguments: `{"command":"pwd"}`,
+	}, func(context.Context, model.ToolCall) (string, error) {
+		fallbackCalled = true
+		return "fallback", nil
+	})
+
+	if err != nil || got != "fallback" {
+		t.Fatalf("ToolRunner() = %q, %v", got, err)
+	}
+	if !fallbackCalled {
+		t.Fatal("fallback was not called")
+	}
+}
+
+func TestToolRunnerKillsClientTerminalOnCancel(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	client := &fakeTerminalClient{output: "partial\n"}
+	a.terminalClient = client
+	runner := a.toolRunner("sess", "/tmp/work")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	got, err := runner(ctx, model.ToolCall{
+		ID:        "call_1",
+		Name:      "run_shell",
+		Arguments: `{"command":"sleep 10"}`,
+	}, func(context.Context, model.ToolCall) (string, error) {
+		return "", fmt.Errorf("fallback should not run")
+	})
+
+	if err != context.Canceled {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if !client.killCalled {
+		t.Fatal("terminal was not killed after cancellation")
+	}
+	if !client.releaseCalled {
+		t.Fatal("terminal was not released after cancellation")
+	}
+	if !strings.Contains(got, "partial") || !strings.Contains(got, "[command cancelled]") {
+		t.Fatalf("ToolRunner() output = %q", got)
+	}
+}
+
+func TestToolRunnerKillsClientTerminalWhenTerminalUpdateFails(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	client := &fakeTerminalClient{output: "partial\n"}
+	a.terminalClient = client
+	a.sendUpdate = func(context.Context, acpsdk.SessionNotification) error {
+		return errors.New("send failed")
+	}
+	runner := a.toolRunner("sess", "/tmp/work")
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "run_shell",
+		Arguments: `{"command":"pwd"}`,
+	}, func(context.Context, model.ToolCall) (string, error) {
+		return "", fmt.Errorf("fallback should not run")
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "send failed") {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if got != "" {
+		t.Fatalf("ToolRunner() output = %q", got)
+	}
+	if !client.killCalled {
+		t.Fatal("terminal was not killed after terminal update failure")
+	}
+	if !client.releaseCalled {
+		t.Fatal("terminal was not released after terminal update failure")
 	}
 }
 
@@ -753,6 +1002,52 @@ type fakeRuntime struct {
 	showSessions    map[string]session.Session
 	showTranscripts map[string]*transcript.Transcript
 	showErr         error
+}
+
+type fakeTerminalClient struct {
+	create        acpsdk.CreateTerminalRequest
+	createErr     error
+	output        string
+	exitCode      *int
+	waitCalled    bool
+	outputCalled  bool
+	killCalled    bool
+	releaseCalled bool
+}
+
+func (f *fakeTerminalClient) CreateTerminal(_ context.Context, req acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error) {
+	f.create = req
+	if f.createErr != nil {
+		return acpsdk.CreateTerminalResponse{}, f.createErr
+	}
+	return acpsdk.CreateTerminalResponse{TerminalId: "term-1"}, nil
+}
+
+func (f *fakeTerminalClient) KillTerminal(context.Context, acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
+	f.killCalled = true
+	return acpsdk.KillTerminalResponse{}, nil
+}
+
+func (f *fakeTerminalClient) TerminalOutput(context.Context, acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error) {
+	f.outputCalled = true
+	return acpsdk.TerminalOutputResponse{Output: f.output}, nil
+}
+
+func (f *fakeTerminalClient) ReleaseTerminal(context.Context, acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error) {
+	f.releaseCalled = true
+	return acpsdk.ReleaseTerminalResponse{}, nil
+}
+
+func (f *fakeTerminalClient) WaitForTerminalExit(ctx context.Context, _ acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error) {
+	f.waitCalled = true
+	if err := ctx.Err(); err != nil {
+		return acpsdk.WaitForTerminalExitResponse{}, err
+	}
+	code := 0
+	if f.exitCode != nil {
+		code = *f.exitCode
+	}
+	return acpsdk.WaitForTerminalExitResponse{ExitCode: &code}, nil
 }
 
 func (f *fakeRuntime) RunTurn(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {

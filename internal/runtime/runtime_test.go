@@ -379,6 +379,33 @@ func TestRunTurnDirectShellRunsCommandWithoutProvider(t *testing.T) {
 	}
 }
 
+func TestRunTurnDirectShellUsesToolRunner(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+	var called bool
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "!pwd",
+		CWD:       t.TempDir(),
+		ToolRunner: func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (string, error) {
+			called = true
+			if call.Name != "run_shell" || !strings.Contains(call.Arguments, "pwd") {
+				t.Fatalf("call = %#v", call)
+			}
+			return "runner-output", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if !called {
+		t.Fatal("ToolRunner was not called")
+	}
+	if result.Content != "runner-output" {
+		t.Fatalf("content = %q", result.Content)
+	}
+}
+
 func TestRunTurnDirectShellKeepsFailedCommandAsTurnResult(t *testing.T) {
 	r := newTestRuntime(t, &recordingProvider{})
 

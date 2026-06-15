@@ -48,7 +48,11 @@ type TurnOptions struct {
 	ReasoningEffortSet bool
 	CWD                string
 	Observer           agent.Observer
+	ToolRunner         ToolRunner
 }
+
+// ToolRunner 可覆盖 runtime 中某次工具调用的执行方式。
+type ToolRunner func(context.Context, model.ToolCall, tool.RunFunc) (string, error)
 
 // TurnResult 描述一次用户输入完成后的结果。
 type TurnResult struct {
@@ -211,7 +215,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	if isDirectShell {
-		return runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer)
+		return runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer, opts.ToolRunner)
 	}
 
 	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
@@ -233,6 +237,12 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	registry, err := buildToolRegistry(skills, cfg.Services)
 	if err != nil {
 		return TurnResult{}, err
+	}
+	if opts.ToolRunner != nil {
+		baseRunner := registry.RunDefault
+		registry = registry.WithRunner(func(ctx context.Context, call model.ToolCall) (string, error) {
+			return opts.ToolRunner(ctx, call, baseRunner)
+		})
 	}
 	if resumeSession {
 		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), opts.Prompt, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
@@ -303,7 +313,7 @@ func directShellCommand(promptText string) (string, bool) {
 }
 
 // runDirectShellTurn 跳过模型调用，直接执行 shell 命令并保存为一个完整 turn。
-func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer) (TurnResult, error) {
+func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner) (TurnResult, error) {
 	if command == "" {
 		return TurnResult{}, fmt.Errorf("shell command is required after !")
 	}
@@ -314,7 +324,16 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 
 	emit(observer, agent.Event{Type: agent.EventTurnStarted})
 	emit(observer, agent.Event{Type: agent.EventToolStarted, Step: 1, ToolCall: call})
-	result, runErr := (tool.RunShell{}).Run(ctx, call.Arguments)
+	runDefault := func(ctx context.Context, call model.ToolCall) (string, error) {
+		return (tool.RunShell{}).Run(ctx, call.Arguments)
+	}
+	var result string
+	var runErr error
+	if runner != nil {
+		result, runErr = runner(ctx, call, runDefault)
+	} else {
+		result, runErr = runDefault(ctx, call)
+	}
 	if ctx.Err() != nil {
 		return TurnResult{}, ctx.Err()
 	}
