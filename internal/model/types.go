@@ -24,6 +24,25 @@ type ToolCall struct {
 	Arguments string
 }
 
+// ToolLocation 描述工具调用关联的文件位置。
+type ToolLocation struct {
+	Path string `json:"path"`
+	Line int    `json:"line,omitempty"`
+}
+
+// ToolDiff 描述工具调用产生的文件内容变更。
+type ToolDiff struct {
+	Path    string  `json:"path"`
+	OldText *string `json:"old_text,omitempty"`
+	NewText string  `json:"new_text"`
+}
+
+// ToolMetadata 保存界面可用的工具调用展示数据。
+type ToolMetadata struct {
+	Locations []ToolLocation `json:"locations,omitempty"`
+	Diff      *ToolDiff      `json:"diff,omitempty"`
+}
+
 // ToolDefinition 描述发送给模型的函数调用工具定义。
 type ToolDefinition struct {
 	Name        string
@@ -42,6 +61,8 @@ type Message struct {
 	ToolCalls []ToolCall
 	// ToolCallID 只对 tool 消息有意义，用来关联对应的工具调用。
 	ToolCallID string
+	// ToolMetadata 只对 tool 消息有意义，用来支持 ACP 等客户端展示结构化结果。
+	ToolMetadata ToolMetadata
 	// Usage 只对 assistant 消息有意义，记录 provider 返回的 token 用量。
 	Usage Usage
 }

@@ -16,8 +16,8 @@ func TestEditFileRunAppliesMultipleEdits(t *testing.T) {
 	}
 
 	got, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "alpha", NewText: stringPtr("one")},
-		editFileReplacement{OldText: "gamma", NewText: stringPtr("three")},
+		EditFileReplacement{OldText: "alpha", NewText: stringPtr("one")},
+		EditFileReplacement{OldText: "gamma", NewText: stringPtr("three")},
 	))
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -35,7 +35,7 @@ func TestEditFileRunAllowsEmptyNewText(t *testing.T) {
 	}
 
 	if _, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: " old", NewText: stringPtr("")},
+		EditFileReplacement{OldText: " old", NewText: stringPtr("")},
 	)); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -49,7 +49,7 @@ func TestEditFileRunOldTextNotFoundDoesNotWrite(t *testing.T) {
 	}
 
 	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "missing", NewText: stringPtr("new")},
+		EditFileReplacement{OldText: "missing", NewText: stringPtr("new")},
 	))
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("Run() error = %v, want not found error", err)
@@ -64,7 +64,7 @@ func TestEditFileRunRejectsNonUniqueOldText(t *testing.T) {
 	}
 
 	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "old", NewText: stringPtr("new")},
+		EditFileReplacement{OldText: "old", NewText: stringPtr("new")},
 	))
 	if err == nil || !strings.Contains(err.Error(), "not unique") {
 		t.Fatalf("Run() error = %v, want non-unique error", err)
@@ -78,7 +78,7 @@ func TestEditFileRunRejectsOverlappingOccurrences(t *testing.T) {
 	}
 
 	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "aa", NewText: stringPtr("b")},
+		EditFileReplacement{OldText: "aa", NewText: stringPtr("b")},
 	))
 	if err == nil || !strings.Contains(err.Error(), "not unique") {
 		t.Fatalf("Run() error = %v, want non-unique error", err)
@@ -93,8 +93,8 @@ func TestEditFileRunRejectsOverlappingEdits(t *testing.T) {
 	}
 
 	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "abc", NewText: stringPtr("x")},
-		editFileReplacement{OldText: "bcd", NewText: stringPtr("y")},
+		EditFileReplacement{OldText: "abc", NewText: stringPtr("x")},
+		EditFileReplacement{OldText: "bcd", NewText: stringPtr("y")},
 	))
 	if err == nil || !strings.Contains(err.Error(), "overlaps") {
 		t.Fatalf("Run() error = %v, want overlap error", err)
@@ -109,7 +109,7 @@ func TestEditFileRunMissingNewTextDoesNotWrite(t *testing.T) {
 	}
 
 	_, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "old"},
+		EditFileReplacement{OldText: "old"},
 	))
 	if err == nil || !strings.Contains(err.Error(), "new_text is required") {
 		t.Fatalf("Run() error = %v, want missing new_text error", err)
@@ -127,7 +127,7 @@ func TestEditFileRunPreservesFileMode(t *testing.T) {
 	}
 
 	if _, err := (EditFile{}).Run(context.Background(), editFileArgs(path,
-		editFileReplacement{OldText: "old", NewText: stringPtr("new")},
+		EditFileReplacement{OldText: "old", NewText: stringPtr("new")},
 	)); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -176,7 +176,7 @@ func TestEditFileDefinition(t *testing.T) {
 	}
 }
 
-func editFileArgs(path string, edits ...editFileReplacement) string {
+func editFileArgs(path string, edits ...EditFileReplacement) string {
 	result := `{"path":` + quoteJSON(path) + `,"edits":[`
 	for i, edit := range edits {
 		if i > 0 {

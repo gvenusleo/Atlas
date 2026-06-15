@@ -15,8 +15,14 @@ type Registry struct {
 	runner RunFunc
 }
 
+// RunResult 描述一次工具调用的文本结果和结构化展示数据。
+type RunResult struct {
+	Content  string
+	Metadata model.ToolMetadata
+}
+
 // RunFunc 执行一次工具调用。
-type RunFunc func(context.Context, model.ToolCall) (string, error)
+type RunFunc func(context.Context, model.ToolCall) (RunResult, error)
 
 // NewRegistry 创建一个工具注册表。
 // 工具名必须唯一，否则后续分发会变得不确定。
@@ -57,7 +63,7 @@ func (r *Registry) Definitions() []model.ToolDefinition {
 }
 
 // Run 执行一次模型请求的工具调用。
-func (r *Registry) Run(ctx context.Context, call model.ToolCall) (string, error) {
+func (r *Registry) Run(ctx context.Context, call model.ToolCall) (RunResult, error) {
 	if r.runner != nil {
 		return r.runner(ctx, call)
 	}
@@ -65,13 +71,13 @@ func (r *Registry) Run(ctx context.Context, call model.ToolCall) (string, error)
 }
 
 // RunDefault 使用注册表中的工具实现执行一次调用。
-func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (string, error) {
+func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (RunResult, error) {
 	tool, ok := r.tools[call.Name]
 	if !ok {
-		return "", fmt.Errorf("unknown tool %q", call.Name)
+		return RunResult{}, fmt.Errorf("unknown tool %q", call.Name)
 	}
 	result, err := tool.Run(ctx, call.Arguments)
-	return result, err
+	return RunResult{Content: result}, err
 }
 
 func cloneDefinition(def model.ToolDefinition) model.ToolDefinition {

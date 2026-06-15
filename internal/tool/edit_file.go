@@ -14,9 +14,16 @@ import (
 // EditFile 替换本地文件中的一个或多个唯一文本块。
 type EditFile struct{}
 
-type editFileReplacement struct {
+// EditFileReplacement 描述 edit_file 的一次文本替换。
+type EditFileReplacement struct {
 	OldText string  `json:"old_text"`
 	NewText *string `json:"new_text"`
+}
+
+// EditFileArgs 是 edit_file 的 JSON 参数。
+type EditFileArgs struct {
+	Path  string                `json:"path"`
+	Edits []EditFileReplacement `json:"edits"`
 }
 
 type editFileMatch struct {
@@ -63,23 +70,29 @@ func (EditFile) Definition() model.ToolDefinition {
 
 // Run 使用 JSON 参数中的 path 和 edits 修改文件。
 func (EditFile) Run(ctx context.Context, arguments string) (string, error) {
-	var args struct {
-		Path  string                `json:"path"`
-		Edits []editFileReplacement `json:"edits"`
-	}
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return "", fmt.Errorf("invalid edit_file arguments: %w", err)
-	}
-	if args.Path == "" {
-		return "", fmt.Errorf("edit_file path is required")
-	}
-	if len(args.Edits) == 0 {
-		return "", fmt.Errorf("edit_file edits must contain at least one replacement")
+	args, err := ParseEditFileArgs(arguments)
+	if err != nil {
+		return "", err
 	}
 	return editFileContent(ctx, args.Path, args.Edits)
 }
 
-func editFileContent(ctx context.Context, path string, edits []editFileReplacement) (string, error) {
+// ParseEditFileArgs 解析并校验 edit_file 参数。
+func ParseEditFileArgs(arguments string) (EditFileArgs, error) {
+	var args EditFileArgs
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return EditFileArgs{}, fmt.Errorf("invalid edit_file arguments: %w", err)
+	}
+	if args.Path == "" {
+		return EditFileArgs{}, fmt.Errorf("edit_file path is required")
+	}
+	if len(args.Edits) == 0 {
+		return EditFileArgs{}, fmt.Errorf("edit_file edits must contain at least one replacement")
+	}
+	return args, nil
+}
+
+func editFileContent(ctx context.Context, path string, edits []EditFileReplacement) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -94,19 +107,26 @@ func editFileContent(ctx context.Context, path string, edits []editFileReplaceme
 	if err != nil {
 		return "", err
 	}
-	content := string(data)
-	matches, err := editFileMatches(content, edits)
+	updated, count, err := ApplyEditFileContent(string(data), edits)
 	if err != nil {
 		return "", err
 	}
-	updated := applyEditFileMatches(content, matches)
 	if err := os.WriteFile(path, []byte(updated), info.Mode().Perm()); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("replaced %d blocks in %s", len(matches), path), nil
+	return fmt.Sprintf("replaced %d blocks in %s", count, path), nil
 }
 
-func editFileMatches(content string, edits []editFileReplacement) ([]editFileMatch, error) {
+// ApplyEditFileContent 对原始文本应用 edit_file 的替换规则。
+func ApplyEditFileContent(content string, edits []EditFileReplacement) (string, int, error) {
+	matches, err := editFileMatches(content, edits)
+	if err != nil {
+		return "", 0, err
+	}
+	return applyEditFileMatches(content, matches), len(matches), nil
+}
+
+func editFileMatches(content string, edits []EditFileReplacement) ([]editFileMatch, error) {
 	matches := make([]editFileMatch, 0, len(edits))
 	for i, edit := range edits {
 		if edit.OldText == "" {

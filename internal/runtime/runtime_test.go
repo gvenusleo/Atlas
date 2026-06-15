@@ -387,12 +387,12 @@ func TestRunTurnDirectShellUsesToolRunner(t *testing.T) {
 		SessionID: "work",
 		Prompt:    "!pwd",
 		CWD:       t.TempDir(),
-		ToolRunner: func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (string, error) {
+		ToolRunner: func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 			called = true
 			if call.Name != "run_shell" || !strings.Contains(call.Arguments, "pwd") {
 				t.Fatalf("call = %#v", call)
 			}
-			return "runner-output", nil
+			return tool.RunResult{Content: "runner-output"}, nil
 		},
 	})
 	if err != nil {

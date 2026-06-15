@@ -149,19 +149,21 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 			result, err := a.tools.Run(ctx, call)
 			toolError := err != nil
 			if err != nil {
-				result = toolErrorResult(result, err)
+				result.Content = toolErrorResult(result.Content, err)
 			}
 			a.transcript.Append(model.Message{
-				Role:       model.RoleTool,
-				Content:    result,
-				ToolCallID: call.ID,
+				Role:         model.RoleTool,
+				Content:      result.Content,
+				ToolCallID:   call.ID,
+				ToolMetadata: result.Metadata,
 			})
 			a.emit(Event{
-				Type:       EventToolFinished,
-				Step:       step,
-				ToolCall:   call,
-				ToolResult: result,
-				ToolError:  toolError,
+				Type:         EventToolFinished,
+				Step:         step,
+				ToolCall:     call,
+				ToolResult:   result.Content,
+				ToolMetadata: result.Metadata,
+				ToolError:    toolError,
 			})
 		}
 	}

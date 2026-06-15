@@ -52,7 +52,7 @@ type TurnOptions struct {
 }
 
 // ToolRunner 可覆盖 runtime 中某次工具调用的执行方式。
-type ToolRunner func(context.Context, model.ToolCall, tool.RunFunc) (string, error)
+type ToolRunner func(context.Context, model.ToolCall, tool.RunFunc) (tool.RunResult, error)
 
 // TurnResult 描述一次用户输入完成后的结果。
 type TurnResult struct {
@@ -240,7 +240,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	if opts.ToolRunner != nil {
 		baseRunner := registry.RunDefault
-		registry = registry.WithRunner(func(ctx context.Context, call model.ToolCall) (string, error) {
+		registry = registry.WithRunner(func(ctx context.Context, call model.ToolCall) (tool.RunResult, error) {
 			return opts.ToolRunner(ctx, call, baseRunner)
 		})
 	}
@@ -324,10 +324,11 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 
 	emit(observer, agent.Event{Type: agent.EventTurnStarted})
 	emit(observer, agent.Event{Type: agent.EventToolStarted, Step: 1, ToolCall: call})
-	runDefault := func(ctx context.Context, call model.ToolCall) (string, error) {
-		return (tool.RunShell{}).Run(ctx, call.Arguments)
+	runDefault := func(ctx context.Context, call model.ToolCall) (tool.RunResult, error) {
+		content, err := (tool.RunShell{}).Run(ctx, call.Arguments)
+		return tool.RunResult{Content: content}, err
 	}
-	var result string
+	var result tool.RunResult
 	var runErr error
 	if runner != nil {
 		result, runErr = runner(ctx, call, runDefault)
@@ -337,19 +338,20 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 	if ctx.Err() != nil {
 		return TurnResult{}, ctx.Err()
 	}
-	if runErr != nil && strings.TrimSpace(result) == "" {
-		result = runErr.Error()
+	if runErr != nil && strings.TrimSpace(result.Content) == "" {
+		result.Content = runErr.Error()
 	}
 	toolError := runErr != nil
 	emit(observer, agent.Event{
-		Type:       agent.EventToolFinished,
-		Step:       1,
-		ToolCall:   call,
-		ToolResult: result,
-		ToolError:  toolError,
-		Err:        runErr,
+		Type:         agent.EventToolFinished,
+		Step:         1,
+		ToolCall:     call,
+		ToolResult:   result.Content,
+		ToolMetadata: result.Metadata,
+		ToolError:    toolError,
+		Err:          runErr,
 	})
-	emit(observer, agent.Event{Type: agent.EventTurnFinished, Step: 1, Content: result, Err: runErr})
+	emit(observer, agent.Event{Type: agent.EventTurnFinished, Step: 1, Content: result.Content, Err: runErr})
 
 	messages := append([]model.Message(nil), existing...)
 	messages = append(messages,
@@ -360,14 +362,14 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 				call,
 			},
 		},
-		model.Message{Role: model.RoleTool, Content: result, ToolCallID: call.ID},
+		model.Message{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
 	)
 	if err := store.SaveTranscript(ctx, sessionID, cwd, messages); err != nil {
 		return TurnResult{}, err
 	}
 	return TurnResult{
 		SessionID: sessionID,
-		Content:   result,
+		Content:   result.Content,
 	}, nil
 }
 

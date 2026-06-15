@@ -24,13 +24,14 @@ const (
 
 // Event 描述 agent loop 中发生的一件可观察事件。
 type Event struct {
-	Type       EventType
-	Step       int
-	Content    string
-	ToolCall   model.ToolCall
-	ToolResult string
-	ToolError  bool
-	Err        error
+	Type         EventType
+	Step         int
+	Content      string
+	ToolCall     model.ToolCall
+	ToolResult   string
+	ToolMetadata model.ToolMetadata
+	ToolError    bool
+	Err          error
 }
 
 // Observer 接收 agent loop 事件。

@@ -14,6 +14,7 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	defer store.Close()
+	oldText := "old"
 
 	messages := []model.Message{
 		{Role: model.RoleUser, Content: "hello"},
@@ -28,7 +29,15 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 				Arguments: `{"path":"README.md"}`,
 			}},
 		},
-		{Role: model.RoleTool, Content: "content", ToolCallID: "call-1"},
+		{
+			Role:       model.RoleTool,
+			Content:    "content",
+			ToolCallID: "call-1",
+			ToolMetadata: model.ToolMetadata{
+				Locations: []model.ToolLocation{{Path: "/tmp/work/README.md", Line: 2}},
+				Diff:      &model.ToolDiff{Path: "/tmp/work/README.md", OldText: &oldText, NewText: "new"},
+			},
+		},
 	}
 	if err := store.SaveTranscript(ctx, "work", "/tmp/work", messages); err != nil {
 		t.Fatalf("SaveTranscript() error = %v", err)
@@ -53,6 +62,12 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	}
 	if got[2].ToolCallID != "call-1" {
 		t.Fatalf("tool call id = %q", got[2].ToolCallID)
+	}
+	if len(got[2].ToolMetadata.Locations) != 1 || got[2].ToolMetadata.Locations[0].Path != "/tmp/work/README.md" || got[2].ToolMetadata.Locations[0].Line != 2 {
+		t.Fatalf("tool locations = %#v", got[2].ToolMetadata.Locations)
+	}
+	if got[2].ToolMetadata.Diff == nil || got[2].ToolMetadata.Diff.NewText != "new" {
+		t.Fatalf("tool diff = %#v", got[2].ToolMetadata.Diff)
 	}
 	info, err := store.GetSession(ctx, "work")
 	if err != nil {

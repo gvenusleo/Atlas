@@ -25,7 +25,7 @@ Atlas 的核心职责：
 
 ## 本地访问模型
 
-Atlas 工具拥有 Atlas 进程本身拥有的本地权限。工具可以在进程权限范围内读文件、写文件、搜索文本并执行 shell 命令。ACP 客户端声明支持 terminal capability 时，ACP 通道的 `run_shell` 可以请求客户端 terminal 执行并嵌入输出；不支持时回退到 Atlas 进程本地执行。
+Atlas 工具拥有 Atlas 进程本身拥有的本地权限。工具可以在进程权限范围内读文件、写文件、搜索文本并执行 shell 命令。ACP 客户端声明支持 terminal capability 时，ACP 通道的 `run_shell` 可以请求客户端 terminal 执行并嵌入输出；客户端声明支持 filesystem capability 时，ACP 通道的文件读写工具可以请求客户端文件系统能力并展示 locations/diff；不支持时回退到 Atlas 进程本地执行。
 
 Atlas 不提供沙箱、权限提示或 approval gate。这是产品行为边界，不是缺失实现。除非产品方向明确变化，代码中不引入权限抽象。
 
@@ -99,7 +99,7 @@ CLI input
   -> save transcript to session store
 ```
 
-ACP 输入通过 `internal/acp` 走同一个 `internal/runtime`。ACP 适配层只负责协议方法、session/update 通知、客户端 terminal 桥接和活动 session 状态；不复制 agent loop、工具执行或 transcript 持久化逻辑。
+ACP 输入通过 `internal/acp` 走同一个 `internal/runtime`。ACP 适配层只负责协议方法、session/update 通知、客户端 terminal/filesystem 桥接和活动 session 状态；不复制 agent loop、工具执行或 transcript 持久化逻辑。
 
 微信远程控制输入通过 `internal/weixin` 走同一个 `internal/runtime`。微信适配层只负责 iLink Bot 登录、消息轮询、typing 状态、斜杠命令、发送回复和发送人与本地 session 的轻量绑定；不复制 agent loop、工具执行或 transcript 持久化逻辑。
 
@@ -174,6 +174,7 @@ Atlas 使用 SQLite 保存本地会话，默认路径为 `~/.atlas/atlas.db`。`
 - ACP `/compact` slash command 暴露和手动压缩能力。
 - ACP session/update 事件顺序与 agent observer 事件顺序一致。
 - ACP terminal capability 下 `run_shell` 终端内容展示、输出收集、失败状态和本地回退能力。
+- ACP filesystem capability 下文件工具读写、locations/diff 展示、tool metadata 持久化和历史回放能力。
 - 微信通道扫码登录、账号保存、typing 状态、文本回复、工作目录切换、会话列表、会话恢复、上下文压缩和取消能力。
 
 交付前运行：

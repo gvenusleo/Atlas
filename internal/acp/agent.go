@@ -51,6 +51,12 @@ type terminalClient interface {
 	WaitForTerminalExit(context.Context, acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error)
 }
 
+// fileClient 是 ACP 客户端文件系统能力的最小接口。
+type fileClient interface {
+	ReadTextFile(context.Context, acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error)
+	WriteTextFile(context.Context, acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error)
+}
+
 // Options 描述启动 ACP 标准输入输出服务所需参数。
 type Options struct {
 	Runtime Runtime
@@ -97,6 +103,7 @@ type sessionState struct {
 type Agent struct {
 	rt                 Runtime
 	terminalClient     terminalClient
+	fileClient         fileClient
 	sendUpdate         func(context.Context, acpsdk.SessionNotification) error
 	clientCapabilities acpsdk.ClientCapabilities
 
@@ -119,10 +126,12 @@ func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	if conn == nil {
 		a.sendUpdate = nil
 		a.terminalClient = nil
+		a.fileClient = nil
 		return
 	}
 	a.sendUpdate = conn.SessionUpdate
 	a.terminalClient = conn
+	a.fileClient = conn
 }
 
 // Initialize 返回 Atlas 支持的 ACP v1 能力。
@@ -407,15 +416,8 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 			if event.ToolError {
 				status = acpsdk.ToolCallStatusFailed
 			}
-			opts := []acpsdk.ToolCallUpdateOpt{
-				acpsdk.WithUpdateStatus(status),
-				acpsdk.WithUpdateRawOutput(event.ToolResult),
-			}
-			if !a.takeTerminalToolCall(sessionID, toolCallID(event)) {
-				opts = append(opts, acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{
-					acpsdk.ToolContent(acpsdk.TextBlock(event.ToolResult)),
-				}))
-			}
+			includeContent := !a.takeTerminalToolCall(sessionID, toolCallID(event))
+			opts := toolCallUpdateOptions(status, event.ToolResult, event.ToolMetadata, includeContent)
 			update = acpsdk.UpdateToolCall(
 				toolCallID(event),
 				opts...,
@@ -428,7 +430,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 }
 
 func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolRunner {
-	return func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (string, error) {
+	return func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 		if call.Name == "run_shell" && a.clientCapabilities.Terminal && a.terminalClient != nil {
 			result, err := a.runShellInClientTerminal(ctx, sessionID, cwd, call)
 			if errors.Is(err, errClientTerminalUnavailable) {
@@ -436,15 +438,18 @@ func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolR
 			}
 			return result, err
 		}
+		if isFileTool(call.Name) {
+			return a.runFileTool(ctx, sessionID, cwd, call, fallback)
+		}
 		return fallback(ctx, call)
 	}
 }
 
 // runShellInClientTerminal 使用 ACP terminal 能力执行 run_shell 并返回最终输出。
-func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall) (string, error) {
+func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall) (tool.RunResult, error) {
 	args, err := tool.ParseShellArgs(call.Arguments)
 	if err != nil {
-		return "", err
+		return tool.RunResult{}, err
 	}
 	spec := tool.DefaultShell()
 	terminalArgs := append([]string(nil), spec.Args...)
@@ -465,7 +470,7 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 	}
 	terminal, err := a.terminalClient.CreateTerminal(ctx, createReq)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", errClientTerminalUnavailable, err)
+		return tool.RunResult{}, fmt.Errorf("%w: %v", errClientTerminalUnavailable, err)
 	}
 	defer func() {
 		_, _ = a.terminalClient.ReleaseTerminal(context.Background(), acpsdk.ReleaseTerminalRequest{
@@ -475,7 +480,7 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 	}()
 	if err := a.sendTerminalToolCallContent(ctx, sessionID, call, terminal.TerminalId); err != nil {
 		a.killClientTerminal(sessionID, terminal.TerminalId)
-		return "", err
+		return tool.RunResult{}, err
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, tool.ShellTimeout(args.TimeoutSeconds))
 	defer cancel()
@@ -491,16 +496,17 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 		}
 		output, outputErr := a.terminalOutputWithStatus(context.Background(), sessionID, terminal.TerminalId, status)
 		if waitErr == context.DeadlineExceeded && outputErr != nil {
-			return output, outputErr
+			return tool.RunResult{Content: output}, outputErr
 		}
-		return output, waitErr
+		return tool.RunResult{Content: output}, waitErr
 	}
 	if err != nil {
 		a.killClientTerminal(sessionID, terminal.TerminalId)
-		return "", err
+		return tool.RunResult{}, err
 	}
 	status := terminalExitStatus(exit)
-	return a.terminalOutputWithStatus(ctx, sessionID, terminal.TerminalId, status)
+	output, err := a.terminalOutputWithStatus(ctx, sessionID, terminal.TerminalId, status)
+	return tool.RunResult{Content: output}, err
 }
 
 func (a *Agent) killClientTerminal(sessionID acpsdk.SessionId, terminalID string) {
@@ -835,12 +841,57 @@ func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall) acpsdk.Sessi
 func replayToolResult(toolID acpsdk.ToolCallId, msg model.Message) acpsdk.SessionUpdate {
 	return acpsdk.UpdateToolCall(
 		toolID,
-		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusCompleted),
-		acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{
-			acpsdk.ToolContent(acpsdk.TextBlock(msg.Content)),
-		}),
-		acpsdk.WithUpdateRawOutput(msg.Content),
+		toolCallUpdateOptions(acpsdk.ToolCallStatusCompleted, msg.Content, msg.ToolMetadata, true)...,
 	)
+}
+
+// toolCallUpdateOptions 将 Atlas 工具结果映射成 ACP tool_call_update。
+func toolCallUpdateOptions(status acpsdk.ToolCallStatus, result string, metadata model.ToolMetadata, includeContent bool) []acpsdk.ToolCallUpdateOpt {
+	opts := []acpsdk.ToolCallUpdateOpt{
+		acpsdk.WithUpdateStatus(status),
+		acpsdk.WithUpdateRawOutput(result),
+	}
+	if locations := toolCallLocations(metadata); len(locations) > 0 {
+		opts = append(opts, acpsdk.WithUpdateLocations(locations))
+	}
+	if includeContent {
+		opts = append(opts, acpsdk.WithUpdateContent(toolCallContent(result, metadata)))
+	}
+	return opts
+}
+
+// toolCallContent 优先使用结构化 diff，否则回退为普通文本内容。
+func toolCallContent(result string, metadata model.ToolMetadata) []acpsdk.ToolCallContent {
+	if metadata.Diff != nil {
+		if metadata.Diff.OldText == nil {
+			return []acpsdk.ToolCallContent{
+				acpsdk.ToolDiffContent(metadata.Diff.Path, metadata.Diff.NewText),
+			}
+		}
+		return []acpsdk.ToolCallContent{
+			acpsdk.ToolDiffContent(metadata.Diff.Path, metadata.Diff.NewText, *metadata.Diff.OldText),
+		}
+	}
+	return []acpsdk.ToolCallContent{
+		acpsdk.ToolContent(acpsdk.TextBlock(result)),
+	}
+}
+
+// toolCallLocations 将持久化的文件位置转换为 ACP 可跳转位置。
+func toolCallLocations(metadata model.ToolMetadata) []acpsdk.ToolCallLocation {
+	if len(metadata.Locations) == 0 {
+		return nil
+	}
+	locations := make([]acpsdk.ToolCallLocation, 0, len(metadata.Locations))
+	for _, location := range metadata.Locations {
+		item := acpsdk.ToolCallLocation{Path: location.Path}
+		if location.Line > 0 {
+			line := location.Line
+			item.Line = &line
+		}
+		locations = append(locations, item)
+	}
+	return locations
 }
 
 func replayToolCallID(messageIndex, toolIndex int, id string) acpsdk.ToolCallId {

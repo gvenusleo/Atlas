@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
+	"github.com/liuyuxin/atlas/internal/tool"
 	"github.com/liuyuxin/atlas/internal/transcript"
 	"github.com/liuyuxin/atlas/internal/version"
 )
@@ -261,11 +263,11 @@ func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
 			Arguments: `{"command":"pwd"}`,
 		}
 		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
-		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (string, error) {
-			return "", fmt.Errorf("fallback should not run")
+		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+			return tool.RunResult{}, fmt.Errorf("fallback should not run")
 		})
-		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result, ToolError: err != nil})
-		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result}, err
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result.Content, ToolMetadata: result.Metadata, ToolError: err != nil})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result.Content}, err
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
@@ -323,11 +325,11 @@ func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
 			Arguments: `{"command":"pwd"}`,
 		}
 		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
-		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (string, error) {
-			return "", fmt.Errorf("fallback should not run")
+		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+			return tool.RunResult{}, fmt.Errorf("fallback should not run")
 		})
-		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result, ToolError: err != nil})
-		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result}, err
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result.Content, ToolMetadata: result.Metadata, ToolError: err != nil})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result.Content}, err
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
@@ -365,13 +367,13 @@ func TestPromptFallsBackWhenClientTerminalUnsupported(t *testing.T) {
 			t.Fatal("ToolRunner is nil")
 		}
 		call := model.ToolCall{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}
-		got, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (string, error) {
-			return "fallback-output", nil
+		got, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+			return tool.RunResult{Content: "fallback-output"}, nil
 		})
-		if err != nil || got != "fallback-output" {
-			t.Fatalf("ToolRunner() = %q, %v", got, err)
+		if err != nil || got.Content != "fallback-output" {
+			t.Fatalf("ToolRunner() = %q, %v", got.Content, err)
 		}
-		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: got}, nil
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: got.Content}, nil
 	}
 	a := NewAgent(rt)
 	a.setSession("sess", "/tmp/work", "test-model", "high")
@@ -381,6 +383,184 @@ func TestPromptFallsBackWhenClientTerminalUnsupported(t *testing.T) {
 		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("read")},
 	}); err != nil {
 		t.Fatalf("Prompt() error = %v", err)
+	}
+}
+
+func TestPromptUsesClientFileSystemForReadFileWhenSupported(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		call := model.ToolCall{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md","offset":2,"limit":3}`}
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
+		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+			return tool.RunResult{}, fmt.Errorf("fallback should not run")
+		})
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result.Content, ToolMetadata: result.Metadata, ToolError: err != nil})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result.Content}, err
+	}
+	a := NewAgent(rt)
+	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true}}
+	a.setSession("sess", "/tmp/work", "test-model", "high")
+	client := &fakeFileClient{readContent: "line 2\nline 3\n"}
+	a.fileClient = client
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("read")},
+	}); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if client.read.Path != "/tmp/work/README.md" || client.read.Line == nil || *client.read.Line != 2 || client.read.Limit == nil || *client.read.Limit != 3 {
+		t.Fatalf("read request = %#v", client.read)
+	}
+	finish := updates[1].Update.ToolCallUpdate
+	if finish == nil || finish.RawOutput != "line 2\nline 3\n" || len(finish.Locations) != 1 || finish.Locations[0].Path != "/tmp/work/README.md" || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 2 {
+		t.Fatalf("tool finish = %#v", updates[1].Update)
+	}
+	if len(finish.Content) != 1 || finish.Content[0].Content == nil || finish.Content[0].Content.Content.Text.Text != "line 2\nline 3\n" {
+		t.Fatalf("tool content = %#v", finish.Content)
+	}
+}
+
+func TestPromptUsesClientFileSystemForWriteFileWhenSupported(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		call := model.ToolCall{ID: "call_1", Name: "write_file", Arguments: `{"path":"README.md","content":"new\n"}`}
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
+		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+			return tool.RunResult{}, fmt.Errorf("fallback should not run")
+		})
+		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolFinished, Step: 1, ToolCall: call, ToolResult: result.Content, ToolMetadata: result.Metadata, ToolError: err != nil})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: result.Content}, err
+	}
+	a := NewAgent(rt)
+	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
+	a.setSession("sess", "/tmp/work", "test-model", "high")
+	client := &fakeFileClient{readContent: "old\n"}
+	a.fileClient = client
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("write")},
+	}); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if client.write.Path != "/tmp/work/README.md" || client.write.Content != "new\n" {
+		t.Fatalf("write request = %#v", client.write)
+	}
+	finish := updates[1].Update.ToolCallUpdate
+	if finish == nil || len(finish.Locations) != 1 || finish.Locations[0].Path != "/tmp/work/README.md" {
+		t.Fatalf("tool finish = %#v", updates[1].Update)
+	}
+	if len(finish.Content) != 1 || finish.Content[0].Diff == nil || finish.Content[0].Diff.Path != "/tmp/work/README.md" || finish.Content[0].Diff.OldText == nil || *finish.Content[0].Diff.OldText != "old\n" || finish.Content[0].Diff.NewText != "new\n" {
+		t.Fatalf("tool diff = %#v", finish.Content)
+	}
+}
+
+func TestToolRunnerUsesClientFileSystemForEditFileWhenSupported(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
+	client := &fakeFileClient{readContent: "old\n"}
+	a.fileClient = client
+	runner := a.toolRunner("sess", "/tmp/work")
+	fallbackCalled := false
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "edit_file",
+		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		fallbackCalled = true
+		return tool.RunResult{}, nil
+	})
+
+	if err != nil {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if fallbackCalled {
+		t.Fatal("fallback should not run")
+	}
+	if got.Content != "replaced 1 blocks in /tmp/work/README.md" {
+		t.Fatalf("content = %q", got.Content)
+	}
+	if client.read.Path != "/tmp/work/README.md" || client.write.Path != "/tmp/work/README.md" || client.write.Content != "new\n" {
+		t.Fatalf("file client read=%#v write=%#v", client.read, client.write)
+	}
+	if got.Metadata.Diff == nil || got.Metadata.Diff.OldText == nil || *got.Metadata.Diff.OldText != "old\n" || got.Metadata.Diff.NewText != "new\n" {
+		t.Fatalf("metadata = %#v", got.Metadata)
+	}
+}
+
+func TestToolRunnerFallsBackForEmptyClientFileSystemWrite(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{WriteTextFile: true}}
+	a.fileClient = &fakeFileClient{}
+	runner := a.toolRunner("sess", "/tmp/work")
+	fallbackCalled := false
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "write_file",
+		Arguments: `{"path":"README.md","content":""}`,
+	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
+		fallbackCalled = true
+		if !strings.Contains(call.Arguments, `"/tmp/work/README.md"`) {
+			t.Fatalf("arguments = %s", call.Arguments)
+		}
+		return tool.RunResult{Content: "wrote /tmp/work/README.md"}, nil
+	})
+
+	if err != nil {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if !fallbackCalled {
+		t.Fatal("fallback was not called")
+	}
+	if got.Content != "wrote /tmp/work/README.md" || got.Metadata.Diff == nil || got.Metadata.Diff.NewText != "" {
+		t.Fatalf("result = %#v", got)
+	}
+}
+
+func TestSearchResultLocationsUsesFileParentForSingleFileOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "note.txt")
+	if err := os.WriteFile(path, []byte("needle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := searchResultLocations(path, "note.txt:1:needle")
+
+	if len(got) != 1 || got[0].Path != path || got[0].Line != 1 {
+		t.Fatalf("locations = %#v", got)
+	}
+}
+
+func TestToolRunnerPreservesListFilesMissingPathError(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	runner := a.toolRunner("sess", "/tmp/work")
+
+	_, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "list_files",
+		Arguments: `{}`,
+	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
+		if call.Arguments != `{}` {
+			t.Fatalf("arguments = %s", call.Arguments)
+		}
+		return tool.RunResult{}, errors.New("list_files path is required")
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("ToolRunner() error = %v", err)
 	}
 }
 
@@ -396,16 +576,16 @@ func TestToolRunnerReturnsClientTerminalExitErrorWithoutFallback(t *testing.T) {
 		ID:        "call_1",
 		Name:      "run_shell",
 		Arguments: `{"command":"false"}`,
-	}, func(context.Context, model.ToolCall) (string, error) {
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		return "fallback", nil
+		return tool.RunResult{Content: "fallback"}, nil
 	})
 
 	if err == nil || !strings.Contains(err.Error(), "command exited with code 7") {
 		t.Fatalf("ToolRunner() error = %v", err)
 	}
-	if !strings.Contains(got, "failed") || !strings.Contains(got, "[command exited with code 7]") {
-		t.Fatalf("ToolRunner() output = %q", got)
+	if !strings.Contains(got.Content, "failed") || !strings.Contains(got.Content, "[command exited with code 7]") {
+		t.Fatalf("ToolRunner() output = %q", got.Content)
 	}
 	if fallbackCalled {
 		t.Fatal("fallback should not run after client terminal command exit")
@@ -423,13 +603,13 @@ func TestToolRunnerFallsBackWhenClientTerminalCreateFails(t *testing.T) {
 		ID:        "call_1",
 		Name:      "run_shell",
 		Arguments: `{"command":"pwd"}`,
-	}, func(context.Context, model.ToolCall) (string, error) {
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		return "fallback", nil
+		return tool.RunResult{Content: "fallback"}, nil
 	})
 
-	if err != nil || got != "fallback" {
-		t.Fatalf("ToolRunner() = %q, %v", got, err)
+	if err != nil || got.Content != "fallback" {
+		t.Fatalf("ToolRunner() = %q, %v", got.Content, err)
 	}
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
@@ -449,8 +629,8 @@ func TestToolRunnerKillsClientTerminalOnCancel(t *testing.T) {
 		ID:        "call_1",
 		Name:      "run_shell",
 		Arguments: `{"command":"sleep 10"}`,
-	}, func(context.Context, model.ToolCall) (string, error) {
-		return "", fmt.Errorf("fallback should not run")
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		return tool.RunResult{}, fmt.Errorf("fallback should not run")
 	})
 
 	if err != context.Canceled {
@@ -462,8 +642,8 @@ func TestToolRunnerKillsClientTerminalOnCancel(t *testing.T) {
 	if !client.releaseCalled {
 		t.Fatal("terminal was not released after cancellation")
 	}
-	if !strings.Contains(got, "partial") || !strings.Contains(got, "[command cancelled]") {
-		t.Fatalf("ToolRunner() output = %q", got)
+	if !strings.Contains(got.Content, "partial") || !strings.Contains(got.Content, "[command cancelled]") {
+		t.Fatalf("ToolRunner() output = %q", got.Content)
 	}
 }
 
@@ -481,15 +661,15 @@ func TestToolRunnerKillsClientTerminalWhenTerminalUpdateFails(t *testing.T) {
 		ID:        "call_1",
 		Name:      "run_shell",
 		Arguments: `{"command":"pwd"}`,
-	}, func(context.Context, model.ToolCall) (string, error) {
-		return "", fmt.Errorf("fallback should not run")
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		return tool.RunResult{}, fmt.Errorf("fallback should not run")
 	})
 
 	if err == nil || !strings.Contains(err.Error(), "send failed") {
 		t.Fatalf("ToolRunner() error = %v", err)
 	}
-	if got != "" {
-		t.Fatalf("ToolRunner() output = %q", got)
+	if got.Content != "" {
+		t.Fatalf("ToolRunner() output = %q", got.Content)
 	}
 	if !client.killCalled {
 		t.Fatal("terminal was not killed after terminal update failure")
@@ -688,6 +868,7 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 
 func TestLoadSessionReplaysTranscript(t *testing.T) {
 	cwd := testCWD(t)
+	oldText := "old"
 	trans := transcript.New()
 	trans.Append(model.Message{Role: model.RoleUser, Content: "hi"})
 	trans.Append(model.Message{
@@ -700,7 +881,15 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 			Arguments: `{"command":"just check"}`,
 		}},
 	})
-	trans.Append(model.Message{Role: model.RoleTool, Content: "ok", ToolCallID: "call_1"})
+	trans.Append(model.Message{
+		Role:       model.RoleTool,
+		Content:    "ok",
+		ToolCallID: "call_1",
+		ToolMetadata: model.ToolMetadata{
+			Locations: []model.ToolLocation{{Path: filepath.Join(cwd, "README.md"), Line: 4}},
+			Diff:      &model.ToolDiff{Path: filepath.Join(cwd, "README.md"), OldText: &oldText, NewText: "new"},
+		},
+	})
 	trans.Append(model.Message{Role: model.RoleAssistant, Content: "done"})
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
@@ -755,7 +944,10 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	if finish == nil || finish.ToolCallId != "call_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted || finish.RawOutput != "ok" {
 		t.Fatalf("tool finish = %#v", updates[4].Update)
 	}
-	if len(finish.Content) != 1 || finish.Content[0].Content.Content.Text.Text != "ok" {
+	if len(finish.Locations) != 1 || finish.Locations[0].Path != filepath.Join(cwd, "README.md") || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 4 {
+		t.Fatalf("tool locations = %#v", finish.Locations)
+	}
+	if len(finish.Content) != 1 || finish.Content[0].Diff == nil || finish.Content[0].Diff.NewText != "new" {
 		t.Fatalf("tool content = %#v", finish.Content)
 	}
 	if updates[5].Update.AgentMessageChunk == nil || updates[5].Update.AgentMessageChunk.Content.Text.Text != "done" {
@@ -1013,6 +1205,27 @@ type fakeTerminalClient struct {
 	outputCalled  bool
 	killCalled    bool
 	releaseCalled bool
+}
+
+type fakeFileClient struct {
+	read        acpsdk.ReadTextFileRequest
+	readContent string
+	readErr     error
+	write       acpsdk.WriteTextFileRequest
+	writeErr    error
+}
+
+func (f *fakeFileClient) ReadTextFile(_ context.Context, req acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error) {
+	f.read = req
+	if f.readErr != nil {
+		return acpsdk.ReadTextFileResponse{}, f.readErr
+	}
+	return acpsdk.ReadTextFileResponse{Content: f.readContent}, nil
+}
+
+func (f *fakeFileClient) WriteTextFile(_ context.Context, req acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error) {
+	f.write = req
+	return acpsdk.WriteTextFileResponse{}, f.writeErr
 }
 
 func (f *fakeTerminalClient) CreateTerminal(_ context.Context, req acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error) {

@@ -97,6 +97,7 @@ create table if not exists messages (
 	reasoning_content text not null default '',
 	tool_call_id text not null default '',
 	tool_calls_json text not null default '',
+	tool_metadata_json text not null default '',
 	input_tokens integer not null default 0,
 	output_tokens integer not null default 0,
 	total_tokens integer not null default 0,
@@ -135,7 +136,7 @@ func (s *Store) LoadTranscript(ctx context.Context, sessionID string) (*transcri
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select role, content, reasoning_content, tool_call_id, tool_calls_json, input_tokens, output_tokens, total_tokens
+select role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, input_tokens, output_tokens, total_tokens
 from messages
 where session_id = ?
 order by id`, sessionID)
@@ -146,12 +147,16 @@ order by id`, sessionID)
 
 	trans := transcript.New()
 	for rows.Next() {
-		var role, content, reasoningContent, toolCallID, toolCallsJSON string
+		var role, content, reasoningContent, toolCallID, toolCallsJSON, toolMetadataJSON string
 		var usage model.Usage
-		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
+		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON, &toolMetadataJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
 			return nil, err
 		}
 		toolCalls, err := decodeToolCalls(toolCallsJSON)
+		if err != nil {
+			return nil, err
+		}
+		toolMetadata, err := decodeToolMetadata(toolMetadataJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -161,6 +166,7 @@ order by id`, sessionID)
 			ReasoningContent: reasoningContent,
 			ToolCallID:       toolCallID,
 			ToolCalls:        toolCalls,
+			ToolMetadata:     toolMetadata,
 			Usage:            usage,
 		})
 	}
@@ -340,9 +346,13 @@ on conflict(id) do update set
 		if err != nil {
 			return err
 		}
+		toolMetadataJSON, err := encodeToolMetadata(msg.ToolMetadata)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
-insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, input_tokens, output_tokens, total_tokens, created_at)
-values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
+insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, input_tokens, output_tokens, total_tokens, created_at)
+values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, toolMetadataJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
 			return err
 		}
 	}
@@ -391,6 +401,28 @@ func decodeToolCalls(content string) ([]model.ToolCall, error) {
 		return nil, err
 	}
 	return calls, nil
+}
+
+func encodeToolMetadata(metadata model.ToolMetadata) (string, error) {
+	if len(metadata.Locations) == 0 && metadata.Diff == nil {
+		return "", nil
+	}
+	content, err := json.Marshal(metadata)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func decodeToolMetadata(content string) (model.ToolMetadata, error) {
+	if content == "" {
+		return model.ToolMetadata{}, nil
+	}
+	var metadata model.ToolMetadata
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		return model.ToolMetadata{}, err
+	}
+	return metadata, nil
 }
 
 func titleFromMessages(messages []model.Message) string {

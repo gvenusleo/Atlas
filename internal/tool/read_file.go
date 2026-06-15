@@ -19,6 +19,13 @@ const (
 // ReadFile 读取本地文本文件内容。
 type ReadFile struct{}
 
+// ReadFileArgs 是 read_file 的 JSON 参数。
+type ReadFileArgs struct {
+	Path   string `json:"path"`
+	Offset int    `json:"offset"`
+	Limit  int    `json:"limit"`
+}
+
 // Definition 返回 read_file 的模型可见定义。
 func (ReadFile) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
@@ -47,24 +54,29 @@ func (ReadFile) Definition() model.ToolDefinition {
 
 // Run 使用 JSON 参数中的 path、offset 和 limit 读取文件。
 func (ReadFile) Run(ctx context.Context, arguments string) (string, error) {
-	var args struct {
-		Path   string `json:"path"`
-		Offset int    `json:"offset"`
-		Limit  int    `json:"limit"`
-	}
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return "", fmt.Errorf("invalid read_file arguments: %w", err)
-	}
-	if args.Path == "" {
-		return "", fmt.Errorf("read_file path is required")
-	}
-	if args.Offset < 0 {
-		return "", fmt.Errorf("read_file offset must be positive")
-	}
-	if args.Limit < 0 {
-		return "", fmt.Errorf("read_file limit must be positive")
+	args, err := ParseReadFileArgs(arguments)
+	if err != nil {
+		return "", err
 	}
 	return readFileContent(ctx, args.Path, args.Offset, args.Limit)
+}
+
+// ParseReadFileArgs 解析并校验 read_file 参数。
+func ParseReadFileArgs(arguments string) (ReadFileArgs, error) {
+	var args ReadFileArgs
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return ReadFileArgs{}, fmt.Errorf("invalid read_file arguments: %w", err)
+	}
+	if args.Path == "" {
+		return ReadFileArgs{}, fmt.Errorf("read_file path is required")
+	}
+	if args.Offset < 0 {
+		return ReadFileArgs{}, fmt.Errorf("read_file offset must be positive")
+	}
+	if args.Limit < 0 {
+		return ReadFileArgs{}, fmt.Errorf("read_file limit must be positive")
+	}
+	return args, nil
 }
 
 func readFileContent(ctx context.Context, path string, offset, limit int) (string, error) {

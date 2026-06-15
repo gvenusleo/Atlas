@@ -41,8 +41,8 @@ func TestRegistryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got != "ok" {
-		t.Fatalf("Run() = %q, want %q", got, "ok")
+	if got.Content != "ok" {
+		t.Fatalf("Run() = %q, want %q", got.Content, "ok")
 	}
 	if ft.gotArgs != `{"path":"README.md"}` {
 		t.Fatalf("tool arguments = %q", ft.gotArgs)

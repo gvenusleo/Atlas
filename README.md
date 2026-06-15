@@ -4,7 +4,7 @@ Atlas 是一个极简本地 coding agent，支持一次性 CLI 调用和 ACP std
 
 ## 行为边界
 
-Atlas 以当前进程的本地权限运行。内置工具可以读取文件、写入文件、搜索文本并执行 shell 命令；Atlas 不提供沙箱、权限提示或 approval gate。请只在可信工作区中运行 Atlas。通过 ACP 连接时，如果客户端声明支持 terminal capability，ACP 通道的 `run_shell` 会优先请求客户端 terminal 执行并嵌入输出；不支持时回退到 Atlas 本地工具执行。
+Atlas 以当前进程的本地权限运行。内置工具可以读取文件、写入文件、搜索文本并执行 shell 命令；Atlas 不提供沙箱、权限提示或 approval gate。请只在可信工作区中运行 Atlas。通过 ACP 连接时，如果客户端声明支持 terminal capability，ACP 通道的 `run_shell` 会优先请求客户端 terminal 执行并嵌入输出；如果客户端声明支持 filesystem capability，ACP 通道的 `read_file`、`write_file` 和 `edit_file` 会优先请求客户端读写文件，并把文件位置和 diff 作为 tool metadata 展示；不支持时回退到 Atlas 本地工具执行。
 
 Atlas 从两个位置加载附加 `AGENTS.md` 指令：
 
@@ -92,7 +92,7 @@ go run ./cmd/atlas version
 
 当用户输入以 `!` 开头时，Atlas 会跳过模型，直接把后续内容作为平台默认 shell 命令执行并返回输出。例如 `!pwd` 或 `!git status`。在 shell 中通过 CLI 调用时，建议使用单引号或转义 `!`，例如 `go run ./cmd/atlas run '!pwd'`，避免 zsh 或 bash 历史展开改写命令。该快捷执行路径同样会保存到 session，并适用于 CLI、ACP 和微信通道。
 
-`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表、删除、模型切换、思考强度切换、思维链流式更新、客户端 terminal 展示 `run_shell` 输出和 `/compact` 上下文压缩命令；不支持 ACP auth、权限请求、MCP 连接和多模态输入。
+`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表、删除、模型切换、思考强度切换、思维链流式更新、客户端 terminal 展示 `run_shell` 输出、文件工具 locations/diff 展示和 `/compact` 上下文压缩命令；不支持 ACP auth、权限请求、MCP 连接和多模态输入。
 
 Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供全文搜索。
 
