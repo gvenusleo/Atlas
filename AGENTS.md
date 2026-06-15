@@ -25,7 +25,7 @@ Atlas 的核心职责：
 
 ## 本地访问模型
 
-Atlas 工具拥有 Atlas 进程本身拥有的本地权限。工具可以在进程权限范围内读文件、写文件、搜索文本并执行 shell 命令。ACP 客户端声明支持 terminal capability 时，ACP 通道的 `run_shell` 可以请求客户端 terminal 执行并嵌入输出；客户端声明支持 filesystem capability 时，ACP 通道的文件读写工具可以请求客户端文件系统能力并展示 locations/diff；不支持时回退到 Atlas 进程本地执行。
+Atlas 工具拥有 Atlas 进程本身拥有的本地权限。工具可以在进程权限范围内读文件、写文件、搜索文本并执行 shell 命令。ACP 客户端声明支持 terminal capability 时，ACP 通道的 `run_shell` 可以请求客户端 terminal 执行并嵌入输出；客户端声明支持 filesystem capability 时，ACP 通道的文件读写工具可以请求客户端文件系统能力并展示 locations/diff；客户端不支持或客户端文件系统调用失败时回退到 Atlas 进程本地执行。
 
 Atlas 不提供沙箱、权限提示或 approval gate。这是产品行为边界，不是缺失实现。除非产品方向明确变化，代码中不引入权限抽象。
 

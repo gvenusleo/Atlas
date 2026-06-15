@@ -64,15 +64,11 @@ func (a *Agent) runReadFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 			req.Limit = &args.Limit
 		}
 		resp, err := a.fileClient.ReadTextFile(ctx, req)
-		return tool.RunResult{Content: resp.Content, Metadata: metadata}, err
+		if err == nil {
+			return tool.RunResult{Content: resp.Content, Metadata: metadata}, nil
+		}
 	}
-	result, err := fallback(ctx, toolCallWithArgs(call, tool.ReadFileArgs{
-		Path:   path,
-		Offset: args.Offset,
-		Limit:  args.Limit,
-	}))
-	result.Metadata = mergeToolMetadata(result.Metadata, metadata)
-	return result, err
+	return runLocalReadFileTool(ctx, call, path, args, metadata, fallback)
 }
 
 // runWriteFileTool 优先使用客户端文件系统写入，并生成 diff metadata。
@@ -91,12 +87,27 @@ func (a *Agent) runWriteFileTool(ctx context.Context, sessionID acpsdk.SessionId
 			Path:      path,
 			Content:   content,
 		})
-		if err != nil {
-			return tool.RunResult{Metadata: metadata}, err
+		if err == nil {
+			metadata.Diff = acpToolDiff(path, oldText, content)
+			return tool.RunResult{Content: "wrote " + path, Metadata: metadata}, nil
 		}
-		metadata.Diff = acpToolDiff(path, oldText, content)
-		return tool.RunResult{Content: "wrote " + path, Metadata: metadata}, nil
 	}
+	return runLocalWriteFileTool(ctx, call, path, content, metadata, fallback)
+}
+
+// runLocalReadFileTool 使用 Atlas 本地工具读取文件并补充 ACP metadata。
+func runLocalReadFileTool(ctx context.Context, call model.ToolCall, path string, args tool.ReadFileArgs, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
+	result, err := fallback(ctx, toolCallWithArgs(call, tool.ReadFileArgs{
+		Path:   path,
+		Offset: args.Offset,
+		Limit:  args.Limit,
+	}))
+	result.Metadata = mergeToolMetadata(result.Metadata, metadata)
+	return result, err
+}
+
+// runLocalWriteFileTool 使用 Atlas 本地工具写入文件并生成 diff metadata。
+func runLocalWriteFileTool(ctx context.Context, call model.ToolCall, path, content string, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	oldText := readLocalToolOldText(path)
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.WriteFileArgs{
 		Path:    path,
@@ -120,7 +131,7 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 	if a.clientCapabilities.Fs.ReadTextFile && a.clientCapabilities.Fs.WriteTextFile && a.fileClient != nil {
 		oldText, err := a.readClientToolText(ctx, sessionID, path)
 		if err != nil {
-			return tool.RunResult{Metadata: metadata}, err
+			return runLocalEditFileTool(ctx, call, path, args, metadata, fallback)
 		}
 		newText, count, err := tool.ApplyEditFileContent(oldText, args.Edits)
 		if err != nil {
@@ -132,13 +143,17 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 				Path:      path,
 				Content:   newText,
 			})
-			if err != nil {
-				return tool.RunResult{Metadata: metadata}, err
+			if err == nil {
+				metadata.Diff = acpToolDiff(path, &oldText, newText)
+				return tool.RunResult{Content: fmt.Sprintf("replaced %d blocks in %s", count, path), Metadata: metadata}, nil
 			}
-			metadata.Diff = acpToolDiff(path, &oldText, newText)
-			return tool.RunResult{Content: fmt.Sprintf("replaced %d blocks in %s", count, path), Metadata: metadata}, nil
 		}
 	}
+	return runLocalEditFileTool(ctx, call, path, args, metadata, fallback)
+}
+
+// runLocalEditFileTool 使用 Atlas 本地工具编辑文件并生成 diff metadata。
+func runLocalEditFileTool(ctx context.Context, call model.ToolCall, path string, args tool.EditFileArgs, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	oldText := readLocalToolOldText(path)
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.EditFileArgs{
 		Path:  path,

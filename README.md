@@ -4,7 +4,7 @@ Atlas 是一个极简本地 coding agent，支持一次性 CLI 调用和 ACP std
 
 ## 行为边界
 
-Atlas 以当前进程的本地权限运行。内置工具可以读取文件、写入文件、搜索文本并执行 shell 命令；Atlas 不提供沙箱、权限提示或 approval gate。请只在可信工作区中运行 Atlas。通过 ACP 连接时，如果客户端声明支持 terminal capability，ACP 通道的 `run_shell` 会优先请求客户端 terminal 执行并嵌入输出；如果客户端声明支持 filesystem capability，ACP 通道的 `read_file`、`write_file` 和 `edit_file` 会优先请求客户端读写文件，并把文件位置和 diff 作为 tool metadata 展示；不支持时回退到 Atlas 本地工具执行。
+Atlas 以当前进程的本地权限运行。内置工具可以读取文件、写入文件、搜索文本并执行 shell 命令；Atlas 不提供沙箱、权限提示或 approval gate。请只在可信工作区中运行 Atlas。通过 ACP 连接时，如果客户端声明支持 terminal capability，ACP 通道的 `run_shell` 会优先请求客户端 terminal 执行并嵌入输出；如果客户端声明支持 filesystem capability，ACP 通道的 `read_file`、`write_file` 和 `edit_file` 会优先请求客户端读写文件，并把文件位置和 diff 作为 tool metadata 展示；客户端不支持或客户端文件系统调用失败时回退到 Atlas 本地工具执行。
 
 Atlas 从两个位置加载附加 `AGENTS.md` 指令：
 
