@@ -23,6 +23,7 @@ const (
 type Config struct {
 	Provider ProviderConfig `json:"provider"`
 	Agent    AgentConfig    `json:"agent"`
+	Memory   MemoryConfig   `json:"memory"`
 	Session  SessionConfig  `json:"session"`
 	Services ServicesConfig `json:"services"`
 }
@@ -50,6 +51,17 @@ type AgentConfig struct {
 	Temperature            float64 `json:"temperature"`
 	ReasoningEffort        string  `json:"reasoning_effort"`
 	CompactionTriggerRatio float64 `json:"compaction_trigger_ratio"`
+}
+
+// MemoryConfig 描述长期记忆后台抽取和检索配置。
+type MemoryConfig struct {
+	Enabled *bool  `json:"enabled"`
+	Model   string `json:"model"`
+}
+
+// IsEnabled 返回长期记忆是否启用；未配置时默认启用。
+func (c MemoryConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // SessionConfig 描述本地会话存储参数。
@@ -156,6 +168,11 @@ func (c Config) Validate() error {
 	}
 	if !defaultFound {
 		return fmt.Errorf("provider.default_model %q is not in provider.models", c.Provider.DefaultModel)
+	}
+	if c.Memory.IsEnabled() && strings.TrimSpace(c.Memory.Model) != "" {
+		if _, err := c.Provider.ResolveModel(c.Memory.Model); err != nil {
+			return fmt.Errorf("memory.model %q is not in provider.models", c.Memory.Model)
+		}
 	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return fmt.Errorf("agent.temperature must be between 0 and 2")

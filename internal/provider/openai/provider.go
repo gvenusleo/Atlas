@@ -97,6 +97,7 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 		MaxTokens:       req.MaxTokens,
 		Temperature:     req.Temperature,
 		ReasoningEffort: req.ReasoningEffort,
+		ResponseFormat:  toAPIResponseFormat(req.ResponseFormat),
 		Stream:          true,
 	}
 	if len(apiReq.Tools) == 0 {
@@ -112,7 +113,12 @@ type chatRequest struct {
 	MaxTokens       int          `json:"max_tokens,omitempty"`
 	Temperature     float64      `json:"temperature,omitempty"`
 	ReasoningEffort string       `json:"reasoning_effort,omitempty"`
+	ResponseFormat  *apiFormat   `json:"response_format,omitempty"`
 	Stream          bool         `json:"stream"`
+}
+
+type apiFormat struct {
+	Type string `json:"type"`
 }
 
 type apiMessage struct {
@@ -229,6 +235,13 @@ func toAPITools(tools []model.ToolDefinition) []apiTool {
 		})
 	}
 	return apiTools
+}
+
+func toAPIResponseFormat(format model.ResponseFormat) *apiFormat {
+	if format == model.ResponseFormatJSONObject {
+		return &apiFormat{Type: string(format)}
+	}
+	return nil
 }
 
 func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.ChatResponse, error) {

@@ -23,6 +23,10 @@ func TestLoadFile(t *testing.T) {
 			"reasoning_effort": "high",
 			"compaction_trigger_ratio": 0.7
 		},
+		"memory": {
+			"enabled": false,
+			"model": "deepseek-v4-pro"
+		},
 		"session": {
 			"db_path": "/tmp/atlas.db"
 		}
@@ -62,6 +66,12 @@ func TestLoadFile(t *testing.T) {
 	if cfg.Agent.CompactionTriggerRatio != 0.7 {
 		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
 	}
+	if cfg.Memory.IsEnabled() {
+		t.Fatal("Memory.IsEnabled() = true")
+	}
+	if cfg.Memory.Model != "deepseek-v4-pro" {
+		t.Fatalf("Memory.Model = %q", cfg.Memory.Model)
+	}
 	if cfg.Session.DBPath != "/tmp/atlas.db" {
 		t.Fatalf("Session.DBPath = %q", cfg.Session.DBPath)
 	}
@@ -86,6 +96,32 @@ func TestLoadFileDefaultsMaxSteps(t *testing.T) {
 	}
 	if cfg.Agent.CompactionTriggerRatio != defaultCompactionTriggerRatio {
 		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
+	}
+	if !cfg.Memory.IsEnabled() {
+		t.Fatal("Memory.IsEnabled() = false")
+	}
+}
+
+func TestLoadFileAllowsDisabledMemoryWithUnknownModel(t *testing.T) {
+	path := writeTestConfig(t, `{
+		"provider": {
+			"base_url": "https://api.deepseek.com",
+			"api_key": "sk-test",
+			"default_model": "deepseek-v4-flash",
+			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+		},
+		"memory": {
+			"enabled": false,
+			"model": "missing-model"
+		}
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if cfg.Memory.IsEnabled() {
+		t.Fatal("Memory.IsEnabled() = true")
 	}
 }
 
@@ -267,6 +303,18 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
 				},
 				"agent": {"compaction_trigger_ratio": 1}
+			}`,
+		},
+		{
+			name: "memory model not configured",
+			content: `{
+				"provider": {
+					"base_url": "https://api.deepseek.com",
+					"api_key": "sk-test",
+					"default_model": "deepseek-v4-flash",
+					"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				},
+				"memory": {"model": "missing"}
 			}`,
 		},
 		{

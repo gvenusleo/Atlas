@@ -43,6 +43,7 @@ type Runtime interface {
 	ListSessionsForCWDPage(context.Context, string, string, int) (session.ListPage, error)
 	SaveSessionRoots(context.Context, string, []string) error
 	DeleteSessionIfExists(context.Context, string) error
+	RunMemoryWorker(context.Context) error
 }
 
 type terminalClient interface {
@@ -84,6 +85,13 @@ func Run(ctx context.Context, opts Options) error {
 		conn.SetLogger(opts.Logger)
 	}
 	a.SetAgentConnection(conn)
+	workerCtx, cancelWorker := context.WithCancel(ctx)
+	defer cancelWorker()
+	go func() {
+		if err := opts.Runtime.RunMemoryWorker(workerCtx); err != nil && opts.Logger != nil {
+			opts.Logger.Debug("memory worker stopped", "error", err)
+		}
+	}()
 
 	select {
 	case <-ctx.Done():

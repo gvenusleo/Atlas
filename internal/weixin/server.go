@@ -31,6 +31,7 @@ type Runtime interface {
 	ListSessions(context.Context, int) ([]session.Session, error)
 	ListSessionsForCWD(context.Context, string, int) ([]session.Session, error)
 	ShowSession(context.Context, string) (session.Session, *transcript.Transcript, error)
+	RunMemoryWorker(context.Context) error
 }
 
 // ServerOptions 描述微信通道服务参数。
@@ -89,6 +90,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 
 // Run 开始长轮询微信消息，直到 ctx 取消。
 func (s *Server) Run(ctx context.Context) error {
+	workerCtx, cancelWorker := context.WithCancel(ctx)
+	defer cancelWorker()
+	go func() {
+		_ = s.rt.RunMemoryWorker(workerCtx)
+	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil

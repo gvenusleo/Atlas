@@ -89,6 +89,9 @@ func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
 	if gotReq.ReasoningEffort != "high" {
 		t.Fatalf("reasoning effort = %q", gotReq.ReasoningEffort)
 	}
+	if gotReq.ResponseFormat != nil {
+		t.Fatalf("response format = %#v", gotReq.ResponseFormat)
+	}
 	if resp.Content != "done" {
 		t.Fatalf("Content = %q", resp.Content)
 	}
@@ -158,6 +161,28 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	tool := gotReq.Messages[1]
 	if tool.Role != "tool" || tool.ToolCallID != "call-1" || tool.Content != "content" {
 		t.Fatalf("tool message = %#v", tool)
+	}
+}
+
+func TestStreamSendsJSONResponseFormat(t *testing.T) {
+	var gotReq chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{
+		Messages:       []model.Message{{Role: model.RoleUser, Content: "json"}},
+		ResponseFormat: model.ResponseFormatJSONObject,
+	}, nil); err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if gotReq.ResponseFormat == nil || gotReq.ResponseFormat.Type != "json_object" {
+		t.Fatalf("response format = %#v", gotReq.ResponseFormat)
 	}
 }
 

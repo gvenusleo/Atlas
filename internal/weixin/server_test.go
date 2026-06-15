@@ -494,6 +494,10 @@ func (f *fakeRuntime) ShowSession(_ context.Context, id string) (session.Session
 	return session.Session{}, nil, context.Canceled
 }
 
+func (f *fakeRuntime) RunMemoryWorker(context.Context) error {
+	return nil
+}
+
 func (f *fakeRuntime) wasRun() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -1,0 +1,485 @@
+package runtime
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/liuyuxin/atlas/internal/config"
+	"github.com/liuyuxin/atlas/internal/memory"
+	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/session"
+)
+
+const (
+	memoryWorkerBatchSize = 4
+	memoryWorkerInterval  = 5 * time.Second
+	memoryJobLease        = 2 * time.Minute
+	memoryPromptMaxRunes  = 40000
+	memorySummaryMaxRunes = 16000
+)
+
+var memoryWorkerIDPrefix = "atlas-memory-"
+
+// ProcessMemoryJobs 处理有限数量的后台记忆任务，主要供测试和短生命周期入口复用。
+func (r *Runtime) ProcessMemoryJobs(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = memoryWorkerBatchSize
+	}
+	return r.processMemoryJobs(ctx, limit, newMemoryWorkerID())
+}
+
+// RunMemoryWorker 持续处理后台记忆任务，直到 ctx 取消。
+func (r *Runtime) RunMemoryWorker(ctx context.Context) error {
+	workerID := newMemoryWorkerID()
+	ticker := time.NewTicker(memoryWorkerInterval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		processed, _ := r.processMemoryJobs(ctx, memoryWorkerBatchSize, workerID)
+		if processed == memoryWorkerBatchSize {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+// processMemoryJobs 批量领取后台任务，并按任务模型创建 provider；单条失败只影响该任务。
+func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID string) (int, error) {
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return 0, err
+	}
+	if !cfg.Memory.IsEnabled() {
+		return 0, nil
+	}
+	memStore, err := openMemoryStore(ctx, cfg.Session)
+	if err != nil {
+		return 0, err
+	}
+	defer memStore.Close()
+	sessionStore, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return 0, err
+	}
+	defer sessionStore.Close()
+
+	processed := 0
+	for processed < limit {
+		job, ok, err := memStore.ClaimNextJob(ctx, workerID, memoryJobLease)
+		if err != nil {
+			return processed, err
+		}
+		if !ok {
+			return processed, nil
+		}
+		selectedModel, err := cfg.Provider.ResolveModel(job.Model)
+		if err != nil {
+			_ = memStore.FailJob(ctx, job, err)
+			processed++
+			continue
+		}
+		provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
+		if err != nil {
+			_ = memStore.FailJob(ctx, job, err)
+			processed++
+			continue
+		}
+		if err := r.processMemoryJob(ctx, memStore, sessionStore, provider, selectedModel, job); err != nil {
+			_ = memStore.FailJob(ctx, job, err)
+			processed++
+			continue
+		}
+		if err := memStore.CompleteJob(ctx, job); err != nil {
+			return processed, err
+		}
+		processed++
+	}
+	return processed, nil
+}
+
+func (r *Runtime) processMemoryJob(ctx context.Context, memStore *memory.Store, sessionStore *session.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
+	switch job.Kind {
+	case memory.JobKindSessionExtract:
+		return r.processMemoryExtractJob(ctx, memStore, sessionStore, provider, selectedModel, job)
+	case memory.JobKindScopeSummarize:
+		return r.processMemorySummarizeJob(ctx, memStore, provider, selectedModel, job)
+	default:
+		return fmt.Errorf("unknown memory job kind %q", job.Kind)
+	}
+}
+
+type memoryExtractOutput struct {
+	Entries             []memoryExtractEntry `json:"entries"`
+	ArchiveFingerprints []string             `json:"archive_fingerprints"`
+}
+
+type memoryExtractEntry struct {
+	Scope      string `json:"scope"`
+	Type       string `json:"type"`
+	Content    string `json:"content"`
+	SourceNote string `json:"source_note"`
+	Confidence int    `json:"confidence"`
+}
+
+type memorySummaryOutput struct {
+	Summary string `json:"summary"`
+}
+
+// processMemoryExtractJob 从完整会话中抽取长期记忆，并按受影响作用域入队摘要刷新。
+func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.Store, sessionStore *session.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
+	info, err := sessionStore.GetSession(ctx, job.SessionID)
+	if err != nil {
+		if isSessionNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	trans, err := sessionStore.LoadTranscript(ctx, job.SessionID)
+	if err != nil {
+		return err
+	}
+	messages := trans.Messages()
+	if len(messages) == 0 {
+		return nil
+	}
+	projectKey, projectPath := memory.ProjectIdentity(info.CWD)
+	existing, err := loadExistingMemories(ctx, memStore, projectKey, 30)
+	if err != nil {
+		return err
+	}
+	resp, err := provider.Stream(ctx, model.ChatRequest{
+		System:         memoryExtractSystemPrompt(),
+		Messages:       []model.Message{{Role: model.RoleUser, Content: memoryExtractPrompt(info, messages, existing)}},
+		MaxTokens:      summaryMaxTokens(selectedModel.MaxTokens),
+		Temperature:    0,
+		ResponseFormat: model.ResponseFormatJSONObject,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	var output memoryExtractOutput
+	if err := decodeJSONObject(resp.Content, &output); err != nil {
+		return err
+	}
+	existingByFingerprint := make(map[string]memory.Entry, len(existing))
+	for _, entry := range existing {
+		existingByFingerprint[entry.Fingerprint] = entry
+	}
+	touched := make(map[string]memory.Summary)
+	for _, item := range output.Entries {
+		entry, ok := normalizeMemoryExtractEntry(item, projectKey, projectPath, info.ID)
+		if !ok {
+			continue
+		}
+		saved, err := memStore.UpsertEntry(ctx, entry)
+		if err != nil {
+			return err
+		}
+		touched[memoryScopeKey(saved.Scope, saved.ProjectKey)] = memory.Summary{
+			Scope:       saved.Scope,
+			ProjectKey:  saved.ProjectKey,
+			ProjectPath: saved.ProjectPath,
+		}
+	}
+	var archiveFingerprints []string
+	for _, fingerprint := range output.ArchiveFingerprints {
+		fingerprint = strings.TrimSpace(fingerprint)
+		entry, ok := existingByFingerprint[fingerprint]
+		if !ok {
+			continue
+		}
+		archiveFingerprints = append(archiveFingerprints, fingerprint)
+		touched[memoryScopeKey(entry.Scope, entry.ProjectKey)] = memory.Summary{
+			Scope:       entry.Scope,
+			ProjectKey:  entry.ProjectKey,
+			ProjectPath: entry.ProjectPath,
+		}
+	}
+	if err := memStore.ArchiveFingerprints(ctx, archiveFingerprints); err != nil {
+		return err
+	}
+	for _, summary := range touched {
+		if err := memStore.EnqueueSummarize(ctx, summary.Scope, summary.ProjectKey, summary.ProjectPath, selectedModel.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// processMemorySummarizeJob 将某个作用域的 active 记忆压成短摘要，供后续提示词注入。
+func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memory.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
+	entries, err := memStore.ListEntries(ctx, job.Scope, job.ProjectKey)
+	if err != nil {
+		return err
+	}
+	inputHash := memory.EntriesInputHash(entries)
+	if len(entries) == 0 {
+		return memStore.SaveSummary(ctx, memory.Summary{
+			Scope:       job.Scope,
+			ProjectKey:  job.ProjectKey,
+			ProjectPath: job.ProjectPath,
+			EntryCount:  0,
+			InputHash:   inputHash,
+		})
+	}
+	resp, err := provider.Stream(ctx, model.ChatRequest{
+		System:         memorySummarySystemPrompt(),
+		Messages:       []model.Message{{Role: model.RoleUser, Content: memorySummaryPrompt(job, entries)}},
+		MaxTokens:      summaryMaxTokens(selectedModel.MaxTokens),
+		Temperature:    0,
+		ResponseFormat: model.ResponseFormatJSONObject,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	var output memorySummaryOutput
+	if err := decodeJSONObject(resp.Content, &output); err != nil {
+		return err
+	}
+	summary := strings.TrimSpace(output.Summary)
+	if summary == "" {
+		return fmt.Errorf("memory summary is empty")
+	}
+	return memStore.SaveSummary(ctx, memory.Summary{
+		Scope:       job.Scope,
+		ProjectKey:  job.ProjectKey,
+		ProjectPath: job.ProjectPath,
+		Content:     summary,
+		EntryCount:  len(entries),
+		InputHash:   inputHash,
+	})
+}
+
+// loadMemoryContext 以 best-effort 方式读取长期记忆，失败时不影响主 turn。
+func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfig, cwd, query string) string {
+	store, err := openMemoryStore(ctx, cfg)
+	if err != nil {
+		return ""
+	}
+	defer store.Close()
+	contextText, err := store.PromptContext(ctx, cwd, query)
+	if err != nil {
+		return ""
+	}
+	return contextText
+}
+
+// enqueueMemoryExtract 以 best-effort 方式安排会话记忆抽取，失败时不影响主 turn。
+func (r *Runtime) enqueueMemoryExtract(ctx context.Context, cfg config.SessionConfig, sessionID, cwd string, messages []model.Message, model string) {
+	if len(messages) == 0 {
+		return
+	}
+	store, err := openMemoryStore(ctx, cfg)
+	if err != nil {
+		return
+	}
+	defer store.Close()
+	_ = store.EnqueueSessionExtract(ctx, sessionID, cwd, memory.TranscriptHash(messages), model)
+}
+
+func configuredMemoryModel(cfg config.Config, sessionModel string) string {
+	if strings.TrimSpace(cfg.Memory.Model) != "" {
+		return cfg.Memory.Model
+	}
+	return strings.TrimSpace(sessionModel)
+}
+
+func memoryExtractSystemPrompt() string {
+	return `You update Atlas long-term memory from completed coding-agent sessions.
+Return only a JSON object. Do not include markdown.
+Keep durable memories that help future sessions: user preferences, project facts, and repeatable workflows.
+Do not store transient chat, private chain-of-thought, generic programming advice, raw logs, secrets, API keys, or content that is only useful inside the current turn.
+Use scope "global" only for durable user preferences that apply across projects. Use scope "project" for repository facts and workflows.
+Use type "instruction", "fact", or "workflow".
+If an existing memory is contradicted or obsolete, list its fingerprint in archive_fingerprints, but only when the fingerprint appears in the provided existing memories.
+Schema: {"entries":[{"scope":"global|project","type":"instruction|fact|workflow","content":"...","source_note":"...","confidence":1-5}],"archive_fingerprints":["..."]}`
+}
+
+func memorySummarySystemPrompt() string {
+	return `Summarize Atlas long-term memories for prompt injection.
+Return only a JSON object. Do not include markdown.
+Keep the summary compact, concrete, and useful for a coding agent. Preserve user instructions, stable project facts, and repeatable workflows.`
+}
+
+// loadExistingMemories 读取抽取任务需要对照的现有记忆，不更新使用统计。
+func loadExistingMemories(ctx context.Context, store *memory.Store, projectKey string, limit int) ([]memory.Entry, error) {
+	global, err := store.ListEntries(ctx, memory.ScopeGlobal, "")
+	if err != nil {
+		return nil, err
+	}
+	project, err := store.ListEntries(ctx, memory.ScopeProject, projectKey)
+	if err != nil {
+		return nil, err
+	}
+	entries := append(global, project...)
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
+}
+
+// memoryExtractPrompt 序列化现有记忆和完整会话，供模型判断增删改。
+func memoryExtractPrompt(info session.Session, messages []model.Message, existing []memory.Entry) string {
+	var builder strings.Builder
+	builder.WriteString("Session ID: ")
+	builder.WriteString(info.ID)
+	builder.WriteString("\nProject path: ")
+	builder.WriteString(filepath.ToSlash(info.CWD))
+	builder.WriteString("\n\nExisting memories with fingerprints:\n")
+	if len(existing) == 0 {
+		builder.WriteString("(none)\n")
+	} else {
+		for _, entry := range existing {
+			builder.WriteString("- ")
+			builder.WriteString(entry.Fingerprint)
+			builder.WriteString(" [")
+			builder.WriteString(entry.Scope)
+			builder.WriteString("/")
+			builder.WriteString(entry.Type)
+			builder.WriteString("] ")
+			builder.WriteString(entry.Content)
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\nCompleted transcript:\n")
+	builder.WriteString(formatMemoryTranscript(messages, memoryPromptMaxRunes))
+	return builder.String()
+}
+
+// memorySummaryPrompt 序列化某个作用域的 active 记忆，供模型生成短摘要。
+func memorySummaryPrompt(job memory.Job, entries []memory.Entry) string {
+	var builder strings.Builder
+	builder.WriteString("Scope: ")
+	builder.WriteString(job.Scope)
+	if job.ProjectPath != "" {
+		builder.WriteString("\nProject path: ")
+		builder.WriteString(filepath.ToSlash(job.ProjectPath))
+	}
+	builder.WriteString("\n\nActive memories:\n")
+	for _, entry := range entries {
+		builder.WriteString("- [")
+		builder.WriteString(entry.Type)
+		builder.WriteString("] ")
+		builder.WriteString(entry.Content)
+		if entry.SourceNote != "" {
+			builder.WriteString(" (source: ")
+			builder.WriteString(entry.SourceNote)
+			builder.WriteString(")")
+		}
+		builder.WriteString("\n")
+	}
+	return trimRunes(builder.String(), memorySummaryMaxRunes)
+}
+
+func formatMemoryTranscript(messages []model.Message, maxRunes int) string {
+	var builder strings.Builder
+	for _, msg := range messages {
+		builder.WriteString(string(msg.Role))
+		builder.WriteString(": ")
+		if len(msg.ToolCalls) > 0 {
+			builder.WriteString(formatToolCalls(msg.ToolCalls))
+		}
+		content := strings.TrimSpace(msg.Content)
+		if msg.Role == model.RoleTool {
+			content = trimRunes(content, 4000)
+		}
+		builder.WriteString(content)
+		builder.WriteString("\n")
+		if builder.Len() > maxRunes*4 {
+			break
+		}
+	}
+	return trimRunes(builder.String(), maxRunes)
+}
+
+func formatToolCalls(calls []model.ToolCall) string {
+	var builder strings.Builder
+	builder.WriteString("tool_calls=")
+	for i, call := range calls {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+		builder.WriteString(call.Name)
+		if call.Arguments != "" {
+			builder.WriteString("(")
+			builder.WriteString(trimRunes(call.Arguments, 800))
+			builder.WriteString(")")
+		}
+	}
+	if builder.Len() > 0 {
+		builder.WriteString(" ")
+	}
+	return builder.String()
+}
+
+func normalizeMemoryExtractEntry(item memoryExtractEntry, projectKey, projectPath, sessionID string) (memory.Entry, bool) {
+	item.Scope = strings.TrimSpace(item.Scope)
+	item.Type = strings.TrimSpace(item.Type)
+	item.Content = strings.TrimSpace(item.Content)
+	if item.Content == "" {
+		return memory.Entry{}, false
+	}
+	if item.Scope != memory.ScopeGlobal && item.Scope != memory.ScopeProject {
+		return memory.Entry{}, false
+	}
+	if item.Type != memory.TypeInstruction && item.Type != memory.TypeFact && item.Type != memory.TypeWorkflow {
+		return memory.Entry{}, false
+	}
+	entry := memory.Entry{
+		Scope:           item.Scope,
+		Type:            item.Type,
+		Content:         item.Content,
+		SourceNote:      strings.TrimSpace(item.SourceNote),
+		Confidence:      item.Confidence,
+		SourceSessionID: sessionID,
+	}
+	if entry.Scope == memory.ScopeProject {
+		entry.ProjectKey = projectKey
+		entry.ProjectPath = projectPath
+	}
+	return entry, true
+}
+
+func decodeJSONObject(content string, target any) error {
+	content = strings.TrimSpace(content)
+	start := strings.IndexByte(content, '{')
+	end := strings.LastIndexByte(content, '}')
+	if start < 0 || end < start {
+		return fmt.Errorf("json object not found")
+	}
+	return json.Unmarshal([]byte(content[start:end+1]), target)
+}
+
+func memoryScopeKey(scope, projectKey string) string {
+	return scope + "\x00" + projectKey
+}
+
+func trimRunes(content string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(content)
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit]) + "\n..."
+}
+
+func newMemoryWorkerID() string {
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return memoryWorkerIDPrefix + "unknown"
+	}
+	return fmt.Sprintf("%s%x", memoryWorkerIDPrefix, suffix[:])
+}

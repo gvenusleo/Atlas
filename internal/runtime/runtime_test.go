@@ -11,6 +11,7 @@ import (
 
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/config"
+	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/skill"
@@ -460,6 +461,7 @@ func TestDoctorReportsOfflineRuntimeChecks(t *testing.T) {
 	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "https://api.example.com, default test-model, 2 models")
 	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "reasoning_effort high")
 	assertDoctorCheck(t, report, "session", DoctorStatusOK, "atlas.db")
+	assertDoctorCheck(t, report, "memory", DoctorStatusOK, "0 entries, 0 pending, 0 failed, model session model")
 	assertDoctorCheck(t, report, "tavily", DoctorStatusWarn, "disabled")
 	assertDoctorCheck(t, report, "shell", DoctorStatusOK, expectedShellDetail())
 }
@@ -671,6 +673,214 @@ func TestDeleteSessionIfExistsIgnoresMissingSession(t *testing.T) {
 	}
 }
 
+func TestRunTurnInjectsLongTermMemory(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+	memStore := openTestMemoryStore(t, dbPath)
+	projectKey, projectPath := memory.ProjectIdentity("/tmp/atlas-work")
+	if _, err := memStore.UpsertEntry(context.Background(), memory.Entry{
+		Scope:       memory.ScopeProject,
+		ProjectKey:  projectKey,
+		ProjectPath: projectPath,
+		Type:        memory.TypeFact,
+		Content:     "Atlas stores long-term memory in SQLite.",
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "where is memory stored?",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if !strings.Contains(provider.request.System, "## Long-Term Memory") || !strings.Contains(provider.request.System, "Atlas stores long-term memory in SQLite.") {
+		t.Fatalf("system prompt = %q", provider.request.System)
+	}
+}
+
+func TestRunTurnEnqueuesMemoryExtract(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "remember project workflow",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	memStore := openTestMemoryStore(t, dbPath)
+	job, ok, err := memStore.ClaimNextJob(context.Background(), "test-worker", time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimNextJob() error = %v", err)
+	}
+	if !ok || job.Kind != memory.JobKindSessionExtract || job.SessionID != "work" {
+		t.Fatalf("job = %#v, ok = %v", job, ok)
+	}
+	if job.Model != "test-model" {
+		t.Fatalf("job model = %q", job.Model)
+	}
+}
+
+func TestProcessMemoryJobsExtractsAndSummarizes(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "normal reply"},
+			{Content: `{"entries":[{"scope":"project","type":"workflow","content":"Run go test ./... before committing.","source_note":"user asked for checks","confidence":4}],"archive_fingerprints":[]}`},
+			{Content: `{"summary":"Project workflow: run go test ./... before committing."}`},
+		},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "always run tests before commit",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+
+	processed, err := r.ProcessMemoryJobs(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ProcessMemoryJobs() error = %v", err)
+	}
+	if processed != 2 {
+		t.Fatalf("processed = %d, want 2", processed)
+	}
+	if len(provider.requests) != 3 {
+		t.Fatalf("requests = %d", len(provider.requests))
+	}
+	if provider.requests[1].ResponseFormat != model.ResponseFormatJSONObject || provider.requests[2].ResponseFormat != model.ResponseFormatJSONObject {
+		t.Fatalf("response formats = %#v, %#v", provider.requests[1].ResponseFormat, provider.requests[2].ResponseFormat)
+	}
+	if len(provider.providerModels) != 3 || provider.providerModels[1] != "test-model" || provider.providerModels[2] != "test-model" {
+		t.Fatalf("provider models = %#v", provider.providerModels)
+	}
+
+	memStore := openTestMemoryStore(t, dbPath)
+	contextText, err := memStore.PromptContext(context.Background(), "/tmp/atlas-work", "commit")
+	if err != nil {
+		t.Fatalf("PromptContext() error = %v", err)
+	}
+	if !strings.Contains(contextText, "run go test ./...") {
+		t.Fatalf("context = %q", contextText)
+	}
+}
+
+func TestProcessMemoryJobsContinuesAfterFailedJob(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "normal reply"},
+			{Content: "second reply"},
+			{Content: `not json`},
+			{Content: `{"entries":[],"archive_fingerprints":[]}`},
+		},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "bad", Prompt: "first"}); err != nil {
+		t.Fatalf("bad RunTurn() error = %v", err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "good", Prompt: "second"}); err != nil {
+		t.Fatalf("good RunTurn() error = %v", err)
+	}
+
+	processed, err := r.ProcessMemoryJobs(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ProcessMemoryJobs() error = %v", err)
+	}
+	if processed != 2 {
+		t.Fatalf("processed = %d, want 2", processed)
+	}
+	counts, err := openTestMemoryStore(t, dbPath).Counts(context.Background())
+	if err != nil {
+		t.Fatalf("Counts() error = %v", err)
+	}
+	if counts.Failed != 1 {
+		t.Fatalf("counts = %#v", counts)
+	}
+}
+
+func TestMemoryUsesConfiguredModel(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "normal reply"},
+			{Content: `{"entries":[{"scope":"project","type":"fact","content":"Use go test ./... before commit.","source_note":"user said this during the session","confidence":5}],"archive_fingerprints":[]}`},
+			{Content: `{"summary":"Use go test ./... before commit."}`},
+		},
+	}
+	r, _ := newTestRuntimeWithDBPath(t, provider)
+	baseLoadConfig := r.deps.LoadConfig
+	r.deps.LoadConfig = func() (config.Config, error) {
+		cfg, err := baseLoadConfig()
+		if err != nil {
+			return config.Config{}, err
+		}
+		cfg.Memory.Model = "other-model"
+		return cfg, nil
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "hello"}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if _, err := r.ProcessMemoryJobs(context.Background(), 2); err != nil {
+		t.Fatalf("ProcessMemoryJobs() error = %v", err)
+	}
+	if len(provider.providerModels) != 3 || provider.providerModels[0] != "test-model" || provider.providerModels[1] != "other-model" || provider.providerModels[2] != "other-model" {
+		t.Fatalf("provider models = %#v", provider.providerModels)
+	}
+}
+
+func TestMemoryCanBeDisabled(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+	disabled := false
+	baseLoadConfig := r.deps.LoadConfig
+	r.deps.LoadConfig = func() (config.Config, error) {
+		cfg, err := baseLoadConfig()
+		if err != nil {
+			return config.Config{}, err
+		}
+		cfg.Memory.Enabled = &disabled
+		return cfg, nil
+	}
+	memStore := openTestMemoryStore(t, dbPath)
+	projectKey, projectPath := memory.ProjectIdentity("/tmp/atlas-work")
+	if _, err := memStore.UpsertEntry(context.Background(), memory.Entry{
+		Scope:       memory.ScopeProject,
+		ProjectKey:  projectKey,
+		ProjectPath: projectPath,
+		Type:        memory.TypeFact,
+		Content:     "disabled memory should not be injected",
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "hello"}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if strings.Contains(provider.request.System, "disabled memory should not be injected") {
+		t.Fatalf("system prompt = %q", provider.request.System)
+	}
+	if _, ok, err := memStore.ClaimNextJob(context.Background(), "worker", time.Minute); err != nil || ok {
+		t.Fatalf("ClaimNextJob() ok = %v, err = %v", ok, err)
+	}
+	processed, err := r.ProcessMemoryJobs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ProcessMemoryJobs() error = %v", err)
+	}
+	if processed != 0 {
+		t.Fatalf("processed = %d", processed)
+	}
+	report := r.Doctor(context.Background())
+	assertDoctorCheck(t, report, "memory", DoctorStatusWarn, "disabled")
+}
+
 type recordingProvider struct {
 	request       model.ChatRequest
 	events        []model.StreamEvent
@@ -693,9 +903,10 @@ func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emi
 }
 
 type sequenceProvider struct {
-	requests      []model.ChatRequest
-	responses     []model.ChatResponse
-	providerModel string
+	requests       []model.ChatRequest
+	responses      []model.ChatResponse
+	providerModel  string
+	providerModels []string
 }
 
 func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
@@ -715,6 +926,12 @@ func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit
 
 func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 	t.Helper()
+	r, _ := newTestRuntimeWithDBPath(t, provider)
+	return r
+}
+
+func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, string) {
+	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "atlas.db")
 	return New(Dependencies{
@@ -730,6 +947,7 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 			}
 			if provider, ok := provider.(*sequenceProvider); ok {
 				provider.providerModel = selected.Value
+				provider.providerModels = append(provider.providerModels, selected.Value)
 			}
 			return provider, nil
 		},
@@ -744,7 +962,20 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 		},
 		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
 		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
-	})
+	}), dbPath
+}
+
+func openTestMemoryStore(t *testing.T, dbPath string) *memory.Store {
+	t.Helper()
+	store, err := memory.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.EnsureSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return store
 }
 
 func testConfig(dbPath string) config.Config {

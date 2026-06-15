@@ -104,6 +104,14 @@ type StreamEvent struct {
 	Delta string
 }
 
+// ResponseFormat 描述 provider 返回文本的格式要求。
+type ResponseFormat string
+
+const (
+	// ResponseFormatJSONObject 表示 provider 应返回一个 JSON object。
+	ResponseFormatJSONObject ResponseFormat = "json_object"
+)
+
 // ChatRequest 是一次模型 step 的完整通用输入。
 type ChatRequest struct {
 	System          string
@@ -112,6 +120,7 @@ type ChatRequest struct {
 	MaxTokens       int
 	Temperature     float64
 	ReasoningEffort string
+	ResponseFormat  ResponseFormat
 }
 
 // ChatResponse 是一次模型 step 的完整通用输出。

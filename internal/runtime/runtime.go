@@ -12,6 +12,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/compact"
 	"github.com/liuyuxin/atlas/internal/config"
+	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/provider/openai"
@@ -220,10 +221,14 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	if isDirectShell {
-		return runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
+		result, savedMessages, err := runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
 			AdditionalDirectories:    opts.AdditionalDirectories,
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		})
+		if err == nil && cfg.Memory.IsEnabled() {
+			r.enqueueMemoryExtract(ctx, cfg.Session, sessionID, cwd, savedMessages, configuredMemoryModel(cfg, ""))
+		}
+		return result, err
 	}
 
 	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
@@ -252,6 +257,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			return opts.ToolRunner(ctx, call, baseRunner)
 		})
 	}
+	memoryContext := ""
+	if cfg.Memory.IsEnabled() {
+		memoryContext = r.loadMemoryContext(ctx, cfg.Session, cwd, opts.Prompt)
+	}
 	if resumeSession {
 		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), opts.Prompt, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
 			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
@@ -279,6 +288,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			WorkingDir:   cwd,
 			Now:          r.deps.Now(),
 			Shell:        tool.DefaultShell().DisplayName,
+			Memory:       memoryContext,
 			Instructions: instructions,
 			Skills:       promptSkillSummaries(skills),
 		}),
@@ -307,6 +317,9 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}); err != nil {
 		return TurnResult{}, err
 	}
+	if cfg.Memory.IsEnabled() {
+		r.enqueueMemoryExtract(ctx, cfg.Session, sessionID, cwd, fullMessages, configuredMemoryModel(cfg, selectedModel.Value))
+	}
 	return TurnResult{
 		SessionID:     sessionID,
 		Content:       content,
@@ -326,13 +339,13 @@ func directShellCommand(promptText string) (string, bool) {
 }
 
 // runDirectShellTurn 跳过模型调用，直接执行 shell 命令并保存为一个完整 turn。
-func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner, saveOpts session.SaveTranscriptOptions) (TurnResult, error) {
+func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner, saveOpts session.SaveTranscriptOptions) (TurnResult, []model.Message, error) {
 	if command == "" {
-		return TurnResult{}, fmt.Errorf("shell command is required after !")
+		return TurnResult{}, nil, fmt.Errorf("shell command is required after !")
 	}
 	call, err := directShellToolCall(fmt.Sprintf("direct_shell_%d", len(existing)+1), command, cwd)
 	if err != nil {
-		return TurnResult{}, err
+		return TurnResult{}, nil, err
 	}
 
 	emit(observer, agent.Event{Type: agent.EventTurnStarted})
@@ -349,7 +362,7 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		result, runErr = runDefault(ctx, call)
 	}
 	if ctx.Err() != nil {
-		return TurnResult{}, ctx.Err()
+		return TurnResult{}, nil, ctx.Err()
 	}
 	if runErr != nil && strings.TrimSpace(result.Content) == "" {
 		result.Content = runErr.Error()
@@ -378,12 +391,12 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		model.Message{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
 	)
 	if err := store.SaveTranscriptWithOptions(ctx, sessionID, cwd, messages, saveOpts); err != nil {
-		return TurnResult{}, err
+		return TurnResult{}, nil, err
 	}
 	return TurnResult{
 		SessionID: sessionID,
 		Content:   result.Content,
-	}, nil
+	}, messages, nil
 }
 
 // directShellToolCall 构造用于 observer 和历史回放的 run_shell 调用。
@@ -587,6 +600,7 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 	report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, default %s, %d models", cfg.Provider.BaseURL, cfg.Provider.DefaultModel, len(cfg.Provider.Models)))
 	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, reasoning_effort %s, compaction_trigger_ratio %.2f", cfg.Agent.MaxSteps, cfg.Agent.Temperature, displayReasoningEffort(cfg.Agent.ReasoningEffort), cfg.Agent.CompactionTriggerRatio))
 	report.addSession(ctx, cfg.Session)
+	report.addMemory(ctx, cfg)
 	report.addTavily(cfg.Services.Tavily)
 	report.addShell()
 	return report
@@ -722,6 +736,38 @@ func (r *DoctorReport) addSession(ctx context.Context, cfg config.SessionConfig)
 	r.add("session", DoctorStatusOK, dbPath)
 }
 
+func (r *DoctorReport) addMemory(ctx context.Context, cfg config.Config) {
+	if !cfg.Memory.IsEnabled() {
+		r.add("memory", DoctorStatusWarn, "disabled")
+		return
+	}
+	dbPath, err := sessionDBPath(cfg.Session)
+	if err != nil {
+		r.add("memory", DoctorStatusFail, err.Error())
+		return
+	}
+	store, err := memory.Open(dbPath)
+	if err != nil {
+		r.add("memory", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
+		return
+	}
+	defer store.Close()
+	if err := store.EnsureSchema(ctx); err != nil {
+		r.add("memory", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
+		return
+	}
+	counts, err := store.Counts(ctx)
+	if err != nil {
+		r.add("memory", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
+		return
+	}
+	status := DoctorStatusOK
+	if counts.Failed > 0 {
+		status = DoctorStatusWarn
+	}
+	r.add("memory", status, fmt.Sprintf("%d entries, %d pending, %d failed, model %s", counts.Entries, counts.Pending, counts.Failed, displayMemoryModel(cfg.Memory.Model)))
+}
+
 func (r *DoctorReport) addTavily(cfg config.TavilyConfig) {
 	if cfg.APIKey == "" {
 		r.add("tavily", DoctorStatusWarn, "disabled")
@@ -819,6 +865,22 @@ func openSessionStore(ctx context.Context, cfg config.SessionConfig) (*session.S
 	return store, nil
 }
 
+func openMemoryStore(ctx context.Context, cfg config.SessionConfig) (*memory.Store, error) {
+	dbPath, err := sessionDBPath(cfg)
+	if err != nil {
+		return nil, err
+	}
+	store, err := memory.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.EnsureSchema(ctx); err != nil {
+		store.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
 func sessionDBPath(cfg config.SessionConfig) (string, error) {
 	if cfg.DBPath == "" {
 		return session.DefaultPath()
@@ -843,6 +905,13 @@ func selectedReasoningEffort(override string, overrideSet bool, configured strin
 func displayReasoningEffort(value string) string {
 	if value == "" {
 		return "Default"
+	}
+	return value
+}
+
+func displayMemoryModel(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "session model"
 	}
 	return value
 }
