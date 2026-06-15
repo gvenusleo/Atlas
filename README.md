@@ -90,6 +90,8 @@ go run ./cmd/atlas version
 
 `atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。传入 `--model <value>` 时，本轮使用该模型。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
+当用户输入以 `!` 开头时，Atlas 会跳过模型，直接把后续内容作为平台默认 shell 命令执行并返回输出。例如 `!pwd` 或 `!git status`。在 shell 中通过 CLI 调用时，建议使用单引号或转义 `!`，例如 `go run ./cmd/atlas run '!pwd'`，避免 zsh 或 bash 历史展开改写命令。该快捷执行路径同样会保存到 session，并适用于 CLI、ACP 和微信通道。
+
 `atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表、删除、模型切换、思考强度切换、思维链流式更新和 `/compact` 上下文压缩命令；不支持 ACP auth、权限请求、MCP 连接和多模态输入。
 
 Atlas 使用 SQLite 保存本地会话。当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供全文搜索。

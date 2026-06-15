@@ -450,11 +450,13 @@ func doctorStatusLabel(status runtime.DoctorStatus) string {
 
 func printEvent(out io.Writer) agent.Observer {
 	needsLineBreak := false
+	streamedContent := false
 	return func(event agent.Event) {
 		switch event.Type {
 		case agent.EventModelDelta:
 			fmt.Fprint(out, event.Content)
 			needsLineBreak = !strings.HasSuffix(event.Content, "\n")
+			streamedContent = true
 		case agent.EventToolStarted:
 			if needsLineBreak {
 				fmt.Fprintln(out)
@@ -466,8 +468,18 @@ func printEvent(out io.Writer) agent.Observer {
 				fmt.Fprintf(out, "[tool failed] %s\n", event.ToolCall.Name)
 			}
 		case agent.EventTurnFinished:
-			if event.Content != "" && needsLineBreak {
-				fmt.Fprintln(out)
+			if event.Content != "" {
+				if streamedContent {
+					if needsLineBreak {
+						fmt.Fprintln(out)
+						needsLineBreak = false
+					}
+					return
+				}
+				fmt.Fprint(out, event.Content)
+				if !strings.HasSuffix(event.Content, "\n") {
+					fmt.Fprintln(out)
+				}
 				needsLineBreak = false
 			}
 		}

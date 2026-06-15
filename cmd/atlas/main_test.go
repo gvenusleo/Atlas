@@ -124,6 +124,26 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestRunWithDependenciesDirectShellPrintsOutput(t *testing.T) {
+	provider := &recordingProvider{}
+	var stdout bytes.Buffer
+	cwd := t.TempDir()
+
+	err := runWithDependencies(context.Background(), []string{"run", "! " + shellEchoCommand("cli-direct")}, runDependencies{
+		runtime: testRuntimeInCWD(filepath.Join(t.TempDir(), "atlas.db"), provider, nil, cwd),
+		stdout:  &stdout,
+	})
+	if err != nil {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+	if provider.called {
+		t.Fatal("provider was called")
+	}
+	if !strings.Contains(stdout.String(), "cli-direct") || !strings.Contains(stdout.String(), "[tool] run_shell") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
 func TestRunWithDependenciesPassesModelFlag(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
@@ -473,6 +493,31 @@ func TestPrintEventBreaksLineBeforeToolStatus(t *testing.T) {
 	}
 }
 
+func TestPrintEventDoesNotRepeatStreamedTurnContent(t *testing.T) {
+	var out bytes.Buffer
+	observer := printEvent(&out)
+
+	observer(agentEventModelDelta("hello"))
+	observer(agentEventTurnFinished("hello"))
+
+	if got := out.String(); got != "hello\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestPrintEventWritesUnstreamedTurnContent(t *testing.T) {
+	var out bytes.Buffer
+	observer := printEvent(&out)
+
+	observer(agentEventToolStarted("run_shell"))
+	observer(agentEventToolFinished("run_shell", false))
+	observer(agentEventTurnFinished("shell output"))
+
+	if got := out.String(); got != "[tool] run_shell\nshell output\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
 func agentEventModelDelta(content string) agent.Event {
 	return agent.Event{
 		Type:    agent.EventModelDelta,
@@ -492,6 +537,13 @@ func agentEventToolFinished(name string, failed bool) agent.Event {
 		Type:      agent.EventToolFinished,
 		ToolCall:  model.ToolCall{Name: name},
 		ToolError: failed,
+	}
+}
+
+func agentEventTurnFinished(content string) agent.Event {
+	return agent.Event{
+		Type:    agent.EventTurnFinished,
+		Content: content,
 	}
 }
 
@@ -577,6 +629,10 @@ func saveTestSession(t *testing.T, dbPath, sessionID, content string) bytes.Buff
 }
 
 func testRuntime(dbPath string, provider model.Provider, instructions []prompt.InstructionFile) *atlasruntime.Runtime {
+	return testRuntimeInCWD(dbPath, provider, instructions, "/tmp/atlas-work")
+}
+
+func testRuntimeInCWD(dbPath string, provider model.Provider, instructions []prompt.InstructionFile, cwd string) *atlasruntime.Runtime {
 	return atlasruntime.New(atlasruntime.Dependencies{
 		LoadConfig: func() (config.Config, error) {
 			return testConfig(dbPath), nil
@@ -596,7 +652,7 @@ func testRuntime(dbPath string, provider model.Provider, instructions []prompt.I
 			}
 			return provider, nil
 		},
-		Getwd: func() (string, error) { return "/tmp/atlas-work", nil },
+		Getwd: func() (string, error) { return cwd, nil },
 		LoadInstructions: func(string) ([]prompt.InstructionFile, error) {
 			return instructions, nil
 		},
@@ -606,4 +662,19 @@ func testRuntime(dbPath string, provider model.Provider, instructions []prompt.I
 		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
 		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
 	})
+}
+
+func shellEchoCommand(text string) string {
+	if tool.DefaultShell().Command == "/bin/sh" {
+		return "printf '%s\\n' " + quoteShell(text)
+	}
+	return "Write-Output " + quotePowerShell(text)
+}
+
+func quoteShell(text string) string {
+	return "'" + strings.ReplaceAll(text, "'", "'\\''") + "'"
+}
+
+func quotePowerShell(text string) string {
+	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 }

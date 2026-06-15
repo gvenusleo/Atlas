@@ -195,6 +195,61 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	}
 }
 
+func TestPromptDirectShellStreamsToolUpdates(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		rt.runOptions = opts
+		opts.Observer(agentpkg.Event{
+			Type: agentpkg.EventToolStarted,
+			Step: 1,
+			ToolCall: model.ToolCall{
+				ID:        "direct_shell_1",
+				Name:      "run_shell",
+				Arguments: `{"command":"pwd"}`,
+			},
+		})
+		opts.Observer(agentpkg.Event{
+			Type:       agentpkg.EventToolFinished,
+			Step:       1,
+			ToolCall:   model.ToolCall{ID: "direct_shell_1", Name: "run_shell"},
+			ToolResult: "/tmp/work\n",
+		})
+		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "/tmp/work\n"}, nil
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "high")
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("!pwd")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("stop reason = %q", resp.StopReason)
+	}
+	if rt.runOptions.Prompt != "!pwd" || rt.runOptions.CWD != "/tmp/work" {
+		t.Fatalf("turn options = %#v", rt.runOptions)
+	}
+	if len(updates) != 2 {
+		t.Fatalf("updates = %#v", updates)
+	}
+	start := updates[0].Update.ToolCall
+	if start == nil || start.ToolCallId != "direct_shell_1" || start.Kind != acpsdk.ToolKindExecute || start.Title != "Run: pwd" {
+		t.Fatalf("tool start = %#v", updates[0].Update)
+	}
+	finish := updates[1].Update.ToolCallUpdate
+	if finish == nil || finish.ToolCallId != "direct_shell_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted {
+		t.Fatalf("tool finish = %#v", updates[1].Update)
+	}
+}
+
 func TestPromptCompactCommandRunsCompaction(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)

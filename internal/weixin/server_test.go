@@ -199,6 +199,59 @@ func TestServerSendsToolUpdatesToWeixin(t *testing.T) {
 	}
 }
 
+func TestServerDirectShellPromptReturnsCommandOutput(t *testing.T) {
+	var mu sync.Mutex
+	var replies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ilink/bot/getconfig":
+			_, _ = w.Write([]byte(`{"typing_ticket":"ticket-1"}`))
+		case "/ilink/bot/sendtyping":
+			w.WriteHeader(http.StatusOK)
+		case "/ilink/bot/sendmessage":
+			var req sendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			mu.Lock()
+			replies = append(replies, req.Message.Items[0].TextItem.Text)
+			mu.Unlock()
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	srv, rt := newTestServer(t, server.URL)
+	rt.resultContent = "shell-output"
+	rt.events = []agent.Event{{
+		Type: agent.EventToolStarted,
+		ToolCall: model.ToolCall{
+			Name:      "run_shell",
+			Arguments: `{"command":"pwd"}`,
+		},
+	}}
+	if err := srv.HandleMessage(context.Background(), textMessage("user-1", "!pwd")); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(replies) >= 2
+	})
+
+	prompt, _ := rt.lastRun()
+	if prompt != "!pwd" {
+		t.Fatalf("prompt = %q", prompt)
+	}
+	mu.Lock()
+	got := append([]string(nil), replies...)
+	mu.Unlock()
+	if got[0] != "Run: pwd" || got[1] != "shell-output" {
+		t.Fatalf("replies = %#v", got)
+	}
+}
+
 func TestServerRejectsOtherSender(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("unexpected request %s", r.URL.Path)
@@ -380,12 +433,13 @@ func TestFormatSessionListIncludesCWDForAllSessions(t *testing.T) {
 }
 
 type fakeRuntime struct {
-	mu        sync.Mutex
-	runCalled bool
-	prompt    string
-	cwd       string
-	events    []agent.Event
-	sessions  []session.Session
+	mu            sync.Mutex
+	runCalled     bool
+	prompt        string
+	cwd           string
+	events        []agent.Event
+	resultContent string
+	sessions      []session.Session
 }
 
 func (f *fakeRuntime) RunTurn(_ context.Context, opts runtime.TurnOptions) (runtime.TurnResult, error) {
@@ -400,7 +454,11 @@ func (f *fakeRuntime) RunTurn(_ context.Context, opts runtime.TurnOptions) (runt
 			opts.Observer(event)
 		}
 	}
-	return runtime.TurnResult{SessionID: "session-1", Content: "reply"}, nil
+	content := f.resultContent
+	if content == "" {
+		content = "reply"
+	}
+	return runtime.TurnResult{SessionID: "session-1", Content: content}, nil
 }
 
 func (f *fakeRuntime) CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error) {

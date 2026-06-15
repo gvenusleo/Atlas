@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
@@ -333,6 +334,73 @@ func TestRunTurnRejectsUnknownModel(t *testing.T) {
 	}
 	if provider.called {
 		t.Fatal("provider was called")
+	}
+}
+
+func TestRunTurnDirectShellRunsCommandWithoutProvider(t *testing.T) {
+	provider := &recordingProvider{}
+	r := newTestRuntime(t, provider)
+	workdir := t.TempDir()
+	var events []agentEvent
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "! " + shellEchoCommand("direct-output"),
+		CWD:       workdir,
+		Observer: func(event agent.Event) {
+			events = append(events, agentEvent{Type: event.Type, Content: event.Content, ToolCall: event.ToolCall, ToolResult: event.ToolResult, ToolError: event.ToolError})
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.called {
+		t.Fatal("provider was called")
+	}
+	if !strings.Contains(result.Content, "direct-output") {
+		t.Fatalf("content = %q", result.Content)
+	}
+	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" || !strings.Contains(events[1].ToolCall.Arguments, workdir) {
+		t.Fatalf("events = %#v", events)
+	}
+	if events[2].Type != agent.EventToolFinished || events[2].ToolError || !strings.Contains(events[2].ToolResult, "direct-output") {
+		t.Fatalf("events = %#v", events)
+	}
+	_, trans, err := r.ShowSession(context.Background(), result.SessionID)
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	messages := trans.Messages()
+	if len(messages) != 3 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	if messages[0].Content == "" || messages[1].Role != model.RoleAssistant || len(messages[1].ToolCalls) != 1 || messages[2].Role != model.RoleTool {
+		t.Fatalf("messages = %#v", messages)
+	}
+}
+
+func TestRunTurnDirectShellKeepsFailedCommandAsTurnResult(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "! " + shellFailCommand("direct-fail", 7),
+		CWD:       t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if !strings.Contains(result.Content, "direct-fail") || !strings.Contains(result.Content, "command exited with code 7") {
+		t.Fatalf("content = %q", result.Content)
+	}
+}
+
+func TestRunTurnDirectShellRejectsEmptyCommand(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+
+	_, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "!"})
+	if err == nil || !strings.Contains(err.Error(), "shell command is required") {
+		t.Fatalf("RunTurn() error = %v", err)
 	}
 }
 
@@ -665,4 +733,34 @@ func expectedShellDetail() string {
 		return "shell"
 	}
 	return tool.DefaultShell().DisplayName
+}
+
+type agentEvent struct {
+	Type       agent.EventType
+	Content    string
+	ToolCall   model.ToolCall
+	ToolResult string
+	ToolError  bool
+}
+
+func shellEchoCommand(text string) string {
+	if tool.DefaultShell().Command == "/bin/sh" {
+		return "printf '%s\\n' " + quoteShell(text)
+	}
+	return "Write-Output " + quotePowerShell(text)
+}
+
+func shellFailCommand(text string, code int) string {
+	if tool.DefaultShell().Command == "/bin/sh" {
+		return "printf '%s\\n' " + quoteShell(text) + "; exit " + fmt.Sprint(code)
+	}
+	return "Write-Output " + quotePowerShell(text) + "; exit " + fmt.Sprint(code)
+}
+
+func quoteShell(text string) string {
+	return "'" + strings.ReplaceAll(text, "'", "'\\''") + "'"
+}
+
+func quotePowerShell(text string) string {
+	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 }

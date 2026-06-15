@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -164,32 +165,12 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
-	if err != nil {
-		return TurnResult{}, err
-	}
-	provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
-	if err != nil {
-		return TurnResult{}, err
-	}
 	cwd := opts.CWD
 	if cwd == "" {
 		cwd, err = r.deps.Getwd()
 		if err != nil {
 			return TurnResult{}, err
 		}
-	}
-	instructions, err := r.deps.LoadInstructions(cwd)
-	if err != nil {
-		return TurnResult{}, err
-	}
-	skills, err := r.deps.LoadSkills(cwd)
-	if err != nil {
-		return TurnResult{}, err
-	}
-	registry, err := buildToolRegistry(skills, cfg.Services)
-	if err != nil {
-		return TurnResult{}, err
 	}
 
 	sessionID := opts.SessionID
@@ -210,6 +191,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	defer store.Close()
 
+	shellCommand, isDirectShell := directShellCommand(opts.Prompt)
+	if isDirectShell && shellCommand == "" {
+		return TurnResult{}, fmt.Errorf("shell command is required after !")
+	}
 	fullTrans := transcript.New()
 	var sessionInfo session.Session
 	if resumeSession {
@@ -224,6 +209,32 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		if err != nil {
 			sessionInfo = session.Session{}
 		}
+	}
+	if isDirectShell {
+		return runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer)
+	}
+
+	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	instructions, err := r.deps.LoadInstructions(cwd)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	skills, err := r.deps.LoadSkills(cwd)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	registry, err := buildToolRegistry(skills, cfg.Services)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	if resumeSession {
 		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), opts.Prompt, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
 			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
 			if err != nil {
@@ -279,6 +290,92 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		SessionID: sessionID,
 		Content:   content,
 	}, nil
+}
+
+// directShellCommand 解析以 ! 开头的直接 shell 命令输入。
+func directShellCommand(promptText string) (string, bool) {
+	trimmed := strings.TrimSpace(promptText)
+	if !strings.HasPrefix(trimmed, "!") {
+		return "", false
+	}
+	command := strings.TrimSpace(strings.TrimPrefix(trimmed, "!"))
+	return command, true
+}
+
+// runDirectShellTurn 跳过模型调用，直接执行 shell 命令并保存为一个完整 turn。
+func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer) (TurnResult, error) {
+	if command == "" {
+		return TurnResult{}, fmt.Errorf("shell command is required after !")
+	}
+	call, err := directShellToolCall(fmt.Sprintf("direct_shell_%d", len(existing)+1), command, cwd)
+	if err != nil {
+		return TurnResult{}, err
+	}
+
+	emit(observer, agent.Event{Type: agent.EventTurnStarted})
+	emit(observer, agent.Event{Type: agent.EventToolStarted, Step: 1, ToolCall: call})
+	result, runErr := (tool.RunShell{}).Run(ctx, call.Arguments)
+	if ctx.Err() != nil {
+		return TurnResult{}, ctx.Err()
+	}
+	if runErr != nil && strings.TrimSpace(result) == "" {
+		result = runErr.Error()
+	}
+	toolError := runErr != nil
+	emit(observer, agent.Event{
+		Type:       agent.EventToolFinished,
+		Step:       1,
+		ToolCall:   call,
+		ToolResult: result,
+		ToolError:  toolError,
+		Err:        runErr,
+	})
+	emit(observer, agent.Event{Type: agent.EventTurnFinished, Step: 1, Content: result, Err: runErr})
+
+	messages := append([]model.Message(nil), existing...)
+	messages = append(messages,
+		model.Message{Role: model.RoleUser, Content: strings.TrimSpace(promptText)},
+		model.Message{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{
+				call,
+			},
+		},
+		model.Message{Role: model.RoleTool, Content: result, ToolCallID: call.ID},
+	)
+	if err := store.SaveTranscript(ctx, sessionID, cwd, messages); err != nil {
+		return TurnResult{}, err
+	}
+	return TurnResult{
+		SessionID: sessionID,
+		Content:   result,
+	}, nil
+}
+
+// directShellToolCall 构造用于 observer 和历史回放的 run_shell 调用。
+func directShellToolCall(id, command, cwd string) (model.ToolCall, error) {
+	args := map[string]string{
+		"command": command,
+	}
+	if cwd != "" {
+		args["workdir"] = cwd
+	}
+	content, err := json.Marshal(args)
+	if err != nil {
+		return model.ToolCall{}, err
+	}
+	return model.ToolCall{
+		ID:        id,
+		Name:      "run_shell",
+		Arguments: string(content),
+	}, nil
+}
+
+// emit 在 observer 存在时发送事件。
+func emit(observer agent.Observer, event agent.Event) {
+	if observer != nil {
+		observer(event)
+	}
 }
 
 // CompactSession 手动压缩指定 session 的 active context。
