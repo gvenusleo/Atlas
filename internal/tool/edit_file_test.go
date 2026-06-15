@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -117,6 +118,9 @@ func TestEditFileRunMissingNewTextDoesNotWrite(t *testing.T) {
 }
 
 func TestEditFileRunPreservesFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not preserve Unix execute bits")
+	}
 	path := filepath.Join(t.TempDir(), "script.sh")
 	if err := os.WriteFile(path, []byte("echo old\n"), 0o755); err != nil {
 		t.Fatal(err)

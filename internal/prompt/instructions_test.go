@@ -9,7 +9,7 @@ import (
 
 func TestLoadInstructionsLoadsGlobalAndCurrentOnly(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	project := t.TempDir()
 	parent := filepath.Dir(project)
@@ -39,7 +39,7 @@ func TestLoadInstructionsLoadsGlobalAndCurrentOnly(t *testing.T) {
 }
 
 func TestLoadInstructionsMissingFiles(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 
 	files, err := LoadInstructions(t.TempDir())
 	if err != nil {
@@ -52,7 +52,7 @@ func TestLoadInstructionsMissingFiles(t *testing.T) {
 
 func TestLoadInstructionsDeduplicatesSamePath(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	atlasDir := filepath.Join(home, ".atlas")
 	writeFile(t, filepath.Join(atlasDir, "AGENTS.md"), "global")
 
@@ -67,7 +67,7 @@ func TestLoadInstructionsDeduplicatesSamePath(t *testing.T) {
 
 func TestLoadInstructionsRejectsLargeFile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	writeFile(t, filepath.Join(home, ".atlas", "AGENTS.md"), strings.Repeat("a", maxInstructionBytes+1))
 
 	_, err := LoadInstructions(t.TempDir())
@@ -84,5 +84,17 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	volume := filepath.VolumeName(home)
+	if volume != "" {
+		t.Setenv("HOMEDRIVE", volume)
+		t.Setenv("HOMEPATH", strings.TrimPrefix(home, volume))
 	}
 }

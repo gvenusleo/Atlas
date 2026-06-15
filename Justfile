@@ -1,8 +1,9 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]
 
-binary := "atlas"
+binary := if os_family() == "windows" { "atlas.exe" } else { "atlas" }
 build_dir := "dist"
-install_dir := env("HOME") + "/.local/bin"
+install_dir := if os_family() == "windows" { env_var_or_default("USERPROFILE", ".") + "/.local/bin" } else { env_var_or_default("HOME", ".") + "/.local/bin" }
 
 default:
     @just --list
@@ -19,10 +20,24 @@ test:
 check: fmt tidy test
 
 build:
+    @just --justfile {{ quote(justfile()) }} _build_{{ os_family() }}
+
+_build_windows:
+    New-Item -ItemType Directory -Force -Path {{ quote(build_dir) }} | Out-Null
+    go build -o {{ quote(build_dir + "/" + binary) }} ./cmd/atlas
+
+_build_unix:
     mkdir -p {{ quote(build_dir) }}
     go build -o {{ quote(build_dir + "/" + binary) }} ./cmd/atlas
 
 install: build
+    @just --justfile {{ quote(justfile()) }} _install_{{ os_family() }}
+
+_install_windows:
+    New-Item -ItemType Directory -Force -Path {{ quote(install_dir) }} | Out-Null
+    Copy-Item -Force {{ quote(build_dir + "/" + binary) }} {{ quote(install_dir + "/" + binary) }}
+
+_install_unix:
     mkdir -p {{ quote(install_dir) }}
     rm -f {{ quote(install_dir + "/" + binary) }}
     cp {{ quote(build_dir + "/" + binary) }} {{ quote(install_dir + "/" + binary) }}
@@ -47,4 +62,10 @@ session-delete session:
     go run ./cmd/atlas session delete {{ quote(session) }}
 
 clean:
+    @just --justfile {{ quote(justfile()) }} _clean_{{ os_family() }}
+
+_clean_windows:
+    if (Test-Path {{ quote(build_dir) }}) { Remove-Item -Recurse -Force {{ quote(build_dir) }} }
+
+_clean_unix:
     rm -rf {{ quote(build_dir) }}

@@ -56,12 +56,13 @@ Atlas is a headless agent core with access to local filesystem and shell tools. 
 - Working directory: %s
 - Current date: %s
 - Platform: %s
-- Shell: /bin/sh`
+- Shell: %s`
 
 // Options 是构造系统提示词所需的动态上下文。
 type Options struct {
 	WorkingDir   string
 	Platform     string
+	Shell        string
 	Now          time.Time
 	Instructions []InstructionFile
 	Skills       []SkillSummary
@@ -83,6 +84,10 @@ func BuildSystem(options Options) string {
 	if platform == "" {
 		platform = runtime.GOOS
 	}
+	shell := options.Shell
+	if shell == "" {
+		shell = defaultShellName(platform)
+	}
 	now := options.Now
 	if now.IsZero() {
 		now = time.Now()
@@ -94,6 +99,7 @@ func BuildSystem(options Options) string {
 		filepath.ToSlash(workingDir),
 		now.Format("2006-01-02"),
 		platform,
+		shell,
 	)
 }
 
@@ -131,4 +137,11 @@ func formatInstructions(files []InstructionFile) string {
 		builder.WriteString("\n</instruction_file>\n\n")
 	}
 	return strings.TrimRight(builder.String(), "\n")
+}
+
+func defaultShellName(platform string) string {
+	if platform == "windows" {
+		return "PowerShell"
+	}
+	return "/bin/sh"
 }

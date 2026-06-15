@@ -10,7 +10,7 @@ import (
 func TestLoadScansUserAndProjectSkills(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	writeSkill(t, filepath.Join(home, ".agents", "skills", "write", "SKILL.md"), `---
 name: write
@@ -43,7 +43,7 @@ description: project description
 func TestLoadProjectSkillOverridesUserSkill(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	writeSkill(t, filepath.Join(home, ".agents", "skills", "shared", "SKILL.md"), `---
 name: shared
@@ -116,5 +116,17 @@ func writeSkill(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	volume := filepath.VolumeName(home)
+	if volume != "" {
+		t.Setenv("HOMEDRIVE", volume)
+		t.Setenv("HOMEPATH", strings.TrimPrefix(home, volume))
 	}
 }

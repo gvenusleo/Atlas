@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,6 +19,13 @@ const (
 	maxShellTimeoutSeconds     = 300
 	maxShellOutputBytes        = 128 * 1024
 )
+
+// ShellSpec 描述 Atlas 在当前平台上使用的默认 shell。
+type ShellSpec struct {
+	DisplayName string
+	Command     string
+	Args        []string
+}
 
 // RunShell 执行本地 shell 命令。
 type RunShell struct{}
@@ -31,7 +40,7 @@ func (RunShell) Definition() model.ToolDefinition {
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
-					"description": "Command to execute with /bin/sh -c.",
+					"description": "Command to execute with the platform default shell.",
 				},
 				"workdir": map[string]any{
 					"type":        "string",
@@ -64,11 +73,38 @@ func (RunShell) Run(ctx context.Context, arguments string) (string, error) {
 	return runShellCommand(ctx, args.Command, args.Workdir, timeout)
 }
 
+// DefaultShell 返回当前平台默认 shell 的执行参数。
+func DefaultShell() ShellSpec {
+	return defaultShellSpec(runtime.GOOS, exec.LookPath)
+}
+
+// CheckDefaultShell 检查当前平台默认 shell 是否可用。
+func CheckDefaultShell() (ShellSpec, error) {
+	spec := DefaultShell()
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath(spec.Command); err != nil {
+			return spec, fmt.Errorf("PowerShell not found: pwsh or powershell.exe")
+		}
+		return spec, nil
+	}
+	info, err := os.Stat(spec.Command)
+	if err != nil {
+		return spec, err
+	}
+	if info.IsDir() || info.Mode()&0o111 == 0 {
+		return spec, fmt.Errorf("%s is not executable", spec.Command)
+	}
+	return spec, nil
+}
+
 func runShellCommand(ctx context.Context, command, workdir string, timeout time.Duration) (string, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", command)
+	spec := DefaultShell()
+	args := append([]string(nil), spec.Args...)
+	args = append(args, command)
+	cmd := exec.CommandContext(runCtx, spec.Command, args...)
 	if workdir != "" {
 		cmd.Dir = workdir
 	}
@@ -117,4 +153,28 @@ func appendShellStatus(output, status string) string {
 		return output + status
 	}
 	return output + "\n" + status
+}
+
+func defaultShellSpec(goos string, lookPath func(string) (string, error)) ShellSpec {
+	if goos == "windows" {
+		for _, command := range []string{"pwsh", "powershell.exe"} {
+			if _, err := lookPath(command); err == nil {
+				return powerShellSpec(command)
+			}
+		}
+		return powerShellSpec("pwsh")
+	}
+	return ShellSpec{
+		DisplayName: "/bin/sh",
+		Command:     "/bin/sh",
+		Args:        []string{"-c"},
+	}
+}
+
+func powerShellSpec(command string) ShellSpec {
+	return ShellSpec{
+		DisplayName: "PowerShell (" + command + ")",
+		Command:     command,
+		Args:        []string{"-NoLogo", "-NoProfile", "-NonInteractive", "-Command"},
+	}
 }

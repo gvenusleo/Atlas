@@ -3,6 +3,7 @@ package weixin
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -33,6 +34,9 @@ func TestStoreSavesCurrentAccount(t *testing.T) {
 	info, err := os.Stat(filepath.Join(store.dir, accountsDirName, "bot_1.json"))
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %v", info.Mode().Perm())
