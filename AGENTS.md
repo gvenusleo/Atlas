@@ -99,7 +99,7 @@ CLI input
   -> save transcript to session store
 ```
 
-ACP 输入通过 `internal/acp` 走同一个 `internal/runtime`。ACP 适配层只负责协议方法、session/update 通知、客户端 terminal/filesystem 桥接和活动 session 状态；不复制 agent loop、工具执行或 transcript 持久化逻辑。
+ACP 输入通过 `internal/acp` 走同一个 `internal/runtime`。ACP 适配层只负责协议方法、session/update 通知、客户端 terminal/filesystem 桥接、embedded text resource 转文本、session 级 additional directories 状态和活动 session 状态；不复制 agent loop、工具执行或 transcript 持久化逻辑。
 
 微信远程控制输入通过 `internal/weixin` 走同一个 `internal/runtime`。微信适配层只负责 iLink Bot 登录、消息轮询、typing 状态、斜杠命令、发送回复和发送人与本地 session 的轻量绑定；不复制 agent loop、工具执行或 transcript 持久化逻辑。
 
@@ -152,7 +152,7 @@ Atlas 使用 SQLite 保存本地会话，默认路径为 `~/.atlas/atlas.db`。`
 
 `atlas run` 默认每次调用创建新的 session ID；传入 `--session <id>` 时恢复或创建指定 session。裸 `atlas` 和 `atlas --session <id>` 是交互模式入口，TUI 接入前只输出占位提示。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
-当前 session 能力覆盖创建、恢复、保存 transcript、列出最近会话、查看会话详情、删除会话和上下文压缩。历史全文搜索和迁移框架不提前实现。
+当前 session 能力覆盖创建、恢复、保存 transcript、列出最近会话、分页游标、查看会话详情、删除会话、额外工作目录元数据和上下文压缩。历史全文搜索和迁移框架不提前实现。
 
 ## 测试标准
 
@@ -171,6 +171,7 @@ Atlas 使用 SQLite 保存本地会话，默认路径为 `~/.atlas/atlas.db`。`
 - session 列表、查看和删除命令。
 - session 上下文压缩、摘要元数据保存和压缩后继续对话。
 - ACP 初始化、session 创建、prompt、取消、关闭、恢复、列表和删除能力。
+- ACP additional directories、embedded text resource、session info update、usage update 和 session/list cursor 分页能力。
 - ACP `/compact` slash command 暴露和手动压缩能力。
 - ACP session/update 事件顺序与 agent observer 事件顺序一致。
 - ACP terminal capability 下 `run_shell` 终端内容展示、输出收集、失败状态和本地回退能力。

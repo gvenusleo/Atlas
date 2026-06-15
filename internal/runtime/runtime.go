@@ -40,10 +40,12 @@ type Runtime struct {
 
 // TurnOptions 描述一次用户输入的执行参数。
 type TurnOptions struct {
-	SessionID       string
-	Prompt          string
-	Model           string
-	ReasoningEffort string
+	SessionID                string
+	Prompt                   string
+	Model                    string
+	ReasoningEffort          string
+	AdditionalDirectories    []string
+	AdditionalDirectoriesSet bool
 	// ReasoningEffortSet 表示 ReasoningEffort 是调用方显式选择的值，即使它为空。
 	ReasoningEffortSet bool
 	CWD                string
@@ -56,8 +58,10 @@ type ToolRunner func(context.Context, model.ToolCall, tool.RunFunc) (tool.RunRes
 
 // TurnResult 描述一次用户输入完成后的结果。
 type TurnResult struct {
-	SessionID string
-	Content   string
+	SessionID     string
+	Content       string
+	Usage         model.Usage
+	ContextWindow int
 }
 
 // CompactOptions 描述一次手动上下文压缩请求。
@@ -72,14 +76,15 @@ type CompactOptions struct {
 
 // CompactResult 描述上下文压缩完成后的结果。
 type CompactResult struct {
-	SessionID    string
-	Compacted    bool
-	CompactCount int
-	KeepCount    int
-	TokensBefore int
-	TokensAfter  int
-	Summary      string
-	Reason       string
+	SessionID     string
+	Compacted     bool
+	CompactCount  int
+	KeepCount     int
+	TokensBefore  int
+	TokensAfter   int
+	ContextWindow int
+	Summary       string
+	Reason        string
 }
 
 // ModelOption 描述 runtime 对外暴露的可选模型。
@@ -215,7 +220,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	if isDirectShell {
-		return runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer, opts.ToolRunner)
+		return runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
+			AdditionalDirectories:    opts.AdditionalDirectories,
+			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
+		})
 	}
 
 	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
@@ -293,12 +301,17 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		initialActiveLen = len(activeAfter)
 	}
 	fullMessages := append(fullTrans.Messages(), activeAfter[initialActiveLen:]...)
-	if err := store.SaveTranscript(ctx, sessionID, cwd, fullMessages); err != nil {
+	if err := store.SaveTranscriptWithOptions(ctx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
+		AdditionalDirectories:    opts.AdditionalDirectories,
+		AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
+	}); err != nil {
 		return TurnResult{}, err
 	}
 	return TurnResult{
-		SessionID: sessionID,
-		Content:   content,
+		SessionID:     sessionID,
+		Content:       content,
+		Usage:         latestAssistantUsage(fullMessages),
+		ContextWindow: selectedModel.ContextWindow,
 	}, nil
 }
 
@@ -313,7 +326,7 @@ func directShellCommand(promptText string) (string, bool) {
 }
 
 // runDirectShellTurn 跳过模型调用，直接执行 shell 命令并保存为一个完整 turn。
-func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner) (TurnResult, error) {
+func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner, saveOpts session.SaveTranscriptOptions) (TurnResult, error) {
 	if command == "" {
 		return TurnResult{}, fmt.Errorf("shell command is required after !")
 	}
@@ -364,7 +377,7 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		},
 		model.Message{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
 	)
-	if err := store.SaveTranscript(ctx, sessionID, cwd, messages); err != nil {
+	if err := store.SaveTranscriptWithOptions(ctx, sessionID, cwd, messages, saveOpts); err != nil {
 		return TurnResult{}, err
 	}
 	return TurnResult{
@@ -445,8 +458,9 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	}
 	if !ok {
 		return CompactResult{
-			SessionID: sessionID,
-			Reason:    "no safe compaction boundary",
+			SessionID:     sessionID,
+			ContextWindow: selectedModel.ContextWindow,
+			Reason:        "no safe compaction boundary",
 		}, nil
 	}
 	start := info.CompactedMessageCount
@@ -473,13 +487,14 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 		return CompactResult{}, err
 	}
 	return CompactResult{
-		SessionID:    sessionID,
-		Compacted:    true,
-		CompactCount: plan.CompactCount,
-		KeepCount:    plan.KeepCount,
-		TokensBefore: plan.TokensBefore,
-		TokensAfter:  plan.TokensAfter + compact.EstimateMessage(compact.SummaryMessage(summary)),
-		Summary:      summary,
+		SessionID:     sessionID,
+		Compacted:     true,
+		CompactCount:  plan.CompactCount,
+		KeepCount:     plan.KeepCount,
+		TokensBefore:  plan.TokensBefore,
+		TokensAfter:   plan.TokensAfter + compact.EstimateMessage(compact.SummaryMessage(summary)),
+		ContextWindow: selectedModel.ContextWindow,
+		Summary:       summary,
 	}, nil
 }
 
@@ -512,6 +527,17 @@ func autoKeepRecentTokens(contextWindow int, triggerRatio float64) int {
 		return compact.DefaultKeepRecentTokens
 	}
 	return min(budget, compact.DefaultKeepRecentTokens)
+}
+
+// latestAssistantUsage 返回最近一次模型回复记录的 token 用量。
+func latestAssistantUsage(messages []model.Message) model.Usage {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role == model.RoleAssistant && (msg.Usage.InputTokens != 0 || msg.Usage.OutputTokens != 0 || msg.Usage.TotalTokens != 0) {
+			return msg.Usage
+		}
+	}
+	return model.Usage{}
 }
 
 // isSessionNotFound 判断错误是否表示 session 不存在。
@@ -568,33 +594,59 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 
 // ListSessions 返回最近更新的本地会话。
 func (r *Runtime) ListSessions(ctx context.Context, limit int) ([]session.Session, error) {
+	page, err := r.ListSessionsPage(ctx, "", limit)
+	return page.Sessions, err
+}
+
+// ListSessionsPage 分页返回最近更新的本地会话。
+func (r *Runtime) ListSessionsPage(ctx context.Context, cursor string, limit int) (session.ListPage, error) {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
-		return nil, err
+		return session.ListPage{}, err
 	}
 	store, err := openSessionStore(ctx, cfg.Session)
 	if err != nil {
-		return nil, err
+		return session.ListPage{}, err
 	}
 	defer store.Close()
-	return store.ListSessions(ctx, limit)
+	return store.ListSessionsPage(ctx, cursor, limit)
 }
 
 // ListSessionsForCWD 返回指定工作目录下最近更新的本地会话。
 func (r *Runtime) ListSessionsForCWD(ctx context.Context, cwd string, limit int) ([]session.Session, error) {
+	page, err := r.ListSessionsForCWDPage(ctx, cwd, "", limit)
+	return page.Sessions, err
+}
+
+// ListSessionsForCWDPage 分页返回指定工作目录下最近更新的本地会话。
+func (r *Runtime) ListSessionsForCWDPage(ctx context.Context, cwd, cursor string, limit int) (session.ListPage, error) {
 	if cwd == "" {
-		return r.ListSessions(ctx, limit)
+		return r.ListSessionsPage(ctx, cursor, limit)
 	}
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
-		return nil, err
+		return session.ListPage{}, err
 	}
 	store, err := openSessionStore(ctx, cfg.Session)
 	if err != nil {
-		return nil, err
+		return session.ListPage{}, err
 	}
 	defer store.Close()
-	return store.ListSessionsForCWD(ctx, cwd, limit)
+	return store.ListSessionsForCWDPage(ctx, cwd, cursor, limit)
+}
+
+// SaveSessionRoots 保存已有会话的 ACP 额外工作目录根。
+func (r *Runtime) SaveSessionRoots(ctx context.Context, sessionID string, additionalDirectories []string) error {
+	cfg, err := r.deps.LoadConfig()
+	if err != nil {
+		return err
+	}
+	store, err := openSessionStore(ctx, cfg.Session)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.SaveSessionRoots(ctx, sessionID, additionalDirectories)
 }
 
 // ShowSession 返回指定会话的元数据和 transcript。

@@ -169,6 +169,38 @@ func TestStoreSaveCompactionPreservesFullTranscript(t *testing.T) {
 	}
 }
 
+func TestStoreSaveTranscriptPersistsAdditionalDirectories(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	roots := []string{"/tmp/extra", "/tmp/shared"}
+	if err := store.SaveTranscriptWithOptions(ctx, "work", "/tmp/work", []model.Message{
+		{Role: model.RoleUser, Content: "hello"},
+	}, SaveTranscriptOptions{AdditionalDirectories: roots, AdditionalDirectoriesSet: true}); err != nil {
+		t.Fatalf("SaveTranscriptWithOptions() error = %v", err)
+	}
+	info, err := store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if strings.Join(info.AdditionalDirectories, ",") != strings.Join(roots, ",") {
+		t.Fatalf("additional directories = %#v", info.AdditionalDirectories)
+	}
+	if err := store.SaveTranscript(ctx, "work", "/tmp/work", []model.Message{
+		{Role: model.RoleUser, Content: "again"},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	info, err = store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if strings.Join(info.AdditionalDirectories, ",") != strings.Join(roots, ",") {
+		t.Fatalf("additional directories after save = %#v", info.AdditionalDirectories)
+	}
+}
+
 func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
@@ -221,6 +253,33 @@ func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	}
 	if len(trans.Messages()) != 0 {
 		t.Fatalf("messages = %#v", trans.Messages())
+	}
+}
+
+func TestStoreListSessionsPageReturnsCursor(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	for _, id := range []string{"first", "second", "third"} {
+		if err := store.SaveTranscript(ctx, id, "/tmp/work", []model.Message{{Role: model.RoleUser, Content: id}}); err != nil {
+			t.Fatalf("SaveTranscript(%s) error = %v", id, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	page, err := store.ListSessionsPage(ctx, "", 2)
+	if err != nil {
+		t.Fatalf("ListSessionsPage() error = %v", err)
+	}
+	if len(page.Sessions) != 2 || page.NextCursor == "" {
+		t.Fatalf("page = %#v", page)
+	}
+	next, err := store.ListSessionsPage(ctx, page.NextCursor, 2)
+	if err != nil {
+		t.Fatalf("ListSessionsPage(next) error = %v", err)
+	}
+	if len(next.Sessions) != 1 || next.NextCursor != "" {
+		t.Fatalf("next page = %#v", next)
 	}
 }
 

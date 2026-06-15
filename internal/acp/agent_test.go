@@ -41,6 +41,12 @@ func TestInitializeReportsSupportedCapabilities(t *testing.T) {
 	if caps.Close == nil || caps.Delete == nil || caps.List == nil || caps.Resume == nil {
 		t.Fatalf("session capabilities = %#v", caps)
 	}
+	if caps.AdditionalDirectories == nil {
+		t.Fatalf("additional directories capability = %#v", caps)
+	}
+	if !resp.AgentCapabilities.PromptCapabilities.EmbeddedContext {
+		t.Fatalf("prompt capabilities = %#v", resp.AgentCapabilities.PromptCapabilities)
+	}
 	if !resp.AgentCapabilities.LoadSession {
 		t.Fatal("LoadSession capability should be enabled")
 	}
@@ -104,6 +110,24 @@ func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	}
 }
 
+func TestNewSessionStoresAdditionalDirectories(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	cwd := testCWD(t)
+	extra := testCWD(t)
+
+	if _, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: cwd, AdditionalDirectories: []string{"relative"}}); err == nil {
+		t.Fatal("NewSession() error = nil")
+	}
+	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: cwd, AdditionalDirectories: []string{extra}})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	state, ok := a.getSession(string(resp.SessionId))
+	if !ok || len(state.additionalDirectories) != 1 || state.additionalDirectories[0] != extra {
+		t.Fatalf("session state = %#v, %t", state, ok)
+	}
+}
+
 func TestNewSessionSendsCompactCommand(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	cwd := testCWD(t)
@@ -117,7 +141,7 @@ func TestNewSessionSendsCompactCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
 	}
-	if len(updates) != 1 {
+	if len(updates) != 2 {
 		t.Fatalf("updates = %#v", updates)
 	}
 	if updates[0].SessionId != resp.SessionId {
@@ -129,6 +153,9 @@ func TestNewSessionSendsCompactCommand(t *testing.T) {
 	}
 	if commands.AvailableCommands[0].Input == nil || commands.AvailableCommands[0].Input.Unstructured == nil {
 		t.Fatalf("command input = %#v", commands.AvailableCommands[0].Input)
+	}
+	if updates[1].Update.SessionInfoUpdate == nil || updates[1].Update.SessionInfoUpdate.UpdatedAt == nil {
+		t.Fatalf("session info update = %#v", updates[1].Update)
 	}
 }
 
@@ -156,7 +183,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "done"}, nil
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "other-model", "max")
+	a.setSession("sess", "/tmp/work", "other-model", "max", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -198,6 +225,61 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 	}
 }
 
+func TestPromptSendsSessionInfoUsageAndMessageID(t *testing.T) {
+	now := time.Date(2026, 6, 15, 9, 30, 0, 0, time.UTC)
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: "/tmp/work", Title: "hello", UpdatedAt: now},
+		},
+	}
+	rt.run = func(_ context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		rt.runOptions = opts
+		return atlasruntime.TurnResult{
+			SessionID:     opts.SessionID,
+			Content:       "done",
+			Usage:         model.Usage{InputTokens: 12, OutputTokens: 3, TotalTokens: 15},
+			ContextWindow: 100,
+		}, nil
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", []string{"/tmp/extra"})
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+	messageID := "00000000-0000-0000-0000-000000000001"
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		MessageId: &messageID,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.UserMessageId == nil || *resp.UserMessageId != messageID {
+		t.Fatalf("user message id = %#v", resp.UserMessageId)
+	}
+	if resp.Usage == nil || resp.Usage.TotalTokens != 15 {
+		t.Fatalf("usage = %#v", resp.Usage)
+	}
+	if !rt.runOptions.AdditionalDirectoriesSet || len(rt.runOptions.AdditionalDirectories) != 1 || rt.runOptions.AdditionalDirectories[0] != "/tmp/extra" {
+		t.Fatalf("turn roots = %#v", rt.runOptions)
+	}
+	if len(updates) != 2 {
+		t.Fatalf("updates = %#v", updates)
+	}
+	info := updates[0].Update.SessionInfoUpdate
+	if info == nil || info.Title == nil || *info.Title != "hello" || info.UpdatedAt == nil || *info.UpdatedAt != "2026-06-15T09:30:00Z" {
+		t.Fatalf("session info update = %#v", updates[0].Update)
+	}
+	usage := updates[1].Update.UsageUpdate
+	if usage == nil || usage.Used != 15 || usage.Size != 100 {
+		t.Fatalf("usage update = %#v", updates[1].Update)
+	}
+}
+
 func TestPromptDirectShellStreamsToolUpdates(t *testing.T) {
 	rt := &fakeRuntime{}
 	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
@@ -220,7 +302,7 @@ func TestPromptDirectShellStreamsToolUpdates(t *testing.T) {
 		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: "/tmp/work\n"}, nil
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "high")
+	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -271,7 +353,7 @@ func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
-	a.setSession("sess", "/tmp/work", "test-model", "high")
+	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -333,7 +415,7 @@ func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
-	a.setSession("sess", "/tmp/work", "test-model", "high")
+	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -376,7 +458,7 @@ func TestPromptFallsBackWhenClientTerminalUnsupported(t *testing.T) {
 		return atlasruntime.TurnResult{SessionID: opts.SessionID, Content: got.Content}, nil
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "high")
+	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
 
 	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -399,7 +481,7 @@ func TestPromptUsesClientFileSystemForReadFileWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true}}
-	a.setSession("sess", "/tmp/work", "test-model", "high")
+	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
 	client := &fakeFileClient{readContent: "line 2\nline 3\n"}
 	a.fileClient = client
 	var updates []acpsdk.SessionNotification
@@ -439,7 +521,7 @@ func TestPromptUsesClientFileSystemForWriteFileWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
-	a.setSession("sess", "/tmp/work", "test-model", "high")
+	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
 	client := &fakeFileClient{readContent: "old\n"}
 	a.fileClient = client
 	var updates []acpsdk.SessionNotification
@@ -682,7 +764,7 @@ func TestToolRunnerKillsClientTerminalWhenTerminalUpdateFails(t *testing.T) {
 func TestPromptCompactCommandRunsCompaction(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "other-model", "max")
+	a.setSession("sess", "/tmp/work", "other-model", "max", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -726,7 +808,7 @@ func TestPromptOnlyInterceptsCompactCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rt := &fakeRuntime{}
 			a := NewAgent(rt)
-			a.setSession("sess", "/tmp/work", "test-model", "")
+			a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 			if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 				SessionId: "sess",
@@ -750,7 +832,7 @@ func TestPromptOnlyInterceptsCompactCommand(t *testing.T) {
 func TestPromptResourceLinkText(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -767,9 +849,36 @@ func TestPromptResourceLinkText(t *testing.T) {
 	}
 }
 
+func TestPromptEmbeddedTextResource(t *testing.T) {
+	rt := &fakeRuntime{}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+	mimeType := "text/markdown"
+
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt: []acpsdk.ContentBlock{
+			acpsdk.TextBlock("review"),
+			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{
+				TextResourceContents: &acpsdk.TextResourceContents{
+					Uri:      "file:///tmp/work/README.md",
+					MimeType: &mimeType,
+					Text:     "# Atlas\n",
+				},
+			}),
+		},
+	}); err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	want := "review\n\nResource: file:///tmp/work/README.md\nMIME: text/markdown\n\n# Atlas"
+	if rt.runOptions.Prompt != want {
+		t.Fatalf("prompt = %q", rt.runOptions.Prompt)
+	}
+}
+
 func TestPromptUnsupportedContent(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
@@ -790,7 +899,7 @@ func TestPromptReturnsCancelledWhenContextStops(t *testing.T) {
 		return atlasruntime.TurnResult{}, ctx.Err()
 	}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	done := make(chan acpsdk.PromptResponse, 1)
 	errCh := make(chan error, 1)
@@ -863,6 +972,33 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(rt.deleted, []string{"sess"}) {
 		t.Fatalf("deleted = %#v", rt.deleted)
+	}
+}
+
+func TestLoadSessionSavesAdditionalDirectories(t *testing.T) {
+	cwd := testCWD(t)
+	extra := testCWD(t)
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: cwd},
+		},
+	}
+	a := NewAgent(rt)
+
+	if _, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+		SessionId:             "sess",
+		Cwd:                   cwd,
+		AdditionalDirectories: []string{extra},
+		McpServers:            []acpsdk.McpServer{},
+	}); err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if !reflect.DeepEqual(rt.savedRoots["sess"], []string{extra}) {
+		t.Fatalf("saved roots = %#v", rt.savedRoots)
+	}
+	state, ok := a.getSession("sess")
+	if !ok || len(state.additionalDirectories) != 1 || state.additionalDirectories[0] != extra {
+		t.Fatalf("session state = %#v, %t", state, ok)
 	}
 }
 
@@ -1043,7 +1179,7 @@ func TestResumeSessionRejectsCWDMismatch(t *testing.T) {
 func TestSetSessionConfigOptionUpdatesModel(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -1079,7 +1215,7 @@ func TestSetSessionConfigOptionUpdatesModel(t *testing.T) {
 func TestSetSessionConfigOptionUpdatesReasoningEffort(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -1114,7 +1250,7 @@ func TestSetSessionConfigOptionUpdatesReasoningEffort(t *testing.T) {
 
 func TestSetSessionConfigOptionRejectsInvalidReasoningEffort(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -1130,7 +1266,7 @@ func TestSetSessionConfigOptionRejectsInvalidReasoningEffort(t *testing.T) {
 
 func TestSetSessionConfigOptionRejectsInvalidModel(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -1146,7 +1282,7 @@ func TestSetSessionConfigOptionRejectsInvalidModel(t *testing.T) {
 
 func TestSetSessionConfigOptionRejectsUnsupportedOption(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "")
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
 	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -1160,13 +1296,28 @@ func TestSetSessionConfigOptionRejectsUnsupportedOption(t *testing.T) {
 	}
 }
 
-func TestListSessionsRejectsCursor(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
+func TestListSessionsSupportsCursor(t *testing.T) {
+	rt := &fakeRuntime{
+		sessionPage: session.ListPage{
+			Sessions:   []session.Session{{ID: "sess", CWD: "/tmp/work", AdditionalDirectories: []string{"/tmp/extra"}}},
+			NextCursor: "next-page",
+		},
+	}
+	a := NewAgent(rt)
 	cursor := "next"
 
-	_, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cursor: &cursor})
-	if err == nil || !strings.Contains(err.Error(), "cursor is not supported") {
+	resp, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cursor: &cursor})
+	if err != nil {
 		t.Fatalf("ListSessions() error = %v", err)
+	}
+	if rt.listedCursor != cursor {
+		t.Fatalf("cursor = %q", rt.listedCursor)
+	}
+	if resp.NextCursor == nil || *resp.NextCursor != "next-page" {
+		t.Fatalf("next cursor = %#v", resp.NextCursor)
+	}
+	if len(resp.Sessions) != 1 || !reflect.DeepEqual(resp.Sessions[0].AdditionalDirectories, []string{"/tmp/extra"}) {
+		t.Fatalf("sessions = %#v", resp.Sessions)
 	}
 }
 
@@ -1188,9 +1339,13 @@ type fakeRuntime struct {
 	compactOptions  atlasruntime.CompactOptions
 	compactResult   atlasruntime.CompactResult
 	listedCWDs      []string
+	listedCursor    string
+	savedRoots      map[string][]string
 	deleted         []string
 	sessions        []session.Session
 	sessionsForCWD  []session.Session
+	sessionPage     session.ListPage
+	sessionCWDPage  session.ListPage
 	showSessions    map[string]session.Session
 	showTranscripts map[string]*transcript.Transcript
 	showErr         error
@@ -1300,6 +1455,9 @@ func (f *fakeRuntime) ShowSession(_ context.Context, sessionID string) (session.
 		}
 		return sess, transcript.New(), nil
 	}
+	if sessionID == f.runOptions.SessionID || sessionID == f.compactOptions.SessionID {
+		return session.Session{ID: sessionID, CWD: f.runOptions.CWD}, transcript.New(), nil
+	}
 	return session.Session{}, nil, errors.New("session not found")
 }
 
@@ -1310,6 +1468,33 @@ func (f *fakeRuntime) ListSessions(context.Context, int) ([]session.Session, err
 func (f *fakeRuntime) ListSessionsForCWD(_ context.Context, cwd string, _ int) ([]session.Session, error) {
 	f.listedCWDs = append(f.listedCWDs, cwd)
 	return f.sessionsForCWD, nil
+}
+
+func (f *fakeRuntime) ListSessionsPage(_ context.Context, cursor string, _ int) (session.ListPage, error) {
+	f.listedCursor = cursor
+	page := f.sessionPage
+	if len(page.Sessions) == 0 {
+		page.Sessions = f.sessions
+	}
+	return page, nil
+}
+
+func (f *fakeRuntime) ListSessionsForCWDPage(_ context.Context, cwd, cursor string, _ int) (session.ListPage, error) {
+	f.listedCWDs = append(f.listedCWDs, cwd)
+	f.listedCursor = cursor
+	page := f.sessionCWDPage
+	if len(page.Sessions) == 0 {
+		page.Sessions = f.sessionsForCWD
+	}
+	return page, nil
+}
+
+func (f *fakeRuntime) SaveSessionRoots(_ context.Context, sessionID string, additionalDirectories []string) error {
+	if f.savedRoots == nil {
+		f.savedRoots = make(map[string][]string)
+	}
+	f.savedRoots[sessionID] = append([]string(nil), additionalDirectories...)
+	return nil
 }
 
 func (f *fakeRuntime) DeleteSessionIfExists(_ context.Context, sessionID string) error {

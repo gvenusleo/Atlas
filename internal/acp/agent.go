@@ -38,8 +38,9 @@ type Runtime interface {
 	CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error)
 	ModelOptions(context.Context) (runtime.ModelOptions, error)
 	ShowSession(context.Context, string) (session.Session, *transcript.Transcript, error)
-	ListSessions(context.Context, int) ([]session.Session, error)
-	ListSessionsForCWD(context.Context, string, int) ([]session.Session, error)
+	ListSessionsPage(context.Context, string, int) (session.ListPage, error)
+	ListSessionsForCWDPage(context.Context, string, string, int) (session.ListPage, error)
+	SaveSessionRoots(context.Context, string, []string) error
 	DeleteSessionIfExists(context.Context, string) error
 }
 
@@ -92,11 +93,12 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 type sessionState struct {
-	cwd             string
-	model           string
-	reasoningEffort string
-	cancel          context.CancelFunc
-	turn            int
+	cwd                   string
+	model                 string
+	reasoningEffort       string
+	additionalDirectories []string
+	cancel                context.CancelFunc
+	turn                  int
 }
 
 // Agent 将 Atlas runtime 适配为 ACP agent 方法。
@@ -142,11 +144,15 @@ func (a *Agent) Initialize(_ context.Context, req acpsdk.InitializeRequest) (acp
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		AgentCapabilities: acpsdk.AgentCapabilities{
 			LoadSession: true,
+			PromptCapabilities: acpsdk.PromptCapabilities{
+				EmbeddedContext: true,
+			},
 			SessionCapabilities: acpsdk.SessionCapabilities{
-				Close:  &acpsdk.SessionCloseCapabilities{},
-				Delete: &acpsdk.SessionDeleteCapabilities{},
-				List:   &acpsdk.SessionListCapabilities{},
-				Resume: &acpsdk.SessionResumeCapabilities{},
+				AdditionalDirectories: &acpsdk.SessionAdditionalDirectoriesCapabilities{},
+				Close:                 &acpsdk.SessionCloseCapabilities{},
+				Delete:                &acpsdk.SessionDeleteCapabilities{},
+				List:                  &acpsdk.SessionListCapabilities{},
+				Resume:                &acpsdk.SessionResumeCapabilities{},
 			},
 		},
 		AgentInfo: &acpsdk.Implementation{
@@ -163,6 +169,9 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
+	if err := requireAbsoluteDirectories(params.AdditionalDirectories); err != nil {
+		return acpsdk.NewSessionResponse{}, err
+	}
 	models, err := a.rt.ModelOptions(ctx)
 	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
@@ -171,8 +180,11 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
-	a.setSession(sessionID, params.Cwd, models.Default, models.ReasoningEffort)
+	a.setSession(sessionID, params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
 	if err := a.sendAvailableCommands(ctx, acpsdk.SessionId(sessionID)); err != nil {
+		return acpsdk.NewSessionResponse{}, err
+	}
+	if err := a.sendSessionInfoUpdate(ctx, acpsdk.SessionId(sessionID), "", time.Now()); err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
 	return acpsdk.NewSessionResponse{
@@ -203,15 +215,17 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	}
 	defer a.clearSessionCancel(string(params.SessionId), turn)
 
-	_, err = a.rt.RunTurn(turnCtx, runtime.TurnOptions{
-		SessionID:          string(params.SessionId),
-		Prompt:             promptText,
-		Model:              state.model,
-		ReasoningEffort:    state.reasoningEffort,
-		ReasoningEffortSet: true,
-		CWD:                state.cwd,
-		Observer:           a.observe(turnCtx, params.SessionId),
-		ToolRunner:         a.toolRunner(params.SessionId, state.cwd),
+	result, err := a.rt.RunTurn(turnCtx, runtime.TurnOptions{
+		SessionID:                string(params.SessionId),
+		Prompt:                   promptText,
+		Model:                    state.model,
+		ReasoningEffort:          state.reasoningEffort,
+		ReasoningEffortSet:       true,
+		AdditionalDirectories:    state.additionalDirectories,
+		AdditionalDirectoriesSet: true,
+		CWD:                      state.cwd,
+		Observer:                 a.observe(turnCtx, params.SessionId),
+		ToolRunner:               a.toolRunner(params.SessionId, state.cwd),
 	})
 	if err != nil {
 		if turnCtx.Err() != nil {
@@ -222,12 +236,28 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	if turnCtx.Err() != nil {
 		return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}, nil
 	}
-	return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
+	if err := a.sendStoredSessionInfoUpdate(ctx, params.SessionId); err != nil {
+		return acpsdk.PromptResponse{}, err
+	}
+	if err := a.sendUsageUpdate(ctx, params.SessionId, usageUsed(result.Usage), result.ContextWindow); err != nil {
+		return acpsdk.PromptResponse{}, err
+	}
+	response := acpsdk.PromptResponse{
+		StopReason: acpsdk.StopReasonEndTurn,
+		Usage:      acpUsage(result.Usage),
+	}
+	if params.MessageId != nil {
+		response.UserMessageId = params.MessageId
+	}
+	return response, nil
 }
 
 // LoadSession 恢复已有 Atlas session，并通过 session/update 回放历史消息。
 func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	if err := requireAbsoluteDirectories(params.AdditionalDirectories); err != nil {
 		return acpsdk.LoadSessionResponse{}, err
 	}
 	sess, trans, err := a.rt.ShowSession(ctx, string(params.SessionId))
@@ -241,11 +271,25 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 	if err != nil {
 		return acpsdk.LoadSessionResponse{}, err
 	}
-	if err := a.replayTranscript(ctx, params.SessionId, trans); err != nil {
+	if err := a.rt.SaveSessionRoots(ctx, string(params.SessionId), params.AdditionalDirectories); err != nil {
 		return acpsdk.LoadSessionResponse{}, err
 	}
-	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort)
+	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
+	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
+	if err := a.replayTranscript(ctx, params.SessionId, trans); err != nil {
+		a.deleteSessionState(string(params.SessionId))
+		return acpsdk.LoadSessionResponse{}, err
+	}
 	if err := a.sendAvailableCommands(ctx, params.SessionId); err != nil {
+		a.deleteSessionState(string(params.SessionId))
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	if err := a.sendSessionInfoUpdate(ctx, params.SessionId, sess.Title, sess.UpdatedAt); err != nil {
+		a.deleteSessionState(string(params.SessionId))
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	if err := a.sendUsageUpdate(ctx, params.SessionId, sess.LastTotalTokens, modelContextWindow(models, models.Default)); err != nil {
+		a.deleteSessionState(string(params.SessionId))
 		return acpsdk.LoadSessionResponse{}, err
 	}
 	return acpsdk.LoadSessionResponse{
@@ -264,6 +308,9 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
+	if err := requireAbsoluteDirectories(params.AdditionalDirectories); err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
 	sess, _, err := a.rt.ShowSession(ctx, string(params.SessionId))
 	if err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
@@ -275,8 +322,18 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	if err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
-	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort)
+	if err := a.rt.SaveSessionRoots(ctx, string(params.SessionId), params.AdditionalDirectories); err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
+	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
+	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
 	if err := a.sendAvailableCommands(ctx, params.SessionId); err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
+	if err := a.sendSessionInfoUpdate(ctx, params.SessionId, sess.Title, sess.UpdatedAt); err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
+	if err := a.sendUsageUpdate(ctx, params.SessionId, sess.LastTotalTokens, modelContextWindow(models, models.Default)); err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
 	return acpsdk.ResumeSessionResponse{
@@ -286,37 +343,35 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 
 // ListSessions 返回 Atlas 本地 SQLite session 历史。
 func (a *Agent) ListSessions(ctx context.Context, params acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
-	if params.Cursor != nil && *params.Cursor != "" {
-		return acpsdk.ListSessionsResponse{}, fmt.Errorf("session/list cursor is not supported")
-	}
 	var (
-		sessions []session.Session
-		err      error
+		page session.ListPage
+		err  error
 	)
+	cursor := ""
+	if params.Cursor != nil {
+		cursor = *params.Cursor
+	}
 	if params.Cwd != nil && *params.Cwd != "" {
 		if err := requireAbsoluteCWD(*params.Cwd); err != nil {
 			return acpsdk.ListSessionsResponse{}, err
 		}
-		sessions, err = a.rt.ListSessionsForCWD(ctx, *params.Cwd, defaultSessionListLimit)
+		page, err = a.rt.ListSessionsForCWDPage(ctx, *params.Cwd, cursor, defaultSessionListLimit)
 	} else {
-		sessions, err = a.rt.ListSessions(ctx, defaultSessionListLimit)
+		page, err = a.rt.ListSessionsPage(ctx, cursor, defaultSessionListLimit)
 	}
 	if err != nil {
 		return acpsdk.ListSessionsResponse{}, err
 	}
 
-	infos := make([]acpsdk.SessionInfo, 0, len(sessions))
-	for _, sess := range sessions {
-		title := sess.Title
-		updatedAt := sess.UpdatedAt.Format(time.RFC3339)
-		infos = append(infos, acpsdk.SessionInfo{
-			SessionId: acpsdk.SessionId(sess.ID),
-			Cwd:       sess.CWD,
-			Title:     &title,
-			UpdatedAt: &updatedAt,
-		})
+	infos := make([]acpsdk.SessionInfo, 0, len(page.Sessions))
+	for _, sess := range page.Sessions {
+		infos = append(infos, sessionInfo(sess))
 	}
-	return acpsdk.ListSessionsResponse{Sessions: infos}, nil
+	resp := acpsdk.ListSessionsResponse{Sessions: infos}
+	if page.NextCursor != "" {
+		resp.NextCursor = &page.NextCursor
+	}
+	return resp, nil
 }
 
 // CloseSession 取消正在运行的 turn，并清除本地活动 session 状态。
@@ -660,6 +715,47 @@ func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.Sess
 	})
 }
 
+// sendStoredSessionInfoUpdate 从本地 session 记录发送最新标题和更新时间。
+func (a *Agent) sendStoredSessionInfoUpdate(ctx context.Context, sessionID acpsdk.SessionId) error {
+	info, _, err := a.rt.ShowSession(ctx, string(sessionID))
+	if err != nil {
+		return err
+	}
+	return a.sendSessionInfoUpdate(ctx, sessionID, info.Title, info.UpdatedAt)
+}
+
+// sendSessionInfoUpdate 通知客户端 session 标题或更新时间变化。
+func (a *Agent) sendSessionInfoUpdate(ctx context.Context, sessionID acpsdk.SessionId, title string, updatedAt time.Time) error {
+	update := &acpsdk.SessionSessionInfoUpdate{
+		SessionUpdate: "session_info_update",
+	}
+	if title != "" {
+		update.Title = &title
+	}
+	if !updatedAt.IsZero() {
+		formatted := updatedAt.UTC().Format(time.RFC3339)
+		update.UpdatedAt = &formatted
+	}
+	if update.Title == nil && update.UpdatedAt == nil {
+		return nil
+	}
+	return a.sendSessionUpdate(ctx, sessionID, acpsdk.SessionUpdate{SessionInfoUpdate: update})
+}
+
+// sendUsageUpdate 通知客户端当前上下文窗口使用情况。
+func (a *Agent) sendUsageUpdate(ctx context.Context, sessionID acpsdk.SessionId, used, size int) error {
+	if used <= 0 || size <= 0 {
+		return nil
+	}
+	return a.sendSessionUpdate(ctx, sessionID, acpsdk.SessionUpdate{
+		UsageUpdate: &acpsdk.SessionUsageUpdate{
+			SessionUpdate: "usage_update",
+			Used:          used,
+			Size:          size,
+		},
+	})
+}
+
 // compactAvailableCommand 返回 ACP 客户端展示的手动压缩命令定义。
 func compactAvailableCommand() acpsdk.AvailableCommand {
 	return acpsdk.AvailableCommand{
@@ -704,16 +800,23 @@ func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId
 	if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateAgentMessageText(message)); err != nil {
 		return acpsdk.PromptResponse{}, err
 	}
+	if err := a.sendStoredSessionInfoUpdate(ctx, sessionID); err != nil {
+		return acpsdk.PromptResponse{}, err
+	}
+	if err := a.sendUsageUpdate(ctx, sessionID, result.TokensAfter, result.ContextWindow); err != nil {
+		return acpsdk.PromptResponse{}, err
+	}
 	return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
 }
 
-func (a *Agent) setSession(id, cwd, model, reasoningEffort string) {
+func (a *Agent) setSession(id, cwd, model, reasoningEffort string, additionalDirectories []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	state := a.sessions[id]
 	state.cwd = cwd
 	state.model = model
 	state.reasoningEffort = reasoningEffort
+	state.additionalDirectories = append([]string(nil), additionalDirectories...)
 	a.sessions[id] = state
 }
 
@@ -786,6 +889,19 @@ func requireAbsoluteCWD(cwd string) error {
 	return nil
 }
 
+// requireAbsoluteDirectories 校验 ACP 额外工作目录根都是绝对路径。
+func requireAbsoluteDirectories(dirs []string) error {
+	for _, dir := range dirs {
+		if dir == "" {
+			return fmt.Errorf("additional directory is required")
+		}
+		if !filepath.IsAbs(dir) {
+			return fmt.Errorf("additional directory must be absolute: %s", dir)
+		}
+	}
+	return nil
+}
+
 func promptToText(blocks []acpsdk.ContentBlock) (string, error) {
 	var parts []string
 	for _, block := range blocks {
@@ -794,6 +910,10 @@ func promptToText(blocks []acpsdk.ContentBlock) (string, error) {
 			parts = append(parts, block.Text.Text)
 		case block.ResourceLink != nil:
 			parts = append(parts, fmt.Sprintf("Resource: %s (%s)", block.ResourceLink.Name, block.ResourceLink.Uri))
+		case block.Resource != nil && block.Resource.Resource.TextResourceContents != nil:
+			parts = append(parts, embeddedTextResource(block.Resource.Resource.TextResourceContents))
+		case block.Resource != nil && block.Resource.Resource.BlobResourceContents != nil:
+			return "", fmt.Errorf("unsupported ACP embedded blob resource")
 		default:
 			return "", fmt.Errorf("unsupported ACP prompt content block")
 		}
@@ -803,6 +923,64 @@ func promptToText(blocks []acpsdk.ContentBlock) (string, error) {
 		return "", fmt.Errorf("prompt is required")
 	}
 	return text, nil
+}
+
+// embeddedTextResource 将 ACP 内嵌文本资源转成模型可读的文本片段。
+func embeddedTextResource(resource *acpsdk.TextResourceContents) string {
+	lines := []string{fmt.Sprintf("Resource: %s", resource.Uri)}
+	if resource.MimeType != nil && *resource.MimeType != "" {
+		lines = append(lines, fmt.Sprintf("MIME: %s", *resource.MimeType))
+	}
+	lines = append(lines, "", resource.Text)
+	return strings.Join(lines, "\n")
+}
+
+// sessionInfo 将本地 session 元数据转换为 ACP session/list 结果。
+func sessionInfo(sess session.Session) acpsdk.SessionInfo {
+	info := acpsdk.SessionInfo{
+		SessionId:             acpsdk.SessionId(sess.ID),
+		Cwd:                   sess.CWD,
+		AdditionalDirectories: append([]string(nil), sess.AdditionalDirectories...),
+	}
+	if sess.Title != "" {
+		title := sess.Title
+		info.Title = &title
+	}
+	if !sess.UpdatedAt.IsZero() {
+		updatedAt := sess.UpdatedAt.UTC().Format(time.RFC3339)
+		info.UpdatedAt = &updatedAt
+	}
+	return info
+}
+
+// acpUsage 将 Atlas 模型用量转换为 ACP prompt 响应用量。
+func acpUsage(usage model.Usage) *acpsdk.Usage {
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.TotalTokens == 0 {
+		return nil
+	}
+	return &acpsdk.Usage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		TotalTokens:  usage.TotalTokens,
+	}
+}
+
+// usageUsed 返回 usage_update 中展示的上下文占用估计值。
+func usageUsed(usage model.Usage) int {
+	if usage.TotalTokens > 0 {
+		return usage.TotalTokens
+	}
+	return usage.InputTokens + usage.OutputTokens
+}
+
+// modelContextWindow 返回当前模型配置的上下文窗口大小。
+func modelContextWindow(options runtime.ModelOptions, current string) int {
+	for _, model := range options.Models {
+		if model.Value == current {
+			return model.ContextWindow
+		}
+	}
+	return 0
 }
 
 // compactCommandInstruction 解析 `/compact` 命令及其可选指令。

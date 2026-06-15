@@ -592,6 +592,39 @@ func TestRunTurnUsesCWDOverride(t *testing.T) {
 	}
 }
 
+func TestRunTurnPersistsAdditionalDirectories(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID:                "work",
+		Prompt:                   "hello",
+		CWD:                      "/tmp/acp-work",
+		AdditionalDirectories:    []string{"/tmp/extra"},
+		AdditionalDirectoriesSet: true,
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	info, _, err := r.ShowSession(context.Background(), result.SessionID)
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if len(info.AdditionalDirectories) != 1 || info.AdditionalDirectories[0] != "/tmp/extra" {
+		t.Fatalf("additional directories = %#v", info.AdditionalDirectories)
+	}
+	page, err := r.ListSessionsPage(context.Background(), "", 10)
+	if err != nil {
+		t.Fatalf("ListSessionsPage() error = %v", err)
+	}
+	if len(page.Sessions) != 1 || len(page.Sessions[0].AdditionalDirectories) != 1 || page.Sessions[0].AdditionalDirectories[0] != "/tmp/extra" {
+		t.Fatalf("page = %#v", page)
+	}
+}
+
 func TestListSessionsForCWD(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
