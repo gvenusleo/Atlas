@@ -1,23 +1,30 @@
 # Atlas
 
-Atlas 是一个极简本地 coding agent，支持一次性 CLI 调用和 ACP stdio 接入。它通过 OpenAI-compatible Chat Completions Provider 调用模型，并在本地会话中保存对话记录。
+Atlas 是一个本地 coding agent。它通过 OpenAI-compatible Chat Completions Provider 调用模型，在本地 SQLite 中保存会话，支持 CLI、ACP stdio 和微信远程控制。
 
-## 行为边界
+## 权限边界
 
-Atlas 以当前进程的本地权限运行。内置工具可以读取文件、写入文件、搜索文本并执行 shell 命令；Atlas 不提供沙箱、权限提示或 approval gate。请只在可信工作区中运行 Atlas。通过 ACP 连接时，如果客户端声明支持 terminal capability，ACP 通道的 `run_shell` 会优先请求客户端 terminal 执行并嵌入输出；如果客户端声明支持 filesystem capability，ACP 通道的 `read_file`、`write_file` 和 `edit_file` 会优先请求客户端读写文件，并把文件位置和 diff 作为 tool metadata 展示；客户端不支持或客户端文件系统调用失败时回退到 Atlas 本地工具执行。
+Atlas 以当前进程的本地权限运行。内置工具可以读写文件、搜索文本并执行 shell 命令；Atlas 不提供沙箱、权限提示或 approval gate。请只在可信工作区中运行。
 
-Atlas 从两个位置加载附加 `AGENTS.md` 指令：
+通过 ACP 连接时，Atlas 会优先使用客户端声明的能力：
+
+- terminal capability：`run_shell` 请求客户端 terminal 执行，并嵌入输出。
+- filesystem capability：文件工具请求客户端读写文件，并展示 locations/diff。
+
+客户端不支持或调用失败时，Atlas 回退到本地工具执行。
+
+Atlas 会加载两个附加指令文件：
 
 - `~/.atlas/AGENTS.md`
 - 当前工作目录下的 `AGENTS.md`
 
-Atlas 不递归查找父目录或子目录中的 `AGENTS.md`。当前用户输入优先于指令文件，当前目录指令优先于全局指令。
+当前用户输入优先于指令文件，当前目录指令优先于全局指令。Atlas 不递归查找父目录或子目录中的 `AGENTS.md`。
 
-Atlas 还会扫描用户级和当前目录级 skill，只把 `name` 和 `description` 摘要放入系统提示词；模型需要完整指令时，通过 `load_skill` 按名称读取对应 `SKILL.md`。
+Atlas 也会扫描用户级和当前目录级 skill，只把 `name` 和 `description` 摘要放进系统提示词；需要完整指令时，模型通过 `load_skill` 读取对应 `SKILL.md`。
 
 ## 配置
 
-Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
+Atlas 从 `~/.atlas/config.json` 读取配置：
 
 ```json
 {
@@ -61,48 +68,87 @@ Atlas 从用户主目录下的 `.atlas/config.json` 读取应用配置：
 }
 ```
 
-`provider.default_model` 必须匹配 `provider.models` 中某个模型的 `value`。`name` 用于界面显示，`value` 是实际发送给 Provider 的模型名。`context_window` 描述模型上下文窗口，`max_tokens` 会作为每次模型请求的最大输出 token 数发送给 Provider。`agent.max_steps` 限制单次请求最多执行多少轮模型调用。`agent.reasoning_effort` 可省略，支持 `high` 和 `max`，会作为 `reasoning_effort` 发送给支持该参数的 OpenAI-compatible Provider。`agent.compaction_trigger_ratio` 可省略，默认 `0.8`，表示上下文输入 token 达到模型 `context_window` 的 80% 时自动压缩早期对话。`memory.enabled` 可省略，默认启用；启用时 `memory.model` 可省略，为空则后台记忆任务使用产生该会话的模型，配置时必须匹配 `provider.models` 中某个 `value`。`session.db_path` 可省略，默认使用 `~/.atlas/atlas.db`。
+字段说明：
 
-`services.tavily` 可省略。配置 `services.tavily.api_key` 后，Atlas 会注册 `web_search` 和 `web_fetch`，默认调用 `https://api.tavily.com`。使用这两个工具时，搜索查询或网页 URL 会发送给 Tavily。
+- `provider.default_model` 必须匹配 `provider.models[].value`。
+- `provider.models[].value` 是发送给 Provider 的模型名，`name` 用于显示。
+- `context_window` 用于上下文压缩和用量展示，`max_tokens` 是每次模型请求的最大输出 token 数。
+- `agent.reasoning_effort` 可省略，支持 `high` 和 `max`。
+- `agent.compaction_trigger_ratio` 默认 `0.8`，表示上下文输入达到模型窗口 80% 时自动压缩早期对话。
+- `memory.enabled` 默认启用。`memory.model` 为空时，后台记忆任务使用产生该会话的模型。
+- `session.db_path` 默认 `~/.atlas/atlas.db`。
+- `services.tavily.api_key` 配置后启用 `web_search` 和 `web_fetch`，请求会发送给 Tavily。
+- `services.weixin.base_url` 可省略，默认 `https://ilinkai.weixin.qq.com`。
 
-`services.weixin` 可省略。`services.weixin.base_url` 默认使用 `https://ilinkai.weixin.qq.com`。微信远程控制首次收到消息时的工作目录使用 `atlas weixin serve` 进程启动时的当前目录。微信通道只允许扫码登录的微信用户本人控制 Atlas。
+当前项目处于早期阶段，不提供数据库迁移框架。schema 变化后请删除旧的 `~/.atlas/atlas.db` 重新生成。
 
 ## 使用
 
+常用命令：
+
 ```sh
 go run ./cmd/atlas
-go run ./cmd/atlas --session 20260608-153012-a1b2c3d4
 go run ./cmd/atlas run "读取 README 并总结"
-go run ./cmd/atlas run --model deepseek-v4-pro "用 Pro 模型分析这个问题"
+go run ./cmd/atlas run --model deepseek-v4-pro "分析这个问题"
 go run ./cmd/atlas run --session 20260608-153012-a1b2c3d4 "继续刚才的问题"
 go run ./cmd/atlas doctor
 go run ./cmd/atlas sessions
 go run ./cmd/atlas session show 20260608-153012-a1b2c3d4
-go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
 go run ./cmd/atlas session compact 20260608-153012-a1b2c3d4
+go run ./cmd/atlas session delete 20260608-153012-a1b2c3d4
+go run ./cmd/atlas acp
 go run ./cmd/atlas weixin login
 go run ./cmd/atlas weixin serve
 go run ./cmd/atlas weixin accounts
 go run ./cmd/atlas weixin logout <account-id>
-go run ./cmd/atlas acp
 go run ./cmd/atlas version
 ```
 
-裸 `atlas` 是交互模式入口；当前版本暂未实现 TUI，会提示使用 `atlas run`。`atlas run` 执行一次模型请求，并实时输出模型文本。
+裸 `atlas` 是交互模式入口；当前版本暂未实现 TUI，会提示使用 `atlas run`。
 
-`atlas doctor` 执行离线配置诊断，检查配置文件、Provider 配置摘要、agent 参数、本地 session 数据库、长期记忆表、Tavily 配置状态和平台默认 shell 可用性。它不会调用模型 Provider 或 Tavily API。
+`atlas run` 默认创建新 session。传入 `--session <id>` 时恢复或创建指定 session；传入 `--model <value>` 时，本轮使用该模型。session ID 只允许字母、数字、`.`、`_` 和 `-`。
 
-`atlas run` 默认创建新的 session ID 并保存本轮 transcript。传入 `--session <id>` 时，Atlas 会恢复这个 session；如果它不存在，则使用该 ID 创建新 session。传入 `--model <value>` 时，本轮使用该模型。session ID 只允许字母、数字、`.`、`_` 和 `-`。
+用户输入以 `!` 开头时，Atlas 跳过模型，直接把后续内容作为平台默认 shell 命令执行并返回输出，比如 `!pwd` 或 `!git status`。通过 shell 调 CLI 时，建议使用单引号或转义 `!`，避免 zsh 或 bash 历史展开改写命令：
 
-当用户输入以 `!` 开头时，Atlas 会跳过模型，直接把后续内容作为平台默认 shell 命令执行并返回输出。例如 `!pwd` 或 `!git status`。在 shell 中通过 CLI 调用时，建议使用单引号或转义 `!`，例如 `go run ./cmd/atlas run '!pwd'`，避免 zsh 或 bash 历史展开改写命令。该快捷执行路径同样会保存到 session，并适用于 CLI、ACP 和微信通道。
+```sh
+go run ./cmd/atlas run '!pwd'
+```
 
-`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表分页、删除、模型切换、思考强度切换、思维链流式更新、embedded text resource、session info/usage update、客户端 terminal 展示 `run_shell` 输出、文件工具 locations/diff 展示、长期记忆后台抽取和 `/compact` 上下文压缩命令。ACP `additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准；不支持 ACP auth、权限请求、MCP 连接和图片、音频、二进制资源输入。
+`atlas doctor` 只做离线诊断，检查配置、Provider 配置摘要、agent 参数、session 数据库、长期记忆表、Tavily 配置和默认 shell，不调用模型或 Tavily API。
 
-Atlas 使用 SQLite 保存本地会话和长期记忆。会话当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供会话全文搜索。长期记忆默认启用，Atlas 会在新增消息达到阈值、用户明确要求记住信息或上下文压缩后，把增量记忆抽取任务写入后台队列，长连接通道会持续处理队列并在后续请求中自动检索注入相关记忆。
+## 会话、压缩和记忆
 
-`atlas weixin login` 使用微信扫码登录并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本消息并调用本地 Atlas runtime，同时处理长期记忆后台队列；它拥有与本机运行 Atlas 相同的文件和 shell 权限。当前微信通道不支持群聊、媒体消息或添加其他控制人。
+Atlas 使用 SQLite 保存本地会话和长期记忆。默认路径是 `~/.atlas/atlas.db`。
 
-微信聊天中支持这些斜杠命令：
+会话支持创建、恢复、列表、查看、删除和上下文压缩。`/compact` 或 `atlas session compact <id>` 会把较早上下文摘要化，并保留最近消息继续对话。
+
+长期记忆默认启用。Atlas 会在新增消息达到阈值、用户明确要求记住信息或上下文压缩后，把增量抽取任务写入后台队列。ACP 和微信等长连接入口会处理队列，并在后续请求中自动检索相关记忆。
+
+## ACP
+
+`atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供 Zed 等客户端连接。
+
+当前支持：
+
+- session 创建、恢复、加载历史回放、列表分页、删除。
+- prompt、取消、关闭。
+- 模型切换、思考强度切换、思维链流式更新。
+- embedded text resource。
+- session info 和 usage update。
+- 客户端 terminal 展示 `run_shell` 输出。
+- 文件工具 locations/diff 展示。
+- 长期记忆后台 worker。
+- `/compact` slash command。
+
+`additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准。当前不支持 ACP auth、权限请求、MCP 连接，也不支持图片、音频、二进制资源输入。
+
+## 微信
+
+`atlas weixin login` 使用微信扫码登录，并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本消息并调用本地 Atlas runtime。
+
+微信通道拥有与本机 Atlas 进程相同的文件和 shell 权限。首次收到消息时，工作目录使用 `atlas weixin serve` 启动时的当前目录。当前只支持扫码登录的微信用户本人控制 Atlas，不支持群聊、媒体消息或添加其他控制人。
+
+微信聊天支持这些斜杠命令：
 
 - `/help`：查看命令。
 - `/status`：查看当前工作目录和 session。
@@ -118,12 +164,12 @@ Atlas 使用 SQLite 保存本地会话和长期记忆。会话当前支持按 ID
 
 ## 内置工具
 
-- `list_files`：列出目录中的文件和子目录，可按深度、glob 和 `.gitignore` 过滤。
+- `list_files`：列出文件和子目录，可按深度、glob 和 `.gitignore` 过滤。
 - `read_file`：读取文本文件。
-- `search_text`：在文件或目录中按字面量或正则搜索文本，可用 glob 限定文件。
-- `edit_file`：精确替换文件中的一个或多个唯一文本块。
+- `search_text`：按字面量或正则搜索文本。
+- `edit_file`：精确替换一个或多个唯一文本块。
 - `write_file`：写入文件内容。
 - `run_shell`：使用平台默认 shell 执行命令；Windows 使用 PowerShell，其他平台使用 `/bin/sh`。
 - `load_skill`：按名称加载本地 skill 指令。
-- `web_search`：使用 Tavily 搜索公网网页，仅在配置 `services.tavily.api_key` 后注册。
-- `web_fetch`：使用 Tavily 提取公网网页内容，仅在配置 `services.tavily.api_key` 后注册。
+- `web_search`：使用 Tavily 搜索公网网页，需要配置 `services.tavily.api_key`。
+- `web_fetch`：使用 Tavily 提取公网网页内容，需要配置 `services.tavily.api_key`。
