@@ -362,7 +362,7 @@ func TestRunTurnDirectShellRunsCommandWithoutProvider(t *testing.T) {
 	if !strings.Contains(result.Content, "direct-output") {
 		t.Fatalf("content = %q", result.Content)
 	}
-	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" || !strings.Contains(events[1].ToolCall.Arguments, workdir) {
+	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" || shellWorkdir(t, events[1].ToolCall.Arguments) != workdir {
 		t.Fatalf("events = %#v", events)
 	}
 	if events[2].Type != agent.EventToolFinished || events[2].ToolError || !strings.Contains(events[2].ToolResult, "direct-output") {
@@ -1181,6 +1181,15 @@ func shellEchoCommand(text string) string {
 		return "printf '%s\\n' " + quoteShell(text)
 	}
 	return "Write-Output " + quotePowerShell(text)
+}
+
+func shellWorkdir(t *testing.T, arguments string) string {
+	t.Helper()
+	args, err := tool.ParseShellArgs(arguments)
+	if err != nil {
+		t.Fatalf("ParseShellArgs() error = %v", err)
+	}
+	return args.Workdir
 }
 
 func shellFailCommand(text string, code int) string {

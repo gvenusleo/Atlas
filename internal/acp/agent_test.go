@@ -367,7 +367,8 @@ func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
-	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
+	cwd := testCWD(t)
+	a.setSession("sess", cwd, "test-model", "high", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -386,7 +387,7 @@ func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
 	if resp.StopReason != acpsdk.StopReasonEndTurn {
 		t.Fatalf("stop reason = %q", resp.StopReason)
 	}
-	if client.create.Command != "/bin/sh" || strings.Join(client.create.Args, " ") != "-c pwd" || client.create.Cwd == nil || *client.create.Cwd != "/tmp/work" {
+	if !terminalCreateMatches(client.create, "pwd", cwd) {
 		t.Fatalf("create request = %#v", client.create)
 	}
 	if !client.waitCalled || !client.outputCalled || !client.releaseCalled {
@@ -429,7 +430,8 @@ func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
-	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
+	cwd := testCWD(t)
+	a.setSession("sess", cwd, "test-model", "high", nil)
 	var updates []acpsdk.SessionNotification
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates = append(updates, update)
@@ -448,7 +450,7 @@ func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
 	if resp.StopReason != acpsdk.StopReasonEndTurn {
 		t.Fatalf("stop reason = %q", resp.StopReason)
 	}
-	if client.create.Command != "/bin/sh" || strings.Join(client.create.Args, " ") != "-c pwd" {
+	if !terminalCreateMatches(client.create, "pwd", cwd) {
 		t.Fatalf("create request = %#v", client.create)
 	}
 	if len(updates) != 3 || updates[1].Update.ToolCallUpdate == nil || updates[1].Update.ToolCallUpdate.Content[0].Terminal == nil || len(updates[2].Update.ToolCallUpdate.Content) != 0 {
@@ -495,7 +497,9 @@ func TestPromptUsesClientFileSystemForReadFileWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true}}
-	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	a.setSession("sess", cwd, "test-model", "high", nil)
 	client := &fakeFileClient{readContent: "line 2\nline 3\n"}
 	a.fileClient = client
 	var updates []acpsdk.SessionNotification
@@ -510,11 +514,11 @@ func TestPromptUsesClientFileSystemForReadFileWhenSupported(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Prompt() error = %v", err)
 	}
-	if client.read.Path != "/tmp/work/README.md" || client.read.Line == nil || *client.read.Line != 2 || client.read.Limit == nil || *client.read.Limit != 3 {
+	if client.read.Path != path || client.read.Line == nil || *client.read.Line != 2 || client.read.Limit == nil || *client.read.Limit != 3 {
 		t.Fatalf("read request = %#v", client.read)
 	}
 	finish := updates[1].Update.ToolCallUpdate
-	if finish == nil || finish.RawOutput != "line 2\nline 3\n" || len(finish.Locations) != 1 || finish.Locations[0].Path != "/tmp/work/README.md" || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 2 {
+	if finish == nil || finish.RawOutput != "line 2\nline 3\n" || len(finish.Locations) != 1 || finish.Locations[0].Path != path || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 2 {
 		t.Fatalf("tool finish = %#v", updates[1].Update)
 	}
 	if len(finish.Content) != 1 || finish.Content[0].Content == nil || finish.Content[0].Content.Content.Text.Text != "line 2\nline 3\n" {
@@ -526,7 +530,9 @@ func TestToolRunnerFallsBackWhenClientReadFileFails(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true}}
 	a.fileClient = &fakeFileClient{readErr: errors.New("resource not found")}
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
 	got, err := runner(context.Background(), model.ToolCall{
@@ -535,7 +541,8 @@ func TestToolRunnerFallsBackWhenClientReadFileFails(t *testing.T) {
 		Arguments: `{"path":"README.md","offset":2,"limit":3}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		if !strings.Contains(call.Arguments, `"/tmp/work/README.md"`) || !strings.Contains(call.Arguments, `"offset":2`) || !strings.Contains(call.Arguments, `"limit":3`) {
+		args, err := tool.ParseReadFileArgs(call.Arguments)
+		if err != nil || args.Path != path || args.Offset != 2 || args.Limit != 3 {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
 		return tool.RunResult{Content: "local"}, nil
@@ -547,7 +554,7 @@ func TestToolRunnerFallsBackWhenClientReadFileFails(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "local" || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != "/tmp/work/README.md" || got.Metadata.Locations[0].Line != 2 {
+	if got.Content != "local" || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path || got.Metadata.Locations[0].Line != 2 {
 		t.Fatalf("result = %#v", got)
 	}
 }
@@ -565,7 +572,9 @@ func TestPromptUsesClientFileSystemForWriteFileWhenSupported(t *testing.T) {
 	}
 	a := NewAgent(rt)
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
-	a.setSession("sess", "/tmp/work", "test-model", "high", nil)
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	a.setSession("sess", cwd, "test-model", "high", nil)
 	client := &fakeFileClient{readContent: "old\n"}
 	a.fileClient = client
 	var updates []acpsdk.SessionNotification
@@ -580,14 +589,14 @@ func TestPromptUsesClientFileSystemForWriteFileWhenSupported(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Prompt() error = %v", err)
 	}
-	if client.write.Path != "/tmp/work/README.md" || client.write.Content != "new\n" {
+	if client.write.Path != path || client.write.Content != "new\n" {
 		t.Fatalf("write request = %#v", client.write)
 	}
 	finish := updates[1].Update.ToolCallUpdate
-	if finish == nil || len(finish.Locations) != 1 || finish.Locations[0].Path != "/tmp/work/README.md" {
+	if finish == nil || len(finish.Locations) != 1 || finish.Locations[0].Path != path {
 		t.Fatalf("tool finish = %#v", updates[1].Update)
 	}
-	if len(finish.Content) != 1 || finish.Content[0].Diff == nil || finish.Content[0].Diff.Path != "/tmp/work/README.md" || finish.Content[0].Diff.OldText == nil || *finish.Content[0].Diff.OldText != "old\n" || finish.Content[0].Diff.NewText != "new\n" {
+	if len(finish.Content) != 1 || finish.Content[0].Diff == nil || finish.Content[0].Diff.Path != path || finish.Content[0].Diff.OldText == nil || *finish.Content[0].Diff.OldText != "old\n" || finish.Content[0].Diff.NewText != "new\n" {
 		t.Fatalf("tool diff = %#v", finish.Content)
 	}
 }
@@ -596,7 +605,9 @@ func TestToolRunnerFallsBackWhenClientWriteFileFails(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
 	a.fileClient = &fakeFileClient{writeErr: errors.New("resource not found")}
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
 	got, err := runner(context.Background(), model.ToolCall{
@@ -605,10 +616,11 @@ func TestToolRunnerFallsBackWhenClientWriteFileFails(t *testing.T) {
 		Arguments: `{"path":"README.md","content":"new\n"}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		if !strings.Contains(call.Arguments, `"/tmp/work/README.md"`) || !strings.Contains(call.Arguments, `"new\n"`) {
+		args, err := tool.ParseWriteFileArgs(call.Arguments)
+		if err != nil || args.Path != path || args.Content == nil || *args.Content != "new\n" {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{Content: "wrote /tmp/work/README.md"}, nil
+		return tool.RunResult{Content: "wrote " + path}, nil
 	})
 
 	if err != nil {
@@ -617,7 +629,7 @@ func TestToolRunnerFallsBackWhenClientWriteFileFails(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "wrote /tmp/work/README.md" || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != "/tmp/work/README.md" || got.Metadata.Diff == nil || got.Metadata.Diff.NewText != "new\n" {
+	if got.Content != "wrote "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path || got.Metadata.Diff == nil || got.Metadata.Diff.NewText != "new\n" {
 		t.Fatalf("result = %#v", got)
 	}
 }
@@ -627,7 +639,9 @@ func TestToolRunnerUsesClientFileSystemForEditFileWhenSupported(t *testing.T) {
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
 	client := &fakeFileClient{readContent: "old\n"}
 	a.fileClient = client
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
 	got, err := runner(context.Background(), model.ToolCall{
@@ -645,10 +659,10 @@ func TestToolRunnerUsesClientFileSystemForEditFileWhenSupported(t *testing.T) {
 	if fallbackCalled {
 		t.Fatal("fallback should not run")
 	}
-	if got.Content != "replaced 1 blocks in /tmp/work/README.md" {
+	if got.Content != "replaced 1 blocks in "+path {
 		t.Fatalf("content = %q", got.Content)
 	}
-	if client.read.Path != "/tmp/work/README.md" || client.write.Path != "/tmp/work/README.md" || client.write.Content != "new\n" {
+	if client.read.Path != path || client.write.Path != path || client.write.Content != "new\n" {
 		t.Fatalf("file client read=%#v write=%#v", client.read, client.write)
 	}
 	if got.Metadata.Diff == nil || got.Metadata.Diff.OldText == nil || *got.Metadata.Diff.OldText != "old\n" || got.Metadata.Diff.NewText != "new\n" {
@@ -660,7 +674,9 @@ func TestToolRunnerFallsBackWhenClientEditFileReadFails(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
 	a.fileClient = &fakeFileClient{readErr: errors.New("resource not found")}
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
 	got, err := runner(context.Background(), model.ToolCall{
@@ -669,10 +685,11 @@ func TestToolRunnerFallsBackWhenClientEditFileReadFails(t *testing.T) {
 		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		if !strings.Contains(call.Arguments, `"/tmp/work/README.md"`) || !strings.Contains(call.Arguments, `"old_text":"old"`) {
+		args, err := tool.ParseEditFileArgs(call.Arguments)
+		if err != nil || args.Path != path || len(args.Edits) != 1 || args.Edits[0].OldText != "old" {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{Content: "replaced 1 blocks in /tmp/work/README.md"}, nil
+		return tool.RunResult{Content: "replaced 1 blocks in " + path}, nil
 	})
 
 	if err != nil {
@@ -681,7 +698,7 @@ func TestToolRunnerFallsBackWhenClientEditFileReadFails(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "replaced 1 blocks in /tmp/work/README.md" || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != "/tmp/work/README.md" {
+	if got.Content != "replaced 1 blocks in "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
 		t.Fatalf("result = %#v", got)
 	}
 }
@@ -690,7 +707,9 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
 	a.fileClient = &fakeFileClient{readContent: "old\n", writeErr: errors.New("resource not found")}
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
 	got, err := runner(context.Background(), model.ToolCall{
@@ -699,10 +718,11 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		if !strings.Contains(call.Arguments, `"/tmp/work/README.md"`) || !strings.Contains(call.Arguments, `"old_text":"old"`) {
+		args, err := tool.ParseEditFileArgs(call.Arguments)
+		if err != nil || args.Path != path || len(args.Edits) != 1 || args.Edits[0].OldText != "old" {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{Content: "replaced 1 blocks in /tmp/work/README.md"}, nil
+		return tool.RunResult{Content: "replaced 1 blocks in " + path}, nil
 	})
 
 	if err != nil {
@@ -711,7 +731,7 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "replaced 1 blocks in /tmp/work/README.md" || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != "/tmp/work/README.md" {
+	if got.Content != "replaced 1 blocks in "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
 		t.Fatalf("result = %#v", got)
 	}
 }
@@ -720,7 +740,9 @@ func TestToolRunnerFallsBackForEmptyClientFileSystemWrite(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{WriteTextFile: true}}
 	a.fileClient = &fakeFileClient{}
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
 	got, err := runner(context.Background(), model.ToolCall{
@@ -729,10 +751,11 @@ func TestToolRunnerFallsBackForEmptyClientFileSystemWrite(t *testing.T) {
 		Arguments: `{"path":"README.md","content":""}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
-		if !strings.Contains(call.Arguments, `"/tmp/work/README.md"`) {
+		args, err := tool.ParseWriteFileArgs(call.Arguments)
+		if err != nil || args.Path != path {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{Content: "wrote /tmp/work/README.md"}, nil
+		return tool.RunResult{Content: "wrote " + path}, nil
 	})
 
 	if err != nil {
@@ -741,7 +764,7 @@ func TestToolRunnerFallsBackForEmptyClientFileSystemWrite(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "wrote /tmp/work/README.md" || got.Metadata.Diff == nil || got.Metadata.Diff.NewText != "" {
+	if got.Content != "wrote "+path || got.Metadata.Diff == nil || got.Metadata.Diff.NewText != "" {
 		t.Fatalf("result = %#v", got)
 	}
 }
@@ -1672,6 +1695,13 @@ func currentConfigValue(options []acpsdk.SessionConfigOption, id acpsdk.SessionC
 		}
 	}
 	return ""
+}
+
+func terminalCreateMatches(req acpsdk.CreateTerminalRequest, command, cwd string) bool {
+	spec := tool.DefaultShell()
+	wantArgs := append([]string(nil), spec.Args...)
+	wantArgs = append(wantArgs, command)
+	return req.Command == spec.Command && reflect.DeepEqual(req.Args, wantArgs) && req.Cwd != nil && *req.Cwd == cwd
 }
 
 func modelSessionConfigID() acpsdk.SessionConfigId {

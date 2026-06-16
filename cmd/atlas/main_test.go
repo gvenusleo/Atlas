@@ -307,8 +307,7 @@ func TestRunWithDependenciesRejectsDoctorUsage(t *testing.T) {
 }
 
 func TestRunWithDependenciesListsWeixinAccounts(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t)
 	store, err := weixin.NewStore("")
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -333,8 +332,7 @@ func TestRunWithDependenciesListsWeixinAccounts(t *testing.T) {
 }
 
 func TestRunWithDependenciesLogsOutWeixinAccount(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t)
 	store, err := weixin.NewStore("")
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -678,4 +676,12 @@ func quoteShell(text string) string {
 
 func quotePowerShell(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
+}
+
+func setTestHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
 }
