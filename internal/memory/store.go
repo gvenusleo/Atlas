@@ -352,7 +352,7 @@ limit ?`, ftsQuery, projectKey, limit)
 		return nil, err
 	}
 	if len(entries) == 0 {
-		return s.ListPromptEntries(ctx, cwd, limit)
+		return entries, nil
 	}
 	if err := s.markUsed(ctx, entries); err != nil {
 		return nil, err

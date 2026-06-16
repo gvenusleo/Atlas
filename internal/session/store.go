@@ -42,8 +42,13 @@ type Session struct {
 	LastInputTokens       int
 	LastOutputTokens      int
 	LastTotalTokens       int
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	// MemoryExtractedMessageCount 记录长期记忆后台任务已处理到的消息边界。
+	MemoryExtractedMessageCount int
+	MemoryExtractedInputTokens  int
+	MemoryExtractedHash         string
+	MemoryExtractedAt           time.Time
+	CreatedAt                   time.Time
+	UpdatedAt                   time.Time
 }
 
 // ListPage 描述一次 session 列表分页结果。
@@ -103,6 +108,10 @@ create table if not exists sessions (
 	last_input_tokens integer not null default 0,
 	last_output_tokens integer not null default 0,
 	last_total_tokens integer not null default 0,
+	memory_extracted_message_count integer not null default 0,
+	memory_extracted_input_tokens integer not null default 0,
+	memory_extracted_hash text not null default '',
+	memory_extracted_at text not null default '',
 	created_at text not null,
 	updated_at text not null
 );
@@ -243,7 +252,7 @@ func (s *Store) listSessionsPage(ctx context.Context, cwd, cursor string, limit 
 	}
 	args = append(args, queryLimit)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-select id, title, cwd, additional_directories_json, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
+select id, title, cwd, additional_directories_json, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, memory_extracted_message_count, memory_extracted_input_tokens, memory_extracted_hash, memory_extracted_at, created_at, updated_at
 from sessions
 %s
 order by updated_at desc, id
@@ -279,7 +288,7 @@ func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, erro
 		return Session{}, err
 	}
 	row := s.db.QueryRowContext(ctx, `
-select id, title, cwd, additional_directories_json, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at
+select id, title, cwd, additional_directories_json, context_summary, compacted_message_count, compacted_input_tokens, last_input_tokens, last_output_tokens, last_total_tokens, memory_extracted_message_count, memory_extracted_input_tokens, memory_extracted_hash, memory_extracted_at, created_at, updated_at
 from sessions
 where id = ?`, sessionID)
 	session, err := scanSession(row)
@@ -344,6 +353,50 @@ where id = ?`, summary, compactedMessageCount, compactedInputTokens, now, sessio
 		return err
 	}
 	if rows == 0 {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	return nil
+}
+
+// SaveMemoryExtraction 保存长期记忆后台抽取的处理边界。
+func (s *Store) SaveMemoryExtraction(ctx context.Context, sessionID string, messageCount int, inputTokens int, inputHash string) error {
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+	if messageCount < 0 {
+		return fmt.Errorf("memory extracted message count must be non-negative")
+	}
+	if inputTokens < 0 {
+		return fmt.Errorf("memory extracted input tokens must be non-negative")
+	}
+	inputHash = strings.TrimSpace(inputHash)
+	if inputHash == "" {
+		return fmt.Errorf("memory extracted hash is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	result, err := s.db.ExecContext(ctx, `
+update sessions
+set memory_extracted_message_count = ?,
+	memory_extracted_input_tokens = ?,
+	memory_extracted_hash = ?,
+	memory_extracted_at = ?
+where id = ?
+	and memory_extracted_message_count <= ?`, messageCount, inputTokens, inputHash, now, sessionID, messageCount)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 0 {
+		return nil
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `select count(*) from sessions where id = ?`, sessionID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
 		return fmt.Errorf("session %q not found", sessionID)
 	}
 	return nil
@@ -448,9 +501,9 @@ type sessionScanner interface {
 
 func scanSession(scanner sessionScanner) (Session, error) {
 	var session Session
-	var createdAt, updatedAt string
+	var createdAt, updatedAt, memoryExtractedAt string
 	var additionalDirectoriesJSON string
-	if err := scanner.Scan(&session.ID, &session.Title, &session.CWD, &additionalDirectoriesJSON, &session.ContextSummary, &session.CompactedMessageCount, &session.CompactedInputTokens, &session.LastInputTokens, &session.LastOutputTokens, &session.LastTotalTokens, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&session.ID, &session.Title, &session.CWD, &additionalDirectoriesJSON, &session.ContextSummary, &session.CompactedMessageCount, &session.CompactedInputTokens, &session.LastInputTokens, &session.LastOutputTokens, &session.LastTotalTokens, &session.MemoryExtractedMessageCount, &session.MemoryExtractedInputTokens, &session.MemoryExtractedHash, &memoryExtractedAt, &createdAt, &updatedAt); err != nil {
 		return Session{}, err
 	}
 	additionalDirectories, err := decodeAdditionalDirectories(additionalDirectoriesJSON)
@@ -465,6 +518,12 @@ func scanSession(scanner sessionScanner) (Session, error) {
 	session.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
 	if err != nil {
 		return Session{}, err
+	}
+	if memoryExtractedAt != "" {
+		session.MemoryExtractedAt, err = time.Parse(time.RFC3339Nano, memoryExtractedAt)
+		if err != nil {
+			return Session{}, err
+		}
 	}
 	return session, nil
 }

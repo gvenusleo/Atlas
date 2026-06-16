@@ -28,14 +28,28 @@ func TestStoreUpsertSearchAndPromptContext(t *testing.T) {
 		t.Fatalf("entry = %#v", entry)
 	}
 
-	results, err := store.Search(ctx, projectPath, "go test committing", 5)
+	results, err := store.Search(ctx, projectPath, "go test Atlas", 5)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
 	if len(results) != 1 || results[0].Content != entry.Content {
 		t.Fatalf("results = %#v", results)
 	}
-	contextText, err := store.PromptContext(ctx, projectPath, "commit")
+	missing, err := store.Search(ctx, projectPath, "unrelated query", 5)
+	if err != nil {
+		t.Fatalf("missing Search() error = %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("missing results = %#v", missing)
+	}
+	recent, err := store.Search(ctx, projectPath, "", 5)
+	if err != nil {
+		t.Fatalf("recent Search() error = %v", err)
+	}
+	if len(recent) != 1 || recent[0].Content != entry.Content {
+		t.Fatalf("recent results = %#v", recent)
+	}
+	contextText, err := store.PromptContext(ctx, projectPath, "test")
 	if err != nil {
 		t.Fatalf("PromptContext() error = %v", err)
 	}

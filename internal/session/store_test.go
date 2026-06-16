@@ -169,6 +169,50 @@ func TestStoreSaveCompactionPreservesFullTranscript(t *testing.T) {
 	}
 }
 
+func TestStoreSaveMemoryExtractionPreservesBoundary(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	messages := []model.Message{
+		{Role: model.RoleUser, Content: "remember tests"},
+		{Role: model.RoleAssistant, Content: "ok"},
+	}
+	if err := store.SaveTranscript(ctx, "work", "/tmp/work", messages); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	if err := store.SaveMemoryExtraction(ctx, "work", len(messages), 42, "hash-2"); err != nil {
+		t.Fatalf("SaveMemoryExtraction() error = %v", err)
+	}
+	info, err := store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.MemoryExtractedMessageCount != 2 || info.MemoryExtractedInputTokens != 42 || info.MemoryExtractedHash != "hash-2" || info.MemoryExtractedAt.IsZero() {
+		t.Fatalf("memory extraction = %#v", info)
+	}
+	if err := store.SaveMemoryExtraction(ctx, "work", 1, 10, "hash-1"); err != nil {
+		t.Fatalf("older SaveMemoryExtraction() error = %v", err)
+	}
+	info, err = store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.MemoryExtractedMessageCount != 2 || info.MemoryExtractedInputTokens != 42 || info.MemoryExtractedHash != "hash-2" {
+		t.Fatalf("memory extraction after older save = %#v", info)
+	}
+	if err := store.SaveTranscript(ctx, "work", "/tmp/work", append(messages, model.Message{Role: model.RoleUser, Content: "new"})); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	info, err = store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.MemoryExtractedMessageCount != 2 || info.MemoryExtractedInputTokens != 42 || info.MemoryExtractedHash != "hash-2" {
+		t.Fatalf("memory extraction after transcript save = %#v", info)
+	}
+}
+
 func TestStoreSaveTranscriptPersistsAdditionalDirectories(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)

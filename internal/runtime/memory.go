@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/liuyuxin/atlas/internal/compact"
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
@@ -21,9 +22,13 @@ const (
 	memoryJobLease        = 2 * time.Minute
 	memoryPromptMaxRunes  = 40000
 	memorySummaryMaxRunes = 16000
+	// 记忆抽取按增量触发，避免每轮对话都消耗后台模型 token。
+	memoryExtractMinNewMessages    = 6
+	memoryExtractMinNewInputTokens = 4000
 )
 
 var memoryWorkerIDPrefix = "atlas-memory-"
+var memoryExtractTriggerRatios = []float64{0.4, 0.6, 0.8}
 
 // ProcessMemoryJobs 处理有限数量的后台记忆任务，主要供测试和短生命周期入口复用。
 func (r *Runtime) ProcessMemoryJobs(ctx context.Context, limit int) (int, error) {
@@ -136,7 +141,7 @@ type memorySummaryOutput struct {
 	Summary string `json:"summary"`
 }
 
-// processMemoryExtractJob 从完整会话中抽取长期记忆，并按受影响作用域入队摘要刷新。
+// processMemoryExtractJob 从上次处理边界后的增量消息抽取长期记忆。
 func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.Store, sessionStore *session.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
 	info, err := sessionStore.GetSession(ctx, job.SessionID)
 	if err != nil {
@@ -153,6 +158,22 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	if len(messages) == 0 {
 		return nil
 	}
+	inputTokens := compact.EstimateMessages(messages)
+	inputHash := memory.TranscriptHash(messages)
+	if info.MemoryExtractedHash == inputHash {
+		return nil
+	}
+	start := info.MemoryExtractedMessageCount
+	if start < 0 {
+		start = 0
+	}
+	if start > len(messages) {
+		start = len(messages)
+	}
+	newMessages := messages[start:]
+	if len(newMessages) == 0 {
+		return sessionStore.SaveMemoryExtraction(ctx, job.SessionID, len(messages), inputTokens, inputHash)
+	}
 	projectKey, projectPath := memory.ProjectIdentity(info.CWD)
 	existing, err := loadExistingMemories(ctx, memStore, projectKey, 30)
 	if err != nil {
@@ -160,7 +181,7 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	}
 	resp, err := provider.Stream(ctx, model.ChatRequest{
 		System:         memoryExtractSystemPrompt(),
-		Messages:       []model.Message{{Role: model.RoleUser, Content: memoryExtractPrompt(info, messages, existing)}},
+		Messages:       []model.Message{{Role: model.RoleUser, Content: memoryExtractPrompt(info, newMessages, existing, start)}},
 		MaxTokens:      summaryMaxTokens(selectedModel.MaxTokens),
 		Temperature:    0,
 		ResponseFormat: model.ResponseFormatJSONObject,
@@ -214,7 +235,7 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 			return err
 		}
 	}
-	return nil
+	return sessionStore.SaveMemoryExtraction(ctx, job.SessionID, len(messages), inputTokens, inputHash)
 }
 
 // processMemorySummarizeJob 将某个作用域的 active 记忆压成短摘要，供后续提示词注入。
@@ -275,9 +296,22 @@ func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfi
 	return contextText
 }
 
-// enqueueMemoryExtract 以 best-effort 方式安排会话记忆抽取，失败时不影响主 turn。
-func (r *Runtime) enqueueMemoryExtract(ctx context.Context, cfg config.SessionConfig, sessionID, cwd string, messages []model.Message, model string) {
+type memoryExtractTriggerOptions struct {
+	Force         bool
+	ContextWindow int
+}
+
+// maybeEnqueueMemoryExtract 按增量阈值安排记忆抽取，失败时不影响主 turn。
+func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.SessionConfig, info session.Session, sessionID, cwd string, messages []model.Message, model string, opts memoryExtractTriggerOptions) {
 	if len(messages) == 0 {
+		return
+	}
+	inputTokens := compact.EstimateMessages(messages)
+	inputHash := memory.TranscriptHash(messages)
+	if info.MemoryExtractedHash == inputHash {
+		return
+	}
+	if !opts.Force && !shouldEnqueueMemoryExtract(info, messages, inputTokens, opts.ContextWindow) {
 		return
 	}
 	store, err := openMemoryStore(ctx, cfg)
@@ -285,7 +319,64 @@ func (r *Runtime) enqueueMemoryExtract(ctx context.Context, cfg config.SessionCo
 		return
 	}
 	defer store.Close()
-	_ = store.EnqueueSessionExtract(ctx, sessionID, cwd, memory.TranscriptHash(messages), model)
+	_ = store.EnqueueSessionExtract(ctx, sessionID, cwd, inputHash, model)
+}
+
+// shouldEnqueueMemoryExtract 判断新增 transcript 是否达到后台记忆抽取阈值。
+func shouldEnqueueMemoryExtract(info session.Session, messages []model.Message, inputTokens, contextWindow int) bool {
+	start := info.MemoryExtractedMessageCount
+	if start < 0 {
+		start = 0
+	}
+	if start > len(messages) {
+		start = len(messages)
+	}
+	if len(messages)-start >= memoryExtractMinNewMessages {
+		return true
+	}
+	if inputTokens-info.MemoryExtractedInputTokens >= memoryExtractMinNewInputTokens {
+		return true
+	}
+	if crossedMemoryExtractRatio(info.MemoryExtractedInputTokens, inputTokens, contextWindow) {
+		return true
+	}
+	return containsExplicitMemoryDirective(messages[start:])
+}
+
+// crossedMemoryExtractRatio 判断上下文用量是否跨过固定水位档。
+func crossedMemoryExtractRatio(previousTokens, currentTokens, contextWindow int) bool {
+	if previousTokens < 0 {
+		previousTokens = 0
+	}
+	if currentTokens <= previousTokens || contextWindow <= 0 {
+		return false
+	}
+	for _, ratio := range memoryExtractTriggerRatios {
+		if ratio <= 0 {
+			continue
+		}
+		threshold := int(float64(contextWindow) * ratio)
+		if threshold > 0 && previousTokens < threshold && currentTokens >= threshold {
+			return true
+		}
+	}
+	return false
+}
+
+// containsExplicitMemoryDirective 检测用户是否明确要求记录长期偏好或约束。
+func containsExplicitMemoryDirective(messages []model.Message) bool {
+	for _, msg := range messages {
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		text := strings.ToLower(msg.Content)
+		for _, marker := range []string{"remember", "always", "never", "记住", "以后", "每次", "必须", "不要"} {
+			if strings.Contains(text, marker) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func configuredMemoryModel(cfg config.Config, sessionModel string) string {
@@ -329,13 +420,20 @@ func loadExistingMemories(ctx context.Context, store *memory.Store, projectKey s
 	return entries, nil
 }
 
-// memoryExtractPrompt 序列化现有记忆和完整会话，供模型判断增删改。
-func memoryExtractPrompt(info session.Session, messages []model.Message, existing []memory.Entry) string {
+// memoryExtractPrompt 序列化现有记忆和新增消息，供模型判断增删改。
+func memoryExtractPrompt(info session.Session, messages []model.Message, existing []memory.Entry, previousMessageCount int) string {
 	var builder strings.Builder
 	builder.WriteString("Session ID: ")
 	builder.WriteString(info.ID)
 	builder.WriteString("\nProject path: ")
 	builder.WriteString(filepath.ToSlash(info.CWD))
+	builder.WriteString("\nPreviously extracted message count: ")
+	builder.WriteString(fmt.Sprintf("%d", previousMessageCount))
+	if strings.TrimSpace(info.ContextSummary) != "" {
+		builder.WriteString("\n\nCurrent compacted context summary:\n")
+		builder.WriteString(trimRunes(info.ContextSummary, 4000))
+		builder.WriteString("\n")
+	}
 	builder.WriteString("\n\nExisting memories with fingerprints:\n")
 	if len(existing) == 0 {
 		builder.WriteString("(none)\n")
@@ -352,7 +450,7 @@ func memoryExtractPrompt(info session.Session, messages []model.Message, existin
 			builder.WriteString("\n")
 		}
 	}
-	builder.WriteString("\nCompleted transcript:\n")
+	builder.WriteString("\nNew transcript messages since the previous memory extraction:\n")
 	builder.WriteString(formatMemoryTranscript(messages, memoryPromptMaxRunes))
 	return builder.String()
 }

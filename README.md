@@ -98,7 +98,7 @@ go run ./cmd/atlas version
 
 `atlas acp` 通过 stdin/stdout 启动 Agent Client Protocol 服务，供支持 ACP 的编辑器或客户端连接。当前支持 session 创建、prompt、取消、关闭、恢复、加载历史回放、列表分页、删除、模型切换、思考强度切换、思维链流式更新、embedded text resource、session info/usage update、客户端 terminal 展示 `run_shell` 输出、文件工具 locations/diff 展示、长期记忆后台抽取和 `/compact` 上下文压缩命令。ACP `additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准；不支持 ACP auth、权限请求、MCP 连接和图片、音频、二进制资源输入。
 
-Atlas 使用 SQLite 保存本地会话和长期记忆。会话当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供会话全文搜索。长期记忆默认启用，Atlas 会在会话保存后把记忆抽取任务写入后台队列，长连接通道会持续处理队列并在后续请求中自动检索注入相关记忆。
+Atlas 使用 SQLite 保存本地会话和长期记忆。会话当前支持按 ID 恢复、列出最近会话、查看会话详情、删除会话和压缩会话上下文；不提供会话全文搜索。长期记忆默认启用，Atlas 会在新增消息达到阈值、用户明确要求记住信息或上下文压缩后，把增量记忆抽取任务写入后台队列，长连接通道会持续处理队列并在后续请求中自动检索注入相关记忆。
 
 `atlas weixin login` 使用微信扫码登录并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本消息并调用本地 Atlas runtime，同时处理长期记忆后台队列；它拥有与本机运行 Atlas 相同的文件和 shell 权限。当前微信通道不支持群聊、媒体消息或添加其他控制人。
 

@@ -226,7 +226,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		})
 		if err == nil && cfg.Memory.IsEnabled() {
-			r.enqueueMemoryExtract(ctx, cfg.Session, sessionID, cwd, savedMessages, configuredMemoryModel(cfg, ""))
+			r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, savedMessages, configuredMemoryModel(cfg, ""), memoryExtractTriggerOptions{})
 		}
 		return result, err
 	}
@@ -261,6 +261,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if cfg.Memory.IsEnabled() {
 		memoryContext = r.loadMemoryContext(ctx, cfg.Session, cwd, opts.Prompt)
 	}
+	memoryForceExtract := false
 	if resumeSession {
 		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), opts.Prompt, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
 			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
@@ -271,6 +272,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 				sessionInfo.ContextSummary = result.Summary
 				sessionInfo.CompactedMessageCount = result.CompactCount
 				sessionInfo.CompactedInputTokens = result.TokensBefore
+				memoryForceExtract = true
 			}
 		}
 	}
@@ -318,7 +320,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		return TurnResult{}, err
 	}
 	if cfg.Memory.IsEnabled() {
-		r.enqueueMemoryExtract(ctx, cfg.Session, sessionID, cwd, fullMessages, configuredMemoryModel(cfg, selectedModel.Value))
+		r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
+			Force:         memoryForceExtract,
+			ContextWindow: selectedModel.ContextWindow,
+		})
 	}
 	return TurnResult{
 		SessionID:     sessionID,
@@ -498,6 +503,15 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	}
 	if err := store.SaveCompaction(ctx, sessionID, summary, plan.CompactCount, plan.TokensBefore); err != nil {
 		return CompactResult{}, err
+	}
+	if cfg.Memory.IsEnabled() {
+		info.ContextSummary = summary
+		info.CompactedMessageCount = plan.CompactCount
+		info.CompactedInputTokens = plan.TokensBefore
+		r.maybeEnqueueMemoryExtract(ctx, cfg.Session, info, sessionID, info.CWD, messages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
+			Force:         true,
+			ContextWindow: selectedModel.ContextWindow,
+		})
 	}
 	return CompactResult{
 		SessionID:     sessionID,

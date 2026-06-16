@@ -153,7 +153,7 @@ Transcript 不负责持久化、压缩或摘要。`internal/session` 负责把 t
 
 `internal/memory` 负责长期记忆条目、摘要、FTS 检索和后台任务队列。长期记忆与 session 共用 `session.db_path` 指向的 SQLite 数据库，但由独立表维护。
 
-长期记忆默认启用，可通过配置关闭。`internal/runtime` 在保存 turn 后入队会话抽取任务，在构造系统提示词前检索当前请求相关的 global/project 记忆并注入。ACP 和微信等长连接入口负责启动后台 worker；worker 使用配置的 memory 模型或产生会话的模型、无工具调用、JSON 输出模式完成记忆抽取和摘要刷新。
+长期记忆默认启用，可通过配置关闭。`internal/runtime` 在保存 turn 后按增量阈值、明确记忆指令或上下文压缩触发会话抽取任务，在构造系统提示词前检索当前请求相关的 global/project 记忆并注入。ACP 和微信等长连接入口负责启动后台 worker；worker 使用配置的 memory 模型或产生会话的模型、无工具调用、JSON 输出模式只抽取上次处理边界后的新增消息，并刷新受影响作用域的摘要。
 
 记忆分类保持极简：`instruction` 表示长期用户约束，`fact` 表示项目事实，`workflow` 表示可复用操作流程。记忆内容可能过期，模型仍应以工具读取到的当前文件和命令结果为准。
 

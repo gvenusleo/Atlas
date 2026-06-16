@@ -14,6 +14,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
+	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
 )
@@ -728,6 +729,85 @@ func TestRunTurnEnqueuesMemoryExtract(t *testing.T) {
 	}
 }
 
+func TestRunTurnSkipsMemoryExtractBelowThreshold(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "hello",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	memStore := openTestMemoryStore(t, dbPath)
+	if job, ok, err := memStore.ClaimNextJob(context.Background(), "test-worker", time.Minute); err != nil || ok {
+		t.Fatalf("job = %#v, ok = %v, err = %v", job, ok, err)
+	}
+}
+
+func TestShouldEnqueueMemoryExtract(t *testing.T) {
+	tests := []struct {
+		name          string
+		info          session.Session
+		messages      []model.Message
+		inputTokens   int
+		contextWindow int
+		want          bool
+	}{
+		{
+			name:        "short unrelated turn",
+			messages:    []model.Message{{Role: model.RoleUser, Content: "hello"}, {Role: model.RoleAssistant, Content: "ok"}},
+			inputTokens: 20,
+			want:        false,
+		},
+		{
+			name: "message threshold",
+			messages: []model.Message{
+				{Role: model.RoleUser, Content: "one"},
+				{Role: model.RoleAssistant, Content: "two"},
+				{Role: model.RoleUser, Content: "three"},
+				{Role: model.RoleAssistant, Content: "four"},
+				{Role: model.RoleUser, Content: "five"},
+				{Role: model.RoleAssistant, Content: "six"},
+			},
+			inputTokens: 60,
+			want:        true,
+		},
+		{
+			name:        "token threshold",
+			info:        session.Session{MemoryExtractedMessageCount: 2, MemoryExtractedInputTokens: 100},
+			messages:    []model.Message{{Role: model.RoleUser, Content: "old"}, {Role: model.RoleAssistant, Content: "old"}, {Role: model.RoleUser, Content: "new"}},
+			inputTokens: 4100,
+			want:        true,
+		},
+		{
+			name:          "context ratio threshold",
+			info:          session.Session{MemoryExtractedInputTokens: 3900},
+			messages:      []model.Message{{Role: model.RoleUser, Content: "new"}},
+			inputTokens:   4000,
+			contextWindow: 10000,
+			want:          true,
+		},
+		{
+			name:        "explicit memory directive",
+			messages:    []model.Message{{Role: model.RoleUser, Content: "please remember this workflow"}},
+			inputTokens: 30,
+			want:        true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldEnqueueMemoryExtract(tt.info, tt.messages, tt.inputTokens, tt.contextWindow)
+			if got != tt.want {
+				t.Fatalf("shouldEnqueueMemoryExtract() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProcessMemoryJobsExtractsAndSummarizes(t *testing.T) {
 	provider := &sequenceProvider{
 		responses: []model.ChatResponse{
@@ -762,12 +842,61 @@ func TestProcessMemoryJobsExtractsAndSummarizes(t *testing.T) {
 	}
 
 	memStore := openTestMemoryStore(t, dbPath)
-	contextText, err := memStore.PromptContext(context.Background(), "/tmp/atlas-work", "commit")
+	contextText, err := memStore.PromptContext(context.Background(), "/tmp/atlas-work", "test")
 	if err != nil {
 		t.Fatalf("PromptContext() error = %v", err)
 	}
 	if !strings.Contains(contextText, "run go test ./...") {
 		t.Fatalf("context = %q", contextText)
+	}
+}
+
+func TestProcessMemoryJobsExtractsOnlyNewMessages(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "first normal reply"},
+			{Content: `{"entries":[],"archive_fingerprints":[]}`},
+			{Content: "second normal reply"},
+			{Content: `{"entries":[],"archive_fingerprints":[]}`},
+		},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "remember alpha detail",
+	}); err != nil {
+		t.Fatalf("first RunTurn() error = %v", err)
+	}
+	if processed, err := r.ProcessMemoryJobs(context.Background(), 1); err != nil || processed != 1 {
+		t.Fatalf("first ProcessMemoryJobs() processed = %d, err = %v", processed, err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "remember beta detail",
+	}); err != nil {
+		t.Fatalf("second RunTurn() error = %v", err)
+	}
+	if processed, err := r.ProcessMemoryJobs(context.Background(), 1); err != nil || processed != 1 {
+		t.Fatalf("second ProcessMemoryJobs() processed = %d, err = %v", processed, err)
+	}
+	if len(provider.requests) != 4 {
+		t.Fatalf("requests = %d", len(provider.requests))
+	}
+	secondExtractPrompt := provider.requests[3].Messages[0].Content
+	if strings.Contains(secondExtractPrompt, "alpha detail") {
+		t.Fatalf("second extract prompt contains old message: %q", secondExtractPrompt)
+	}
+	if !strings.Contains(secondExtractPrompt, "beta detail") {
+		t.Fatalf("second extract prompt missing new message: %q", secondExtractPrompt)
+	}
+
+	store := openTestSessionStore(t, dbPath)
+	info, err := store.GetSession(context.Background(), "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.MemoryExtractedMessageCount != 4 || info.MemoryExtractedHash == "" {
+		t.Fatalf("memory extraction boundary = %#v", info)
 	}
 }
 
@@ -781,10 +910,10 @@ func TestProcessMemoryJobsContinuesAfterFailedJob(t *testing.T) {
 		},
 	}
 	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "bad", Prompt: "first"}); err != nil {
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "bad", Prompt: "remember first"}); err != nil {
 		t.Fatalf("bad RunTurn() error = %v", err)
 	}
-	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "good", Prompt: "second"}); err != nil {
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "good", Prompt: "remember second"}); err != nil {
 		t.Fatalf("good RunTurn() error = %v", err)
 	}
 
@@ -822,7 +951,7 @@ func TestMemoryUsesConfiguredModel(t *testing.T) {
 		cfg.Memory.Model = "other-model"
 		return cfg, nil
 	}
-	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "hello"}); err != nil {
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "remember model preference"}); err != nil {
 		t.Fatalf("RunTurn() error = %v", err)
 	}
 	if _, err := r.ProcessMemoryJobs(context.Background(), 2); err != nil {
@@ -968,6 +1097,19 @@ func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, 
 func openTestMemoryStore(t *testing.T, dbPath string) *memory.Store {
 	t.Helper()
 	store, err := memory.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.EnsureSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func openTestSessionStore(t *testing.T, dbPath string) *session.Store {
+	t.Helper()
+	store, err := session.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
