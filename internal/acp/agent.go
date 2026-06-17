@@ -23,12 +23,13 @@ import (
 )
 
 const (
-	defaultSessionListLimit       = 100
-	modelConfigID                 = "model"
-	reasoningEffortConfigID       = "reasoning_effort"
-	defaultReasoningEffortName    = "Default"
-	compactCommandName            = "compact"
-	availableCommandsRefreshDelay = 0
+	defaultSessionListLimit    = 100
+	modelConfigID              = "model"
+	reasoningEffortConfigID    = "reasoning_effort"
+	defaultReasoningEffortName = "Default"
+	compactCommandName         = "compact"
+	postResponseUpdateDelay    = 50 * time.Millisecond
+	postResponseUpdateTimeout  = 2 * time.Second
 )
 
 var errClientTerminalUnavailable = errors.New("client terminal unavailable")
@@ -189,14 +190,9 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
+	now := time.Now()
 	a.setSession(sessionID, params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
-	if err := a.sendAvailableCommands(ctx, acpsdk.SessionId(sessionID)); err != nil {
-		return acpsdk.NewSessionResponse{}, err
-	}
-	if err := a.sendSessionInfoUpdate(ctx, acpsdk.SessionId(sessionID), "", time.Now()); err != nil {
-		return acpsdk.NewSessionResponse{}, err
-	}
-	a.refreshAvailableCommandsLater(acpsdk.SessionId(sessionID))
+	a.sendSessionMetadataLater(acpsdk.SessionId(sessionID), "", now, 0, 0)
 	return acpsdk.NewSessionResponse{
 		SessionId:     acpsdk.SessionId(sessionID),
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
@@ -246,12 +242,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	if turnCtx.Err() != nil {
 		return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}, nil
 	}
-	if err := a.sendStoredSessionInfoUpdate(ctx, params.SessionId); err != nil {
-		return acpsdk.PromptResponse{}, err
-	}
-	if err := a.sendUsageUpdate(ctx, params.SessionId, usageUsed(result.Usage), result.ContextWindow); err != nil {
-		return acpsdk.PromptResponse{}, err
-	}
+	a.sendStoredSessionMetadata(ctx, params.SessionId, usageUsed(result.Usage), result.ContextWindow)
 	response := acpsdk.PromptResponse{
 		StopReason: acpsdk.StopReasonEndTurn,
 		Usage:      acpUsage(result.Usage),
@@ -290,18 +281,7 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 		a.deleteSessionState(string(params.SessionId))
 		return acpsdk.LoadSessionResponse{}, err
 	}
-	if err := a.sendAvailableCommands(ctx, params.SessionId); err != nil {
-		a.deleteSessionState(string(params.SessionId))
-		return acpsdk.LoadSessionResponse{}, err
-	}
-	if err := a.sendSessionInfoUpdate(ctx, params.SessionId, sess.Title, sess.UpdatedAt); err != nil {
-		a.deleteSessionState(string(params.SessionId))
-		return acpsdk.LoadSessionResponse{}, err
-	}
-	if err := a.sendUsageUpdate(ctx, params.SessionId, sess.LastTotalTokens, modelContextWindow(models, models.Default)); err != nil {
-		a.deleteSessionState(string(params.SessionId))
-		return acpsdk.LoadSessionResponse{}, err
-	}
+	a.sendSessionMetadataLater(params.SessionId, sess.Title, sess.UpdatedAt, sess.LastTotalTokens, modelContextWindow(models, models.Default))
 	return acpsdk.LoadSessionResponse{
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
@@ -337,16 +317,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	}
 	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
 	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
-	if err := a.sendAvailableCommands(ctx, params.SessionId); err != nil {
-		return acpsdk.ResumeSessionResponse{}, err
-	}
-	if err := a.sendSessionInfoUpdate(ctx, params.SessionId, sess.Title, sess.UpdatedAt); err != nil {
-		return acpsdk.ResumeSessionResponse{}, err
-	}
-	if err := a.sendUsageUpdate(ctx, params.SessionId, sess.LastTotalTokens, modelContextWindow(models, models.Default)); err != nil {
-		return acpsdk.ResumeSessionResponse{}, err
-	}
-	a.refreshAvailableCommandsLater(params.SessionId)
+	a.sendSessionMetadataLater(params.SessionId, sess.Title, sess.UpdatedAt, sess.LastTotalTokens, modelContextWindow(models, models.Default))
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
 	}, nil
@@ -726,28 +697,34 @@ func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.Sess
 	})
 }
 
-// refreshAvailableCommandsLater 在 new/session 响应返回后补发命令，兼容先注册 session 后接收通知的客户端。
-func (a *Agent) refreshAvailableCommandsLater(sessionID acpsdk.SessionId) {
+// sendSessionMetadataLater 在响应返回后补发非关键 session 元数据，避免客户端尚未注册会话。
+func (a *Agent) sendSessionMetadataLater(sessionID acpsdk.SessionId, title string, updatedAt time.Time, used, size int) {
 	if a.sendUpdate == nil {
 		return
 	}
 	go func() {
-		if availableCommandsRefreshDelay > 0 {
-			timer := time.NewTimer(availableCommandsRefreshDelay)
-			defer timer.Stop()
-			<-timer.C
+		timer := time.NewTimer(postResponseUpdateDelay)
+		defer timer.Stop()
+		<-timer.C
+		if _, ok := a.getSession(string(sessionID)); !ok {
+			return
 		}
-		_ = a.sendAvailableCommands(context.Background(), sessionID)
+		ctx, cancel := context.WithTimeout(context.Background(), postResponseUpdateTimeout)
+		defer cancel()
+		_ = a.sendAvailableCommands(ctx, sessionID)
+		_ = a.sendSessionInfoUpdate(ctx, sessionID, title, updatedAt)
+		_ = a.sendUsageUpdate(ctx, sessionID, used, size)
 	}()
 }
 
-// sendStoredSessionInfoUpdate 从本地 session 记录发送最新标题和更新时间。
-func (a *Agent) sendStoredSessionInfoUpdate(ctx context.Context, sessionID acpsdk.SessionId) error {
+// sendStoredSessionMetadata 尽力发送 turn 结束后的标题和 usage。
+func (a *Agent) sendStoredSessionMetadata(ctx context.Context, sessionID acpsdk.SessionId, used, size int) {
 	info, _, err := a.rt.ShowSession(ctx, string(sessionID))
 	if err != nil {
-		return err
+		return
 	}
-	return a.sendSessionInfoUpdate(ctx, sessionID, info.Title, info.UpdatedAt)
+	_ = a.sendSessionInfoUpdate(ctx, sessionID, info.Title, info.UpdatedAt)
+	_ = a.sendUsageUpdate(ctx, sessionID, used, size)
 }
 
 // sendSessionInfoUpdate 通知客户端 session 标题或更新时间变化。
@@ -826,12 +803,7 @@ func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId
 	if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateAgentMessageText(message)); err != nil {
 		return acpsdk.PromptResponse{}, err
 	}
-	if err := a.sendStoredSessionInfoUpdate(ctx, sessionID); err != nil {
-		return acpsdk.PromptResponse{}, err
-	}
-	if err := a.sendUsageUpdate(ctx, sessionID, result.TokensAfter, result.ContextWindow); err != nil {
-		return acpsdk.PromptResponse{}, err
-	}
+	a.sendStoredSessionMetadata(ctx, sessionID, result.TokensAfter, result.ContextWindow)
 	return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
 }
 

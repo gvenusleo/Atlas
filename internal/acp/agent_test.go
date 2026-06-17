@@ -131,7 +131,7 @@ func TestNewSessionStoresAdditionalDirectories(t *testing.T) {
 func TestNewSessionSendsCompactCommand(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	cwd := testCWD(t)
-	updates := make(chan acpsdk.SessionNotification, 3)
+	updates := make(chan acpsdk.SessionNotification, 2)
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
 		updates <- update
 		return nil
@@ -143,7 +143,6 @@ func TestNewSessionSendsCompactCommand(t *testing.T) {
 	}
 	first := receiveSessionUpdate(t, updates)
 	second := receiveSessionUpdate(t, updates)
-	third := receiveSessionUpdate(t, updates)
 	if first.SessionId != resp.SessionId {
 		t.Fatalf("session id = %#v", first)
 	}
@@ -157,9 +156,24 @@ func TestNewSessionSendsCompactCommand(t *testing.T) {
 	if second.Update.SessionInfoUpdate == nil || second.Update.SessionInfoUpdate.UpdatedAt == nil {
 		t.Fatalf("session info update = %#v", second.Update)
 	}
-	if third.SessionId != resp.SessionId || third.Update.AvailableCommandsUpdate == nil || len(third.Update.AvailableCommandsUpdate.AvailableCommands) != 1 || third.Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
-		t.Fatalf("refreshed commands update = %#v", third)
+}
+
+func TestNewSessionDoesNotFailWhenPostResponseUpdateFails(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	called := make(chan struct{}, 3)
+	a.sendUpdate = func(context.Context, acpsdk.SessionNotification) error {
+		called <- struct{}{}
+		return errors.New("send failed because receiver is gone")
 	}
+
+	resp, err := a.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: testCWD(t)})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	if resp.SessionId == "" {
+		t.Fatalf("session id = %q", resp.SessionId)
+	}
+	receiveSignal(t, called)
 }
 
 func receiveSessionUpdate(t *testing.T, updates <-chan acpsdk.SessionNotification) acpsdk.SessionNotification {
@@ -170,6 +184,15 @@ func receiveSessionUpdate(t *testing.T, updates <-chan acpsdk.SessionNotificatio
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for session update")
 		return acpsdk.SessionNotification{}
+	}
+}
+
+func receiveSignal(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for signal")
 	}
 }
 
@@ -291,6 +314,38 @@ func TestPromptSendsSessionInfoUsageAndMessageID(t *testing.T) {
 	usage := updates[1].Update.UsageUpdate
 	if usage == nil || usage.Used != 15 || usage.Size != 100 {
 		t.Fatalf("usage update = %#v", updates[1].Update)
+	}
+}
+
+func TestPromptIgnoresSessionMetadataUpdateFailure(t *testing.T) {
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: "/tmp/work", Title: "hello", UpdatedAt: time.Now()},
+		},
+	}
+	rt.run = func(_ context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
+		return atlasruntime.TurnResult{
+			SessionID:     opts.SessionID,
+			Content:       "done",
+			Usage:         model.Usage{TotalTokens: 15},
+			ContextWindow: 100,
+		}, nil
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+	a.sendUpdate = func(context.Context, acpsdk.SessionNotification) error {
+		return errors.New("send failed because receiver is gone")
+	}
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != acpsdk.StopReasonEndTurn || resp.Usage == nil || resp.Usage.TotalTokens != 15 {
+		t.Fatalf("response = %#v", resp)
 	}
 }
 
@@ -1187,7 +1242,7 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	cwd := testCWD(t)
 	rt := &fakeRuntime{
 		showSessions: map[string]session.Session{
-			"sess": {ID: "sess", CWD: cwd, UpdatedAt: now},
+			"sess": {ID: "sess", CWD: cwd, UpdatedAt: now, LastTotalTokens: 42},
 		},
 		sessionsForCWD: []session.Session{
 			{ID: "sess", Title: "hello", CWD: cwd, UpdatedAt: now},
@@ -1223,8 +1278,8 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	if second.Update.SessionInfoUpdate == nil {
 		t.Fatalf("session info update = %#v", second.Update)
 	}
-	if third.Update.AvailableCommandsUpdate == nil || third.Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
-		t.Fatalf("refreshed commands update = %#v", third.Update)
+	if third.Update.UsageUpdate == nil {
+		t.Fatalf("usage update = %#v", third.Update)
 	}
 	list, err := a.ListSessions(context.Background(), acpsdk.ListSessionsRequest{Cwd: &cwd})
 	if err != nil {
@@ -1249,6 +1304,33 @@ func TestResumeListCloseAndDeleteSessions(t *testing.T) {
 	if !reflect.DeepEqual(rt.deleted, []string{"sess"}) {
 		t.Fatalf("deleted = %#v", rt.deleted)
 	}
+}
+
+func TestResumeSessionDoesNotFailWhenPostResponseUpdateFails(t *testing.T) {
+	cwd := testCWD(t)
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: cwd, UpdatedAt: time.Now(), LastTotalTokens: 42},
+		},
+	}
+	a := NewAgent(rt)
+	called := make(chan struct{}, 3)
+	a.sendUpdate = func(context.Context, acpsdk.SessionNotification) error {
+		called <- struct{}{}
+		return errors.New("send failed because receiver is gone")
+	}
+
+	resp, err := a.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
+		SessionId: "sess",
+		Cwd:       cwd,
+	})
+	if err != nil {
+		t.Fatalf("ResumeSession() error = %v", err)
+	}
+	if got := currentModelValue(resp.ConfigOptions); got != "test-model" {
+		t.Fatalf("current model = %q", got)
+	}
+	receiveSignal(t, called)
 }
 
 func TestLoadSessionSavesAdditionalDirectories(t *testing.T) {
@@ -1312,9 +1394,9 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 		},
 	}
 	a := NewAgent(rt)
-	var updates []acpsdk.SessionNotification
+	updates := make(chan acpsdk.SessionNotification, 7)
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
-		updates = append(updates, update)
+		updates <- update
 		return nil
 	}
 
@@ -1333,28 +1415,32 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	if !ok || state.cwd != cwd || state.model != "test-model" || state.reasoningEffort != "high" {
 		t.Fatalf("session state = %#v, %t", state, ok)
 	}
-	if len(updates) != 7 {
-		t.Fatalf("updates = %#v", updates)
+	first := receiveSessionUpdate(t, updates)
+	second := receiveSessionUpdate(t, updates)
+	third := receiveSessionUpdate(t, updates)
+	fourth := receiveSessionUpdate(t, updates)
+	fifth := receiveSessionUpdate(t, updates)
+	sixth := receiveSessionUpdate(t, updates)
+	seventh := receiveSessionUpdate(t, updates)
+	if first.SessionId != "sess" || first.Update.UserMessageChunk == nil || first.Update.UserMessageChunk.Content.Text.Text != "hi" {
+		t.Fatalf("user update = %#v", first)
 	}
-	if updates[0].SessionId != "sess" || updates[0].Update.UserMessageChunk == nil || updates[0].Update.UserMessageChunk.Content.Text.Text != "hi" {
-		t.Fatalf("user update = %#v", updates[0])
+	if second.Update.AgentThoughtChunk == nil || second.Update.AgentThoughtChunk.Content.Text.Text != "thinking" {
+		t.Fatalf("thought update = %#v", second.Update)
 	}
-	if updates[1].Update.AgentThoughtChunk == nil || updates[1].Update.AgentThoughtChunk.Content.Text.Text != "thinking" {
-		t.Fatalf("thought update = %#v", updates[1].Update)
+	if third.Update.AgentMessageChunk == nil || third.Update.AgentMessageChunk.Content.Text.Text != "I will check" {
+		t.Fatalf("agent update = %#v", third.Update)
 	}
-	if updates[2].Update.AgentMessageChunk == nil || updates[2].Update.AgentMessageChunk.Content.Text.Text != "I will check" {
-		t.Fatalf("agent update = %#v", updates[2].Update)
-	}
-	start := updates[3].Update.ToolCall
+	start := fourth.Update.ToolCall
 	if start == nil || start.ToolCallId != "call_1" || start.Title != "Run: just check" || start.Kind != acpsdk.ToolKindExecute || start.Status != acpsdk.ToolCallStatusInProgress {
-		t.Fatalf("tool start = %#v", updates[3].Update)
+		t.Fatalf("tool start = %#v", fourth.Update)
 	}
 	if got := start.RawInput.(map[string]any)["command"]; got != "just check" {
 		t.Fatalf("raw input = %#v", start.RawInput)
 	}
-	finish := updates[4].Update.ToolCallUpdate
+	finish := fifth.Update.ToolCallUpdate
 	if finish == nil || finish.ToolCallId != "call_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted || finish.RawOutput != "ok" {
-		t.Fatalf("tool finish = %#v", updates[4].Update)
+		t.Fatalf("tool finish = %#v", fifth.Update)
 	}
 	if len(finish.Locations) != 1 || finish.Locations[0].Path != filepath.Join(cwd, "README.md") || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 4 {
 		t.Fatalf("tool locations = %#v", finish.Locations)
@@ -1362,12 +1448,43 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	if len(finish.Content) != 1 || finish.Content[0].Diff == nil || finish.Content[0].Diff.NewText != "new" {
 		t.Fatalf("tool content = %#v", finish.Content)
 	}
-	if updates[5].Update.AgentMessageChunk == nil || updates[5].Update.AgentMessageChunk.Content.Text.Text != "done" {
-		t.Fatalf("final update = %#v", updates[5].Update)
+	if sixth.Update.AgentMessageChunk == nil || sixth.Update.AgentMessageChunk.Content.Text.Text != "done" {
+		t.Fatalf("final update = %#v", sixth.Update)
 	}
-	if updates[6].Update.AvailableCommandsUpdate == nil || len(updates[6].Update.AvailableCommandsUpdate.AvailableCommands) != 1 || updates[6].Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
-		t.Fatalf("commands update = %#v", updates[6].Update)
+	if seventh.Update.AvailableCommandsUpdate == nil || len(seventh.Update.AvailableCommandsUpdate.AvailableCommands) != 1 || seventh.Update.AvailableCommandsUpdate.AvailableCommands[0].Name != "compact" {
+		t.Fatalf("commands update = %#v", seventh.Update)
 	}
+}
+
+func TestLoadSessionDoesNotFailWhenMetadataUpdateFails(t *testing.T) {
+	cwd := testCWD(t)
+	rt := &fakeRuntime{
+		showSessions: map[string]session.Session{
+			"sess": {ID: "sess", CWD: cwd, UpdatedAt: time.Now(), LastTotalTokens: 42},
+		},
+		showTranscripts: map[string]*transcript.Transcript{
+			"sess": transcript.New(),
+		},
+	}
+	a := NewAgent(rt)
+	called := make(chan struct{}, 3)
+	a.sendUpdate = func(context.Context, acpsdk.SessionNotification) error {
+		called <- struct{}{}
+		return errors.New("send failed because receiver is gone")
+	}
+
+	resp, err := a.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+		SessionId:  "sess",
+		Cwd:        cwd,
+		McpServers: []acpsdk.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if got := currentModelValue(resp.ConfigOptions); got != "test-model" {
+		t.Fatalf("current model = %q", got)
+	}
+	receiveSignal(t, called)
 }
 
 func TestLoadSessionRejectsCWDMismatch(t *testing.T) {
