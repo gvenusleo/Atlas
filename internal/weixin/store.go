@@ -58,6 +58,9 @@ func NewStore(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, accountsDirName), 0o700); err != nil {
 		return nil, err
 	}
+	if err := secureStorePath(filepath.Join(dir, accountsDirName), true); err != nil {
+		return nil, err
+	}
 	return &Store{dir: dir}, nil
 }
 
@@ -73,7 +76,7 @@ func (s *Store) SaveAccount(account Account) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.accountPath(account.ID), content, 0o600); err != nil {
+	if err := writeSecureFile(s.accountPath(account.ID), content); err != nil {
 		return err
 	}
 	state, err := s.loadState()
@@ -181,7 +184,7 @@ func (s *Store) saveState(state channelState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.statePath(), content, 0o600)
+	return writeSecureFile(s.statePath(), content)
 }
 
 // accountPath 返回账号凭据文件路径。

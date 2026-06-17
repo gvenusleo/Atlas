@@ -516,6 +516,28 @@ func TestDoctorReportsSessionFailure(t *testing.T) {
 	assertDoctorCheck(t, report, "session", DoctorStatusFail, dbPath)
 }
 
+func TestSessionDBPathExpandsHomeSlashStyles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	got, err := sessionDBPath(config.SessionConfig{DBPath: "~/.atlas/atlas.db"})
+	if err != nil {
+		t.Fatalf("sessionDBPath() error = %v", err)
+	}
+	if want := filepath.Join(home, ".atlas", "atlas.db"); got != want {
+		t.Fatalf("sessionDBPath() = %q, want %q", got, want)
+	}
+
+	got, err = sessionDBPath(config.SessionConfig{DBPath: `~\.atlas\atlas.db`})
+	if err != nil {
+		t.Fatalf("sessionDBPath() error = %v", err)
+	}
+	if want := filepath.Join(home, `.atlas\atlas.db`); got != want {
+		t.Fatalf("sessionDBPath() = %q, want %q", got, want)
+	}
+}
+
 func TestRunTurnIncludesSkillSummaries(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},

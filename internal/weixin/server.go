@@ -11,6 +11,7 @@ import (
 	"sync"
 	"text/tabwriter"
 	"time"
+	"unicode"
 
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/runtime"
@@ -162,7 +163,7 @@ func (s *Server) handleSlash(ctx context.Context, msg WeixinMessage, body string
 		}
 		return s.reply(ctx, msg, fmt.Sprintf("cwd: %s\nsession: %s", state.CWD, displaySessionID(state.SessionID)))
 	case "/cwd":
-		return s.handleCWD(ctx, msg, args)
+		return s.handleCWD(ctx, msg, slashCommandRest(body))
 	case "/new":
 		return s.updateSender(ctx, msg.FromUserID, func(state SenderState) (SenderState, string, error) {
 			state.SessionID = ""
@@ -186,15 +187,14 @@ func (s *Server) handleSlash(ctx context.Context, msg WeixinMessage, body string
 }
 
 // handleCWD 读取或切换发送人的当前工作目录。
-func (s *Server) handleCWD(ctx context.Context, msg WeixinMessage, args []string) error {
-	if len(args) == 0 {
+func (s *Server) handleCWD(ctx context.Context, msg WeixinMessage, target string) error {
+	if target == "" {
 		state, err := s.senderState(msg.FromUserID)
 		if err != nil {
 			return err
 		}
 		return s.reply(ctx, msg, state.CWD)
 	}
-	target := args[0]
 	return s.updateSender(ctx, msg.FromUserID, func(state SenderState) (SenderState, string, error) {
 		if target == "-" {
 			if state.PreviousCWD == "" {
@@ -219,6 +219,17 @@ func (s *Server) handleCWD(ctx context.Context, msg WeixinMessage, args []string
 		}
 		return state, fmt.Sprintf("Switched cwd to %s. The next message will start a new conversation.", state.CWD), nil
 	}, msg)
+}
+
+// slashCommandRest 返回命令名之后的原始参数文本。
+func slashCommandRest(body string) string {
+	body = strings.TrimSpace(body)
+	for index, char := range body {
+		if unicode.IsSpace(char) {
+			return strings.TrimSpace(body[index:])
+		}
+	}
+	return ""
 }
 
 // handleSessions 返回当前目录或全局最近会话列表。

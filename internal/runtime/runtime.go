@@ -899,14 +899,25 @@ func sessionDBPath(cfg config.SessionConfig) (string, error) {
 	if cfg.DBPath == "" {
 		return session.DefaultPath()
 	}
-	if strings.HasPrefix(cfg.DBPath, "~/") {
+	if rest, ok := homeRelativePath(cfg.DBPath); ok {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, cfg.DBPath[2:]), nil
+		return filepath.Join(home, rest), nil
 	}
 	return cfg.DBPath, nil
+}
+
+// homeRelativePath 识别用户配置中的 ~/ 和 ~\ 路径写法。
+func homeRelativePath(path string) (string, bool) {
+	if len(path) < 2 || path[0] != '~' {
+		return "", false
+	}
+	if path[1] != '/' && path[1] != '\\' {
+		return "", false
+	}
+	return path[2:], true
 }
 
 func selectedReasoningEffort(override string, overrideSet bool, configured string) string {

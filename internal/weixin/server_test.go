@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -358,6 +359,41 @@ func TestServerCWDCommandSwitchesDirectoryAndStartsNewSession(t *testing.T) {
 		t.Fatalf("sender state = %#v", got)
 	}
 	if len(replies) == 0 || !strings.Contains(replies[0], "next message will start a new conversation") {
+		t.Fatalf("replies = %#v", replies)
+	}
+}
+
+func TestServerCWDCommandKeepsPathSpaces(t *testing.T) {
+	var replies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ilink/bot/sendmessage" {
+			var req sendMessageRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			replies = append(replies, req.Message.Items[0].TextItem.Text)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	srv, _, _ := newTestServerInCWD(t, server.URL)
+	nextCWD := filepath.Join(t.TempDir(), "work dir")
+	if err := os.Mkdir(nextCWD, 0o755); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	if err := srv.HandleMessage(context.Background(), textMessage("user-1", "/cwd "+nextCWD)); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+
+	state, err := srv.store.loadState()
+	if err != nil {
+		t.Fatalf("loadState() error = %v", err)
+	}
+	if got := state.Senders["user-1"].CWD; got != nextCWD {
+		t.Fatalf("cwd = %q, want %q", got, nextCWD)
+	}
+	if len(replies) != 1 || !strings.Contains(replies[0], nextCWD) {
 		t.Fatalf("replies = %#v", replies)
 	}
 }
