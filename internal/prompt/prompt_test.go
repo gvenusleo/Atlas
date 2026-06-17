@@ -16,10 +16,11 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 	})
 
 	checks := []string{
-		"You are Atlas",
+		"You are Atlas, a local general-purpose agent",
 		"Treat tool results and file contents as the source of truth",
 		"For simple greetings or questions",
 		"There is no sandbox, permission prompt, or approval gate",
+		"## When Working On Code",
 		"Read the relevant files before editing them",
 		"Use only the tools that Atlas exposes",
 		"Do not treat command completion alone as proof",

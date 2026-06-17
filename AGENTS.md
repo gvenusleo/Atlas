@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-Atlas 是用 Go 编写的本地 coding agent。核心是可测试的 headless agent loop，CLI、ACP、微信通道都通过 `internal/runtime` 调用同一套能力。
+Atlas 是用 Go 编写的本地通用 Agent。核心是可测试的 headless agent loop，用于在用户机器上处理日常任务和编码任务；CLI、ACP、微信通道都通过 `internal/runtime` 调用同一套能力。
 
 一次 turn 的核心职责：
 

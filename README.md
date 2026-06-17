@@ -1,6 +1,6 @@
 # Atlas
 
-Atlas 是一个本地 coding agent。它通过 OpenAI-compatible Chat Completions Provider 调用模型，在本地 SQLite 中保存会话，支持 CLI、ACP stdio 和微信远程控制。
+Atlas 是一个运行在用户机器上的本地通用 Agent。它通过 OpenAI-compatible Chat Completions Provider 调用模型，在本地 SQLite 中保存会话，具备文件操作、Shell 执行、网页搜索、长期记忆和上下文压缩能力。
 
 ## 权限边界
 
