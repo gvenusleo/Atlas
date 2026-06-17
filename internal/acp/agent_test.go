@@ -499,6 +499,7 @@ func TestPromptUsesClientFileSystemForReadFileWhenSupported(t *testing.T) {
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true}}
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "local\n")
 	a.setSession("sess", cwd, "test-model", "high", nil)
 	client := &fakeFileClient{readContent: "line 2\nline 3\n"}
 	a.fileClient = client
@@ -532,6 +533,7 @@ func TestToolRunnerFallsBackWhenClientReadFileFails(t *testing.T) {
 	a.fileClient = &fakeFileClient{readErr: errors.New("resource not found")}
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "local\n")
 	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
@@ -574,6 +576,7 @@ func TestPromptUsesClientFileSystemForWriteFileWhenSupported(t *testing.T) {
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true}}
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
 	a.setSession("sess", cwd, "test-model", "high", nil)
 	client := &fakeFileClient{readContent: "old\n"}
 	a.fileClient = client
@@ -607,6 +610,7 @@ func TestToolRunnerFallsBackWhenClientWriteFileFails(t *testing.T) {
 	a.fileClient = &fakeFileClient{writeErr: errors.New("resource not found")}
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
 	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
@@ -641,6 +645,7 @@ func TestToolRunnerUsesClientFileSystemForEditFileWhenSupported(t *testing.T) {
 	a.fileClient = client
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
 	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
@@ -676,6 +681,7 @@ func TestToolRunnerFallsBackWhenClientEditFileReadFails(t *testing.T) {
 	a.fileClient = &fakeFileClient{readErr: errors.New("resource not found")}
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
 	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
@@ -709,6 +715,7 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 	a.fileClient = &fakeFileClient{readContent: "old\n", writeErr: errors.New("resource not found")}
 	cwd := testCWD(t)
 	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
 	runner := a.toolRunner("sess", cwd)
 	fallbackCalled := false
 
@@ -766,6 +773,101 @@ func TestToolRunnerFallsBackForEmptyClientFileSystemWrite(t *testing.T) {
 	}
 	if got.Content != "wrote "+path || got.Metadata.Diff == nil || got.Metadata.Diff.NewText != "" {
 		t.Fatalf("result = %#v", got)
+	}
+}
+
+func TestToolRunnerDoesNotAskClientFileSystemForNonTextPaths(t *testing.T) {
+	tests := []struct {
+		name         string
+		toolName     string
+		path         string
+		arguments    string
+		capabilities acpsdk.FileSystemCapabilities
+		setup        func(t *testing.T, path string)
+	}{
+		{
+			name:         "read directory",
+			toolName:     "read_file",
+			path:         "docs",
+			arguments:    `{"path":"docs"}`,
+			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true},
+			setup:        mkdirTestDir,
+		},
+		{
+			name:         "read binary",
+			toolName:     "read_file",
+			path:         "image.bin",
+			arguments:    `{"path":"image.bin"}`,
+			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true},
+			setup:        writeTestBinaryFile,
+		},
+		{
+			name:         "write directory",
+			toolName:     "write_file",
+			path:         "docs",
+			arguments:    `{"path":"docs","content":"new\n"}`,
+			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			setup:        mkdirTestDir,
+		},
+		{
+			name:         "write binary",
+			toolName:     "write_file",
+			path:         "image.bin",
+			arguments:    `{"path":"image.bin","content":"new\n"}`,
+			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			setup:        writeTestBinaryFile,
+		},
+		{
+			name:         "edit directory",
+			toolName:     "edit_file",
+			path:         "docs",
+			arguments:    `{"path":"docs","edits":[{"old_text":"old","new_text":"new"}]}`,
+			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			setup:        mkdirTestDir,
+		},
+		{
+			name:         "edit binary",
+			toolName:     "edit_file",
+			path:         "image.bin",
+			arguments:    `{"path":"image.bin","edits":[{"old_text":"old","new_text":"new"}]}`,
+			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
+			setup:        writeTestBinaryFile,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := NewAgent(&fakeRuntime{})
+			a.clientCapabilities = acpsdk.ClientCapabilities{Fs: tt.capabilities}
+			client := &fakeFileClient{readContent: "client"}
+			a.fileClient = client
+			cwd := testCWD(t)
+			tt.setup(t, filepath.Join(cwd, tt.path))
+			runner := a.toolRunner("sess", cwd)
+			fallbackCalled := false
+
+			got, err := runner(context.Background(), model.ToolCall{
+				ID:        "call_1",
+				Name:      tt.toolName,
+				Arguments: tt.arguments,
+			}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+				fallbackCalled = true
+				return tool.RunResult{Content: "local"}, nil
+			})
+
+			if err != nil {
+				t.Fatalf("ToolRunner() error = %v", err)
+			}
+			if !fallbackCalled {
+				t.Fatal("fallback was not called")
+			}
+			if client.read.Path != "" || client.write.Path != "" {
+				t.Fatalf("client fs should not run: read=%#v write=%#v", client.read, client.write)
+			}
+			if got.Content != "local" {
+				t.Fatalf("result = %#v", got)
+			}
+		})
 	}
 }
 
@@ -1715,4 +1817,34 @@ func reasoningEffortSessionConfigID() acpsdk.SessionConfigId {
 func testCWD(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "work")
+}
+
+// writeTestTextFile 写入测试用文本文件。
+func writeTestTextFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+// writeTestBinaryFile 写入包含 NUL 的测试二进制文件。
+func writeTestBinaryFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte{0x00, 0x01, 0x02}, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+// mkdirTestDir 创建测试目录。
+func mkdirTestDir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
 }

@@ -1,13 +1,17 @@
 package acp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/liuyuxin/atlas/internal/model"
@@ -17,6 +21,7 @@ import (
 const (
 	maxACPToolDiffBytes = 512 * 1024
 	maxACPToolLocations = 50
+	textProbeBytes      = 8 * 1024
 )
 
 // isFileTool 判断工具是否需要 ACP 文件展示增强。
@@ -55,7 +60,7 @@ func (a *Agent) runReadFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 	}
 	path := absoluteToolPath(cwd, args.Path)
 	metadata := model.ToolMetadata{Locations: []model.ToolLocation{{Path: path, Line: lineOrZero(args.Offset)}}}
-	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil {
+	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil && clientReadTextFileAllowed(path) {
 		req := acpsdk.ReadTextFileRequest{SessionId: sessionID, Path: path}
 		if args.Offset > 0 {
 			req.Line = &args.Offset
@@ -80,7 +85,7 @@ func (a *Agent) runWriteFileTool(ctx context.Context, sessionID acpsdk.SessionId
 	path := absoluteToolPath(cwd, args.Path)
 	content := *args.Content
 	metadata := model.ToolMetadata{Locations: []model.ToolLocation{{Path: path}}}
-	if a.clientCapabilities.Fs.WriteTextFile && a.fileClient != nil && content != "" {
+	if a.clientCapabilities.Fs.WriteTextFile && a.fileClient != nil && content != "" && clientWriteTextFileAllowed(path) {
 		oldText := a.readToolOldText(ctx, sessionID, path)
 		_, err := a.fileClient.WriteTextFile(ctx, acpsdk.WriteTextFileRequest{
 			SessionId: sessionID,
@@ -128,7 +133,7 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 	}
 	path := absoluteToolPath(cwd, args.Path)
 	metadata := model.ToolMetadata{Locations: []model.ToolLocation{{Path: path}}}
-	if a.clientCapabilities.Fs.ReadTextFile && a.clientCapabilities.Fs.WriteTextFile && a.fileClient != nil {
+	if a.clientCapabilities.Fs.ReadTextFile && a.clientCapabilities.Fs.WriteTextFile && a.fileClient != nil && clientReadTextFileAllowed(path) {
 		oldText, err := a.readClientToolText(ctx, sessionID, path)
 		if err != nil {
 			return runLocalEditFileTool(ctx, call, path, args, metadata, fallback)
@@ -198,7 +203,7 @@ func (a *Agent) runSearchTextTool(ctx context.Context, cwd string, call model.To
 
 // readToolOldText 读取旧内容用于 diff；读不到时按新文件处理。
 func (a *Agent) readToolOldText(ctx context.Context, sessionID acpsdk.SessionId, path string) *string {
-	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil {
+	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil && clientOldTextReadAllowed(path) {
 		content, err := a.readClientToolText(ctx, sessionID, path)
 		if err != nil {
 			return nil
@@ -210,6 +215,9 @@ func (a *Agent) readToolOldText(ctx context.Context, sessionID acpsdk.SessionId,
 
 // readLocalToolOldText 读取本地旧内容，缺失时返回 nil 表示新文件。
 func readLocalToolOldText(path string) *string {
+	if !localTextFile(path) {
+		return nil
+	}
 	content, ok := readLocalToolText(path)
 	if !ok {
 		return nil
@@ -233,6 +241,61 @@ func readLocalToolText(path string) (string, bool) {
 		return "", false
 	}
 	return string(data), true
+}
+
+// clientReadTextFileAllowed 避免把目录或二进制文件交给 ACP 客户端读取。
+func clientReadTextFileAllowed(path string) bool {
+	return localTextFile(path)
+}
+
+// clientOldTextReadAllowed 只在路径不存在或本地确认是文本文件时读取客户端旧内容。
+func clientOldTextReadAllowed(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return true
+	}
+	if err != nil || info.IsDir() || !info.Mode().IsRegular() {
+		return false
+	}
+	return localFileLooksText(path)
+}
+
+// clientWriteTextFileAllowed 避免请求客户端把目录或特殊文件当文本文件写入。
+func clientWriteTextFileAllowed(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return true
+	}
+	if err != nil || info.IsDir() || !info.Mode().IsRegular() {
+		return false
+	}
+	return localFileLooksText(path)
+}
+
+// localTextFile 判断本地路径是否为可安全交给文本接口处理的普通文本文件。
+func localTextFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || !info.Mode().IsRegular() {
+		return false
+	}
+	return localFileLooksText(path)
+}
+
+// localFileLooksText 采样文件开头，排除 NUL 字节和非 UTF-8 内容。
+func localFileLooksText(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	buf := make([]byte, textProbeBytes)
+	n, err := file.Read(buf)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false
+	}
+	sample := buf[:n]
+	return bytes.IndexByte(sample, 0) < 0 && utf8.Valid(sample)
 }
 
 // acpToolDiff 在合理大小内生成可持久化的 diff metadata。
