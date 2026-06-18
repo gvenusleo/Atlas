@@ -1569,123 +1569,107 @@ func TestResumeSessionRejectsCWDMismatch(t *testing.T) {
 	}
 }
 
-func TestSetSessionConfigOptionUpdatesModel(t *testing.T) {
-	rt := &fakeRuntime{}
-	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "", nil)
-
-	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
-		ValueId: &acpsdk.SetSessionConfigOptionValueId{
-			SessionId: "sess",
-			ConfigId:  modelSessionConfigID(),
-			Value:     "other-model",
+func TestSetSessionConfigOptionUpdatesConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		configID   acpsdk.SessionConfigId
+		value      string
+		checkState func(t *testing.T, state sessionState)
+		checkRun   func(t *testing.T, opts atlasruntime.TurnOptions)
+	}{
+		{
+			name:     "model",
+			configID: modelSessionConfigID(),
+			value:    "other-model",
+			checkState: func(t *testing.T, state sessionState) {
+				if state.model != "other-model" {
+					t.Fatalf("session model = %q", state.model)
+				}
+			},
+			checkRun: func(t *testing.T, opts atlasruntime.TurnOptions) {
+				if opts.Model != "other-model" {
+					t.Fatalf("turn model = %q", opts.Model)
+				}
+			},
 		},
-	})
-	if err != nil {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
+		{
+			name:     "reasoning_effort",
+			configID: reasoningEffortSessionConfigID(),
+			value:    "max",
+			checkState: func(t *testing.T, state sessionState) {
+				if state.reasoningEffort != "max" {
+					t.Fatalf("session reasoning effort = %q", state.reasoningEffort)
+				}
+			},
+			checkRun: func(t *testing.T, opts atlasruntime.TurnOptions) {
+				if opts.ReasoningEffort != "max" {
+					t.Fatalf("turn reasoning effort = %q", opts.ReasoningEffort)
+				}
+			},
+		},
 	}
-	if got := currentModelValue(resp.ConfigOptions); got != "other-model" {
-		t.Fatalf("current model = %q", got)
-	}
-	state, ok := a.getSession("sess")
-	if !ok {
-		t.Fatal("session missing")
-	}
-	if state.model != "other-model" {
-		t.Fatalf("session model = %q", state.model)
-	}
-	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
-		SessionId: "sess",
-		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
-	}); err != nil {
-		t.Fatalf("Prompt() error = %v", err)
-	}
-	if rt.runOptions.Model != "other-model" {
-		t.Fatalf("turn model = %q", rt.runOptions.Model)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := &fakeRuntime{}
+			a := NewAgent(rt)
+			a.setSession("sess", "/tmp/work", "test-model", "", nil)
+
+			resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+				ValueId: &acpsdk.SetSessionConfigOptionValueId{
+					SessionId: "sess",
+					ConfigId:  tt.configID,
+					Value:     acpsdk.SessionConfigValueId(tt.value),
+				},
+			})
+			if err != nil {
+				t.Fatalf("SetSessionConfigOption() error = %v", err)
+			}
+			if got := currentConfigValue(resp.ConfigOptions, tt.configID); got != tt.value {
+				t.Fatalf("current config value = %q, want %q", got, tt.value)
+			}
+			state, ok := a.getSession("sess")
+			if !ok {
+				t.Fatal("session missing")
+			}
+			tt.checkState(t, state)
+			if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+				SessionId: "sess",
+				Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
+			}); err != nil {
+				t.Fatalf("Prompt() error = %v", err)
+			}
+			tt.checkRun(t, rt.runOptions)
+		})
 	}
 }
 
-func TestSetSessionConfigOptionUpdatesReasoningEffort(t *testing.T) {
-	rt := &fakeRuntime{}
-	a := NewAgent(rt)
-	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+func TestSetSessionConfigOptionRejectsInvalidValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		configID acpsdk.SessionConfigId
+		value    string
+		wantErr  string
+	}{
+		{name: "invalid reasoning effort", configID: reasoningEffortSessionConfigID(), value: "medium", wantErr: "not supported"},
+		{name: "invalid model", configID: modelSessionConfigID(), value: "missing-model", wantErr: "not configured"},
+		{name: "unsupported option", configID: "mode", value: "other-model", wantErr: "unsupported session config option"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := NewAgent(&fakeRuntime{})
+			a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
-	resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
-		ValueId: &acpsdk.SetSessionConfigOptionValueId{
-			SessionId: "sess",
-			ConfigId:  reasoningEffortSessionConfigID(),
-			Value:     "max",
-		},
-	})
-	if err != nil {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
-	}
-	if got := currentReasoningEffortValue(resp.ConfigOptions); got != "max" {
-		t.Fatalf("current reasoning effort = %q", got)
-	}
-	state, ok := a.getSession("sess")
-	if !ok {
-		t.Fatal("session missing")
-	}
-	if state.reasoningEffort != "max" {
-		t.Fatalf("session reasoning effort = %q", state.reasoningEffort)
-	}
-	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
-		SessionId: "sess",
-		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hi")},
-	}); err != nil {
-		t.Fatalf("Prompt() error = %v", err)
-	}
-	if rt.runOptions.ReasoningEffort != "max" {
-		t.Fatalf("turn reasoning effort = %q", rt.runOptions.ReasoningEffort)
-	}
-}
-
-func TestSetSessionConfigOptionRejectsInvalidReasoningEffort(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "", nil)
-
-	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
-		ValueId: &acpsdk.SetSessionConfigOptionValueId{
-			SessionId: "sess",
-			ConfigId:  reasoningEffortSessionConfigID(),
-			Value:     "medium",
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
-	}
-}
-
-func TestSetSessionConfigOptionRejectsInvalidModel(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "", nil)
-
-	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
-		ValueId: &acpsdk.SetSessionConfigOptionValueId{
-			SessionId: "sess",
-			ConfigId:  modelSessionConfigID(),
-			Value:     "missing-model",
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "not configured") {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
-	}
-}
-
-func TestSetSessionConfigOptionRejectsUnsupportedOption(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
-	a.setSession("sess", "/tmp/work", "test-model", "", nil)
-
-	_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
-		ValueId: &acpsdk.SetSessionConfigOptionValueId{
-			SessionId: "sess",
-			ConfigId:  "mode",
-			Value:     "other-model",
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "unsupported session config option") {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
+			_, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
+				ValueId: &acpsdk.SetSessionConfigOptionValueId{
+					SessionId: "sess",
+					ConfigId:  tt.configID,
+					Value:     acpsdk.SessionConfigValueId(tt.value),
+				},
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("SetSessionConfigOption() error = %v", err)
+			}
+		})
 	}
 }
 

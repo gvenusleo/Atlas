@@ -77,82 +77,63 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
-func TestLoadFileDefaultsMaxSteps(t *testing.T) {
-	path := writeTestConfig(t, `{
+func TestLoadFileDefaults(t *testing.T) {
+	base := `{
 		"provider": {
 			"base_url": "https://api.deepseek.com",
 			"api_key": "sk-test",
 			"default_model": "deepseek-v4-flash",
 			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
 		}
-	}`)
+	}`
 
-	cfg, err := LoadFile(path)
-	if err != nil {
-		t.Fatalf("LoadFile() error = %v", err)
-	}
-	if cfg.Agent.MaxSteps != defaultMaxSteps {
-		t.Fatalf("MaxSteps = %d", cfg.Agent.MaxSteps)
-	}
-	if cfg.Agent.CompactionTriggerRatio != defaultCompactionTriggerRatio {
-		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
-	}
-	if !cfg.Memory.IsEnabled() {
-		t.Fatal("Memory.IsEnabled() = false")
-	}
-}
-
-func TestLoadFileAllowsDisabledMemoryWithUnknownModel(t *testing.T) {
-	path := writeTestConfig(t, `{
-		"provider": {
-			"base_url": "https://api.deepseek.com",
-			"api_key": "sk-test",
-			"default_model": "deepseek-v4-flash",
-			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
-		},
-		"memory": {
-			"enabled": false,
-			"model": "missing-model"
+	t.Run("max_steps_and_compaction_ratio", func(t *testing.T) {
+		cfg, err := LoadFile(writeTestConfig(t, base))
+		if err != nil {
+			t.Fatalf("LoadFile() error = %v", err)
 		}
-	}`)
-
-	cfg, err := LoadFile(path)
-	if err != nil {
-		t.Fatalf("LoadFile() error = %v", err)
-	}
-	if cfg.Memory.IsEnabled() {
-		t.Fatal("Memory.IsEnabled() = true")
-	}
-}
-
-func TestLoadFileDefaultsTavilyBaseURL(t *testing.T) {
-	path := writeTestConfig(t, `{
-		"provider": {
-			"base_url": "https://api.deepseek.com",
-			"api_key": "sk-test",
-			"default_model": "deepseek-v4-flash",
-			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
-		},
-		"services": {
-			"tavily": {
-				"api_key": "tvly-test"
-			}
+		if cfg.Agent.MaxSteps != defaultMaxSteps {
+			t.Fatalf("MaxSteps = %d", cfg.Agent.MaxSteps)
 		}
-	}`)
+		if cfg.Agent.CompactionTriggerRatio != defaultCompactionTriggerRatio {
+			t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
+		}
+		if !cfg.Memory.IsEnabled() {
+			t.Fatal("Memory.IsEnabled() = false")
+		}
+	})
 
-	cfg, err := LoadFile(path)
-	if err != nil {
-		t.Fatalf("LoadFile() error = %v", err)
-	}
-	if cfg.Services.Tavily.BaseURL != defaultTavilyBaseURL {
-		t.Fatalf("Tavily.BaseURL = %q", cfg.Services.Tavily.BaseURL)
-	}
-	if cfg.Services.Tavily.APIKey != "tvly-test" {
-		t.Fatalf("Tavily.APIKey = %q", cfg.Services.Tavily.APIKey)
-	}
-	if cfg.Services.Weixin.BaseURL != defaultWeixinBaseURL {
-		t.Fatalf("Weixin.BaseURL = %q", cfg.Services.Weixin.BaseURL)
-	}
+	t.Run("disabled_memory_allows_unknown_model", func(t *testing.T) {
+		content := base[:len(base)-1] + `,
+		"memory": {"enabled": false, "model": "missing-model"}
+	}`
+		cfg, err := LoadFile(writeTestConfig(t, content))
+		if err != nil {
+			t.Fatalf("LoadFile() error = %v", err)
+		}
+		if cfg.Memory.IsEnabled() {
+			t.Fatal("Memory.IsEnabled() = true")
+		}
+	})
+
+	t.Run("tavily_and_weixin_base_url", func(t *testing.T) {
+		content := base[:len(base)-1] + `,
+		"services": {"tavily": {"api_key": "tvly-test"}}
+	}`
+		cfg, err := LoadFile(writeTestConfig(t, content))
+		if err != nil {
+			t.Fatalf("LoadFile() error = %v", err)
+		}
+		if cfg.Services.Tavily.BaseURL != defaultTavilyBaseURL {
+			t.Fatalf("Tavily.BaseURL = %q", cfg.Services.Tavily.BaseURL)
+		}
+		if cfg.Services.Tavily.APIKey != "tvly-test" {
+			t.Fatalf("Tavily.APIKey = %q", cfg.Services.Tavily.APIKey)
+		}
+		if cfg.Services.Weixin.BaseURL != defaultWeixinBaseURL {
+			t.Fatalf("Weixin.BaseURL = %q", cfg.Services.Weixin.BaseURL)
+		}
+	})
 }
 
 func TestLoadFileRejectsInvalidConfig(t *testing.T) {

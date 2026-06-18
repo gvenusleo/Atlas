@@ -267,59 +267,52 @@ func TestRunTurnRegistersTavilyToolsWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestRunTurnUsesRequestedModel(t *testing.T) {
-	provider := &recordingProvider{
-		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-		response: model.ChatResponse{Content: "ok"},
+func TestRunTurnOverrides(t *testing.T) {
+	tests := []struct {
+		name string
+		opts TurnOptions
+		check func(t *testing.T, p *recordingProvider)
+	}{
+		{
+			name: "requested model",
+			opts: TurnOptions{Prompt: "hello", Model: "other-model"},
+			check: func(t *testing.T, p *recordingProvider) {
+				if p.providerModel != "other-model" {
+					t.Fatalf("provider model = %q", p.providerModel)
+				}
+			},
+		},
+		{
+			name: "reasoning effort override",
+			opts: TurnOptions{Prompt: "hello", ReasoningEffort: "max", ReasoningEffortSet: true},
+			check: func(t *testing.T, p *recordingProvider) {
+				if p.request.ReasoningEffort != "max" {
+					t.Fatalf("reasoning effort = %q", p.request.ReasoningEffort)
+				}
+			},
+		},
+		{
+			name: "empty reasoning effort override",
+			opts: TurnOptions{Prompt: "hello", ReasoningEffort: "", ReasoningEffortSet: true},
+			check: func(t *testing.T, p *recordingProvider) {
+				if p.request.ReasoningEffort != "" {
+					t.Fatalf("reasoning effort = %q", p.request.ReasoningEffort)
+				}
+			},
+		},
 	}
-	r := newTestRuntime(t, provider)
-
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		Prompt: "hello",
-		Model:  "other-model",
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	if provider.providerModel != "other-model" {
-		t.Fatalf("provider model = %q", provider.providerModel)
-	}
-}
-
-func TestRunTurnUsesReasoningEffortOverride(t *testing.T) {
-	provider := &recordingProvider{
-		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-		response: model.ChatResponse{Content: "ok"},
-	}
-	r := newTestRuntime(t, provider)
-
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		Prompt:             "hello",
-		ReasoningEffort:    "max",
-		ReasoningEffortSet: true,
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	if provider.request.ReasoningEffort != "max" {
-		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
-	}
-}
-
-func TestRunTurnAllowsEmptyReasoningEffortOverride(t *testing.T) {
-	provider := &recordingProvider{
-		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-		response: model.ChatResponse{Content: "ok"},
-	}
-	r := newTestRuntime(t, provider)
-
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		Prompt:             "hello",
-		ReasoningEffort:    "",
-		ReasoningEffortSet: true,
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	if provider.request.ReasoningEffort != "" {
-		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &recordingProvider{
+				events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+				response: model.ChatResponse{Content: "ok"},
+			}
+			r := newTestRuntime(t, provider)
+			if _, err := r.RunTurn(context.Background(), tt.opts); err != nil {
+				t.Fatalf("RunTurn() error = %v", err)
+			}
+			tt.check(t, provider)
+		})
 	}
 }
 

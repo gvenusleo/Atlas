@@ -1,3 +1,4 @@
+// Package transcript 保存当前 agent 实例中的模型消息序列。
 package transcript
 
 import "github.com/liuyuxin/atlas/internal/model"
