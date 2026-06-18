@@ -71,12 +71,14 @@ func TestStreamSendsChatCompletionsRequest(t *testing.T) {
 	if len(gotReq.Messages) != 2 {
 		t.Fatalf("messages = %d", len(gotReq.Messages))
 	}
-	if gotReq.Messages[0].Role != "system" || gotReq.Messages[0].Content != "system prompt" {
+	if gotReq.Messages[0].Role != "system" {
 		t.Fatalf("system message = %#v", gotReq.Messages[0])
 	}
-	if gotReq.Messages[1].Role != "user" || gotReq.Messages[1].Content != "hi" {
+	assertContentParts(t, gotReq.Messages[0].Content, []apiContentPart{{Type: "text", Text: "system prompt"}})
+	if gotReq.Messages[1].Role != "user" {
 		t.Fatalf("user message = %#v", gotReq.Messages[1])
 	}
+	assertContentParts(t, gotReq.Messages[1].Content, []apiContentPart{{Type: "text", Text: "hi"}})
 	if len(gotReq.Tools) != 1 || gotReq.Tools[0].Function.Name != "read_file" {
 		t.Fatalf("tools = %#v", gotReq.Tools)
 	}
@@ -162,6 +164,36 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	if tool.Role != "tool" || tool.ToolCallID != "call-1" || tool.Content != "content" {
 		t.Fatalf("tool message = %#v", tool)
 	}
+}
+
+func TestStreamSendsImageContentPart(t *testing.T) {
+	var gotReq chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	_, err := provider.Stream(context.Background(), model.ChatRequest{
+		Messages: []model.Message{{
+			Role:    model.RoleUser,
+			Content: "describe",
+			Parts: []model.ContentPart{
+				{Type: model.ContentPartText, Text: "describe"},
+				{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,aGVsbG8=", Detail: model.ImageDetailHigh},
+			},
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	assertContentParts(t, gotReq.Messages[0].Content, []apiContentPart{
+		{Type: "text", Text: "describe"},
+		{Type: "image_url", ImageURL: &apiImageURLContent{URL: "data:image/png;base64,aGVsbG8=", Detail: "high"}},
+	})
 }
 
 func TestStreamSendsJSONResponseFormat(t *testing.T) {
@@ -310,6 +342,35 @@ func newTestProvider(t *testing.T, baseURL string) *Provider {
 		t.Fatal(err)
 	}
 	return provider
+}
+
+func assertContentParts(t *testing.T, content any, want []apiContentPart) {
+	t.Helper()
+	raw, err := json.Marshal(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []apiContentPart
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("content is not parts array: %s", raw)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("content parts = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i].Type != want[i].Type || got[i].Text != want[i].Text {
+			t.Fatalf("content parts = %#v, want %#v", got, want)
+		}
+		if want[i].ImageURL == nil {
+			if got[i].ImageURL != nil {
+				t.Fatalf("content parts = %#v, want %#v", got, want)
+			}
+			continue
+		}
+		if got[i].ImageURL == nil || *got[i].ImageURL != *want[i].ImageURL {
+			t.Fatalf("content parts = %#v, want %#v", got, want)
+		}
+	}
 }
 
 func writeSSE(w http.ResponseWriter, events ...string) {

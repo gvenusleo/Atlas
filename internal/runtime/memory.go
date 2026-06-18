@@ -189,7 +189,7 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	}
 	resp, err := provider.Stream(ctx, model.ChatRequest{
 		System:          memoryExtractSystemPrompt(),
-		Messages:        []model.Message{{Role: model.RoleUser, Content: memoryExtractPrompt(info, newMessages, existing, start)}},
+		Messages:        []model.Message{model.TextMessage(model.RoleUser, memoryExtractPrompt(info, newMessages, existing, start))},
 		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
 		Temperature:     0,
 		ReasoningEffort: reasoningEffort,
@@ -269,7 +269,7 @@ func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memor
 	}
 	resp, err := provider.Stream(ctx, model.ChatRequest{
 		System:          memorySummarySystemPrompt(),
-		Messages:        []model.Message{{Role: model.RoleUser, Content: memorySummaryPrompt(job, entries)}},
+		Messages:        []model.Message{model.TextMessage(model.RoleUser, memorySummaryPrompt(job, entries))},
 		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
 		Temperature:     0,
 		ReasoningEffort: reasoningEffort,
@@ -383,7 +383,7 @@ func containsExplicitMemoryDirective(messages []model.Message) bool {
 		if msg.Role != model.RoleUser {
 			continue
 		}
-		text := strings.ToLower(msg.Content)
+		text := strings.ToLower(model.TextFromParts(model.MessageParts(msg)))
 		for _, marker := range []string{"remember", "always", "never", "记住", "以后", "每次", "必须", "不要"} {
 			if strings.Contains(text, marker) {
 				return true
@@ -401,7 +401,7 @@ func configuredMemoryModel(cfg config.Config, sessionModel string) string {
 }
 
 func memoryExtractSystemPrompt() string {
-	return `You update Atlas long-term memory from completed coding-agent sessions.
+	return `You update Atlas long-term memory from completed agent sessions.
 Return only a JSON object. Do not include markdown.
 Keep durable memories that help future sessions: user preferences, project facts, and repeatable workflows.
 Do not store transient chat, private chain-of-thought, generic programming advice, raw logs, secrets, API keys, or content that is only useful inside the current turn.
@@ -502,7 +502,7 @@ func formatMemoryTranscript(messages []model.Message, maxRunes int) string {
 		if len(msg.ToolCalls) > 0 {
 			builder.WriteString(formatToolCalls(msg.ToolCalls))
 		}
-		content := strings.TrimSpace(msg.Content)
+		content := strings.TrimSpace(formatMessageContentForMemory(msg))
 		if msg.Role == model.RoleTool {
 			content = trimRunes(content, 4000)
 		}
@@ -513,6 +513,33 @@ func formatMemoryTranscript(messages []model.Message, maxRunes int) string {
 		}
 	}
 	return trimRunes(builder.String(), maxRunes)
+}
+
+func formatMessageContentForMemory(msg model.Message) string {
+	parts := model.MessageParts(msg)
+	if len(parts) == 0 {
+		return msg.Content
+	}
+	var lines []string
+	for _, part := range parts {
+		switch part.Type {
+		case model.ContentPartImage:
+			mimeType := strings.TrimSpace(part.MimeType)
+			if mimeType == "" {
+				mimeType = "image"
+			}
+			detail := part.Detail
+			if detail == "" {
+				detail = model.ImageDetailAuto
+			}
+			lines = append(lines, fmt.Sprintf("[Image: %s, detail=%s]", mimeType, detail))
+		default:
+			if strings.TrimSpace(part.Text) != "" {
+				lines = append(lines, part.Text)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func formatToolCalls(calls []model.ToolCall) string {

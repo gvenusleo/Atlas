@@ -19,10 +19,16 @@ const (
 	// ProviderFormatResponses 表示使用 Responses API 格式。
 	ProviderFormatResponses = "responses"
 
+	// ModelInputFormatText 表示模型支持文本输入。
+	ModelInputFormatText = "text"
+	// ModelInputFormatImage 表示模型支持图片输入。
+	ModelInputFormatImage = "image"
+
 	defaultMaxSteps               = 8
 	defaultCompactionTriggerRatio = 0.8
 	defaultTavilyBaseURL          = "https://api.tavily.com"
 	defaultWeixinBaseURL          = "https://ilinkai.weixin.qq.com"
+	defaultWeixinCDNBaseURL       = "https://novac2c.cdn.weixin.qq.com/c2c"
 )
 
 // Config 是 Atlas CLI 启动时需要的应用配置。
@@ -52,6 +58,7 @@ type ProviderModel struct {
 	Description      string                    `json:"description,omitempty"`
 	ContextWindow    int                       `json:"context_window"`
 	MaxTokens        int                       `json:"max_tokens"`
+	InputFormats     []string                  `json:"input_formats"`
 	ReasoningEfforts []ProviderReasoningEffort `json:"reasoning_efforts,omitempty"`
 }
 
@@ -99,7 +106,8 @@ type TavilyConfig struct {
 
 // WeixinConfig 描述微信远程控制通道配置。
 type WeixinConfig struct {
-	BaseURL string `json:"base_url"`
+	BaseURL    string `json:"base_url"`
+	CDNBaseURL string `json:"cdn_base_url"`
 }
 
 // DefaultPath 返回当前用户主目录下的 Atlas 配置路径。
@@ -167,6 +175,12 @@ func (c Config) Validate() error {
 		weixinURL, err := url.Parse(c.Services.Weixin.BaseURL)
 		if err != nil || weixinURL.Scheme == "" || weixinURL.Host == "" || !isHTTPURL(weixinURL) {
 			return fmt.Errorf("services.weixin.base_url is invalid")
+		}
+	}
+	if c.Services.Weixin.CDNBaseURL != "" {
+		cdnURL, err := url.Parse(c.Services.Weixin.CDNBaseURL)
+		if err != nil || cdnURL.Scheme == "" || cdnURL.Host == "" || !isHTTPURL(cdnURL) {
+			return fmt.Errorf("services.weixin.cdn_base_url is invalid")
 		}
 	}
 	return nil
@@ -247,6 +261,9 @@ func (p ProviderConfig) Validate(index int) error {
 		if model.MaxTokens > model.ContextWindow {
 			return fmt.Errorf("%s.models[%d].max_tokens must be less than or equal to context_window", prefix, i)
 		}
+		if err := validateModelInputFormats(prefix, i, model); err != nil {
+			return err
+		}
 		if err := validateModelReasoningEfforts(prefix, i, model); err != nil {
 			return err
 		}
@@ -260,6 +277,37 @@ func (p ProviderConfig) Validate(index int) error {
 	}
 	if !defaultFound {
 		return fmt.Errorf("%s.default_model %q is not in providers[%d].models", prefix, p.DefaultModel, index)
+	}
+	return nil
+}
+
+// validateModelInputFormats 校验模型输入格式声明。
+func validateModelInputFormats(prefix string, modelIndex int, model ProviderModel) error {
+	modelPrefix := fmt.Sprintf("%s.models[%d]", prefix, modelIndex)
+	if len(model.InputFormats) == 0 {
+		return fmt.Errorf("%s.input_formats is required", modelPrefix)
+	}
+	seen := make(map[string]struct{}, len(model.InputFormats))
+	hasText := false
+	for i, format := range model.InputFormats {
+		value := strings.TrimSpace(format)
+		if value == "" {
+			return fmt.Errorf("%s.input_formats[%d] is required", modelPrefix, i)
+		}
+		switch value {
+		case ModelInputFormatText:
+			hasText = true
+		case ModelInputFormatImage:
+		default:
+			return fmt.Errorf("%s.input_formats[%d] must be text or image", modelPrefix, i)
+		}
+		if _, ok := seen[value]; ok {
+			return fmt.Errorf("%s.input_formats contains duplicate value %q", modelPrefix, value)
+		}
+		seen[value] = struct{}{}
+	}
+	if !hasText {
+		return fmt.Errorf("%s.input_formats must include text", modelPrefix)
 	}
 	return nil
 }
@@ -303,6 +351,7 @@ func (p ProviderConfig) ModelOptions() []ProviderModel {
 	models := make([]ProviderModel, len(p.Models))
 	for i, model := range p.Models {
 		models[i] = model
+		models[i].InputFormats = append([]string(nil), model.InputFormats...)
 		models[i].ReasoningEfforts = append([]ProviderReasoningEffort(nil), model.ReasoningEfforts...)
 	}
 	return models
@@ -312,6 +361,16 @@ func (p ProviderConfig) ModelOptions() []ProviderModel {
 func (m ProviderModel) SupportsReasoningEffort(value string) bool {
 	for _, effort := range m.ReasoningEfforts {
 		if effort.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+// SupportsInputFormat 返回模型是否声明支持指定输入格式。
+func (m ProviderModel) SupportsInputFormat(value string) bool {
+	for _, format := range m.InputFormats {
+		if format == value {
 			return true
 		}
 	}
@@ -335,6 +394,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Services.Weixin.BaseURL == "" {
 		c.Services.Weixin.BaseURL = defaultWeixinBaseURL
+	}
+	if c.Services.Weixin.CDNBaseURL == "" {
+		c.Services.Weixin.CDNBaseURL = defaultWeixinCDNBaseURL
 	}
 }
 

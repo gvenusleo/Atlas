@@ -124,11 +124,18 @@ type inputItem struct {
 	Raw       json.RawMessage `json:"-"`
 	Type      string          `json:"type,omitempty"`
 	Role      string          `json:"role,omitempty"`
-	Content   string          `json:"content,omitempty"`
+	Content   any             `json:"content,omitempty"`
 	CallID    string          `json:"call_id,omitempty"`
 	Name      string          `json:"name,omitempty"`
 	Arguments string          `json:"arguments,omitempty"`
 	Output    string          `json:"output,omitempty"`
+}
+
+type inputContentPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 func (i inputItem) MarshalJSON() ([]byte, error) {
@@ -205,10 +212,10 @@ func toInputItems(messages []model.Message) []inputItem {
 				items = append(items, toProviderInputItems(msg.ProviderItems)...)
 				continue
 			}
-			if msg.Content != "" {
+			if msg.Content != "" || len(msg.Parts) > 0 {
 				items = append(items, inputItem{
 					Role:    string(model.RoleAssistant),
-					Content: msg.Content,
+					Content: toInputContentParts(model.MessageParts(msg)),
 				})
 			}
 			for _, call := range msg.ToolCalls {
@@ -228,11 +235,38 @@ func toInputItems(messages []model.Message) []inputItem {
 		default:
 			items = append(items, inputItem{
 				Role:    string(msg.Role),
-				Content: msg.Content,
+				Content: toInputContentParts(model.MessageParts(msg)),
 			})
 		}
 	}
 	return items
+}
+
+func toInputContentParts(parts []model.ContentPart) []inputContentPart {
+	inputParts := make([]inputContentPart, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case model.ContentPartImage:
+			if part.DataURL == "" {
+				continue
+			}
+			detail := string(part.Detail)
+			if detail == "" {
+				detail = string(model.ImageDetailAuto)
+			}
+			inputParts = append(inputParts, inputContentPart{
+				Type:     "input_image",
+				ImageURL: part.DataURL,
+				Detail:   detail,
+			})
+		default:
+			inputParts = append(inputParts, inputContentPart{
+				Type: "input_text",
+				Text: part.Text,
+			})
+		}
+	}
+	return inputParts
 }
 
 func toProviderInputItems(providerItems []model.ProviderItem) []inputItem {

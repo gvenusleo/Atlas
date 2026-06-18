@@ -235,6 +235,20 @@ func TranscriptHash(messages []model.Message) string {
 		builder.WriteByte('\x00')
 		builder.WriteString(msg.Content)
 		builder.WriteByte('\x00')
+		for _, part := range model.MessageParts(msg) {
+			builder.WriteString(string(part.Type))
+			builder.WriteByte('\x00')
+			builder.WriteString(part.Text)
+			builder.WriteByte('\x00')
+			builder.WriteString(part.MimeType)
+			builder.WriteByte('\x00')
+			builder.WriteString(part.DataURL)
+			builder.WriteByte('\x00')
+			builder.WriteString(part.URI)
+			builder.WriteByte('\x00')
+			builder.WriteString(string(part.Detail))
+			builder.WriteByte('\x00')
+		}
 		builder.WriteString(msg.ReasoningContent)
 		builder.WriteByte('\x00')
 		for _, call := range msg.ToolCalls {

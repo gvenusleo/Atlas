@@ -122,6 +122,7 @@ create table if not exists messages (
 	session_id text not null,
 	role text not null,
 	content text not null,
+	content_parts_json text not null default '',
 	reasoning_content text not null default '',
 	tool_call_id text not null default '',
 	tool_calls_json text not null default '',
@@ -165,7 +166,7 @@ func (s *Store) LoadTranscript(ctx context.Context, sessionID string) (*transcri
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, provider_items_json, input_tokens, output_tokens, total_tokens
+select role, content, content_parts_json, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, provider_items_json, input_tokens, output_tokens, total_tokens
 from messages
 where session_id = ?
 order by id`, sessionID)
@@ -176,9 +177,13 @@ order by id`, sessionID)
 
 	trans := transcript.New()
 	for rows.Next() {
-		var role, content, reasoningContent, toolCallID, toolCallsJSON, toolMetadataJSON, providerItemsJSON string
+		var role, content, contentPartsJSON, reasoningContent, toolCallID, toolCallsJSON, toolMetadataJSON, providerItemsJSON string
 		var usage model.Usage
-		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON, &toolMetadataJSON, &providerItemsJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
+		if err := rows.Scan(&role, &content, &contentPartsJSON, &reasoningContent, &toolCallID, &toolCallsJSON, &toolMetadataJSON, &providerItemsJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
+			return nil, err
+		}
+		parts, err := decodeContentParts(contentPartsJSON)
+		if err != nil {
 			return nil, err
 		}
 		toolCalls, err := decodeToolCalls(toolCallsJSON)
@@ -196,6 +201,7 @@ order by id`, sessionID)
 		trans.Append(model.Message{
 			Role:             model.Role(role),
 			Content:          content,
+			Parts:            parts,
 			ReasoningContent: reasoningContent,
 			ToolCallID:       toolCallID,
 			ToolCalls:        toolCalls,
@@ -497,9 +503,13 @@ on conflict(id) do update set
 		if err != nil {
 			return err
 		}
+		contentPartsJSON, err := encodeContentParts(model.MessageParts(msg))
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
-insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, provider_items_json, input_tokens, output_tokens, total_tokens, created_at)
-values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, toolMetadataJSON, providerItemsJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
+insert into messages(session_id, role, content, content_parts_json, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, provider_items_json, input_tokens, output_tokens, total_tokens, created_at)
+values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, contentPartsJSON, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, toolMetadataJSON, providerItemsJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
 			return err
 		}
 	}
@@ -537,6 +547,28 @@ func scanSession(scanner sessionScanner) (Session, error) {
 		}
 	}
 	return session, nil
+}
+
+func encodeContentParts(parts []model.ContentPart) (string, error) {
+	if len(parts) == 0 {
+		return "", nil
+	}
+	content, err := json.Marshal(parts)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func decodeContentParts(content string) ([]model.ContentPart, error) {
+	if content == "" {
+		return nil, nil
+	}
+	var parts []model.ContentPart
+	if err := json.Unmarshal([]byte(content), &parts); err != nil {
+		return nil, err
+	}
+	return parts, nil
 }
 
 func encodeToolCalls(calls []model.ToolCall) (string, error) {
@@ -660,8 +692,15 @@ func decodeSessionCursor(cursor string) (time.Time, string, error) {
 
 func titleFromMessages(messages []model.Message) string {
 	for _, msg := range messages {
-		if msg.Role == model.RoleUser && strings.TrimSpace(msg.Content) != "" {
-			return firstLine(msg.Content)
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			content = strings.TrimSpace(model.TextFromParts(model.MessageParts(msg)))
+		}
+		if content != "" {
+			return firstLine(content)
 		}
 	}
 	return ""

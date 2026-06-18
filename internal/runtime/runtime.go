@@ -45,6 +45,7 @@ type Runtime struct {
 type TurnOptions struct {
 	SessionID                string
 	Prompt                   string
+	Parts                    []model.ContentPart
 	Model                    string
 	ReasoningEffort          string
 	AdditionalDirectories    []string
@@ -97,6 +98,7 @@ type ModelOption struct {
 	Description      string
 	ContextWindow    int
 	MaxTokens        int
+	InputFormats     []string
 	ReasoningEfforts []ReasoningEffortOption
 }
 
@@ -198,7 +200,9 @@ func New(deps Dependencies) *Runtime {
 
 // RunTurn 恢复或创建 session，执行一次 agent turn，并保存 transcript。
 func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, error) {
-	if strings.TrimSpace(opts.Prompt) == "" {
+	parts := turnContentParts(opts)
+	promptText := strings.TrimSpace(model.TextFromParts(parts))
+	if len(parts) == 0 || promptText == "" && !hasImageParts(parts) {
 		return TurnResult{}, fmt.Errorf("prompt is required")
 	}
 
@@ -232,7 +236,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	defer store.Close()
 
-	shellCommand, isDirectShell := directShellCommand(opts.Prompt)
+	shellCommand, isDirectShell := directShellCommand(promptText)
+	if isDirectShell && hasImageParts(parts) {
+		return TurnResult{}, fmt.Errorf("direct shell input does not support images")
+	}
 	if isDirectShell && shellCommand == "" {
 		return TurnResult{}, fmt.Errorf("shell command is required after !")
 	}
@@ -252,7 +259,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	if isDirectShell {
-		result, savedMessages, err := runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), opts.Prompt, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
+		result, savedMessages, err := runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), promptText, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
 			AdditionalDirectories:    opts.AdditionalDirectories,
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		})
@@ -269,6 +276,9 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	selectedModel, err := activeProvider.ResolveModel(opts.Model)
 	if err != nil {
 		return TurnResult{}, err
+	}
+	if hasImageParts(parts) && !selectedModel.SupportsInputFormat(config.ModelInputFormatImage) {
+		return TurnResult{}, fmt.Errorf("model %q does not support image input", selectedModel.Value)
 	}
 	reasoningEffort, err := selectedReasoningEffort(opts.ReasoningEffort, opts.ReasoningEffortSet, selectedModel)
 	if err != nil {
@@ -298,11 +308,11 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	memoryContext := ""
 	if cfg.Memory.IsEnabled() {
-		memoryContext = r.loadMemoryContext(ctx, cfg.Session, cwd, opts.Prompt)
+		memoryContext = r.loadMemoryContext(ctx, cfg.Session, cwd, promptText)
 	}
 	memoryForceExtract := false
 	if resumeSession {
-		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), opts.Prompt, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
+		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), parts, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
 			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
 			if err != nil {
 				return TurnResult{}, err
@@ -343,7 +353,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		return TurnResult{}, err
 	}
 
-	content, err := a.RunTurn(ctx, opts.Prompt)
+	content, err := a.RunTurnParts(ctx, parts)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -425,7 +435,7 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 
 	messages := append([]model.Message(nil), existing...)
 	messages = append(messages,
-		model.Message{Role: model.RoleUser, Content: strings.TrimSpace(promptText)},
+		model.TextMessage(model.RoleUser, strings.TrimSpace(promptText)),
 		model.Message{
 			Role: model.RoleAssistant,
 			ToolCalls: []model.ToolCall{
@@ -441,6 +451,37 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		SessionID: sessionID,
 		Content:   result.Content,
 	}, messages, nil
+}
+
+// turnContentParts 返回本轮输入的结构化内容。
+func turnContentParts(opts TurnOptions) []model.ContentPart {
+	if len(opts.Parts) > 0 {
+		parts := make([]model.ContentPart, 0, len(opts.Parts))
+		for _, part := range opts.Parts {
+			if part.Type == "" {
+				part.Type = model.ContentPartText
+			}
+			if part.Type == model.ContentPartImage && part.Detail == "" {
+				part.Detail = model.ImageDetailAuto
+			}
+			parts = append(parts, part)
+		}
+		return parts
+	}
+	if strings.TrimSpace(opts.Prompt) == "" {
+		return nil
+	}
+	return []model.ContentPart{{Type: model.ContentPartText, Text: opts.Prompt}}
+}
+
+// hasImageParts 判断输入中是否包含图片片段。
+func hasImageParts(parts []model.ContentPart) bool {
+	for _, part := range parts {
+		if part.Type == model.ContentPartImage {
+			return true
+		}
+	}
+	return false
 }
 
 // directShellToolCall 构造用于 observer 和历史回放的 run_shell 调用。
@@ -576,13 +617,13 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 }
 
 // shouldAutoCompact 判断追加当前用户输入后是否需要自动压缩。
-func shouldAutoCompact(info session.Session, messages []model.Message, promptText string, contextWindow int, triggerRatio float64) bool {
+func shouldAutoCompact(info session.Session, messages []model.Message, parts []model.ContentPart, contextWindow int, triggerRatio float64) bool {
 	inputTokens := info.LastInputTokens
 	if inputTokens <= 0 {
 		active := compact.BuildActiveMessages(info.ContextSummary, info.CompactedMessageCount, messages)
 		inputTokens = compact.EstimateMessages(active)
 	}
-	inputTokens += compact.EstimateMessage(model.Message{Role: model.RoleUser, Content: promptText})
+	inputTokens += compact.EstimateMessage(model.Message{Role: model.RoleUser, Content: model.TextFromParts(parts), Parts: parts})
 	return compact.ShouldAutoCompact(inputTokens, contextWindow, triggerRatio)
 }
 
@@ -649,6 +690,7 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 			Description:      model.Description,
 			ContextWindow:    model.ContextWindow,
 			MaxTokens:        model.MaxTokens,
+			InputFormats:     append([]string(nil), model.InputFormats...),
 			ReasoningEfforts: reasoningEfforts,
 		})
 	}

@@ -21,5 +21,9 @@ func (t *Transcript) Append(msg model.Message) {
 // Messages 返回当前消息快照。
 // 返回值是副本，调用方修改它不会影响 Transcript 内部状态。
 func (t *Transcript) Messages() []model.Message {
-	return append([]model.Message(nil), t.messages...)
+	messages := append([]model.Message(nil), t.messages...)
+	for i := range messages {
+		messages[i].Parts = append([]model.ContentPart(nil), messages[i].Parts...)
+	}
+	return messages
 }

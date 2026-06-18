@@ -17,7 +17,14 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	oldText := "old"
 
 	messages := []model.Message{
-		{Role: model.RoleUser, Content: "hello"},
+		{
+			Role:    model.RoleUser,
+			Content: "hello",
+			Parts: []model.ContentPart{
+				{Type: model.ContentPartText, Text: "hello"},
+				{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,aGVsbG8=", Detail: model.ImageDetailAuto},
+			},
+		},
 		{
 			Role:             model.RoleAssistant,
 			Content:          "reading",
@@ -54,6 +61,9 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	got := trans.Messages()
 	if len(got) != len(messages) {
 		t.Fatalf("messages = %d, want %d", len(got), len(messages))
+	}
+	if len(got[0].Parts) != 2 || got[0].Parts[1].Type != model.ContentPartImage || got[0].Parts[1].MimeType != "image/png" {
+		t.Fatalf("parts = %#v", got[0].Parts)
 	}
 	if got[1].ToolCalls[0].Name != "read_file" {
 		t.Fatalf("tool calls = %#v", got[1].ToolCalls)

@@ -15,6 +15,7 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
@@ -147,15 +148,20 @@ func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 }
 
 // Initialize 返回 Atlas 支持的 ACP v1 能力。
-func (a *Agent) Initialize(_ context.Context, req acpsdk.InitializeRequest) (acpsdk.InitializeResponse, error) {
+func (a *Agent) Initialize(ctx context.Context, req acpsdk.InitializeRequest) (acpsdk.InitializeResponse, error) {
 	a.clientCapabilities = req.ClientCapabilities
 	title := "Atlas"
+	imageInput := false
+	if models, err := a.rt.ModelOptions(ctx); err == nil {
+		imageInput = modelOptionsSupportInput(models, config.ModelInputFormatImage)
+	}
 	return acpsdk.InitializeResponse{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		AgentCapabilities: acpsdk.AgentCapabilities{
 			LoadSession: true,
 			PromptCapabilities: acpsdk.PromptCapabilities{
 				EmbeddedContext: true,
+				Image:           imageInput,
 			},
 			SessionCapabilities: acpsdk.SessionCapabilities{
 				AdditionalDirectories: &acpsdk.SessionAdditionalDirectoriesCapabilities{},
@@ -206,11 +212,15 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	if !ok {
 		return acpsdk.PromptResponse{}, fmt.Errorf("session %q not found", params.SessionId)
 	}
-	promptText, err := promptToText(params.Prompt)
+	promptParts, err := promptToParts(params.Prompt)
 	if err != nil {
 		return acpsdk.PromptResponse{}, err
 	}
+	promptText := strings.TrimSpace(model.TextFromParts(promptParts))
 	if instruction, ok := compactCommandInstruction(promptText); ok {
+		if promptHasImage(promptParts) {
+			return acpsdk.PromptResponse{}, fmt.Errorf("slash commands do not support images")
+		}
 		return a.runCommandPrompt(ctx, params.SessionId, state, instruction)
 	}
 	a.cancelSession(string(params.SessionId))
@@ -225,6 +235,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	result, err := a.rt.RunTurn(turnCtx, runtime.TurnOptions{
 		SessionID:                string(params.SessionId),
 		Prompt:                   promptText,
+		Parts:                    promptParts,
 		Model:                    state.model,
 		ReasoningEffort:          state.reasoningEffort,
 		ReasoningEffortSet:       true,
@@ -642,8 +653,12 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 	for messageIndex, msg := range trans.Messages() {
 		switch msg.Role {
 		case model.RoleUser:
-			if msg.Content != "" {
-				if err := a.sendSessionUpdate(ctx, sessionID, acpsdk.UpdateUserMessageText(msg.Content)); err != nil {
+			for _, part := range model.MessageParts(msg) {
+				update, ok := userMessageUpdate(part)
+				if !ok {
+					continue
+				}
+				if err := a.sendSessionUpdate(ctx, sessionID, update); err != nil {
 					return err
 				}
 			}
@@ -682,6 +697,35 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 		}
 	}
 	return nil
+}
+
+func userMessageUpdate(part model.ContentPart) (acpsdk.SessionUpdate, bool) {
+	switch part.Type {
+	case model.ContentPartImage:
+		data, ok := base64FromDataURL(part.DataURL)
+		if !ok || part.MimeType == "" {
+			return acpsdk.SessionUpdate{}, false
+		}
+		block := acpsdk.ImageBlock(data, part.MimeType)
+		if part.URI != "" {
+			block.Image.Uri = acpsdk.Ptr(part.URI)
+		}
+		return acpsdk.UpdateUserMessage(block), true
+	default:
+		if part.Text == "" {
+			return acpsdk.SessionUpdate{}, false
+		}
+		return acpsdk.UpdateUserMessageText(part.Text), true
+	}
+}
+
+func base64FromDataURL(value string) (string, bool) {
+	const marker = ";base64,"
+	index := strings.Index(value, marker)
+	if index < 0 {
+		return "", false
+	}
+	return value[index+len(marker):], true
 }
 
 func (a *Agent) sendSessionUpdate(ctx context.Context, sessionID acpsdk.SessionId, update acpsdk.SessionUpdate) error {
@@ -906,27 +950,89 @@ func requireAbsoluteDirectories(dirs []string) error {
 	return nil
 }
 
-func promptToText(blocks []acpsdk.ContentBlock) (string, error) {
-	var parts []string
+func promptToParts(blocks []acpsdk.ContentBlock) ([]model.ContentPart, error) {
+	var parts []model.ContentPart
 	for _, block := range blocks {
 		switch {
 		case block.Text != nil:
-			parts = append(parts, block.Text.Text)
+			parts = append(parts, model.ContentPart{Type: model.ContentPartText, Text: block.Text.Text})
+		case block.Image != nil:
+			part, err := imageBlockPart(block.Image)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
 		case block.ResourceLink != nil:
-			parts = append(parts, fmt.Sprintf("Resource: %s (%s)", block.ResourceLink.Name, block.ResourceLink.Uri))
+			parts = append(parts, model.ContentPart{Type: model.ContentPartText, Text: fmt.Sprintf("Resource: %s (%s)", block.ResourceLink.Name, block.ResourceLink.Uri)})
 		case block.Resource != nil && block.Resource.Resource.TextResourceContents != nil:
-			parts = append(parts, embeddedTextResource(block.Resource.Resource.TextResourceContents))
+			parts = append(parts, model.ContentPart{Type: model.ContentPartText, Text: embeddedTextResource(block.Resource.Resource.TextResourceContents)})
 		case block.Resource != nil && block.Resource.Resource.BlobResourceContents != nil:
-			return "", fmt.Errorf("unsupported ACP embedded blob resource")
+			part, err := embeddedBlobResourcePart(block.Resource.Resource.BlobResourceContents)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
 		default:
-			return "", fmt.Errorf("unsupported ACP prompt content block")
+			return nil, fmt.Errorf("unsupported ACP prompt content block")
 		}
 	}
-	text := strings.TrimSpace(strings.Join(parts, "\n\n"))
-	if text == "" {
-		return "", fmt.Errorf("prompt is required")
+	if len(parts) == 0 || strings.TrimSpace(model.TextFromParts(parts)) == "" && !promptHasImage(parts) {
+		return nil, fmt.Errorf("prompt is required")
 	}
-	return text, nil
+	return parts, nil
+}
+
+func imageBlockPart(image *acpsdk.ContentBlockImage) (model.ContentPart, error) {
+	if image == nil || strings.TrimSpace(image.Data) == "" || strings.TrimSpace(image.MimeType) == "" {
+		return model.ContentPart{}, fmt.Errorf("ACP image block is incomplete")
+	}
+	return model.ContentPart{
+		Type:     model.ContentPartImage,
+		MimeType: image.MimeType,
+		DataURL:  dataURL(image.MimeType, image.Data),
+		URI:      derefString(image.Uri),
+		Detail:   model.ImageDetailAuto,
+	}, nil
+}
+
+func embeddedBlobResourcePart(resource *acpsdk.BlobResourceContents) (model.ContentPart, error) {
+	mimeType := ""
+	if resource.MimeType != nil {
+		mimeType = *resource.MimeType
+	}
+	if !strings.HasPrefix(mimeType, "image/") {
+		return model.ContentPart{}, fmt.Errorf("unsupported ACP embedded blob resource")
+	}
+	if strings.TrimSpace(resource.Blob) == "" {
+		return model.ContentPart{}, fmt.Errorf("ACP embedded image resource is empty")
+	}
+	return model.ContentPart{
+		Type:     model.ContentPartImage,
+		MimeType: mimeType,
+		DataURL:  dataURL(mimeType, resource.Blob),
+		URI:      resource.Uri,
+		Detail:   model.ImageDetailAuto,
+	}, nil
+}
+
+func dataURL(mimeType, base64Data string) string {
+	return "data:" + mimeType + ";base64," + base64Data
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func promptHasImage(parts []model.ContentPart) bool {
+	for _, part := range parts {
+		if part.Type == model.ContentPartImage {
+			return true
+		}
+	}
+	return false
 }
 
 // embeddedTextResource 将 ACP 内嵌文本资源转成模型可读的文本片段。
@@ -1205,6 +1311,17 @@ func modelInitialReasoningEffort(options runtime.ModelOptions, modelValue string
 		return ""
 	}
 	return modelOption.ReasoningEfforts[0].Value
+}
+
+func modelOptionsSupportInput(options runtime.ModelOptions, inputFormat string) bool {
+	for _, modelOption := range options.Models {
+		for _, format := range modelOption.InputFormats {
+			if format == inputFormat {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func findModelOption(options runtime.ModelOptions, value string) (runtime.ModelOption, bool) {

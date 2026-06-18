@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -353,6 +354,38 @@ func TestRunWithDependenciesLogsOutWeixinAccount(t *testing.T) {
 	}
 }
 
+func TestRunWithDependenciesWeixinServeReturnsConfigError(t *testing.T) {
+	home := setTestHome(t)
+	configDir := filepath.Join(home, ".atlas")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	configPath := filepath.Join(configDir, "config.json")
+	content := `{
+  "active_provider": "test",
+  "providers": [{
+    "name": "test",
+    "base_url": "https://api.example.com",
+    "api_key": "sk-test",
+    "default_model": "test-model",
+    "models": [{
+      "value": "test-model",
+      "name": "Test Model",
+      "context_window": 1000,
+      "max_tokens": 100
+    }]
+  }]
+}`
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	err := runWithDependencies(context.Background(), []string{"weixin", "serve"}, runDependencies{})
+	if err == nil || !strings.Contains(err.Error(), "input_formats is required") {
+		t.Fatalf("runWithDependencies() error = %v", err)
+	}
+}
+
 func TestRunWithDependenciesListsSessions(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "atlas.db")
 	stdout := saveTestSession(t, dbPath, "work", "hello")
@@ -602,7 +635,7 @@ func testConfig(dbPath string) config.Config {
 						Value:         "test-model",
 						Name:          "Test Model",
 						ContextWindow: 1000000,
-						MaxTokens:     384000,
+						MaxTokens:     384000, InputFormats: []string{config.ModelInputFormatText},
 						ReasoningEfforts: []config.ProviderReasoningEffort{
 							{Value: "high", Name: "High"},
 							{Value: "max", Name: "Max"},
@@ -612,7 +645,7 @@ func testConfig(dbPath string) config.Config {
 						Value:         "other-model",
 						Name:          "Other Model",
 						ContextWindow: 1000000,
-						MaxTokens:     128000,
+						MaxTokens:     128000, InputFormats: []string{config.ModelInputFormatText},
 					},
 				},
 			},

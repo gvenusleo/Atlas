@@ -82,6 +82,26 @@ func TestRunTurnPersistsProviderUsage(t *testing.T) {
 	}
 }
 
+func TestRunTurnRejectsImageWhenModelDoesNotSupportIt(t *testing.T) {
+	provider := &recordingProvider{}
+	r := newTestRuntime(t, provider)
+
+	_, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "describe",
+		Parts: []model.ContentPart{
+			{Type: model.ContentPartText, Text: "describe"},
+			{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,aGVsbG8="},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not support image input") {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.called {
+		t.Fatalf("provider was called: %#v", provider.request)
+	}
+}
+
 func TestCompactSessionSummarizesOldTurnsAndRunTurnUsesActiveContext(t *testing.T) {
 	provider := &sequenceProvider{
 		responses: []model.ChatResponse{
@@ -1178,7 +1198,7 @@ func testConfig(dbPath string) config.Config {
 						Value:         "test-model",
 						Name:          "Test Model",
 						ContextWindow: 1000000,
-						MaxTokens:     384000,
+						MaxTokens:     384000, InputFormats: []string{config.ModelInputFormatText},
 						ReasoningEfforts: []config.ProviderReasoningEffort{
 							{Value: "high", Name: "High"},
 							{Value: "max", Name: "Max"},
@@ -1188,7 +1208,7 @@ func testConfig(dbPath string) config.Config {
 						Value:         "other-model",
 						Name:          "Other Model",
 						ContextWindow: 1000000,
-						MaxTokens:     128000,
+						MaxTokens:     128000, InputFormats: []string{config.ModelInputFormatText},
 						ReasoningEfforts: []config.ProviderReasoningEffort{
 							{Value: "high", Name: "High"},
 						},

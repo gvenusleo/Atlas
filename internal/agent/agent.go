@@ -75,15 +75,22 @@ func New(config Config) (*Agent, error) {
 	}, nil
 }
 
-// RunTurn 执行一次用户输入到最终 assistant 回复的循环。
+// RunTurn 执行一次纯文本用户输入到最终 assistant 回复的循环。
 func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
+	return a.RunTurnParts(ctx, []model.ContentPart{{Type: model.ContentPartText, Text: prompt}})
+}
+
+// RunTurnParts 执行一次结构化用户输入到最终 assistant 回复的循环。
+func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (string, error) {
+	content := model.TextFromParts(parts)
 	a.transcript.Append(model.Message{
 		Role:    model.RoleUser,
-		Content: prompt,
+		Content: content,
+		Parts:   normalizeContentParts(parts),
 	})
 	a.emit(Event{
 		Type:    EventTurnStarted,
-		Content: prompt,
+		Content: content,
 	})
 
 	for step := 0; step < a.maxSteps; step++ {
@@ -177,6 +184,21 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 		Err:  err,
 	})
 	return "", err
+}
+
+// normalizeContentParts 补齐图片默认 detail，并复制输入切片。
+func normalizeContentParts(parts []model.ContentPart) []model.ContentPart {
+	normalized := make([]model.ContentPart, 0, len(parts))
+	for _, part := range parts {
+		if part.Type == "" {
+			part.Type = model.ContentPartText
+		}
+		if part.Type == model.ContentPartImage && part.Detail == "" {
+			part.Detail = model.ImageDetailAuto
+		}
+		normalized = append(normalized, part)
+	}
+	return normalized
 }
 
 func (a *Agent) emit(event Event) {

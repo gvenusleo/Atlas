@@ -468,10 +468,49 @@ func TestFormatSessionListIncludesCWDForAllSessions(t *testing.T) {
 	}
 }
 
+func TestServerPassesImageMessageToRuntime(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'E', 'N', 'D'}
+	var requestMu sync.Mutex
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestMu.Lock()
+		requests = append(requests, r.URL.Path)
+		requestMu.Unlock()
+		switch r.URL.Path {
+		case "/image.png":
+			_, _ = w.Write(png)
+		case "/ilink/bot/getconfig", "/ilink/bot/sendtyping", "/ilink/bot/sendmessage":
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	srv, rt := newTestServer(t, server.URL)
+	if err := srv.HandleMessage(context.Background(), imageMessage("user-1", "describe", server.URL+"/image.png")); err != nil {
+		t.Fatalf("HandleMessage() error = %v", err)
+	}
+	waitFor(t, func() bool {
+		requestMu.Lock()
+		defer requestMu.Unlock()
+		return containsPath(requests, "/ilink/bot/sendmessage")
+	})
+
+	parts := rt.lastParts()
+	if len(parts) != 2 || parts[0].Text != "describe" || parts[1].Type != model.ContentPartImage {
+		t.Fatalf("parts = %#v", parts)
+	}
+	if parts[1].MimeType != "image/png" || !strings.HasPrefix(parts[1].DataURL, "data:image/png;base64,") {
+		t.Fatalf("image part = %#v", parts[1])
+	}
+}
+
 type fakeRuntime struct {
 	mu            sync.Mutex
 	runCalled     bool
 	prompt        string
+	parts         []model.ContentPart
 	cwd           string
 	events        []agent.Event
 	resultContent string
@@ -482,6 +521,7 @@ func (f *fakeRuntime) RunTurn(_ context.Context, opts runtime.TurnOptions) (runt
 	f.mu.Lock()
 	f.runCalled = true
 	f.prompt = opts.Prompt
+	f.parts = append([]model.ContentPart(nil), opts.Parts...)
 	f.cwd = opts.CWD
 	events := append([]agent.Event(nil), f.events...)
 	f.mu.Unlock()
@@ -546,6 +586,12 @@ func (f *fakeRuntime) lastRun() (string, string) {
 	return f.prompt, f.cwd
 }
 
+func (f *fakeRuntime) lastParts() []model.ContentPart {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]model.ContentPart(nil), f.parts...)
+}
+
 func (f *fakeRuntime) setSessions(sessions []session.Session) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -596,6 +642,17 @@ func textMessage(from, text string) WeixinMessage {
 		ContextToken: "ctx",
 		RunID:        "run",
 	}
+}
+
+func imageMessage(from, text, imageURL string) WeixinMessage {
+	msg := textMessage(from, text)
+	msg.Items = append(msg.Items, MessageItem{
+		Type: messageItemTypeImage,
+		ImageItem: &ImageItem{
+			Media: &CDNMedia{FullURL: imageURL},
+		},
+	})
+	return msg
 }
 
 func containsPath(paths []string, target string) bool {

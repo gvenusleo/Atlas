@@ -71,9 +71,10 @@ func TestStreamSendsResponsesRequest(t *testing.T) {
 	if gotReq.Instructions != "system prompt" {
 		t.Fatalf("Instructions = %q", gotReq.Instructions)
 	}
-	if len(gotReq.Input) != 1 || gotReq.Input[0].Role != "user" || gotReq.Input[0].Content != "hi" {
+	if len(gotReq.Input) != 1 || gotReq.Input[0].Role != "user" {
 		t.Fatalf("input = %#v", gotReq.Input)
 	}
+	assertInputContentParts(t, gotReq.Input[0].Content, []inputContentPart{{Type: "input_text", Text: "hi"}})
 	if len(gotReq.Tools) != 1 || gotReq.Tools[0].Name != "read_file" || gotReq.Tools[0].Type != "function" {
 		t.Fatalf("tools = %#v", gotReq.Tools)
 	}
@@ -104,6 +105,36 @@ func TestStreamSendsResponsesRequest(t *testing.T) {
 	if resp.Usage.TotalTokens != 5 {
 		t.Fatalf("Usage.TotalTokens = %d", resp.Usage.TotalTokens)
 	}
+}
+
+func TestStreamSendsImageContentPart(t *testing.T) {
+	var gotReq responsesRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"type":"response.completed","response":{"status":"completed"}}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	_, err := provider.Stream(context.Background(), model.ChatRequest{
+		Messages: []model.Message{{
+			Role:    model.RoleUser,
+			Content: "describe",
+			Parts: []model.ContentPart{
+				{Type: model.ContentPartText, Text: "describe"},
+				{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,aGVsbG8=", Detail: model.ImageDetailHigh},
+			},
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	assertInputContentParts(t, gotReq.Input[0].Content, []inputContentPart{
+		{Type: "input_text", Text: "describe"},
+		{Type: "input_image", ImageURL: "data:image/png;base64,aGVsbG8=", Detail: "high"},
+	})
 }
 
 func TestStreamSendsFunctionCallOutput(t *testing.T) {
@@ -423,6 +454,26 @@ func newTestProvider(t *testing.T, baseURL string) *Provider {
 		t.Fatal(err)
 	}
 	return provider
+}
+
+func assertInputContentParts(t *testing.T, content any, want []inputContentPart) {
+	t.Helper()
+	raw, err := json.Marshal(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []inputContentPart
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("content is not parts array: %s", raw)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("content parts = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("content parts = %#v, want %#v", got, want)
+		}
+	}
 }
 
 func writeSSE(w http.ResponseWriter, events ...string) {

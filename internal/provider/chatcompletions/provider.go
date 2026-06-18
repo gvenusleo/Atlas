@@ -124,10 +124,21 @@ type apiFormat struct {
 
 type apiMessage struct {
 	Role             string        `json:"role"`
-	Content          string        `json:"content"`
+	Content          any           `json:"content"`
 	ReasoningContent string        `json:"reasoning_content,omitempty"`
 	ToolCallID       string        `json:"tool_call_id,omitempty"`
 	ToolCalls        []apiToolCall `json:"tool_calls,omitempty"`
+}
+
+type apiContentPart struct {
+	Type     string              `json:"type"`
+	Text     string              `json:"text,omitempty"`
+	ImageURL *apiImageURLContent `json:"image_url,omitempty"`
+}
+
+type apiImageURLContent struct {
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type apiTool struct {
@@ -191,7 +202,7 @@ func toAPIMessages(req model.ChatRequest) []apiMessage {
 	if req.System != "" {
 		messages = append(messages, apiMessage{
 			Role:    string(model.RoleSystem),
-			Content: req.System,
+			Content: toAPIContentParts([]model.ContentPart{{Type: model.ContentPartText, Text: req.System}}),
 		})
 	}
 	for _, msg := range req.Messages {
@@ -203,9 +214,13 @@ func toAPIMessages(req model.ChatRequest) []apiMessage {
 func toAPIMessage(msg model.Message) apiMessage {
 	apiMsg := apiMessage{
 		Role:             string(msg.Role),
-		Content:          msg.Content,
 		ReasoningContent: msg.ReasoningContent,
 		ToolCallID:       msg.ToolCallID,
+	}
+	if msg.Role == model.RoleTool {
+		apiMsg.Content = msg.Content
+	} else {
+		apiMsg.Content = toAPIContentParts(model.MessageParts(msg))
 	}
 	if len(msg.ToolCalls) > 0 {
 		apiMsg.ToolCalls = make([]apiToolCall, 0, len(msg.ToolCalls))
@@ -221,6 +236,35 @@ func toAPIMessage(msg model.Message) apiMessage {
 		}
 	}
 	return apiMsg
+}
+
+func toAPIContentParts(parts []model.ContentPart) []apiContentPart {
+	apiParts := make([]apiContentPart, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case model.ContentPartImage:
+			if part.DataURL == "" {
+				continue
+			}
+			detail := string(part.Detail)
+			if detail == "" {
+				detail = string(model.ImageDetailAuto)
+			}
+			apiParts = append(apiParts, apiContentPart{
+				Type: "image_url",
+				ImageURL: &apiImageURLContent{
+					URL:    part.DataURL,
+					Detail: detail,
+				},
+			})
+		default:
+			apiParts = append(apiParts, apiContentPart{
+				Type: "text",
+				Text: part.Text,
+			})
+		}
+	}
+	return apiParts
 }
 
 func toAPITools(tools []model.ToolDefinition) []apiTool {

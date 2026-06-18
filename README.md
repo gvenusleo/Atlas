@@ -42,6 +42,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置：
           "name": "DeepSeek V4 Flash",
           "context_window": 1000000,
           "max_tokens": 384000,
+          "input_formats": ["text"],
           "reasoning_efforts": [
             {
               "value": "high",
@@ -57,7 +58,8 @@ Atlas 从 `~/.atlas/config.json` 读取配置：
           "value": "deepseek-v4-pro",
           "name": "DeepSeek V4 Pro",
           "context_window": 1000000,
-          "max_tokens": 384000
+          "max_tokens": 384000,
+          "input_formats": ["text", "image"]
         }
       ]
     }
@@ -77,6 +79,9 @@ Atlas 从 `~/.atlas/config.json` 读取配置：
   "services": {
     "tavily": {
       "api_key": "tvly-..."
+    },
+    "weixin": {
+      "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c"
     }
   }
 }
@@ -90,12 +95,14 @@ Atlas 从 `~/.atlas/config.json` 读取配置：
 - `providers[].format` 可省略，默认 `chat_completions`；OpenAI Responses API 使用 `responses`。
 - `providers[].models[].value` 是发送给 Provider 的模型名，`name` 用于显示。
 - `context_window` 用于上下文压缩和用量展示，`max_tokens` 是每次模型请求的最大输出 token 数。
+- `providers[].models[].input_formats` 声明模型支持的输入格式，当前支持 `text` 和 `image`，且必须包含 `text`。
 - `providers[].models[].reasoning_efforts` 声明模型支持的思考深度选项；未显式选择时使用第一项。
 - `agent.compaction_trigger_ratio` 默认 `0.8`，表示上下文输入达到模型窗口 80% 时自动压缩早期对话。
 - `memory.enabled` 默认启用。`memory.model` 为空时，后台记忆任务使用产生该会话的模型。
 - `session.db_path` 默认 `~/.atlas/atlas.db`。
 - `services.tavily.api_key` 配置后启用 `web_search` 和 `web_fetch`，请求会发送给 Tavily。
 - `services.weixin.base_url` 可省略，默认 `https://ilinkai.weixin.qq.com`。
+- `services.weixin.cdn_base_url` 可省略，默认 `https://novac2c.cdn.weixin.qq.com/c2c`，用于微信图片输入下载。
 
 当前项目处于早期阶段，不提供数据库迁移框架。schema 变化后请删除旧的 `~/.atlas/atlas.db` 重新生成。
 
@@ -154,16 +161,17 @@ Atlas 使用 SQLite 保存本地会话和长期记忆。默认路径是 `~/.atla
 - session info 和 usage update。
 - 客户端 terminal 展示 `run_shell` 输出。
 - 文件工具 locations/diff 展示。
+- 图片输入。
 - 长期记忆后台 worker。
 - `/compact` slash command。
 
-`additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准。当前不支持 ACP auth、权限请求、MCP 连接，也不支持图片、音频、二进制资源输入。
+`additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准。当前不支持 ACP auth、权限请求、MCP 连接，也不支持音频和非图片二进制资源输入。
 
 ## 微信
 
-`atlas weixin login` 使用微信扫码登录，并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本消息并调用本地 Atlas runtime。
+`atlas weixin login` 使用微信扫码登录，并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本和图片消息并调用本地 Atlas runtime。
 
-微信通道拥有与本机 Atlas 进程相同的文件和 shell 权限。首次收到消息时，工作目录使用 `atlas weixin serve` 启动时的当前目录。当前只支持扫码登录的微信用户本人控制 Atlas，不支持群聊、媒体消息或添加其他控制人。
+微信通道拥有与本机 Atlas 进程相同的文件和 shell 权限。首次收到消息时，工作目录使用 `atlas weixin serve` 启动时的当前目录。当前只支持扫码登录的微信用户本人控制 Atlas，不支持群聊、音频、视频或添加其他控制人。
 
 微信聊天支持这些斜杠命令：
 

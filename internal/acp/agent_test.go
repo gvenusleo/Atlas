@@ -47,6 +47,9 @@ func TestInitializeReportsSupportedCapabilities(t *testing.T) {
 	if !resp.AgentCapabilities.PromptCapabilities.EmbeddedContext {
 		t.Fatalf("prompt capabilities = %#v", resp.AgentCapabilities.PromptCapabilities)
 	}
+	if !resp.AgentCapabilities.PromptCapabilities.Image {
+		t.Fatalf("prompt capabilities = %#v", resp.AgentCapabilities.PromptCapabilities)
+	}
 	if !resp.AgentCapabilities.LoadSession {
 		t.Fatal("LoadSession capability should be enabled")
 	}
@@ -1190,16 +1193,25 @@ func TestPromptEmbeddedTextResource(t *testing.T) {
 	}
 }
 
-func TestPromptUnsupportedContent(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
+func TestPromptAcceptsImageContent(t *testing.T) {
+	rt := &fakeRuntime{}
+	a := NewAgent(rt)
 	a.setSession("sess", "/tmp/work", "test-model", "", nil)
 
-	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+	if _, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
 		SessionId: "sess",
-		Prompt:    []acpsdk.ContentBlock{acpsdk.ImageBlock("data", "image/png")},
-	})
-	if err == nil || !strings.Contains(err.Error(), "unsupported ACP prompt content block") {
+		Prompt: []acpsdk.ContentBlock{
+			acpsdk.TextBlock("describe"),
+			acpsdk.ImageBlock("aGVsbG8=", "image/png"),
+		},
+	}); err != nil {
 		t.Fatalf("Prompt() error = %v", err)
+	}
+	if rt.runOptions.Prompt != "describe" {
+		t.Fatalf("prompt = %q", rt.runOptions.Prompt)
+	}
+	if len(rt.runOptions.Parts) != 2 || rt.runOptions.Parts[1].Type != model.ContentPartImage || rt.runOptions.Parts[1].DataURL != "data:image/png;base64,aGVsbG8=" {
+		t.Fatalf("parts = %#v", rt.runOptions.Parts)
 	}
 }
 
@@ -1831,7 +1843,7 @@ func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, 
 				Value:         "test-model",
 				Name:          "Test Model",
 				ContextWindow: 1000000,
-				MaxTokens:     384000,
+				MaxTokens:     384000, InputFormats: []string{"text", "image"},
 				ReasoningEfforts: []atlasruntime.ReasoningEffortOption{
 					{Value: "high", Name: "High"},
 					{Value: "max", Name: "Max"},
@@ -1842,7 +1854,7 @@ func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, 
 				Name:          "Other Model",
 				Description:   "alternate",
 				ContextWindow: 1000000,
-				MaxTokens:     128000,
+				MaxTokens:     128000, InputFormats: []string{"text"},
 				ReasoningEfforts: []atlasruntime.ReasoningEffortOption{
 					{Value: "high", Name: "High"},
 				},

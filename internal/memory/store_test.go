@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/liuyuxin/atlas/internal/model"
 )
 
 func TestStoreUpsertSearchAndPromptContext(t *testing.T) {
@@ -81,6 +83,29 @@ func TestStoreJobs(t *testing.T) {
 	}
 	if counts.Pending != 0 || counts.Failed != 0 {
 		t.Fatalf("counts = %#v", counts)
+	}
+}
+
+func TestTranscriptHashIncludesContentParts(t *testing.T) {
+	base := []model.Message{{
+		Role:    model.RoleUser,
+		Content: "describe",
+		Parts: []model.ContentPart{
+			{Type: model.ContentPartText, Text: "describe"},
+			{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,one", Detail: model.ImageDetailAuto},
+		},
+	}}
+	changed := []model.Message{{
+		Role:    model.RoleUser,
+		Content: "describe",
+		Parts: []model.ContentPart{
+			{Type: model.ContentPartText, Text: "describe"},
+			{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,two", Detail: model.ImageDetailAuto},
+		},
+	}}
+
+	if TranscriptHash(base) == TranscriptHash(changed) {
+		t.Fatal("TranscriptHash ignored image content parts")
 	}
 }
 

@@ -22,12 +22,13 @@ func TestLoadFile(t *testing.T) {
 						"name": "DeepSeek V4 Flash",
 						"context_window": 1000000,
 						"max_tokens": 384000,
+						"input_formats": ["text"],
 						"reasoning_efforts": [
 							{"value": "high", "name": "High"},
 							{"value": "max", "name": "Max", "description": "Maximum reasoning depth"}
 						]
 					},
-					{"value": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "description": "pro model", "context_window": 1000000, "max_tokens": 384000}
+					{"value": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "description": "pro model", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}
 				]
 			},
 			{
@@ -36,7 +37,7 @@ func TestLoadFile(t *testing.T) {
 				"base_url": "https://api.openai.com/v1",
 				"api_key": "sk-openai",
 				"default_model": "gpt-5",
-				"models": [{"value": "gpt-5", "name": "GPT-5", "context_window": 400000, "max_tokens": 128000}]
+				"models": [{"value": "gpt-5", "name": "GPT-5", "context_window": 400000, "max_tokens": 128000, "input_formats": ["text", "image"]}]
 			}
 		],
 		"agent": {
@@ -91,6 +92,9 @@ func TestLoadFile(t *testing.T) {
 	if provider.Models[0].MaxTokens != 384000 {
 		t.Fatalf("MaxTokens = %d", provider.Models[0].MaxTokens)
 	}
+	if len(provider.Models[0].InputFormats) != 1 || provider.Models[0].InputFormats[0] != ModelInputFormatText {
+		t.Fatalf("InputFormats = %#v", provider.Models[0].InputFormats)
+	}
 	if len(provider.Models[0].ReasoningEfforts) != 2 || provider.Models[0].ReasoningEfforts[1].Description != "Maximum reasoning depth" {
 		t.Fatalf("ReasoningEfforts = %#v", provider.Models[0].ReasoningEfforts)
 	}
@@ -122,7 +126,7 @@ func TestLoadFileDefaults(t *testing.T) {
 			"base_url": "https://api.deepseek.com",
 			"api_key": "sk-test",
 			"default_model": "deepseek-v4-flash",
-			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]
 		}]
 	}`
 
@@ -179,6 +183,9 @@ func TestLoadFileDefaults(t *testing.T) {
 		if cfg.Services.Weixin.BaseURL != defaultWeixinBaseURL {
 			t.Fatalf("Weixin.BaseURL = %q", cfg.Services.Weixin.BaseURL)
 		}
+		if cfg.Services.Weixin.CDNBaseURL != defaultWeixinCDNBaseURL {
+			t.Fatalf("Weixin.CDNBaseURL = %q", cfg.Services.Weixin.CDNBaseURL)
+		}
 	})
 }
 
@@ -194,7 +201,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 				"base_url": "https://api.deepseek.com",
 				"api_key": "sk-test",
 				"default_model": "deepseek-v4-flash",
-				"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]
 			}]
 		}`},
 		{name: "missing provider", content: `{"active_provider": "deepseek"}`},
@@ -205,15 +212,15 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 				"base_url": "https://api.deepseek.com",
 				"api_key": "sk-test",
 				"default_model": "deepseek-v4-flash",
-				"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+				"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]
 			}]
 		}`},
 		{name: "missing provider name", content: validProviderConfigWith(`"name": "",`)},
 		{name: "duplicate provider name", content: `{
 			"active_provider": "deepseek",
 			"providers": [
-				{"name": "deepseek", "base_url": "https://api.deepseek.com", "api_key": "sk-test", "default_model": "deepseek-v4-flash", "models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]},
-				{"name": "deepseek", "base_url": "https://api.example.com", "api_key": "sk-test", "default_model": "other", "models": [{"value": "other", "name": "Other", "context_window": 1000000, "max_tokens": 384000}]}
+				{"name": "deepseek", "base_url": "https://api.deepseek.com", "api_key": "sk-test", "default_model": "deepseek-v4-flash", "models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]},
+				{"name": "deepseek", "base_url": "https://api.example.com", "api_key": "sk-test", "default_model": "other", "models": [{"value": "other", "name": "Other", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]}
 			]
 		}`},
 		{name: "invalid provider format", content: validProviderConfigWith(`"format": "openai",`)},
@@ -224,20 +231,25 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 		{name: "missing models", content: validProviderConfigWithout("models")},
 		{name: "default model not configured", content: validProviderConfigWith(`"default_model": "deepseek-v4-pro",`)},
 		{name: "duplicate model value", content: validProviderConfigWith(`"models": [
-			{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000},
-			{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash Copy", "context_window": 1000000, "max_tokens": 384000}
+			{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]},
+			{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash Copy", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}
 		],`)},
 		{name: "missing context window", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "max_tokens": 384000}],`)},
 		{name: "missing max tokens", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000}],`)},
 		{name: "max tokens exceed context window", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 1000001}],`)},
-		{name: "missing reasoning effort value", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "reasoning_efforts": [{"name": "High"}]}],`)},
-		{name: "missing reasoning effort name", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "reasoning_efforts": [{"value": "high"}]}],`)},
-		{name: "duplicate reasoning effort value", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "reasoning_efforts": [{"value": "high", "name": "High"}, {"value": "high", "name": "High Copy"}]}],`)},
+		{name: "missing input formats", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}],`)},
+		{name: "empty input format", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": [""]}],`)},
+		{name: "unsupported input format", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text", "audio"]}],`)},
+		{name: "input formats missing text", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["image"]}],`)},
+		{name: "duplicate input format", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text", "text"]}],`)},
+		{name: "missing reasoning effort value", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"], "reasoning_efforts": [{"name": "High"}]}],`)},
+		{name: "missing reasoning effort name", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"], "reasoning_efforts": [{"value": "high"}]}],`)},
+		{name: "duplicate reasoning effort value", content: validProviderConfigWith(`"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"], "reasoning_efforts": [{"value": "high", "name": "High"}, {"value": "high", "name": "High Copy"}]}],`)},
 		{name: "invalid inactive provider", content: `{
 			"active_provider": "deepseek",
 			"providers": [
-				{"name": "deepseek", "base_url": "https://api.deepseek.com", "api_key": "sk-test", "default_model": "deepseek-v4-flash", "models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]},
-				{"name": "broken", "base_url": ":", "api_key": "sk-test", "default_model": "broken", "models": [{"value": "broken", "name": "Broken", "context_window": 1000000, "max_tokens": 384000}]}
+				{"name": "deepseek", "base_url": "https://api.deepseek.com", "api_key": "sk-test", "default_model": "deepseek-v4-flash", "models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]},
+				{"name": "broken", "base_url": ":", "api_key": "sk-test", "default_model": "broken", "models": [{"value": "broken", "name": "Broken", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]}
 			]
 		}`},
 		{name: "invalid temperature", content: validConfigWith(`"agent": {"temperature": 3},`)},
@@ -248,6 +260,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 		{name: "custom tavily base url without api key", content: validConfigWith(`"services": {"tavily": {"base_url": "https://tavily.example.com"}},`)},
 		{name: "invalid weixin base url", content: validConfigWith(`"services": {"weixin": {"base_url": ":"}},`)},
 		{name: "unsupported weixin base url scheme", content: validConfigWith(`"services": {"weixin": {"base_url": "ftp://ilinkai.weixin.qq.com"}},`)},
+		{name: "invalid weixin cdn base url", content: validConfigWith(`"services": {"weixin": {"cdn_base_url": ":"}},`)},
 	}
 
 	for _, tt := range tests {
@@ -269,7 +282,7 @@ func TestLoadFileAllowsProviderResponsesFormat(t *testing.T) {
 			"base_url": "https://api.openai.com/v1",
 			"api_key": "sk-test",
 			"default_model": "gpt-5",
-			"models": [{"value": "gpt-5", "name": "GPT-5", "context_window": 400000, "max_tokens": 128000}]
+			"models": [{"value": "gpt-5", "name": "GPT-5", "context_window": 400000, "max_tokens": 128000, "input_formats": ["text", "image"]}]
 		}]
 	}`)
 
@@ -290,8 +303,8 @@ func TestProviderConfigResolveModel(t *testing.T) {
 	provider := ProviderConfig{
 		DefaultModel: "default",
 		Models: []ProviderModel{
-			{Value: "default", Name: "Default", ContextWindow: 1000000, MaxTokens: 384000},
-			{Value: "other", Name: "Other", ContextWindow: 1000000, MaxTokens: 384000},
+			{Value: "default", Name: "Default", ContextWindow: 1000000, MaxTokens: 384000, InputFormats: []string{ModelInputFormatText}},
+			{Value: "other", Name: "Other", ContextWindow: 1000000, MaxTokens: 384000, InputFormats: []string{ModelInputFormatText}},
 		},
 	}
 
@@ -333,7 +346,7 @@ func validConfigWith(extra string) string {
 			"base_url": "https://api.deepseek.com",
 			"api_key": "sk-test",
 			"default_model": "deepseek-v4-flash",
-			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]
+			"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]
 		}]
 	}`
 }
@@ -360,7 +373,7 @@ func validProviderFields() map[string]string {
 		"base_url":      `"base_url": "https://api.deepseek.com"`,
 		"api_key":       `"api_key": "sk-test"`,
 		"default_model": `"default_model": "deepseek-v4-flash"`,
-		"models":        `"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000}]`,
+		"models":        `"models": [{"value": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]`,
 	}
 }
 

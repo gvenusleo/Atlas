@@ -178,16 +178,17 @@ func runWeixinServeCommand(ctx context.Context, args []string, deps runDependenc
 	if len(args) != 0 {
 		return errors.New("usage: atlas weixin serve")
 	}
-	store, client, account, err := newWeixinServeRuntime()
+	store, client, account, weixinConfig, err := newWeixinServeRuntime()
 	if err != nil {
 		return err
 	}
 	server, err := weixin.NewServer(weixin.ServerOptions{
-		Runtime: deps.runtime,
-		Store:   store,
-		Client:  client,
-		Account: account,
-		Output:  deps.stdout,
+		Runtime:    deps.runtime,
+		Store:      store,
+		Client:     client,
+		Account:    account,
+		Output:     deps.stdout,
+		CDNBaseURL: weixinConfig.CDNBaseURL,
 	})
 	if err != nil {
 		return err
@@ -266,23 +267,27 @@ func newWeixinLoginClient(cfg config.WeixinConfig) (*weixin.Store, *weixin.Clien
 	return store, client, nil
 }
 
-func newWeixinServeRuntime() (*weixin.Store, *weixin.Client, weixin.Account, error) {
+func newWeixinServeRuntime() (*weixin.Store, *weixin.Client, weixin.Account, config.WeixinConfig, error) {
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		return nil, nil, weixin.Account{}, config.WeixinConfig{}, err
+	}
 	store, err := weixin.NewStore("")
 	if err != nil {
-		return nil, nil, weixin.Account{}, err
+		return nil, nil, weixin.Account{}, config.WeixinConfig{}, err
 	}
 	account, err := store.LoadAccount("")
 	if err != nil {
-		return nil, nil, weixin.Account{}, err
+		return nil, nil, weixin.Account{}, config.WeixinConfig{}, err
 	}
 	client, err := weixin.NewClient(weixin.ClientOptions{
 		BaseURL: account.BaseURL,
 		Token:   account.Token,
 	})
 	if err != nil {
-		return nil, nil, weixin.Account{}, err
+		return nil, nil, weixin.Account{}, config.WeixinConfig{}, err
 	}
-	return store, client, account, nil
+	return store, client, account, cfg.Services.Weixin, nil
 }
 
 func runSessionsCommand(ctx context.Context, args []string, deps runDependencies) error {

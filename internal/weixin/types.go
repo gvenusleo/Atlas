@@ -4,15 +4,17 @@ package weixin
 import "time"
 
 const (
-	defaultBaseURL = "https://ilinkai.weixin.qq.com"
-	defaultBotType = "3"
+	defaultBaseURL    = "https://ilinkai.weixin.qq.com"
+	defaultCDNBaseURL = "https://novac2c.cdn.weixin.qq.com/c2c"
+	defaultBotType    = "3"
 
 	messageTypeUser = 1
 	messageTypeBot  = 2
 
 	messageStateFinish = 2
 
-	messageItemTypeText = 1
+	messageItemTypeText  = 1
+	messageItemTypeImage = 2
 
 	typingStatusTyping = 1
 	typingStatusCancel = 2
@@ -93,13 +95,33 @@ type WeixinMessage struct {
 
 // MessageItem 描述微信消息中的一个内容项。
 type MessageItem struct {
-	Type     int       `json:"type,omitempty"`
-	TextItem *TextItem `json:"text_item,omitempty"`
+	Type      int        `json:"type,omitempty"`
+	TextItem  *TextItem  `json:"text_item,omitempty"`
+	ImageItem *ImageItem `json:"image_item,omitempty"`
 }
 
 // TextItem 描述微信文本内容项。
 type TextItem struct {
 	Text string `json:"text,omitempty"`
+}
+
+// CDNMedia 描述微信 CDN 媒体引用。
+type CDNMedia struct {
+	EncryptQueryParam string `json:"encrypt_query_param,omitempty"`
+	AESKey            string `json:"aes_key,omitempty"`
+	EncryptType       int    `json:"encrypt_type,omitempty"`
+	FullURL           string `json:"full_url,omitempty"`
+}
+
+// ImageItem 描述微信图片内容项。
+type ImageItem struct {
+	Media      *CDNMedia `json:"media,omitempty"`
+	ThumbMedia *CDNMedia `json:"thumb_media,omitempty"`
+	AESKey     string    `json:"aeskey,omitempty"`
+	URL        string    `json:"url,omitempty"`
+	MidSize    int64     `json:"mid_size,omitempty"`
+	ThumbSize  int64     `json:"thumb_size,omitempty"`
+	HDSize     int64     `json:"hd_size,omitempty"`
 }
 
 type sendMessageRequest struct {

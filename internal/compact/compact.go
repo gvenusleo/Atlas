@@ -37,7 +37,7 @@ func EstimateMessages(messages []model.Message) int {
 
 // EstimateMessage 估算单条消息的 token 数。
 func EstimateMessage(msg model.Message) int {
-	total := estimateText(msg.Content) + estimateText(msg.ReasoningContent) + estimateText(msg.ToolCallID) + 4
+	total := estimateParts(model.MessageParts(msg)) + estimateText(msg.ReasoningContent) + estimateText(msg.ToolCallID) + 4
 	for _, call := range msg.ToolCalls {
 		total += estimateText(call.ID) + estimateText(call.Name) + estimateText(call.Arguments) + 8
 	}
@@ -73,10 +73,7 @@ func BuildActiveMessages(summary string, compactedCount int, full []model.Messag
 
 // SummaryMessage 将已保存摘要转换成模型上下文中的合成用户消息。
 func SummaryMessage(summary string) model.Message {
-	return model.Message{
-		Role:    model.RoleUser,
-		Content: summaryPrefix + "\n\n" + strings.TrimSpace(summary),
-	}
+	return model.TextMessage(model.RoleUser, summaryPrefix+"\n\n"+strings.TrimSpace(summary))
 }
 
 // SelectPlan 选择一个安全的自动压缩切分点。
@@ -147,15 +144,15 @@ func SerializeMessages(messages []model.Message) string {
 	for _, msg := range messages {
 		switch msg.Role {
 		case model.RoleUser:
-			if strings.TrimSpace(msg.Content) != "" {
-				parts = append(parts, "[User]: "+msg.Content)
+			if content := serializeContentParts(model.MessageParts(msg)); strings.TrimSpace(content) != "" {
+				parts = append(parts, "[User]: "+content)
 			}
 		case model.RoleAssistant:
 			if strings.TrimSpace(msg.ReasoningContent) != "" {
 				parts = append(parts, "[Assistant reasoning]: "+msg.ReasoningContent)
 			}
-			if strings.TrimSpace(msg.Content) != "" {
-				parts = append(parts, "[Assistant]: "+msg.Content)
+			if content := serializeContentParts(model.MessageParts(msg)); strings.TrimSpace(content) != "" {
+				parts = append(parts, "[Assistant]: "+content)
 			}
 			if len(msg.ToolCalls) > 0 {
 				var calls []string
@@ -192,10 +189,7 @@ func BuildSummaryMessages(previousSummary string, messages []model.Message, inst
 	}
 	b.WriteString("\nConversation to summarize:\n")
 	b.WriteString(SerializeMessages(messages))
-	return []model.Message{{
-		Role:    model.RoleUser,
-		Content: b.String(),
-	}}
+	return []model.Message{model.TextMessage(model.RoleUser, b.String())}
 }
 
 // safeCutBefore 判断是否可以在指定消息前切分，避免拆开用户轮次和工具调用。
@@ -219,6 +213,48 @@ func estimateText(text string) int {
 		return 0
 	}
 	return (len([]rune(text)) + 3) / 4
+}
+
+// estimateParts 估算结构化内容片段的 token 数，图片只按占位和固定开销计算。
+func estimateParts(parts []model.ContentPart) int {
+	total := 0
+	for _, part := range parts {
+		switch part.Type {
+		case model.ContentPartImage:
+			total += 256 + estimateText(imagePlaceholder(part))
+		default:
+			total += estimateText(part.Text)
+		}
+	}
+	return total
+}
+
+// serializeContentParts 将结构化内容转为摘要和记忆使用的纯文本。
+func serializeContentParts(parts []model.ContentPart) string {
+	lines := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case model.ContentPartImage:
+			lines = append(lines, imagePlaceholder(part))
+		default:
+			if strings.TrimSpace(part.Text) != "" {
+				lines = append(lines, part.Text)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func imagePlaceholder(part model.ContentPart) string {
+	mimeType := strings.TrimSpace(part.MimeType)
+	if mimeType == "" {
+		mimeType = "image"
+	}
+	detail := part.Detail
+	if detail == "" {
+		detail = model.ImageDetailAuto
+	}
+	return fmt.Sprintf("[Image: %s, detail=%s]", mimeType, detail)
 }
 
 // truncate 按字符数截断文本，避免切坏 UTF-8 内容。

@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/tool"
@@ -37,22 +38,24 @@ type Runtime interface {
 
 // ServerOptions 描述微信通道服务参数。
 type ServerOptions struct {
-	Runtime   Runtime
-	Store     *Store
-	Client    *Client
-	Account   Account
-	Output    io.Writer
-	PollDelay time.Duration
+	Runtime    Runtime
+	Store      *Store
+	Client     *Client
+	Account    Account
+	Output     io.Writer
+	PollDelay  time.Duration
+	CDNBaseURL string
 }
 
 // Server 连接微信 iLink Bot，并把消息转发给 Atlas runtime。
 type Server struct {
-	rt        Runtime
-	store     *Store
-	client    *Client
-	account   Account
-	output    io.Writer
-	pollDelay time.Duration
+	rt         Runtime
+	store      *Store
+	client     *Client
+	account    Account
+	output     io.Writer
+	pollDelay  time.Duration
+	cdnBaseURL string
 
 	stateMu sync.Mutex
 	active  map[string]context.CancelFunc
@@ -78,14 +81,19 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.PollDelay <= 0 {
 		opts.PollDelay = 2 * time.Second
 	}
+	cdnBaseURL := strings.TrimRight(strings.TrimSpace(opts.CDNBaseURL), "/")
+	if cdnBaseURL == "" {
+		cdnBaseURL = defaultCDNBaseURL
+	}
 	return &Server{
-		rt:        opts.Runtime,
-		store:     opts.Store,
-		client:    opts.Client,
-		account:   opts.Account,
-		output:    opts.Output,
-		pollDelay: opts.PollDelay,
-		active:    map[string]context.CancelFunc{},
+		rt:         opts.Runtime,
+		store:      opts.Store,
+		client:     opts.Client,
+		account:    opts.Account,
+		output:     opts.Output,
+		pollDelay:  opts.PollDelay,
+		cdnBaseURL: cdnBaseURL,
+		active:     map[string]context.CancelFunc{},
 	}, nil
 }
 
@@ -138,14 +146,25 @@ func (s *Server) HandleMessage(ctx context.Context, msg WeixinMessage) error {
 	if msg.FromUserID != s.account.UserID {
 		return nil
 	}
-	body := strings.TrimSpace(extractText(msg.Items))
-	if body == "" {
-		return s.client.SendText(ctx, msg.FromUserID, "Atlas currently supports text messages only.", msg.ContextToken, msg.RunID)
+	parts, err := s.extractParts(ctx, msg.Items)
+	if err != nil {
+		return s.client.SendText(ctx, msg.FromUserID, "Atlas error: "+err.Error(), msg.ContextToken, msg.RunID)
 	}
+	body := strings.TrimSpace(model.TextFromParts(parts))
 	if strings.HasPrefix(body, "/") {
+		if hasImagePart(parts) {
+			return s.reply(ctx, msg, "Slash commands do not support images.")
+		}
 		return s.handleSlash(ctx, msg, body)
 	}
-	return s.startTurn(ctx, msg, body)
+	if body == "" && hasImagePart(parts) {
+		parts = append([]model.ContentPart{{Type: model.ContentPartText, Text: "请分析这张图片。"}}, parts...)
+		body = "请分析这张图片。"
+	}
+	if body == "" {
+		return s.client.SendText(ctx, msg.FromUserID, "Atlas currently supports text and image messages.", msg.ContextToken, msg.RunID)
+	}
+	return s.startTurn(ctx, msg, body, parts)
 }
 
 // handleSlash 处理微信聊天中的本地控制命令。
@@ -300,8 +319,8 @@ func (s *Server) handleCancel(ctx context.Context, msg WeixinMessage) error {
 	return s.reply(ctx, msg, "Cancelled current turn.")
 }
 
-// startTurn 为普通文本消息启动一次异步 Atlas turn。
-func (s *Server) startTurn(ctx context.Context, msg WeixinMessage, prompt string) error {
+// startTurn 为普通消息启动一次异步 Atlas turn。
+func (s *Server) startTurn(ctx context.Context, msg WeixinMessage, prompt string, parts []model.ContentPart) error {
 	state, err := s.senderState(msg.FromUserID)
 	if err != nil {
 		return err
@@ -316,12 +335,12 @@ func (s *Server) startTurn(ctx context.Context, msg WeixinMessage, prompt string
 	s.active[msg.FromUserID] = cancel
 	s.stateMu.Unlock()
 
-	go s.runTurn(turnCtx, msg, prompt, state)
+	go s.runTurn(turnCtx, msg, prompt, parts, state)
 	return nil
 }
 
 // runTurn 调用 runtime 并把最终回复发回微信。
-func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, state SenderState) {
+func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, parts []model.ContentPart, state SenderState) {
 	defer func() {
 		s.stateMu.Lock()
 		delete(s.active, msg.FromUserID)
@@ -336,6 +355,7 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 	result, err := s.rt.RunTurn(ctx, runtime.TurnOptions{
 		SessionID: state.SessionID,
 		Prompt:    prompt,
+		Parts:     parts,
 		CWD:       state.CWD,
 		Observer: func(event agent.Event) {
 			if event.Type == agent.EventToolStarted && event.ToolCall.Name != "" {
@@ -499,14 +519,32 @@ func (s *Server) defaultCWD() string {
 	return "."
 }
 
-// extractText 提取微信消息中的第一个文本内容项。
-func extractText(items []MessageItem) string {
+// extractParts 提取微信消息中的文本和图片内容项。
+func (s *Server) extractParts(ctx context.Context, items []MessageItem) ([]model.ContentPart, error) {
+	var parts []model.ContentPart
 	for _, item := range items {
 		if item.Type == messageItemTypeText && item.TextItem != nil {
-			return item.TextItem.Text
+			parts = append(parts, model.ContentPart{Type: model.ContentPartText, Text: item.TextItem.Text})
+			continue
+		}
+		if item.Type == messageItemTypeImage && item.ImageItem != nil {
+			part, err := s.imagePartFromItem(ctx, item)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
 		}
 	}
-	return ""
+	return parts, nil
+}
+
+func hasImagePart(parts []model.ContentPart) bool {
+	for _, part := range parts {
+		if part.Type == model.ContentPartImage {
+			return true
+		}
+	}
+	return false
 }
 
 // splitText 按 rune 数分割微信回复文本。

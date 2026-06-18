@@ -1,6 +1,8 @@
 // Package model 定义 Atlas 内部使用的模型消息和工具调用协议。
 package model
 
+import "strings"
+
 // Role 表示聊天消息的角色。
 type Role string
 
@@ -44,6 +46,38 @@ type ToolMetadata struct {
 	Diff      *ToolDiff      `json:"diff,omitempty"`
 }
 
+// ContentPartType 表示一段消息内容的模态类型。
+type ContentPartType string
+
+const (
+	// ContentPartText 表示普通文本内容。
+	ContentPartText ContentPartType = "text"
+	// ContentPartImage 表示内联图片内容。
+	ContentPartImage ContentPartType = "image"
+)
+
+// ImageDetail 表示模型处理图片时的清晰度偏好。
+type ImageDetail string
+
+const (
+	// ImageDetailAuto 让 provider 或模型自动选择图片清晰度。
+	ImageDetailAuto ImageDetail = "auto"
+	// ImageDetailLow 表示低清晰度图片输入。
+	ImageDetailLow ImageDetail = "low"
+	// ImageDetailHigh 表示高清晰度图片输入。
+	ImageDetailHigh ImageDetail = "high"
+)
+
+// ContentPart 描述一条消息中的一个文本或图片片段。
+type ContentPart struct {
+	Type     ContentPartType `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	MimeType string          `json:"mime_type,omitempty"`
+	DataURL  string          `json:"data_url,omitempty"`
+	URI      string          `json:"uri,omitempty"`
+	Detail   ImageDetail     `json:"detail,omitempty"`
+}
+
 // ProviderItem 保存特定 API 格式下一轮必须原样回放的输出项。
 type ProviderItem struct {
 	Type string `json:"type"`
@@ -62,6 +96,8 @@ type ToolDefinition struct {
 type Message struct {
 	Role    Role
 	Content string
+	// Parts 保存模型可见的结构化内容；为空时 Content 会作为单个文本片段使用。
+	Parts []ContentPart
 	// ReasoningContent 只对 assistant 消息有意义，用于支持 provider 的思维链续接。
 	ReasoningContent string
 	// ToolCalls 只对 assistant 消息有意义。
@@ -74,6 +110,57 @@ type Message struct {
 	Usage Usage
 	// ProviderItems 只对 assistant 消息有意义，用于 provider 续接特定 API 状态。
 	ProviderItems []ProviderItem
+}
+
+// TextMessage 构造包含单个文本片段的消息。
+func TextMessage(role Role, content string) Message {
+	return Message{
+		Role:    role,
+		Content: content,
+		Parts:   []ContentPart{{Type: ContentPartText, Text: content}},
+	}
+}
+
+// MessageParts 返回消息的结构化内容；旧消息自动回退为文本片段。
+func MessageParts(msg Message) []ContentPart {
+	if len(msg.Parts) > 0 {
+		parts := make([]ContentPart, len(msg.Parts))
+		copy(parts, msg.Parts)
+		return parts
+	}
+	if msg.Content == "" {
+		return nil
+	}
+	return []ContentPart{{Type: ContentPartText, Text: msg.Content}}
+}
+
+// TextFromParts 提取内容片段中的文本，供标题、记忆和兼容字段使用。
+func TextFromParts(parts []ContentPart) string {
+	var text string
+	for _, part := range parts {
+		if part.Type != ContentPartText || part.Text == "" {
+			continue
+		}
+		text = joinText(text, part.Text)
+	}
+	return text
+}
+
+func joinText(left, right string) string {
+	if left == "" {
+		return right
+	}
+	return left + "\n\n" + strings.TrimLeft(right, "\n")
+}
+
+// HasImagePart 返回消息是否包含图片片段。
+func HasImagePart(msg Message) bool {
+	for _, part := range MessageParts(msg) {
+		if part.Type == ContentPartImage {
+			return true
+		}
+	}
+	return false
 }
 
 // StopReason 表示一次模型 step 结束的原因。
