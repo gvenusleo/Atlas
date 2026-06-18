@@ -23,6 +23,10 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 			Content:          "reading",
 			ReasoningContent: "need file",
 			Usage:            model.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13},
+			ProviderItems: []model.ProviderItem{{
+				Type: "responses",
+				JSON: `{"type":"reasoning","id":"rs_1","summary":[]}`,
+			}},
 			ToolCalls: []model.ToolCall{{
 				ID:        "call-1",
 				Name:      "read_file",
@@ -59,6 +63,9 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	}
 	if got[1].Usage != (model.Usage{InputTokens: 10, OutputTokens: 3, TotalTokens: 13}) {
 		t.Fatalf("usage = %#v", got[1].Usage)
+	}
+	if len(got[1].ProviderItems) != 1 || got[1].ProviderItems[0].Type != "responses" {
+		t.Fatalf("provider items = %#v", got[1].ProviderItems)
 	}
 	if got[2].ToolCallID != "call-1" {
 		t.Fatalf("tool call id = %q", got[2].ToolCallID)

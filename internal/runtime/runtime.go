@@ -16,7 +16,8 @@ import (
 	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
-	"github.com/liuyuxin/atlas/internal/provider/openai"
+	"github.com/liuyuxin/atlas/internal/provider/chatcompletions"
+	"github.com/liuyuxin/atlas/internal/provider/responses"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
@@ -48,7 +49,7 @@ type TurnOptions struct {
 	ReasoningEffort          string
 	AdditionalDirectories    []string
 	AdditionalDirectoriesSet bool
-	// ReasoningEffortSet 表示 ReasoningEffort 是调用方显式选择的值，即使它为空。
+	// ReasoningEffortSet 表示 ReasoningEffort 是调用方显式选择的值。
 	ReasoningEffortSet bool
 	CWD                string
 	Observer           agent.Observer
@@ -91,18 +92,25 @@ type CompactResult struct {
 
 // ModelOption 描述 runtime 对外暴露的可选模型。
 type ModelOption struct {
-	Value         string
-	Name          string
-	Description   string
-	ContextWindow int
-	MaxTokens     int
+	Value            string
+	Name             string
+	Description      string
+	ContextWindow    int
+	MaxTokens        int
+	ReasoningEfforts []ReasoningEffortOption
+}
+
+// ReasoningEffortOption 描述模型支持的一个 reasoning effort。
+type ReasoningEffortOption struct {
+	Value       string
+	Name        string
+	Description string
 }
 
 // ModelOptions 描述当前配置的模型选择状态。
 type ModelOptions struct {
-	Default         string
-	ReasoningEffort string
-	Models          []ModelOption
+	Default string
+	Models  []ModelOption
 }
 
 // DoctorStatus 描述一项 doctor 诊断结果的严重程度。
@@ -145,11 +153,7 @@ func DefaultDependencies() Dependencies {
 		LoadConfig: config.LoadDefault,
 		ConfigPath: config.DefaultPath,
 		NewProvider: func(cfg config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
-			return openai.New(openai.Config{
-				BaseURL: cfg.BaseURL,
-				APIKey:  cfg.APIKey,
-				Model:   selected.Value,
-			})
+			return newAPIProvider(cfg, selected)
 		},
 		Getwd: os.Getwd,
 		LoadInstructions: func(cwd string) ([]prompt.InstructionFile, error) {
@@ -159,6 +163,32 @@ func DefaultDependencies() Dependencies {
 		NewSessionID: session.NewID,
 		Now:          time.Now,
 	}
+}
+
+func newAPIProvider(cfg config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
+	switch providerFormat(cfg) {
+	case config.ProviderFormatChatCompletions:
+		return chatcompletions.New(chatcompletions.Config{
+			BaseURL: cfg.BaseURL,
+			APIKey:  cfg.APIKey,
+			Model:   selected.Value,
+		})
+	case config.ProviderFormatResponses:
+		return responses.New(responses.Config{
+			BaseURL: cfg.BaseURL,
+			APIKey:  cfg.APIKey,
+			Model:   selected.Value,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported provider format %q", cfg.Format)
+	}
+}
+
+func providerFormat(cfg config.ProviderConfig) string {
+	if cfg.Format == "" {
+		return config.ProviderFormatChatCompletions
+	}
+	return cfg.Format
 }
 
 // New 创建 Runtime，并为未指定的依赖填入默认实现。
@@ -232,11 +262,19 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		return result, err
 	}
 
-	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
+	activeProvider, err := cfg.ActiveProviderConfig()
 	if err != nil {
 		return TurnResult{}, err
 	}
-	provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
+	selectedModel, err := activeProvider.ResolveModel(opts.Model)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	reasoningEffort, err := selectedReasoningEffort(opts.ReasoningEffort, opts.ReasoningEffortSet, selectedModel)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	provider, err := r.deps.NewProvider(activeProvider, selectedModel)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -298,7 +336,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		MaxSteps:        cfg.Agent.MaxSteps,
 		MaxTokens:       selectedModel.MaxTokens,
 		Temperature:     cfg.Agent.Temperature,
-		ReasoningEffort: selectedReasoningEffort(opts.ReasoningEffort, opts.ReasoningEffortSet, cfg.Agent.ReasoningEffort),
+		ReasoningEffort: reasoningEffort,
 		Observer:        opts.Observer,
 	})
 	if err != nil {
@@ -440,11 +478,18 @@ func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (Comp
 	if err != nil {
 		return CompactResult{}, err
 	}
-	selectedModel, err := cfg.Provider.ResolveModel(opts.Model)
+	activeProvider, err := cfg.ActiveProviderConfig()
 	if err != nil {
 		return CompactResult{}, err
 	}
-	provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
+	selectedModel, err := activeProvider.ResolveModel(opts.Model)
+	if err != nil {
+		return CompactResult{}, err
+	}
+	if _, err := selectedReasoningEffort(opts.ReasoningEffort, opts.ReasoningEffortSet, selectedModel); err != nil {
+		return CompactResult{}, err
+	}
+	provider, err := r.deps.NewProvider(activeProvider, selectedModel)
 	if err != nil {
 		return CompactResult{}, err
 	}
@@ -489,11 +534,15 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	if start > len(messages) {
 		start = len(messages)
 	}
+	selectedReasoning, err := selectedReasoningEffort(reasoningEffort, reasoningEffortSet, selectedModel)
+	if err != nil {
+		return CompactResult{}, err
+	}
 	resp, err := provider.Stream(ctx, model.ChatRequest{
 		Messages:        compact.BuildSummaryMessages(info.ContextSummary, messages[start:plan.CompactCount], instruction),
 		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
 		Temperature:     cfg.Agent.Temperature,
-		ReasoningEffort: selectedReasoningEffort(reasoningEffort, reasoningEffortSet, cfg.Agent.ReasoningEffort),
+		ReasoningEffort: selectedReasoning,
 	}, nil)
 	if err != nil {
 		return CompactResult{}, err
@@ -579,21 +628,33 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 	if err != nil {
 		return ModelOptions{}, err
 	}
-	models := cfg.Provider.ModelOptions()
+	activeProvider, err := cfg.ActiveProviderConfig()
+	if err != nil {
+		return ModelOptions{}, err
+	}
+	models := activeProvider.ModelOptions()
 	options := make([]ModelOption, 0, len(models))
 	for _, model := range models {
+		reasoningEfforts := make([]ReasoningEffortOption, 0, len(model.ReasoningEfforts))
+		for _, effort := range model.ReasoningEfforts {
+			reasoningEfforts = append(reasoningEfforts, ReasoningEffortOption{
+				Value:       effort.Value,
+				Name:        effort.Name,
+				Description: effort.Description,
+			})
+		}
 		options = append(options, ModelOption{
-			Value:         model.Value,
-			Name:          model.Name,
-			Description:   model.Description,
-			ContextWindow: model.ContextWindow,
-			MaxTokens:     model.MaxTokens,
+			Value:            model.Value,
+			Name:             model.Name,
+			Description:      model.Description,
+			ContextWindow:    model.ContextWindow,
+			MaxTokens:        model.MaxTokens,
+			ReasoningEfforts: reasoningEfforts,
 		})
 	}
 	return ModelOptions{
-		Default:         cfg.Provider.DefaultModel,
-		ReasoningEffort: cfg.Agent.ReasoningEffort,
-		Models:          options,
+		Default: activeProvider.DefaultModel,
+		Models:  options,
 	}, nil
 }
 
@@ -612,8 +673,13 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	report.add("config", DoctorStatusOK, configPath)
-	report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, default %s, %d models", cfg.Provider.BaseURL, cfg.Provider.DefaultModel, len(cfg.Provider.Models)))
-	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, reasoning_effort %s, compaction_trigger_ratio %.2f", cfg.Agent.MaxSteps, cfg.Agent.Temperature, displayReasoningEffort(cfg.Agent.ReasoningEffort), cfg.Agent.CompactionTriggerRatio))
+	activeProvider, err := cfg.ActiveProviderConfig()
+	if err != nil {
+		report.add("provider", DoctorStatusFail, err.Error())
+		return report
+	}
+	report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, %s, %s, default %s, %d models", activeProvider.Name, providerFormat(activeProvider), activeProvider.BaseURL, activeProvider.DefaultModel, len(activeProvider.Models)))
+	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, compaction_trigger_ratio %.2f", cfg.Agent.MaxSteps, cfg.Agent.Temperature, cfg.Agent.CompactionTriggerRatio))
 	report.addSession(ctx, cfg.Session)
 	report.addMemory(ctx, cfg)
 	report.addTavily(cfg.Services.Tavily)
@@ -921,18 +987,23 @@ func homeRelativePath(path string) (string, bool) {
 	return path[2:], true
 }
 
-func selectedReasoningEffort(override string, overrideSet bool, configured string) string {
+func selectedReasoningEffort(override string, overrideSet bool, selectedModel config.ProviderModel) (string, error) {
 	if overrideSet {
-		return override
+		if len(selectedModel.ReasoningEfforts) == 0 {
+			if override == "" {
+				return "", nil
+			}
+			return "", fmt.Errorf("reasoning effort %q is not supported by model %q", override, selectedModel.Value)
+		}
+		if selectedModel.SupportsReasoningEffort(override) {
+			return override, nil
+		}
+		return "", fmt.Errorf("reasoning effort %q is not supported by model %q", override, selectedModel.Value)
 	}
-	return configured
-}
-
-func displayReasoningEffort(value string) string {
-	if value == "" {
-		return "Default"
+	if len(selectedModel.ReasoningEfforts) == 0 {
+		return "", nil
 	}
-	return value
+	return selectedModel.ReasoningEfforts[0].Value, nil
 }
 
 func displayMemoryModel(value string) string {

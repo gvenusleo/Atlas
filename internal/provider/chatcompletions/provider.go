@@ -1,5 +1,5 @@
-// Package openai 实现 OpenAI-compatible 的流式聊天 provider。
-package openai
+// Package chatcompletions 实现 Chat Completions 格式的流式模型 provider。
+package chatcompletions
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ import (
 
 const chatCompletionsPath = "/chat/completions"
 
-// Config 是创建 OpenAI-compatible provider 所需的连接配置。
+// Config 是创建 Chat Completions provider 所需的连接配置。
 type Config struct {
 	BaseURL    string
 	APIKey     string
@@ -25,7 +25,7 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
-// Provider 调用 OpenAI-compatible Chat Completions API。
+// Provider 调用 Chat Completions API。
 type Provider struct {
 	baseURL    string
 	apiKey     string
@@ -33,20 +33,20 @@ type Provider struct {
 	httpClient *http.Client
 }
 
-// New 创建一个 OpenAI-compatible provider。
+// New 创建一个 Chat Completions provider。
 func New(config Config) (*Provider, error) {
 	if config.BaseURL == "" {
-		return nil, fmt.Errorf("openai base url is required")
+		return nil, fmt.Errorf("chat completions base url is required")
 	}
 	baseURL, err := url.Parse(config.BaseURL)
 	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
-		return nil, fmt.Errorf("openai base url is invalid")
+		return nil, fmt.Errorf("chat completions base url is invalid")
 	}
 	if config.APIKey == "" {
-		return nil, fmt.Errorf("openai api key is required")
+		return nil, fmt.Errorf("chat completions api key is required")
 	}
 	if config.Model == "" {
-		return nil, fmt.Errorf("openai model is required")
+		return nil, fmt.Errorf("chat completions model is required")
 	}
 	httpClient := config.HTTPClient
 	if httpClient == nil {

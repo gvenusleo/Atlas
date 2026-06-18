@@ -1,6 +1,6 @@
 # Atlas
 
-Atlas 是一个运行在用户机器上的本地通用 Agent。它通过 OpenAI-compatible Chat Completions Provider 调用模型，在本地 SQLite 中保存会话，具备文件操作、Shell 执行、网页搜索、长期记忆和上下文压缩能力。
+Atlas 是一个运行在用户机器上的本地通用 Agent。它通过模型 API 格式适配器调用 Provider，在本地 SQLite 中保存会话，具备文件操作、Shell 执行、网页搜索、长期记忆和上下文压缩能力。
 
 ## 权限边界
 
@@ -28,29 +28,43 @@ Atlas 从 `~/.atlas/config.json` 读取配置：
 
 ```json
 {
-  "provider": {
-    "base_url": "https://api.deepseek.com",
-    "api_key": "sk-...",
-    "default_model": "deepseek-v4-flash",
-    "models": [
-      {
-        "value": "deepseek-v4-flash",
-        "name": "DeepSeek V4 Flash",
-        "context_window": 1000000,
-        "max_tokens": 384000
-      },
-      {
-        "value": "deepseek-v4-pro",
-        "name": "DeepSeek V4 Pro",
-        "context_window": 1000000,
-        "max_tokens": 384000
-      }
-    ]
-  },
+  "active_provider": "deepseek",
+  "providers": [
+    {
+      "name": "deepseek",
+      "format": "chat_completions",
+      "base_url": "https://api.deepseek.com",
+      "api_key": "sk-...",
+      "default_model": "deepseek-v4-flash",
+      "models": [
+        {
+          "value": "deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "context_window": 1000000,
+          "max_tokens": 384000,
+          "reasoning_efforts": [
+            {
+              "value": "high",
+              "name": "High"
+            },
+            {
+              "value": "max",
+              "name": "Max"
+            }
+          ]
+        },
+        {
+          "value": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "context_window": 1000000,
+          "max_tokens": 384000
+        }
+      ]
+    }
+  ],
   "agent": {
     "max_steps": 8,
     "temperature": 0.2,
-    "reasoning_effort": "high",
     "compaction_trigger_ratio": 0.8
   },
   "memory": {
@@ -70,10 +84,13 @@ Atlas 从 `~/.atlas/config.json` 读取配置：
 
 字段说明：
 
-- `provider.default_model` 必须匹配 `provider.models[].value`。
-- `provider.models[].value` 是发送给 Provider 的模型名，`name` 用于显示。
+- `active_provider` 必须匹配某个 `providers[].name`，Atlas 只使用当前选中的 Provider。
+- `providers` 是 Provider 配置数组；每项都需要完整有效，`name` 不能重复。
+- `providers[].default_model` 必须匹配同一项里的 `providers[].models[].value`。
+- `providers[].format` 可省略，默认 `chat_completions`；OpenAI Responses API 使用 `responses`。
+- `providers[].models[].value` 是发送给 Provider 的模型名，`name` 用于显示。
 - `context_window` 用于上下文压缩和用量展示，`max_tokens` 是每次模型请求的最大输出 token 数。
-- `agent.reasoning_effort` 可省略，支持 `high` 和 `max`。
+- `providers[].models[].reasoning_efforts` 声明模型支持的思考深度选项；未显式选择时使用第一项。
 - `agent.compaction_trigger_ratio` 默认 `0.8`，表示上下文输入达到模型窗口 80% 时自动压缩早期对话。
 - `memory.enabled` 默认启用。`memory.model` 为空时，后台记忆任务使用产生该会话的模型。
 - `session.db_path` 默认 `~/.atlas/atlas.db`。

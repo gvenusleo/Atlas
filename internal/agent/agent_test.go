@@ -126,6 +126,44 @@ func TestRunTurnToolThenFinalResponse(t *testing.T) {
 	}
 }
 
+func TestRunTurnPreservesProviderItems(t *testing.T) {
+	registry, err := tool.NewRegistry(fakeTool{
+		definition: model.ToolDefinition{Name: "fake"},
+		result:     "tool result",
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{
+				ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}},
+				ProviderItems: []model.ProviderItem{{
+					Type: "responses",
+					JSON: `{"type":"reasoning","id":"rs_1","summary":[]}`,
+				}},
+			},
+			{Content: "done"},
+		},
+	}
+	agent, err := New(Config{Provider: provider, Tools: registry})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "use tool"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+
+	if len(provider.requests) != 2 {
+		t.Fatalf("stream calls = %d, want 2", len(provider.requests))
+	}
+	items := provider.requests[1].Messages[1].ProviderItems
+	if len(items) != 1 || items[0].Type != "responses" {
+		t.Fatalf("provider items = %#v", items)
+	}
+}
+
 func TestRunTurnEmitsEventsInOrder(t *testing.T) {
 	registry, err := tool.NewRegistry(fakeTool{
 		definition: model.ToolDefinition{Name: "fake"},

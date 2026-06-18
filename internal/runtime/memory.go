@@ -68,6 +68,10 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 	if !cfg.Memory.IsEnabled() {
 		return 0, nil
 	}
+	activeProvider, err := cfg.ActiveProviderConfig()
+	if err != nil {
+		return 0, err
+	}
 	memStore, err := openMemoryStore(ctx, cfg.Session)
 	if err != nil {
 		return 0, err
@@ -88,13 +92,13 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 		if !ok {
 			return processed, nil
 		}
-		selectedModel, err := cfg.Provider.ResolveModel(job.Model)
+		selectedModel, err := activeProvider.ResolveModel(job.Model)
 		if err != nil {
 			_ = memStore.FailJob(ctx, job, err)
 			processed++
 			continue
 		}
-		provider, err := r.deps.NewProvider(cfg.Provider, selectedModel)
+		provider, err := r.deps.NewProvider(activeProvider, selectedModel)
 		if err != nil {
 			_ = memStore.FailJob(ctx, job, err)
 			processed++
@@ -179,12 +183,17 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	if err != nil {
 		return err
 	}
+	reasoningEffort, err := selectedReasoningEffort("", false, selectedModel)
+	if err != nil {
+		return err
+	}
 	resp, err := provider.Stream(ctx, model.ChatRequest{
-		System:         memoryExtractSystemPrompt(),
-		Messages:       []model.Message{{Role: model.RoleUser, Content: memoryExtractPrompt(info, newMessages, existing, start)}},
-		MaxTokens:      summaryMaxTokens(selectedModel.MaxTokens),
-		Temperature:    0,
-		ResponseFormat: model.ResponseFormatJSONObject,
+		System:          memoryExtractSystemPrompt(),
+		Messages:        []model.Message{{Role: model.RoleUser, Content: memoryExtractPrompt(info, newMessages, existing, start)}},
+		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
+		Temperature:     0,
+		ReasoningEffort: reasoningEffort,
+		ResponseFormat:  model.ResponseFormatJSONObject,
 	}, nil)
 	if err != nil {
 		return err
@@ -254,12 +263,17 @@ func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memor
 			InputHash:   inputHash,
 		})
 	}
+	reasoningEffort, err := selectedReasoningEffort("", false, selectedModel)
+	if err != nil {
+		return err
+	}
 	resp, err := provider.Stream(ctx, model.ChatRequest{
-		System:         memorySummarySystemPrompt(),
-		Messages:       []model.Message{{Role: model.RoleUser, Content: memorySummaryPrompt(job, entries)}},
-		MaxTokens:      summaryMaxTokens(selectedModel.MaxTokens),
-		Temperature:    0,
-		ResponseFormat: model.ResponseFormatJSONObject,
+		System:          memorySummarySystemPrompt(),
+		Messages:        []model.Message{{Role: model.RoleUser, Content: memorySummaryPrompt(job, entries)}},
+		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
+		Temperature:     0,
+		ReasoningEffort: reasoningEffort,
+		ResponseFormat:  model.ResponseFormatJSONObject,
 	}, nil)
 	if err != nil {
 		return err

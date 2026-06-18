@@ -24,13 +24,12 @@ import (
 )
 
 const (
-	defaultSessionListLimit    = 100
-	modelConfigID              = "model"
-	reasoningEffortConfigID    = "reasoning_effort"
-	defaultReasoningEffortName = "Default"
-	compactCommandName         = "compact"
-	postResponseUpdateDelay    = 50 * time.Millisecond
-	postResponseUpdateTimeout  = 2 * time.Second
+	defaultSessionListLimit   = 100
+	modelConfigID             = "model"
+	reasoningEffortConfigID   = "reasoning_effort"
+	compactCommandName        = "compact"
+	postResponseUpdateDelay   = 50 * time.Millisecond
+	postResponseUpdateTimeout = 2 * time.Second
 )
 
 var errClientTerminalUnavailable = errors.New("client terminal unavailable")
@@ -192,11 +191,12 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 		return acpsdk.NewSessionResponse{}, err
 	}
 	now := time.Now()
-	a.setSession(sessionID, params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
+	defaultReasoning := modelInitialReasoningEffort(models, models.Default)
+	a.setSession(sessionID, params.Cwd, models.Default, defaultReasoning, params.AdditionalDirectories)
 	a.sendSessionMetadataLater(acpsdk.SessionId(sessionID), "", now, 0, 0)
 	return acpsdk.NewSessionResponse{
 		SessionId:     acpsdk.SessionId(sessionID),
-		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
+		ConfigOptions: sessionConfigOptions(models, models.Default, defaultReasoning),
 	}, nil
 }
 
@@ -277,14 +277,15 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 		return acpsdk.LoadSessionResponse{}, err
 	}
 	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
-	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
+	defaultReasoning := modelInitialReasoningEffort(models, models.Default)
+	a.setSession(string(params.SessionId), params.Cwd, models.Default, defaultReasoning, params.AdditionalDirectories)
 	if err := a.replayTranscript(ctx, params.SessionId, trans); err != nil {
 		a.deleteSessionState(string(params.SessionId))
 		return acpsdk.LoadSessionResponse{}, err
 	}
 	a.sendSessionMetadataLater(params.SessionId, sess.Title, sess.UpdatedAt, sess.LastTotalTokens, modelContextWindow(models, models.Default))
 	return acpsdk.LoadSessionResponse{
-		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
+		ConfigOptions: sessionConfigOptions(models, models.Default, defaultReasoning),
 	}, nil
 }
 
@@ -317,10 +318,11 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 		return acpsdk.ResumeSessionResponse{}, err
 	}
 	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
-	a.setSession(string(params.SessionId), params.Cwd, models.Default, models.ReasoningEffort, params.AdditionalDirectories)
+	defaultReasoning := modelInitialReasoningEffort(models, models.Default)
+	a.setSession(string(params.SessionId), params.Cwd, models.Default, defaultReasoning, params.AdditionalDirectories)
 	a.sendSessionMetadataLater(params.SessionId, sess.Title, sess.UpdatedAt, sess.LastTotalTokens, modelContextWindow(models, models.Default))
 	return acpsdk.ResumeSessionResponse{
-		ConfigOptions: sessionConfigOptions(models, models.Default, models.ReasoningEffort),
+		ConfigOptions: sessionConfigOptions(models, models.Default, defaultReasoning),
 	}, nil
 }
 
@@ -405,9 +407,12 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acpsdk.SetSes
 			return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("provider model %q is not configured", req.Value)
 		}
 		state.model = string(req.Value)
+		if !hasReasoningEffortValue(models, state.model, state.reasoningEffort) {
+			state.reasoningEffort = modelInitialReasoningEffort(models, state.model)
+		}
 	case acpsdk.SessionConfigId(reasoningEffortConfigID):
-		if !hasReasoningEffortValue(string(req.Value)) {
-			return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("reasoning effort %q is not supported", req.Value)
+		if !hasReasoningEffortValue(models, state.model, string(req.Value)) {
+			return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("reasoning effort %q is not supported by model %q", req.Value, state.model)
 		}
 		state.reasoningEffort = string(req.Value)
 	default:
@@ -1107,10 +1112,13 @@ func rawToolInput(arguments string) any {
 }
 
 func sessionConfigOptions(options runtime.ModelOptions, currentModel, currentReasoningEffort string) []acpsdk.SessionConfigOption {
-	return []acpsdk.SessionConfigOption{
+	result := []acpsdk.SessionConfigOption{
 		modelConfigOption(options, currentModel),
-		reasoningEffortConfigOption(currentReasoningEffort),
 	}
+	if option, ok := reasoningEffortConfigOption(options, currentModel, currentReasoningEffort); ok {
+		result = append(result, option)
+	}
+	return result
 }
 
 func modelConfigOption(options runtime.ModelOptions, current string) acpsdk.SessionConfigOption {
@@ -1140,13 +1148,24 @@ func modelConfigOption(options runtime.ModelOptions, current string) acpsdk.Sess
 	}
 }
 
-func reasoningEffortConfigOption(current string) acpsdk.SessionConfigOption {
+func reasoningEffortConfigOption(options runtime.ModelOptions, currentModel, current string) (acpsdk.SessionConfigOption, bool) {
+	modelOption, ok := findModelOption(options, currentModel)
+	if !ok || len(modelOption.ReasoningEfforts) == 0 {
+		return acpsdk.SessionConfigOption{}, false
+	}
 	category := acpsdk.SessionConfigOptionCategoryThoughtLevel
 	description := "Controls model reasoning depth when supported by the provider."
-	ungrouped := acpsdk.SessionConfigSelectOptionsUngrouped{
-		{Name: defaultReasoningEffortName, Value: ""},
-		{Name: "High", Value: "high"},
-		{Name: "Max", Value: "max"},
+	ungrouped := make(acpsdk.SessionConfigSelectOptionsUngrouped, 0, len(modelOption.ReasoningEfforts))
+	for _, effort := range modelOption.ReasoningEfforts {
+		option := acpsdk.SessionConfigSelectOption{
+			Name:  effort.Name,
+			Value: acpsdk.SessionConfigValueId(effort.Value),
+		}
+		if effort.Description != "" {
+			effortDescription := effort.Description
+			option.Description = &effortDescription
+		}
+		ungrouped = append(ungrouped, option)
 	}
 	return acpsdk.SessionConfigOption{
 		Select: &acpsdk.SessionConfigOptionSelect{
@@ -1159,23 +1178,40 @@ func reasoningEffortConfigOption(current string) acpsdk.SessionConfigOption {
 				Ungrouped: &ungrouped,
 			},
 		},
-	}
+	}, true
 }
 
 func hasModelValue(options runtime.ModelOptions, value string) bool {
-	for _, model := range options.Models {
-		if model.Value == value {
+	_, ok := findModelOption(options, value)
+	return ok
+}
+
+func hasReasoningEffortValue(options runtime.ModelOptions, modelValue string, value string) bool {
+	modelOption, ok := findModelOption(options, modelValue)
+	if !ok {
+		return false
+	}
+	for _, effort := range modelOption.ReasoningEfforts {
+		if effort.Value == value {
 			return true
 		}
 	}
 	return false
 }
 
-func hasReasoningEffortValue(value string) bool {
-	switch value {
-	case "", "high", "max":
-		return true
-	default:
-		return false
+func modelInitialReasoningEffort(options runtime.ModelOptions, modelValue string) string {
+	modelOption, ok := findModelOption(options, modelValue)
+	if !ok || len(modelOption.ReasoningEfforts) == 0 {
+		return ""
 	}
+	return modelOption.ReasoningEfforts[0].Value
+}
+
+func findModelOption(options runtime.ModelOptions, value string) (runtime.ModelOption, bool) {
+	for _, model := range options.Models {
+		if model.Value == value {
+			return model, true
+		}
+	}
+	return runtime.ModelOption{}, false
 }

@@ -1585,10 +1585,16 @@ func TestSetSessionConfigOptionUpdatesConfig(t *testing.T) {
 				if state.model != "other-model" {
 					t.Fatalf("session model = %q", state.model)
 				}
+				if state.reasoningEffort != "high" {
+					t.Fatalf("session reasoning effort = %q", state.reasoningEffort)
+				}
 			},
 			checkRun: func(t *testing.T, opts atlasruntime.TurnOptions) {
 				if opts.Model != "other-model" {
 					t.Fatalf("turn model = %q", opts.Model)
+				}
+				if opts.ReasoningEffort != "high" {
+					t.Fatalf("turn reasoning effort = %q", opts.ReasoningEffort)
 				}
 			},
 		},
@@ -1612,7 +1618,7 @@ func TestSetSessionConfigOptionUpdatesConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rt := &fakeRuntime{}
 			a := NewAgent(rt)
-			a.setSession("sess", "/tmp/work", "test-model", "", nil)
+			a.setSession("sess", "/tmp/work", "test-model", "max", nil)
 
 			resp, err := a.SetSessionConfigOption(context.Background(), acpsdk.SetSessionConfigOptionRequest{
 				ValueId: &acpsdk.SetSessionConfigOptionValueId{
@@ -1626,6 +1632,12 @@ func TestSetSessionConfigOptionUpdatesConfig(t *testing.T) {
 			}
 			if got := currentConfigValue(resp.ConfigOptions, tt.configID); got != tt.value {
 				t.Fatalf("current config value = %q, want %q", got, tt.value)
+			}
+			if tt.configID == modelSessionConfigID() {
+				if got := currentReasoningEffortValue(resp.ConfigOptions); got != "high" {
+					t.Fatalf("current reasoning effort = %q", got)
+				}
+				assertReasoningEffortOptions(t, resp.ConfigOptions, []string{"high"})
 			}
 			state, ok := a.getSession("sess")
 			if !ok {
@@ -1813,11 +1825,28 @@ func (f *fakeRuntime) CompactSession(_ context.Context, opts atlasruntime.Compac
 
 func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, error) {
 	return atlasruntime.ModelOptions{
-		Default:         "test-model",
-		ReasoningEffort: "high",
+		Default: "test-model",
 		Models: []atlasruntime.ModelOption{
-			{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
-			{Value: "other-model", Name: "Other Model", Description: "alternate", ContextWindow: 1000000, MaxTokens: 128000},
+			{
+				Value:         "test-model",
+				Name:          "Test Model",
+				ContextWindow: 1000000,
+				MaxTokens:     384000,
+				ReasoningEfforts: []atlasruntime.ReasoningEffortOption{
+					{Value: "high", Name: "High"},
+					{Value: "max", Name: "Max"},
+				},
+			},
+			{
+				Value:         "other-model",
+				Name:          "Other Model",
+				Description:   "alternate",
+				ContextWindow: 1000000,
+				MaxTokens:     128000,
+				ReasoningEfforts: []atlasruntime.ReasoningEffortOption{
+					{Value: "high", Name: "High"},
+				},
+			},
 		},
 	}, nil
 }
@@ -1889,6 +1918,27 @@ func currentModelValue(options []acpsdk.SessionConfigOption) string {
 
 func currentReasoningEffortValue(options []acpsdk.SessionConfigOption) string {
 	return currentConfigValue(options, reasoningEffortSessionConfigID())
+}
+
+func assertReasoningEffortOptions(t *testing.T, options []acpsdk.SessionConfigOption, want []string) {
+	t.Helper()
+	for _, option := range options {
+		if option.Select == nil || option.Select.Id != reasoningEffortSessionConfigID() {
+			continue
+		}
+		if option.Select.Options.Ungrouped == nil {
+			t.Fatalf("reasoning effort options = %#v", option.Select.Options)
+		}
+		got := make([]string, 0, len(*option.Select.Options.Ungrouped))
+		for _, item := range *option.Select.Options.Ungrouped {
+			got = append(got, string(item.Value))
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("reasoning effort options = %#v, want %#v", got, want)
+		}
+		return
+	}
+	t.Fatalf("reasoning effort config option missing")
 }
 
 func currentConfigValue(options []acpsdk.SessionConfigOption, id acpsdk.SessionConfigId) string {

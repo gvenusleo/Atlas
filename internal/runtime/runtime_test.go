@@ -14,6 +14,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
+	"github.com/liuyuxin/atlas/internal/provider/responses"
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
@@ -169,8 +170,8 @@ func TestRunTurnAutoCompactsWhenThresholdExceeded(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "atlas.db")
 	r.deps.LoadConfig = func() (config.Config, error) {
 		cfg := testConfig(dbPath)
-		cfg.Provider.Models[0].ContextWindow = 100
-		cfg.Provider.Models[0].MaxTokens = 100
+		cfg.Providers[0].Models[0].ContextWindow = 100
+		cfg.Providers[0].Models[0].MaxTokens = 100
 		cfg.Agent.CompactionTriggerRatio = 0.8
 		return cfg, nil
 	}
@@ -269,9 +270,10 @@ func TestRunTurnRegistersTavilyToolsWhenConfigured(t *testing.T) {
 
 func TestRunTurnOverrides(t *testing.T) {
 	tests := []struct {
-		name string
-		opts TurnOptions
-		check func(t *testing.T, p *recordingProvider)
+		name        string
+		opts        TurnOptions
+		wantErrText string
+		check       func(t *testing.T, p *recordingProvider)
 	}{
 		{
 			name: "requested model",
@@ -292,11 +294,12 @@ func TestRunTurnOverrides(t *testing.T) {
 			},
 		},
 		{
-			name: "empty reasoning effort override",
-			opts: TurnOptions{Prompt: "hello", ReasoningEffort: "", ReasoningEffortSet: true},
+			name:        "empty reasoning effort override is rejected",
+			opts:        TurnOptions{Prompt: "hello", ReasoningEffort: "", ReasoningEffortSet: true},
+			wantErrText: "not supported",
 			check: func(t *testing.T, p *recordingProvider) {
-				if p.request.ReasoningEffort != "" {
-					t.Fatalf("reasoning effort = %q", p.request.ReasoningEffort)
+				if p.called {
+					t.Fatal("provider was called")
 				}
 			},
 		},
@@ -308,7 +311,15 @@ func TestRunTurnOverrides(t *testing.T) {
 				response: model.ChatResponse{Content: "ok"},
 			}
 			r := newTestRuntime(t, provider)
-			if _, err := r.RunTurn(context.Background(), tt.opts); err != nil {
+			_, err := r.RunTurn(context.Background(), tt.opts)
+			if tt.wantErrText != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErrText) {
+					t.Fatalf("RunTurn() error = %v", err)
+				}
+				tt.check(t, provider)
+				return
+			}
+			if err != nil {
 				t.Fatalf("RunTurn() error = %v", err)
 			}
 			tt.check(t, provider)
@@ -436,11 +447,11 @@ func TestModelOptions(t *testing.T) {
 	if options.Default != "test-model" {
 		t.Fatalf("default = %q", options.Default)
 	}
-	if options.ReasoningEffort != "high" {
-		t.Fatalf("reasoning effort = %q", options.ReasoningEffort)
-	}
 	if len(options.Models) != 2 || options.Models[1].Value != "other-model" || options.Models[1].ContextWindow != 1000000 || options.Models[1].MaxTokens != 128000 {
 		t.Fatalf("models = %#v", options.Models)
+	}
+	if len(options.Models[0].ReasoningEfforts) != 2 || options.Models[0].ReasoningEfforts[0].Value != "high" {
+		t.Fatalf("reasoning efforts = %#v", options.Models[0])
 	}
 }
 
@@ -452,12 +463,26 @@ func TestDoctorReportsOfflineRuntimeChecks(t *testing.T) {
 		t.Fatalf("report failed: %#v", report.Checks)
 	}
 	assertDoctorCheck(t, report, "config", DoctorStatusOK, "config.json")
-	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "https://api.example.com, default test-model, 2 models")
-	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "reasoning_effort high")
+	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "test, chat_completions, https://api.example.com, default test-model, 2 models")
+	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "max_steps 4, temperature 0.20, compaction_trigger_ratio 0.80")
 	assertDoctorCheck(t, report, "session", DoctorStatusOK, "atlas.db")
 	assertDoctorCheck(t, report, "memory", DoctorStatusOK, "0 entries, 0 pending, 0 failed, model session model")
 	assertDoctorCheck(t, report, "tavily", DoctorStatusWarn, "disabled")
 	assertDoctorCheck(t, report, "shell", DoctorStatusOK, expectedShellDetail())
+}
+
+func TestNewAPIProviderUsesResponsesFormat(t *testing.T) {
+	provider, err := newAPIProvider(config.ProviderConfig{
+		Format:  config.ProviderFormatResponses,
+		BaseURL: "https://api.openai.com/v1",
+		APIKey:  "sk-test",
+	}, config.ProviderModel{Value: "gpt-5"})
+	if err != nil {
+		t.Fatalf("newAPIProvider() error = %v", err)
+	}
+	if _, ok := provider.(*responses.Provider); !ok {
+		t.Fatalf("provider = %T, want *responses.Provider", provider)
+	}
 }
 
 func TestDoctorReportsTavilyWhenConfigured(t *testing.T) {
@@ -852,6 +877,9 @@ func TestProcessMemoryJobsExtractsAndSummarizes(t *testing.T) {
 	if provider.requests[1].ResponseFormat != model.ResponseFormatJSONObject || provider.requests[2].ResponseFormat != model.ResponseFormatJSONObject {
 		t.Fatalf("response formats = %#v, %#v", provider.requests[1].ResponseFormat, provider.requests[2].ResponseFormat)
 	}
+	if provider.requests[1].ReasoningEffort != "high" || provider.requests[2].ReasoningEffort != "high" {
+		t.Fatalf("memory reasoning efforts = %#v, %#v", provider.requests[1].ReasoningEffort, provider.requests[2].ReasoningEffort)
+	}
 	if len(provider.providerModels) != 3 || provider.providerModels[1] != "test-model" || provider.providerModels[2] != "test-model" {
 		t.Fatalf("provider models = %#v", provider.providerModels)
 	}
@@ -1137,19 +1165,40 @@ func openTestSessionStore(t *testing.T, dbPath string) *session.Store {
 
 func testConfig(dbPath string) config.Config {
 	return config.Config{
-		Provider: config.ProviderConfig{
-			BaseURL:      "https://api.example.com",
-			APIKey:       "sk-test",
-			DefaultModel: "test-model",
-			Models: []config.ProviderModel{
-				{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
-				{Value: "other-model", Name: "Other Model", ContextWindow: 1000000, MaxTokens: 128000},
+		ActiveProvider: "test",
+		Providers: []config.ProviderConfig{
+			{
+				Name:         "test",
+				Format:       config.ProviderFormatChatCompletions,
+				BaseURL:      "https://api.example.com",
+				APIKey:       "sk-test",
+				DefaultModel: "test-model",
+				Models: []config.ProviderModel{
+					{
+						Value:         "test-model",
+						Name:          "Test Model",
+						ContextWindow: 1000000,
+						MaxTokens:     384000,
+						ReasoningEfforts: []config.ProviderReasoningEffort{
+							{Value: "high", Name: "High"},
+							{Value: "max", Name: "Max"},
+						},
+					},
+					{
+						Value:         "other-model",
+						Name:          "Other Model",
+						ContextWindow: 1000000,
+						MaxTokens:     128000,
+						ReasoningEfforts: []config.ProviderReasoningEffort{
+							{Value: "high", Name: "High"},
+						},
+					},
+				},
 			},
 		},
 		Agent: config.AgentConfig{
 			MaxSteps:               4,
 			Temperature:            0.2,
-			ReasoningEffort:        "high",
 			CompactionTriggerRatio: 0.8,
 		},
 		Session: config.SessionConfig{

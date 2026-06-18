@@ -265,7 +265,7 @@ func TestRunWithDependenciesRunsDoctor(t *testing.T) {
 	got := stdout.String()
 	for _, want := range []string{
 		"OK config:",
-		"OK provider: https://api.example.com, default test-model, 2 models",
+		"OK provider: test, chat_completions, https://api.example.com, default test-model, 2 models",
 		"OK session:",
 		"OK memory: 0 entries, 0 pending, 0 failed, model session model",
 		"WARN tavily: disabled",
@@ -590,19 +590,36 @@ func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit
 
 func testConfig(dbPath string) config.Config {
 	return config.Config{
-		Provider: config.ProviderConfig{
-			BaseURL:      "https://api.example.com",
-			APIKey:       "sk-test",
-			DefaultModel: "test-model",
-			Models: []config.ProviderModel{
-				{Value: "test-model", Name: "Test Model", ContextWindow: 1000000, MaxTokens: 384000},
-				{Value: "other-model", Name: "Other Model", ContextWindow: 1000000, MaxTokens: 128000},
+		ActiveProvider: "test",
+		Providers: []config.ProviderConfig{
+			{
+				Name:         "test",
+				BaseURL:      "https://api.example.com",
+				APIKey:       "sk-test",
+				DefaultModel: "test-model",
+				Models: []config.ProviderModel{
+					{
+						Value:         "test-model",
+						Name:          "Test Model",
+						ContextWindow: 1000000,
+						MaxTokens:     384000,
+						ReasoningEfforts: []config.ProviderReasoningEffort{
+							{Value: "high", Name: "High"},
+							{Value: "max", Name: "Max"},
+						},
+					},
+					{
+						Value:         "other-model",
+						Name:          "Other Model",
+						ContextWindow: 1000000,
+						MaxTokens:     128000,
+					},
+				},
 			},
 		},
 		Agent: config.AgentConfig{
 			MaxSteps:               4,
 			Temperature:            0.2,
-			ReasoningEffort:        "high",
 			CompactionTriggerRatio: 0.8,
 		},
 		Session: config.SessionConfig{

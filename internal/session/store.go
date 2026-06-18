@@ -126,6 +126,7 @@ create table if not exists messages (
 	tool_call_id text not null default '',
 	tool_calls_json text not null default '',
 	tool_metadata_json text not null default '',
+	provider_items_json text not null default '',
 	input_tokens integer not null default 0,
 	output_tokens integer not null default 0,
 	total_tokens integer not null default 0,
@@ -164,7 +165,7 @@ func (s *Store) LoadTranscript(ctx context.Context, sessionID string) (*transcri
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, input_tokens, output_tokens, total_tokens
+select role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, provider_items_json, input_tokens, output_tokens, total_tokens
 from messages
 where session_id = ?
 order by id`, sessionID)
@@ -175,9 +176,9 @@ order by id`, sessionID)
 
 	trans := transcript.New()
 	for rows.Next() {
-		var role, content, reasoningContent, toolCallID, toolCallsJSON, toolMetadataJSON string
+		var role, content, reasoningContent, toolCallID, toolCallsJSON, toolMetadataJSON, providerItemsJSON string
 		var usage model.Usage
-		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON, &toolMetadataJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
+		if err := rows.Scan(&role, &content, &reasoningContent, &toolCallID, &toolCallsJSON, &toolMetadataJSON, &providerItemsJSON, &usage.InputTokens, &usage.OutputTokens, &usage.TotalTokens); err != nil {
 			return nil, err
 		}
 		toolCalls, err := decodeToolCalls(toolCallsJSON)
@@ -185,6 +186,10 @@ order by id`, sessionID)
 			return nil, err
 		}
 		toolMetadata, err := decodeToolMetadata(toolMetadataJSON)
+		if err != nil {
+			return nil, err
+		}
+		providerItems, err := decodeProviderItems(providerItemsJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -196,6 +201,7 @@ order by id`, sessionID)
 			ToolCalls:        toolCalls,
 			ToolMetadata:     toolMetadata,
 			Usage:            usage,
+			ProviderItems:    providerItems,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -487,9 +493,13 @@ on conflict(id) do update set
 		if err != nil {
 			return err
 		}
+		providerItemsJSON, err := encodeProviderItems(msg.ProviderItems)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
-insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, input_tokens, output_tokens, total_tokens, created_at)
-values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, toolMetadataJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
+insert into messages(session_id, role, content, reasoning_content, tool_call_id, tool_calls_json, tool_metadata_json, provider_items_json, input_tokens, output_tokens, total_tokens, created_at)
+values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg.Content, msg.ReasoningContent, msg.ToolCallID, toolCallsJSON, toolMetadataJSON, providerItemsJSON, msg.Usage.InputTokens, msg.Usage.OutputTokens, msg.Usage.TotalTokens, now); err != nil {
 			return err
 		}
 	}
@@ -571,6 +581,28 @@ func decodeToolMetadata(content string) (model.ToolMetadata, error) {
 		return model.ToolMetadata{}, err
 	}
 	return metadata, nil
+}
+
+func encodeProviderItems(items []model.ProviderItem) (string, error) {
+	if len(items) == 0 {
+		return "", nil
+	}
+	content, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func decodeProviderItems(content string) ([]model.ProviderItem, error) {
+	if content == "" {
+		return nil, nil
+	}
+	var items []model.ProviderItem
+	if err := json.Unmarshal([]byte(content), &items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // encodeAdditionalDirectories 将额外工作目录根序列化为 JSON。

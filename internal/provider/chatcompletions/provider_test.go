@@ -1,4 +1,4 @@
-package openai
+package chatcompletions
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-func TestStreamSendsOpenAICompatibleRequest(t *testing.T) {
+func TestStreamSendsChatCompletionsRequest(t *testing.T) {
 	var gotAuth string
 	var gotReq chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

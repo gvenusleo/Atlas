@@ -44,6 +44,12 @@ type ToolMetadata struct {
 	Diff      *ToolDiff      `json:"diff,omitempty"`
 }
 
+// ProviderItem 保存特定 API 格式下一轮必须原样回放的输出项。
+type ProviderItem struct {
+	Type string `json:"type"`
+	JSON string `json:"json"`
+}
+
 // ToolDefinition 描述发送给模型的函数调用工具定义。
 type ToolDefinition struct {
 	Name        string
@@ -66,6 +72,8 @@ type Message struct {
 	ToolMetadata ToolMetadata
 	// Usage 只对 assistant 消息有意义，记录 provider 返回的 token 用量。
 	Usage Usage
+	// ProviderItems 只对 assistant 消息有意义，用于 provider 续接特定 API 状态。
+	ProviderItems []ProviderItem
 }
 
 // StopReason 表示一次模型 step 结束的原因。
@@ -131,6 +139,7 @@ type ChatResponse struct {
 	ToolCalls        []ToolCall
 	StopReason       StopReason
 	Usage            Usage
+	ProviderItems    []ProviderItem
 	// RawFinish 保留 provider 的原始结束原因，方便调试。
 	RawFinish string
 }
