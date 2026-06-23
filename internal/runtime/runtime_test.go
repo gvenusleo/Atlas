@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +46,81 @@ func TestRunTurnSavesAndResumesSession(t *testing.T) {
 		t.Fatalf("messages = %#v", messages)
 	}
 	if messages[0].Content != "first" || messages[1].Content != "ok" || messages[2].Content != "second" {
+		t.Fatalf("messages = %#v", messages)
+	}
+}
+
+func TestRunTurnSavesInterruptedUserMessage(t *testing.T) {
+	wantErr := errors.New("network failed")
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "first reply"},
+			{},
+			{Content: "third reply"},
+		},
+		errors: []error{nil, wantErr, nil},
+	}
+	r := newTestRuntime(t, provider)
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "first",
+	}); err != nil {
+		t.Fatalf("first RunTurn() error = %v", err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "second",
+	}); !errors.Is(err, wantErr) {
+		t.Fatalf("second RunTurn() error = %v, want %v", err, wantErr)
+	}
+
+	_, trans, err := r.ShowSession(context.Background(), "work")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	messages := trans.Messages()
+	if len(messages) != 3 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	if messages[0].Content != "first" || messages[1].Content != "first reply" || messages[2].Content != "second" {
+		t.Fatalf("messages = %#v", messages)
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "third",
+	}); err != nil {
+		t.Fatalf("third RunTurn() error = %v", err)
+	}
+	requestMessages := provider.requests[2].Messages
+	if len(requestMessages) != 4 {
+		t.Fatalf("request messages = %#v", requestMessages)
+	}
+	if requestMessages[0].Content != "first" || requestMessages[1].Content != "first reply" || requestMessages[2].Content != "second" || requestMessages[3].Content != "third" {
+		t.Fatalf("request messages = %#v", requestMessages)
+	}
+}
+
+func TestRunTurnSavesInterruptedUserMessageAfterCancel(t *testing.T) {
+	provider := &cancelingProvider{}
+	r := newTestRuntime(t, provider)
+	ctx, cancel := context.WithCancel(context.Background())
+	provider.cancel = cancel
+
+	if _, err := r.RunTurn(ctx, TurnOptions{
+		SessionID: "work",
+		Prompt:    "second",
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunTurn() error = %v, want %v", err, context.Canceled)
+	}
+
+	_, trans, err := r.ShowSession(context.Background(), "work")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	messages := trans.Messages()
+	if len(messages) != 1 || messages[0].Content != "second" {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
@@ -1097,6 +1173,7 @@ func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emi
 type sequenceProvider struct {
 	requests       []model.ChatRequest
 	responses      []model.ChatResponse
+	errors         []error
 	providerModel  string
 	providerModels []string
 }
@@ -1108,12 +1185,33 @@ func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit
 	}
 	resp := p.responses[0]
 	p.responses = p.responses[1:]
+	if len(p.errors) > 0 {
+		err := p.errors[0]
+		p.errors = p.errors[1:]
+		if err != nil {
+			return model.ChatResponse{}, err
+		}
+	}
 	if emit != nil && resp.Content != "" {
 		if err := emit(model.StreamEvent{Type: model.StreamTextDelta, Delta: resp.Content}); err != nil {
 			return model.ChatResponse{}, err
 		}
 	}
 	return resp, nil
+}
+
+type cancelingProvider struct {
+	cancel context.CancelFunc
+}
+
+func (p *cancelingProvider) Stream(ctx context.Context, _ model.ChatRequest, _ func(model.StreamEvent) error) (model.ChatResponse, error) {
+	if p.cancel != nil {
+		p.cancel()
+	}
+	if err := ctx.Err(); err != nil {
+		return model.ChatResponse{}, err
+	}
+	return model.ChatResponse{}, context.Canceled
 }
 
 func TestRunTurnSuppressesRepeatedMemoryInjection(t *testing.T) {

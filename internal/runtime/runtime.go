@@ -122,6 +122,8 @@ type ModelOptions struct {
 type DoctorStatus string
 
 const (
+	interruptedTurnSaveTimeout = 2 * time.Second
+
 	// DoctorStatusOK 表示检查通过。
 	DoctorStatusOK DoctorStatus = "ok"
 	// DoctorStatusWarn 表示能力不可用或配置缺失，但不阻止核心运行。
@@ -357,14 +359,22 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 
 	content, err := a.RunTurnParts(ctx, parts)
-	if err != nil {
-		return TurnResult{}, err
-	}
 	activeAfter := trans.Messages()
 	if initialActiveLen > len(activeAfter) {
 		initialActiveLen = len(activeAfter)
 	}
 	fullMessages := append(fullTrans.Messages(), activeAfter[initialActiveLen:]...)
+	if err != nil {
+		saveCtx, cancel := context.WithTimeout(context.Background(), interruptedTurnSaveTimeout)
+		defer cancel()
+		if saveErr := store.SaveTranscriptWithOptions(saveCtx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
+			AdditionalDirectories:    opts.AdditionalDirectories,
+			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
+		}); saveErr != nil {
+			return TurnResult{}, fmt.Errorf("%w; failed to save interrupted turn: %v", err, saveErr)
+		}
+		return TurnResult{}, err
+	}
 	if err := store.SaveTranscriptWithOptions(ctx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
 		AdditionalDirectories:    opts.AdditionalDirectories,
 		AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
