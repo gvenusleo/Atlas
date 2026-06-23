@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -125,6 +126,11 @@ func Open(path string) (*Store, error) {
 // Close 关闭底层数据库连接。
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// DB 返回底层数据库连接，供测试和诊断使用。
+func (s *Store) DB() *sql.DB {
+	return s.db
 }
 
 // EnsureSchema 创建长期记忆相关表结构。
@@ -337,6 +343,89 @@ where fingerprint = ?`, statusArchived, now, strings.TrimSpace(fingerprint)); er
 	return nil
 }
 
+// DecayConfidence 按记忆类型对 active 记忆的 confidence 做离散衰减。
+// decayDays 按类型指定每多少天衰减 1 点；未指定的类型不衰减。
+// confidence 不会低于 1。
+func (s *Store) DecayConfidence(ctx context.Context, decayDays map[string]int) error {
+	if len(decayDays) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	for entryType, days := range decayDays {
+		if days <= 0 {
+			continue
+		}
+		rows, err := s.db.QueryContext(ctx, `
+select id, confidence, updated_at from memory_entries
+where status = 'active' and type = ?`, entryType)
+		if err != nil {
+			return err
+		}
+		var ids []int64
+		var newConfidences []int
+		for rows.Next() {
+			var id int64
+			var confidence int
+			var updatedAtStr string
+			if err := rows.Scan(&id, &confidence, &updatedAtStr); err != nil {
+				rows.Close()
+				return err
+			}
+			updatedAt, err := time.Parse(time.RFC3339Nano, updatedAtStr)
+			if err != nil {
+				continue
+			}
+			ageDays := int(now.Sub(updatedAt).Hours() / 24)
+			decay := ageDays / days
+			newConf := confidence - decay
+			if newConf < 1 {
+				newConf = 1
+			}
+			if newConf != confidence {
+				ids = append(ids, id)
+				newConfidences = append(newConfidences, newConf)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for i, id := range ids {
+			if _, err := s.db.ExecContext(ctx, `
+update memory_entries set confidence = ? where id = ?`, newConfidences[i], id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+const scoreFloorRatio = 0.15
+
+// PruneStaleEntries 将长期未使用且低置信度的 active 记忆归档。
+// 条件：confidence <= 1 且 use_count == 0 且 last_used_at 超过 maxUnusedDays 天。
+// 返回归档条目数。last_used_at 为空的条目按 updated_at 计算。
+func (s *Store) PruneStaleEntries(ctx context.Context, maxUnusedDays int) (int, error) {
+	if maxUnusedDays <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -maxUnusedDays).Format(time.RFC3339Nano)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	res, err := s.db.ExecContext(ctx, `
+	update memory_entries
+	set status = ?, updated_at = ?
+	where status = 'active'
+		and confidence <= 1
+		and use_count = 0
+		and (last_used_at = '' or last_used_at < ?)
+		and updated_at < ?`, statusArchived, now, cutoff, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // Search 返回和 query 相关的 global/project active 记忆。
 func (s *Store) Search(ctx context.Context, cwd, query string, limit int) ([]Entry, error) {
 	projectKey, _ := ProjectIdentity(cwd)
@@ -348,26 +437,52 @@ func (s *Store) Search(ctx context.Context, cwd, query string, limit int) ([]Ent
 		limit = defaultPromptEntryLimit
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select e.id, e.scope, e.project_key, e.project_path, e.type, e.content, e.source_note, e.confidence, e.fingerprint, e.status, e.source_session_id, e.created_at, e.updated_at, e.last_used_at, e.use_count
+select e.id, e.scope, e.project_key, e.project_path, e.type, e.content, e.source_note, e.confidence, e.fingerprint, e.status, e.source_session_id, e.created_at, e.updated_at, e.last_used_at, e.use_count, bm25(memory_entries_fts) as rank
 from memory_entries_fts
 join memory_entries e on e.id = memory_entries_fts.rowid
 where memory_entries_fts match ?
 	and e.status = 'active'
 	and (e.scope = 'global' or (e.scope = 'project' and e.project_key = ?))
-order by bm25(memory_entries_fts), e.updated_at desc
+order by rank, e.confidence desc, e.use_count desc, e.updated_at desc
 limit ?`, ftsQuery, projectKey, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	entries, err := scanEntries(rows)
-	if err != nil {
+	var entries []Entry
+	var ranks []float64
+	for rows.Next() {
+		var entry Entry
+		var createdAt, updatedAt, lastUsedAt string
+		var rank float64
+		if err := rows.Scan(&entry.ID, &entry.Scope, &entry.ProjectKey, &entry.ProjectPath, &entry.Type, &entry.Content, &entry.SourceNote, &entry.Confidence, &entry.Fingerprint, &entry.Status, &entry.SourceSessionID, &createdAt, &updatedAt, &lastUsedAt, &entry.UseCount, &rank); err != nil {
+			return nil, err
+		}
+		entry.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			return nil, err
+		}
+		entry.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
+		if err != nil {
+			return nil, err
+		}
+		if lastUsedAt != "" {
+			entry.LastUsedAt, err = time.Parse(time.RFC3339Nano, lastUsedAt)
+			if err != nil {
+				return nil, err
+			}
+		}
+		entries = append(entries, entry)
+		ranks = append(ranks, rank)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	if len(entries) == 0 {
 		return entries, nil
 	}
+	entries = filterByScore(entries, ranks)
 	if err := s.markUsed(ctx, entries); err != nil {
 		return nil, err
 	}
@@ -385,7 +500,7 @@ select id, scope, project_key, project_path, type, content, source_note, confide
 from memory_entries
 where status = 'active'
 	and (scope = 'global' or (scope = 'project' and project_key = ?))
-order by updated_at desc, id desc
+order by confidence desc, use_count desc, updated_at desc, id desc
 limit ?`, projectKey, limit)
 	if err != nil {
 		return nil, err
@@ -464,23 +579,30 @@ order by scope`, projectKey)
 }
 
 // PromptContext 构造系统提示词可直接注入的长期记忆上下文。
-func (s *Store) PromptContext(ctx context.Context, cwd, query string) (string, error) {
+// excludeFingerprints 中的记忆不会出现在结果中；如果全部被排除则回退全量。
+// 返回格式化文本和本轮实际注入条目的指纹列表。
+func (s *Store) PromptContext(ctx context.Context, cwd, query string, excludeFingerprints []string) (string, []string, error) {
 	summaries, err := s.LoadSummaries(ctx, cwd)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	entries, err := s.Search(ctx, cwd, query, defaultPromptEntryLimit)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
+	entries = filterExcluded(entries, excludeFingerprints)
 	if len(summaries) == 0 && len(entries) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 	var builder strings.Builder
 	builder.WriteString("The following long-term memories were automatically retrieved from prior Atlas sessions. They may be stale; verify project facts with tools when precision matters.\n")
 	writeSummaries(&builder, summaries)
 	writeEntries(&builder, entries)
-	return trimPromptContext(builder.String()), nil
+	fingerprints := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		fingerprints = append(fingerprints, entry.Fingerprint)
+	}
+	return trimPromptContext(builder.String()), fingerprints, nil
 }
 
 // EnqueueSessionExtract 安排从指定 session 中抽取记忆。
@@ -778,6 +900,47 @@ func trimPromptContext(content string) string {
 		return string(runes)
 	}
 	return string(runes[:maxPromptContextRunes]) + "\n..."
+}
+
+// filterExcluded 过滤掉排除集合中的记忆。如果全部被排除，返回原始列表以防丢失覆盖面。
+func filterExcluded(entries []Entry, excludeFingerprints []string) []Entry {
+	if len(excludeFingerprints) == 0 || len(entries) == 0 {
+		return entries
+	}
+	excludeSet := make(map[string]struct{}, len(excludeFingerprints))
+	for _, fp := range excludeFingerprints {
+		excludeSet[fp] = struct{}{}
+	}
+	filtered := make([]Entry, 0, len(entries))
+	for _, entry := range entries {
+		if _, excluded := excludeSet[entry.Fingerprint]; !excluded {
+			filtered = append(filtered, entry)
+		}
+	}
+	if len(filtered) == 0 {
+		return entries
+	}
+	return filtered
+}
+
+// filterByScore 保留 BM25 分数与 top hit 接近的记忆，过滤尾部噪声。
+// BM25 分数越小（越负）表示相关性越差；top hit 永远保留。
+func filterByScore(entries []Entry, ranks []float64) []Entry {
+	if len(entries) <= 1 {
+		return entries
+	}
+	topRank := ranks[0]
+	absTop := math.Abs(topRank)
+	if absTop < 1e-9 {
+		return entries
+	}
+	filtered := make([]Entry, 0, len(entries))
+	for i, entry := range entries {
+		if i == 0 || math.Abs(ranks[i]-topRank)/absTop <= scoreFloorRatio {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func buildFTSQuery(query string) string {

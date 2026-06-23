@@ -27,6 +27,15 @@ const (
 	memoryExtractMinNewInputTokens = 4000
 )
 
+// memoryDecayDays 按记忆类型指定 confidence 衰减速率（每多少天衰减 1 点）。
+var memoryDecayDays = map[string]int{
+	memory.TypeInstruction: 180,
+	memory.TypeFact:        90,
+	memory.TypeWorkflow:    120,
+}
+
+const memoryPruneUnusedDays = 90
+
 var memoryWorkerIDPrefix = "atlas-memory-"
 var memoryExtractTriggerRatios = []float64{0.4, 0.6, 0.8}
 
@@ -90,6 +99,9 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 			return processed, err
 		}
 		if !ok {
+			if processed == 0 {
+				_, _ = memStore.PruneStaleEntries(ctx, memoryPruneUnusedDays)
+			}
 			return processed, nil
 		}
 		selectedModel, err := activeProvider.ResolveModel(job.Model)
@@ -181,6 +193,9 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	projectKey, projectPath := memory.ProjectIdentity(info.CWD)
 	existing, err := loadExistingMemories(ctx, memStore, projectKey, 30)
 	if err != nil {
+		return err
+	}
+	if err := memStore.DecayConfidence(ctx, memoryDecayDays); err != nil {
 		return err
 	}
 	reasoningEffort, err := selectedReasoningEffort("", false, selectedModel)
@@ -297,16 +312,27 @@ func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memor
 }
 
 // loadMemoryContext 以 best-effort 方式读取长期记忆，失败时不影响主 turn。
-func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfig, cwd, query string) string {
+// 同一 session 连续轮次中，上轮已注入且本轮仍在结果中的记忆会被跳过以防重复注入。
+func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfig, sessionID, cwd, query string) string {
 	store, err := openMemoryStore(ctx, cfg)
 	if err != nil {
 		return ""
 	}
 	defer store.Close()
-	contextText, err := store.PromptContext(ctx, cwd, query)
+
+	r.lastInjectedMemMu.Lock()
+	exclude := r.lastInjectedMemories[sessionID]
+	r.lastInjectedMemMu.Unlock()
+
+	contextText, fingerprints, err := store.PromptContext(ctx, cwd, query, exclude)
 	if err != nil {
 		return ""
 	}
+
+	r.lastInjectedMemMu.Lock()
+	r.lastInjectedMemories[sessionID] = fingerprints
+	r.lastInjectedMemMu.Unlock()
+
 	return contextText
 }
 

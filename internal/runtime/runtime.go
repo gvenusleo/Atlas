@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/liuyuxin/atlas/internal/agent"
@@ -38,7 +39,9 @@ type Dependencies struct {
 
 // Runtime 是 CLI 和后续交互界面共享的 Atlas 执行入口。
 type Runtime struct {
-	deps Dependencies
+	deps                 Dependencies
+	lastInjectedMemories map[string][]string
+	lastInjectedMemMu    sync.Mutex
 }
 
 // TurnOptions 描述一次用户输入的执行参数。
@@ -195,7 +198,7 @@ func providerFormat(cfg config.ProviderConfig) string {
 
 // New 创建 Runtime，并为未指定的依赖填入默认实现。
 func New(deps Dependencies) *Runtime {
-	return &Runtime{deps: completeDependencies(deps)}
+	return &Runtime{deps: completeDependencies(deps), lastInjectedMemories: make(map[string][]string)}
 }
 
 // RunTurn 恢复或创建 session，执行一次 agent turn，并保存 transcript。
@@ -308,7 +311,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	memoryContext := ""
 	if cfg.Memory.IsEnabled() {
-		memoryContext = r.loadMemoryContext(ctx, cfg.Session, cwd, promptText)
+		memoryContext = r.loadMemoryContext(ctx, cfg.Session, sessionID, cwd, promptText)
 	}
 	memoryForceExtract := false
 	if resumeSession {
@@ -820,7 +823,13 @@ func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	defer store.Close()
-	return store.DeleteSession(ctx, sessionID)
+	if err := store.DeleteSession(ctx, sessionID); err != nil {
+		return err
+	}
+	r.lastInjectedMemMu.Lock()
+	delete(r.lastInjectedMemories, sessionID)
+	r.lastInjectedMemMu.Unlock()
+	return nil
 }
 
 // DeleteSessionIfExists 删除指定本地会话，并忽略不存在的会话。

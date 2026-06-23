@@ -51,7 +51,7 @@ func TestStoreUpsertSearchAndPromptContext(t *testing.T) {
 	if len(recent) != 1 || recent[0].Content != entry.Content {
 		t.Fatalf("recent results = %#v", recent)
 	}
-	contextText, err := store.PromptContext(ctx, projectPath, "test")
+	contextText, _, err := store.PromptContext(ctx, projectPath, "test", nil)
 	if err != nil {
 		t.Fatalf("PromptContext() error = %v", err)
 	}
@@ -173,6 +173,454 @@ func TestCompleteJobIgnoresStaleClaim(t *testing.T) {
 	}
 	if !ok || newJob.InputHash != "hash-2" || newJob.Model != "deepseek-v4-pro" {
 		t.Fatalf("newJob = %#v, ok = %v", newJob, ok)
+	}
+}
+
+func TestSearchRanksByConfidenceAndUsage(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	// Two entries with the same distinctive tokens so BM25 scores are close.
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "atlas test command runs tests", Confidence: 1,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "atlas test coverage shows results", Confidence: 5,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	results, err := store.Search(ctx, projectPath, "atlas test", 5)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+	if results[0].Confidence < results[1].Confidence {
+		t.Fatalf("expected higher confidence first, got %d then %d", results[0].Confidence, results[1].Confidence)
+	}
+}
+
+func TestListPromptEntriesRanksByConfidenceAndUsage(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "low confidence fact", Confidence: 1,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "high confidence fact", Confidence: 5,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	results, err := store.ListPromptEntries(ctx, projectPath, 5)
+	if err != nil {
+		t.Fatalf("ListPromptEntries() error = %v", err)
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+	if results[0].Confidence < results[1].Confidence {
+		t.Fatalf("expected higher confidence first, got %d then %d", results[0].Confidence, results[1].Confidence)
+	}
+}
+
+func TestSearchFiltersLowScoreEntries(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	// Highly relevant: exact match on distinctive token.
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "atlas configuration json", Confidence: 3,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	// Weakly relevant: shares one common token but is about something else.
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "json schema validation", Confidence: 3,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	results, err := store.Search(ctx, projectPath, "atlas configuration json", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	// The highly-relevant entry must be present.
+	found := false
+	for _, r := range results {
+		if strings.Contains(r.Content, "atlas configuration") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected highly relevant entry in results, got %v", results)
+	}
+	// The weakly-relevant entry should be filtered out by score floor.
+	for _, r := range results {
+		if r.Content == "json schema validation" {
+			t.Fatalf("expected weakly relevant entry to be filtered, got %v", results)
+		}
+	}
+}
+
+func TestSearchKeepsAtLeastOne(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "unique alpha beta", Confidence: 3,
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	results, err := store.Search(ctx, projectPath, "alpha beta", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(results) < 1 {
+		t.Fatalf("expected at least 1 result, got %d", len(results))
+	}
+}
+
+func TestPromptContextExcludesPreviousFingerprints(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	e1, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "atlas test command", Confidence: 3,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	e2, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "atlas test coverage", Confidence: 3,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	// First call: both entries returned.
+	_, fps, err := store.PromptContext(ctx, projectPath, "atlas test", nil)
+	if err != nil {
+		t.Fatalf("PromptContext() error = %v", err)
+	}
+	if len(fps) < 2 {
+		t.Fatalf("expected at least 2 fingerprints, got %d", len(fps))
+	}
+
+	// Second call excluding all previous fingerprints: should fall back to full set.
+	_, fps2, err := store.PromptContext(ctx, projectPath, "atlas test", fps)
+	if err != nil {
+		t.Fatalf("PromptContext() error = %v", err)
+	}
+	if len(fps2) == 0 {
+		t.Fatalf("expected fallback to full set, got 0 fingerprints")
+	}
+
+	// Third call excluding only e1: should return e2 only.
+	_, fps3, err := store.PromptContext(ctx, projectPath, "atlas test", []string{e1.Fingerprint})
+	if err != nil {
+		t.Fatalf("PromptContext() error = %v", err)
+	}
+	for _, fp := range fps3 {
+		if fp == e1.Fingerprint {
+			t.Fatalf("excluded fingerprint %s should not appear", e1.Fingerprint)
+		}
+	}
+	found := false
+	for _, fp := range fps3 {
+		if fp == e2.Fingerprint {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected e2 fingerprint in results")
+	}
+}
+
+func TestDecayConfidenceReducesOldEntries(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "old fact", Confidence: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	// Backdate updated_at by 100 days.
+	oldTime := time.Now().UTC().AddDate(0, 0, -100).Format(time.RFC3339Nano)
+	if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
+		t.Fatalf("backdate error = %v", err)
+	}
+
+	// fact decays 1 point per 90 days; 100 days -> 1 point decay.
+	if err := store.DecayConfidence(ctx, map[string]int{TypeFact: 90}); err != nil {
+		t.Fatalf("DecayConfidence() error = %v", err)
+	}
+
+	decayed, err := store.GetEntryByFingerprint(ctx, entry.Fingerprint)
+	if err != nil {
+		t.Fatalf("GetEntryByFingerprint() error = %v", err)
+	}
+	if decayed.Confidence != 4 {
+		t.Fatalf("expected confidence 4, got %d", decayed.Confidence)
+	}
+}
+
+func TestDecayConfidenceFloorsAtOne(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "very old fact", Confidence: 2,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	oldTime := time.Now().UTC().AddDate(0, 0, -365).Format(time.RFC3339Nano)
+	if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
+		t.Fatalf("backdate error = %v", err)
+	}
+
+	if err := store.DecayConfidence(ctx, map[string]int{TypeFact: 30}); err != nil {
+		t.Fatalf("DecayConfidence() error = %v", err)
+	}
+
+	decayed, err := store.GetEntryByFingerprint(ctx, entry.Fingerprint)
+	if err != nil {
+		t.Fatalf("GetEntryByFingerprint() error = %v", err)
+	}
+	if decayed.Confidence != 1 {
+		t.Fatalf("expected confidence floored at 1, got %d", decayed.Confidence)
+	}
+}
+
+func TestDecayConfidenceByType(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	fact, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "fact entry", Confidence: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	instruction, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeInstruction, Content: "instruction entry", Confidence: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	oldTime := time.Now().UTC().AddDate(0, 0, -100).Format(time.RFC3339Nano)
+	for _, id := range []int64{fact.ID, instruction.ID} {
+		if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, id); err != nil {
+			t.Fatalf("backdate error = %v", err)
+		}
+	}
+
+	// fact: 90 days/point -> 1 decay; instruction: 180 days/point -> 0 decay.
+	if err := store.DecayConfidence(ctx, map[string]int{TypeFact: 90, TypeInstruction: 180}); err != nil {
+		t.Fatalf("DecayConfidence() error = %v", err)
+	}
+
+	decayedFact, _ := store.GetEntryByFingerprint(ctx, fact.Fingerprint)
+	decayedInst, _ := store.GetEntryByFingerprint(ctx, instruction.Fingerprint)
+	if decayedFact.Confidence != 4 {
+		t.Fatalf("fact expected confidence 4, got %d", decayedFact.Confidence)
+	}
+	if decayedInst.Confidence != 5 {
+		t.Fatalf("instruction expected confidence 5, got %d", decayedInst.Confidence)
+	}
+}
+
+func TestUpsertAfterDecayRestoresConfidence(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "repeated fact", Confidence: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	oldTime := time.Now().UTC().AddDate(0, 0, -200).Format(time.RFC3339Nano)
+	if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
+		t.Fatalf("backdate error = %v", err)
+	}
+
+	if err := store.DecayConfidence(ctx, map[string]int{TypeFact: 90}); err != nil {
+		t.Fatalf("DecayConfidence() error = %v", err)
+	}
+
+	// Re-upsert with high confidence; should take max(decayed, new).
+	restored, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "repeated fact", Confidence: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	if restored.Confidence != 5 {
+		t.Fatalf("expected confidence restored to 5, got %d", restored.Confidence)
+	}
+}
+
+func TestPruneStaleEntriesArchivesOldUnused(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "stale unused low confidence", Confidence: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	oldTime := time.Now().UTC().AddDate(0, 0, -100).Format(time.RFC3339Nano)
+	if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
+		t.Fatalf("backdate error = %v", err)
+	}
+
+	n, err := store.PruneStaleEntries(ctx, 90)
+	if err != nil {
+		t.Fatalf("PruneStaleEntries() error = %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 pruned, got %d", n)
+	}
+	pruned, _ := store.GetEntryByFingerprint(ctx, entry.Fingerprint)
+	if pruned.Status != statusArchived {
+		t.Fatalf("expected status archived, got %s", pruned.Status)
+	}
+}
+
+func TestPruneStaleEntriesKeepsUsedEntries(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "used entry", Confidence: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	// Mark as used via Search.
+	_, _ = store.Search(ctx, projectPath, "used", 5)
+
+	oldTime := time.Now().UTC().AddDate(0, 0, -100).Format(time.RFC3339Nano)
+	if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
+		t.Fatalf("backdate error = %v", err)
+	}
+
+	n, err := store.PruneStaleEntries(ctx, 90)
+	if err != nil {
+		t.Fatalf("PruneStaleEntries() error = %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 pruned, got %d", n)
+	}
+}
+
+func TestPruneStaleEntriesKeepsHighConfidence(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "high confidence old unused", Confidence: 3,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	oldTime := time.Now().UTC().AddDate(0, 0, -100).Format(time.RFC3339Nano)
+	if _, err := store.db.ExecContext(ctx, `update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
+		t.Fatalf("backdate error = %v", err)
+	}
+
+	n, err := store.PruneStaleEntries(ctx, 90)
+	if err != nil {
+		t.Fatalf("PruneStaleEntries() error = %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 pruned, got %d", n)
+	}
+}
+
+func TestPruneStaleEntriesKeepsRecentEntries(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "recent low confidence unused", Confidence: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	_ = entry
+	// updated_at is recent (just created), so should not be pruned.
+	n, err := store.PruneStaleEntries(ctx, 90)
+	if err != nil {
+		t.Fatalf("PruneStaleEntries() error = %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 pruned, got %d", n)
 	}
 }
 
