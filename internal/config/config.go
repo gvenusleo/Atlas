@@ -59,7 +59,13 @@ type ProviderModel struct {
 	ContextWindow    int                       `json:"context_window"`
 	MaxTokens        int                       `json:"max_tokens"`
 	InputFormats     []string                  `json:"input_formats"`
+	PromptCache      PromptCacheConfig         `json:"prompt_cache,omitempty"`
 	ReasoningEfforts []ProviderReasoningEffort `json:"reasoning_efforts,omitempty"`
+}
+
+// PromptCacheConfig 描述模型侧 prompt cache 的启用方式。
+type PromptCacheConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // ProviderReasoningEffort 描述模型支持的一个 reasoning effort 选项。

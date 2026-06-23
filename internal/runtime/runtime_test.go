@@ -335,6 +335,21 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	}
 }
 
+func TestRunTurnPassesSessionIDToProvider(t *testing.T) {
+	provider := &recordingProvider{
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r := newTestRuntime(t, provider)
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "hello"})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if provider.request.SessionID != result.SessionID {
+		t.Fatalf("request session id = %q, want %q", provider.request.SessionID, result.SessionID)
+	}
+}
+
 func TestRunTurnRegistersTavilyToolsWhenConfigured(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},

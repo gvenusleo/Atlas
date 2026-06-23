@@ -231,6 +231,25 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
           "input_formats": ["text", "image"]
         }
       ]
+    },
+    {
+      "name": "openai",
+      "format": "responses",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-...",
+      "default_model": "gpt-5",
+      "models": [
+        {
+          "value": "gpt-5",
+          "name": "GPT-5",
+          "context_window": 400000,
+          "max_tokens": 128000,
+          "input_formats": ["text", "image"],
+          "prompt_cache": {
+            "enabled": true
+          }
+        }
+      ]
     }
   ],
   "agent": {
@@ -277,7 +296,10 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 | `models[].context_window` | 上下文窗口，用于压缩和用量展示 |
 | `models[].max_tokens` | 每次模型请求的最大输出 token 数，需 ≤ `context_window` |
 | `models[].input_formats` | 支持的输入格式，当前支持 `text` 和 `image`，且必须包含 `text` |
+| `models[].prompt_cache.enabled` | 可省略，默认关闭；设为 `true` 时，同一 Atlas session 会向兼容 Provider 发送稳定的 `prompt_cache_key` |
 | `models[].reasoning_efforts` | 声明支持的思考深度选项；未显式选择时使用第一项 |
+
+`prompt_cache.enabled` 只应在确认 Provider 接受对应字段后开启。OpenAI-compatible 服务兼容性不一致；如果开启后请求返回未知字段或 400 错误，删除该模型的 `prompt_cache` 配置即可回退。
 
 **Agent**
 

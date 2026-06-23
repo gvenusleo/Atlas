@@ -176,19 +176,40 @@ func newAPIProvider(cfg config.ProviderConfig, selected config.ProviderModel) (m
 	switch providerFormat(cfg) {
 	case config.ProviderFormatChatCompletions:
 		return chatcompletions.New(chatcompletions.Config{
-			BaseURL: cfg.BaseURL,
-			APIKey:  cfg.APIKey,
-			Model:   selected.Value,
+			BaseURL:            cfg.BaseURL,
+			APIKey:             cfg.APIKey,
+			Model:              selected.Value,
+			PromptCacheEnabled: selected.PromptCache.Enabled,
 		})
 	case config.ProviderFormatResponses:
 		return responses.New(responses.Config{
-			BaseURL: cfg.BaseURL,
-			APIKey:  cfg.APIKey,
-			Model:   selected.Value,
+			BaseURL:            cfg.BaseURL,
+			APIKey:             cfg.APIKey,
+			Model:              selected.Value,
+			PromptCacheEnabled: selected.PromptCache.Enabled,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported provider format %q", cfg.Format)
 	}
+}
+
+type sessionProvider struct {
+	base      model.Provider
+	sessionID string
+}
+
+func withSessionID(provider model.Provider, sessionID string) model.Provider {
+	if sessionID == "" {
+		return provider
+	}
+	return sessionProvider{base: provider, sessionID: sessionID}
+}
+
+func (p sessionProvider) Stream(ctx context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
+	if req.SessionID == "" {
+		req.SessionID = p.sessionID
+	}
+	return p.base.Stream(ctx, req, emit)
 }
 
 func providerFormat(cfg config.ProviderConfig) string {
@@ -293,6 +314,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
+	provider = withSessionID(provider, sessionID)
 	instructions, err := r.deps.LoadInstructions(cwd)
 	if err != nil {
 		return TurnResult{}, err
@@ -547,6 +569,7 @@ func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (Comp
 	if err != nil {
 		return CompactResult{}, err
 	}
+	provider = withSessionID(provider, opts.SessionID)
 	store, err := openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return CompactResult{}, err

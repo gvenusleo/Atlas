@@ -19,18 +19,20 @@ const chatCompletionsPath = "/chat/completions"
 
 // Config 是创建 Chat Completions provider 所需的连接配置。
 type Config struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	HTTPClient *http.Client
+	BaseURL            string
+	APIKey             string
+	Model              string
+	PromptCacheEnabled bool
+	HTTPClient         *http.Client
 }
 
 // Provider 调用 Chat Completions API。
 type Provider struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	baseURL            string
+	apiKey             string
+	model              string
+	promptCacheEnabled bool
+	httpClient         *http.Client
 }
 
 // New 创建一个 Chat Completions provider。
@@ -53,10 +55,11 @@ func New(config Config) (*Provider, error) {
 		httpClient = http.DefaultClient
 	}
 	return &Provider{
-		baseURL:    strings.TrimRight(config.BaseURL, "/"),
-		apiKey:     config.APIKey,
-		model:      config.Model,
-		httpClient: httpClient,
+		baseURL:            strings.TrimRight(config.BaseURL, "/"),
+		apiKey:             config.APIKey,
+		model:              config.Model,
+		promptCacheEnabled: config.PromptCacheEnabled,
+		httpClient:         httpClient,
 	}, nil
 }
 
@@ -101,6 +104,9 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 		ResponseFormat:  toAPIResponseFormat(req.ResponseFormat),
 		Stream:          true,
 	}
+	if p.promptCacheEnabled && req.SessionID != "" {
+		apiReq.PromptCacheKey = req.SessionID
+	}
 	if len(apiReq.Tools) == 0 {
 		apiReq.Tools = nil
 	}
@@ -115,6 +121,7 @@ type chatRequest struct {
 	Temperature     float64      `json:"temperature,omitempty"`
 	ReasoningEffort string       `json:"reasoning_effort,omitempty"`
 	ResponseFormat  *apiFormat   `json:"response_format,omitempty"`
+	PromptCacheKey  string       `json:"prompt_cache_key,omitempty"`
 	Stream          bool         `json:"stream"`
 }
 
@@ -164,9 +171,20 @@ type apiToolFunction struct {
 }
 
 type apiUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens             int                `json:"prompt_tokens"`
+	CompletionTokens         int                `json:"completion_tokens"`
+	TotalTokens              int                `json:"total_tokens"`
+	PromptTokensDetails      promptTokenDetails `json:"prompt_tokens_details"`
+	CacheReadInputTokens     int                `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int                `json:"cache_creation_input_tokens"`
+	CacheWriteInputTokens    int                `json:"cache_write_input_tokens"`
+	PromptCacheHitTokens     int                `json:"prompt_cache_hit_tokens"`
+}
+
+type promptTokenDetails struct {
+	CachedTokens             int `json:"cached_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheWriteTokens         int `json:"cache_write_tokens"`
 }
 
 type streamChunk struct {
@@ -352,7 +370,7 @@ func parseStreamLine(
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 		return false, err
 	}
-	if chunk.Usage.TotalTokens != 0 || chunk.Usage.PromptTokens != 0 || chunk.Usage.CompletionTokens != 0 {
+	if hasUsage(chunk.Usage) {
 		*usage = chunk.Usage
 	}
 	if len(chunk.Choices) == 0 {
@@ -430,10 +448,25 @@ func toModelToolCallsFromAccumulators(calls []toolCallAccumulator) []model.ToolC
 
 func toModelUsage(usage apiUsage) model.Usage {
 	return model.Usage{
-		InputTokens:  usage.PromptTokens,
-		OutputTokens: usage.CompletionTokens,
-		TotalTokens:  usage.TotalTokens,
+		InputTokens:           usage.PromptTokens,
+		OutputTokens:          usage.CompletionTokens,
+		TotalTokens:           usage.TotalTokens,
+		CacheReadInputTokens:  max(usage.PromptTokensDetails.CachedTokens, usage.CacheReadInputTokens, usage.PromptCacheHitTokens),
+		CacheWriteInputTokens: max(usage.CacheCreationInputTokens, usage.CacheWriteInputTokens, usage.PromptTokensDetails.CacheCreationInputTokens, usage.PromptTokensDetails.CacheWriteTokens),
 	}
+}
+
+func hasUsage(usage apiUsage) bool {
+	return usage.PromptTokens != 0 ||
+		usage.CompletionTokens != 0 ||
+		usage.TotalTokens != 0 ||
+		usage.PromptTokensDetails.CachedTokens != 0 ||
+		usage.CacheReadInputTokens != 0 ||
+		usage.CacheCreationInputTokens != 0 ||
+		usage.CacheWriteInputTokens != 0 ||
+		usage.PromptCacheHitTokens != 0 ||
+		usage.PromptTokensDetails.CacheCreationInputTokens != 0 ||
+		usage.PromptTokensDetails.CacheWriteTokens != 0
 }
 
 func toStopReason(finishReason string) model.StopReason {

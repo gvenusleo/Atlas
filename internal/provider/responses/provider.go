@@ -19,18 +19,20 @@ const responsesPath = "/responses"
 
 // Config 是创建 Responses provider 所需的连接配置。
 type Config struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	HTTPClient *http.Client
+	BaseURL            string
+	APIKey             string
+	Model              string
+	PromptCacheEnabled bool
+	HTTPClient         *http.Client
 }
 
 // Provider 调用 Responses API。
 type Provider struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	baseURL            string
+	apiKey             string
+	model              string
+	promptCacheEnabled bool
+	httpClient         *http.Client
 }
 
 // New 创建一个 Responses provider。
@@ -53,10 +55,11 @@ func New(config Config) (*Provider, error) {
 		httpClient = http.DefaultClient
 	}
 	return &Provider{
-		baseURL:    strings.TrimRight(config.BaseURL, "/"),
-		apiKey:     config.APIKey,
-		model:      config.Model,
-		httpClient: httpClient,
+		baseURL:            strings.TrimRight(config.BaseURL, "/"),
+		apiKey:             config.APIKey,
+		model:              config.Model,
+		promptCacheEnabled: config.PromptCacheEnabled,
+		httpClient:         httpClient,
 	}, nil
 }
 
@@ -102,6 +105,9 @@ func (p *Provider) buildRequest(req model.ChatRequest) responsesRequest {
 		Text:            toAPIText(req.ResponseFormat),
 		Stream:          true,
 	}
+	if p.promptCacheEnabled && req.SessionID != "" {
+		apiReq.PromptCacheKey = req.SessionID
+	}
 	if len(apiReq.Tools) == 0 {
 		apiReq.Tools = nil
 	}
@@ -117,6 +123,7 @@ type responsesRequest struct {
 	Temperature     float64     `json:"temperature,omitempty"`
 	Reasoning       *reasoning  `json:"reasoning,omitempty"`
 	Text            *apiText    `json:"text,omitempty"`
+	PromptCacheKey  string      `json:"prompt_cache_key,omitempty"`
 	Stream          bool        `json:"stream"`
 }
 
@@ -194,9 +201,14 @@ type apiOutputItem struct {
 }
 
 type apiUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens        int               `json:"input_tokens"`
+	OutputTokens       int               `json:"output_tokens"`
+	TotalTokens        int               `json:"total_tokens"`
+	InputTokensDetails inputTokenDetails `json:"input_tokens_details"`
+}
+
+type inputTokenDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 type responsesError struct {
@@ -487,14 +499,15 @@ func outputText(output []apiOutputItem) string {
 }
 
 func hasUsage(usage apiUsage) bool {
-	return usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.TotalTokens != 0
+	return usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.TotalTokens != 0 || usage.InputTokensDetails.CachedTokens != 0
 }
 
 func toModelUsage(usage apiUsage) model.Usage {
 	return model.Usage{
-		InputTokens:  usage.InputTokens,
-		OutputTokens: usage.OutputTokens,
-		TotalTokens:  usage.TotalTokens,
+		InputTokens:          usage.InputTokens,
+		OutputTokens:         usage.OutputTokens,
+		TotalTokens:          usage.TotalTokens,
+		CacheReadInputTokens: usage.InputTokensDetails.CachedTokens,
 	}
 }
 

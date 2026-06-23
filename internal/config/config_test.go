@@ -17,15 +17,16 @@ func TestLoadFile(t *testing.T) {
 				"api_key": "sk-test",
 				"default_model": "deepseek-v4-flash",
 				"models": [
-					{
-						"value": "deepseek-v4-flash",
-						"name": "DeepSeek V4 Flash",
-						"context_window": 1000000,
-						"max_tokens": 384000,
-						"input_formats": ["text"],
-						"reasoning_efforts": [
-							{"value": "high", "name": "High"},
-							{"value": "max", "name": "Max", "description": "Maximum reasoning depth"}
+						{
+							"value": "deepseek-v4-flash",
+							"name": "DeepSeek V4 Flash",
+							"context_window": 1000000,
+							"max_tokens": 384000,
+							"input_formats": ["text"],
+							"prompt_cache": {"enabled": true},
+							"reasoning_efforts": [
+								{"value": "high", "name": "High"},
+								{"value": "max", "name": "Max", "description": "Maximum reasoning depth"}
 						]
 					},
 					{"value": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "description": "pro model", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}
@@ -94,6 +95,9 @@ func TestLoadFile(t *testing.T) {
 	}
 	if len(provider.Models[0].InputFormats) != 1 || provider.Models[0].InputFormats[0] != ModelInputFormatText {
 		t.Fatalf("InputFormats = %#v", provider.Models[0].InputFormats)
+	}
+	if !provider.Models[0].PromptCache.Enabled {
+		t.Fatalf("PromptCache = %#v", provider.Models[0].PromptCache)
 	}
 	if len(provider.Models[0].ReasoningEfforts) != 2 || provider.Models[0].ReasoningEfforts[1].Description != "Maximum reasoning depth" {
 		t.Fatalf("ReasoningEfforts = %#v", provider.Models[0].ReasoningEfforts)

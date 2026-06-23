@@ -108,6 +108,53 @@ func TestStreamSendsChatCompletionsRequest(t *testing.T) {
 	}
 }
 
+func TestStreamSendsPromptCacheKeyWhenEnabled(t *testing.T) {
+	var gotReq chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"choices":[{"delta":{},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	provider, err := New(Config{
+		BaseURL:            server.URL,
+		APIKey:             "sk-test",
+		Model:              "deepseek-v4-flash",
+		PromptCacheEnabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{SessionID: "sess-1"}, nil); err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if gotReq.PromptCacheKey != "sess-1" {
+		t.Fatalf("prompt cache key = %q", gotReq.PromptCacheKey)
+	}
+}
+
+func TestStreamOmitsPromptCacheKeyByDefault(t *testing.T) {
+	var raw map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"choices":[{"delta":{},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{SessionID: "sess-1"}, nil); err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if _, ok := raw["prompt_cache_key"]; ok {
+		t.Fatalf("prompt_cache_key present: %#v", raw)
+	}
+}
+
 func TestStreamSendsToolMessages(t *testing.T) {
 	var gotReq chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +210,28 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	tool := gotReq.Messages[1]
 	if tool.Role != "tool" || tool.ToolCallID != "call-1" || tool.Content != "content" {
 		t.Fatalf("tool message = %#v", tool)
+	}
+}
+
+func TestStreamParsesCacheUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(w,
+			`{"choices":[{"delta":{"content":"done"},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prompt_tokens_details":{"cached_tokens":12,"cache_creation_input_tokens":5}}}`,
+		)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	resp, err := provider.Stream(context.Background(), model.ChatRequest{}, nil)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if resp.Usage.CacheReadInputTokens != 12 {
+		t.Fatalf("CacheReadInputTokens = %d", resp.Usage.CacheReadInputTokens)
+	}
+	if resp.Usage.CacheWriteInputTokens != 5 {
+		t.Fatalf("CacheWriteInputTokens = %d", resp.Usage.CacheWriteInputTokens)
 	}
 }
 

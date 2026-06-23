@@ -179,9 +179,11 @@ const (
 
 // Usage 记录 provider 返回的 token 用量。
 type Usage struct {
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	InputTokens           int
+	OutputTokens          int
+	TotalTokens           int
+	CacheReadInputTokens  int
+	CacheWriteInputTokens int
 }
 
 // StreamEventType 表示 provider stream 中的增量事件类型。
@@ -213,6 +215,7 @@ type ChatRequest struct {
 	System          string
 	Messages        []Message
 	Tools           []ToolDefinition
+	SessionID       string
 	MaxTokens       int
 	Temperature     float64
 	ReasoningEffort string
