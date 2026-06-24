@@ -3,6 +3,7 @@ package prompt
 
 import (
 	"fmt"
+	"html"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -122,15 +123,20 @@ func formatSkills(skills []SkillSummary) string {
 
 	var builder strings.Builder
 	builder.WriteString("\n\n## Available Skills\n\n")
-	builder.WriteString("These are summaries only. When a request matches a skill, call load_skill with the skill name and follow the returned SKILL.md before applying that skill.\n\n")
+	builder.WriteString("Skills provide specialized instructions and workflows for specific tasks. These are summaries only. When the user explicitly selects a skill, its full SKILL.md may be injected as a <skill> context message for that turn. Otherwise, when a request matches a skill, call load_skill with the skill name and follow the returned SKILL.md before applying that skill.\n\n")
+	builder.WriteString("<available_skills>\n")
 	for _, skill := range skills {
-		builder.WriteString("- `")
-		builder.WriteString(skill.Name)
-		builder.WriteString("`: ")
-		builder.WriteString(skill.Description)
-		builder.WriteString("\n")
+		builder.WriteString("  <skill>\n")
+		builder.WriteString("    <name>")
+		builder.WriteString(html.EscapeString(skill.Name))
+		builder.WriteString("</name>\n")
+		builder.WriteString("    <description>")
+		builder.WriteString(html.EscapeString(skill.Description))
+		builder.WriteString("</description>\n")
+		builder.WriteString("  </skill>\n")
 	}
-	return strings.TrimRight(builder.String(), "\n")
+	builder.WriteString("</available_skills>")
+	return builder.String()
 }
 
 func formatInstructions(files []InstructionFile) string {

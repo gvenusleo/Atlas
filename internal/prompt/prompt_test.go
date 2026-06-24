@@ -101,12 +101,18 @@ func TestBuildSystemIncludesOnlySkillSummaries(t *testing.T) {
 		Now:        time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
 		Skills: []SkillSummary{
 			{Name: "write", Description: "polish prose"},
+			{Name: "lint<xml>", Description: "check <tags> & quotes"},
 		},
 	})
 
 	for _, check := range []string{
 		"## Available Skills",
-		"`write`: polish prose",
+		"<available_skills>",
+		"<name>write</name>",
+		"<description>polish prose</description>",
+		"<name>lint&lt;xml&gt;</name>",
+		"<description>check &lt;tags&gt; &amp; quotes</description>",
+		"full SKILL.md may be injected as a <skill> context message",
 		"call load_skill with the skill name",
 	} {
 		if !strings.Contains(result, check) {

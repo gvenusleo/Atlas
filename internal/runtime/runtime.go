@@ -46,9 +46,11 @@ type Runtime struct {
 
 // TurnOptions 描述一次用户输入的执行参数。
 type TurnOptions struct {
-	SessionID                string
-	Prompt                   string
-	Parts                    []model.ContentPart
+	SessionID string
+	Prompt    string
+	Parts     []model.ContentPart
+	// Skills 是调用方明确选择、需要在本轮注入完整 SKILL.md 的 skill 名称。
+	Skills                   []string
 	Model                    string
 	ReasoningEffort          string
 	AdditionalDirectories    []string
@@ -116,6 +118,12 @@ type ReasoningEffortOption struct {
 type ModelOptions struct {
 	Default string
 	Models  []ModelOption
+}
+
+// SkillSummary 描述当前工作目录可用的模型可调用 skill。
+type SkillSummary struct {
+	Name        string
+	Description string
 }
 
 // DoctorStatus 描述一项 doctor 诊断结果的严重程度。
@@ -338,8 +346,9 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		memoryContext = r.loadMemoryContext(ctx, cfg.Session, sessionID, cwd, promptText)
 	}
 	memoryForceExtract := false
+	selectedSkillMessages := skillMessages(opts.Skills, skills)
 	if resumeSession {
-		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), parts, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
+		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), selectedSkillMessages, parts, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
 			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
 			if err != nil {
 				return TurnResult{}, err
@@ -357,7 +366,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	for _, msg := range activeMessages {
 		trans.Append(msg)
 	}
-	initialActiveLen := len(activeMessages)
 	a, err := agent.New(agent.Config{
 		Provider:   provider,
 		Tools:      registry,
@@ -380,12 +388,16 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		return TurnResult{}, err
 	}
 
+	for _, msg := range selectedSkillMessages {
+		trans.Append(msg)
+	}
+	persistFrom := len(trans.Messages())
 	content, err := a.RunTurnParts(ctx, parts)
 	activeAfter := trans.Messages()
-	if initialActiveLen > len(activeAfter) {
-		initialActiveLen = len(activeAfter)
+	if persistFrom > len(activeAfter) {
+		persistFrom = len(activeAfter)
 	}
-	fullMessages := append(fullTrans.Messages(), activeAfter[initialActiveLen:]...)
+	fullMessages := append(fullTrans.Messages(), activeAfter[persistFrom:]...)
 	if err != nil {
 		saveCtx, cancel := context.WithTimeout(context.Background(), interruptedTurnSaveTimeout)
 		defer cancel()
@@ -653,12 +665,13 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 }
 
 // shouldAutoCompact 判断追加当前用户输入后是否需要自动压缩。
-func shouldAutoCompact(info session.Session, messages []model.Message, parts []model.ContentPart, contextWindow int, triggerRatio float64) bool {
+func shouldAutoCompact(info session.Session, messages, contextMessages []model.Message, parts []model.ContentPart, contextWindow int, triggerRatio float64) bool {
 	inputTokens := info.LastInputTokens
 	if inputTokens <= 0 {
 		active := compact.BuildActiveMessages(info.ContextSummary, info.CompactedMessageCount, messages)
 		inputTokens = compact.EstimateMessages(active)
 	}
+	inputTokens += compact.EstimateMessages(contextMessages)
 	inputTokens += compact.EstimateMessage(model.Message{Role: model.RoleUser, Content: model.TextFromParts(parts), Parts: parts})
 	return compact.ShouldAutoCompact(inputTokens, contextWindow, triggerRatio)
 }
@@ -734,6 +747,30 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 		Default: activeProvider.DefaultModel,
 		Models:  options,
 	}, nil
+}
+
+// SkillSummaries 返回当前工作目录可用的模型可调用 skill 摘要。
+func (r *Runtime) SkillSummaries(_ context.Context, cwd string) ([]SkillSummary, error) {
+	if cwd == "" {
+		var err error
+		cwd, err = r.deps.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+	catalog, err := r.deps.LoadSkills(cwd)
+	if err != nil {
+		return nil, err
+	}
+	summaries := catalog.Summaries()
+	result := make([]SkillSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		result = append(result, SkillSummary{
+			Name:        summary.Name,
+			Description: summary.Description,
+		})
+	}
+	return result, nil
 }
 
 // Doctor 运行离线配置和本地运行环境诊断。
@@ -1013,6 +1050,37 @@ func promptSkillSummaries(catalog *skill.Catalog) []prompt.SkillSummary {
 		})
 	}
 	return result
+}
+
+// skillMessages 将显式选择的 skill 渲染成本轮模型可见但不持久化的上下文消息。
+func skillMessages(names []string, catalog *skill.Catalog) []model.Message {
+	if len(names) == 0 || catalog == nil {
+		return nil
+	}
+	messages := make([]model.Message, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		found, ok := catalog.Lookup(name)
+		if !ok {
+			continue
+		}
+		messages = append(messages, model.TextMessage(model.RoleUser, skillContext(found)))
+	}
+	return messages
+}
+
+// skillContext 使用 Codex 风格的 XML 包装完整 SKILL.md 内容。
+func skillContext(found skill.Skill) string {
+	return fmt.Sprintf(
+		"<skill>\n<name>%s</name>\n<path>%s</path>\n%s\n</skill>",
+		found.Name,
+		found.Path,
+		strings.TrimSpace(found.Content),
+	)
 }
 
 func openSessionStore(ctx context.Context, cfg config.SessionConfig) (*session.Store, error) {

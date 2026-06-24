@@ -292,6 +292,18 @@ func TestRunTurnAutoCompactsWhenThresholdExceeded(t *testing.T) {
 	}
 }
 
+func TestShouldAutoCompactCountsSkillContext(t *testing.T) {
+	info := session.Session{LastInputTokens: 1}
+	contextMessages := []model.Message{
+		model.TextMessage(model.RoleUser, strings.Repeat("skill context ", 80)),
+	}
+	parts := []model.ContentPart{{Type: model.ContentPartText, Text: "hi"}}
+
+	if !shouldAutoCompact(info, nil, contextMessages, parts, 100, 0.8) {
+		t.Fatal("shouldAutoCompact() = false, want true")
+	}
+}
+
 func TestAutoKeepRecentTokensUsesModelThresholdAsCeiling(t *testing.T) {
 	if got := autoKeepRecentTokens(10000, 0.8); got != 8000 {
 		t.Fatalf("autoKeepRecentTokens() = %d, want 8000", got)
@@ -714,11 +726,62 @@ func TestRunTurnIncludesSkillSummaries(t *testing.T) {
 	if _, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "hello"}); err != nil {
 		t.Fatalf("RunTurn() error = %v", err)
 	}
-	if !strings.Contains(provider.request.System, "`write`: polish prose") {
+	if !strings.Contains(provider.request.System, "<name>write</name>") || !strings.Contains(provider.request.System, "<description>polish prose</description>") {
 		t.Fatalf("system prompt = %q", provider.request.System)
 	}
 	if strings.Contains(provider.request.System, "# Write") {
 		t.Fatalf("system prompt includes skill body: %q", provider.request.System)
+	}
+}
+
+func TestRunTurnInjectsSelectedSkillWithoutPersistingIt(t *testing.T) {
+	provider := &recordingProvider{
+		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
+		response: model.ChatResponse{Content: "ok"},
+	}
+	catalog, err := skill.NewCatalog([]skill.Skill{{
+		Name:        "think",
+		Description: "plan work",
+		Path:        "/tmp/atlas-work/.agents/skills/think/SKILL.md",
+		Content:     "---\nname: think\ndescription: plan work\n---\n\n# Think\nPlan first.",
+	}})
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	r := newTestRuntime(t, provider)
+	r.deps.LoadSkills = func(string) (*skill.Catalog, error) {
+		return catalog, nil
+	}
+
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "design this",
+		Skills:    []string{"think"},
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+
+	messages := provider.request.Messages
+	if len(messages) != 2 {
+		t.Fatalf("request messages = %#v", messages)
+	}
+	if !strings.Contains(messages[0].Content, "<skill>") || !strings.Contains(messages[0].Content, "<name>think</name>") || !strings.Contains(messages[0].Content, "# Think") {
+		t.Fatalf("skill message = %q", messages[0].Content)
+	}
+	if messages[1].Content != "design this" {
+		t.Fatalf("user message = %#v", messages[1])
+	}
+
+	_, trans, err := r.ShowSession(context.Background(), "work")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	saved := trans.Messages()
+	if len(saved) != 2 {
+		t.Fatalf("saved messages = %#v", saved)
+	}
+	if saved[0].Content != "design this" || strings.Contains(saved[0].Content, "<skill>") {
+		t.Fatalf("saved user message = %#v", saved[0])
 	}
 }
 
@@ -742,6 +805,29 @@ func TestRunTurnUsesCWDForSkillLoading(t *testing.T) {
 	}
 	if gotCWD != "/tmp/acp-work" {
 		t.Fatalf("LoadSkills cwd = %q", gotCWD)
+	}
+}
+
+func TestSkillSummariesUsesCWDAndFiltersDisabled(t *testing.T) {
+	r := newTestRuntime(t, &recordingProvider{})
+	var gotCWD string
+	r.deps.LoadSkills = func(cwd string) (*skill.Catalog, error) {
+		gotCWD = cwd
+		return skill.NewCatalog([]skill.Skill{
+			{Name: "think", Description: "plan work"},
+			{Name: "hidden", Description: "hidden work", DisableModelInvocation: true},
+		})
+	}
+
+	summaries, err := r.SkillSummaries(context.Background(), "/tmp/acp-work")
+	if err != nil {
+		t.Fatalf("SkillSummaries() error = %v", err)
+	}
+	if gotCWD != "/tmp/acp-work" {
+		t.Fatalf("LoadSkills cwd = %q", gotCWD)
+	}
+	if len(summaries) != 1 || summaries[0].Name != "think" || summaries[0].Description != "plan work" {
+		t.Fatalf("summaries = %#v", summaries)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/liuyuxin/atlas/internal/agent"
@@ -40,6 +41,7 @@ type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
 	CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error)
 	ModelOptions(context.Context) (runtime.ModelOptions, error)
+	SkillSummaries(context.Context, string) ([]runtime.SkillSummary, error)
 	ShowSession(context.Context, string) (session.Session, *transcript.Transcript, error)
 	ListSessionsPage(context.Context, string, int) (session.ListPage, error)
 	ListSessionsForCWDPage(context.Context, string, string, int) (session.ListPage, error)
@@ -217,11 +219,15 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		return acpsdk.PromptResponse{}, err
 	}
 	promptText := strings.TrimSpace(model.TextFromParts(promptParts))
+	var selectedSkills []string
 	if instruction, ok := compactCommandInstruction(promptText); ok {
 		if promptHasImage(promptParts) {
 			return acpsdk.PromptResponse{}, fmt.Errorf("slash commands do not support images")
 		}
 		return a.runCommandPrompt(ctx, params.SessionId, state, instruction)
+	}
+	if skillName, ok := skillCommandName(promptText, a.skillCommands(ctx, state.cwd)); ok {
+		selectedSkills = []string{skillName}
 	}
 	a.cancelSession(string(params.SessionId))
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -236,6 +242,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		SessionID:                string(params.SessionId),
 		Prompt:                   promptText,
 		Parts:                    promptParts,
+		Skills:                   selectedSkills,
 		Model:                    state.model,
 		ReasoningEffort:          state.reasoningEffort,
 		ReasoningEffortSet:       true,
@@ -740,9 +747,13 @@ func (a *Agent) sendSessionUpdate(ctx context.Context, sessionID acpsdk.SessionI
 
 // sendAvailableCommands 通知客户端当前 session 可用的 slash command。
 func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.SessionId) error {
+	state, ok := a.getSession(string(sessionID))
+	if !ok {
+		return nil
+	}
 	return a.sendSessionUpdate(ctx, sessionID, acpsdk.SessionUpdate{
 		AvailableCommandsUpdate: &acpsdk.SessionAvailableCommandsUpdate{
-			AvailableCommands: []acpsdk.AvailableCommand{compactAvailableCommand()},
+			AvailableCommands: a.availableCommands(ctx, state.cwd),
 		},
 	})
 }
@@ -820,6 +831,44 @@ func compactAvailableCommand() acpsdk.AvailableCommand {
 			},
 		},
 	}
+}
+
+// skillAvailableCommand 返回 ACP 客户端展示的 skill slash command 定义。
+func skillAvailableCommand(summary runtime.SkillSummary) acpsdk.AvailableCommand {
+	return acpsdk.AvailableCommand{
+		Name:        summary.Name,
+		Description: summary.Description,
+		Input: &acpsdk.AvailableCommandInput{
+			Unstructured: &acpsdk.UnstructuredCommandInput{
+				Hint: "task",
+			},
+		},
+	}
+}
+
+// availableCommands 返回当前 session 工作目录下客户端可展示的 slash command。
+func (a *Agent) availableCommands(ctx context.Context, cwd string) []acpsdk.AvailableCommand {
+	commands := []acpsdk.AvailableCommand{compactAvailableCommand()}
+	for _, summary := range a.skillCommands(ctx, cwd) {
+		commands = append(commands, skillAvailableCommand(summary))
+	}
+	return commands
+}
+
+// skillCommands 返回可作为 ACP slash command 暴露的 skill 摘要。
+func (a *Agent) skillCommands(ctx context.Context, cwd string) []runtime.SkillSummary {
+	summaries, err := a.rt.SkillSummaries(ctx, cwd)
+	if err != nil {
+		return nil
+	}
+	commands := make([]runtime.SkillSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		if summary.Name == "" || summary.Name == compactCommandName || !validSlashCommandName(summary.Name) {
+			continue
+		}
+		commands = append(commands, summary)
+	}
+	return commands
 }
 
 // runCommandPrompt 执行不进入模型 turn 的 ACP slash command。
@@ -1104,6 +1153,55 @@ func compactCommandInstruction(text string) (string, bool) {
 		return strings.TrimSpace(strings.TrimPrefix(text, prefix)), true
 	}
 	return "", false
+}
+
+// skillCommandName 解析 skill slash command 的名称。
+func skillCommandName(text string, skills []runtime.SkillSummary) (string, bool) {
+	name, ok := slashCommandName(text)
+	if !ok {
+		return "", false
+	}
+	for _, summary := range skills {
+		if summary.Name == name {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// slashCommandName 解析 `/name optional text` 形式 slash command 的名称。
+func slashCommandName(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, "/") {
+		return "", false
+	}
+	withoutSlash := strings.TrimPrefix(text, "/")
+	if withoutSlash == "" {
+		return "", false
+	}
+	index := strings.IndexFunc(withoutSlash, unicode.IsSpace)
+	name := withoutSlash
+	if index >= 0 {
+		name = withoutSlash[:index]
+	}
+	if name == "" {
+		return "", false
+	}
+	if !validSlashCommandName(name) {
+		return "", false
+	}
+	return name, true
+}
+
+// validSlashCommandName 判断 skill 名称是否能安全映射为 ACP slash command。
+func validSlashCommandName(name string) bool {
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return name != ""
 }
 
 func toolCallID(event agent.Event) acpsdk.ToolCallId {

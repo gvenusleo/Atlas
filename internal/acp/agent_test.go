@@ -134,7 +134,11 @@ func TestNewSessionStoresAdditionalDirectories(t *testing.T) {
 }
 
 func TestNewSessionSendsCompactCommand(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
+	a := NewAgent(&fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "think", Description: "plan work"},
+		},
+	})
 	cwd := testCWD(t)
 	updates := make(chan acpsdk.SessionNotification, 2)
 	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
@@ -152,14 +156,36 @@ func TestNewSessionSendsCompactCommand(t *testing.T) {
 		t.Fatalf("session id = %#v", first)
 	}
 	commands := first.Update.AvailableCommandsUpdate
-	if commands == nil || len(commands.AvailableCommands) != 1 || commands.AvailableCommands[0].Name != "compact" {
+	if commands == nil || len(commands.AvailableCommands) != 2 {
 		t.Fatalf("commands = %#v", first.Update)
 	}
 	if commands.AvailableCommands[0].Input == nil || commands.AvailableCommands[0].Input.Unstructured == nil {
 		t.Fatalf("command input = %#v", commands.AvailableCommands[0].Input)
 	}
+	if commands.AvailableCommands[0].Name != "compact" || commands.AvailableCommands[1].Name != "think" {
+		t.Fatalf("commands = %#v", commands.AvailableCommands)
+	}
+	if commands.AvailableCommands[1].Description != "plan work" {
+		t.Fatalf("skill command = %#v", commands.AvailableCommands[1])
+	}
 	if second.Update.SessionInfoUpdate == nil || second.Update.SessionInfoUpdate.UpdatedAt == nil {
 		t.Fatalf("session info update = %#v", second.Update)
+	}
+}
+
+func TestAvailableCommandsSkipsInvalidAndReservedSkills(t *testing.T) {
+	a := NewAgent(&fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "compact", Description: "reserved"},
+			{Name: "bad/name", Description: "invalid"},
+			{Name: "write", Description: "write prose"},
+		},
+	})
+	a.setSession("sess", testCWD(t), "test-model", "high", nil)
+
+	commands := a.availableCommands(context.Background(), testCWD(t))
+	if got := commandNames(commands); !reflect.DeepEqual(got, []string{"compact", "write"}) {
+		t.Fatalf("commands = %#v", got)
 	}
 }
 
@@ -199,6 +225,14 @@ func receiveSignal(t *testing.T, ch <-chan struct{}) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for signal")
 	}
+}
+
+func commandNames(commands []acpsdk.AvailableCommand) []string {
+	names := make([]string, 0, len(commands))
+	for _, command := range commands {
+		names = append(names, command.Name)
+	}
+	return names
 }
 
 func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
@@ -1220,6 +1254,42 @@ func TestPromptOnlyInterceptsCompactCommand(t *testing.T) {
 	}
 }
 
+func TestPromptSkillCommandRunsTurnWithSelectedSkill(t *testing.T) {
+	rt := &fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "think", Description: "plan work"},
+		},
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "other-model", "max", nil)
+
+	resp, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt: []acpsdk.ContentBlock{
+			acpsdk.TextBlock("/think design this"),
+			acpsdk.TextBlock("extra context"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("stop reason = %q", resp.StopReason)
+	}
+	if rt.compactOptions.SessionID != "" {
+		t.Fatalf("compact should not run: %#v", rt.compactOptions)
+	}
+	if rt.runOptions.Prompt != "/think design this\n\nextra context" {
+		t.Fatalf("prompt = %q", rt.runOptions.Prompt)
+	}
+	if !reflect.DeepEqual(rt.runOptions.Skills, []string{"think"}) {
+		t.Fatalf("skills = %#v", rt.runOptions.Skills)
+	}
+	if len(rt.runOptions.Parts) != 2 || model.TextFromParts(rt.runOptions.Parts) != rt.runOptions.Prompt {
+		t.Fatalf("parts = %#v, prompt = %q", rt.runOptions.Parts, rt.runOptions.Prompt)
+	}
+}
+
 func TestPromptResourceLinkText(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
@@ -1813,6 +1883,8 @@ type fakeRuntime struct {
 	runOptions      atlasruntime.TurnOptions
 	compactOptions  atlasruntime.CompactOptions
 	compactResult   atlasruntime.CompactResult
+	skillSummaries  []atlasruntime.SkillSummary
+	skillCWDs       []string
 	listedCWDs      []string
 	listedCursor    string
 	savedRoots      map[string][]string
@@ -1935,6 +2007,11 @@ func (f *fakeRuntime) ModelOptions(context.Context) (atlasruntime.ModelOptions, 
 			},
 		},
 	}, nil
+}
+
+func (f *fakeRuntime) SkillSummaries(_ context.Context, cwd string) ([]atlasruntime.SkillSummary, error) {
+	f.skillCWDs = append(f.skillCWDs, cwd)
+	return append([]atlasruntime.SkillSummary(nil), f.skillSummaries...), nil
 }
 
 func (f *fakeRuntime) ShowSession(_ context.Context, sessionID string) (session.Session, *transcript.Transcript, error) {
