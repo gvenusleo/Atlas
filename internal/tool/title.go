@@ -28,10 +28,12 @@ func primaryDisplayTitle(call model.ToolCall) string {
 		prefix, key = "Write: ", "path"
 	case "edit_file":
 		prefix, key = "Edit: ", "path"
-	case "list_files":
-		prefix, key = "List: ", "path"
-	case "search_text":
-		prefix, key = "Search: ", "query"
+	case "apply_patch":
+		prefix, key = "Patch: ", "patch"
+	case "glob":
+		prefix, key = "Glob: ", "pattern"
+	case "grep":
+		prefix, key = "Grep: ", "pattern"
 	case "web_search":
 		prefix, key = "WebSearch: ", "query"
 	case "web_fetch":
@@ -49,6 +51,9 @@ func primaryDisplayTitle(call model.ToolCall) string {
 	value, ok := args[key].(string)
 	if !ok || strings.TrimSpace(value) == "" {
 		return ""
+	}
+	if call.Name == "apply_patch" {
+		value, _, _ = strings.Cut(value, "\n")
 	}
 	return prefix + value
 }

@@ -16,6 +16,15 @@ func TestWriteFileRun(t *testing.T) {
 	assertFileContent(t, path, "hello")
 }
 
+func TestWriteFileRunUsesDefaultCWD(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, err := (WriteFile{CWD: dir}).Run(context.Background(), writeFileArgs("note.txt", "hello")); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(dir, "note.txt"), "hello")
+}
+
 func TestWriteFileRunCreatesParentDirectories(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "note.txt")
 

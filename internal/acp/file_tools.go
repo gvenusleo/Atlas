@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ const (
 // isFileTool 判断工具是否需要 ACP 文件展示增强。
 func isFileTool(name string) bool {
 	switch name {
-	case "read_file", "write_file", "edit_file", "list_files", "search_text":
+	case "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep":
 		return true
 	default:
 		return false
@@ -43,10 +42,12 @@ func (a *Agent) runFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd
 		return a.runWriteFileTool(ctx, sessionID, cwd, call, fallback)
 	case "edit_file":
 		return a.runEditFileTool(ctx, sessionID, cwd, call, fallback)
-	case "list_files":
-		return a.runListFilesTool(ctx, cwd, call, fallback)
-	case "search_text":
-		return a.runSearchTextTool(ctx, cwd, call, fallback)
+	case "apply_patch":
+		return a.runApplyPatchTool(ctx, cwd, call, fallback)
+	case "glob":
+		return a.runGlobTool(ctx, cwd, call, fallback)
+	case "grep":
+		return a.runGrepTool(ctx, cwd, call, fallback)
 	default:
 		return fallback(ctx, call)
 	}
@@ -59,11 +60,11 @@ func (a *Agent) runReadFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 		return tool.RunResult{}, err
 	}
 	path := absoluteToolPath(cwd, args.Path)
-	metadata := model.ToolMetadata{Locations: []model.ToolLocation{{Path: path, Line: lineOrZero(args.Offset)}}}
+	metadata := model.ToolMetadata{Locations: []model.ToolLocation{{Path: path, Line: lineOrZero(args.Line)}}}
 	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil && clientReadTextFileAllowed(path) {
 		req := acpsdk.ReadTextFileRequest{SessionId: sessionID, Path: path}
-		if args.Offset > 0 {
-			req.Line = &args.Offset
+		if args.Line > 0 {
+			req.Line = &args.Line
 		}
 		if args.Limit > 0 {
 			req.Limit = &args.Limit
@@ -103,9 +104,9 @@ func (a *Agent) runWriteFileTool(ctx context.Context, sessionID acpsdk.SessionId
 // runLocalReadFileTool 使用 Atlas 本地工具读取文件并补充 ACP metadata。
 func runLocalReadFileTool(ctx context.Context, call model.ToolCall, path string, args tool.ReadFileArgs, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.ReadFileArgs{
-		Path:   path,
-		Offset: args.Offset,
-		Limit:  args.Limit,
+		Path:  path,
+		Line:  args.Line,
+		Limit: args.Limit,
 	}))
 	result.Metadata = mergeToolMetadata(result.Metadata, metadata)
 	return result, err
@@ -138,7 +139,7 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 		if err != nil {
 			return runLocalEditFileTool(ctx, call, path, args, metadata, fallback)
 		}
-		newText, count, err := tool.ApplyEditFileContent(oldText, args.Edits)
+		newText, err := tool.ApplyEditFileContent(oldText, args.OldText, *args.NewText)
 		if err != nil {
 			return tool.RunResult{Metadata: metadata}, err
 		}
@@ -150,7 +151,7 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 			})
 			if err == nil {
 				metadata.Diff = acpToolDiff(path, &oldText, newText)
-				return tool.RunResult{Content: fmt.Sprintf("replaced %d blocks in %s", count, path), Metadata: metadata}, nil
+				return tool.RunResult{Content: "replaced 1 block in " + path, Metadata: metadata}, nil
 			}
 		}
 	}
@@ -161,8 +162,9 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 func runLocalEditFileTool(ctx context.Context, call model.ToolCall, path string, args tool.EditFileArgs, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	oldText := readLocalToolOldText(path)
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.EditFileArgs{
-		Path:  path,
-		Edits: args.Edits,
+		Path:    path,
+		OldText: args.OldText,
+		NewText: args.NewText,
 	}))
 	if err == nil {
 		if newText, ok := readLocalToolText(path); ok {
@@ -173,9 +175,33 @@ func runLocalEditFileTool(ctx context.Context, call model.ToolCall, path string,
 	return result, err
 }
 
-// runListFilesTool 保持本地列目录实现，同时补充目录位置 metadata。
-func (a *Agent) runListFilesTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
-	path, ok := toolPathFromArguments(cwd, call.Arguments)
+// runApplyPatchTool 应用 patch 并为 ACP 补充位置和单文件 diff metadata。
+func (a *Agent) runApplyPatchTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
+	args, err := tool.ParseApplyPatchArgs(call.Arguments)
+	if err != nil {
+		return tool.RunResult{}, err
+	}
+	paths := tool.ApplyPatchPaths(args.Patch, cwd)
+	oldTexts := make(map[string]*string, len(paths))
+	for _, path := range paths {
+		oldTexts[path] = readLocalToolOldText(path)
+	}
+	result, err := fallback(ctx, call)
+	metadata := model.ToolMetadata{Locations: toolLocationsForPaths(paths)}
+	if err == nil && len(paths) == 1 {
+		if newText, ok := readLocalToolText(paths[0]); ok {
+			metadata.Diff = acpToolDiff(paths[0], oldTexts[paths[0]], newText)
+		} else if oldTexts[paths[0]] != nil {
+			metadata.Diff = acpToolDiff(paths[0], oldTexts[paths[0]], "")
+		}
+	}
+	result.Metadata = mergeToolMetadata(result.Metadata, metadata)
+	return result, err
+}
+
+// runGlobTool 保持本地查找实现，同时补充目录位置 metadata。
+func (a *Agent) runGlobTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
+	path, ok := searchRootFromArguments(cwd, call.Arguments)
 	if !ok {
 		return fallback(ctx, call)
 	}
@@ -186,14 +212,14 @@ func (a *Agent) runListFilesTool(ctx context.Context, cwd string, call model.Too
 	return result, err
 }
 
-// runSearchTextTool 保持本地搜索实现，同时从匹配行提取跳转位置。
-func (a *Agent) runSearchTextTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
-	path, ok := toolPathFromArguments(cwd, call.Arguments)
+// runGrepTool 保持本地搜索实现，同时从匹配行提取跳转位置。
+func (a *Agent) runGrepTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
+	path, ok := searchRootFromArguments(cwd, call.Arguments)
 	if !ok {
 		return fallback(ctx, call)
 	}
 	result, err := fallback(ctx, toolCallWithPath(call, path))
-	locations := searchResultLocations(path, result.Content)
+	locations := grepResultLocations(path, result.Content)
 	if len(locations) == 0 {
 		locations = []model.ToolLocation{{Path: path}}
 	}
@@ -344,13 +370,16 @@ func lineOrZero(line int) int {
 	return 0
 }
 
-// toolPathFromArguments 从工具参数中提取并标准化 path。
-func toolPathFromArguments(cwd, arguments string) (string, bool) {
+// searchRootFromArguments 从工具参数中提取 path；未传 path 时使用 cwd。
+func searchRootFromArguments(cwd, arguments string) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
 	}
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil || args.Path == "" {
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return "", false
+	}
+	if args.Path == "" {
+		args.Path = cwd
 	}
 	return absoluteToolPath(cwd, args.Path), true
 }
@@ -375,8 +404,8 @@ func toolCallWithArgs(call model.ToolCall, args any) model.ToolCall {
 	return call
 }
 
-// searchResultLocations 从 search_text 的 file:line:content 输出中提取可跳转位置。
-func searchResultLocations(root, output string) []model.ToolLocation {
+// grepResultLocations 从 grep 的 file:line:content 输出中提取可跳转位置。
+func grepResultLocations(root, output string) []model.ToolLocation {
 	var locations []model.ToolLocation
 	seen := map[string]struct{}{}
 	locationRoot := root
@@ -413,6 +442,17 @@ func searchResultLocations(root, output string) []model.ToolLocation {
 		if len(locations) >= maxACPToolLocations {
 			break
 		}
+	}
+	return locations
+}
+
+func toolLocationsForPaths(paths []string) []model.ToolLocation {
+	if len(paths) == 0 {
+		return nil
+	}
+	locations := make([]model.ToolLocation, 0, len(paths))
+	for _, path := range paths {
+		locations = append(locations, model.ToolLocation{Path: path})
 	}
 	return locations
 }

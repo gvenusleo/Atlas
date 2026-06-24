@@ -17,13 +17,15 @@ const (
 )
 
 // ReadFile 读取本地文本文件内容。
-type ReadFile struct{}
+type ReadFile struct {
+	CWD string
+}
 
 // ReadFileArgs 是 read_file 的 JSON 参数。
 type ReadFileArgs struct {
-	Path   string `json:"path"`
-	Offset int    `json:"offset"`
-	Limit  int    `json:"limit"`
+	Path  string `json:"path"`
+	Line  int    `json:"line"`
+	Limit int    `json:"limit"`
 }
 
 // Definition 返回 read_file 的模型可见定义。
@@ -38,7 +40,7 @@ func (ReadFile) Definition() model.ToolDefinition {
 					"type":        "string",
 					"description": "Path to read.",
 				},
-				"offset": map[string]any{
+				"line": map[string]any{
 					"type":        "integer",
 					"description": "Optional 1-based line number to start reading from.",
 				},
@@ -52,13 +54,13 @@ func (ReadFile) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 path、offset 和 limit 读取文件。
-func (ReadFile) Run(ctx context.Context, arguments string) (string, error) {
+// Run 使用 JSON 参数中的 path、line 和 limit 读取文件。
+func (r ReadFile) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseReadFileArgs(arguments)
 	if err != nil {
 		return "", err
 	}
-	return readFileContent(ctx, args.Path, args.Offset, args.Limit)
+	return readFileContent(ctx, resolveToolPath(r.CWD, args.Path), args.Line, args.Limit)
 }
 
 // ParseReadFileArgs 解析并校验 read_file 参数。
@@ -70,8 +72,8 @@ func ParseReadFileArgs(arguments string) (ReadFileArgs, error) {
 	if args.Path == "" {
 		return ReadFileArgs{}, fmt.Errorf("read_file path is required")
 	}
-	if args.Offset < 0 {
-		return ReadFileArgs{}, fmt.Errorf("read_file offset must be positive")
+	if args.Line < 0 {
+		return ReadFileArgs{}, fmt.Errorf("read_file line must be positive")
 	}
 	if args.Limit < 0 {
 		return ReadFileArgs{}, fmt.Errorf("read_file limit must be positive")
@@ -79,7 +81,7 @@ func ParseReadFileArgs(arguments string) (ReadFileArgs, error) {
 	return args, nil
 }
 
-func readFileContent(ctx context.Context, path string, offset, limit int) (string, error) {
+func readFileContent(ctx context.Context, path string, line, limit int) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -96,7 +98,7 @@ func readFileContent(ctx context.Context, path string, offset, limit int) (strin
 		return "", fmt.Errorf("read_file path is a directory: %s", path)
 	}
 
-	startLine := offset
+	startLine := line
 	if startLine == 0 {
 		startLine = 1
 	}
@@ -154,13 +156,13 @@ func readFileLines(ctx context.Context, file *os.File, startLine, lineLimit int)
 	}
 
 	if lineNumber == 0 && startLine > 1 {
-		return "", fmt.Errorf("read_file offset %d is beyond end of file (0 lines total)", startLine)
+		return "", fmt.Errorf("read_file line %d is beyond end of file (0 lines total)", startLine)
 	}
 	if lineNumber == 0 {
 		return "", nil
 	}
 	if startLine > lineNumber {
-		return "", fmt.Errorf("read_file offset %d is beyond end of file (%d lines total)", startLine, lineNumber)
+		return "", fmt.Errorf("read_file line %d is beyond end of file (%d lines total)", startLine, lineNumber)
 	}
 
 	result := string(content)
@@ -172,7 +174,7 @@ func readFileLines(ctx context.Context, file *os.File, startLine, lineLimit int)
 		if truncatedByBytes {
 			reason = fmt.Sprintf(" (%d byte output limit)", maxReadFileBytes)
 		}
-		return result + fmt.Sprintf("\n\n[Showing lines %d-%d%s. Use offset=%d to continue.]", startLine, lastReturnedLine, reason, lastReturnedLine+1), nil
+		return result + fmt.Sprintf("\n\n[Showing lines %d-%d%s. Use line=%d to continue.]", startLine, lastReturnedLine, reason, lastReturnedLine+1), nil
 	}
 	return result, nil
 }

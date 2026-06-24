@@ -30,18 +30,33 @@ func TestRunShellRunFailure(t *testing.T) {
 	}
 }
 
-func TestRunShellRunWorkdir(t *testing.T) {
+func TestRunShellRunCWD(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellWorkdirCommand())+`,"workdir":`+quoteJSON(dir)+`}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellWorkdirCommand())+`,"cwd":`+quoteJSON(dir)+`}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if !strings.Contains(got, filepath.Base(dir)) || !strings.Contains(got, "note.txt") {
 		t.Fatalf("Run() = %q, want workdir output", got)
+	}
+}
+
+func TestRunShellRunUsesDefaultCWD(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := (RunShell{CWD: dir}).Run(context.Background(), `{"command":`+quoteJSON(shellWorkdirCommand())+`}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(got, filepath.Base(dir)) || !strings.Contains(got, "note.txt") {
+		t.Fatalf("Run() = %q, want default cwd output", got)
 	}
 }
 

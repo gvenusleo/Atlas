@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -60,8 +61,9 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 		"read_file":   acpsdk.ToolKindRead,
 		"edit_file":   acpsdk.ToolKindEdit,
 		"write_file":  acpsdk.ToolKindEdit,
-		"list_files":  acpsdk.ToolKindSearch,
-		"search_text": acpsdk.ToolKindSearch,
+		"glob":        acpsdk.ToolKindSearch,
+		"grep":        acpsdk.ToolKindSearch,
+		"apply_patch": acpsdk.ToolKindEdit,
 		"web_search":  acpsdk.ToolKindSearch,
 		"web_fetch":   acpsdk.ToolKindFetch,
 		"run_shell":   acpsdk.ToolKindExecute,
@@ -545,7 +547,7 @@ func TestPromptFallsBackWhenClientTerminalUnsupported(t *testing.T) {
 func TestPromptUsesClientFileSystemForReadFileWhenSupported(t *testing.T) {
 	rt := &fakeRuntime{}
 	rt.run = func(ctx context.Context, opts atlasruntime.TurnOptions) (atlasruntime.TurnResult, error) {
-		call := model.ToolCall{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md","offset":2,"limit":3}`}
+		call := model.ToolCall{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md","line":2,"limit":3}`}
 		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
 		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 			return tool.RunResult{}, fmt.Errorf("fallback should not run")
@@ -598,11 +600,11 @@ func TestToolRunnerFallsBackWhenClientReadFileFails(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "read_file",
-		Arguments: `{"path":"README.md","offset":2,"limit":3}`,
+		Arguments: `{"path":"README.md","line":2,"limit":3}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
 		args, err := tool.ParseReadFileArgs(call.Arguments)
-		if err != nil || args.Path != path || args.Offset != 2 || args.Limit != 3 {
+		if err != nil || args.Path != path || args.Line != 2 || args.Limit != 3 {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
 		return tool.RunResult{Content: "local"}, nil
@@ -710,7 +712,7 @@ func TestToolRunnerUsesClientFileSystemForEditFileWhenSupported(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "edit_file",
-		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
+		Arguments: `{"path":"README.md","old_text":"old","new_text":"new"}`,
 	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
 		return tool.RunResult{}, nil
@@ -722,7 +724,7 @@ func TestToolRunnerUsesClientFileSystemForEditFileWhenSupported(t *testing.T) {
 	if fallbackCalled {
 		t.Fatal("fallback should not run")
 	}
-	if got.Content != "replaced 1 blocks in "+path {
+	if got.Content != "replaced 1 block in "+path {
 		t.Fatalf("content = %q", got.Content)
 	}
 	if client.read.Path != path || client.write.Path != path || client.write.Content != "new\n" {
@@ -746,14 +748,14 @@ func TestToolRunnerFallsBackWhenClientEditFileReadFails(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "edit_file",
-		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
+		Arguments: `{"path":"README.md","old_text":"old","new_text":"new"}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
 		args, err := tool.ParseEditFileArgs(call.Arguments)
-		if err != nil || args.Path != path || len(args.Edits) != 1 || args.Edits[0].OldText != "old" {
+		if err != nil || args.Path != path || args.OldText != "old" || args.NewText == nil || *args.NewText != "new" {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{Content: "replaced 1 blocks in " + path}, nil
+		return tool.RunResult{Content: "replaced 1 block in " + path}, nil
 	})
 
 	if err != nil {
@@ -762,7 +764,7 @@ func TestToolRunnerFallsBackWhenClientEditFileReadFails(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "replaced 1 blocks in "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
+	if got.Content != "replaced 1 block in "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
 		t.Fatalf("result = %#v", got)
 	}
 }
@@ -780,14 +782,14 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "edit_file",
-		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
+		Arguments: `{"path":"README.md","old_text":"old","new_text":"new"}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
 		args, err := tool.ParseEditFileArgs(call.Arguments)
-		if err != nil || args.Path != path || len(args.Edits) != 1 || args.Edits[0].OldText != "old" {
+		if err != nil || args.Path != path || args.OldText != "old" || args.NewText == nil || *args.NewText != "new" {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{Content: "replaced 1 blocks in " + path}, nil
+		return tool.RunResult{Content: "replaced 1 block in " + path}, nil
 	})
 
 	if err != nil {
@@ -796,8 +798,78 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 	if !fallbackCalled {
 		t.Fatal("fallback was not called")
 	}
-	if got.Content != "replaced 1 blocks in "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
+	if got.Content != "replaced 1 block in "+path || len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
 		t.Fatalf("result = %#v", got)
+	}
+}
+
+func TestToolRunnerAddsMetadataForApplyPatch(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
+	runner := a.toolRunner("sess", cwd)
+	patch := strings.Join([]string{
+		"--- a/README.md",
+		"+++ b/README.md",
+		"@@ -1 +1 @@",
+		"-old",
+		"+new",
+		"",
+	}, "\n")
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "apply_patch",
+		Arguments: `{"patch":` + strconv.Quote(patch) + `}`,
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		if err := os.WriteFile(path, []byte("new\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return tool.RunResult{Content: "applied patch"}, nil
+	})
+
+	if err != nil {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
+		t.Fatalf("locations = %#v", got.Metadata.Locations)
+	}
+	if got.Metadata.Diff == nil || got.Metadata.Diff.OldText == nil || *got.Metadata.Diff.OldText != "old\n" || got.Metadata.Diff.NewText != "new\n" {
+		t.Fatalf("diff = %#v", got.Metadata.Diff)
+	}
+}
+
+func TestToolRunnerAddsDiffForApplyPatchDelete(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	cwd := testCWD(t)
+	path := filepath.Join(cwd, "README.md")
+	writeTestTextFile(t, path, "old\n")
+	runner := a.toolRunner("sess", cwd)
+	patch := strings.Join([]string{
+		"--- a/README.md",
+		"+++ /dev/null",
+		"@@ -1 +0,0 @@",
+		"-old",
+		"",
+	}, "\n")
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "apply_patch",
+		Arguments: `{"patch":` + strconv.Quote(patch) + `}`,
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		return tool.RunResult{Content: "applied patch"}, nil
+	})
+
+	if err != nil {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if got.Metadata.Diff == nil || got.Metadata.Diff.OldText == nil || *got.Metadata.Diff.OldText != "old\n" || got.Metadata.Diff.NewText != "" {
+		t.Fatalf("diff = %#v", got.Metadata.Diff)
 	}
 }
 
@@ -879,7 +951,7 @@ func TestToolRunnerDoesNotAskClientFileSystemForNonTextPaths(t *testing.T) {
 			name:         "edit directory",
 			toolName:     "edit_file",
 			path:         "docs",
-			arguments:    `{"path":"docs","edits":[{"old_text":"old","new_text":"new"}]}`,
+			arguments:    `{"path":"docs","old_text":"old","new_text":"new"}`,
 			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
 			setup:        mkdirTestDir,
 		},
@@ -887,7 +959,7 @@ func TestToolRunnerDoesNotAskClientFileSystemForNonTextPaths(t *testing.T) {
 			name:         "edit binary",
 			toolName:     "edit_file",
 			path:         "image.bin",
-			arguments:    `{"path":"image.bin","edits":[{"old_text":"old","new_text":"new"}]}`,
+			arguments:    `{"path":"image.bin","old_text":"old","new_text":"new"}`,
 			capabilities: acpsdk.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
 			setup:        writeTestBinaryFile,
 		},
@@ -936,29 +1008,31 @@ func TestSearchResultLocationsUsesFileParentForSingleFileOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := searchResultLocations(path, "note.txt:1:needle")
+	got := grepResultLocations(path, "note.txt:1:needle")
 
 	if len(got) != 1 || got[0].Path != path || got[0].Line != 1 {
 		t.Fatalf("locations = %#v", got)
 	}
 }
 
-func TestToolRunnerPreservesListFilesMissingPathError(t *testing.T) {
+func TestToolRunnerUsesCWDForGlobWithoutPath(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
-	runner := a.toolRunner("sess", "/tmp/work")
+	cwd := testCWD(t)
+	runner := a.toolRunner("sess", cwd)
 
 	_, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
-		Name:      "list_files",
-		Arguments: `{}`,
+		Name:      "glob",
+		Arguments: `{"pattern":"*.go"}`,
 	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
-		if call.Arguments != `{}` {
+		args, err := tool.ParseGlobArgs(call.Arguments)
+		if err != nil || args.Path != cwd || args.Pattern != "*.go" {
 			t.Fatalf("arguments = %s", call.Arguments)
 		}
-		return tool.RunResult{}, errors.New("list_files path is required")
+		return tool.RunResult{Content: "main.go"}, nil
 	})
 
-	if err == nil || !strings.Contains(err.Error(), "path is required") {
+	if err != nil {
 		t.Fatalf("ToolRunner() error = %v", err)
 	}
 }

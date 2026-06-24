@@ -508,9 +508,9 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 	spec := tool.DefaultShell()
 	terminalArgs := append([]string(nil), spec.Args...)
 	terminalArgs = append(terminalArgs, args.Command)
-	workdir := args.Workdir
-	if workdir == "" {
-		workdir = cwd
+	terminalCWD := args.CWD
+	if terminalCWD == "" {
+		terminalCWD = cwd
 	}
 	limit := 128 * 1024
 	createReq := acpsdk.CreateTerminalRequest{
@@ -519,8 +519,8 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 		Args:            terminalArgs,
 		OutputByteLimit: &limit,
 	}
-	if workdir != "" {
-		createReq.Cwd = &workdir
+	if terminalCWD != "" {
+		createReq.Cwd = &terminalCWD
 	}
 	terminal, err := a.terminalClient.CreateTerminal(ctx, createReq)
 	if err != nil {
@@ -1193,9 +1193,9 @@ func toolKind(name string) acpsdk.ToolKind {
 	switch name {
 	case "read_file":
 		return acpsdk.ToolKindRead
-	case "edit_file", "write_file":
+	case "edit_file", "write_file", "apply_patch":
 		return acpsdk.ToolKindEdit
-	case "list_files", "search_text", "web_search":
+	case "glob", "grep", "web_search":
 		return acpsdk.ToolKindSearch
 	case "web_fetch":
 		return acpsdk.ToolKindFetch

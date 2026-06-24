@@ -23,6 +23,8 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 		"## When Working On Code",
 		"Read the relevant files before editing them",
 		"Use only the tools that Atlas exposes",
+		"Use glob for path discovery, grep for regex text search",
+		"Use edit_file for one exact unique text replacement",
 		"Do not treat command completion alone as proof",
 		"Match the user's language",
 		"Current date: 2026-06-08",

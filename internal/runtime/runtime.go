@@ -323,7 +323,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	registry, err := buildToolRegistry(skills, cfg.Services)
+	registry, err := buildToolRegistry(cwd, skills, cfg.Services)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -525,7 +525,7 @@ func directShellToolCall(id, command, cwd string) (model.ToolCall, error) {
 		"command": command,
 	}
 	if cwd != "" {
-		args["workdir"] = cwd
+		args["cwd"] = cwd
 	}
 	content, err := json.Marshal(args)
 	if err != nil {
@@ -979,14 +979,15 @@ func completeDependencies(deps Dependencies) Dependencies {
 	return deps
 }
 
-func buildToolRegistry(skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
+func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
 	tools := []tool.Tool{
-		tool.ListFiles{},
-		tool.ReadFile{},
-		tool.EditFile{},
-		tool.SearchText{},
-		tool.WriteFile{},
-		tool.RunShell{},
+		tool.Glob{CWD: cwd},
+		tool.Grep{CWD: cwd},
+		tool.ReadFile{CWD: cwd},
+		tool.EditFile{CWD: cwd},
+		tool.ApplyPatch{CWD: cwd},
+		tool.WriteFile{CWD: cwd},
+		tool.RunShell{CWD: cwd},
 		tool.LoadSkill{Skills: skills},
 	}
 	if services.Tavily.APIKey != "" {

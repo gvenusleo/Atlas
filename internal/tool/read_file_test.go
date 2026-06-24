@@ -24,6 +24,22 @@ func TestReadFileRun(t *testing.T) {
 	}
 }
 
+func TestReadFileRunUsesDefaultCWD(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "note.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := (ReadFile{CWD: dir}).Run(context.Background(), `{"path":"note.txt"}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got != "hello" {
+		t.Fatalf("Run() = %q, want %q", got, "hello")
+	}
+}
+
 func TestReadFileRunInvalidArguments(t *testing.T) {
 	if _, err := (ReadFile{}).Run(context.Background(), `{`); err == nil {
 		t.Fatal("Run() error = nil, want invalid arguments error")
@@ -59,30 +75,30 @@ func TestReadFileRunLargeFile(t *testing.T) {
 	}
 }
 
-func TestReadFileRunOffsetAndLimit(t *testing.T) {
+func TestReadFileRunLineAndLimit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")
 	if err := os.WriteFile(path, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"offset":2,"limit":1}`)
+	got, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"line":2,"limit":1}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !strings.Contains(got, "two\n") || !strings.Contains(got, "Use offset=3 to continue") {
+	if !strings.Contains(got, "two\n") || !strings.Contains(got, "Use line=3 to continue") {
 		t.Fatalf("Run() = %q, want selected line and continuation", got)
 	}
 }
 
-func TestReadFileRunOffsetBeyondEnd(t *testing.T) {
+func TestReadFileRunLineBeyondEnd(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "note.txt")
 	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"offset":3}`)
+	_, err := (ReadFile{}).Run(context.Background(), `{"path":`+quoteJSON(path)+`,"line":3}`)
 	if err == nil || !strings.Contains(err.Error(), "beyond end of file") {
-		t.Fatalf("Run() error = %v, want offset error", err)
+		t.Fatalf("Run() error = %v, want line error", err)
 	}
 }
 

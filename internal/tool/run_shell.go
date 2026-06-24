@@ -28,12 +28,14 @@ type ShellSpec struct {
 }
 
 // RunShell 执行本地 shell 命令。
-type RunShell struct{}
+type RunShell struct {
+	CWD string
+}
 
 // ShellArgs 描述 run_shell 接收的 JSON 参数。
 type ShellArgs struct {
 	Command        string `json:"command"`
-	Workdir        string `json:"workdir"`
+	CWD            string `json:"cwd"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
 }
 
@@ -49,7 +51,7 @@ func (RunShell) Definition() model.ToolDefinition {
 					"type":        "string",
 					"description": "Command to execute with the platform default shell.",
 				},
-				"workdir": map[string]any{
+				"cwd": map[string]any{
 					"type":        "string",
 					"description": "Optional working directory.",
 				},
@@ -64,13 +66,17 @@ func (RunShell) Definition() model.ToolDefinition {
 }
 
 // Run 使用 JSON 参数执行一次本地 shell 命令。
-func (RunShell) Run(ctx context.Context, arguments string) (string, error) {
+func (r RunShell) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseShellArgs(arguments)
 	if err != nil {
 		return "", err
 	}
 	timeout := ShellTimeout(args.TimeoutSeconds)
-	return runShellCommand(ctx, args.Command, args.Workdir, timeout)
+	cwd := args.CWD
+	if cwd == "" {
+		cwd = r.CWD
+	}
+	return runShellCommand(ctx, args.Command, cwd, timeout)
 }
 
 // ParseShellArgs 解析并校验 run_shell 的 JSON 参数。

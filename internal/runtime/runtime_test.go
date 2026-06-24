@@ -324,14 +324,49 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
-	if len(provider.request.Tools) != 7 {
-		t.Fatalf("tools = %d", len(provider.request.Tools))
-	}
+	assertToolNames(t, provider.request.Tools, "glob", "grep", "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
 	}
 	if provider.providerModel != "test-model" {
 		t.Fatalf("provider model = %q", provider.providerModel)
+	}
+}
+
+func TestRunTurnLocalFileToolsUseSessionCWD(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("from cwd"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{
+				ToolCalls: []model.ToolCall{{
+					ID:        "call_1",
+					Name:      "read_file",
+					Arguments: `{"path":"note.txt"}`,
+				}},
+			},
+			{Content: "done"},
+		},
+	}
+	r := newTestRuntime(t, provider)
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "work",
+		Prompt:    "read note",
+		CWD:       cwd,
+	})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if result.Content != "done" {
+		t.Fatalf("content = %q", result.Content)
+	}
+	requestMessages := provider.requests[1].Messages
+	last := requestMessages[len(requestMessages)-1]
+	if last.Role != model.RoleTool || last.Content != "from cwd" {
+		t.Fatalf("tool message = %#v", last)
 	}
 }
 
@@ -367,16 +402,7 @@ func TestRunTurnRegistersTavilyToolsWhenConfigured(t *testing.T) {
 	if _, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "hello"}); err != nil {
 		t.Fatalf("RunTurn() error = %v", err)
 	}
-	if len(provider.request.Tools) != 9 {
-		t.Fatalf("tools = %d", len(provider.request.Tools))
-	}
-	names := make(map[string]bool, len(provider.request.Tools))
-	for _, definition := range provider.request.Tools {
-		names[definition.Name] = true
-	}
-	if !names["web_search"] || !names["web_fetch"] {
-		t.Fatalf("tools = %#v", provider.request.Tools)
-	}
+	assertToolNames(t, provider.request.Tools, "web_search", "web_fetch")
 }
 
 func TestRunTurnOverrides(t *testing.T) {
@@ -477,7 +503,7 @@ func TestRunTurnDirectShellRunsCommandWithoutProvider(t *testing.T) {
 	if !strings.Contains(result.Content, "direct-output") {
 		t.Fatalf("content = %q", result.Content)
 	}
-	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" || shellWorkdir(t, events[1].ToolCall.Arguments) != workdir {
+	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" || shellCWD(t, events[1].ToolCall.Arguments) != workdir {
 		t.Fatalf("events = %#v", events)
 	}
 	if events[2].Type != agent.EventToolFinished || events[2].ToolError || !strings.Contains(events[2].ToolResult, "direct-output") {
@@ -1453,6 +1479,20 @@ func assertDoctorCheck(t *testing.T, report DoctorReport, name string, status Do
 	t.Fatalf("missing doctor check %q in %#v", name, report.Checks)
 }
 
+func assertToolNames(t *testing.T, tools []model.ToolDefinition, names ...string) {
+	t.Helper()
+
+	seen := make(map[string]bool, len(tools))
+	for _, definition := range tools {
+		seen[definition.Name] = true
+	}
+	for _, name := range names {
+		if !seen[name] {
+			t.Fatalf("missing tool %q in %#v", name, tools)
+		}
+	}
+}
+
 func expectedShellDetail() string {
 	if tool.DefaultShell().DisplayName == "" {
 		return "shell"
@@ -1475,13 +1515,13 @@ func shellEchoCommand(text string) string {
 	return "Write-Output " + quotePowerShell(text)
 }
 
-func shellWorkdir(t *testing.T, arguments string) string {
+func shellCWD(t *testing.T, arguments string) string {
 	t.Helper()
 	args, err := tool.ParseShellArgs(arguments)
 	if err != nil {
 		t.Fatalf("ParseShellArgs() error = %v", err)
 	}
-	return args.Workdir
+	return args.CWD
 }
 
 func shellFailCommand(text string, code int) string {

@@ -443,10 +443,11 @@ Atlas 使用 SQLite 保存本地会话和长期记忆，默认路径 `~/.atlas/a
 
 | 工具 | 说明 |
 |---|---|
-| `list_files` | 列出文件和子目录，可按深度、glob 和 `.gitignore` 过滤 |
+| `glob` | 按 glob pattern 查找文件和目录，默认从会话工作目录开始 |
 | `read_file` | 读取文本文件 |
-| `search_text` | 按字面量或正则搜索文本 |
-| `edit_file` | 精确替换一个或多个唯一文本块 |
+| `grep` | 用正则搜索文本，默认从会话工作目录开始 |
+| `edit_file` | 精确替换一个唯一文本块 |
+| `apply_patch` | 应用 unified diff patch，可一次修改多个文件 |
 | `write_file` | 写入文件内容 |
 | `run_shell` | 使用平台默认 shell 执行命令；Windows 用 PowerShell，其他平台用 `/bin/sh` |
 | `load_skill` | 按名称加载本地 skill 指令 |

@@ -117,9 +117,7 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if provider.request.ReasoningEffort != "high" {
 		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
 	}
-	if len(provider.request.Tools) != 7 {
-		t.Fatalf("tools = %d", len(provider.request.Tools))
-	}
+	assertToolNames(t, provider.request.Tools, "glob", "grep", "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
 	if provider.providerModel != "test-model" {
 		t.Fatalf("provider model = %q", provider.providerModel)
 	}
@@ -726,6 +724,20 @@ func quoteShell(text string) string {
 
 func quotePowerShell(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
+}
+
+func assertToolNames(t *testing.T, tools []model.ToolDefinition, names ...string) {
+	t.Helper()
+
+	seen := make(map[string]bool, len(tools))
+	for _, definition := range tools {
+		seen[definition.Name] = true
+	}
+	for _, name := range names {
+		if !seen[name] {
+			t.Fatalf("missing tool %q in %#v", name, tools)
+		}
+	}
 }
 
 func setTestHome(t *testing.T) string {

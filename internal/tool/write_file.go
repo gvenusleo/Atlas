@@ -11,7 +11,9 @@ import (
 )
 
 // WriteFile 写入本地文本文件内容。
-type WriteFile struct{}
+type WriteFile struct {
+	CWD string
+}
 
 // WriteFileArgs 是 write_file 的 JSON 参数。
 type WriteFileArgs struct {
@@ -36,12 +38,12 @@ func (WriteFile) Definition() model.ToolDefinition {
 }
 
 // Run 使用 JSON 参数中的 path 和 content 写入文件。
-func (WriteFile) Run(ctx context.Context, arguments string) (string, error) {
+func (w WriteFile) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseWriteFileArgs(arguments)
 	if err != nil {
 		return "", err
 	}
-	return writeFileContent(ctx, args.Path, *args.Content)
+	return writeFileContent(ctx, resolveToolPath(w.CWD, args.Path), *args.Content)
 }
 
 // ParseWriteFileArgs 解析并校验 write_file 参数。
