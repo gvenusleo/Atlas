@@ -359,7 +359,7 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 		CWD:       state.CWD,
 		Observer: func(event agent.Event) {
 			if event.Type == agent.EventToolStarted && event.ToolCall.Name != "" {
-				title := tool.DisplayTitle(event.ToolCall)
+				title := tool.DisplayTitle(event.ToolCall, state.CWD)
 				progress.WriteString(title)
 				progress.WriteString("\n")
 				if err := s.reply(context.Background(), msg, title); err != nil {

@@ -2,14 +2,16 @@ package tool
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
 // DisplayTitle 返回工具调用适合展示给用户的标题。
-func DisplayTitle(call model.ToolCall) string {
-	if title := primaryDisplayTitle(call); title != "" {
+// cwd 用于缩短文件路径：如果文件在 cwd 下，只显示相对路径。
+func DisplayTitle(call model.ToolCall, cwd string) string {
+	if title := primaryDisplayTitle(call, cwd); title != "" {
 		return title
 	}
 	if call.Name == "" {
@@ -19,7 +21,7 @@ func DisplayTitle(call model.ToolCall) string {
 }
 
 // primaryDisplayTitle 从内置工具参数中提取最能说明动作的字段。
-func primaryDisplayTitle(call model.ToolCall) string {
+func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 	prefix, key := "", ""
 	switch call.Name {
 	case "read_file":
@@ -55,5 +57,29 @@ func primaryDisplayTitle(call model.ToolCall) string {
 	if call.Name == "apply_patch" {
 		value, _, _ = strings.Cut(value, "\n")
 	}
+	if isFileTool(call.Name) {
+		value = shortenPath(value, cwd)
+	}
 	return prefix + value
+}
+
+// isFileTool 判断工具是否使用文件路径作为主参数。
+func isFileTool(name string) bool {
+	switch name {
+	case "read_file", "write_file", "edit_file":
+		return true
+	}
+	return false
+}
+
+// shortenPath 将绝对路径缩短为基于 cwd 的相对路径（如果文件在 cwd 下）。
+func shortenPath(path, cwd string) string {
+	if cwd == "" || !filepath.IsAbs(path) {
+		return path
+	}
+	rel, err := filepath.Rel(cwd, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return path
+	}
+	return rel
 }
