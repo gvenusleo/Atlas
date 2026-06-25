@@ -11,7 +11,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
-const defaultMaxSteps = 8
+const defaultMaxSteps = 20
 
 // Config 是创建 Agent 所需的依赖和运行参数。
 type Config struct {

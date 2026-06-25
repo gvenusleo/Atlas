@@ -24,7 +24,7 @@ const (
 	// ModelInputFormatImage 表示模型支持图片输入。
 	ModelInputFormatImage = "image"
 
-	defaultMaxSteps               = 8
+	defaultMaxSteps               = 20
 	defaultCompactionTriggerRatio = 0.8
 	defaultTavilyBaseURL          = "https://api.tavily.com"
 	defaultWeixinBaseURL          = "https://ilinkai.weixin.qq.com"

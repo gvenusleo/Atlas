@@ -237,7 +237,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
     }
   ],
   "agent": {
-    "max_steps": 8,
+    "max_steps": 20,
     "temperature": 0.2,
     "compaction_trigger_ratio": 0.8
   },
@@ -289,7 +289,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `agent.max_steps` | `8` | 单次 turn 最大循环步数 |
+| `agent.max_steps` | `20` | 单次 turn 最大循环步数 |
 | `agent.temperature` | `0` | 采样温度，范围 0–2 |
 | `agent.compaction_trigger_ratio` | `0.8` | 上下文输入达到窗口的该比例时自动压缩 |
 
