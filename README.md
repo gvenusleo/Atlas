@@ -1,8 +1,6 @@
 # Atlas
 
-> 一个运行在用户本机上的通用 Agent。可读写文件、执行 Shell、搜索网页、长期记忆，并通过 CLI、ACP 和微信通道驱动同一套 headless agent 核心。
-
-Atlas 用 Go 编写，核心是一个可测试的 headless agent loop。CLI、ACP（供 Zed 等编辑器连接）和微信通道都通过 `internal/runtime` 调用同一套能力，不重复实现循环逻辑。
+Atlas 用 Go 编写的**通用 Agent**。核心是一个可测试的 headless agent loop，可读写文件、执行 Shell、搜索网页、长期记忆，CLI、ACP（供 Zed 等编辑器连接）和微信通道都通过 `internal/runtime` 调用同一套能力，不重复实现循环逻辑。
 
 ## 特性
 
@@ -105,21 +103,7 @@ sequenceDiagram
 
 ### 长期记忆
 
-记忆系统通过后台 worker 异步工作：会话达到增量阈值、用户明确要求记住、或上下文压缩后，入队抽取任务；worker 只处理上次边界后的新增消息，抽取后刷新受影响作用域的摘要，下次会话自动检索注入。
-
-```mermaid
-graph TD
-    A[RunTurn 完成] --> B{达到阈值?}
-    B -->|是| C[入队 session_extract]
-    B -->|压缩或明确指令| C
-    C --> D[后台 worker 领取]
-    D --> E[增量抽取新消息]
-    E --> F[模型抽取记忆条目]
-    F --> G[写入并归档]
-    G --> H[入队 scope_summarize]
-    H --> I[刷新作用域摘要]
-    I --> J[下次 RunTurn 注入记忆]
-```
+记忆系统通过后台 worker 异步工作。触发时机有三种：会话消息量达到增量阈值、用户明确要求记住某内容、或上下文压缩完成后。触发后入队抽取任务，worker 只处理上次边界后的新增消息，调用模型抽取记忆条目并写入数据库，随后刷新受影响作用域的摘要。下次会话开始时自动检索相关记忆并注入到系统提示词中。
 
 ## 快速开始
 
