@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 const chatCompletionsPath = "/chat/completions"
@@ -76,6 +77,7 @@ func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("User-Agent", "atlas/"+version.Current)
 
 	httpResp, err := p.httpClient.Do(httpReq)
 	if err != nil {

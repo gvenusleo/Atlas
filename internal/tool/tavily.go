@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 const (
@@ -347,6 +348,7 @@ func (c *TavilyClient) post(ctx context.Context, endpoint, operation string, pay
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "atlas/"+version.Current)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

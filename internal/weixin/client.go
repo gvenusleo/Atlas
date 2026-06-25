@@ -237,6 +237,7 @@ func (c *Client) headers(jsonContent bool) map[string]string {
 		"X-WECHAT-UIN":            randomWechatUIN(),
 		"iLink-App-Id":            "bot",
 		"iLink-App-ClientVersion": clientVersion(),
+		"User-Agent":              "atlas/" + version.Current,
 	}
 	if jsonContent {
 		headers["Content-Type"] = "application/json"
