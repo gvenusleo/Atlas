@@ -14,17 +14,17 @@ concurrency:
 
 jobs:
   build:
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  goos: linux,   goarch: amd64, archive: tar.gz }
-          - { os: ubuntu-latest,  goos: linux,   goarch: arm64, archive: tar.gz }
-          - { os: macos-13,       goos: darwin,  goarch: amd64, archive: tar.gz }
-          - { os: macos-latest,   goos: darwin,  goarch: arm64, archive: tar.gz }
-          - { os: windows-latest, goos: windows, goarch: amd64, archive: zip }
-          - { os: windows-latest, goos: windows, goarch: arm64, archive: zip }
-    runs-on: ${{ matrix.os }}
+          - { goos: linux, goarch: amd64, archive: tar.gz }
+          - { goos: linux, goarch: arm64, archive: tar.gz }
+          - { goos: darwin, goarch: amd64, archive: tar.gz }
+          - { goos: darwin, goarch: arm64, archive: tar.gz }
+          - { goos: windows, goarch: amd64, archive: zip }
+          - { goos: windows, goarch: arm64, archive: zip }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +34,7 @@ jobs:
           go-version-file: go.mod
       - name: Build
         env:
-          CGO_ENABLED: '0'
+          CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         shell: bash
@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          7z a "atlas-${GOOS}-${GOARCH}-v${VERSION}.zip" atlas.exe
+          zip "atlas-${GOOS}-${GOARCH}-v${VERSION}.zip" atlas.exe
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
