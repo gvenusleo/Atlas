@@ -303,11 +303,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		return result, err
 	}
 
-	activeProvider, err := cfg.ActiveProviderConfig()
-	if err != nil {
-		return TurnResult{}, err
-	}
-	selectedModel, err := activeProvider.ResolveModel(opts.Model)
+	activeProvider, selectedModel, err := cfg.ResolveModel(opts.Model)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -566,11 +562,7 @@ func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (Comp
 	if err != nil {
 		return CompactResult{}, err
 	}
-	activeProvider, err := cfg.ActiveProviderConfig()
-	if err != nil {
-		return CompactResult{}, err
-	}
-	selectedModel, err := activeProvider.ResolveModel(opts.Model)
+	activeProvider, selectedModel, err := cfg.ResolveModel(opts.Model)
 	if err != nil {
 		return CompactResult{}, err
 	}
@@ -718,15 +710,11 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 	if err != nil {
 		return ModelOptions{}, err
 	}
-	activeProvider, err := cfg.ActiveProviderConfig()
-	if err != nil {
-		return ModelOptions{}, err
-	}
-	models := activeProvider.ModelOptions()
-	options := make([]ModelOption, 0, len(models))
-	for _, model := range models {
-		reasoningEfforts := make([]ReasoningEffortOption, 0, len(model.ReasoningEfforts))
-		for _, effort := range model.ReasoningEfforts {
+	allModels := cfg.AllModels()
+	options := make([]ModelOption, 0, len(allModels))
+	for _, m := range allModels {
+		reasoningEfforts := make([]ReasoningEffortOption, 0, len(m.Model.ReasoningEfforts))
+		for _, effort := range m.Model.ReasoningEfforts {
 			reasoningEfforts = append(reasoningEfforts, ReasoningEffortOption{
 				Value:       effort.Value,
 				Name:        effort.Name,
@@ -734,17 +722,17 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 			})
 		}
 		options = append(options, ModelOption{
-			Value:            model.Value,
-			Name:             model.Name,
-			Description:      model.Description,
-			ContextWindow:    model.ContextWindow,
-			MaxTokens:        model.MaxTokens,
-			InputFormats:     append([]string(nil), model.InputFormats...),
+			Value:            m.Model.Value,
+			Name:             m.Model.Name,
+			Description:      m.Model.Description,
+			ContextWindow:    m.Model.ContextWindow,
+			MaxTokens:        m.Model.MaxTokens,
+			InputFormats:     append([]string(nil), m.Model.InputFormats...),
 			ReasoningEfforts: reasoningEfforts,
 		})
 	}
 	return ModelOptions{
-		Default: activeProvider.DefaultModel,
+		Default: cfg.DefaultModel,
 		Models:  options,
 	}, nil
 }
@@ -788,12 +776,9 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	report.add("config", DoctorStatusOK, configPath)
-	activeProvider, err := cfg.ActiveProviderConfig()
-	if err != nil {
-		report.add("provider", DoctorStatusFail, err.Error())
-		return report
+	for _, provider := range cfg.Providers {
+		report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, %s, %s, %d models", provider.Name, providerFormat(provider), provider.BaseURL, len(provider.Models)))
 	}
-	report.add("provider", DoctorStatusOK, fmt.Sprintf("%s, %s, %s, default %s, %d models", activeProvider.Name, providerFormat(activeProvider), activeProvider.BaseURL, activeProvider.DefaultModel, len(activeProvider.Models)))
 	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, compaction_trigger_ratio %.2f", cfg.Agent.MaxSteps, cfg.Agent.Temperature, cfg.Agent.CompactionTriggerRatio))
 	report.addSession(ctx, cfg.Session)
 	report.addMemory(ctx, cfg)

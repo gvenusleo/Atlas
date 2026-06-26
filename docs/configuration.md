@@ -6,14 +6,13 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 
 ```json
 {
-  "active_provider": "deepseek",
+  "default_model": "deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
       "format": "chat_completions",
       "base_url": "https://api.deepseek.com",
       "api_key": "sk-...",
-      "default_model": "deepseek-v4-flash",
       "models": [
         {
           "value": "deepseek-v4-flash",
@@ -46,7 +45,6 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
       "format": "responses",
       "base_url": "https://api.openai.com/v1",
       "api_key": "sk-...",
-      "default_model": "gpt-5",
       "models": [
         {
           "value": "gpt-5",
@@ -86,15 +84,20 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 
 ## Field Reference
 
+### Top-level
+
+| Field | Description |
+|---|---|
+| `default_model` | Must match a `models[].value` across all providers. Used when no model is explicitly selected. |
+
 ### Provider
 
 | Field | Description |
 |---|---|
-| `active_provider` | Must match a `providers[].name`. Atlas only uses the selected provider. |
+| `providers[].name` | Provider name, must be unique. |
 | `providers[].format` | Optional, defaults to `chat_completions`. Use `responses` for OpenAI Responses API. |
 | `providers[].base_url` | Provider API URL. |
 | `providers[].api_key` | Authentication key. |
-| `providers[].default_model` | Must match a `models[].value` under the same provider. |
 
 ### Models
 

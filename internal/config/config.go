@@ -33,22 +33,21 @@ const (
 
 // Config 是 Atlas CLI 启动时需要的应用配置。
 type Config struct {
-	ActiveProvider string           `json:"active_provider"`
-	Providers      []ProviderConfig `json:"providers"`
-	Agent          AgentConfig      `json:"agent"`
-	Memory         MemoryConfig     `json:"memory"`
-	Session        SessionConfig    `json:"session"`
-	Services       ServicesConfig   `json:"services"`
+	DefaultModel string           `json:"default_model"`
+	Providers    []ProviderConfig `json:"providers"`
+	Agent        AgentConfig      `json:"agent"`
+	Memory       MemoryConfig     `json:"memory"`
+	Session      SessionConfig    `json:"session"`
+	Services     ServicesConfig   `json:"services"`
 }
 
 // ProviderConfig 描述一个模型 API provider。
 type ProviderConfig struct {
-	Name         string          `json:"name"`
-	Format       string          `json:"format"`
-	BaseURL      string          `json:"base_url"`
-	APIKey       string          `json:"api_key"`
-	DefaultModel string          `json:"default_model"`
-	Models       []ProviderModel `json:"models"`
+	Name    string          `json:"name"`
+	Format  string          `json:"format"`
+	BaseURL string          `json:"base_url"`
+	APIKey  string          `json:"api_key"`
+	Models  []ProviderModel `json:"models"`
 }
 
 // ProviderModel 描述一个可选模型。
@@ -154,13 +153,12 @@ func LoadFile(path string) (Config, error) {
 
 // Validate 校验 Atlas 运行所需的配置字段。
 func (c Config) Validate() error {
-	active, err := c.ActiveProviderConfig()
-	if err != nil {
+	if err := c.validateProviders(); err != nil {
 		return err
 	}
 	if c.Memory.IsEnabled() && strings.TrimSpace(c.Memory.Model) != "" {
-		if _, err := active.ResolveModel(c.Memory.Model); err != nil {
-			return fmt.Errorf("memory.model %q is not in active provider models", c.Memory.Model)
+		if _, _, err := c.ResolveModel(c.Memory.Model); err != nil {
+			return fmt.Errorf("memory.model %q is not in any provider models", c.Memory.Model)
 		}
 	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
@@ -192,39 +190,59 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// ActiveProviderConfig 返回当前启用的 provider 配置。
-func (c Config) ActiveProviderConfig() (ProviderConfig, error) {
+// validateProviders 校验所有 provider 配置，并检查 model value 跨 provider 全局唯一。
+func (c Config) validateProviders() error {
 	if len(c.Providers) == 0 {
-		return ProviderConfig{}, fmt.Errorf("providers is required")
+		return fmt.Errorf("providers is required")
 	}
-	name := strings.TrimSpace(c.ActiveProvider)
-	if name == "" {
-		return ProviderConfig{}, fmt.Errorf("active_provider is required")
+	if strings.TrimSpace(c.DefaultModel) == "" {
+		return fmt.Errorf("default_model is required")
 	}
-	seen := make(map[string]struct{}, len(c.Providers))
-	var active ProviderConfig
-	activeFound := false
+	seenProviders := make(map[string]struct{}, len(c.Providers))
+	seenModels := make(map[string]string) // model value -> provider name
+	defaultFound := false
 	for i, provider := range c.Providers {
 		providerName := strings.TrimSpace(provider.Name)
 		if providerName == "" {
-			return ProviderConfig{}, fmt.Errorf("providers[%d].name is required", i)
+			return fmt.Errorf("providers[%d].name is required", i)
 		}
-		if _, ok := seen[providerName]; ok {
-			return ProviderConfig{}, fmt.Errorf("providers contains duplicate name %q", providerName)
+		if _, ok := seenProviders[providerName]; ok {
+			return fmt.Errorf("providers contains duplicate name %q", providerName)
 		}
-		seen[providerName] = struct{}{}
+		seenProviders[providerName] = struct{}{}
 		if err := provider.Validate(i); err != nil {
-			return ProviderConfig{}, err
+			return err
 		}
-		if providerName == name {
-			active = provider
-			activeFound = true
+		for _, model := range provider.Models {
+			if existing, ok := seenModels[model.Value]; ok {
+				return fmt.Errorf("model value %q is duplicated in providers %q and %q", model.Value, existing, providerName)
+			}
+			seenModels[model.Value] = providerName
+			if model.Value == c.DefaultModel {
+				defaultFound = true
+			}
 		}
 	}
-	if activeFound {
-		return active, nil
+	if !defaultFound {
+		return fmt.Errorf("default_model %q is not in any provider models", c.DefaultModel)
 	}
-	return ProviderConfig{}, fmt.Errorf("active_provider %q is not in providers", name)
+	return nil
+}
+
+// ResolveModel 在所有 provider 中查找指定 value 的模型，返回 provider 和模型。
+// value 为空时返回 default_model 对应的模型。
+func (c Config) ResolveModel(value string) (ProviderConfig, ProviderModel, error) {
+	if strings.TrimSpace(value) == "" {
+		value = c.DefaultModel
+	}
+	for _, provider := range c.Providers {
+		for _, model := range provider.Models {
+			if model.Value == value {
+				return provider, model, nil
+			}
+		}
+	}
+	return ProviderConfig{}, ProviderModel{}, fmt.Errorf("model %q is not configured in any provider", value)
 }
 
 // Validate 校验单个 provider 配置。
@@ -243,14 +261,10 @@ func (p ProviderConfig) Validate(index int) error {
 	if p.APIKey == "" {
 		return fmt.Errorf("%s.api_key is required", prefix)
 	}
-	if p.DefaultModel == "" {
-		return fmt.Errorf("%s.default_model is required", prefix)
-	}
 	if len(p.Models) == 0 {
 		return fmt.Errorf("%s.models is required", prefix)
 	}
 	seen := make(map[string]struct{}, len(p.Models))
-	defaultFound := false
 	for i, model := range p.Models {
 		if strings.TrimSpace(model.Value) == "" {
 			return fmt.Errorf("%s.models[%d].value is required", prefix, i)
@@ -277,12 +291,6 @@ func (p ProviderConfig) Validate(index int) error {
 			return fmt.Errorf("%s.models contains duplicate value %q", prefix, model.Value)
 		}
 		seen[model.Value] = struct{}{}
-		if model.Value == p.DefaultModel {
-			defaultFound = true
-		}
-	}
-	if !defaultFound {
-		return fmt.Errorf("%s.default_model %q is not in providers[%d].models", prefix, p.DefaultModel, index)
 	}
 	return nil
 }
@@ -339,28 +347,24 @@ func validateModelReasoningEfforts(prefix string, modelIndex int, model Provider
 	return nil
 }
 
-// ResolveModel 返回指定 value 对应的模型；value 为空时返回默认模型。
-func (p ProviderConfig) ResolveModel(value string) (ProviderModel, error) {
-	if strings.TrimSpace(value) == "" {
-		value = p.DefaultModel
-	}
-	for _, model := range p.Models {
-		if model.Value == value {
-			return model, nil
+// AllModels 返回所有 provider 的所有模型，附带其所属 provider。
+func (c Config) AllModels() []ProviderModelInfo {
+	var result []ProviderModelInfo
+	for _, provider := range c.Providers {
+		for _, model := range provider.Models {
+			result = append(result, ProviderModelInfo{
+				Provider: provider,
+				Model:    model,
+			})
 		}
 	}
-	return ProviderModel{}, fmt.Errorf("provider model %q is not configured", value)
+	return result
 }
 
-// ModelOptions 返回模型列表副本。
-func (p ProviderConfig) ModelOptions() []ProviderModel {
-	models := make([]ProviderModel, len(p.Models))
-	for i, model := range p.Models {
-		models[i] = model
-		models[i].InputFormats = append([]string(nil), model.InputFormats...)
-		models[i].ReasoningEfforts = append([]ProviderReasoningEffort(nil), model.ReasoningEfforts...)
-	}
-	return models
+// ProviderModelInfo 包含模型定义及其所属 provider。
+type ProviderModelInfo struct {
+	Provider ProviderConfig
+	Model    ProviderModel
 }
 
 // SupportsReasoningEffort 返回模型是否声明支持指定 reasoning effort。

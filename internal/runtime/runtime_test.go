@@ -612,7 +612,7 @@ func TestDoctorReportsOfflineRuntimeChecks(t *testing.T) {
 		t.Fatalf("report failed: %#v", report.Checks)
 	}
 	assertDoctorCheck(t, report, "config", DoctorStatusOK, "config.json")
-	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "test, chat_completions, https://api.example.com, default test-model, 2 models")
+	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "test, chat_completions, https://api.example.com, 2 models")
 	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "max_steps 4, temperature 0.20, compaction_trigger_ratio 0.80")
 	assertDoctorCheck(t, report, "session", DoctorStatusOK, "atlas.db")
 	assertDoctorCheck(t, report, "memory", DoctorStatusOK, "0 entries, 0 pending, 0 failed, model session model")
@@ -1505,14 +1505,13 @@ func openTestSessionStore(t *testing.T, dbPath string) *session.Store {
 
 func testConfig(dbPath string) config.Config {
 	return config.Config{
-		ActiveProvider: "test",
+		DefaultModel: "test-model",
 		Providers: []config.ProviderConfig{
 			{
-				Name:         "test",
-				Format:       config.ProviderFormatChatCompletions,
-				BaseURL:      "https://api.example.com",
-				APIKey:       "sk-test",
-				DefaultModel: "test-model",
+				Name:    "test",
+				Format:  config.ProviderFormatChatCompletions,
+				BaseURL: "https://api.example.com",
+				APIKey:  "sk-test",
 				Models: []config.ProviderModel{
 					{
 						Value:         "test-model",

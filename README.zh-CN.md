@@ -43,14 +43,13 @@ just install      # 构建并安装到 ~/.local/bin
 
 ```json
 {
-  "active_provider": "deepseek",
+  "default_model": "deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
       "format": "chat_completions",
       "base_url": "https://api.deepseek.com",
       "api_key": "sk-...",
-      "default_model": "deepseek-v4-flash",
       "models": [
         {
           "value": "deepseek-v4-flash",

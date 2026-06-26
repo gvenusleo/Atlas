@@ -6,14 +6,13 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 ```json
 {
-  "active_provider": "deepseek",
+  "default_model": "deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
       "format": "chat_completions",
       "base_url": "https://api.deepseek.com",
       "api_key": "sk-...",
-      "default_model": "deepseek-v4-flash",
       "models": [
         {
           "value": "deepseek-v4-flash",
@@ -46,7 +45,6 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
       "format": "responses",
       "base_url": "https://api.openai.com/v1",
       "api_key": "sk-...",
-      "default_model": "gpt-5",
       "models": [
         {
           "value": "gpt-5",
@@ -86,15 +84,20 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 ## 字段说明
 
+### 顶层
+
+| 字段 | 说明 |
+|---|---|
+| `default_model` | 必须匹配所有 provider 中某个 `models[].value`，未显式选择模型时使用 |
+
 ### Provider
 
 | 字段 | 说明 |
 |---|---|
-| `active_provider` | 必须匹配某个 `providers[].name`，Atlas 只使用当前选中的 Provider |
+| `providers[].name` | Provider 名称，必须唯一 |
 | `providers[].format` | 可省略，默认 `chat_completions`；OpenAI Responses API 使用 `responses` |
 | `providers[].base_url` | Provider API 地址 |
 | `providers[].api_key` | 鉴权密钥 |
-| `providers[].default_model` | 必须匹配同一 Provider 下的某个 `models[].value` |
 
 ### 模型
 

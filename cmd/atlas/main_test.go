@@ -264,7 +264,7 @@ func TestRunWithDependenciesRunsDoctor(t *testing.T) {
 	got := stdout.String()
 	for _, want := range []string{
 		"OK config:",
-		"OK provider: test, chat_completions, https://api.example.com, default test-model, 2 models",
+		"OK provider: test, chat_completions, https://api.example.com, 2 models",
 		"OK session:",
 		"OK memory: 0 entries, 0 pending, 0 failed, model session model",
 		"WARN tavily: disabled",
@@ -360,12 +360,11 @@ func TestRunWithDependenciesWeixinServeReturnsConfigError(t *testing.T) {
 	}
 	configPath := filepath.Join(configDir, "config.json")
 	content := `{
-  "active_provider": "test",
+  "default_model": "test-model",
   "providers": [{
     "name": "test",
     "base_url": "https://api.example.com",
     "api_key": "sk-test",
-    "default_model": "test-model",
     "models": [{
       "value": "test-model",
       "name": "Test Model",
@@ -621,13 +620,12 @@ func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit
 
 func testConfig(dbPath string) config.Config {
 	return config.Config{
-		ActiveProvider: "test",
+		DefaultModel: "test-model",
 		Providers: []config.ProviderConfig{
 			{
-				Name:         "test",
-				BaseURL:      "https://api.example.com",
-				APIKey:       "sk-test",
-				DefaultModel: "test-model",
+				Name:    "test",
+				BaseURL: "https://api.example.com",
+				APIKey:  "sk-test",
 				Models: []config.ProviderModel{
 					{
 						Value:         "test-model",

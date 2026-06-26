@@ -43,14 +43,13 @@ Create a config file at `~/.atlas/config.json` (minimal example):
 
 ```json
 {
-  "active_provider": "deepseek",
+  "default_model": "deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
       "format": "chat_completions",
       "base_url": "https://api.deepseek.com",
       "api_key": "sk-...",
-      "default_model": "deepseek-v4-flash",
       "models": [
         {
           "value": "deepseek-v4-flash",

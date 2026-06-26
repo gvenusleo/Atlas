@@ -77,10 +77,6 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 	if !cfg.Memory.IsEnabled() {
 		return 0, nil
 	}
-	activeProvider, err := cfg.ActiveProviderConfig()
-	if err != nil {
-		return 0, err
-	}
 	memStore, err := openMemoryStore(ctx, cfg.Session)
 	if err != nil {
 		return 0, err
@@ -104,7 +100,7 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 			}
 			return processed, nil
 		}
-		selectedModel, err := activeProvider.ResolveModel(job.Model)
+		activeProvider, selectedModel, err := cfg.ResolveModel(job.Model)
 		if err != nil {
 			_ = memStore.FailJob(ctx, job, err)
 			processed++
