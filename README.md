@@ -24,6 +24,20 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 
 ### Installation
 
+Install the latest release with one command:
+
+```sh
+curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/gvenusleo/atlas/releases/download/latest/install.ps1 | iex
+```
+
+Or build from source:
+
 ```sh
 git clone https://github.com/gvenusleo/atlas.git
 cd atlas

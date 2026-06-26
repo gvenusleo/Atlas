@@ -1,0 +1,86 @@
+name: release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  goos: linux,   goarch: amd64, archive: tar.gz }
+          - { os: ubuntu-latest,  goos: linux,   goarch: arm64, archive: tar.gz }
+          - { os: macos-13,       goos: darwin,  goarch: amd64, archive: tar.gz }
+          - { os: macos-latest,   goos: darwin,  goarch: arm64, archive: tar.gz }
+          - { os: windows-latest, goos: windows, goarch: amd64, archive: zip }
+          - { os: windows-latest, goos: windows, goarch: arm64, archive: zip }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          BINARY=atlas
+          if [ "$GOOS" = "windows" ]; then BINARY=atlas.exe; fi
+          go build -ldflags="-s -w" -o "$BINARY" ./cmd/atlas
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar czf "atlas-${GOOS}-${GOARCH}-v${VERSION}.tar.gz" atlas
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          7z a "atlas-${GOOS}-${GOARCH}-v${VERSION}.zip" atlas.exe
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: atlas-${{ matrix.goos }}-${{ matrix.goarch }}-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/atlas-*.tar.gz
+            artifacts/atlas-*.zip
+            scripts/install.sh
+            scripts/install.ps1
