@@ -40,6 +40,8 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 		prefix, key = "WebSearch: ", "query"
 	case "web_fetch":
 		prefix, key = "WebFetch: ", "url"
+	case "load_skill":
+		prefix, key = "LoadSkill: ", "name"
 	case "run_shell":
 		prefix, key = "Run: ", "command"
 	default:
