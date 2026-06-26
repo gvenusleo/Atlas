@@ -369,6 +369,20 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 					s.sendTyping(ctx, msg.FromUserID, true)
 				}
 			}
+			if event.Type == agent.EventToolFinished && len(event.ToolMetadata.Todos) > 0 {
+				var inProgress []string
+				for _, todo := range event.ToolMetadata.Todos {
+					if todo.Status == model.TodoStatusInProgress {
+						inProgress = append(inProgress, todo.Content)
+					}
+				}
+				if len(inProgress) > 0 {
+					text := "进行中: " + strings.Join(inProgress, ", ")
+					if err := s.reply(context.Background(), msg, text); err != nil {
+						fmt.Fprintf(s.output, "weixin todo update failed: %v\n", err)
+					}
+				}
+			}
 		},
 	})
 	if err != nil {

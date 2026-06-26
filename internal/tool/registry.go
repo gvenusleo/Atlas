@@ -70,6 +70,11 @@ func (r *Registry) Run(ctx context.Context, call model.ToolCall) (RunResult, err
 	return r.RunDefault(ctx, call)
 }
 
+// MetadataTool 是可选的工具接口，允许工具在执行后返回结构化 metadata。
+type MetadataTool interface {
+	Metadata(arguments string, content string) model.ToolMetadata
+}
+
 // RunDefault 使用注册表中的工具实现执行一次调用。
 func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (RunResult, error) {
 	tool, ok := r.tools[call.Name]
@@ -77,7 +82,13 @@ func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (RunResu
 		return RunResult{}, fmt.Errorf("unknown tool %q", call.Name)
 	}
 	result, err := tool.Run(ctx, call.Arguments)
-	return RunResult{Content: result}, err
+	runResult := RunResult{Content: result}
+	if err == nil {
+		if mt, ok := tool.(MetadataTool); ok {
+			runResult.Metadata = mt.Metadata(call.Arguments, result)
+		}
+	}
+	return runResult, err
 }
 
 func cloneDefinition(def model.ToolDefinition) model.ToolDefinition {

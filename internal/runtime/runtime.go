@@ -1025,6 +1025,7 @@ func buildToolRegistry(cwd string, skills *skill.Catalog, services config.Servic
 		tool.ApplyPatch{CWD: cwd},
 		tool.WriteFile{CWD: cwd},
 		tool.RunShell{CWD: cwd},
+		tool.TodoWrite{},
 		tool.LoadSkill{Skills: skills},
 	}
 	if services.Tavily.APIKey != "" {

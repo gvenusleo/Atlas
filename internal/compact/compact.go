@@ -2,6 +2,7 @@
 package compact
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -187,9 +188,60 @@ func BuildSummaryMessages(previousSummary string, messages []model.Message, inst
 		b.WriteString(strings.TrimSpace(previousSummary))
 		b.WriteString("\n")
 	}
+	if todos := extractLastTodos(messages); len(todos) > 0 {
+		b.WriteString("\nCurrent todo list (include incomplete tasks in the Progress section):\n")
+		for _, t := range todos {
+			fmt.Fprintf(&b, "- [%s] %s\n", t.Status, t.Content)
+		}
+	}
 	b.WriteString("\nConversation to summarize:\n")
 	b.WriteString(SerializeMessages(messages))
 	return []model.Message{model.TextMessage(model.RoleUser, b.String())}
+}
+
+// extractLastTodos 扫描消息中最后一次 todo_write 调用，返回其 todo 列表。
+// 只返回包含未完成项的列表；全部完成时返回 nil。
+func extractLastTodos(messages []model.Message) []model.TodoEntry {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != model.RoleAssistant {
+			continue
+		}
+		for _, call := range msg.ToolCalls {
+			if call.Name != "todo_write" {
+				continue
+			}
+			var params struct {
+				Todos []struct {
+					Content string `json:"content"`
+					Status  string `json:"status"`
+				} `json:"todos"`
+			}
+			if err := json.Unmarshal([]byte(call.Arguments), &params); err != nil {
+				return nil
+			}
+			var entries []model.TodoEntry
+			hasIncomplete := false
+			for _, item := range params.Todos {
+				entry := model.TodoEntry{
+					Content: strings.TrimSpace(item.Content),
+					Status:  model.TodoStatus(item.Status),
+				}
+				if entry.Content == "" {
+					continue
+				}
+				entries = append(entries, entry)
+				if entry.Status != model.TodoStatusCompleted {
+					hasIncomplete = true
+				}
+			}
+			if !hasIncomplete {
+				return nil
+			}
+			return entries
+		}
+	}
+	return nil
 }
 
 // safeCutBefore 判断是否可以在指定消息前切分，避免拆开用户轮次和工具调用。

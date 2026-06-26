@@ -483,6 +483,19 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd str
 				toolCallID(event),
 				opts...,
 			)
+			// todo_write 工具执行后发送 plan update。
+			if len(event.ToolMetadata.Todos) > 0 {
+				entries := make([]acpsdk.PlanEntry, len(event.ToolMetadata.Todos))
+				for i, todo := range event.ToolMetadata.Todos {
+					entries[i] = acpsdk.PlanEntry{
+						Content:  todo.Content,
+						Priority: acpsdk.PlanEntryPriorityMedium,
+						Status:   acpsdk.PlanEntryStatus(todo.Status),
+					}
+				}
+				planUpdate := acpsdk.UpdatePlan(entries...)
+				_ = a.sendSessionUpdate(ctx, sessionID, planUpdate)
+			}
 		default:
 			return
 		}

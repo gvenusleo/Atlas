@@ -2,6 +2,7 @@ package tool
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -42,6 +43,8 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 		prefix, key = "WebFetch: ", "url"
 	case "load_skill":
 		prefix, key = "LoadSkill: ", "name"
+	case "todo_write":
+		prefix, key = "Todo: ", "todos"
 	case "run_shell":
 		prefix, key = "Run: ", "command"
 	default:
@@ -51,6 +54,13 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return ""
+	}
+	if call.Name == "todo_write" {
+		items, ok := args["todos"].([]any)
+		if !ok || len(items) == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%s%d items", prefix, len(items))
 	}
 	value, ok := args[key].(string)
 	if !ok || strings.TrimSpace(value) == "" {

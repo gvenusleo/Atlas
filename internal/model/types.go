@@ -40,10 +40,29 @@ type ToolDiff struct {
 	NewText string  `json:"new_text"`
 }
 
+// TodoStatus 表示单个 todo 项的执行状态。
+type TodoStatus string
+
+const (
+	// TodoStatusPending 表示任务尚未开始。
+	TodoStatusPending TodoStatus = "pending"
+	// TodoStatusInProgress 表示任务正在执行。
+	TodoStatusInProgress TodoStatus = "in_progress"
+	// TodoStatusCompleted 表示任务已完成。
+	TodoStatusCompleted TodoStatus = "completed"
+)
+
+// TodoEntry 描述 todo 列表中的一个任务条目。
+type TodoEntry struct {
+	Content string     `json:"content"`
+	Status  TodoStatus `json:"status"`
+}
+
 // ToolMetadata 保存界面可用的工具调用展示数据。
 type ToolMetadata struct {
 	Locations []ToolLocation `json:"locations,omitempty"`
 	Diff      *ToolDiff      `json:"diff,omitempty"`
+	Todos     []TodoEntry    `json:"todos,omitempty"`
 }
 
 // ContentPartType 表示一段消息内容的模态类型。

@@ -157,3 +157,85 @@ func TestBuildSummaryMessagesTruncatesToolResultWithoutBreakingUTF8(t *testing.T
 		t.Fatalf("summary prompt did not truncate tool result: %s", got[0].Content)
 	}
 }
+
+func TestBuildSummaryMessagesInjectsIncompleteTodos(t *testing.T) {
+	messages := []model.Message{
+		{Role: model.RoleUser, Content: "do stuff"},
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{{
+				Name:      "todo_write",
+				Arguments: `{"todos":[{"content":"Task A","status":"completed"},{"content":"Task B","status":"in_progress"},{"content":"Task C","status":"pending"}]}`,
+			}},
+		},
+		{Role: model.RoleTool, Content: "Todo list updated"},
+	}
+	got := BuildSummaryMessages("", messages, "")
+	content := got[0].Content
+	if !strings.Contains(content, "Current todo list") {
+		t.Fatalf("summary prompt missing todo list")
+	}
+	if !strings.Contains(content, "[completed] Task A") {
+		t.Fatalf("summary prompt missing completed todo")
+	}
+	if !strings.Contains(content, "[in_progress] Task B") {
+		t.Fatalf("summary prompt missing in_progress todo")
+	}
+	if !strings.Contains(content, "[pending] Task C") {
+		t.Fatalf("summary prompt missing pending todo")
+	}
+}
+
+func TestBuildSummaryMessagesSkipsTodosWhenAllCompleted(t *testing.T) {
+	messages := []model.Message{
+		{Role: model.RoleUser, Content: "do stuff"},
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{{
+				Name:      "todo_write",
+				Arguments: `{"todos":[{"content":"Task A","status":"completed"},{"content":"Task B","status":"completed"}]}`,
+			}},
+		},
+		{Role: model.RoleTool, Content: "Todo list updated"},
+	}
+	got := BuildSummaryMessages("", messages, "")
+	if strings.Contains(got[0].Content, "Current todo list") {
+		t.Fatalf("summary prompt should not contain todo list when all completed")
+	}
+}
+
+func TestBuildSummaryMessagesUsesLastTodoWriteCall(t *testing.T) {
+	messages := []model.Message{
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{{
+				Name:      "todo_write",
+				Arguments: `{"todos":[{"content":"Old task","status":"completed"}]}`,
+			}},
+		},
+		{Role: model.RoleTool, Content: "updated"},
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{{
+				Name:      "todo_write",
+				Arguments: `{"todos":[{"content":"New task","status":"in_progress"}]}`,
+			}},
+		},
+		{Role: model.RoleTool, Content: "updated"},
+	}
+	got := BuildSummaryMessages("", messages, "")
+	content := got[0].Content
+	// Extract just the todo list section (between "Current todo list" and "Conversation to summarize")
+	startIdx := strings.Index(content, "Current todo list")
+	endIdx := strings.Index(content, "Conversation to summarize")
+	if startIdx < 0 || endIdx < 0 || endIdx <= startIdx {
+		t.Fatalf("could not find todo list section in prompt")
+	}
+	todoSection := content[startIdx:endIdx]
+	if !strings.Contains(todoSection, "New task") {
+		t.Fatalf("todo list section should use last todo_write call")
+	}
+	if strings.Contains(todoSection, "Old task") {
+		t.Fatalf("todo list section should not contain old todo")
+	}
+}
