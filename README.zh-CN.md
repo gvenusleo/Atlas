@@ -78,6 +78,8 @@ go run ./cmd/atlas run "读取 README 并总结"
 
 ## 使用
 
+Atlas 的当前的主要使用方式是通过 [ACP](https://agentclientprotocol.com/) 在 Zed 等编辑器中连接。详见 [通道](docs/zh-CN/channels.md) 中的 ACP 功能与 Zed 配置说明。
+
 ```sh
 atlas run "<prompt>"                    # 执行单次任务
 atlas run --model <value> "<prompt>"    # 指定模型

@@ -4,9 +4,21 @@
 
 ## ACP
 
-`atlas acp` 通过 stdin/stdout 启动 [Agent Client Protocol](https://agentclientprotocol.com/) 服务，供 Zed 等编辑器连接。
+`atlas acp` 通过 stdin/stdout 启动 [Agent Client Protocol](https://agentclientprotocol.com/) 服务，供 Zed 等 ACP Client 连接。
 
-当前支持：
+在 Zed 中添加 Atlas：
+
+```json
+"agent_servers": {
+  "Atlas": {
+    "type": "custom",
+    "command": "~/.local/bin/atlas",
+    "args": ["acp"]
+  }
+}
+```
+
+ACP 支持的功能：
 
 - session 创建、恢复、加载历史回放、列表分页、删除
 - prompt、取消、关闭

@@ -4,9 +4,21 @@
 
 ## ACP
 
-`atlas acp` starts an [Agent Client Protocol](https://agentclientprotocol.com/) service via stdin/stdout for editors like Zed to connect.
+`atlas acp` starts an [Agent Client Protocol](https://agentclientprotocol.com/) service via stdin/stdout for ACP clients like Zed to connect.
 
-Currently supported:
+Add Atlas in Zed:
+
+```json
+"agent_servers": {
+  "Atlas": {
+    "type": "custom",
+    "command": "~/.local/bin/atlas",
+    "args": ["acp"]
+  }
+}
+```
+
+ACP supported features:
 
 - Session creation, resumption, history replay, paginated listing, deletion
 - Prompt, cancel, close

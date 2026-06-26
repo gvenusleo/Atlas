@@ -78,6 +78,8 @@ go run ./cmd/atlas run "Read README and summarize"
 
 ## Usage
 
+The primary way to use Atlas is through [ACP](https://agentclientprotocol.com/) in editors like Zed. See [Channels](docs/channels.md) for ACP features and Zed configuration.
+
 ```sh
 atlas run "<prompt>"                    # run a one-shot task
 atlas run --model <value> "<prompt>"    # specify model
