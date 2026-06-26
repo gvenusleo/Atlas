@@ -1,55 +1,53 @@
-# Atlas 开发指南
+# Atlas Development Guide
 
-## 项目定位
+## Project Positioning
 
-Atlas 是用 Go 编写的本地通用 Agent。核心是可测试的 headless agent loop，用于在用户机器上处理日常任务和编码任务；CLI、ACP、微信通道都通过 `internal/runtime` 调用同一套能力。
+Atlas is a local general-purpose agent written in Go. The core is a testable headless agent loop for handling everyday tasks and coding tasks on the user's machine. CLI, ACP, and WeChat channels all call into the same capabilities via `internal/runtime`.
 
-一次 turn 的核心职责：
+Core responsibilities of a single turn:
 
-- 追加用户输入到 transcript。
-- 用系统提示词、历史消息和工具定义调用模型 Provider。
-- 按模型返回顺序执行工具调用，并把结果写回 transcript。
-- 没有工具调用、遇到错误或达到 `max_steps` 时结束。
-- 保存 transcript、用量、上下文压缩和记忆相关元数据。
+- Append user input to the transcript.
+- Call the model provider with system prompt, message history, and tool definitions.
+- Execute tool calls in the order returned by the model, and write results back to the transcript.
+- End when there are no tool calls, an error occurs, or `max_steps` is reached.
+- Save transcript, usage, context compaction, and memory-related metadata.
 
-## 协作原则
+## Collaboration Principles
 
-用户主要负责写代码。助手负责梳理架构、审查设计、说明权衡，并指出具体文件、接口和测试路径。用户明确要求实现时，可以直接改代码。
+State assumptions before proposing solutions. When ambiguity arises, list possible interpretations. Choose the smallest, verifiable slice for each change. No drive-by refactors.
 
-提出方案前先说明假设。遇到歧义时列出可能解释。每次改动都选择最小、可验证的切片，不做顺手重构。
+## Local Access Model
 
-## 本地访问模型
+Atlas tools have the same local permissions as the Atlas process itself — they can read and write files, search text, and execute shell commands. Atlas does not provide a sandbox, permission prompts, or an approval gate. This is a product boundary, not a missing implementation. Do not introduce permission abstractions into the code unless the product direction changes.
 
-Atlas 工具拥有 Atlas 进程本身拥有的本地权限，可以读写文件、搜索文本并执行 shell 命令。Atlas 不提供沙箱、权限提示或 approval gate，这是产品边界，不是缺失实现。除非产品方向变化，不要在代码里引入权限抽象。
+When an ACP client declares terminal capability, `run_shell` can request the client terminal to execute and embed the output. When a client declares filesystem capability, file tools can request the client filesystem and display locations/diff. When the client doesn't support a capability or the call fails, fall back to Atlas local tools.
 
-ACP 客户端声明 terminal capability 时，`run_shell` 可以请求客户端 terminal 执行并嵌入输出。客户端声明 filesystem capability 时，文件工具可以请求客户端文件系统能力并展示 locations/diff。客户端不支持或调用失败时，回退到 Atlas 本地工具。
+Before calling the client text file interface, ACP file tools only pass confirmed local plain UTF-8 text files. Directories, special files, and binary content fall back to local tools.
 
-ACP 文件工具调用客户端文本文件接口前，只传递本地确认的普通 UTF-8 文本文件；目录、特殊文件和二进制内容回退到本地工具。
+README, CLI copy, and tests must all reflect this boundary. Tests only verify tool behavior, fallback, and error propagation — not permission prompts.
 
-README、CLI 文案和测试都要反映这个边界。测试只验证工具行为、回退和错误传播，不验证权限提示。
+## Configuration and Prompts
 
-## 配置和提示词
+Atlas reads configuration from `~/.atlas/config.json`. The top-level `active_provider` selects the current provider by matching `providers[].name`. The `providers` array contains provider configs, each with `name`, `format`, `base_url`, `api_key`, `default_model`, and `models`. The `format` field selects the adapter by API format — currently `chat_completions` and `responses` are supported, defaulting to `chat_completions` when not configured. Model entries must include at least `value`, `name`, `context_window`, `max_tokens`, and `input_formats`. The `input_formats` field currently supports `text` and `image`, and must include `text`. The `default_model` must match a `value` under the same provider. Supported reasoning depths are declared via `reasoning_efforts`; the first option is used when not explicitly selected, and this is not placed in the global `agent` config.
 
-Atlas 从 `~/.atlas/config.json` 读取配置。顶层 `active_provider` 按 `providers[].name` 选择当前 Provider；`providers` 是 Provider 配置数组，每项包括 `name`、`format`、`base_url`、`api_key`、`default_model` 和 `models`。`format` 按 API 格式选择适配器，当前支持 `chat_completions` 和 `responses`，未配置时默认 `chat_completions`。模型项至少包含 `value`、`name`、`context_window`、`max_tokens`、`input_formats`；`input_formats` 当前支持 `text` 和 `image`，且必须包含 `text`。`default_model` 必须匹配同一 Provider 下的某个 `value`。模型支持的思考深度由 `reasoning_efforts` 声明，未显式选择时使用第一项，不放在 `agent` 全局配置中。
+`format`, `base_url`, `api_key`, `default_model`, and model `value` belong only to provider connection config and do not enter `model.ChatRequest`. The `agent` package only depends on `model.Provider` and generic generation parameters.
 
-`format`、`base_url`、`api_key`、`default_model` 和模型 `value` 只属于 Provider 连接配置，不进入 `model.ChatRequest`。`agent` 包只依赖 `model.Provider` 和通用生成参数。
+Long-term memory config includes `memory.enabled` and `memory.model`. When `memory.enabled` is not configured, it defaults to enabled. When enabled but `memory.model` is empty, background memory tasks use the model that produced the session. When configured, it must match a model in the current provider's model list.
 
-长期记忆配置包括 `memory.enabled` 和 `memory.model`。`memory.enabled` 未配置时默认启用；启用但 `memory.model` 为空时，后台记忆任务使用产生该会话的模型；配置时必须匹配当前 Provider 模型列表。
+The system prompt is constructed by `internal/prompt`. It only describes model behavior, tool usage principles, verification habits, and reply style — it does not repeat tool JSON schemas.
 
-系统提示词由 `internal/prompt` 构造，只说明模型行为、工具使用原则、验证习惯和回复风格，不重复工具 JSON schema。
-
-Atlas 只加载两个附加指令文件：
+Atlas loads only two additional instruction files:
 
 - `~/.atlas/AGENTS.md`
-- 当前工作目录下的 `AGENTS.md`
+- `AGENTS.md` in the current working directory
 
-当前用户请求优先于指令文件，当前目录指令优先于全局指令。Atlas 不递归查找父目录或子目录中的 `AGENTS.md`。
+Current user requests take precedence over instruction files. Current-directory instructions take precedence over global instructions. Atlas does not recursively search parent or child directories for `AGENTS.md`.
 
-Atlas 会扫描用户级和当前目录级 skill，但系统提示词只注入 `name` 和 `description`。完整 `SKILL.md` 只能通过 `load_skill` 工具按需加载。
+Atlas scans user-level and current-directory-level skills, but the system prompt only injects `name` and `description`. The full `SKILL.md` can only be loaded on demand via the `load_skill` tool.
 
-## 包结构
+## Package Structure
 
-推荐包边界：
+Recommended package boundaries:
 
 ```text
 cmd/atlas
@@ -71,7 +69,7 @@ internal/version
 internal/weixin
 ```
 
-核心流程：
+Core flow:
 
 ```text
 CLI / ACP / Weixin
@@ -82,66 +80,66 @@ CLI / ACP / Weixin
   -> transcript + session store
 ```
 
-`internal/acp` 只做 ACP 协议适配、session/update 通知、客户端 terminal/filesystem 桥接、embedded text resource 解析和 session 状态管理，不复制 agent loop。
+`internal/acp` only does ACP protocol adaptation, session/update notifications, client terminal/filesystem bridging, embedded text resource parsing, and session state management. It does not duplicate the agent loop.
 
-`internal/weixin` 只做 iLink Bot 登录、消息轮询、typing、斜杠命令、回复发送和用户到 session 的轻量绑定，不复制 agent loop。
+`internal/weixin` only does iLink Bot login, message polling, typing, slash commands, reply sending, and lightweight user-to-session binding. It does not duplicate the agent loop.
 
-## 核心边界
+## Core Boundaries
 
-**Provider**，`model.Provider` 是模型后端唯一接口。`internal/provider/*` 按 API 格式实现适配器，例如 Chat Completions 和 Responses。Provider 负责连接信息、鉴权、模型名、请求格式、SSE 解析和响应格式转换。`model.ChatRequest` 只表达 Atlas 的通用聊天协议。
+**Provider**: `model.Provider` is the sole interface to model backends. `internal/provider/*` implements adapters by API format, e.g. Chat Completions and Responses. The provider handles connection info, authentication, model name, request format, SSE parsing, and response format conversion. `model.ChatRequest` only expresses Atlas's generic chat protocol.
 
-**Tool**，工具通过 `tool.Tool` 注册：`Definition()` 返回模型可见定义，`Run(ctx, arguments)` 解析模型给出的 JSON 参数并返回文本结果。工具尽量无状态，注册表负责排序、重复检查和按名称执行。
+**Tool**: Tools are registered via `tool.Tool`: `Definition()` returns the model-visible definition, and `Run(ctx, arguments)` parses the JSON arguments from the model and returns a text result. Tools should be stateless where possible. The registry handles sorting, duplicate checking, and execution by name.
 
-**Transcript**，`internal/transcript` 只保存当前 agent 实例中的消息序列。读取时返回副本，不负责持久化、压缩或摘要。
+**Transcript**: `internal/transcript` only holds the message sequence for the current agent instance. Reads return copies. It is not responsible for persistence, compaction, or summarization.
 
-**Session**，`internal/session` 用 SQLite 保存 transcript、session 元数据、上下文压缩元数据、记忆抽取边界和 provider 续接所需的原始输出项。默认路径是 `~/.atlas/atlas.db`，可通过 `session.db_path` 覆盖。当前不实现迁移框架；早期 schema 变化由用户删除旧数据库重建。
+**Session**: `internal/session` uses SQLite to store transcripts, session metadata, context compaction metadata, memory extraction boundaries, and raw output items needed for provider continuation. The default path is `~/.atlas/atlas.db`, overridable via `session.db_path`. No migration framework is currently implemented; early schema changes require users to delete and recreate the old database.
 
-**Memory**，`internal/memory` 维护长期记忆条目、摘要、FTS 检索和后台任务队列。长期记忆与 session 共用 SQLite 数据库，但使用独立表。运行时按增量阈值、明确记忆指令或上下文压缩触发抽取任务；worker 只处理上次边界后的新增消息，并刷新受影响作用域的摘要。记忆类型保持三种：`instruction`、`fact`、`workflow`。
+**Memory**: `internal/memory` maintains long-term memory entries, summaries, FTS retrieval, and background task queues. Long-term memory shares the SQLite database with sessions but uses separate tables. The runtime triggers extraction tasks based on incremental thresholds, explicit memory instructions, or context compaction. The worker only processes new messages since the last boundary and refreshes summaries for affected scopes. Memory types remain three: `instruction`, `fact`, and `workflow`.
 
-## 运行约束
+## Runtime Constraints
 
-保持 agent loop 可预测：
+Keep the agent loop predictable:
 
-- 一个 turn 内包含编号 step。
-- 每个 tool call 都有配对的 tool result。
-- tool result 顺序与模型返回顺序一致。
-- 工具错误作为模型可见的 tool result 写回 transcript。
-- 公共接口接收 `context.Context`。
-- observer 事件按发生顺序发送，CLI、ACP 和后续 UI 按这个顺序渲染。
+- A turn contains numbered steps.
+- Every tool call has a paired tool result.
+- Tool results are in the same order the model returned them.
+- Tool errors are written back to the transcript as model-visible tool results.
+- Public interfaces accept `context.Context`.
+- Observer events are sent in the order they occur. CLI, ACP, and future UI render in this order.
 
-## 取舍原则
+## Tradeoff Principles
 
-Atlas 追求小、清楚、可验证。当前真实使用路径优先于理论完整性。
+Atlas pursues small, clear, and verifiable. Current real usage paths take priority over theoretical completeness.
 
-- 不提前做兼容矩阵。遇到真实 provider 差异后，用测试固定行为，再做局部适配。
-- 不为“可能以后”保留两套接口、fallback 或配置开关。
-- 两个真实调用点出现前不抽象。
-- 不把上游大型 agent 的完整架构搬进来，只吸收能让当前核心更小、更清楚的做法。
+- Don't build compatibility matrices upfront. After encountering real provider differences, pin behavior with tests, then do local adaptation.
+- Don't keep duplicate interfaces, fallbacks, or config switches for "maybe later."
+- Don't abstract before two real call sites exist.
+- Don't import the full architecture of upstream large agents. Only adopt what makes the current core smaller and clearer.
 
-## 测试标准
+## Testing Standards
 
-关键行为使用 fake Provider 和临时目录测试。优先覆盖这些面：
+Key behaviors are tested with fake providers and temp directories. Priority coverage areas:
 
-- agent loop：纯文本回复、工具调用、错误回写、顺序、`max_steps`。
-- 工具：文件读写、文本搜索、shell 成功和失败、Tavily 工具。
-- prompt：全局和当前目录指令、skill 摘要、长期记忆注入。
-- session：保存、恢复、列表、查看、删除、额外工作目录、上下文压缩、图片内容片段持久化。
-- memory：schema、检索、入队、增量抽取、摘要刷新、禁用、模型选择和图片占位。
-- ACP：初始化、session 生命周期、历史回放、取消、列表分页、usage、terminal/filesystem capability、图片输入、`/compact`。
-- 微信：扫码登录、账号保存、typing、图片输入、工作目录切换、会话列表、恢复、压缩、取消。
+- Agent loop: plain text replies, tool calls, error writeback, ordering, `max_steps`.
+- Tools: file read/write, text search, shell success and failure, Tavily tools.
+- Prompt: global and current-directory instructions, skill summaries, long-term memory injection.
+- Session: save, restore, list, view, delete, additional working directories, context compaction, image content fragment persistence.
+- Memory: schema, retrieval, enqueue, incremental extraction, summary refresh, disable, model selection, and image placeholders.
+- ACP: initialization, session lifecycle, history replay, cancel, paginated listing, usage, terminal/filesystem capability, image input, `/compact`.
+- WeChat: QR login, account saving, typing, image input, working directory switching, session listing, restore, compaction, cancel.
 
-交付前运行：
+Run before delivery:
 
 ```sh
 go test ./...
 ```
 
-## 代码风格
+## Code Style
 
-- 保持代码小而明确。
-- 优先使用 Go 标准库。
-- 只修改与当前任务直接相关的代码。
-- 注释必要、简洁，符合 Go 规范。
-- 导出类型、函数和包需要规范注释。
-- 测试、文档和注释服务行为理解，不堆砌说明。
-- 不因为旧 Atlas 实现存在过，就把旧细节重新加回来。
+- Keep code small and explicit.
+- Prefer the Go standard library.
+- Only modify code directly related to the current task.
+- Comments should be necessary, concise, and follow Go conventions.
+- Exported types, functions, and packages require proper doc comments.
+- Tests, docs, and comments serve behavior understanding — don't pad with explanations.
+- Don't reintroduce old details from previous Atlas implementations just because they existed.
