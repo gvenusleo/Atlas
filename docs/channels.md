@@ -80,4 +80,13 @@ The WebSocket channel is designed for LAN-only use with no authentication. It ex
 - Turn cancellation
 - Long-term memory background worker
 
-Each connection maintains its own working directory, session ID, and selected model. Switching sessions does not require reconnecting — simply send a prompt with a different `session_id` or omit it to reuse the current session.
+### Multi-session concurrency
+
+A single WebSocket connection supports multiple concurrent sessions. Each session maintains its own working directory, selected model, and turn state. Different sessions can run turns in parallel; the same session rejects a second prompt while a turn is running.
+
+All messages are routed by `session_id`:
+
+- `prompt` with `session_id` — runs in that session's context. Without `session_id`, creates a new session; the assigned ID is returned in `turn_finished`.
+- `cancel` — requires `session_id`, cancels only that session's turn without affecting others.
+- `set_model` — requires `session_id`, sets the model for that session only.
+- All streaming events (`turn_started`, `model_delta`, `tool_started`, etc.) carry `session_id` so the client can route them to the correct session UI.

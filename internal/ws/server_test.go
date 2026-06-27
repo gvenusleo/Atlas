@@ -225,17 +225,23 @@ func TestPromptEvents(t *testing.T) {
 	if msg1.Type != MsgEvent || msg1.Event != EventTurnStarted {
 		t.Fatalf("msg1 = %#v", msg1)
 	}
+	// 所有事件都应携带 session_id
+	if msg1.SessionID != "test-session" {
+		t.Fatalf("turn_started session_id = %q, want %q", msg1.SessionID, "test-session")
+	}
 
 	msg2 := recvMsg(t, conn)
 	if msg2.Type != MsgEvent || msg2.Event != EventModelDelta || msg2.Content != "Hello!" {
 		t.Fatalf("msg2 = %#v", msg2)
+	}
+	if msg2.SessionID != "test-session" {
+		t.Fatalf("model_delta session_id = %q, want %q", msg2.SessionID, "test-session")
 	}
 
 	msg3 := recvMsg(t, conn)
 	if msg3.Type != MsgEvent || msg3.Event != EventTurnFinished {
 		t.Fatalf("msg3 = %#v", msg3)
 	}
-	// turn_finished 必须携带 session_id，客户端据此知道新建会话的 ID
 	if msg3.SessionID != "test-session" {
 		t.Fatalf("turn_finished session_id = %q, want %q", msg3.SessionID, "test-session")
 	}
@@ -276,8 +282,8 @@ func TestPromptNewSession(t *testing.T) {
 		t.Fatalf("session_id = %q, want %q", msg.SessionID, "new-session-abc")
 	}
 
-	// 后续 prompt 不传 session_id，应复用 state 中保存的 new-session-abc
-	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, Content: "world"})
+	// 后续 prompt 传回 session_id，应复用同一 session
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "new-session-abc", Content: "world"})
 	recvMsg(t, conn) // turn_started
 	recvMsg(t, conn) // model_delta
 	recvMsg(t, conn) // turn_finished
@@ -286,60 +292,6 @@ func TestPromptNewSession(t *testing.T) {
 	defer rt.mu.Unlock()
 	if rt.lastTurnOpts.SessionID != "new-session-abc" {
 		t.Fatalf("second prompt session_id = %q, want %q", rt.lastTurnOpts.SessionID, "new-session-abc")
-	}
-}
-
-func TestPromptSessionSwitch(t *testing.T) {
-	rt := &fakeRuntime{
-		turnResult: runtime.TurnResult{SessionID: "session-2"},
-	}
-	_, addr := startTestServer(t, rt)
-	conn := dialWS(t, addr)
-
-	// 第一次 prompt 使用 session-1
-	sendMsg(t, conn, ClientMessage{
-		Type:      MsgPrompt,
-		SessionID: "session-1",
-		CWD:       "/tmp",
-		Content:   "hello",
-	})
-	recvMsg(t, conn) // turn_started
-	recvMsg(t, conn) // model_delta
-	recvMsg(t, conn) // turn_finished
-
-	// 验证第一次使用了 session-1
-	rt.mu.Lock()
-	if rt.lastTurnOpts.SessionID != "session-1" {
-		t.Fatalf("first session ID = %q", rt.lastTurnOpts.SessionID)
-	}
-	rt.mu.Unlock()
-
-	// 第二次 prompt 不传 session_id，应复用 state 中的 session
-	// 但 RunTurn 返回了 session-2，state 应更新为 session-2
-	sendMsg(t, conn, ClientMessage{
-		Type:    MsgPrompt,
-		Content: "world",
-	})
-	recvMsg(t, conn) // turn_started
-	recvMsg(t, conn) // model_delta
-	recvMsg(t, conn) // turn_finished
-
-	// 第三次 prompt 不传 session_id，应使用 state 中保存的 session-2
-	sendMsg(t, conn, ClientMessage{
-		Type:    MsgPrompt,
-		Content: "again",
-	})
-	recvMsg(t, conn) // turn_started
-	recvMsg(t, conn) // model_delta
-	recvMsg(t, conn) // turn_finished
-
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	// 第二次 prompt 时 sessionID 为空，从 state 取回 session-1
-	// 但 RunTurn 返回 session-2，state 更新为 session-2
-	// 第三次 prompt 时 sessionID 为空，从 state 取回 session-2
-	if rt.lastTurnOpts.SessionID != "session-2" {
-		t.Fatalf("third session ID = %q, want session-2", rt.lastTurnOpts.SessionID)
 	}
 }
 
@@ -501,10 +453,11 @@ func TestCancelTurn(t *testing.T) {
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	// 发送 prompt
+	// 发送 prompt（带 session_id）
 	sendMsg(t, conn, ClientMessage{
-		Type:    MsgPrompt,
-		Content: "long task",
+		Type:      MsgPrompt,
+		SessionID: "s1",
+		Content:   "long task",
 	})
 
 	// 等待 turn 开始
@@ -513,13 +466,28 @@ func TestCancelTurn(t *testing.T) {
 		t.Fatalf("msg1 = %#v", msg1)
 	}
 
-	// 发送 cancel
-	sendMsg(t, conn, ClientMessage{Type: MsgCancel})
+	// 发送 cancel（必须带 session_id）
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "s1"})
 
 	// 应收到 turn_finished (cancelled)
 	msg2 := recvMsg(t, conn)
 	if msg2.Type != MsgEvent || msg2.Event != EventTurnFinished {
 		t.Fatalf("msg2 = %#v", msg2)
+	}
+}
+
+func TestCancelRequiresSessionID(t *testing.T) {
+	rt := &fakeRuntime{}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel})
+	msg := recvMsg(t, conn)
+	if msg.Type != MsgEvent || msg.Event != EventError {
+		t.Fatalf("msg = %#v", msg)
+	}
+	if !strings.Contains(msg.Error, "session_id is required") {
+		t.Fatalf("error = %q", msg.Error)
 	}
 }
 
@@ -553,20 +521,20 @@ func TestPromptError(t *testing.T) {
 	}
 }
 
-func TestConcurrentPromptRejected(t *testing.T) {
-	// 第一个 prompt 阻塞，第二个 prompt 应被拒绝
+func TestConcurrentPromptSameSessionRejected(t *testing.T) {
+	// 同一 session 的第二个 prompt 应被拒绝
 	rt := &blockingRuntime{}
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
 	// 发送第一个 prompt（会阻塞）
-	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, Content: "long task"})
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "long task"})
 
 	// 等待 turn 开始
 	recvMsg(t, conn) // turn_started
 
-	// 发送第二个 prompt，应收到错误
-	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, Content: "second"})
+	// 发送第二个 prompt 到同一 session，应收到错误
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "second"})
 	msg := recvMsg(t, conn)
 	if msg.Type != MsgEvent || msg.Event != EventError {
 		t.Fatalf("msg = %#v, want event/error", msg)
@@ -576,7 +544,7 @@ func TestConcurrentPromptRejected(t *testing.T) {
 	}
 
 	// 取消第一个 turn，清理
-	sendMsg(t, conn, ClientMessage{Type: MsgCancel})
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "s1"})
 	recvMsg(t, conn) // turn_finished (cancelled)
 }
 
@@ -639,7 +607,7 @@ func TestSetModel(t *testing.T) {
 		t.Fatalf("msg = %#v", msg)
 	}
 
-	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, Content: "hello"})
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "hello"})
 	recvMsg(t, conn) // turn_started
 	recvMsg(t, conn) // model_delta
 	recvMsg(t, conn) // turn_finished
@@ -660,7 +628,7 @@ func TestSetModelRejectsUnknownModel(t *testing.T) {
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, Model: "missing-model"})
+	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, SessionID: "s1", Model: "missing-model"})
 	msg := recvMsg(t, conn)
 
 	if msg.Type != MsgEvent || msg.Event != EventError {
@@ -669,16 +637,24 @@ func TestSetModelRejectsUnknownModel(t *testing.T) {
 	if !strings.Contains(msg.Error, "not configured") {
 		t.Fatalf("error = %q", msg.Error)
 	}
+}
 
-	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, Content: "hello"})
-	recvMsg(t, conn) // turn_started
-	recvMsg(t, conn) // model_delta
-	recvMsg(t, conn) // turn_finished
+func TestSetModelRequiresSessionID(t *testing.T) {
+	rt := &fakeRuntime{
+		modelOptions: runtime.ModelOptions{
+			Models: []runtime.ModelOption{{Value: "gpt-5", Name: "GPT-5"}},
+		},
+	}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
 
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	if rt.lastTurnOpts.Model != "" {
-		t.Fatalf("turn model = %q", rt.lastTurnOpts.Model)
+	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, Model: "gpt-5"})
+	msg := recvMsg(t, conn)
+	if msg.Type != MsgEvent || msg.Event != EventError {
+		t.Fatalf("msg = %#v", msg)
+	}
+	if !strings.Contains(msg.Error, "session_id is required") {
+		t.Fatalf("error = %q", msg.Error)
 	}
 }
 
@@ -748,7 +724,8 @@ func TestPromptWithImageParts(t *testing.T) {
 	conn := dialWS(t, addr)
 
 	sendMsg(t, conn, ClientMessage{
-		Type: MsgPrompt,
+		Type:      MsgPrompt,
+		SessionID: "s1",
 		Parts: []ContentPart{
 			{Type: "text", Text: "what is this?"},
 			{Type: "image", Data: "aGVsbG8=", MimeType: "image/png"},
@@ -778,5 +755,187 @@ func TestPromptWithImageParts(t *testing.T) {
 	// DataURL 必须是完整 data URL 格式，provider 直接传给 API
 	if img.DataURL != "data:image/png;base64,aGVsbG8=" {
 		t.Fatalf("data_url = %q", img.DataURL)
+	}
+}
+
+// --- 多会话并发测试 ---
+
+// multiSessionRuntime 支持按 session_id 路由的阻塞 runtime。
+type multiSessionRuntime struct {
+	mu       sync.Mutex
+	started  map[string]bool
+	modelOpt runtime.ModelOptions
+}
+
+func newMultiSessionRuntime() *multiSessionRuntime {
+	return &multiSessionRuntime{
+		started: make(map[string]bool),
+		modelOpt: runtime.ModelOptions{
+			Models: []runtime.ModelOption{{Value: "gpt-5", Name: "GPT-5"}},
+		},
+	}
+}
+
+func (m *multiSessionRuntime) RunTurn(ctx context.Context, opts runtime.TurnOptions) (runtime.TurnResult, error) {
+	m.mu.Lock()
+	m.started[opts.SessionID] = true
+	m.mu.Unlock()
+
+	if opts.Observer != nil {
+		opts.Observer(agent.Event{Type: agent.EventTurnStarted, Step: 0})
+	}
+	<-ctx.Done()
+	return runtime.TurnResult{}, ctx.Err()
+}
+
+func (m *multiSessionRuntime) CompactSession(ctx context.Context, opts runtime.CompactOptions) (runtime.CompactResult, error) {
+	return runtime.CompactResult{}, nil
+}
+
+func (m *multiSessionRuntime) ModelOptions(ctx context.Context) (runtime.ModelOptions, error) {
+	return m.modelOpt, nil
+}
+
+func (m *multiSessionRuntime) SkillSummaries(ctx context.Context, cwd string) ([]runtime.SkillSummary, error) {
+	return nil, nil
+}
+
+func (m *multiSessionRuntime) ShowSession(ctx context.Context, id string) (session.Session, *transcript.Transcript, error) {
+	return session.Session{}, nil, nil
+}
+
+func (m *multiSessionRuntime) ListSessionsPage(ctx context.Context, cursor string, limit int) (session.ListPage, error) {
+	return session.ListPage{}, nil
+}
+
+func (m *multiSessionRuntime) ListSessionsForCWDPage(ctx context.Context, cwd, cursor string, limit int) (session.ListPage, error) {
+	return session.ListPage{}, nil
+}
+
+func (m *multiSessionRuntime) DeleteSessionIfExists(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *multiSessionRuntime) RunMemoryWorker(ctx context.Context) error {
+	return nil
+}
+
+func TestMultiSessionConcurrentTurns(t *testing.T) {
+	// 两个不同 session 的 prompt 可以并发执行
+	rt := newMultiSessionRuntime()
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	// 同时发送两个 prompt 到不同 session
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "session-a", Content: "task A"})
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "session-b", Content: "task B"})
+
+	// 两个 turn 都应启动（收到两个 turn_started）
+	msg1 := recvMsg(t, conn)
+	if msg1.Event != EventTurnStarted {
+		t.Fatalf("msg1 = %#v, want turn_started", msg1)
+	}
+	msg2 := recvMsg(t, conn)
+	if msg2.Event != EventTurnStarted {
+		t.Fatalf("msg2 = %#v, want turn_started", msg2)
+	}
+
+	// 两个 session 都应处于运行状态
+	gotA, gotB := false, false
+	for _, m := range []ServerMessage{msg1, msg2} {
+		if m.SessionID == "session-a" {
+			gotA = true
+		}
+		if m.SessionID == "session-b" {
+			gotB = true
+		}
+	}
+	if !gotA || !gotB {
+		t.Fatalf("expected turn_started for both sessions, got A=%v B=%v", gotA, gotB)
+	}
+
+	// 取消两个 turn
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "session-a"})
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "session-b"})
+
+	// 收到两个 turn_finished
+	recvMsg(t, conn) // turn_finished for one
+	recvMsg(t, conn) // turn_finished for other
+}
+
+func TestPerSessionCancel(t *testing.T) {
+	// 取消 session A 不影响 session B
+	rt := newMultiSessionRuntime()
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	// 启动两个 session 的 turn
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-a", Content: "task A"})
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-b", Content: "task B"})
+
+	// 收到两个 turn_started
+	recvMsg(t, conn) // turn_started for one
+	recvMsg(t, conn) // turn_started for other
+
+	// 只取消 session A
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "sess-a"})
+
+	// 应收到 session A 的 turn_finished (cancelled)
+	msg := recvMsg(t, conn)
+	if msg.Event != EventTurnFinished {
+		t.Fatalf("msg = %#v, want turn_finished", msg)
+	}
+	if msg.SessionID != "sess-a" {
+		t.Fatalf("session_id = %q, want sess-a", msg.SessionID)
+	}
+
+	// session B 仍在运行，取消它以清理
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "sess-b"})
+	recvMsg(t, conn) // turn_finished for sess-b
+}
+
+func TestPerSessionModel(t *testing.T) {
+	// 不同 session 可以使用不同模型
+	rt := &fakeRuntime{
+		modelOptions: runtime.ModelOptions{
+			Models: []runtime.ModelOption{
+				{Value: "gpt-5", Name: "GPT-5"},
+				{Value: "claude-4", Name: "Claude 4"},
+			},
+		},
+	}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	// session A 用 gpt-5
+	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, SessionID: "sess-a", Model: "gpt-5"})
+	recvMsg(t, conn) // model_set
+
+	// session B 用 claude-4
+	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, SessionID: "sess-b", Model: "claude-4"})
+	recvMsg(t, conn) // model_set
+
+	// session A prompt 应使用 gpt-5
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-a", Content: "hello"})
+	recvMsg(t, conn) // turn_started
+	recvMsg(t, conn) // model_delta
+	recvMsg(t, conn) // turn_finished
+
+	rt.mu.Lock()
+	if rt.lastTurnOpts.Model != "gpt-5" {
+		t.Fatalf("sess-a model = %q, want gpt-5", rt.lastTurnOpts.Model)
+	}
+	rt.mu.Unlock()
+
+	// session B prompt 应使用 claude-4
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-b", Content: "hello"})
+	recvMsg(t, conn) // turn_started
+	recvMsg(t, conn) // model_delta
+	recvMsg(t, conn) // turn_finished
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.lastTurnOpts.Model != "claude-4" {
+		t.Fatalf("sess-b model = %q, want claude-4", rt.lastTurnOpts.Model)
 	}
 }
