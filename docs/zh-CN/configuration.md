@@ -77,6 +77,10 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
     },
     "weixin": {
       "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c"
+    },
+    "ws": {
+      "host": "0.0.0.0",
+      "port": 8765
     }
   }
 }
@@ -141,5 +145,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 | `services.tavily.api_key` | 配置后启用 `web_search` 和 `web_fetch` |
 | `services.weixin.base_url` | 可省略，默认 `https://ilinkai.weixin.qq.com` |
 | `services.weixin.cdn_base_url` | 可省略，默认 `https://novac2c.cdn.weixin.qq.com/c2c`，用于微信图片下载 |
+| `services.ws.host` | WebSocket 服务绑定地址，默认 `0.0.0.0` |
+| `services.ws.port` | WebSocket 服务端口，默认 `8765` |
 
 > **数据库迁移**：当前项目处于早期阶段，不提供迁移框架。schema 变化后请删除旧的 `~/.atlas/atlas.db` 重新生成。

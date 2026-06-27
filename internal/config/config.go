@@ -101,6 +101,7 @@ type SessionConfig struct {
 type ServicesConfig struct {
 	Tavily TavilyConfig `json:"tavily"`
 	Weixin WeixinConfig `json:"weixin"`
+	WS     WSConfig     `json:"ws"`
 }
 
 // TavilyConfig 描述 Tavily 搜索和网页提取服务配置。
@@ -113,6 +114,12 @@ type TavilyConfig struct {
 type WeixinConfig struct {
 	BaseURL    string `json:"base_url"`
 	CDNBaseURL string `json:"cdn_base_url"`
+}
+
+// WSConfig 描述 WebSocket 通道配置。
+type WSConfig struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 // DefaultPath 返回当前用户主目录下的 Atlas 配置路径。

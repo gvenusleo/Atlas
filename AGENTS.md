@@ -2,7 +2,7 @@
 
 ## Project Positioning
 
-Atlas is a local general-purpose agent written in Go. The core is a testable headless agent loop for handling everyday tasks and coding tasks on the user's machine. CLI, ACP, and WeChat channels all call into the same capabilities via `internal/runtime`.
+Atlas is a local general-purpose agent written in Go. The core is a testable headless agent loop for handling everyday tasks and coding tasks on the user's machine. CLI, ACP, WeChat, and WebSocket channels all call into the same capabilities via `internal/runtime`.
 
 Core responsibilities of a single turn:
 
@@ -67,12 +67,13 @@ internal/tool
 internal/transcript
 internal/version
 internal/weixin
+internal/ws
 ```
 
 Core flow:
 
 ```text
-CLI / ACP / Weixin
+CLI / ACP / Weixin / WS
   -> runtime.RunTurn
   -> agent.RunTurn
   -> provider.Stream
@@ -83,6 +84,8 @@ CLI / ACP / Weixin
 `internal/acp` only does ACP protocol adaptation, session/update notifications, client terminal/filesystem bridging, embedded text resource parsing, and session state management. It does not duplicate the agent loop.
 
 `internal/weixin` only does iLink Bot login, message polling, typing, slash commands, reply sending, and lightweight user-to-session binding. It does not duplicate the agent loop.
+
+`internal/ws` only does WebSocket connection management, message dispatch, observer event mapping, and per-connection state (cwd, session, model). It does not duplicate the agent loop.
 
 ## Core Boundaries
 
@@ -127,6 +130,7 @@ Key behaviors are tested with fake providers and temp directories. Priority cove
 - Memory: schema, retrieval, enqueue, incremental extraction, summary refresh, disable, model selection, and image placeholders.
 - ACP: initialization, session lifecycle, history replay, cancel, paginated listing, usage, terminal/filesystem capability, image input, `/compact`.
 - WeChat: QR login, account saving, typing, image input, working directory switching, session listing, restore, compaction, cancel.
+- WebSocket: prompt events, session switching, cancel, image parts, model options, session listing/detail/delete/compact, skills.
 
 Run before delivery:
 

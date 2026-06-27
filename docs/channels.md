@@ -65,3 +65,19 @@ Slash commands available in WeChat chat:
 | `/resume <session-id>` | Resume a session and switch to its working directory |
 | `/compact` | Compact current session context |
 | `/cancel` | Cancel the currently running turn |
+
+## WebSocket
+
+`atlas serve` starts a WebSocket server for local network clients (e.g. a mobile app) to connect. The server listens on `0.0.0.0:8765` by default, configurable via `services.ws.host` and `services.ws.port` in `~/.atlas/config.json`.
+
+The WebSocket channel is designed for LAN-only use with no authentication. It exposes the same agent capabilities as other channels:
+
+- Prompt with text and image input
+- Streaming events: model deltas, reasoning deltas, tool calls
+- Session listing, detail, deletion, compaction
+- Model switching and listing
+- Skill summaries
+- Turn cancellation
+- Long-term memory background worker
+
+Each connection maintains its own working directory, session ID, and selected model. Switching sessions does not require reconnecting — simply send a prompt with a different `session_id` or omit it to reuse the current session.

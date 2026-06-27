@@ -17,6 +17,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/session"
 	"github.com/liuyuxin/atlas/internal/version"
 	"github.com/liuyuxin/atlas/internal/weixin"
+	"github.com/liuyuxin/atlas/internal/ws"
 )
 
 func main() {
@@ -55,6 +56,8 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return runPrompt(ctx, args[1:], deps)
 	case "acp":
 		return runACPCommand(ctx, args[1:], deps)
+	case "serve":
+		return runServeCommand(ctx, args[1:], deps)
 	case "doctor":
 		return runDoctorCommand(ctx, args[1:], deps)
 	case "weixin":
@@ -66,7 +69,7 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 	case "version":
 		return runVersionCommand(args[1:], deps)
 	default:
-		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas doctor | atlas weixin <login|serve|accounts|logout> | atlas acp | atlas version")
+		return errors.New("usage: atlas [--session <id>] | atlas run [--session <id>] [--model <value>] <prompt> | atlas doctor | atlas weixin <login|serve|accounts|logout> | atlas acp | atlas serve | atlas version")
 	}
 }
 
@@ -110,6 +113,27 @@ func runACPCommand(ctx context.Context, args []string, deps runDependencies) err
 		Input:   deps.stdin,
 		Output:  deps.stdout,
 	})
+}
+
+// runServeCommand 启动 WebSocket 服务。
+func runServeCommand(ctx context.Context, args []string, deps runDependencies) error {
+	if len(args) != 0 {
+		return errors.New("usage: atlas serve")
+	}
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		return err
+	}
+	srv, err := ws.NewServer(ws.ServerOptions{
+		Runtime: deps.runtime,
+		Host:    cfg.Services.WS.Host,
+		Port:    cfg.Services.WS.Port,
+		Output:  deps.stdout,
+	})
+	if err != nil {
+		return err
+	}
+	return srv.Run(ctx)
 }
 
 func runDoctorCommand(ctx context.Context, args []string, deps runDependencies) error {

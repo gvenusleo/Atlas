@@ -99,6 +99,7 @@ atlas run "<prompt>"                    # 执行单次任务
 atlas run --model <value> "<prompt>"    # 指定模型
 atlas run --session <id> "<prompt>"     # 恢复或创建指定 session
 atlas acp                               # 启动 ACP 服务
+atlas serve                             # 启动 WebSocket 服务（局域网）
 atlas doctor                            # 离线诊断
 atlas sessions                          # 列出会话
 atlas session show <id>                 # 查看会话内容

@@ -65,3 +65,19 @@ ACP 支持的功能：
 | `/resume <session-id>` | 恢复指定会话，并切换到该会话的工作目录 |
 | `/compact` | 压缩当前会话上下文 |
 | `/cancel` | 取消当前正在运行的 turn |
+
+## WebSocket
+
+`atlas serve` 启动 WebSocket 服务，供局域网客户端（如手机 App）连接。默认监听 `0.0.0.0:8765`，可通过 `~/.atlas/config.json` 中的 `services.ws.host` 和 `services.ws.port` 配置。
+
+WebSocket 通道仅限局域网使用，无认证。它暴露与其他通道相同的 Agent 能力：
+
+- 支持文本和图片输入的对话
+- 流式事件：模型增量、推理增量、工具调用
+- 会话列表、详情、删除、压缩
+- 模型切换和列表
+- Skill 摘要
+- Turn 取消
+- 长期记忆后台 worker
+
+每个连接维护自己的工作目录、会话 ID 和所选模型。切换会话无需重连——发送 prompt 时指定不同的 `session_id` 即可，或省略以复用当前会话。

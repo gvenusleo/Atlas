@@ -99,6 +99,7 @@ atlas run "<prompt>"                    # run a one-shot task
 atlas run --model <value> "<prompt>"    # specify model
 atlas run --session <id> "<prompt>"     # resume or create a specific session
 atlas acp                               # start ACP service
+atlas serve                             # start WebSocket service (LAN)
 atlas doctor                            # offline diagnostics
 atlas sessions                          # list sessions
 atlas session show <id>                 # view session content
