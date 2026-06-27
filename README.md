@@ -27,13 +27,13 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 Install the latest release with one command:
 
 ```sh
-curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash
+curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://github.com/gvenusleo/atlas/releases/download/latest/install.ps1 | iex
+irm https://github.com/gvenusleo/atlas/releases/latest/download/install.ps1 | iex
 ```
 
 Or build from source:

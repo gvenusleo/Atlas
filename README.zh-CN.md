@@ -27,13 +27,13 @@
 一行命令安装最新版本：
 
 ```sh
-curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash
+curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash
 ```
 
 Windows (PowerShell)：
 
 ```powershell
-irm https://github.com/gvenusleo/atlas/releases/download/latest/install.ps1 | iex
+irm https://github.com/gvenusleo/atlas/releases/latest/download/install.ps1 | iex
 ```
 
 或从源码构建：
