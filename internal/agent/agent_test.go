@@ -495,3 +495,115 @@ type cancelProvider struct{}
 func (cancelProvider) Stream(ctx context.Context, _ model.ChatRequest, _ func(model.StreamEvent) error) (model.ChatResponse, error) {
 	return model.ChatResponse{}, ctx.Err()
 }
+
+// overflowProvider 先返回 context-overflow 错误，之后返回正常响应。
+type overflowProvider struct {
+	responses []model.ChatResponse
+	requests  []model.ChatRequest
+	calls     int
+}
+
+func (p *overflowProvider) Stream(_ context.Context, req model.ChatRequest, _ func(model.StreamEvent) error) (model.ChatResponse, error) {
+	p.requests = append(p.requests, req)
+	p.calls++
+	if p.calls == 1 {
+		return model.ChatResponse{}, errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input")
+	}
+	if len(p.responses) == 0 {
+		return model.ChatResponse{}, errors.New("unexpected stream call")
+	}
+	resp := p.responses[0]
+	p.responses = p.responses[1:]
+	return resp, nil
+}
+
+func TestRunTurnOverflowRecovery(t *testing.T) {
+	provider := &overflowProvider{
+		responses: []model.ChatResponse{{Content: "recovered"}},
+	}
+	compactorCalls := 0
+	agent, err := New(Config{
+		Provider: provider,
+		Compactor: func(_ context.Context) error {
+			compactorCalls++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	got, err := agent.RunTurn(context.Background(), "hi")
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got != "recovered" {
+		t.Fatalf("RunTurn() = %q, want %q", got, "recovered")
+	}
+	if compactorCalls != 1 {
+		t.Fatalf("compactor calls = %d, want 1", compactorCalls)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", provider.calls)
+	}
+}
+
+func TestRunTurnOverflowWithoutCompactorReturnsError(t *testing.T) {
+	provider := &overflowProvider{}
+	agent, err := New(Config{Provider: provider})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = agent.RunTurn(context.Background(), "hi")
+	if err == nil {
+		t.Fatal("RunTurn() error = nil, want overflow error")
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+}
+
+func TestRunTurnOverflowCompactorFailsReturnsError(t *testing.T) {
+	provider := &overflowProvider{}
+	agent, err := New(Config{
+		Provider: provider,
+		Compactor: func(_ context.Context) error {
+			return errors.New("compaction failed")
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = agent.RunTurn(context.Background(), "hi")
+	if err == nil {
+		t.Fatal("RunTurn() error = nil, want overflow error")
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1 (no retry after compaction failure)", provider.calls)
+	}
+}
+
+func TestRunTurnOverflowNonContextErrorNoRecovery(t *testing.T) {
+	provider := &fakeProvider{err: errors.New("status 401: unauthorized")}
+	compactorCalls := 0
+	agent, err := New(Config{
+		Provider: provider,
+		Compactor: func(_ context.Context) error {
+			compactorCalls++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = agent.RunTurn(context.Background(), "hi")
+	if err == nil {
+		t.Fatal("RunTurn() error = nil, want auth error")
+	}
+	if compactorCalls != 0 {
+		t.Fatalf("compactor calls = %d, want 0 (non-overflow error should not trigger compaction)", compactorCalls)
+	}
+}

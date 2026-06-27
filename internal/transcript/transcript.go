@@ -18,6 +18,12 @@ func (t *Transcript) Append(msg model.Message) {
 	t.messages = append(t.messages, msg)
 }
 
+// Reset 清空并替换为给定消息列表。
+// 用于 context-overflow 恢复时用压缩后的消息重建 transcript。
+func (t *Transcript) Reset(messages []model.Message) {
+	t.messages = append([]model.Message(nil), messages...)
+}
+
 // Messages 返回当前消息快照。
 // 返回值是副本，调用方修改它不会影响 Transcript 内部状态。
 func (t *Transcript) Messages() []model.Message {

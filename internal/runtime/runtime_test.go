@@ -1623,3 +1623,188 @@ func quoteShell(text string) string {
 func quotePowerShell(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 }
+
+// TestRunTurnOverflowRecoveryPreservesFullTranscript 验证 overflow 恢复后保存的
+// 完整 transcript 语义正确：下一轮 BuildActiveMessages 不会二次切掉已压缩前缀，
+// 也不会重复注入 summary。
+func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			// 第一轮：正常回复
+			{Content: "first reply", Usage: model.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
+			// 第二轮：正常回复
+			{Content: "second reply", Usage: model.Usage{InputTokens: 120, OutputTokens: 2, TotalTokens: 122}},
+			// 第三轮 step 0：overflow 错误（response 被丢弃）
+			{Content: ""},
+			// compactor 调用 provider.Stream 生成摘要
+			{Content: "compaction summary"},
+			// 第三轮 step 0 重试：正常回复
+			{Content: "third reply", Usage: model.Usage{InputTokens: 50, OutputTokens: 2, TotalTokens: 52}},
+			// 第四轮：验证下一轮正常工作
+			{Content: "fourth reply", Usage: model.Usage{InputTokens: 60, OutputTokens: 2, TotalTokens: 62}},
+		},
+		errors: []error{
+			nil, // 第一轮
+			nil, // 第二轮
+			errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input"), // 第三轮首次
+			nil, // compactor 摘要调用
+			nil, // 第三轮重试
+			nil, // 第四轮
+		},
+	}
+	r := newTestRuntime(t, provider)
+
+	// 前两轮建立历史
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "first"}); err != nil {
+		t.Fatalf("first RunTurn() error = %v", err)
+	}
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "second"}); err != nil {
+		t.Fatalf("second RunTurn() error = %v", err)
+	}
+
+	// 第三轮触发 overflow 恢复
+	result, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "third"})
+	if err != nil {
+		t.Fatalf("third RunTurn() error = %v", err)
+	}
+	if result.Content != "third reply" {
+		t.Fatalf("third RunTurn() content = %q, want %q", result.Content, "third reply")
+	}
+
+	// 验证 session metadata：CompactedMessageCount > 0，ContextSummary 非空
+	info, full, err := r.ShowSession(context.Background(), "overflow-test")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if info.CompactedMessageCount == 0 {
+		t.Fatal("CompactedMessageCount = 0, want > 0 (compaction should have occurred)")
+	}
+	if info.ContextSummary == "" {
+		t.Fatal("ContextSummary is empty, want non-empty")
+	}
+
+	// 完整 transcript 不应包含 synthetic summary message。
+	// summary 存在 session metadata 中，不写入 transcript。
+	for i, msg := range full.Messages() {
+		if strings.Contains(msg.Content, "Context summary from earlier conversation:") {
+			t.Fatalf("full transcript[%d] contains synthetic summary message: %q", i, msg.Content)
+		}
+	}
+
+	// 第四轮：验证 BuildActiveMessages 正确工作，不二次切掉或重复 summary
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "fourth"}); err != nil {
+		t.Fatalf("fourth RunTurn() error = %v", err)
+	}
+
+	// 检查第四轮 provider 收到的活动消息
+	lastReq := provider.requests[len(provider.requests)-1]
+	activeMsgs := lastReq.Messages
+
+	// 活动消息的第一条应该是 summary（由 BuildActiveMessages 注入）
+	if len(activeMsgs) == 0 {
+		t.Fatal("active messages is empty")
+	}
+	if !strings.Contains(activeMsgs[0].Content, "Context summary from earlier conversation:") {
+		t.Fatalf("active messages[0] = %q, want summary", activeMsgs[0].Content[:min(80, len(activeMsgs[0].Content))])
+	}
+
+	// 活动消息不应有两个 summary
+	summaryCount := 0
+	for _, msg := range activeMsgs {
+		if strings.Contains(msg.Content, "Context summary from earlier conversation:") {
+			summaryCount++
+		}
+	}
+	if summaryCount != 1 {
+		t.Fatalf("summary count in active messages = %d, want 1", summaryCount)
+	}
+
+	// 活动消息应包含 "third reply" 和 "fourth"（压缩后保留的最近消息）
+	foundThird := false
+	foundFourth := false
+	for _, msg := range activeMsgs {
+		if msg.Content == "third reply" {
+			foundThird = true
+		}
+		if strings.Contains(msg.Content, "fourth") {
+			foundFourth = true
+		}
+	}
+	if !foundThird {
+		t.Fatal("active messages missing 'third reply' (should be in recent context after compaction)")
+	}
+	if !foundFourth {
+		t.Fatal("active messages missing 'fourth' prompt")
+	}
+}
+
+// TestRunTurnOverflowRecoveryPreservesSkillContext 验证 overflow 恢复后
+// 本轮显式注入的 skill 上下文不丢失，retry 时模型仍能看到 skill 内容。
+func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
+	catalog, err := skill.NewCatalog([]skill.Skill{{
+		Name:        "think",
+		Description: "plan work",
+		Path:        "/tmp/atlas-work/.agents/skills/think/SKILL.md",
+		Content:     "---\nname: think\ndescription: plan work\n---\n\n# Think\nPlan first.",
+	}})
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			// 第一轮：正常回复，建立历史
+			{Content: "first reply", Usage: model.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
+			// 第二轮 step 0：overflow 错误（response 被丢弃）
+			{Content: ""},
+			// compactor 调用 provider.Stream 生成摘要
+			{Content: "compaction summary"},
+			// 第二轮 step 0 重试：正常回复
+			{Content: "recovered reply"},
+		},
+		errors: []error{
+			nil, // 第一轮
+			errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input"), // 第二轮首次
+			nil, // compactor 摘要调用
+			nil, // 第二轮重试
+		},
+	}
+	r := newTestRuntime(t, provider)
+	r.deps.LoadSkills = func(string) (*skill.Catalog, error) {
+		return catalog, nil
+	}
+
+	// 第一轮建立历史
+	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "skill-overflow", Prompt: "first"}); err != nil {
+		t.Fatalf("first RunTurn() error = %v", err)
+	}
+
+	// 第二轮带 skill，触发 overflow 恢复
+	result, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "skill-overflow",
+		Prompt:    "design this",
+		Skills:    []string{"think"},
+	})
+	if err != nil {
+		t.Fatalf("second RunTurn() error = %v", err)
+	}
+	if result.Content != "recovered reply" {
+		t.Fatalf("content = %q, want %q", result.Content, "recovered reply")
+	}
+
+	// 找到 retry 时的 provider 请求（最后一个请求）
+	lastReq := provider.requests[len(provider.requests)-1]
+	activeMsgs := lastReq.Messages
+
+	// retry 请求的活动消息中必须包含 skill 上下文
+	foundSkill := false
+	for _, msg := range activeMsgs {
+		if strings.Contains(msg.Content, "<skill>") && strings.Contains(msg.Content, "<name>think</name>") {
+			foundSkill = true
+			break
+		}
+	}
+	if !foundSkill {
+		t.Fatal("retry request missing skill context after overflow recovery")
+	}
+}

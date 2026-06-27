@@ -362,6 +362,11 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	for _, msg := range activeMessages {
 		trans.Append(msg)
 	}
+	compacted := false
+	persistFrom := 0
+	// 压缩恢复时记录的完整历史和 reset 后的消息数，用于正确保存 transcript。
+	var preCompactionMessages []model.Message
+	postCompactionStart := 0
 	a, err := agent.New(agent.Config{
 		Provider:   provider,
 		Tools:      registry,
@@ -378,7 +383,37 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		MaxTokens:       selectedModel.MaxTokens,
 		Temperature:     cfg.Agent.Temperature,
 		ReasoningEffort: reasoningEffort,
-		Observer:        opts.Observer,
+		Compactor: func(compactCtx context.Context) error {
+			// 合并完整历史：fullTrans 的已压缩前缀 + agent transcript 中的新消息
+			currentMessages := append(fullTrans.Messages(), trans.Messages()[persistFrom:]...)
+			result, compactErr := r.compactLoadedSession(compactCtx, store, provider, cfg, selectedModel, sessionID, sessionInfo, currentMessages, "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
+			if compactErr != nil {
+				return compactErr
+			}
+			if !result.Compacted {
+				return fmt.Errorf("compaction skipped: %s", result.Reason)
+			}
+			sessionInfo.ContextSummary = result.Summary
+			sessionInfo.CompactedMessageCount = result.CompactCount
+			sessionInfo.CompactedInputTokens = result.TokensBefore
+			// 用压缩后的活动消息重建 agent transcript
+			activeMsgs := compact.BuildActiveMessages(result.Summary, result.CompactCount, currentMessages)
+			trans.Reset(activeMsgs)
+			// 重新注入本轮显式选择的 skill 上下文。
+			// Reset 后 trans 只含压缩后的活动消息，skill messages 在 persistFrom 之前被追加，
+			// 不在 currentMessages 中，需要重新追加以供 retry 时模型可见。
+			for _, msg := range selectedSkillMessages {
+				trans.Append(msg)
+			}
+			// 记录压缩前的完整历史和 reset 后的消息数。
+			// 保存时需要完整 transcript（含被压缩前缀），不能只保存 active messages，
+			// 否则下一轮 BuildActiveMessages 会二次切掉已压缩的前缀。
+			preCompactionMessages = currentMessages
+			postCompactionStart = len(activeMsgs)
+			compacted = true
+			return nil
+		},
+		Observer: opts.Observer,
 	})
 	if err != nil {
 		return TurnResult{}, err
@@ -387,13 +422,20 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	for _, msg := range selectedSkillMessages {
 		trans.Append(msg)
 	}
-	persistFrom := len(trans.Messages())
+	persistFrom = len(trans.Messages())
 	content, err := a.RunTurnParts(ctx, parts)
 	activeAfter := trans.Messages()
-	if persistFrom > len(activeAfter) {
-		persistFrom = len(activeAfter)
+	var fullMessages []model.Message
+	if compacted {
+		// 压缩恢复后保存完整 transcript：压缩前的完整历史 + 压缩后 agent 新产生的消息。
+		// SaveCompaction 已记录 CompactedMessageCount，下一轮 BuildActiveMessages 会正确切掉前缀。
+		fullMessages = append(preCompactionMessages, activeAfter[postCompactionStart:]...)
+	} else {
+		if persistFrom > len(activeAfter) {
+			persistFrom = len(activeAfter)
+		}
+		fullMessages = append(fullTrans.Messages(), activeAfter[persistFrom:]...)
 	}
-	fullMessages := append(fullTrans.Messages(), activeAfter[persistFrom:]...)
 	if err != nil {
 		saveCtx, cancel := context.WithTimeout(context.Background(), interruptedTurnSaveTimeout)
 		defer cancel()

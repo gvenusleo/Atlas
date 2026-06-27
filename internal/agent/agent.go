@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/liuyuxin/atlas/internal/compact"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/tool"
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
-const defaultMaxSteps = 20
+const (
+	defaultMaxSteps = 20
+	// maxOverflowCompactions 限制单个 turn 内因 context-overflow 触发的自动压缩次数。
+	// 压缩后仍 overflow 说明对话已无法恢复，直接返回错误。
+	maxOverflowCompactions = 1
+)
 
 // Config 是创建 Agent 所需的依赖和运行参数。
 type Config struct {
@@ -24,7 +30,10 @@ type Config struct {
 	Temperature float64
 	// ReasoningEffort 控制支持该参数的模型的思考深度。
 	ReasoningEffort string
-	Observer        Observer
+	// Compactor 在 context-overflow 时由 runtime 注入的压缩回调。
+	// 为 nil 时 agent 不做 overflow 恢复，直接返回 provider 错误。
+	Compactor func(ctx context.Context) error
+	Observer  Observer
 }
 
 // Agent 串联模型、工具和 transcript，执行一个 headless turn。
@@ -37,6 +46,7 @@ type Agent struct {
 	maxTokens       int
 	temperature     float64
 	reasoningEffort string
+	compactor       func(ctx context.Context) error
 	observer        Observer
 }
 
@@ -71,6 +81,7 @@ func New(config Config) (*Agent, error) {
 		maxTokens:       config.MaxTokens,
 		temperature:     config.Temperature,
 		reasoningEffort: config.ReasoningEffort,
+		compactor:       config.Compactor,
 		observer:        config.Observer,
 	}, nil
 }
@@ -93,6 +104,7 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 		Content: content,
 	})
 
+	overflowCompactions := 0
 	for step := 0; step < a.maxSteps; step++ {
 		resp, err := a.provider.Stream(ctx, model.ChatRequest{
 			System:          a.system,
@@ -119,6 +131,15 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 			return nil
 		})
 		if err != nil {
+			// Context-overflow 恢复：当 provider 返回超限错误且注入了 compactor 时，
+			// 触发一次自动压缩后重试当前 step。限制最多 maxOverflowCompactions 次。
+			if compact.IsContextOverflow(err) && a.compactor != nil && overflowCompactions < maxOverflowCompactions {
+				if compactErr := a.compactor(ctx); compactErr == nil {
+					overflowCompactions++
+					step-- // 重试当前 step
+					continue
+				}
+			}
 			a.emit(Event{
 				Type: EventTurnFinished,
 				Step: step,
