@@ -607,3 +607,70 @@ func TestRunTurnOverflowNonContextErrorNoRecovery(t *testing.T) {
 		t.Fatalf("compactor calls = %d, want 0 (non-overflow error should not trigger compaction)", compactorCalls)
 	}
 }
+
+func TestRunTurnOnAppend(t *testing.T) {
+	registry, err := tool.NewRegistry(fakeTool{
+		definition: model.ToolDefinition{Name: "fake"},
+		result:     "tool result",
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{{ID: "call_1", Name: "fake", Arguments: `{}`}}},
+			{Content: "done"},
+		},
+	}
+	var appended []model.Message
+	agent, err := New(Config{
+		Provider: provider,
+		Tools:    registry,
+		OnAppend: func(msg model.Message) {
+			appended = append(appended, msg)
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if _, err := agent.RunTurn(context.Background(), "use tool"); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+
+	// 应收到 4 次 OnAppend：user prompt, assistant+tool_call, tool result, assistant final
+	if len(appended) != 4 {
+		t.Fatalf("OnAppend calls = %d, want 4", len(appended))
+	}
+	if appended[0].Role != model.RoleUser {
+		t.Fatalf("append 0 role = %q, want user", appended[0].Role)
+	}
+	if appended[1].Role != model.RoleAssistant || len(appended[1].ToolCalls) != 1 {
+		t.Fatalf("append 1 = %#v, want assistant with 1 tool call", appended[1])
+	}
+	if appended[2].Role != model.RoleTool || appended[2].ToolCallID != "call_1" {
+		t.Fatalf("append 2 = %#v, want tool result for call_1", appended[2])
+	}
+	if appended[3].Role != model.RoleAssistant || appended[3].Content != "done" {
+		t.Fatalf("append 3 = %#v, want assistant 'done'", appended[3])
+	}
+}
+
+func TestRunTurnOnAppendNil(t *testing.T) {
+	// OnAppend 为 nil 时不应 panic
+	provider := &fakeProvider{
+		responses: []model.ChatResponse{{Content: "hello"}},
+	}
+	agent, err := New(Config{Provider: provider})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	got, err := agent.RunTurn(context.Background(), "hi")
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got != "hello" {
+		t.Fatalf("RunTurn() = %q, want %q", got, "hello")
+	}
+}

@@ -33,7 +33,10 @@ type Config struct {
 	// Compactor 在 context-overflow 时由 runtime 注入的压缩回调。
 	// 为 nil 时 agent 不做 overflow 恢复，直接返回 provider 错误。
 	Compactor func(ctx context.Context) error
-	Observer  Observer
+	// OnAppend 在每次 transcript.Append 之后调用，用于实时持久化。
+	// 为 nil 时不做任何操作。
+	OnAppend func(msg model.Message)
+	Observer Observer
 }
 
 // Agent 串联模型、工具和 transcript，执行一个 headless turn。
@@ -47,6 +50,7 @@ type Agent struct {
 	temperature     float64
 	reasoningEffort string
 	compactor       func(ctx context.Context) error
+	onAppend        func(model.Message)
 	observer        Observer
 }
 
@@ -82,8 +86,17 @@ func New(config Config) (*Agent, error) {
 		temperature:     config.Temperature,
 		reasoningEffort: config.ReasoningEffort,
 		compactor:       config.Compactor,
+		onAppend:        config.OnAppend,
 		observer:        config.Observer,
 	}, nil
+}
+
+// appendMessage 将消息追加到 transcript 并触发 OnAppend 回调。
+func (a *Agent) appendMessage(msg model.Message) {
+	a.transcript.Append(msg)
+	if a.onAppend != nil {
+		a.onAppend(msg)
+	}
 }
 
 // RunTurn 执行一次纯文本用户输入到最终 assistant 回复的循环。
@@ -94,7 +107,7 @@ func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 // RunTurnParts 执行一次结构化用户输入到最终 assistant 回复的循环。
 func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (string, error) {
 	content := model.TextFromParts(parts)
-	a.transcript.Append(model.Message{
+	a.appendMessage(model.Message{
 		Role:    model.RoleUser,
 		Content: content,
 		Parts:   normalizeContentParts(parts),
@@ -148,7 +161,7 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 			return "", err
 		}
 
-		a.transcript.Append(model.Message{
+		a.appendMessage(model.Message{
 			Role:             model.RoleAssistant,
 			Content:          resp.Content,
 			ReasoningContent: resp.ReasoningContent,
@@ -181,7 +194,7 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 			if err != nil {
 				result.Content = toolErrorResult(result.Content, err)
 			}
-			a.transcript.Append(model.Message{
+			a.appendMessage(model.Message{
 				Role:         model.RoleTool,
 				Content:      result.Content,
 				ToolCallID:   call.ID,

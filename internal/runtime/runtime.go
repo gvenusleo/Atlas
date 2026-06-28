@@ -411,7 +411,16 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			preCompactionMessages = currentMessages
 			postCompactionStart = len(activeMsgs)
 			compacted = true
+			// 压缩后立即持久化，确保压缩结果不丢失
+			persistNow(ctx, store, sessionID, cwd, preCompactionMessages, trans, postCompactionStart, opts)
 			return nil
+		},
+		OnAppend: func(_ model.Message) {
+			if compacted {
+				persistNow(ctx, store, sessionID, cwd, preCompactionMessages, trans, postCompactionStart, opts)
+			} else {
+				persistNow(ctx, store, sessionID, cwd, fullTrans.Messages(), trans, persistFrom, opts)
+			}
 		},
 		Observer: opts.Observer,
 	})
@@ -465,6 +474,23 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		Usage:         latestAssistantUsage(fullMessages),
 		ContextWindow: selectedModel.ContextWindow,
 	}, nil
+}
+
+// persistNow 将当前 transcript 状态实时写入数据库。
+// preMessages 是压缩前的完整历史（未压缩时为 fullTrans），startIdx 是 trans 中新消息的起始索引。
+// 用于 agent 循环中每次 Append 后的增量持久化，确保进程崩溃时不丢失已产生的工作。
+func persistNow(ctx context.Context, store *session.Store, sessionID, cwd string, preMessages []model.Message, trans *transcript.Transcript, startIdx int, opts TurnOptions) {
+	transMsgs := trans.Messages()
+	if startIdx > len(transMsgs) {
+		startIdx = len(transMsgs)
+	}
+	fullMessages := append(preMessages, transMsgs[startIdx:]...)
+	saveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_ = store.SaveTranscriptWithOptions(saveCtx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
+		AdditionalDirectories:    opts.AdditionalDirectories,
+		AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
+	})
 }
 
 // directShellCommand 解析以 ! 开头的直接 shell 命令输入。
