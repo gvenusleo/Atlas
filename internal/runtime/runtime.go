@@ -358,6 +358,11 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	activeMessages := compact.BuildActiveMessages(sessionInfo.ContextSummary, sessionInfo.CompactedMessageCount, fullTrans.Messages())
+	// 如果当前模型不支持图片输入，过滤掉活动消息中的图片片段。
+	// 历史中的图片消息不会被删除，只是在发送给模型时移除图片 part。
+	if !selectedModel.SupportsInputFormat(config.ModelInputFormatImage) {
+		activeMessages = stripImageParts(activeMessages)
+	}
 	trans := transcript.New()
 	for _, msg := range activeMessages {
 		trans.Append(msg)
@@ -398,6 +403,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			sessionInfo.CompactedInputTokens = result.TokensBefore
 			// 用压缩后的活动消息重建 agent transcript
 			activeMsgs := compact.BuildActiveMessages(result.Summary, result.CompactCount, currentMessages)
+			// 压缩后重建的活动消息可能重新包含历史图片，需要再次过滤。
+			if !selectedModel.SupportsInputFormat(config.ModelInputFormatImage) {
+				activeMsgs = stripImageParts(activeMsgs)
+			}
 			trans.Reset(activeMsgs)
 			// 重新注入本轮显式选择的 skill 上下文。
 			// Reset 后 trans 只含压缩后的活动消息，skill messages 在 persistFrom 之前被追加，
@@ -593,6 +602,27 @@ func hasImageParts(parts []model.ContentPart) bool {
 		}
 	}
 	return false
+}
+
+// stripImageParts 移除消息列表中所有图片片段，仅保留文本片段。
+// 用于当前模型不支持图片输入时过滤历史消息中的图片。
+func stripImageParts(messages []model.Message) []model.Message {
+	filtered := make([]model.Message, len(messages))
+	for i, msg := range messages {
+		if len(msg.Parts) == 0 {
+			filtered[i] = msg
+			continue
+		}
+		textOnly := make([]model.ContentPart, 0, len(msg.Parts))
+		for _, part := range msg.Parts {
+			if part.Type != model.ContentPartImage {
+				textOnly = append(textOnly, part)
+			}
+		}
+		filtered[i] = msg
+		filtered[i].Parts = textOnly
+	}
+	return filtered
 }
 
 // directShellToolCall 构造用于 observer 和历史回放的 run_shell 调用。

@@ -1808,3 +1808,56 @@ func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 		t.Fatal("retry request missing skill context after overflow recovery")
 	}
 }
+
+// TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage 验证当模型不支持图片时，
+// 历史消息中的图片片段被过滤掉，只保留文本。
+func TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage(t *testing.T) {
+	provider := &recordingProvider{
+		response: model.ChatResponse{Content: "ok"},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+
+	// 先保存一条带图片的历史消息
+	store := openTestSessionStore(t, dbPath)
+	imgMsg := model.Message{
+		Role:    model.RoleUser,
+		Content: "look at this",
+		Parts: []model.ContentPart{
+			{Type: model.ContentPartText, Text: "look at this"},
+			{Type: model.ContentPartImage, MimeType: "image/png", DataURL: "data:image/png;base64,aGVsbG8="},
+		},
+	}
+	if err := store.SaveTranscript(context.Background(), "img-session", "/tmp/atlas-work", []model.Message{imgMsg}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	store.Close()
+
+	// 第二轮：恢复 session，发送纯文本 prompt
+	// test-model 不支持图片，历史中的图片应被过滤
+	if _, err := r.RunTurn(context.Background(), TurnOptions{
+		SessionID: "img-session",
+		Prompt:    "what did I show you",
+	}); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+
+	// 检查 provider 收到的消息中不应有图片片段
+	for i, msg := range provider.request.Messages {
+		for j, part := range msg.Parts {
+			if part.Type == model.ContentPartImage {
+				t.Fatalf("message[%d].Parts[%d] contains image, should have been stripped", i, j)
+			}
+		}
+	}
+
+	// 历史消息的文本应保留
+	foundHistoryText := false
+	for _, msg := range provider.request.Messages {
+		if msg.Content == "look at this" {
+			foundHistoryText = true
+		}
+	}
+	if !foundHistoryText {
+		t.Fatal("history text 'look at this' missing from provider request")
+	}
+}
