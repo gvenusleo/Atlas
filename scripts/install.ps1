@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "gvenusleo/atlas"
-$InstallDir = if ($env:ATLAS_INSTALL_DIR) { $env:ATLAS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "atlas\bin" }
+$InstallDir = if ($env:ATLAS_INSTALL_DIR) { $env:ATLAS_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".local\bin" }
 
 # 解析参数
 $version = ""
