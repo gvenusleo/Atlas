@@ -26,14 +26,14 @@ const (
 	maxTavilyToolOutputBytes  = 256 * 1024
 )
 
-// TavilyClient 调用 Tavily REST API。
+// TavilyClient calls the Tavily REST API.
 type TavilyClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
 }
 
-// NewTavilyClient 创建 Tavily REST client。
+// NewTavilyClient creates a Tavily REST client.
 func NewTavilyClient(baseURL, apiKey string, httpClient *http.Client) (*TavilyClient, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -59,12 +59,12 @@ func NewTavilyClient(baseURL, apiKey string, httpClient *http.Client) (*TavilyCl
 	}, nil
 }
 
-// TavilySearch 是基于 Tavily Search 的网页搜索工具。
+// TavilySearch is a web search tool based on Tavily Search.
 type TavilySearch struct {
 	Client *TavilyClient
 }
 
-// Definition 返回 web_search 的模型可见定义。
+// Definition returns the model-visible definition for web_search.
 func (TavilySearch) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "web_search",
@@ -113,7 +113,7 @@ func (TavilySearch) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 query 调用 Tavily Search。
+// Run calls Tavily Search using the query from the JSON parameters.
 func (t TavilySearch) Run(ctx context.Context, arguments string) (string, error) {
 	if t.Client == nil {
 		return "", fmt.Errorf("web_search is not configured")
@@ -181,12 +181,12 @@ func (t TavilySearch) Run(ctx context.Context, arguments string) (string, error)
 	return limitTavilyOutput(formatTavilySearchResponse(resp)), nil
 }
 
-// TavilyFetch 是基于 Tavily Extract 的网页内容提取工具。
+// TavilyFetch is a web content extraction tool based on Tavily Extract.
 type TavilyFetch struct {
 	Client *TavilyClient
 }
 
-// Definition 返回 web_fetch 的模型可见定义。
+// Definition returns the model-visible definition for web_fetch.
 func (TavilyFetch) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "web_fetch",
@@ -220,7 +220,7 @@ func (TavilyFetch) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 url 调用 Tavily Extract。
+// Run calls Tavily Extract using the url from the JSON parameters.
 func (t TavilyFetch) Run(ctx context.Context, arguments string) (string, error) {
 	if t.Client == nil {
 		return "", fmt.Errorf("web_fetch is not configured")

@@ -1,4 +1,4 @@
-// Package weixin 提供微信 iLink Bot 通道适配。
+// Package weixin provides the WeChat iLink Bot channel adapter.
 package weixin
 
 import "time"
@@ -20,7 +20,7 @@ const (
 	typingStatusCancel = 2
 )
 
-// Account 描述一次微信扫码登录得到的账号凭据。
+// Account describes the account credentials obtained from a WeChat QR code login.
 type Account struct {
 	ID        string    `json:"id"`
 	Token     string    `json:"token"`
@@ -29,7 +29,7 @@ type Account struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// LoginResult 描述扫码登录完成后的结果。
+// LoginResult describes the result after completing a QR code login.
 type LoginResult struct {
 	Account          Account
 	AlreadyConnected bool
@@ -77,7 +77,7 @@ type getUpdatesResponse struct {
 	LongPollingTimeout int             `json:"longpolling_timeout_ms,omitempty"`
 }
 
-// WeixinMessage 描述微信 iLink 返回的一条消息。
+// WeixinMessage describes a single message returned by WeChat iLink.
 type WeixinMessage struct {
 	Seq          int64         `json:"seq,omitempty"`
 	MessageID    int64         `json:"message_id,omitempty"`
@@ -93,19 +93,19 @@ type WeixinMessage struct {
 	RunID        string        `json:"run_id,omitempty"`
 }
 
-// MessageItem 描述微信消息中的一个内容项。
+// MessageItem describes a single content item in a WeChat message.
 type MessageItem struct {
 	Type      int        `json:"type,omitempty"`
 	TextItem  *TextItem  `json:"text_item,omitempty"`
 	ImageItem *ImageItem `json:"image_item,omitempty"`
 }
 
-// TextItem 描述微信文本内容项。
+// TextItem describes a WeChat text content item.
 type TextItem struct {
 	Text string `json:"text,omitempty"`
 }
 
-// CDNMedia 描述微信 CDN 媒体引用。
+// CDNMedia describes a WeChat CDN media reference.
 type CDNMedia struct {
 	EncryptQueryParam string `json:"encrypt_query_param,omitempty"`
 	AESKey            string `json:"aes_key,omitempty"`
@@ -113,7 +113,7 @@ type CDNMedia struct {
 	FullURL           string `json:"full_url,omitempty"`
 }
 
-// ImageItem 描述微信图片内容项。
+// ImageItem describes a WeChat image content item.
 type ImageItem struct {
 	Media      *CDNMedia `json:"media,omitempty"`
 	ThumbMedia *CDNMedia `json:"thumb_media,omitempty"`

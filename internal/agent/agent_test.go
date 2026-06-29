@@ -496,7 +496,7 @@ func (cancelProvider) Stream(ctx context.Context, _ model.ChatRequest, _ func(mo
 	return model.ChatResponse{}, ctx.Err()
 }
 
-// overflowProvider 先返回 context-overflow 错误，之后返回正常响应。
+// overflowProvider first returns a context-overflow error, then returns a normal response.
 type overflowProvider struct {
 	responses []model.ChatResponse
 	requests  []model.ChatRequest
@@ -638,7 +638,7 @@ func TestRunTurnOnAppend(t *testing.T) {
 		t.Fatalf("RunTurn() error = %v", err)
 	}
 
-	// 应收到 4 次 OnAppend：user prompt, assistant+tool_call, tool result, assistant final
+	// Should receive 4 OnAppend calls: user prompt, assistant+tool_call, tool result, assistant final
 	if len(appended) != 4 {
 		t.Fatalf("OnAppend calls = %d, want 4", len(appended))
 	}
@@ -657,7 +657,7 @@ func TestRunTurnOnAppend(t *testing.T) {
 }
 
 func TestRunTurnOnAppendNil(t *testing.T) {
-	// OnAppend 为 nil 时不应 panic
+	// Should not panic when OnAppend is nil
 	provider := &fakeProvider{
 		responses: []model.ChatResponse{{Content: "hello"}},
 	}

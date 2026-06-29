@@ -10,18 +10,18 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// WriteFile 写入本地文本文件内容。
+// WriteFile writes content to a local text file.
 type WriteFile struct {
 	CWD string
 }
 
-// WriteFileArgs 是 write_file 的 JSON 参数。
+// WriteFileArgs is the JSON parameters for write_file.
 type WriteFileArgs struct {
 	Path    string  `json:"path"`
 	Content *string `json:"content"`
 }
 
-// Definition 返回 write_file 的模型可见定义。
+// Definition returns the model-visible definition for write_file.
 func (WriteFile) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "write_file",
@@ -37,7 +37,7 @@ func (WriteFile) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 path 和 content 写入文件。
+// Run writes a file using the path and content from the JSON parameters.
 func (w WriteFile) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseWriteFileArgs(arguments)
 	if err != nil {
@@ -46,7 +46,7 @@ func (w WriteFile) Run(ctx context.Context, arguments string) (string, error) {
 	return writeFileContent(ctx, resolveToolPath(w.CWD, args.Path), *args.Content)
 }
 
-// ParseWriteFileArgs 解析并校验 write_file 参数。
+// ParseWriteFileArgs parses and validates write_file parameters.
 func ParseWriteFileArgs(arguments string) (WriteFileArgs, error) {
 	var args WriteFileArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {

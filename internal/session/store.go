@@ -1,4 +1,4 @@
-// Package session 提供 Atlas 本地会话的 SQLite 存储。
+// Package session provides SQLite storage for Atlas local sessions.
 package session
 
 import (
@@ -25,17 +25,17 @@ const defaultDBFileName = "atlas.db"
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-// Store 读写 Atlas 的本地会话数据库。
+// Store reads and writes the Atlas local session database.
 type Store struct {
 	db *sql.DB
 }
 
-// Session 描述一个本地会话的元数据。
+// Session describes the metadata for a local session.
 type Session struct {
 	ID    string
 	Title string
 	CWD   string
-	// AdditionalDirectories 保存 ACP session 级额外工作目录根。
+	// AdditionalDirectories holds the ACP session-level additional working directory roots.
 	AdditionalDirectories []string
 	ContextSummary        string
 	CompactedMessageCount int
@@ -43,7 +43,7 @@ type Session struct {
 	LastInputTokens       int
 	LastOutputTokens      int
 	LastTotalTokens       int
-	// MemoryExtractedMessageCount 记录长期记忆后台任务已处理到的消息边界。
+	// MemoryExtractedMessageCount records the message boundary processed by the long-term memory background task.
 	MemoryExtractedMessageCount int
 	MemoryExtractedInputTokens  int
 	MemoryExtractedHash         string
@@ -52,21 +52,21 @@ type Session struct {
 	UpdatedAt                   time.Time
 }
 
-// ListPage 描述一次 session 列表分页结果。
+// ListPage describes a single page of session list results.
 type ListPage struct {
 	Sessions   []Session
 	NextCursor string
 }
 
-// SaveTranscriptOptions 描述保存 transcript 时附带的 session 元数据覆盖项。
+// SaveTranscriptOptions describes the session metadata overrides applied when saving a transcript.
 type SaveTranscriptOptions struct {
-	// AdditionalDirectories 是本次保存要写入的额外工作目录根。
+	// AdditionalDirectories is the additional working directory roots to write in this save.
 	AdditionalDirectories []string
-	// AdditionalDirectoriesSet 表示调用方显式提供了额外工作目录根。
+	// AdditionalDirectoriesSet indicates the caller explicitly provided additional working directory roots.
 	AdditionalDirectoriesSet bool
 }
 
-// DefaultPath 返回用户主目录下的默认会话数据库路径。
+// DefaultPath returns the default session database path under the user's home directory.
 func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -75,7 +75,7 @@ func DefaultPath() (string, error) {
 	return filepath.Join(home, ".atlas", defaultDBFileName), nil
 }
 
-// Open 打开 SQLite 会话数据库。
+// Open opens the SQLite session database.
 func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, fmt.Errorf("session db path is required")
@@ -90,12 +90,12 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// Close 关闭底层数据库连接。
+// Close closes the underlying database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// EnsureSchema 创建第一版会话表结构。
+// EnsureSchema creates the initial session table schema.
 func (s *Store) EnsureSchema(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
 create table if not exists sessions (
@@ -137,7 +137,7 @@ create table if not exists messages (
 	return err
 }
 
-// NewID 生成适合命令行展示和恢复的 session ID。
+// NewID generates a session ID suitable for CLI display and restoration.
 func NewID(now time.Time) (string, error) {
 	if now.IsZero() {
 		now = time.Now()
@@ -149,7 +149,7 @@ func NewID(now time.Time) (string, error) {
 	return now.Format("20060102-150405") + "-" + hex.EncodeToString(suffix[:]), nil
 }
 
-// ValidateID 校验用户提供或自动生成的 session ID。
+// ValidateID validates a user-provided or auto-generated session ID.
 func ValidateID(id string) error {
 	if id == "" {
 		return fmt.Errorf("session id is required")
@@ -160,7 +160,7 @@ func ValidateID(id string) error {
 	return nil
 }
 
-// LoadTranscript 读取指定 session 的 transcript。不存在时返回空 transcript。
+// LoadTranscript reads the transcript for the specified session. Returns an empty transcript if not found.
 func (s *Store) LoadTranscript(ctx context.Context, sessionID string) (*transcript.Transcript, error) {
 	if err := ValidateID(sessionID); err != nil {
 		return nil, err
@@ -216,29 +216,29 @@ order by id`, sessionID)
 	return trans, nil
 }
 
-// ListSessions 按最近更新时间倒序返回会话列表。
+// ListSessions returns sessions ordered by most recent update time.
 func (s *Store) ListSessions(ctx context.Context, limit int) ([]Session, error) {
 	page, err := s.ListSessionsPage(ctx, "", limit)
 	return page.Sessions, err
 }
 
-// ListSessionsPage 按最近更新时间倒序分页返回会话列表。
+// ListSessionsPage returns a paginated list of sessions, ordered by most recent update time.
 func (s *Store) ListSessionsPage(ctx context.Context, cursor string, limit int) (ListPage, error) {
 	return s.listSessionsPage(ctx, "", cursor, limit)
 }
 
-// ListSessionsForCWD 按最近更新时间倒序返回指定工作目录的会话列表。
+// ListSessionsForCWD returns sessions for the specified working directory, ordered by most recent update time.
 func (s *Store) ListSessionsForCWD(ctx context.Context, cwd string, limit int) ([]Session, error) {
 	page, err := s.ListSessionsForCWDPage(ctx, cwd, "", limit)
 	return page.Sessions, err
 }
 
-// ListSessionsForCWDPage 按最近更新时间倒序分页返回指定工作目录的会话列表。
+// ListSessionsForCWDPage returns a paginated list of sessions for the specified working directory, ordered by most recent update time.
 func (s *Store) ListSessionsForCWDPage(ctx context.Context, cwd, cursor string, limit int) (ListPage, error) {
 	return s.listSessionsPage(ctx, cwd, cursor, limit)
 }
 
-// listSessionsPage 执行 session 列表的共享游标分页查询。
+// listSessionsPage executes the shared cursor pagination query for session lists.
 func (s *Store) listSessionsPage(ctx context.Context, cwd, cursor string, limit int) (ListPage, error) {
 	if limit <= 0 {
 		limit = 20
@@ -295,7 +295,7 @@ limit ?`, where), args...)
 	return page, nil
 }
 
-// GetSession 返回指定 session 的元数据。
+// GetSession returns the metadata for the specified session.
 func (s *Store) GetSession(ctx context.Context, sessionID string) (Session, error) {
 	if err := ValidateID(sessionID); err != nil {
 		return Session{}, err
@@ -311,7 +311,7 @@ where id = ?`, sessionID)
 	return session, err
 }
 
-// DeleteSession 删除指定 session 及其消息。
+// DeleteSession deletes the specified session and its messages.
 func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 	if err := ValidateID(sessionID); err != nil {
 		return err
@@ -339,7 +339,7 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 	return tx.Commit()
 }
 
-// SaveCompaction 保存指定 session 的上下文压缩摘要和边界。
+// SaveCompaction saves the context compaction summary and boundary for the specified session.
 func (s *Store) SaveCompaction(ctx context.Context, sessionID string, summary string, compactedMessageCount int, compactedInputTokens int) error {
 	if err := ValidateID(sessionID); err != nil {
 		return err
@@ -371,7 +371,7 @@ where id = ?`, summary, compactedMessageCount, compactedInputTokens, now, sessio
 	return nil
 }
 
-// SaveMemoryExtraction 保存长期记忆后台抽取的处理边界。
+// SaveMemoryExtraction saves the processing boundary for long-term memory background extraction.
 func (s *Store) SaveMemoryExtraction(ctx context.Context, sessionID string, messageCount int, inputTokens int, inputHash string) error {
 	if err := ValidateID(sessionID); err != nil {
 		return err
@@ -415,7 +415,7 @@ where id = ?
 	return nil
 }
 
-// SaveSessionRoots 保存指定 session 的额外工作目录根。
+// SaveSessionRoots saves the additional working directory roots for the specified session.
 func (s *Store) SaveSessionRoots(ctx context.Context, sessionID string, additionalDirectories []string) error {
 	if err := ValidateID(sessionID); err != nil {
 		return err
@@ -441,12 +441,12 @@ where id = ?`, additionalDirectoriesJSON, sessionID)
 	return nil
 }
 
-// SaveTranscript 用给定消息快照覆盖保存指定 session。
+// SaveTranscript overwrites the specified session with the given message snapshot.
 func (s *Store) SaveTranscript(ctx context.Context, sessionID, cwd string, messages []model.Message) error {
 	return s.SaveTranscriptWithOptions(ctx, sessionID, cwd, messages, SaveTranscriptOptions{})
 }
 
-// SaveTranscriptWithOptions 用给定消息快照和元数据覆盖保存指定 session。
+// SaveTranscriptWithOptions overwrites the specified session with the given message snapshot and metadata.
 func (s *Store) SaveTranscriptWithOptions(ctx context.Context, sessionID, cwd string, messages []model.Message, opts SaveTranscriptOptions) error {
 	if err := ValidateID(sessionID); err != nil {
 		return err
@@ -637,7 +637,7 @@ func decodeProviderItems(content string) ([]model.ProviderItem, error) {
 	return items, nil
 }
 
-// encodeAdditionalDirectories 将额外工作目录根序列化为 JSON。
+// encodeAdditionalDirectories serializes additional working directory roots to JSON.
 func encodeAdditionalDirectories(additionalDirectories []string) (string, error) {
 	if len(additionalDirectories) == 0 {
 		return "", nil
@@ -649,7 +649,7 @@ func encodeAdditionalDirectories(additionalDirectories []string) (string, error)
 	return string(content), nil
 }
 
-// decodeAdditionalDirectories 解析额外工作目录根 JSON。
+// decodeAdditionalDirectories parses the additional working directory roots JSON.
 func decodeAdditionalDirectories(content string) ([]string, error) {
 	if content == "" {
 		return nil, nil
@@ -661,7 +661,7 @@ func decodeAdditionalDirectories(content string) ([]string, error) {
 	return additionalDirectories, nil
 }
 
-// encodeSessionCursor 将分页游标编码为 opaque 字符串。
+// encodeSessionCursor encodes a pagination cursor as an opaque string.
 func encodeSessionCursor(updatedAt time.Time, id string) string {
 	if updatedAt.IsZero() || id == "" {
 		return ""
@@ -670,7 +670,7 @@ func encodeSessionCursor(updatedAt time.Time, id string) string {
 	return base64.StdEncoding.EncodeToString([]byte(content))
 }
 
-// decodeSessionCursor 解码分页游标。
+// decodeSessionCursor decodes a pagination cursor.
 func decodeSessionCursor(cursor string) (time.Time, string, error) {
 	if cursor == "" {
 		return time.Time{}, "", fmt.Errorf("session cursor is required")

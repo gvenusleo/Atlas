@@ -1,4 +1,4 @@
-// Package prompt 构造 Atlas 的模型系统提示词。
+// Package prompt constructs the Atlas model system prompt.
 package prompt
 
 import (
@@ -67,7 +67,7 @@ For multi-step tasks, use todo_write to plan and track progress. Create a todo l
 - Platform: %s
 - Shell: %s`
 
-// Options 是构造系统提示词所需的动态上下文。
+// Options holds the dynamic context needed to construct the system prompt.
 type Options struct {
 	WorkingDir   string
 	Platform     string
@@ -78,13 +78,13 @@ type Options struct {
 	Skills       []SkillSummary
 }
 
-// SkillSummary 是系统提示词中可见的 skill 元数据。
+// SkillSummary is the skill metadata visible in the system prompt.
 type SkillSummary struct {
 	Name        string
 	Description string
 }
 
-// BuildSystem 构造 Atlas 默认系统提示词。
+// BuildSystem constructs the default Atlas system prompt.
 func BuildSystem(options Options) string {
 	workingDir := options.WorkingDir
 	if workingDir == "" {

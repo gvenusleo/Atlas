@@ -8,24 +8,24 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// Registry 按工具名分发模型发起的工具调用。
+// Registry dispatches model-initiated tool calls by tool name.
 type Registry struct {
 	tools  map[string]Tool
 	order  []string
 	runner RunFunc
 }
 
-// RunResult 描述一次工具调用的文本结果和结构化展示数据。
+// RunResult describes the text result and structured presentation data for a tool call.
 type RunResult struct {
 	Content  string
 	Metadata model.ToolMetadata
 }
 
-// RunFunc 执行一次工具调用。
+// RunFunc executes a single tool call.
 type RunFunc func(context.Context, model.ToolCall) (RunResult, error)
 
-// NewRegistry 创建一个工具注册表。
-// 工具名必须唯一，否则后续分发会变得不确定。
+// NewRegistry creates a tool registry.
+// Tool names must be unique; otherwise dispatch becomes non-deterministic.
 func NewRegistry(tools ...Tool) (*Registry, error) {
 	r := &Registry{
 		tools: make(map[string]Tool),
@@ -41,7 +41,7 @@ func NewRegistry(tools ...Tool) (*Registry, error) {
 	return r, nil
 }
 
-// WithRunner 返回使用自定义执行器的新注册表，工具定义保持不变。
+// WithRunner returns a new registry using a custom executor, with tool definitions unchanged.
 func (r *Registry) WithRunner(runner RunFunc) *Registry {
 	if runner == nil {
 		return r
@@ -53,7 +53,7 @@ func (r *Registry) WithRunner(runner RunFunc) *Registry {
 	}
 }
 
-// Definitions 按注册顺序返回工具定义。
+// Definitions returns tool definitions in registration order.
 func (r *Registry) Definitions() []model.ToolDefinition {
 	defs := make([]model.ToolDefinition, 0, len(r.order))
 	for _, name := range r.order {
@@ -62,7 +62,7 @@ func (r *Registry) Definitions() []model.ToolDefinition {
 	return defs
 }
 
-// Run 执行一次模型请求的工具调用。
+// Run executes a single model-requested tool call.
 func (r *Registry) Run(ctx context.Context, call model.ToolCall) (RunResult, error) {
 	if r.runner != nil {
 		return r.runner(ctx, call)
@@ -70,12 +70,12 @@ func (r *Registry) Run(ctx context.Context, call model.ToolCall) (RunResult, err
 	return r.RunDefault(ctx, call)
 }
 
-// MetadataTool 是可选的工具接口，允许工具在执行后返回结构化 metadata。
+// MetadataTool is an optional tool interface that allows tools to return structured metadata after execution.
 type MetadataTool interface {
 	Metadata(arguments string, content string) model.ToolMetadata
 }
 
-// RunDefault 使用注册表中的工具实现执行一次调用。
+// RunDefault executes a single call using the tool implementation from the registry.
 func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (RunResult, error) {
 	tool, ok := r.tools[call.Name]
 	if !ok {

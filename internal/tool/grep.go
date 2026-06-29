@@ -23,12 +23,12 @@ const (
 
 var errStopGrep = errors.New("stop grep")
 
-// Grep 使用正则表达式搜索本地文本文件。
+// Grep searches local text files using a regular expression.
 type Grep struct {
 	CWD string
 }
 
-// Definition 返回 grep 的模型可见定义。
+// Definition returns the model-visible definition for grep.
 func (Grep) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "grep",
@@ -54,7 +54,7 @@ func (Grep) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 pattern 搜索匹配行。
+// Run searches for matching lines using the pattern from the JSON parameters.
 func (g Grep) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseGrepArgs(arguments)
 	if err != nil {
@@ -64,14 +64,14 @@ func (g Grep) Run(ctx context.Context, arguments string) (string, error) {
 	return grep(ctx, root, args.Pattern, args.Include, defaultGrepLimit)
 }
 
-// GrepArgs 是 grep 的 JSON 参数。
+// GrepArgs is the JSON parameters for grep.
 type GrepArgs struct {
 	Pattern string `json:"pattern"`
 	Path    string `json:"path"`
 	Include string `json:"include"`
 }
 
-// ParseGrepArgs 解析并校验 grep 参数。
+// ParseGrepArgs parses and validates grep parameters.
 func ParseGrepArgs(arguments string) (GrepArgs, error) {
 	var args GrepArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {

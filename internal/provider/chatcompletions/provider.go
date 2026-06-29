@@ -1,4 +1,4 @@
-// Package chatcompletions 实现 Chat Completions 格式的流式模型 provider。
+// Package chatcompletions implements the Chat Completions format streaming model provider.
 package chatcompletions
 
 import (
@@ -18,7 +18,7 @@ import (
 
 const chatCompletionsPath = "/chat/completions"
 
-// Config 是创建 Chat Completions provider 所需的连接配置。
+// Config holds the connection configuration for creating a Chat Completions provider.
 type Config struct {
 	BaseURL            string
 	APIKey             string
@@ -27,7 +27,7 @@ type Config struct {
 	HTTPClient         *http.Client
 }
 
-// Provider 调用 Chat Completions API。
+// Provider calls the Chat Completions API.
 type Provider struct {
 	baseURL            string
 	apiKey             string
@@ -36,7 +36,7 @@ type Provider struct {
 	httpClient         *http.Client
 }
 
-// New 创建一个 Chat Completions provider。
+// New creates a Chat Completions provider.
 func New(config Config) (*Provider, error) {
 	if config.BaseURL == "" {
 		return nil, fmt.Errorf("chat completions base url is required")
@@ -64,7 +64,7 @@ func New(config Config) (*Provider, error) {
 	}, nil
 }
 
-// Stream 执行一次流式聊天请求，并返回累计后的完整响应。
+// Stream executes a streaming chat request and returns the accumulated complete response.
 func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
 	body, err := json.Marshal(p.buildRequest(req))
 	if err != nil {
@@ -112,8 +112,8 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 	if len(apiReq.Tools) == 0 {
 		apiReq.Tools = nil
 	}
-	// 请求 API 在流式响应的最后一个 chunk 中返回 usage 统计。
-	// 部分 provider（如 Ark）在流式模式下默认不返回 usage，需要显式开启。
+	// Request the API to return usage statistics in the last chunk of the streaming response.
+	// Some providers (e.g., Ark) do not return usage by default in streaming mode; this must be explicitly enabled.
 	apiReq.StreamOptions = &streamOptions{IncludeUsage: true}
 	return apiReq
 }
@@ -131,7 +131,7 @@ type chatRequest struct {
 	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
 }
 
-// streamOptions 控制流式响应的附加行为。
+// streamOptions controls additional behavior of streaming responses.
 type streamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
 }

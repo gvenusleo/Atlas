@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-// gitIgnore 保存一个 .gitignore 文件解析出的规则。
+// gitIgnore holds the rules parsed from a .gitignore file.
 type gitIgnore struct {
 	patterns []gitIgnorePattern
 }
 
-// gitIgnorePattern 表示一行有效的 .gitignore 规则。
+// gitIgnorePattern represents a single valid .gitignore rule line.
 type gitIgnorePattern struct {
 	pattern  string
 	segments []string
@@ -23,7 +23,7 @@ type gitIgnorePattern struct {
 	hasSlash bool
 }
 
-// loadGitIgnore 按需读取待列出目录下的 .gitignore。
+// loadGitIgnore reads the .gitignore in the directory to be listed when needed.
 func loadGitIgnore(root string, respect bool) (*gitIgnore, error) {
 	if !respect {
 		return nil, nil
@@ -38,12 +38,12 @@ func loadGitIgnore(root string, respect bool) (*gitIgnore, error) {
 	return compileGitIgnoreFile(ignorePath)
 }
 
-// isGitIgnored 判断相对路径是否被已加载的 .gitignore 忽略。
+// isGitIgnored determines whether a relative path is ignored by loaded .gitignore rules.
 func isGitIgnored(ignorer *gitIgnore, rel string, isDir bool) bool {
 	return ignorer != nil && ignorer.matches(rel, isDir)
 }
 
-// compileGitIgnoreFile 读取并解析一个 .gitignore 文件。
+// compileGitIgnoreFile reads and parses a .gitignore file.
 func compileGitIgnoreFile(filename string) (*gitIgnore, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -62,7 +62,7 @@ func compileGitIgnoreFile(filename string) (*gitIgnore, error) {
 	return compileGitIgnoreLines(lines)
 }
 
-// compileGitIgnoreLines 解析 .gitignore 行，保留后出现规则覆盖前面规则的顺序。
+// compileGitIgnoreLines parses .gitignore lines, preserving the order where later rules override earlier ones.
 func compileGitIgnoreLines(lines []string) (*gitIgnore, error) {
 	ignorer := &gitIgnore{}
 	for i, line := range lines {
@@ -77,7 +77,7 @@ func compileGitIgnoreLines(lines []string) (*gitIgnore, error) {
 	return ignorer, nil
 }
 
-// parseGitIgnoreLine 将单行规则转成匹配结构，空行和注释返回 ok=false。
+// parseGitIgnoreLine converts a single rule line to a match structure; empty lines and comments return ok=false.
 func parseGitIgnoreLine(line string) (gitIgnorePattern, bool, error) {
 	line = strings.TrimSuffix(line, "\r")
 	line = trimGitIgnoreTrailingSpaces(line)
@@ -122,7 +122,7 @@ func parseGitIgnoreLine(line string) (gitIgnorePattern, bool, error) {
 	}, true, nil
 }
 
-// trimGitIgnoreTrailingSpaces 丢弃未转义的行尾空格。
+// trimGitIgnoreTrailingSpaces discards unescaped trailing spaces.
 func trimGitIgnoreTrailingSpaces(line string) string {
 	for strings.HasSuffix(line, " ") {
 		backslashes := 0
@@ -137,7 +137,7 @@ func trimGitIgnoreTrailingSpaces(line string) string {
 	return line
 }
 
-// matches 按 .gitignore 顺序判断相对路径最终是否被忽略。
+// matches determines whether a relative path is ultimately ignored, following .gitignore order.
 func (g *gitIgnore) matches(rel string, isDir bool) bool {
 	rel = strings.Trim(filepath.ToSlash(rel), "/")
 	if rel == "" || rel == "." {
@@ -153,7 +153,7 @@ func (g *gitIgnore) matches(rel string, isDir bool) bool {
 	return ignored
 }
 
-// matches 判断单条规则是否命中相对路径。
+// matches determines whether a single rule matches a relative path.
 func (p gitIgnorePattern) matches(rel string, isDir bool) bool {
 	if p.hasSlash {
 		return p.matchesPath(rel, isDir)
@@ -161,7 +161,7 @@ func (p gitIgnorePattern) matches(rel string, isDir bool) bool {
 	return p.matchesName(rel, isDir)
 }
 
-// matchesName 处理不含斜杠的规则，这类规则可命中任意层级的路径段。
+// matchesName handles rules without slashes, which can match path segments at any level.
 func (p gitIgnorePattern) matchesName(rel string, isDir bool) bool {
 	segments := strings.Split(rel, "/")
 	for i, segment := range segments {
@@ -177,7 +177,7 @@ func (p gitIgnorePattern) matchesName(rel string, isDir bool) bool {
 	return false
 }
 
-// matchesPath 处理根相对规则，并允许已命中的目录规则继续覆盖子路径。
+// matchesPath handles root-relative rules and allows matched directory rules to continue covering sub-paths.
 func (p gitIgnorePattern) matchesPath(rel string, isDir bool) bool {
 	segments := strings.Split(rel, "/")
 	for end := 1; end <= len(segments); end++ {
@@ -191,7 +191,7 @@ func (p gitIgnorePattern) matchesPath(rel string, isDir bool) bool {
 	return false
 }
 
-// matchGitIgnoreSegments 用路径段匹配规则，其中 ** 可匹配零个或多个路径段。
+// matchGitIgnoreSegments matches rules against path segments, where ** can match zero or more segments.
 func matchGitIgnoreSegments(pattern, rel []string) bool {
 	if len(pattern) == 0 {
 		return len(rel) == 0

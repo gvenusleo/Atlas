@@ -1,4 +1,4 @@
-// Package config 读取 Atlas 的本机应用配置。
+// Package config reads Atlas's local application configuration.
 package config
 
 import (
@@ -14,14 +14,14 @@ const (
 	configDirName  = ".atlas"
 	configFileName = "config.json"
 
-	// ProviderFormatChatCompletions 表示使用 Chat Completions API 格式。
+	// ProviderFormatChatCompletions indicates the Chat Completions API format.
 	ProviderFormatChatCompletions = "chat_completions"
-	// ProviderFormatResponses 表示使用 Responses API 格式。
+	// ProviderFormatResponses indicates the Responses API format.
 	ProviderFormatResponses = "responses"
 
-	// ModelInputFormatText 表示模型支持文本输入。
+	// ModelInputFormatText indicates the model supports text input.
 	ModelInputFormatText = "text"
-	// ModelInputFormatImage 表示模型支持图片输入。
+	// ModelInputFormatImage indicates the model supports image input.
 	ModelInputFormatImage = "image"
 
 	defaultMaxSteps               = 20
@@ -31,7 +31,7 @@ const (
 	defaultWeixinCDNBaseURL       = "https://novac2c.cdn.weixin.qq.com/c2c"
 )
 
-// Config 是 Atlas CLI 启动时需要的应用配置。
+// Config is the application configuration required at Atlas CLI startup.
 type Config struct {
 	DefaultModel string           `json:"default_model"`
 	Providers    []ProviderConfig `json:"providers"`
@@ -41,7 +41,7 @@ type Config struct {
 	Services     ServicesConfig   `json:"services"`
 }
 
-// ProviderConfig 描述一个模型 API provider。
+// ProviderConfig describes a model API provider.
 type ProviderConfig struct {
 	Name    string          `json:"name"`
 	Format  string          `json:"format"`
@@ -50,7 +50,7 @@ type ProviderConfig struct {
 	Models  []ProviderModel `json:"models"`
 }
 
-// ProviderModel 描述一个可选模型。
+// ProviderModel describes a selectable model.
 type ProviderModel struct {
 	Value            string                    `json:"value"`
 	Name             string                    `json:"name"`
@@ -62,67 +62,67 @@ type ProviderModel struct {
 	ReasoningEfforts []ProviderReasoningEffort `json:"reasoning_efforts,omitempty"`
 }
 
-// PromptCacheConfig 描述模型侧 prompt cache 的启用方式。
+// PromptCacheConfig describes the prompt cache configuration for a model.
 type PromptCacheConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// ProviderReasoningEffort 描述模型支持的一个 reasoning effort 选项。
+// ProviderReasoningEffort describes a reasoning effort option supported by a model.
 type ProviderReasoningEffort struct {
 	Value       string `json:"value"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
-// AgentConfig 描述 agent turn loop 的运行参数。
+// AgentConfig describes the runtime parameters for the agent turn loop.
 type AgentConfig struct {
 	MaxSteps               int     `json:"max_steps"`
 	Temperature            float64 `json:"temperature"`
 	CompactionTriggerRatio float64 `json:"compaction_trigger_ratio"`
 }
 
-// MemoryConfig 描述长期记忆后台抽取和检索配置。
+// MemoryConfig describes the long-term memory extraction and retrieval configuration.
 type MemoryConfig struct {
 	Enabled *bool  `json:"enabled"`
 	Model   string `json:"model"`
 }
 
-// IsEnabled 返回长期记忆是否启用；未配置时默认启用。
+// IsEnabled returns whether long-term memory is enabled; defaults to enabled when not configured.
 func (c MemoryConfig) IsEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
 }
 
-// SessionConfig 描述本地会话存储参数。
+// SessionConfig describes the local session storage parameters.
 type SessionConfig struct {
 	DBPath string `json:"db_path"`
 }
 
-// ServicesConfig 描述 Atlas 可选接入的外部服务。
+// ServicesConfig describes optional external services Atlas can integrate with.
 type ServicesConfig struct {
 	Tavily TavilyConfig `json:"tavily"`
 	Weixin WeixinConfig `json:"weixin"`
 	WS     WSConfig     `json:"ws"`
 }
 
-// TavilyConfig 描述 Tavily 搜索和网页提取服务配置。
+// TavilyConfig describes the Tavily search and web extraction service configuration.
 type TavilyConfig struct {
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
 }
 
-// WeixinConfig 描述微信远程控制通道配置。
+// WeixinConfig describes the WeChat remote control channel configuration.
 type WeixinConfig struct {
 	BaseURL    string `json:"base_url"`
 	CDNBaseURL string `json:"cdn_base_url"`
 }
 
-// WSConfig 描述 WebSocket 通道配置。
+// WSConfig describes the WebSocket channel configuration.
 type WSConfig struct {
 	Host string `json:"host"`
 	Port int    `json:"port"`
 }
 
-// DefaultPath 返回当前用户主目录下的 Atlas 配置路径。
+// DefaultPath returns the Atlas configuration path under the current user's home directory.
 func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -131,7 +131,7 @@ func DefaultPath() (string, error) {
 	return filepath.Join(home, configDirName, configFileName), nil
 }
 
-// LoadDefault 从默认路径读取配置文件。
+// LoadDefault reads the configuration file from the default path.
 func LoadDefault() (Config, error) {
 	path, err := DefaultPath()
 	if err != nil {
@@ -140,7 +140,7 @@ func LoadDefault() (Config, error) {
 	return LoadFile(path)
 }
 
-// LoadFile 从指定 JSON 文件读取并校验配置。
+// LoadFile reads and validates the configuration from the specified JSON file.
 func LoadFile(path string) (Config, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -158,7 +158,7 @@ func LoadFile(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Validate 校验 Atlas 运行所需的配置字段。
+// Validate validates the configuration fields required for Atlas to run.
 func (c Config) Validate() error {
 	if err := c.validateProviders(); err != nil {
 		return err
@@ -197,7 +197,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// validateProviders 校验所有 provider 配置，并检查 model value 跨 provider 全局唯一。
+// validateProviders validates all provider configurations and checks that model values are globally unique across providers.
 func (c Config) validateProviders() error {
 	if len(c.Providers) == 0 {
 		return fmt.Errorf("providers is required")
@@ -236,8 +236,8 @@ func (c Config) validateProviders() error {
 	return nil
 }
 
-// ResolveModel 在所有 provider 中查找指定 value 的模型，返回 provider 和模型。
-// value 为空时返回 default_model 对应的模型。
+// ResolveModel finds the model with the specified value across all providers, returning the provider and model.
+// When value is empty, returns the model corresponding to default_model.
 func (c Config) ResolveModel(value string) (ProviderConfig, ProviderModel, error) {
 	if strings.TrimSpace(value) == "" {
 		value = c.DefaultModel
@@ -252,7 +252,7 @@ func (c Config) ResolveModel(value string) (ProviderConfig, ProviderModel, error
 	return ProviderConfig{}, ProviderModel{}, fmt.Errorf("model %q is not configured in any provider", value)
 }
 
-// Validate 校验单个 provider 配置。
+// Validate validates a single provider configuration.
 func (p ProviderConfig) Validate(index int) error {
 	prefix := fmt.Sprintf("providers[%d]", index)
 	if p.Format != "" && !validProviderFormat(p.Format) {
@@ -302,7 +302,7 @@ func (p ProviderConfig) Validate(index int) error {
 	return nil
 }
 
-// validateModelInputFormats 校验模型输入格式声明。
+// validateModelInputFormats validates the model input format declarations.
 func validateModelInputFormats(prefix string, modelIndex int, model ProviderModel) error {
 	modelPrefix := fmt.Sprintf("%s.models[%d]", prefix, modelIndex)
 	if len(model.InputFormats) == 0 {
@@ -333,7 +333,7 @@ func validateModelInputFormats(prefix string, modelIndex int, model ProviderMode
 	return nil
 }
 
-// validateModelReasoningEfforts 校验模型级 reasoning effort 声明。
+// validateModelReasoningEfforts validates the model-level reasoning effort declarations.
 func validateModelReasoningEfforts(prefix string, modelIndex int, model ProviderModel) error {
 	modelPrefix := fmt.Sprintf("%s.models[%d]", prefix, modelIndex)
 	seen := make(map[string]struct{}, len(model.ReasoningEfforts))
@@ -354,7 +354,7 @@ func validateModelReasoningEfforts(prefix string, modelIndex int, model Provider
 	return nil
 }
 
-// AllModels 返回所有 provider 的所有模型，附带其所属 provider。
+// AllModels returns all models from all providers, each with its owning provider.
 func (c Config) AllModels() []ProviderModelInfo {
 	var result []ProviderModelInfo
 	for _, provider := range c.Providers {
@@ -368,13 +368,13 @@ func (c Config) AllModels() []ProviderModelInfo {
 	return result
 }
 
-// ProviderModelInfo 包含模型定义及其所属 provider。
+// ProviderModelInfo contains a model definition and its owning provider.
 type ProviderModelInfo struct {
 	Provider ProviderConfig
 	Model    ProviderModel
 }
 
-// SupportsReasoningEffort 返回模型是否声明支持指定 reasoning effort。
+// SupportsReasoningEffort returns whether the model declares support for the specified reasoning effort.
 func (m ProviderModel) SupportsReasoningEffort(value string) bool {
 	for _, effort := range m.ReasoningEfforts {
 		if effort.Value == value {
@@ -384,7 +384,7 @@ func (m ProviderModel) SupportsReasoningEffort(value string) bool {
 	return false
 }
 
-// SupportsInputFormat 返回模型是否声明支持指定输入格式。
+// SupportsInputFormat returns whether the model declares support for the specified input format.
 func (m ProviderModel) SupportsInputFormat(value string) bool {
 	for _, format := range m.InputFormats {
 		if format == value {

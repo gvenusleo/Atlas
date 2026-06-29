@@ -1,4 +1,4 @@
-// Package skill 加载本地 Atlas skill 的元数据和正文。
+// Package skill loads metadata and content for local Atlas skills.
 package skill
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Skill 表示一个从 SKILL.md 加载的本地 skill。
+// Skill represents a local skill loaded from SKILL.md.
 type Skill struct {
 	Name                   string
 	Description            string
@@ -20,13 +20,13 @@ type Skill struct {
 	Content                string
 }
 
-// Summary 是可以直接放进系统提示词的 skill 摘要。
+// Summary is a skill summary suitable for inclusion in the system prompt.
 type Summary struct {
 	Name        string
 	Description string
 }
 
-// Catalog 保存当前运行目录可用的 skill。
+// Catalog holds the skills available for the current working directory.
 type Catalog struct {
 	skills []Skill
 	byName map[string]Skill
@@ -36,7 +36,7 @@ type root struct {
 	path string
 }
 
-// Load 扫描用户级和当前目录级 skill。
+// Load scans user-level and current-directory-level skills.
 func Load(cwd string) (*Catalog, error) {
 	roots, err := rootsFor(cwd)
 	if err != nil {
@@ -45,7 +45,7 @@ func Load(cwd string) (*Catalog, error) {
 	return loadFromRoots(roots)
 }
 
-// NewCatalog 从给定 skill 创建目录，主要供测试和调用方注入已知集合。
+// NewCatalog creates a catalog from the given skills, primarily for testing and caller-injected known sets.
 func NewCatalog(skills []Skill) (*Catalog, error) {
 	byName := make(map[string]Skill, len(skills))
 	for _, skill := range skills {
@@ -60,7 +60,7 @@ func NewCatalog(skills []Skill) (*Catalog, error) {
 	return newCatalogFromMap(byName), nil
 }
 
-// Summaries 返回模型可见的 skill 摘要。
+// Summaries returns the model-visible skill summaries.
 func (c *Catalog) Summaries() []Summary {
 	if c == nil {
 		return nil
@@ -78,7 +78,7 @@ func (c *Catalog) Summaries() []Summary {
 	return summaries
 }
 
-// Lookup 按名称返回模型可加载的 skill。
+// Lookup returns the model-loadable skill by name.
 func (c *Catalog) Lookup(name string) (Skill, bool) {
 	if c == nil {
 		return Skill{}, false

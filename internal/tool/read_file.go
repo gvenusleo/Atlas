@@ -16,19 +16,19 @@ const (
 	defaultReadFileLineMax = 2000
 )
 
-// ReadFile 读取本地文本文件内容。
+// ReadFile reads the content of a local text file.
 type ReadFile struct {
 	CWD string
 }
 
-// ReadFileArgs 是 read_file 的 JSON 参数。
+// ReadFileArgs is the JSON parameters for read_file.
 type ReadFileArgs struct {
 	Path  string `json:"path"`
 	Line  int    `json:"line"`
 	Limit int    `json:"limit"`
 }
 
-// Definition 返回 read_file 的模型可见定义。
+// Definition returns the model-visible definition for read_file.
 func (ReadFile) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "read_file",
@@ -54,7 +54,7 @@ func (ReadFile) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 path、line 和 limit 读取文件。
+// Run reads a file using the path, line, and limit from the JSON parameters.
 func (r ReadFile) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseReadFileArgs(arguments)
 	if err != nil {
@@ -63,7 +63,7 @@ func (r ReadFile) Run(ctx context.Context, arguments string) (string, error) {
 	return readFileContent(ctx, resolveToolPath(r.CWD, args.Path), args.Line, args.Limit)
 }
 
-// ParseReadFileArgs 解析并校验 read_file 参数。
+// ParseReadFileArgs parses and validates read_file parameters.
 func ParseReadFileArgs(arguments string) (ReadFileArgs, error) {
 	var args ReadFileArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {

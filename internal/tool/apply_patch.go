@@ -12,17 +12,17 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// ApplyPatch 应用 unified diff patch。
+// ApplyPatch applies a unified diff patch.
 type ApplyPatch struct {
 	CWD string
 }
 
-// ApplyPatchArgs 是 apply_patch 的 JSON 参数。
+// ApplyPatchArgs is the JSON parameters for apply_patch.
 type ApplyPatchArgs struct {
 	Patch string `json:"patch"`
 }
 
-// Definition 返回 apply_patch 的模型可见定义。
+// Definition returns the model-visible definition for apply_patch.
 func (ApplyPatch) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "apply_patch",
@@ -40,7 +40,7 @@ func (ApplyPatch) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 patch 应用 unified diff。
+// Run applies a unified diff using the patch from the JSON parameters.
 func (a ApplyPatch) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseApplyPatchArgs(arguments)
 	if err != nil {
@@ -59,7 +59,7 @@ func (a ApplyPatch) Run(ctx context.Context, arguments string) (string, error) {
 	return "applied patch to " + strings.Join(paths, ", "), nil
 }
 
-// ParseApplyPatchArgs 解析并校验 apply_patch 参数。
+// ParseApplyPatchArgs parses and validates apply_patch parameters.
 func ParseApplyPatchArgs(arguments string) (ApplyPatchArgs, error) {
 	var args ApplyPatchArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -71,7 +71,7 @@ func ParseApplyPatchArgs(arguments string) (ApplyPatchArgs, error) {
 	return args, nil
 }
 
-// ApplyPatchPaths 从 unified diff 中提取涉及的目标路径。
+// ApplyPatchPaths extracts the target paths involved in a unified diff.
 func ApplyPatchPaths(patch, cwd string) []string {
 	seen := map[string]struct{}{}
 	var paths []string

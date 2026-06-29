@@ -1,4 +1,4 @@
-// Package runtime 组装 Atlas 一次运行所需的配置、Provider、工具、提示词和会话存储。
+// Package runtime assembles the configuration, provider, tools, prompts, and session store needed for a single Atlas run.
 package runtime
 
 import (
@@ -25,7 +25,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
-// Dependencies 定义 Runtime 需要的外部依赖，测试可以替换其中任意一项。
+// Dependencies defines the external dependencies required by Runtime; tests can replace any of them.
 type Dependencies struct {
 	LoadConfig       func() (config.Config, error)
 	ConfigPath       func() (string, error)
@@ -37,35 +37,35 @@ type Dependencies struct {
 	Now              func() time.Time
 }
 
-// Runtime 是 CLI 和后续交互界面共享的 Atlas 执行入口。
+// Runtime is the Atlas execution entry point shared by the CLI and future interactive interfaces.
 type Runtime struct {
 	deps                 Dependencies
 	lastInjectedMemories map[string][]string
 	lastInjectedMemMu    sync.Mutex
 }
 
-// TurnOptions 描述一次用户输入的执行参数。
+// TurnOptions describes the execution parameters for a single user input.
 type TurnOptions struct {
 	SessionID string
 	Prompt    string
 	Parts     []model.ContentPart
-	// Skills 是调用方明确选择、需要在本轮注入完整 SKILL.md 的 skill 名称。
+	// Skills is the skill names explicitly selected by the caller, requiring full SKILL.md injection for this turn.
 	Skills                   []string
 	Model                    string
 	ReasoningEffort          string
 	AdditionalDirectories    []string
 	AdditionalDirectoriesSet bool
-	// ReasoningEffortSet 表示 ReasoningEffort 是调用方显式选择的值。
+	// ReasoningEffortSet indicates ReasoningEffort was explicitly selected by the caller.
 	ReasoningEffortSet bool
 	CWD                string
 	Observer           agent.Observer
 	ToolRunner         ToolRunner
 }
 
-// ToolRunner 可覆盖 runtime 中某次工具调用的执行方式。
+// ToolRunner can override the execution of a specific tool call in the runtime.
 type ToolRunner func(context.Context, model.ToolCall, tool.RunFunc) (tool.RunResult, error)
 
-// TurnResult 描述一次用户输入完成后的结果。
+// TurnResult describes the result after a user input is completed.
 type TurnResult struct {
 	SessionID     string
 	Content       string
@@ -73,7 +73,7 @@ type TurnResult struct {
 	ContextWindow int
 }
 
-// CompactOptions 描述一次手动上下文压缩请求。
+// CompactOptions describes a manual context compaction request.
 type CompactOptions struct {
 	SessionID          string
 	Model              string
@@ -83,7 +83,7 @@ type CompactOptions struct {
 	Instruction        string
 }
 
-// CompactResult 描述上下文压缩完成后的结果。
+// CompactResult describes the result after context compaction.
 type CompactResult struct {
 	SessionID     string
 	Compacted     bool
@@ -96,7 +96,7 @@ type CompactResult struct {
 	Reason        string
 }
 
-// ModelOption 描述 runtime 对外暴露的可选模型。
+// ModelOption describes a selectable model exposed by the runtime.
 type ModelOption struct {
 	Value            string
 	Name             string
@@ -107,52 +107,52 @@ type ModelOption struct {
 	ReasoningEfforts []ReasoningEffortOption
 }
 
-// ReasoningEffortOption 描述模型支持的一个 reasoning effort。
+// ReasoningEffortOption describes a reasoning effort option supported by a model.
 type ReasoningEffortOption struct {
 	Value       string
 	Name        string
 	Description string
 }
 
-// ModelOptions 描述当前配置的模型选择状态。
+// ModelOptions describes the current configured model selection state.
 type ModelOptions struct {
 	Default string
 	Models  []ModelOption
 }
 
-// SkillSummary 描述当前工作目录可用的模型可调用 skill。
+// SkillSummary describes a model-invocable skill available in the current working directory.
 type SkillSummary struct {
 	Name        string
 	Description string
 }
 
-// DoctorStatus 描述一项 doctor 诊断结果的严重程度。
+// DoctorStatus describes the severity of a doctor diagnostic result.
 type DoctorStatus string
 
 const (
 	interruptedTurnSaveTimeout = 2 * time.Second
 
-	// DoctorStatusOK 表示检查通过。
+	// DoctorStatusOK indicates the check passed.
 	DoctorStatusOK DoctorStatus = "ok"
-	// DoctorStatusWarn 表示能力不可用或配置缺失，但不阻止核心运行。
+	// DoctorStatusWarn indicates a capability is unavailable or configuration is missing, but does not block core operation.
 	DoctorStatusWarn DoctorStatus = "warn"
-	// DoctorStatusFail 表示 Atlas 的核心运行前提不满足。
+	// DoctorStatusFail indicates Atlas's core runtime prerequisites are not met.
 	DoctorStatusFail DoctorStatus = "fail"
 )
 
-// DoctorCheck 描述 atlas doctor 输出中的一项诊断。
+// DoctorCheck describes a single diagnostic item in the atlas doctor output.
 type DoctorCheck struct {
 	Name   string
 	Status DoctorStatus
 	Detail string
 }
 
-// DoctorReport 汇总 atlas doctor 的全部诊断结果。
+// DoctorReport summarizes all diagnostic results from atlas doctor.
 type DoctorReport struct {
 	Checks []DoctorCheck
 }
 
-// Failed 返回报告中是否存在失败项。
+// Failed returns whether the report contains any failed items.
 func (r DoctorReport) Failed() bool {
 	for _, check := range r.Checks {
 		if check.Status == DoctorStatusFail {
@@ -162,7 +162,7 @@ func (r DoctorReport) Failed() bool {
 	return false
 }
 
-// DefaultDependencies 返回真实命令行运行时使用的依赖。
+// DefaultDependencies returns the dependencies used by the real CLI runtime.
 func DefaultDependencies() Dependencies {
 	return Dependencies{
 		LoadConfig: config.LoadDefault,
@@ -227,12 +227,12 @@ func providerFormat(cfg config.ProviderConfig) string {
 	return cfg.Format
 }
 
-// New 创建 Runtime，并为未指定的依赖填入默认实现。
+// New creates a Runtime, filling in default implementations for unspecified dependencies.
 func New(deps Dependencies) *Runtime {
 	return &Runtime{deps: completeDependencies(deps), lastInjectedMemories: make(map[string][]string)}
 }
 
-// RunTurn 恢复或创建 session，执行一次 agent turn，并保存 transcript。
+// RunTurn restores or creates a session, executes an agent turn, and saves the transcript.
 func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, error) {
 	parts := turnContentParts(opts)
 	promptText := strings.TrimSpace(model.TextFromParts(parts))
@@ -358,8 +358,8 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	activeMessages := compact.BuildActiveMessages(sessionInfo.ContextSummary, sessionInfo.CompactedMessageCount, fullTrans.Messages())
-	// 如果当前模型不支持图片输入，过滤掉活动消息中的图片片段。
-	// 历史中的图片消息不会被删除，只是在发送给模型时移除图片 part。
+	// If the current model does not support image input, filter out image segments from active messages.
+	// Historical image messages are not deleted; image parts are only removed when sending to the model.
 	if !selectedModel.SupportsInputFormat(config.ModelInputFormatImage) {
 		activeMessages = stripImageParts(activeMessages)
 	}
@@ -369,7 +369,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	compacted := false
 	persistFrom := 0
-	// 压缩恢复时记录的完整历史和 reset 后的消息数，用于正确保存 transcript。
+	// Full history and post-reset message count recorded during compaction recovery, used for correct transcript saving.
 	var preCompactionMessages []model.Message
 	postCompactionStart := 0
 	a, err := agent.New(agent.Config{
@@ -389,7 +389,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		Temperature:     cfg.Agent.Temperature,
 		ReasoningEffort: reasoningEffort,
 		Compactor: func(compactCtx context.Context) error {
-			// 合并完整历史：fullTrans 的已压缩前缀 + agent transcript 中的新消息
+			// Merge full history: fullTrans's compacted prefix + new messages in agent transcript
 			currentMessages := append(fullTrans.Messages(), trans.Messages()[persistFrom:]...)
 			result, compactErr := r.compactLoadedSession(compactCtx, store, provider, cfg, selectedModel, sessionID, sessionInfo, currentMessages, "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
 			if compactErr != nil {
@@ -401,26 +401,26 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			sessionInfo.ContextSummary = result.Summary
 			sessionInfo.CompactedMessageCount = result.CompactCount
 			sessionInfo.CompactedInputTokens = result.TokensBefore
-			// 用压缩后的活动消息重建 agent transcript
+			// Rebuild agent transcript with compacted active messages
 			activeMsgs := compact.BuildActiveMessages(result.Summary, result.CompactCount, currentMessages)
-			// 压缩后重建的活动消息可能重新包含历史图片，需要再次过滤。
+			// Active messages rebuilt after compaction may re-include historical images; filter again.
 			if !selectedModel.SupportsInputFormat(config.ModelInputFormatImage) {
 				activeMsgs = stripImageParts(activeMsgs)
 			}
 			trans.Reset(activeMsgs)
-			// 重新注入本轮显式选择的 skill 上下文。
-			// Reset 后 trans 只含压缩后的活动消息，skill messages 在 persistFrom 之前被追加，
-			// 不在 currentMessages 中，需要重新追加以供 retry 时模型可见。
+			// Re-inject explicitly selected skill context for this turn.
+			// After Reset, trans only contains compacted active messages; skill messages are appended before persistFrom,
+			// Not in currentMessages; must be re-appended for model visibility during retry.
 			for _, msg := range selectedSkillMessages {
 				trans.Append(msg)
 			}
-			// 记录压缩前的完整历史和 reset 后的消息数。
-			// 保存时需要完整 transcript（含被压缩前缀），不能只保存 active messages，
-			// 否则下一轮 BuildActiveMessages 会二次切掉已压缩的前缀。
+			// Record the full history before compaction and the message count after reset.
+			// When saving, the full transcript (including compacted prefix) is needed, not just active messages,
+			// Otherwise the next BuildActiveMessages would re-cut the compacted prefix.
 			preCompactionMessages = currentMessages
 			postCompactionStart = len(activeMsgs)
 			compacted = true
-			// 压缩后立即持久化，确保压缩结果不丢失
+			// Persist immediately after compaction to ensure compaction results are not lost
 			persistNow(ctx, store, sessionID, cwd, preCompactionMessages, trans, postCompactionStart, opts)
 			return nil
 		},
@@ -445,8 +445,8 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	activeAfter := trans.Messages()
 	var fullMessages []model.Message
 	if compacted {
-		// 压缩恢复后保存完整 transcript：压缩前的完整历史 + 压缩后 agent 新产生的消息。
-		// SaveCompaction 已记录 CompactedMessageCount，下一轮 BuildActiveMessages 会正确切掉前缀。
+		// After compaction recovery, save the full transcript: full history before compaction + new messages produced by the agent after compaction.
+		// SaveCompaction has recorded CompactedMessageCount; the next BuildActiveMessages will correctly cut the prefix.
 		fullMessages = append(preCompactionMessages, activeAfter[postCompactionStart:]...)
 	} else {
 		if persistFrom > len(activeAfter) {
@@ -485,9 +485,9 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}, nil
 }
 
-// persistNow 将当前 transcript 状态实时写入数据库。
-// preMessages 是压缩前的完整历史（未压缩时为 fullTrans），startIdx 是 trans 中新消息的起始索引。
-// 用于 agent 循环中每次 Append 后的增量持久化，确保进程崩溃时不丢失已产生的工作。
+// persistNow writes the current transcript state to the database in real time.
+// preMessages is the full history before compaction (fullTrans when not compacted), startIdx is the starting index of new messages in trans.
+// Used for incremental persistence after each Append in the agent loop, ensuring work is not lost on process crash.
 func persistNow(ctx context.Context, store *session.Store, sessionID, cwd string, preMessages []model.Message, trans *transcript.Transcript, startIdx int, opts TurnOptions) {
 	transMsgs := trans.Messages()
 	if startIdx > len(transMsgs) {
@@ -502,7 +502,7 @@ func persistNow(ctx context.Context, store *session.Store, sessionID, cwd string
 	})
 }
 
-// directShellCommand 解析以 ! 开头的直接 shell 命令输入。
+// directShellCommand parses direct shell command input starting with !.
 func directShellCommand(promptText string) (string, bool) {
 	trimmed := strings.TrimSpace(promptText)
 	if !strings.HasPrefix(trimmed, "!") {
@@ -512,7 +512,7 @@ func directShellCommand(promptText string) (string, bool) {
 	return command, true
 }
 
-// runDirectShellTurn 跳过模型调用，直接执行 shell 命令并保存为一个完整 turn。
+// runDirectShellTurn skips the model call, directly executes a shell command, and saves it as a complete turn.
 func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner, saveOpts session.SaveTranscriptOptions) (TurnResult, []model.Message, error) {
 	if command == "" {
 		return TurnResult{}, nil, fmt.Errorf("shell command is required after !")
@@ -573,7 +573,7 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 	}, messages, nil
 }
 
-// turnContentParts 返回本轮输入的结构化内容。
+// turnContentParts returns the structured content for the current turn's input.
 func turnContentParts(opts TurnOptions) []model.ContentPart {
 	if len(opts.Parts) > 0 {
 		parts := make([]model.ContentPart, 0, len(opts.Parts))
@@ -594,7 +594,7 @@ func turnContentParts(opts TurnOptions) []model.ContentPart {
 	return []model.ContentPart{{Type: model.ContentPartText, Text: opts.Prompt}}
 }
 
-// hasImageParts 判断输入中是否包含图片片段。
+// hasImageParts determines whether the input contains image segments.
 func hasImageParts(parts []model.ContentPart) bool {
 	for _, part := range parts {
 		if part.Type == model.ContentPartImage {
@@ -604,8 +604,8 @@ func hasImageParts(parts []model.ContentPart) bool {
 	return false
 }
 
-// stripImageParts 移除消息列表中所有图片片段，仅保留文本片段。
-// 用于当前模型不支持图片输入时过滤历史消息中的图片。
+// stripImageParts removes all image segments from the message list, keeping only text segments.
+// Used to filter images from historical messages when the current model does not support image input.
 func stripImageParts(messages []model.Message) []model.Message {
 	filtered := make([]model.Message, len(messages))
 	for i, msg := range messages {
@@ -625,7 +625,7 @@ func stripImageParts(messages []model.Message) []model.Message {
 	return filtered
 }
 
-// directShellToolCall 构造用于 observer 和历史回放的 run_shell 调用。
+// directShellToolCall constructs a run_shell call for observer and history replay.
 func directShellToolCall(id, command, cwd string) (model.ToolCall, error) {
 	args := map[string]string{
 		"command": command,
@@ -644,14 +644,14 @@ func directShellToolCall(id, command, cwd string) (model.ToolCall, error) {
 	}, nil
 }
 
-// emit 在 observer 存在时发送事件。
+// emit sends an event when an observer is present.
 func emit(observer agent.Observer, event agent.Event) {
 	if observer != nil {
 		observer(event)
 	}
 }
 
-// CompactSession 手动压缩指定 session 的 active context。
+// CompactSession manually compacts the active context of the specified session.
 func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (CompactResult, error) {
 	if err := session.ValidateID(opts.SessionID); err != nil {
 		return CompactResult{}, err
@@ -692,7 +692,7 @@ func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (Comp
 	return r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, opts.SessionID, info, trans.Messages(), opts.Instruction, opts.ReasoningEffort, opts.ReasoningEffortSet, true)
 }
 
-// compactLoadedSession 对已加载的完整 transcript 执行一次摘要压缩。
+// compactLoadedSession performs a summary compaction on a fully loaded transcript.
 func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store, provider model.Provider, cfg config.Config, selectedModel config.ProviderModel, sessionID string, info session.Session, messages []model.Message, instruction string, reasoningEffort string, reasoningEffortSet bool, manual bool) (CompactResult, error) {
 	keepRecentTokens := autoKeepRecentTokens(selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio)
 	plan, ok := compact.SelectPlan(messages, info.CompactedMessageCount, keepRecentTokens)
@@ -754,7 +754,7 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	}, nil
 }
 
-// shouldAutoCompact 判断追加当前用户输入后是否需要自动压缩。
+// shouldAutoCompact determines whether auto-compaction is needed after appending the current user input.
 func shouldAutoCompact(info session.Session, messages, contextMessages []model.Message, parts []model.ContentPart, contextWindow int, triggerRatio float64) bool {
 	inputTokens := info.LastInputTokens
 	if inputTokens <= 0 {
@@ -766,7 +766,7 @@ func shouldAutoCompact(info session.Session, messages, contextMessages []model.M
 	return compact.ShouldAutoCompact(inputTokens, contextWindow, triggerRatio)
 }
 
-// summaryMaxTokens 返回摘要请求可用的最大输出 token 数。
+// summaryMaxTokens returns the maximum output tokens available for a summary request.
 func summaryMaxTokens(maxTokens int) int {
 	if maxTokens <= 0 || maxTokens > 4096 {
 		return 4096
@@ -774,7 +774,7 @@ func summaryMaxTokens(maxTokens int) int {
 	return maxTokens
 }
 
-// autoKeepRecentTokens 返回自动压缩时保留最近上下文的 token 目标。
+// autoKeepRecentTokens returns the token target for retaining recent context during auto-compaction.
 func autoKeepRecentTokens(contextWindow int, triggerRatio float64) int {
 	if contextWindow <= 0 {
 		return compact.DefaultKeepRecentTokens
@@ -786,7 +786,7 @@ func autoKeepRecentTokens(contextWindow int, triggerRatio float64) int {
 	return min(budget, compact.DefaultKeepRecentTokens)
 }
 
-// latestAssistantUsage 返回最近一次模型回复记录的 token 用量。
+// latestAssistantUsage returns the token usage recorded by the most recent model reply.
 func latestAssistantUsage(messages []model.Message) model.Usage {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
@@ -797,12 +797,12 @@ func latestAssistantUsage(messages []model.Message) model.Usage {
 	return model.Usage{}
 }
 
-// isSessionNotFound 判断错误是否表示 session 不存在。
+// isSessionNotFound determines whether an error indicates the session was not found.
 func isSessionNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "not found")
 }
 
-// ModelOptions 返回当前配置文件中可供选择的模型。
+// ModelOptions returns the selectable models from the current configuration file.
 func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
@@ -835,7 +835,7 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 	}, nil
 }
 
-// SkillSummaries 返回当前工作目录可用的模型可调用 skill 摘要。
+// SkillSummaries returns model-invocable skill summaries available in the current working directory.
 func (r *Runtime) SkillSummaries(_ context.Context, cwd string) ([]SkillSummary, error) {
 	if cwd == "" {
 		var err error
@@ -859,7 +859,7 @@ func (r *Runtime) SkillSummaries(_ context.Context, cwd string) ([]SkillSummary,
 	return result, nil
 }
 
-// Doctor 运行离线配置和本地运行环境诊断。
+// Doctor runs offline configuration and local environment diagnostics.
 func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 	var report DoctorReport
 	configPath, pathErr := r.deps.ConfigPath()
@@ -885,13 +885,13 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 	return report
 }
 
-// ListSessions 返回最近更新的本地会话。
+// ListSessions returns recently updated local sessions.
 func (r *Runtime) ListSessions(ctx context.Context, limit int) ([]session.Session, error) {
 	page, err := r.ListSessionsPage(ctx, "", limit)
 	return page.Sessions, err
 }
 
-// ListSessionsPage 分页返回最近更新的本地会话。
+// ListSessionsPage returns a paginated list of recently updated local sessions.
 func (r *Runtime) ListSessionsPage(ctx context.Context, cursor string, limit int) (session.ListPage, error) {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
@@ -905,13 +905,13 @@ func (r *Runtime) ListSessionsPage(ctx context.Context, cursor string, limit int
 	return store.ListSessionsPage(ctx, cursor, limit)
 }
 
-// ListSessionsForCWD 返回指定工作目录下最近更新的本地会话。
+// ListSessionsForCWD returns recently updated local sessions under the specified working directory.
 func (r *Runtime) ListSessionsForCWD(ctx context.Context, cwd string, limit int) ([]session.Session, error) {
 	page, err := r.ListSessionsForCWDPage(ctx, cwd, "", limit)
 	return page.Sessions, err
 }
 
-// ListSessionsForCWDPage 分页返回指定工作目录下最近更新的本地会话。
+// ListSessionsForCWDPage returns a paginated list of recently updated local sessions under the specified working directory.
 func (r *Runtime) ListSessionsForCWDPage(ctx context.Context, cwd, cursor string, limit int) (session.ListPage, error) {
 	if cwd == "" {
 		return r.ListSessionsPage(ctx, cursor, limit)
@@ -928,7 +928,7 @@ func (r *Runtime) ListSessionsForCWDPage(ctx context.Context, cwd, cursor string
 	return store.ListSessionsForCWDPage(ctx, cwd, cursor, limit)
 }
 
-// SaveSessionRoots 保存已有会话的 ACP 额外工作目录根。
+// SaveSessionRoots saves the ACP additional working directory roots for an existing session.
 func (r *Runtime) SaveSessionRoots(ctx context.Context, sessionID string, additionalDirectories []string) error {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
@@ -942,7 +942,7 @@ func (r *Runtime) SaveSessionRoots(ctx context.Context, sessionID string, additi
 	return store.SaveSessionRoots(ctx, sessionID, additionalDirectories)
 }
 
-// ShowSession 返回指定会话的元数据和 transcript。
+// ShowSession returns the metadata and transcript for the specified session.
 func (r *Runtime) ShowSession(ctx context.Context, sessionID string) (session.Session, *transcript.Transcript, error) {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
@@ -965,7 +965,7 @@ func (r *Runtime) ShowSession(ctx context.Context, sessionID string) (session.Se
 	return info, trans, nil
 }
 
-// DeleteSession 删除指定本地会话。
+// DeleteSession deletes the specified local session.
 func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
@@ -985,7 +985,7 @@ func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// DeleteSessionIfExists 删除指定本地会话，并忽略不存在的会话。
+// DeleteSessionIfExists deletes the specified local session, ignoring non-existent sessions.
 func (r *Runtime) DeleteSessionIfExists(ctx context.Context, sessionID string) error {
 	err := r.DeleteSession(ctx, sessionID)
 	if err != nil && strings.Contains(err.Error(), "not found") {
@@ -1136,7 +1136,7 @@ func promptSkillSummaries(catalog *skill.Catalog) []prompt.SkillSummary {
 	return result
 }
 
-// skillMessages 将显式选择的 skill 渲染成本轮模型可见但不持久化的上下文消息。
+// skillMessages renders explicitly selected skills as model-visible, non-persistent context messages for the current turn.
 func skillMessages(names []string, catalog *skill.Catalog) []model.Message {
 	if len(names) == 0 || catalog == nil {
 		return nil
@@ -1157,7 +1157,7 @@ func skillMessages(names []string, catalog *skill.Catalog) []model.Message {
 	return messages
 }
 
-// skillContext 使用 Codex 风格的 XML 包装完整 SKILL.md 内容。
+// skillContext wraps the full SKILL.md content using Codex-style XML.
 func skillContext(found skill.Skill) string {
 	return fmt.Sprintf(
 		"<skill>\n<name>%s</name>\n<path>%s</path>\n%s\n</skill>",
@@ -1213,7 +1213,7 @@ func sessionDBPath(cfg config.SessionConfig) (string, error) {
 	return cfg.DBPath, nil
 }
 
-// homeRelativePath 识别用户配置中的 ~/ 和 ~\ 路径写法。
+// homeRelativePath recognizes ~/ and ~\ path notation in user configuration.
 func homeRelativePath(path string) (string, bool) {
 	if len(path) < 2 || path[0] != '~' {
 		return "", false

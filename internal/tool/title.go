@@ -9,8 +9,8 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// DisplayTitle 返回工具调用适合展示给用户的标题。
-// cwd 用于缩短文件路径：如果文件在 cwd 下，只显示相对路径。
+// DisplayTitle returns a user-facing display title for a tool call.
+// cwd is used to shorten file paths: if a file is under cwd, only the relative path is shown.
 func DisplayTitle(call model.ToolCall, cwd string) string {
 	if title := primaryDisplayTitle(call, cwd); title != "" {
 		return title
@@ -21,7 +21,7 @@ func DisplayTitle(call model.ToolCall, cwd string) string {
 	return "Tool: " + call.Name
 }
 
-// primaryDisplayTitle 从内置工具参数中提取最能说明动作的字段。
+// primaryDisplayTitle extracts the most descriptive field from built-in tool parameters.
 func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 	prefix, key := "", ""
 	switch call.Name {
@@ -75,7 +75,7 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 	return prefix + value
 }
 
-// isFileTool 判断工具是否使用文件路径作为主参数。
+// isFileTool determines whether a tool uses a file path as its primary parameter.
 func isFileTool(name string) bool {
 	switch name {
 	case "read_file", "write_file", "edit_file":
@@ -84,7 +84,7 @@ func isFileTool(name string) bool {
 	return false
 }
 
-// shortenPath 将绝对路径缩短为基于 cwd 的相对路径（如果文件在 cwd 下）。
+// shortenPath shortens an absolute path to a cwd-relative path (if the file is under cwd).
 func shortenPath(path, cwd string) string {
 	if cwd == "" || !filepath.IsAbs(path) {
 		return path

@@ -1,4 +1,4 @@
-// Package agent 实现 Atlas 的 headless turn loop。
+// Package agent implements the Atlas headless turn loop.
 package agent
 
 import (
@@ -14,12 +14,12 @@ import (
 
 const (
 	defaultMaxSteps = 20
-	// maxOverflowCompactions 限制单个 turn 内因 context-overflow 触发的自动压缩次数。
-	// 压缩后仍 overflow 说明对话已无法恢复，直接返回错误。
+	// maxOverflowCompactions limits the number of auto-compactions triggered by context-overflow within a single turn.
+	// If overflow persists after compaction, the conversation is unrecoverable and the error is returned directly.
 	maxOverflowCompactions = 1
 )
 
-// Config 是创建 Agent 所需的依赖和运行参数。
+// Config holds the dependencies and runtime parameters for creating an Agent.
 type Config struct {
 	Provider    model.Provider
 	Tools       *tool.Registry
@@ -28,18 +28,18 @@ type Config struct {
 	MaxSteps    int
 	MaxTokens   int
 	Temperature float64
-	// ReasoningEffort 控制支持该参数的模型的思考深度。
+	// ReasoningEffort controls the thinking depth for models that support this parameter.
 	ReasoningEffort string
-	// Compactor 在 context-overflow 时由 runtime 注入的压缩回调。
-	// 为 nil 时 agent 不做 overflow 恢复，直接返回 provider 错误。
+	// Compactor is the compaction callback injected by the runtime on context-overflow.
+	// When nil, the agent does not perform overflow recovery and returns the provider error directly.
 	Compactor func(ctx context.Context) error
-	// OnAppend 在每次 transcript.Append 之后调用，用于实时持久化。
-	// 为 nil 时不做任何操作。
+	// OnAppend is called after each transcript.Append, used for real-time persistence.
+	// When nil, no action is taken.
 	OnAppend func(msg model.Message)
 	Observer Observer
 }
 
-// Agent 串联模型、工具和 transcript，执行一个 headless turn。
+// Agent wires together the model, tools, and transcript to execute a headless turn.
 type Agent struct {
 	provider        model.Provider
 	tools           *tool.Registry
@@ -54,7 +54,7 @@ type Agent struct {
 	observer        Observer
 }
 
-// New 创建一个 Agent。
+// New creates an Agent.
 func New(config Config) (*Agent, error) {
 	if config.Provider == nil {
 		return nil, fmt.Errorf("agent provider is required")
@@ -91,7 +91,7 @@ func New(config Config) (*Agent, error) {
 	}, nil
 }
 
-// appendMessage 将消息追加到 transcript 并触发 OnAppend 回调。
+// appendMessage appends a message to the transcript and triggers the OnAppend callback.
 func (a *Agent) appendMessage(msg model.Message) {
 	a.transcript.Append(msg)
 	if a.onAppend != nil {
@@ -99,12 +99,12 @@ func (a *Agent) appendMessage(msg model.Message) {
 	}
 }
 
-// RunTurn 执行一次纯文本用户输入到最终 assistant 回复的循环。
+// RunTurn executes a loop from plain-text user input to a final assistant reply.
 func (a *Agent) RunTurn(ctx context.Context, prompt string) (string, error) {
 	return a.RunTurnParts(ctx, []model.ContentPart{{Type: model.ContentPartText, Text: prompt}})
 }
 
-// RunTurnParts 执行一次结构化用户输入到最终 assistant 回复的循环。
+// RunTurnParts executes a loop from structured user input to a final assistant reply.
 func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (string, error) {
 	content := model.TextFromParts(parts)
 	a.appendMessage(model.Message{
@@ -144,12 +144,12 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 			return nil
 		})
 		if err != nil {
-			// Context-overflow 恢复：当 provider 返回超限错误且注入了 compactor 时，
-			// 触发一次自动压缩后重试当前 step。限制最多 maxOverflowCompactions 次。
+			// Context-overflow recovery: when the provider returns an overflow error and a compactor is injected,
+			// trigger one auto-compaction and retry the current step. Limited to at most maxOverflowCompactions times.
 			if compact.IsContextOverflow(err) && a.compactor != nil && overflowCompactions < maxOverflowCompactions {
 				if compactErr := a.compactor(ctx); compactErr == nil {
 					overflowCompactions++
-					step-- // 重试当前 step
+					step-- // retry current step
 					continue
 				}
 			}
@@ -220,7 +220,7 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 	return "", err
 }
 
-// normalizeContentParts 补齐图片默认 detail，并复制输入切片。
+// normalizeContentParts fills in default image detail and copies the input slice.
 func normalizeContentParts(parts []model.ContentPart) []model.ContentPart {
 	normalized := make([]model.ContentPart, 0, len(parts))
 	for _, part := range parts {

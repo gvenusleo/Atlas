@@ -2,27 +2,27 @@ package agent
 
 import "github.com/liuyuxin/atlas/internal/model"
 
-// EventType 表示 agent turn loop 中可观察的事件类型。
+// EventType represents the type of an observable event in the agent turn loop.
 type EventType string
 
 const (
-	// EventTurnStarted 表示一个用户 turn 已进入 agent loop。
+	// EventTurnStarted indicates that a user turn has entered the agent loop.
 	EventTurnStarted EventType = "turn_started"
-	// EventModelDelta 表示模型返回了一段文本增量。
+	// EventModelDelta indicates the model returned a text delta.
 	EventModelDelta EventType = "model_delta"
-	// EventModelReasoningDelta 表示模型返回了一段思维链增量。
+	// EventModelReasoningDelta indicates the model returned a chain-of-thought delta.
 	EventModelReasoningDelta EventType = "model_reasoning_delta"
-	// EventModelResponse 表示一次模型 step 已返回。
+	// EventModelResponse indicates a model step has returned.
 	EventModelResponse EventType = "model_response"
-	// EventToolStarted 表示一个工具调用即将执行。
+	// EventToolStarted indicates a tool call is about to execute.
 	EventToolStarted EventType = "tool_started"
-	// EventToolFinished 表示一个工具调用已经结束。
+	// EventToolFinished indicates a tool call has finished.
 	EventToolFinished EventType = "tool_finished"
-	// EventTurnFinished 表示一个用户 turn 已结束。
+	// EventTurnFinished indicates a user turn has ended.
 	EventTurnFinished EventType = "turn_finished"
 )
 
-// Event 描述 agent loop 中发生的一件可观察事件。
+// Event describes an observable event in the agent loop.
 type Event struct {
 	Type         EventType
 	Step         int
@@ -34,5 +34,5 @@ type Event struct {
 	Err          error
 }
 
-// Observer 接收 agent loop 事件。
+// Observer receives agent loop events.
 type Observer func(Event)

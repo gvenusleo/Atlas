@@ -155,7 +155,7 @@ func TestStreamOmitsPromptCacheKeyByDefault(t *testing.T) {
 	}
 }
 
-// TestStreamSendsIncludeUsage 验证流式请求始终携带 stream_options.include_usage。
+// TestStreamSendsIncludeUsage verifies that streaming requests always include stream_options.include_usage.
 func TestStreamSendsIncludeUsage(t *testing.T) {
 	var gotReq chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

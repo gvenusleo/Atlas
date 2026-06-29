@@ -2,8 +2,8 @@ package compact
 
 import "strings"
 
-// contextKeywords 是与上下文/输入直接相关的关键词。
-// 单独出现这些词不足以判定 overflow，需要配合 limitKeywords 组合匹配。
+// contextKeywords are keywords directly related to context/input.
+// These words alone are insufficient to determine overflow; they require combination with limitKeywords.
 var contextKeywords = []string{
 	"context",
 	"input",
@@ -12,8 +12,8 @@ var contextKeywords = []string{
 	"tokens",
 }
 
-// limitKeywords 是表示数量/长度限制的词。
-// 单独出现这些词不足以判定 overflow（如 "maximum of 5 attachments"）。
+// limitKeywords are words indicating quantity/length limits.
+// These words alone are insufficient to determine overflow (e.g., "maximum of 5 attachments").
 var limitKeywords = []string{
 	"maximum of",
 	"maximum length",
@@ -22,35 +22,35 @@ var limitKeywords = []string{
 	"too many",
 }
 
-// exactPatterns 是自身已足够明确、无需组合匹配的 overflow 模式。
+// exactPatterns are overflow patterns that are sufficiently explicit on their own without combination matching.
 var exactPatterns = []string{
 	"context length",
 	"context window",
 	"context_limit",
 }
 
-// IsContextOverflow 判断错误是否表示上下文超限（token 或 input item 数量）。
-// 用于 agent 循环在 provider 返回 400 时决定是否触发自动压缩恢复。
+// IsContextOverflow determines whether an error indicates context overflow (token or input item count).
+// Used by the agent loop to decide whether to trigger auto-compaction recovery when the provider returns a 400.
 //
-// 匹配策略分两层：
-//  1. 精确模式：错误消息包含 "context length"、"context window"、"context_limit" 等自身明确的模式。
-//  2. 组合模式：错误消息同时包含一个 limitKeywords 词和一个 contextKeywords 词，
-//     例如 "Maximum of 1000 items allowed in input" 同时命中 "maximum of" + "items"/"input"。
-//     这避免了 "maximum of 5 attachments" 等无关 400 误触发压缩。
+// The matching strategy has two layers:
+//  1. Exact mode: the error message contains self-explicit patterns like "context length", "context window", "context_limit".
+//  2. Combination mode: the error message contains both a limitKeywords word and a contextKeywords word,
+//     e.g., "Maximum of 1000 items allowed in input" matches both "maximum of" + "items"/"input".
+//     This avoids false compaction triggers from unrelated 400s like "maximum of 5 attachments".
 func IsContextOverflow(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
 
-	// 精确模式
+	// Exact mode
 	for _, pattern := range exactPatterns {
 		if strings.Contains(msg, pattern) {
 			return true
 		}
 	}
 
-	// 组合模式：limitKeyword + contextKeyword
+	// Combination mode: limitKeyword + contextKeyword
 	hasLimit := false
 	for _, kw := range limitKeywords {
 		if strings.Contains(msg, kw) {

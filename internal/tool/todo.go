@@ -9,21 +9,21 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// TodoWrite 是 todo 列表管理工具。模型每次调用传入完整列表，全量替换。
+// TodoWrite is the todo list management tool. The model passes the complete list each call, replacing all entries.
 type TodoWrite struct{}
 
-// todoWriteParams 是 todo_write 工具的参数。
+// todoWriteParams is the parameters for the todo_write tool.
 type todoWriteParams struct {
 	Todos []todoItem `json:"todos"`
 }
 
-// todoItem 是单个 todo 条目。
+// todoItem is a single todo entry.
 type todoItem struct {
 	Content string `json:"content"`
 	Status  string `json:"status"`
 }
 
-// Definition 返回 todo_write 的工具定义。
+// Definition returns the tool definition for todo_write.
 func (TodoWrite) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name: "todo_write",
@@ -73,7 +73,7 @@ func (TodoWrite) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 解析参数并返回 todo 列表摘要和结构化 metadata。
+// Run parses parameters and returns a todo list summary and structured metadata.
 func (TodoWrite) Run(_ context.Context, arguments string) (string, error) {
 	var params todoWriteParams
 	if err := json.Unmarshal([]byte(arguments), &params); err != nil {
@@ -116,7 +116,7 @@ func (TodoWrite) Run(_ context.Context, arguments string) (string, error) {
 	return b.String(), nil
 }
 
-// Metadata 返回 todo 列表的结构化展示数据，供 ACP plan update 和微信进度通知使用。
+// Metadata returns structured presentation data for the todo list, used by ACP plan update and WeChat progress notifications.
 func (TodoWrite) Metadata(arguments string, _ string) model.ToolMetadata {
 	var params todoWriteParams
 	if err := json.Unmarshal([]byte(arguments), &params); err != nil {

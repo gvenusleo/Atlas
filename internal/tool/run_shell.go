@@ -20,26 +20,26 @@ const (
 	maxShellOutputBytes        = 128 * 1024
 )
 
-// ShellSpec 描述 Atlas 在当前平台上使用的默认 shell。
+// ShellSpec describes the default shell used by Atlas on the current platform.
 type ShellSpec struct {
 	DisplayName string
 	Command     string
 	Args        []string
 }
 
-// RunShell 执行本地 shell 命令。
+// RunShell executes a local shell command.
 type RunShell struct {
 	CWD string
 }
 
-// ShellArgs 描述 run_shell 接收的 JSON 参数。
+// ShellArgs describes the JSON parameters received by run_shell.
 type ShellArgs struct {
 	Command        string `json:"command"`
 	CWD            string `json:"cwd"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
 }
 
-// Definition 返回 run_shell 的模型可见定义。
+// Definition returns the model-visible definition for run_shell.
 func (RunShell) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "run_shell",
@@ -65,7 +65,7 @@ func (RunShell) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数执行一次本地 shell 命令。
+// Run executes a local shell command using the JSON parameters.
 func (r RunShell) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseShellArgs(arguments)
 	if err != nil {
@@ -79,7 +79,7 @@ func (r RunShell) Run(ctx context.Context, arguments string) (string, error) {
 	return runShellCommand(ctx, args.Command, cwd, timeout)
 }
 
-// ParseShellArgs 解析并校验 run_shell 的 JSON 参数。
+// ParseShellArgs parses and validates the JSON parameters for run_shell.
 func ParseShellArgs(arguments string) (ShellArgs, error) {
 	var args ShellArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -91,17 +91,17 @@ func ParseShellArgs(arguments string) (ShellArgs, error) {
 	return args, nil
 }
 
-// ShellTimeout 返回 run_shell 实际使用的超时时长。
+// ShellTimeout returns the actual timeout duration used by run_shell.
 func ShellTimeout(seconds int) time.Duration {
 	return normalizeShellTimeout(seconds)
 }
 
-// DefaultShell 返回当前平台默认 shell 的执行参数。
+// DefaultShell returns the execution parameters for the default shell on the current platform.
 func DefaultShell() ShellSpec {
 	return defaultShellSpec(runtime.GOOS, exec.LookPath)
 }
 
-// CheckDefaultShell 检查当前平台默认 shell 是否可用。
+// CheckDefaultShell checks whether the default shell for the current platform is available.
 func CheckDefaultShell() (ShellSpec, error) {
 	spec := DefaultShell()
 	if runtime.GOOS == "windows" {

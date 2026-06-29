@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// LoginOptions 描述微信扫码登录流程参数。
+// LoginOptions describes the parameters for the WeChat QR code login flow.
 type LoginOptions struct {
 	Store  *Store
 	Client *Client
@@ -16,7 +16,7 @@ type LoginOptions struct {
 	Now    func() time.Time
 }
 
-// Login 执行微信扫码登录并保存账号凭据。
+// Login performs a WeChat QR code login and saves the account credentials.
 func Login(ctx context.Context, opts LoginOptions) (LoginResult, error) {
 	if opts.Store == nil {
 		return LoginResult{}, fmt.Errorf("weixin store is required")
@@ -92,7 +92,7 @@ func Login(ctx context.Context, opts LoginOptions) (LoginResult, error) {
 	return LoginResult{}, fmt.Errorf("weixin login timed out")
 }
 
-// normalizeBaseURL 把微信重定向 host 归一化为 HTTPS base URL。
+// normalizeBaseURL normalizes a WeChat redirect host to an HTTPS base URL.
 func normalizeBaseURL(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

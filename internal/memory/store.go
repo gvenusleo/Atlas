@@ -1,4 +1,4 @@
-// Package memory 管理 Atlas 的长期记忆条目、检索摘要和后台任务。
+// Package memory manages Atlas's long-term memory entries, retrieval summaries, and background tasks.
 package memory
 
 import (
@@ -20,16 +20,16 @@ import (
 )
 
 const (
-	// ScopeGlobal 表示跨项目生效的用户偏好和长期指令。
+	// ScopeGlobal indicates user preferences and long-term instructions that apply across projects.
 	ScopeGlobal = "global"
-	// ScopeProject 表示只对当前项目生效的事实和工作流。
+	// ScopeProject indicates facts and workflows that apply only to the current project.
 	ScopeProject = "project"
 
-	// TypeInstruction 表示用户长期偏好或约束。
+	// TypeInstruction indicates a user long-term preference or constraint.
 	TypeInstruction = "instruction"
-	// TypeFact 表示项目事实。
+	// TypeFact indicates a project fact.
 	TypeFact = "fact"
-	// TypeWorkflow 表示可复用的项目操作流程。
+	// TypeWorkflow indicates a reusable project workflow.
 	TypeWorkflow = "workflow"
 
 	statusActive    = "active"
@@ -39,9 +39,9 @@ const (
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"
 
-	// JobKindSessionExtract 表示从会话 transcript 中抽取记忆。
+	// JobKindSessionExtract indicates extracting memory from a session transcript.
 	JobKindSessionExtract = "session_extract"
-	// JobKindScopeSummarize 表示重新生成某个记忆作用域的摘要。
+	// JobKindScopeSummarize indicates regenerating the summary for a memory scope.
 	JobKindScopeSummarize = "scope_summarize"
 
 	defaultPromptEntryLimit = 12
@@ -50,12 +50,12 @@ const (
 
 var ftsTokenPattern = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 
-// Store 读写 Atlas 长期记忆数据库。
+// Store reads and writes the Atlas long-term memory database.
 type Store struct {
 	db *sql.DB
 }
 
-// Entry 是一条长期记忆。
+// Entry is a single long-term memory entry.
 type Entry struct {
 	ID              int64
 	Scope           string
@@ -74,7 +74,7 @@ type Entry struct {
 	UseCount        int
 }
 
-// Summary 是某个记忆作用域的模型摘要。
+// Summary is the model-generated summary for a memory scope.
 type Summary struct {
 	Scope       string
 	ProjectKey  string
@@ -85,7 +85,7 @@ type Summary struct {
 	UpdatedAt   time.Time
 }
 
-// Job 描述一条后台记忆任务。
+// Job describes a single background memory job.
 type Job struct {
 	Key         string
 	Kind        string
@@ -101,14 +101,14 @@ type Job struct {
 	LastError   string
 }
 
-// Counts 汇总后台记忆任务数量。
+// Counts summarizes background memory job counts.
 type Counts struct {
 	Entries int
 	Pending int
 	Failed  int
 }
 
-// Open 打开 SQLite 记忆数据库。
+// Open opens the SQLite memory database.
 func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, fmt.Errorf("memory db path is required")
@@ -123,17 +123,17 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// Close 关闭底层数据库连接。
+// Close closes the underlying database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// DB 返回底层数据库连接，供测试和诊断使用。
+// DB returns the underlying database connection for testing and diagnostics.
 func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// EnsureSchema 创建长期记忆相关表结构。
+// EnsureSchema creates the long-term memory table schema.
 func (s *Store) EnsureSchema(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
 create table if not exists memory_entries (
@@ -216,7 +216,7 @@ create index if not exists memory_jobs_ready_idx
 	return err
 }
 
-// ProjectIdentity 返回工作目录对应的稳定项目标识。
+// ProjectIdentity returns a stable project identifier for the working directory.
 func ProjectIdentity(cwd string) (string, string) {
 	if cwd == "" {
 		cwd = "."
@@ -233,7 +233,7 @@ func ProjectIdentity(cwd string) (string, string) {
 	return hex.EncodeToString(sum[:])[:16], projectPath
 }
 
-// TranscriptHash 返回 transcript 内容的稳定哈希。
+// TranscriptHash returns a stable hash of the transcript content.
 func TranscriptHash(messages []model.Message) string {
 	var builder strings.Builder
 	for _, msg := range messages {
@@ -270,14 +270,14 @@ func TranscriptHash(messages []model.Message) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// EntryFingerprint 返回记忆条目的去重指纹。
+// EntryFingerprint returns the deduplication fingerprint for a memory entry.
 func EntryFingerprint(scope, projectKey, entryType, content string) string {
 	normalized := strings.ToLower(strings.Join(strings.Fields(content), " "))
 	sum := sha256.Sum256([]byte(scope + "\x00" + projectKey + "\x00" + entryType + "\x00" + normalized))
 	return hex.EncodeToString(sum[:])
 }
 
-// UpsertEntry 写入或更新一条 active 记忆。
+// UpsertEntry inserts or updates a single active memory entry.
 func (s *Store) UpsertEntry(ctx context.Context, entry Entry) (Entry, error) {
 	if err := validateScope(entry.Scope); err != nil {
 		return Entry{}, err
@@ -314,7 +314,7 @@ on conflict(fingerprint) do update set
 	return s.GetEntryByFingerprint(ctx, entry.Fingerprint)
 }
 
-// GetEntryByFingerprint 按指纹读取记忆条目。
+// GetEntryByFingerprint reads a memory entry by fingerprint.
 func (s *Store) GetEntryByFingerprint(ctx context.Context, fingerprint string) (Entry, error) {
 	row := s.db.QueryRowContext(ctx, `
 select id, scope, project_key, project_path, type, content, source_note, confidence, fingerprint, status, source_session_id, created_at, updated_at, last_used_at, use_count
@@ -323,7 +323,7 @@ where fingerprint = ?`, fingerprint)
 	return scanEntry(row)
 }
 
-// ArchiveFingerprints 将指定指纹的记忆标记为 archived。
+// ArchiveFingerprints marks memories with the specified fingerprints as archived.
 func (s *Store) ArchiveFingerprints(ctx context.Context, fingerprints []string) error {
 	if len(fingerprints) == 0 {
 		return nil
@@ -343,9 +343,9 @@ where fingerprint = ?`, statusArchived, now, strings.TrimSpace(fingerprint)); er
 	return nil
 }
 
-// DecayConfidence 按记忆类型对 active 记忆的 confidence 做离散衰减。
-// decayDays 按类型指定每多少天衰减 1 点；未指定的类型不衰减。
-// confidence 不会低于 1。
+// DecayConfidence applies discrete confidence decay to active memories by memory type.
+// decayDays specifies how many days per 1-point decay by type; unspecified types do not decay.
+// confidence never goes below 1.
 func (s *Store) DecayConfidence(ctx context.Context, decayDays map[string]int) error {
 	if len(decayDays) == 0 {
 		return nil
@@ -402,9 +402,9 @@ update memory_entries set confidence = ? where id = ?`, newConfidences[i], id); 
 
 const scoreFloorRatio = 0.15
 
-// PruneStaleEntries 将长期未使用且低置信度的 active 记忆归档。
-// 条件：confidence <= 1 且 use_count == 0 且 last_used_at 超过 maxUnusedDays 天。
-// 返回归档条目数。last_used_at 为空的条目按 updated_at 计算。
+// PruneStaleEntries archives active memories that have been unused for a long time and have low confidence.
+// Condition: confidence <= 1 and use_count == 0 and last_used_at exceeds maxUnusedDays.
+// Returns the number of archived entries. Entries with empty last_used_at are calculated by updated_at.
 func (s *Store) PruneStaleEntries(ctx context.Context, maxUnusedDays int) (int, error) {
 	if maxUnusedDays <= 0 {
 		return 0, nil
@@ -426,7 +426,7 @@ func (s *Store) PruneStaleEntries(ctx context.Context, maxUnusedDays int) (int, 
 	return int(n), nil
 }
 
-// Search 返回和 query 相关的 global/project active 记忆。
+// Search returns global/project active memories related to the query.
 func (s *Store) Search(ctx context.Context, cwd, query string, limit int) ([]Entry, error) {
 	projectKey, _ := ProjectIdentity(cwd)
 	ftsQuery := buildFTSQuery(query)
@@ -489,7 +489,7 @@ limit ?`, ftsQuery, projectKey, limit)
 	return entries, nil
 }
 
-// ListPromptEntries 返回没有 query 时用于提示词注入的最近记忆。
+// ListPromptEntries returns recent memories for prompt injection when no query is provided.
 func (s *Store) ListPromptEntries(ctx context.Context, cwd string, limit int) ([]Entry, error) {
 	projectKey, _ := ProjectIdentity(cwd)
 	if limit <= 0 {
@@ -517,7 +517,7 @@ limit ?`, projectKey, limit)
 	return entries, nil
 }
 
-// ListEntries 返回指定作用域下的 active 记忆。
+// ListEntries returns active memories under the specified scope.
 func (s *Store) ListEntries(ctx context.Context, scope, projectKey string) ([]Entry, error) {
 	rows, err := s.db.QueryContext(ctx, `
 select id, scope, project_key, project_path, type, content, source_note, confidence, fingerprint, status, source_session_id, created_at, updated_at, last_used_at, use_count
@@ -531,7 +531,7 @@ order by type, updated_at desc, id desc`, scope, projectKey)
 	return scanEntries(rows)
 }
 
-// SaveSummary 保存指定作用域的记忆摘要。
+// SaveSummary saves the memory summary for the specified scope.
 func (s *Store) SaveSummary(ctx context.Context, summary Summary) error {
 	if err := validateScope(summary.Scope); err != nil {
 		return err
@@ -554,7 +554,7 @@ on conflict(scope, project_key) do update set
 	return err
 }
 
-// LoadSummaries 返回 global 和当前 project 的摘要。
+// LoadSummaries returns summaries for the global and current project scopes.
 func (s *Store) LoadSummaries(ctx context.Context, cwd string) ([]Summary, error) {
 	projectKey, _ := ProjectIdentity(cwd)
 	rows, err := s.db.QueryContext(ctx, `
@@ -578,9 +578,9 @@ order by scope`, projectKey)
 	return summaries, rows.Err()
 }
 
-// PromptContext 构造系统提示词可直接注入的长期记忆上下文。
-// excludeFingerprints 中的记忆不会出现在结果中；如果全部被排除则回退全量。
-// 返回格式化文本和本轮实际注入条目的指纹列表。
+// PromptContext constructs long-term memory context for direct injection into the system prompt.
+// Memories in excludeFingerprints do not appear in results; if all are excluded, falls back to full set.
+// Returns formatted text and the fingerprint list of entries actually injected this turn.
 func (s *Store) PromptContext(ctx context.Context, cwd, query string, excludeFingerprints []string) (string, []string, error) {
 	summaries, err := s.LoadSummaries(ctx, cwd)
 	if err != nil {
@@ -605,7 +605,7 @@ func (s *Store) PromptContext(ctx context.Context, cwd, query string, excludeFin
 	return trimPromptContext(builder.String()), fingerprints, nil
 }
 
-// EnqueueSessionExtract 安排从指定 session 中抽取记忆。
+// EnqueueSessionExtract schedules memory extraction from the specified session.
 func (s *Store) EnqueueSessionExtract(ctx context.Context, sessionID, cwd, inputHash, model string) error {
 	if sessionID == "" || inputHash == "" {
 		return nil
@@ -632,7 +632,7 @@ on conflict(job_key) do update set
 	return err
 }
 
-// EnqueueSummarize 安排重新生成指定记忆作用域摘要。
+// EnqueueSummarize schedules regeneration of the summary for the specified memory scope.
 func (s *Store) EnqueueSummarize(ctx context.Context, scope, projectKey, projectPath, model string) error {
 	if err := validateScope(scope); err != nil {
 		return err
@@ -660,7 +660,7 @@ on conflict(job_key) do update set
 	return err
 }
 
-// ClaimNextJob 获取一条可执行的后台任务并设置租约。
+// ClaimNextJob fetches an executable background job and sets its lease.
 func (s *Store) ClaimNextJob(ctx context.Context, workerID string, lease time.Duration) (Job, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -722,7 +722,7 @@ where job_key = ?
 	return job, true, nil
 }
 
-// CompleteJob 标记后台任务成功。
+// CompleteJob marks a background job as succeeded.
 func (s *Store) CompleteJob(ctx context.Context, job Job) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
@@ -740,7 +740,7 @@ where job_key = ?
 	return err
 }
 
-// FailJob 标记后台任务失败并设置重试时间。
+// FailJob marks a background job as failed and sets the retry time.
 func (s *Store) FailJob(ctx context.Context, job Job, jobErr error) error {
 	delay := time.Duration(min(max(job.Attempts, 1), 5)) * time.Minute
 	now := time.Now().UTC()
@@ -763,7 +763,7 @@ where job_key = ?
 	return err
 }
 
-// Counts 返回 doctor 使用的记忆统计。
+// Counts returns memory statistics for doctor diagnostics.
 func (s *Store) Counts(ctx context.Context) (Counts, error) {
 	var counts Counts
 	if err := s.db.QueryRowContext(ctx, `select count(*) from memory_entries where status = 'active'`).Scan(&counts.Entries); err != nil {
@@ -902,7 +902,7 @@ func trimPromptContext(content string) string {
 	return string(runes[:maxPromptContextRunes]) + "\n..."
 }
 
-// filterExcluded 过滤掉排除集合中的记忆。如果全部被排除，返回原始列表以防丢失覆盖面。
+// filterExcluded filters out memories in the exclusion set. If all are excluded, returns the original list to preserve coverage.
 func filterExcluded(entries []Entry, excludeFingerprints []string) []Entry {
 	if len(excludeFingerprints) == 0 || len(entries) == 0 {
 		return entries
@@ -923,8 +923,8 @@ func filterExcluded(entries []Entry, excludeFingerprints []string) []Entry {
 	return filtered
 }
 
-// filterByScore 保留 BM25 分数与 top hit 接近的记忆，过滤尾部噪声。
-// BM25 分数越小（越负）表示相关性越差；top hit 永远保留。
+// filterByScore retains memories with BM25 scores close to the top hit, filtering tail noise.
+// Lower (more negative) BM25 scores indicate lower relevance; the top hit is always retained.
 func filterByScore(entries []Entry, ranks []float64) []Entry {
 	if len(entries) <= 1 {
 		return entries
@@ -983,7 +983,7 @@ func clampConfidence(confidence int) int {
 	return min(max(confidence, 1), 5)
 }
 
-// EntriesInputHash 返回一组记忆条目的摘要输入哈希。
+// EntriesInputHash returns the summary input hash for a set of memory entries.
 func EntriesInputHash(entries []Entry) string {
 	var builder strings.Builder
 	for _, entry := range entries {

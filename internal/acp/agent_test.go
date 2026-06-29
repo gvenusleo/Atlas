@@ -2133,7 +2133,7 @@ func testCWD(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "work")
 }
 
-// writeTestTextFile 写入测试用文本文件。
+// writeTestTextFile writes a test text file.
 func writeTestTextFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -2144,7 +2144,7 @@ func writeTestTextFile(t *testing.T, path, content string) {
 	}
 }
 
-// writeTestBinaryFile 写入包含 NUL 的测试二进制文件。
+// writeTestBinaryFile writes a test binary file containing NUL bytes.
 func writeTestBinaryFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -2155,7 +2155,7 @@ func writeTestBinaryFile(t *testing.T, path string) {
 	}
 }
 
-// mkdirTestDir 创建测试目录。
+// mkdirTestDir creates a test directory.
 func mkdirTestDir(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {

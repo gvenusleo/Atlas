@@ -1,5 +1,5 @@
-// Package version 定义 Atlas 的发布版本。
+// Package version defines the Atlas release version.
 package version
 
-// Current 是当前发布版本。
+// Current is the current release version.
 const Current = "0.10.0"

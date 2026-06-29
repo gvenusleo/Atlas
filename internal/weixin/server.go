@@ -26,7 +26,7 @@ const (
 	maxWeixinTextLength     = 3500
 )
 
-// Runtime 描述微信通道需要调用的 Atlas 核心能力。
+// Runtime describes the Atlas core capabilities needed by the WeChat channel.
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
 	CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error)
@@ -36,7 +36,7 @@ type Runtime interface {
 	RunMemoryWorker(context.Context) error
 }
 
-// ServerOptions 描述微信通道服务参数。
+// ServerOptions describes the WeChat channel server parameters.
 type ServerOptions struct {
 	Runtime    Runtime
 	Store      *Store
@@ -47,7 +47,7 @@ type ServerOptions struct {
 	CDNBaseURL string
 }
 
-// Server 连接微信 iLink Bot，并把消息转发给 Atlas runtime。
+// Server connects to the WeChat iLink Bot and forwards messages to the Atlas runtime.
 type Server struct {
 	rt         Runtime
 	store      *Store
@@ -61,7 +61,7 @@ type Server struct {
 	active  map[string]context.CancelFunc
 }
 
-// NewServer 创建微信通道服务。
+// NewServer creates a WeChat channel server.
 func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Runtime == nil {
 		return nil, fmt.Errorf("weixin runtime is required")
@@ -97,7 +97,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}, nil
 }
 
-// Run 开始长轮询微信消息，直到 ctx 取消。
+// Run starts long-polling WeChat messages until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	defer cancelWorker()
@@ -138,7 +138,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// HandleMessage 处理单条微信消息。
+// HandleMessage processes a single WeChat message.
 func (s *Server) HandleMessage(ctx context.Context, msg WeixinMessage) error {
 	if msg.MessageType != messageTypeUser {
 		return nil
@@ -167,7 +167,7 @@ func (s *Server) HandleMessage(ctx context.Context, msg WeixinMessage) error {
 	return s.startTurn(ctx, msg, body, parts)
 }
 
-// handleSlash 处理微信聊天中的本地控制命令。
+// handleSlash handles local control commands in WeChat chat.
 func (s *Server) handleSlash(ctx context.Context, msg WeixinMessage, body string) error {
 	fields := strings.Fields(body)
 	command := strings.ToLower(fields[0])
@@ -205,7 +205,7 @@ func (s *Server) handleSlash(ctx context.Context, msg WeixinMessage, body string
 	}
 }
 
-// handleCWD 读取或切换发送人的当前工作目录。
+// handleCWD reads or switches the sender's current working directory.
 func (s *Server) handleCWD(ctx context.Context, msg WeixinMessage, target string) error {
 	if target == "" {
 		state, err := s.senderState(msg.FromUserID)
@@ -240,7 +240,7 @@ func (s *Server) handleCWD(ctx context.Context, msg WeixinMessage, target string
 	}, msg)
 }
 
-// slashCommandRest 返回命令名之后的原始参数文本。
+// slashCommandRest returns the raw parameter text after the command name.
 func slashCommandRest(body string) string {
 	body = strings.TrimSpace(body)
 	for index, char := range body {
@@ -251,7 +251,7 @@ func slashCommandRest(body string) string {
 	return ""
 }
 
-// handleSessions 返回当前目录或全局最近会话列表。
+// handleSessions returns the recent session list for the current directory or globally.
 func (s *Server) handleSessions(ctx context.Context, msg WeixinMessage, all bool) error {
 	state, err := s.senderState(msg.FromUserID)
 	if err != nil {
@@ -272,7 +272,7 @@ func (s *Server) handleSessions(ctx context.Context, msg WeixinMessage, all bool
 	return s.reply(ctx, msg, formatSessionList(sessions, all))
 }
 
-// handleResume 把发送人的后续消息绑定到指定 Atlas session。
+// handleResume binds the sender's subsequent messages to the specified Atlas session.
 func (s *Server) handleResume(ctx context.Context, msg WeixinMessage, sessionID string) error {
 	info, _, err := s.rt.ShowSession(ctx, sessionID)
 	if err != nil {
@@ -288,7 +288,7 @@ func (s *Server) handleResume(ctx context.Context, msg WeixinMessage, sessionID 
 	}, msg)
 }
 
-// handleCompact 对当前绑定 session 执行手动上下文压缩。
+// handleCompact performs manual context compaction on the currently bound session.
 func (s *Server) handleCompact(ctx context.Context, msg WeixinMessage) error {
 	state, err := s.senderState(msg.FromUserID)
 	if err != nil {
@@ -307,7 +307,7 @@ func (s *Server) handleCompact(ctx context.Context, msg WeixinMessage) error {
 	return s.reply(ctx, msg, fmt.Sprintf("Compacted %d messages, kept %d messages.", result.CompactCount, result.KeepCount))
 }
 
-// handleCancel 取消发送人当前正在运行的 turn。
+// handleCancel cancels the sender's currently running turn.
 func (s *Server) handleCancel(ctx context.Context, msg WeixinMessage) error {
 	s.stateMu.Lock()
 	cancel := s.active[msg.FromUserID]
@@ -319,7 +319,7 @@ func (s *Server) handleCancel(ctx context.Context, msg WeixinMessage) error {
 	return s.reply(ctx, msg, "Cancelled current turn.")
 }
 
-// startTurn 为普通消息启动一次异步 Atlas turn。
+// startTurn starts an asynchronous Atlas turn for a regular message.
 func (s *Server) startTurn(ctx context.Context, msg WeixinMessage, prompt string, parts []model.ContentPart) error {
 	state, err := s.senderState(msg.FromUserID)
 	if err != nil {
@@ -339,7 +339,7 @@ func (s *Server) startTurn(ctx context.Context, msg WeixinMessage, prompt string
 	return nil
 }
 
-// runTurn 调用 runtime 并把最终回复发回微信。
+// runTurn calls the runtime and sends the final reply back to WeChat.
 func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, parts []model.ContentPart, state SenderState) {
 	defer func() {
 		s.stateMu.Lock()
@@ -406,7 +406,7 @@ func (s *Server) runTurn(ctx context.Context, msg WeixinMessage, prompt string, 
 	}
 }
 
-// refreshTypingTicket 刷新 sendtyping 所需的 ticket。
+// refreshTypingTicket refreshes the ticket needed for sendtyping.
 func (s *Server) refreshTypingTicket(ctx context.Context, contextToken string) error {
 	ticket, err := s.client.GetConfig(ctx, s.account.UserID, contextToken)
 	if err != nil {
@@ -417,7 +417,7 @@ func (s *Server) refreshTypingTicket(ctx context.Context, contextToken string) e
 	})
 }
 
-// ensureTypingTicket 在收到消息上下文后尽力准备输入状态 ticket。
+// ensureTypingTicket best-effort prepares the typing ticket after receiving message context.
 func (s *Server) ensureTypingTicket(ctx context.Context, contextToken string) {
 	if contextToken == "" {
 		return
@@ -429,7 +429,7 @@ func (s *Server) ensureTypingTicket(ctx context.Context, contextToken string) {
 	_ = s.refreshTypingTicket(ctx, contextToken)
 }
 
-// sendTyping 尽力发送或取消微信输入状态。
+// sendTyping best-effort sends or cancels the WeChat typing indicator.
 func (s *Server) sendTyping(ctx context.Context, userID string, typing bool) {
 	state, err := s.loadState()
 	if err != nil || state.TypingTicket == "" {
@@ -440,7 +440,7 @@ func (s *Server) sendTyping(ctx context.Context, userID string, typing bool) {
 	}
 }
 
-// reply 把文本按微信消息长度限制分片发送。
+// reply sends text in segments according to WeChat message length limits.
 func (s *Server) reply(ctx context.Context, msg WeixinMessage, text string) error {
 	for _, chunk := range splitText(text, maxWeixinTextLength) {
 		if err := s.client.SendText(ctx, msg.FromUserID, chunk, msg.ContextToken, msg.RunID); err != nil {
@@ -450,7 +450,7 @@ func (s *Server) reply(ctx context.Context, msg WeixinMessage, text string) erro
 	return nil
 }
 
-// senderState 返回发送人的当前状态，首次使用时填入默认工作目录。
+// senderState returns the sender's current state, initializing with the default working directory on first use.
 func (s *Server) senderState(sender string) (SenderState, error) {
 	state, err := s.loadState()
 	if err != nil {
@@ -468,7 +468,7 @@ func (s *Server) senderState(sender string) (SenderState, error) {
 	return senderState, nil
 }
 
-// updateSender 原子更新指定发送人的状态，并回复命令结果。
+// updateSender atomically updates the specified sender's state and replies with the command result.
 func (s *Server) updateSender(ctx context.Context, sender string, update func(SenderState) (SenderState, string, error), msg WeixinMessage) error {
 	var reply string
 	var updateErr error
@@ -493,7 +493,7 @@ func (s *Server) updateSender(ctx context.Context, sender string, update func(Se
 	return s.reply(ctx, msg, reply)
 }
 
-// setSenderSession 记录发送人当前绑定的 Atlas session。
+// setSenderSession records the Atlas session currently bound to the sender.
 func (s *Server) setSenderSession(sender, sessionID string) error {
 	return s.updateState(func(state *channelState) {
 		current := state.Senders[sender]
@@ -505,14 +505,14 @@ func (s *Server) setSenderSession(sender, sessionID string) error {
 	})
 }
 
-// loadState 串行读取微信通道状态文件。
+// loadState serially reads the WeChat channel state file.
 func (s *Server) loadState() (channelState, error) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	return s.store.loadState()
 }
 
-// updateState 串行执行一次读改写，避免并发覆盖状态文件。
+// updateState performs a serialized read-modify-write to avoid concurrent overwrites of the state file.
 func (s *Server) updateState(update func(*channelState)) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
@@ -525,7 +525,7 @@ func (s *Server) updateState(update func(*channelState)) error {
 	return s.store.saveState(state)
 }
 
-// defaultCWD 返回微信通道首次对话使用的工作目录。
+// defaultCWD returns the working directory used for the first conversation in the WeChat channel.
 func (s *Server) defaultCWD() string {
 	if wd, err := os.Getwd(); err == nil {
 		return wd
@@ -533,7 +533,7 @@ func (s *Server) defaultCWD() string {
 	return "."
 }
 
-// extractParts 提取微信消息中的文本和图片内容项。
+// extractParts extracts text and image content items from a WeChat message.
 func (s *Server) extractParts(ctx context.Context, items []MessageItem) ([]model.ContentPart, error) {
 	var parts []model.ContentPart
 	for _, item := range items {
@@ -561,7 +561,7 @@ func hasImagePart(parts []model.ContentPart) bool {
 	return false
 }
 
-// splitText 按 rune 数分割微信回复文本。
+// splitText splits WeChat reply text by rune count.
 func splitText(text string, limit int) []string {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -580,7 +580,7 @@ func splitText(text string, limit int) []string {
 	return chunks
 }
 
-// displaySessionID 返回适合聊天展示的 session ID。
+// displaySessionID returns a session ID suitable for chat display.
 func displaySessionID(id string) string {
 	if id == "" {
 		return "(new)"
@@ -588,7 +588,7 @@ func displaySessionID(id string) string {
 	return id
 }
 
-// weixinHelpText 返回微信 slash command 的简明说明。
+// weixinHelpText returns a concise description of WeChat slash commands.
 func weixinHelpText() string {
 	return strings.Join([]string{
 		"Atlas commands:",
@@ -605,7 +605,7 @@ func weixinHelpText() string {
 	}, "\n")
 }
 
-// formatSessionList 把会话列表格式化为适合微信纯文本展示的表格。
+// formatSessionList formats a session list as a table suitable for WeChat plain-text display.
 func formatSessionList(sessions []session.Session, includeCWD bool) string {
 	var b strings.Builder
 	if includeCWD {
@@ -629,7 +629,7 @@ func formatSessionList(sessions []session.Session, includeCWD bool) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// tableCell 清理表格单元格中的连续空白。
+// tableCell cleans up consecutive whitespace in table cells.
 func tableCell(value, fallback string) string {
 	value = strings.Join(strings.Fields(value), " ")
 	if value == "" {
@@ -638,7 +638,7 @@ func tableCell(value, fallback string) string {
 	return value
 }
 
-// sleepContext 在等待期间响应 ctx 取消。
+// sleepContext responds to ctx cancellation during the wait.
 func sleepContext(ctx context.Context, d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()

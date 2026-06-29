@@ -1624,37 +1624,37 @@ func quotePowerShell(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 }
 
-// TestRunTurnOverflowRecoveryPreservesFullTranscript 验证 overflow 恢复后保存的
-// 完整 transcript 语义正确：下一轮 BuildActiveMessages 不会二次切掉已压缩前缀，
-// 也不会重复注入 summary。
+// TestRunTurnOverflowRecoveryPreservesFullTranscript verifies that the saved transcript after overflow recovery
+// Full transcript semantics are correct: the next BuildActiveMessages will not re-cut the compacted prefix,
+// Also does not re-inject summary.
 func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 	provider := &sequenceProvider{
 		responses: []model.ChatResponse{
-			// 第一轮：正常回复
+			// Round 1: normal reply
 			{Content: "first reply", Usage: model.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
-			// 第二轮：正常回复
+			// Round 2: normal reply
 			{Content: "second reply", Usage: model.Usage{InputTokens: 120, OutputTokens: 2, TotalTokens: 122}},
-			// 第三轮 step 0：overflow 错误（response 被丢弃）
+			// Round 3 step 0: overflow error (response discarded)
 			{Content: ""},
-			// compactor 调用 provider.Stream 生成摘要
+			// compactor calls provider.Stream to generate summary
 			{Content: "compaction summary"},
-			// 第三轮 step 0 重试：正常回复
+			// Round 3 step 0 retry: normal reply
 			{Content: "third reply", Usage: model.Usage{InputTokens: 50, OutputTokens: 2, TotalTokens: 52}},
-			// 第四轮：验证下一轮正常工作
+			// Round 4: verify next round works correctly
 			{Content: "fourth reply", Usage: model.Usage{InputTokens: 60, OutputTokens: 2, TotalTokens: 62}},
 		},
 		errors: []error{
-			nil, // 第一轮
-			nil, // 第二轮
-			errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input"), // 第三轮首次
-			nil, // compactor 摘要调用
-			nil, // 第三轮重试
-			nil, // 第四轮
+			nil, // Round 1
+			nil, // Round 2
+			errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input"), // Round 3 first attempt
+			nil, // compactor summary call
+			nil, // Round 3 retry
+			nil, // Round 4
 		},
 	}
 	r := newTestRuntime(t, provider)
 
-	// 前两轮建立历史
+	// First two rounds establish history
 	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "first"}); err != nil {
 		t.Fatalf("first RunTurn() error = %v", err)
 	}
@@ -1662,7 +1662,7 @@ func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 		t.Fatalf("second RunTurn() error = %v", err)
 	}
 
-	// 第三轮触发 overflow 恢复
+	// Round 3 triggers overflow recovery
 	result, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "third"})
 	if err != nil {
 		t.Fatalf("third RunTurn() error = %v", err)
@@ -1671,7 +1671,7 @@ func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 		t.Fatalf("third RunTurn() content = %q, want %q", result.Content, "third reply")
 	}
 
-	// 验证 session metadata：CompactedMessageCount > 0，ContextSummary 非空
+	// Verify session metadata: CompactedMessageCount > 0, ContextSummary non-empty
 	info, full, err := r.ShowSession(context.Background(), "overflow-test")
 	if err != nil {
 		t.Fatalf("ShowSession() error = %v", err)
@@ -1683,24 +1683,24 @@ func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 		t.Fatal("ContextSummary is empty, want non-empty")
 	}
 
-	// 完整 transcript 不应包含 synthetic summary message。
-	// summary 存在 session metadata 中，不写入 transcript。
+	// Full transcript should not contain synthetic summary message.
+	// summary is stored in session metadata, not written to transcript.
 	for i, msg := range full.Messages() {
 		if strings.Contains(msg.Content, "Context summary from earlier conversation:") {
 			t.Fatalf("full transcript[%d] contains synthetic summary message: %q", i, msg.Content)
 		}
 	}
 
-	// 第四轮：验证 BuildActiveMessages 正确工作，不二次切掉或重复 summary
+	// Round 4: verify BuildActiveMessages works correctly, no double-cut or duplicate summary
 	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "overflow-test", Prompt: "fourth"}); err != nil {
 		t.Fatalf("fourth RunTurn() error = %v", err)
 	}
 
-	// 检查第四轮 provider 收到的活动消息
+	// Check active messages received by provider in round 4
 	lastReq := provider.requests[len(provider.requests)-1]
 	activeMsgs := lastReq.Messages
 
-	// 活动消息的第一条应该是 summary（由 BuildActiveMessages 注入）
+	// First active message should be summary (injected by BuildActiveMessages)
 	if len(activeMsgs) == 0 {
 		t.Fatal("active messages is empty")
 	}
@@ -1708,7 +1708,7 @@ func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 		t.Fatalf("active messages[0] = %q, want summary", activeMsgs[0].Content[:min(80, len(activeMsgs[0].Content))])
 	}
 
-	// 活动消息不应有两个 summary
+	// Active messages should not have two summaries
 	summaryCount := 0
 	for _, msg := range activeMsgs {
 		if strings.Contains(msg.Content, "Context summary from earlier conversation:") {
@@ -1719,7 +1719,7 @@ func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 		t.Fatalf("summary count in active messages = %d, want 1", summaryCount)
 	}
 
-	// 活动消息应包含 "third reply" 和 "fourth"（压缩后保留的最近消息）
+	// Active messages should include "third reply" and "fourth" (recent messages retained after compaction)
 	foundThird := false
 	foundFourth := false
 	for _, msg := range activeMsgs {
@@ -1738,8 +1738,8 @@ func TestRunTurnOverflowRecoveryPreservesFullTranscript(t *testing.T) {
 	}
 }
 
-// TestRunTurnOverflowRecoveryPreservesSkillContext 验证 overflow 恢复后
-// 本轮显式注入的 skill 上下文不丢失，retry 时模型仍能看到 skill 内容。
+// TestRunTurnOverflowRecoveryPreservesSkillContext verifies that after overflow recovery
+// Explicitly injected skill context for this turn is not lost; the model can still see skill content during retry.
 func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 	catalog, err := skill.NewCatalog([]skill.Skill{{
 		Name:        "think",
@@ -1753,20 +1753,20 @@ func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 
 	provider := &sequenceProvider{
 		responses: []model.ChatResponse{
-			// 第一轮：正常回复，建立历史
+			// Round 1: normal reply, establishing history
 			{Content: "first reply", Usage: model.Usage{InputTokens: 100, OutputTokens: 2, TotalTokens: 102}},
-			// 第二轮 step 0：overflow 错误（response 被丢弃）
+			// Round 2 step 0: overflow error (response discarded)
 			{Content: ""},
-			// compactor 调用 provider.Stream 生成摘要
+			// compactor calls provider.Stream to generate summary
 			{Content: "compaction summary"},
-			// 第二轮 step 0 重试：正常回复
+			// Round 2 step 0 retry: normal reply
 			{Content: "recovered reply"},
 		},
 		errors: []error{
-			nil, // 第一轮
-			errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input"), // 第二轮首次
-			nil, // compactor 摘要调用
-			nil, // 第二轮重试
+			nil, // Round 1
+			errors.New("responses request failed: status 400: Maximum of 1000 items allowed in input"), // Round 2 first attempt
+			nil, // compactor summary call
+			nil, // Round 2 retry
 		},
 	}
 	r := newTestRuntime(t, provider)
@@ -1774,12 +1774,12 @@ func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 		return catalog, nil
 	}
 
-	// 第一轮建立历史
+	// Round 1 establishes history
 	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "skill-overflow", Prompt: "first"}); err != nil {
 		t.Fatalf("first RunTurn() error = %v", err)
 	}
 
-	// 第二轮带 skill，触发 overflow 恢复
+	// Round 2 with skill, triggers overflow recovery
 	result, err := r.RunTurn(context.Background(), TurnOptions{
 		SessionID: "skill-overflow",
 		Prompt:    "design this",
@@ -1792,11 +1792,11 @@ func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 		t.Fatalf("content = %q, want %q", result.Content, "recovered reply")
 	}
 
-	// 找到 retry 时的 provider 请求（最后一个请求）
+	// Find the provider request during retry (last request)
 	lastReq := provider.requests[len(provider.requests)-1]
 	activeMsgs := lastReq.Messages
 
-	// retry 请求的活动消息中必须包含 skill 上下文
+	// Active messages in the retry request must include skill context
 	foundSkill := false
 	for _, msg := range activeMsgs {
 		if strings.Contains(msg.Content, "<skill>") && strings.Contains(msg.Content, "<name>think</name>") {
@@ -1809,15 +1809,15 @@ func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 	}
 }
 
-// TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage 验证当模型不支持图片时，
-// 历史消息中的图片片段被过滤掉，只保留文本。
+// TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage verifies that when the model does not support images,
+// Image segments in historical messages are filtered out, keeping only text.
 func TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage(t *testing.T) {
 	provider := &recordingProvider{
 		response: model.ChatResponse{Content: "ok"},
 	}
 	r, dbPath := newTestRuntimeWithDBPath(t, provider)
 
-	// 先保存一条带图片的历史消息
+	// First save a history message with an image
 	store := openTestSessionStore(t, dbPath)
 	imgMsg := model.Message{
 		Role:    model.RoleUser,
@@ -1832,8 +1832,8 @@ func TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage(t *testing.T)
 	}
 	store.Close()
 
-	// 第二轮：恢复 session，发送纯文本 prompt
-	// test-model 不支持图片，历史中的图片应被过滤
+	// Round 2: resume session, send plain-text prompt
+	// test-model does not support images; historical images should be filtered
 	if _, err := r.RunTurn(context.Background(), TurnOptions{
 		SessionID: "img-session",
 		Prompt:    "what did I show you",
@@ -1841,7 +1841,7 @@ func TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage(t *testing.T)
 		t.Fatalf("RunTurn() error = %v", err)
 	}
 
-	// 检查 provider 收到的消息中不应有图片片段
+	// Verify no image segments in provider-received messages
 	for i, msg := range provider.request.Messages {
 		for j, part := range msg.Parts {
 			if part.Type == model.ContentPartImage {
@@ -1850,7 +1850,7 @@ func TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage(t *testing.T)
 		}
 	}
 
-	// 历史消息的文本应保留
+	// History message text should be preserved
 	foundHistoryText := false
 	for _, msg := range provider.request.Messages {
 		if msg.Content == "look at this" {

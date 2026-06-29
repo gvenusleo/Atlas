@@ -24,7 +24,7 @@ const (
 	configTimeout    = 10 * time.Second
 )
 
-// Client 调用微信 iLink Bot HTTP API。
+// Client calls the WeChat iLink Bot HTTP API.
 type Client struct {
 	baseURL    string
 	token      string
@@ -32,14 +32,14 @@ type Client struct {
 	botAgent   string
 }
 
-// ClientOptions 描述微信 API client 的创建参数。
+// ClientOptions describes the parameters for creating a WeChat API client.
 type ClientOptions struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
 }
 
-// NewClient 创建微信 API client。
+// NewClient creates a WeChat API client.
 func NewClient(opts ClientOptions) (*Client, error) {
 	baseURL := strings.TrimSpace(opts.BaseURL)
 	if baseURL == "" {
@@ -63,7 +63,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	}, nil
 }
 
-// FetchQRCode 获取登录二维码。
+// FetchQRCode fetches the login QR code.
 func (c *Client) FetchQRCode(ctx context.Context) (string, string, error) {
 	var resp qrCodeResponse
 	if err := c.post(ctx, c.baseURL, "ilink/bot/get_bot_qrcode?bot_type="+url.QueryEscape(defaultBotType), map[string]any{
@@ -80,7 +80,7 @@ func (c *Client) FetchQRCode(ctx context.Context) (string, string, error) {
 	return resp.QRCode, resp.QRCodeURL, nil
 }
 
-// PollQRStatus 等待一次二维码扫描状态。
+// PollQRStatus waits for a single QR code scan status.
 func (c *Client) PollQRStatus(ctx context.Context, apiBaseURL, qrCode, verifyCode string) (qrStatusResponse, error) {
 	endpoint := "ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(qrCode)
 	if verifyCode != "" {
@@ -91,7 +91,7 @@ func (c *Client) PollQRStatus(ctx context.Context, apiBaseURL, qrCode, verifyCod
 	return resp, err
 }
 
-// GetUpdates 长轮询读取新消息。
+// GetUpdates long-polls for new messages.
 func (c *Client) GetUpdates(ctx context.Context, buf string, timeout time.Duration) (getUpdatesResponse, error) {
 	if timeout <= 0 {
 		timeout = loginPollTimeout
@@ -107,7 +107,7 @@ func (c *Client) GetUpdates(ctx context.Context, buf string, timeout time.Durati
 	return resp, err
 }
 
-// GetConfig 读取账号配置，包括 typing ticket。
+// GetConfig reads the account configuration, including the typing ticket.
 func (c *Client) GetConfig(ctx context.Context, userID, contextToken string) (string, error) {
 	var resp getConfigResponse
 	if err := c.post(ctx, c.baseURL, "ilink/bot/getconfig", getConfigRequest{
@@ -123,7 +123,7 @@ func (c *Client) GetConfig(ctx context.Context, userID, contextToken string) (st
 	return resp.TypingTicket, nil
 }
 
-// SendTyping 发送或取消输入状态。
+// SendTyping sends or cancels the typing indicator.
 func (c *Client) SendTyping(ctx context.Context, userID, ticket string, typing bool) error {
 	status := typingStatusCancel
 	if typing {
@@ -141,7 +141,7 @@ func (c *Client) SendTyping(ctx context.Context, userID, ticket string, typing b
 	return apiError("sendtyping", resp.ReturnCode, resp.ErrorCode, resp.Error)
 }
 
-// SendText 发送文本回复。
+// SendText sends a text reply.
 func (c *Client) SendText(ctx context.Context, to, text, contextToken, runID string) error {
 	if strings.TrimSpace(to) == "" {
 		return fmt.Errorf("weixin message recipient is required")
@@ -170,7 +170,7 @@ func (c *Client) SendText(ctx context.Context, to, text, contextToken, runID str
 	return apiError("sendmessage", resp.ReturnCode, resp.ErrorCode, resp.Error)
 }
 
-// get 发送微信 API GET 请求并解码响应。
+// get sends a WeChat API GET request and decodes the response.
 func (c *Client) get(ctx context.Context, baseURL, endpoint string, out any, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -185,7 +185,7 @@ func (c *Client) get(ctx context.Context, baseURL, endpoint string, out any, tim
 	return c.do(req, out)
 }
 
-// post 发送微信 API POST 请求并解码响应。
+// post sends a WeChat API POST request and decodes the response.
 func (c *Client) post(ctx context.Context, baseURL, endpoint string, body any, out any, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -204,7 +204,7 @@ func (c *Client) post(ctx context.Context, baseURL, endpoint string, body any, o
 	return c.do(req, out)
 }
 
-// do 执行 HTTP 请求，并把非 2xx 响应转换为错误。
+// do executes an HTTP request and converts non-2xx responses to errors.
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -230,7 +230,7 @@ func (c *Client) do(req *http.Request, out any) error {
 	return nil
 }
 
-// headers 返回 iLink Bot API 需要的通用请求头。
+// headers returns the common request headers needed by the iLink Bot API.
 func (c *Client) headers(jsonContent bool) map[string]string {
 	headers := map[string]string{
 		"AuthorizationType":       "ilink_bot_token",
@@ -248,7 +248,7 @@ func (c *Client) headers(jsonContent bool) map[string]string {
 	return headers
 }
 
-// baseInfo 返回微信 API 请求体中的客户端识别信息。
+// baseInfo returns the client identification info in the WeChat API request body.
 func (c *Client) baseInfo() baseInfo {
 	return baseInfo{
 		ChannelVersion: version.Current,
@@ -256,7 +256,7 @@ func (c *Client) baseInfo() baseInfo {
 	}
 }
 
-// joinEndpoint 把 base URL 和相对接口路径拼成完整 URL。
+// joinEndpoint joins a base URL and a relative endpoint path into a full URL.
 func joinEndpoint(baseURL, endpoint string) string {
 	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil {
@@ -272,7 +272,7 @@ func joinEndpoint(baseURL, endpoint string) string {
 	return u.String()
 }
 
-// randomWechatUIN 生成微信 API 需要的随机 X-WECHAT-UIN。
+// randomWechatUIN generates a random X-WECHAT-UIN required by the WeChat API.
 func randomWechatUIN() string {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -282,7 +282,7 @@ func randomWechatUIN() string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", n)))
 }
 
-// clientVersion 把 Atlas 版本号转换为 iLink 客户端版本整数。
+// clientVersion converts the Atlas version number to an iLink client version integer.
 func clientVersion() string {
 	parts := strings.Split(version.Current, ".")
 	values := []int{0, 0, 0}
@@ -294,7 +294,7 @@ func clientVersion() string {
 	return fmt.Sprintf("%d", values[0]<<16|values[1]<<8|values[2])
 }
 
-// newClientID 生成发送消息时使用的客户端消息 ID。
+// newClientID generates a client message ID used when sending messages.
 func newClientID() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -303,7 +303,7 @@ func newClientID() string {
 	return fmt.Sprintf("atlas-%x", b[:])
 }
 
-// apiError 把微信 API JSON 里的业务错误码转换为 Go error。
+// apiError converts a WeChat API JSON business error code to a Go error.
 func apiError(operation string, ret int, errcode int, errmsg string) error {
 	if ret == 0 && errcode == 0 {
 		return nil

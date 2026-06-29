@@ -11,12 +11,12 @@ import (
 	"github.com/liuyuxin/atlas/internal/skill"
 )
 
-// LoadSkill 按名称加载本地 skill 的完整 SKILL.md。
+// LoadSkill loads the full SKILL.md for a local skill by name.
 type LoadSkill struct {
 	Skills *skill.Catalog
 }
 
-// Definition 返回 load_skill 的模型可见定义。
+// Definition returns the model-visible definition for load_skill.
 func (l LoadSkill) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "load_skill",
@@ -34,7 +34,7 @@ func (l LoadSkill) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 name 返回 skill 路径和完整正文。
+// Run returns the skill path and full content using the name from the JSON parameters.
 func (l LoadSkill) Run(ctx context.Context, arguments string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err

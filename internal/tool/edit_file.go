@@ -10,19 +10,19 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// EditFile 替换本地文件中的一个唯一文本块。
+// EditFile replaces a unique text block in a local file.
 type EditFile struct {
 	CWD string
 }
 
-// EditFileArgs 是 edit_file 的 JSON 参数。
+// EditFileArgs is the JSON parameters for edit_file.
 type EditFileArgs struct {
 	Path    string  `json:"path"`
 	OldText string  `json:"old_text"`
 	NewText *string `json:"new_text"`
 }
 
-// Definition 返回 edit_file 的模型可见定义。
+// Definition returns the model-visible definition for edit_file.
 func (EditFile) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "edit_file",
@@ -48,7 +48,7 @@ func (EditFile) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 path、old_text 和 new_text 修改文件。
+// Run modifies a file using the path, old_text, and new_text from the JSON parameters.
 func (e EditFile) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseEditFileArgs(arguments)
 	if err != nil {
@@ -57,7 +57,7 @@ func (e EditFile) Run(ctx context.Context, arguments string) (string, error) {
 	return editFileContent(ctx, resolveToolPath(e.CWD, args.Path), args.OldText, *args.NewText)
 }
 
-// ParseEditFileArgs 解析并校验 edit_file 参数。
+// ParseEditFileArgs parses and validates edit_file parameters.
 func ParseEditFileArgs(arguments string) (EditFileArgs, error) {
 	var args EditFileArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
@@ -100,7 +100,7 @@ func editFileContent(ctx context.Context, path, oldText, newText string) (string
 	return fmt.Sprintf("replaced 1 block in %s", path), nil
 }
 
-// ApplyEditFileContent 对原始文本应用 edit_file 的替换规则。
+// ApplyEditFileContent applies the edit_file replacement rules to the original text.
 func ApplyEditFileContent(content, oldText, newText string) (string, error) {
 	start, count := editFileOccurrence(content, oldText)
 	if start < 0 {

@@ -8,13 +8,13 @@ import (
 
 const maxInstructionBytes = 64 * 1024
 
-// InstructionFile 是一个已加载的 AGENTS.md 指令文件。
+// InstructionFile is a loaded AGENTS.md instruction file.
 type InstructionFile struct {
 	Path    string
 	Content string
 }
 
-// LoadInstructions 只加载全局和当前目录下的 AGENTS.md。
+// LoadInstructions loads only the global and current-directory AGENTS.md files.
 func LoadInstructions(cwd string) ([]InstructionFile, error) {
 	globalPath, err := globalInstructionsPath()
 	if err != nil {

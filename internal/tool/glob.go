@@ -20,12 +20,12 @@ const (
 
 var errStopGlob = errors.New("stop glob")
 
-// Glob 按 glob pattern 查找本地文件和目录。
+// Glob finds local files and directories matching a glob pattern.
 type Glob struct {
 	CWD string
 }
 
-// Definition 返回 glob 的模型可见定义。
+// Definition returns the model-visible definition for glob.
 func (Glob) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "glob",
@@ -47,7 +47,7 @@ func (Glob) Definition() model.ToolDefinition {
 	}
 }
 
-// Run 使用 JSON 参数中的 pattern 查找路径。
+// Run finds paths using the pattern from the JSON parameters.
 func (g Glob) Run(ctx context.Context, arguments string) (string, error) {
 	args, err := ParseGlobArgs(arguments)
 	if err != nil {
@@ -57,13 +57,13 @@ func (g Glob) Run(ctx context.Context, arguments string) (string, error) {
 	return globPaths(ctx, root, args.Pattern, defaultGlobLimit)
 }
 
-// GlobArgs 是 glob 的 JSON 参数。
+// GlobArgs is the JSON parameters for glob.
 type GlobArgs struct {
 	Pattern string `json:"pattern"`
 	Path    string `json:"path"`
 }
 
-// ParseGlobArgs 解析并校验 glob 参数。
+// ParseGlobArgs parses and validates glob parameters.
 func ParseGlobArgs(arguments string) (GlobArgs, error) {
 	var args GlobArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {

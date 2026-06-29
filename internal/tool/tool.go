@@ -1,4 +1,4 @@
-// Package tool 提供模型工具调用到本地工具实现的分发层。
+// Package tool provides the dispatch layer from model tool calls to local tool implementations.
 package tool
 
 import (
@@ -7,10 +7,10 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// Tool 是 Atlas 可以由模型调用的本地能力。
+// Tool is a local capability that Atlas can invoke via the model.
 type Tool interface {
-	// Definition 返回发送给模型的工具定义。
+	// Definition returns the tool definition sent to the model.
 	Definition() model.ToolDefinition
-	// Run 使用模型给出的原始 JSON 参数执行工具。
+	// Run executes the tool using the raw JSON parameters from the model.
 	Run(ctx context.Context, arguments string) (string, error)
 }

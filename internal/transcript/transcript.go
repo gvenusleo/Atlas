@@ -1,31 +1,31 @@
-// Package transcript 保存当前 agent 实例中的模型消息序列。
+// Package transcript holds the model message sequence for the current agent instance.
 package transcript
 
 import "github.com/liuyuxin/atlas/internal/model"
 
-// Transcript 保存一次会话中的模型消息序列。
+// Transcript holds the model message sequence for a conversation.
 type Transcript struct {
 	messages []model.Message
 }
 
-// New 创建一个空的内存 transcript。
+// New creates an empty in-memory transcript.
 func New() *Transcript {
 	return &Transcript{}
 }
 
-// Append 按调用顺序追加一条消息。
+// Append appends a message in call order.
 func (t *Transcript) Append(msg model.Message) {
 	t.messages = append(t.messages, msg)
 }
 
-// Reset 清空并替换为给定消息列表。
-// 用于 context-overflow 恢复时用压缩后的消息重建 transcript。
+// Reset clears and replaces the message list with the given messages.
+// Used during context-overflow recovery to rebuild the transcript with compacted messages.
 func (t *Transcript) Reset(messages []model.Message) {
 	t.messages = append([]model.Message(nil), messages...)
 }
 
-// Messages 返回当前消息快照。
-// 返回值是副本，调用方修改它不会影响 Transcript 内部状态。
+// Messages returns a snapshot of the current messages.
+// The returned slice is a copy; modifying it does not affect the Transcript's internal state.
 func (t *Transcript) Messages() []model.Message {
 	messages := append([]model.Message(nil), t.messages...)
 	for i := range messages {

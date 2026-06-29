@@ -19,7 +19,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
-// fakeRuntime 实现 ws.Runtime 接口用于测试。
+// fakeRuntime implements the ws.Runtime interface for testing.
 type fakeRuntime struct {
 	mu sync.Mutex
 
@@ -31,7 +31,7 @@ type fakeRuntime struct {
 	turnResult runtime.TurnResult
 	turnError  error
 
-	// 记录最后一次 RunTurn 的参数
+	// Record last RunTurn parameters
 	lastTurnOpts runtime.TurnOptions
 	listedCWD    string
 	listedCursor string
@@ -43,7 +43,7 @@ func (f *fakeRuntime) RunTurn(ctx context.Context, opts runtime.TurnOptions) (ru
 	f.lastTurnOpts = opts
 	f.mu.Unlock()
 
-	// 模拟事件推送
+	// Simulate event push
 	if opts.Observer != nil {
 		opts.Observer(agent.Event{Type: agent.EventTurnStarted, Step: 0})
 		opts.Observer(agent.Event{Type: agent.EventModelDelta, Step: 1, Content: "Hello!"})
@@ -110,7 +110,7 @@ func (f *fakeRuntime) RunMemoryWorker(ctx context.Context) error {
 	return nil
 }
 
-// startTestServer 启动一个测试 WebSocket 服务并返回地址。
+// startTestServer starts a test WebSocket server and returns its address.
 func startTestServer(t *testing.T, rt Runtime) (*Server, string) {
 	t.Helper()
 	srv, err := NewServer(ServerOptions{
@@ -140,7 +140,7 @@ func startTestServer(t *testing.T, rt Runtime) (*Server, string) {
 	return srv, ln.Addr().String()
 }
 
-// dialWS 连接测试 WebSocket 服务。
+// dialWS connects to a test WebSocket server.
 func dialWS(t *testing.T, addr string) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -153,7 +153,7 @@ func dialWS(t *testing.T, addr string) *websocket.Conn {
 	return conn
 }
 
-// sendMsg 发送一条 JSON 消息。
+// sendMsg sends a JSON message.
 func sendMsg(t *testing.T, conn *websocket.Conn, msg ClientMessage) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -164,7 +164,7 @@ func sendMsg(t *testing.T, conn *websocket.Conn, msg ClientMessage) {
 	}
 }
 
-// recvMsg 读取一条 JSON 消息。
+// recvMsg reads a single JSON message.
 func recvMsg(t *testing.T, conn *websocket.Conn) ServerMessage {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -220,12 +220,12 @@ func TestPromptEvents(t *testing.T) {
 		Content:   "hello",
 	})
 
-	// 应收到 turn_started, model_delta, turn_finished
+	// Should receive turn_started, model_delta, turn_finished
 	msg1 := recvMsg(t, conn)
 	if msg1.Type != MsgEvent || msg1.Event != EventTurnStarted {
 		t.Fatalf("msg1 = %#v", msg1)
 	}
-	// 所有事件都应携带 session_id
+	// All events should carry session_id
 	if msg1.SessionID != "test-session" {
 		t.Fatalf("turn_started session_id = %q, want %q", msg1.SessionID, "test-session")
 	}
@@ -246,7 +246,7 @@ func TestPromptEvents(t *testing.T) {
 		t.Fatalf("turn_finished session_id = %q, want %q", msg3.SessionID, "test-session")
 	}
 
-	// 验证 RunTurn 参数
+	// Verify RunTurn parameters
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	if rt.lastTurnOpts.SessionID != "test-session" {
@@ -258,7 +258,7 @@ func TestPromptEvents(t *testing.T) {
 }
 
 func TestPromptNewSession(t *testing.T) {
-	// 客户端不传 session_id，runtime 生成新 ID 并通过 turn_finished 回传
+	// Client does not send session_id; runtime generates new ID and returns it via turn_finished
 	rt := &fakeRuntime{
 		turnResult: runtime.TurnResult{SessionID: "new-session-abc"},
 	}
@@ -282,7 +282,7 @@ func TestPromptNewSession(t *testing.T) {
 		t.Fatalf("session_id = %q, want %q", msg.SessionID, "new-session-abc")
 	}
 
-	// 后续 prompt 传回 session_id，应复用同一 session
+	// Subsequent prompts pass back session_id, should reuse same session
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "new-session-abc", Content: "world"})
 	recvMsg(t, conn) // turn_started
 	recvMsg(t, conn) // model_delta
@@ -297,9 +297,9 @@ func TestPromptNewSession(t *testing.T) {
 
 func TestShowSession(t *testing.T) {
 	trans := transcript.New()
-	// 用户消息同时设置 Content 和 Parts
+	// User message sets both Content and Parts
 	trans.Append(model.Message{Role: "user", Content: "hello", Parts: []model.ContentPart{{Type: model.ContentPartText, Text: "hello"}}})
-	// assistant 消息只设置 Content，没有 Parts（与 agent 循环实际行为一致）
+	// assistant messages only set Content, no Parts (consistent with actual agent loop behavior)
 	trans.Append(model.Message{Role: "assistant", Content: "hi there"})
 
 	rt := &fakeRuntime{
@@ -326,7 +326,7 @@ func TestShowSession(t *testing.T) {
 	if msg.Messages[0].Role != "user" || msg.Messages[0].Content != "hello" {
 		t.Fatalf("msg 0 = %#v", msg.Messages[0])
 	}
-	// assistant 消息只有 Content 没有 Parts，必须通过 MessageParts fallback 才能取到
+	// assistant messages only have Content without Parts; must use MessageParts fallback to retrieve
 	if msg.Messages[1].Role != "assistant" || msg.Messages[1].Content != "hi there" {
 		t.Fatalf("msg 1 = %#v", msg.Messages[1])
 	}
@@ -448,28 +448,28 @@ func TestCompactSession(t *testing.T) {
 }
 
 func TestCancelTurn(t *testing.T) {
-	// 使用一个会阻塞的 fakeRuntime
+	// Use a blocking fakeRuntime
 	rt := &blockingRuntime{}
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	// 发送 prompt（带 session_id）
+	// Send prompt (with session_id)
 	sendMsg(t, conn, ClientMessage{
 		Type:      MsgPrompt,
 		SessionID: "s1",
 		Content:   "long task",
 	})
 
-	// 等待 turn 开始
+	// Wait for turn to start
 	msg1 := recvMsg(t, conn)
 	if msg1.Event != EventTurnStarted {
 		t.Fatalf("msg1 = %#v", msg1)
 	}
 
-	// 发送 cancel（必须带 session_id）
+	// Send cancel (must include session_id)
 	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "s1"})
 
-	// 应收到 turn_finished (cancelled)
+	// Should receive turn_finished (cancelled)
 	msg2 := recvMsg(t, conn)
 	if msg2.Type != MsgEvent || msg2.Event != EventTurnFinished {
 		t.Fatalf("msg2 = %#v", msg2)
@@ -492,7 +492,7 @@ func TestCancelRequiresSessionID(t *testing.T) {
 }
 
 func TestPromptError(t *testing.T) {
-	// 非 context 取消的错误路径：应收到 error 事件（error_flag=true），不发 turn_finished
+	// Non-context-cancellation error path: should receive error event (error_flag=true), no turn_finished
 	rt := &fakeRuntime{
 		turnResult: runtime.TurnResult{SessionID: "s1"},
 		turnError:  fmt.Errorf("model unavailable"),
@@ -502,7 +502,7 @@ func TestPromptError(t *testing.T) {
 
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "hello"})
 
-	// turn_started + model_delta（fakeRuntime 在返回错误前推送了事件）
+	// turn_started + model_delta (fakeRuntime pushed events before returning error)
 	recvMsg(t, conn)
 	recvMsg(t, conn)
 
@@ -522,18 +522,18 @@ func TestPromptError(t *testing.T) {
 }
 
 func TestConcurrentPromptSameSessionRejected(t *testing.T) {
-	// 同一 session 的第二个 prompt 应被拒绝
+	// Second prompt to same session should be rejected
 	rt := &blockingRuntime{}
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	// 发送第一个 prompt（会阻塞）
+	// Send first prompt (will block)
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "long task"})
 
-	// 等待 turn 开始
+	// Wait for turn to start
 	recvMsg(t, conn) // turn_started
 
-	// 发送第二个 prompt 到同一 session，应收到错误
+	// Send second prompt to same session, should receive error
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "second"})
 	msg := recvMsg(t, conn)
 	if msg.Type != MsgEvent || msg.Event != EventError {
@@ -543,12 +543,12 @@ func TestConcurrentPromptSameSessionRejected(t *testing.T) {
 		t.Fatalf("error = %q", msg.Error)
 	}
 
-	// 取消第一个 turn，清理
+	// Cancel first turn, cleanup
 	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "s1"})
 	recvMsg(t, conn) // turn_finished (cancelled)
 }
 
-// blockingRuntime 在 RunTurn 中阻塞直到 context 被取消。
+// blockingRuntime blocks in RunTurn until the context is cancelled.
 type blockingRuntime struct{}
 
 func (b *blockingRuntime) RunTurn(ctx context.Context, opts runtime.TurnOptions) (runtime.TurnResult, error) {
@@ -732,7 +732,7 @@ func TestPromptWithImageParts(t *testing.T) {
 		},
 	})
 
-	// 消费事件
+	// Consume events
 	recvMsg(t, conn) // turn_started
 	recvMsg(t, conn) // model_delta
 	recvMsg(t, conn) // turn_finished
@@ -752,15 +752,15 @@ func TestPromptWithImageParts(t *testing.T) {
 	if img.MimeType != "image/png" {
 		t.Fatalf("mime_type = %q", img.MimeType)
 	}
-	// DataURL 必须是完整 data URL 格式，provider 直接传给 API
+	// DataURL must be a full data URL format; provider passes it directly to the API
 	if img.DataURL != "data:image/png;base64,aGVsbG8=" {
 		t.Fatalf("data_url = %q", img.DataURL)
 	}
 }
 
-// --- 多会话并发测试 ---
+// --- Multi-session concurrency tests ---
 
-// multiSessionRuntime 支持按 session_id 路由的阻塞 runtime。
+// multiSessionRuntime supports blocking runtime routed by session_id.
 type multiSessionRuntime struct {
 	mu       sync.Mutex
 	started  map[string]bool
@@ -821,16 +821,16 @@ func (m *multiSessionRuntime) RunMemoryWorker(ctx context.Context) error {
 }
 
 func TestMultiSessionConcurrentTurns(t *testing.T) {
-	// 两个不同 session 的 prompt 可以并发执行
+	// Prompts for two different sessions can execute concurrently
 	rt := newMultiSessionRuntime()
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	// 同时发送两个 prompt 到不同 session
+	// Send two prompts to different sessions simultaneously
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "session-a", Content: "task A"})
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "session-b", Content: "task B"})
 
-	// 两个 turn 都应启动（收到两个 turn_started）
+	// Both turns should start (received two turn_started)
 	msg1 := recvMsg(t, conn)
 	if msg1.Event != EventTurnStarted {
 		t.Fatalf("msg1 = %#v, want turn_started", msg1)
@@ -840,7 +840,7 @@ func TestMultiSessionConcurrentTurns(t *testing.T) {
 		t.Fatalf("msg2 = %#v, want turn_started", msg2)
 	}
 
-	// 两个 session 都应处于运行状态
+	// Both sessions should be in running state
 	gotA, gotB := false, false
 	for _, m := range []ServerMessage{msg1, msg2} {
 		if m.SessionID == "session-a" {
@@ -854,33 +854,33 @@ func TestMultiSessionConcurrentTurns(t *testing.T) {
 		t.Fatalf("expected turn_started for both sessions, got A=%v B=%v", gotA, gotB)
 	}
 
-	// 取消两个 turn
+	// Cancel both turns
 	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "session-a"})
 	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "session-b"})
 
-	// 收到两个 turn_finished
+	// Received two turn_finished
 	recvMsg(t, conn) // turn_finished for one
 	recvMsg(t, conn) // turn_finished for other
 }
 
 func TestPerSessionCancel(t *testing.T) {
-	// 取消 session A 不影响 session B
+	// Cancelling session A does not affect session B
 	rt := newMultiSessionRuntime()
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	// 启动两个 session 的 turn
+	// Start turns for two sessions
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-a", Content: "task A"})
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-b", Content: "task B"})
 
-	// 收到两个 turn_started
+	// Received two turn_started
 	recvMsg(t, conn) // turn_started for one
 	recvMsg(t, conn) // turn_started for other
 
-	// 只取消 session A
+	// Only cancel session A
 	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "sess-a"})
 
-	// 应收到 session A 的 turn_finished (cancelled)
+	// Should receive session A's turn_finished (cancelled)
 	msg := recvMsg(t, conn)
 	if msg.Event != EventTurnFinished {
 		t.Fatalf("msg = %#v, want turn_finished", msg)
@@ -889,13 +889,13 @@ func TestPerSessionCancel(t *testing.T) {
 		t.Fatalf("session_id = %q, want sess-a", msg.SessionID)
 	}
 
-	// session B 仍在运行，取消它以清理
+	// session B still running, cancel it for cleanup
 	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "sess-b"})
 	recvMsg(t, conn) // turn_finished for sess-b
 }
 
 func TestPerSessionModel(t *testing.T) {
-	// 不同 session 可以使用不同模型
+	// Different sessions can use different models
 	rt := &fakeRuntime{
 		modelOptions: runtime.ModelOptions{
 			Models: []runtime.ModelOption{
@@ -907,15 +907,15 @@ func TestPerSessionModel(t *testing.T) {
 	_, addr := startTestServer(t, rt)
 	conn := dialWS(t, addr)
 
-	// session A 用 gpt-5
+	// session A uses gpt-5
 	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, SessionID: "sess-a", Model: "gpt-5"})
 	recvMsg(t, conn) // model_set
 
-	// session B 用 claude-4
+	// session B uses claude-4
 	sendMsg(t, conn, ClientMessage{Type: MsgSetModel, SessionID: "sess-b", Model: "claude-4"})
 	recvMsg(t, conn) // model_set
 
-	// session A prompt 应使用 gpt-5
+	// session A prompt should use gpt-5
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-a", Content: "hello"})
 	recvMsg(t, conn) // turn_started
 	recvMsg(t, conn) // model_delta
@@ -927,7 +927,7 @@ func TestPerSessionModel(t *testing.T) {
 	}
 	rt.mu.Unlock()
 
-	// session B prompt 应使用 claude-4
+	// session B prompt should use claude-4
 	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "sess-b", Content: "hello"})
 	recvMsg(t, conn) // turn_started
 	recvMsg(t, conn) // model_delta

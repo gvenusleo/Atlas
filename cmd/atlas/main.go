@@ -115,7 +115,7 @@ func runACPCommand(ctx context.Context, args []string, deps runDependencies) err
 	})
 }
 
-// runServeCommand 启动 WebSocket 服务。
+// runServeCommand starts the WebSocket server.
 func runServeCommand(ctx context.Context, args []string, deps runDependencies) error {
 	if len(args) != 0 {
 		return errors.New("usage: atlas serve")

@@ -1,4 +1,4 @@
-// Package acp 通过 Agent Client Protocol 暴露 Atlas。
+// Package acp exposes Atlas via the Agent Client Protocol.
 package acp
 
 import (
@@ -36,7 +36,7 @@ const (
 
 var errClientTerminalUnavailable = errors.New("client terminal unavailable")
 
-// Runtime 是 ACP 适配层需要的 Atlas 执行入口。
+// Runtime is the Atlas execution entry point needed by the ACP adapter layer.
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
 	CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error)
@@ -58,13 +58,13 @@ type terminalClient interface {
 	WaitForTerminalExit(context.Context, acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error)
 }
 
-// fileClient 是 ACP 客户端文件系统能力的最小接口。
+// fileClient is the minimal interface for ACP client filesystem capabilities.
 type fileClient interface {
 	ReadTextFile(context.Context, acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error)
 	WriteTextFile(context.Context, acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error)
 }
 
-// Options 描述启动 ACP 标准输入输出服务所需参数。
+// Options describes the parameters for starting the ACP stdio service.
 type Options struct {
 	Runtime Runtime
 	Input   io.Reader
@@ -72,7 +72,7 @@ type Options struct {
 	Logger  *slog.Logger
 }
 
-// Run 启动 ACP agent 连接，并阻塞直到客户端断开。
+// Run starts the ACP agent connection and blocks until the client disconnects.
 func Run(ctx context.Context, opts Options) error {
 	if opts.Runtime == nil {
 		return fmt.Errorf("acp runtime is required")
@@ -114,7 +114,7 @@ type sessionState struct {
 	turn                  int
 }
 
-// Agent 将 Atlas runtime 适配为 ACP agent 方法。
+// Agent adapts the Atlas runtime to ACP agent methods.
 type Agent struct {
 	rt                 Runtime
 	terminalClient     terminalClient
@@ -127,7 +127,7 @@ type Agent struct {
 	terminalToolCalls map[string]struct{}
 }
 
-// NewAgent 创建由 Atlas runtime 驱动的 ACP agent。
+// NewAgent creates an ACP agent driven by the Atlas runtime.
 func NewAgent(rt Runtime) *Agent {
 	return &Agent{
 		rt:                rt,
@@ -136,7 +136,7 @@ func NewAgent(rt Runtime) *Agent {
 	}
 }
 
-// SetAgentConnection 绑定用于发送 session/update 通知的 SDK 连接。
+// SetAgentConnection binds the SDK connection used for sending session/update notifications.
 func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	if conn == nil {
 		a.sendUpdate = nil
@@ -149,7 +149,7 @@ func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	a.fileClient = conn
 }
 
-// Initialize 返回 Atlas 支持的 ACP v1 能力。
+// Initialize returns the ACP v1 capabilities supported by Atlas.
 func (a *Agent) Initialize(ctx context.Context, req acpsdk.InitializeRequest) (acpsdk.InitializeResponse, error) {
 	a.clientCapabilities = req.ClientCapabilities
 	title := "Atlas"
@@ -182,7 +182,7 @@ func (a *Agent) Initialize(ctx context.Context, req acpsdk.InitializeRequest) (a
 	}, nil
 }
 
-// NewSession 创建绑定到 cwd 的活动 ACP session。
+// NewSession creates an active ACP session bound to the specified cwd.
 func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest) (acpsdk.NewSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.NewSessionResponse{}, err
@@ -208,7 +208,7 @@ func (a *Agent) NewSession(ctx context.Context, params acpsdk.NewSessionRequest)
 	}, nil
 }
 
-// Prompt 为指定 ACP session 执行一次 Atlas turn。
+// Prompt executes an Atlas turn for the specified ACP session.
 func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk.PromptResponse, error) {
 	state, ok := a.getSession(string(params.SessionId))
 	if !ok {
@@ -272,7 +272,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 	return response, nil
 }
 
-// LoadSession 恢复已有 Atlas session，并通过 session/update 回放历史消息。
+// LoadSession restores an existing Atlas session and replays history via session/update.
 func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.LoadSessionResponse{}, err
@@ -307,13 +307,13 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 	}, nil
 }
 
-// Cancel 停止指定 session 中正在运行的 prompt。
+// Cancel stops the currently running prompt in the specified session.
 func (a *Agent) Cancel(_ context.Context, params acpsdk.CancelNotification) error {
 	a.cancelSession(string(params.SessionId))
 	return nil
 }
 
-// ResumeSession 将已有 Atlas session 标记为活动状态，不回放历史消息。
+// ResumeSession marks an existing Atlas session as active without replaying history.
 func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRequest) (acpsdk.ResumeSessionResponse, error) {
 	if err := requireAbsoluteCWD(params.Cwd); err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
@@ -344,7 +344,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	}, nil
 }
 
-// ListSessions 返回 Atlas 本地 SQLite session 历史。
+// ListSessions returns Atlas local SQLite session history.
 func (a *Agent) ListSessions(ctx context.Context, params acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
 	var (
 		page session.ListPage
@@ -377,13 +377,13 @@ func (a *Agent) ListSessions(ctx context.Context, params acpsdk.ListSessionsRequ
 	return resp, nil
 }
 
-// CloseSession 取消正在运行的 turn，并清除本地活动 session 状态。
+// CloseSession cancels the running turn and clears the local active session state.
 func (a *Agent) CloseSession(_ context.Context, params acpsdk.CloseSessionRequest) (acpsdk.CloseSessionResponse, error) {
 	a.deleteSessionState(string(params.SessionId))
 	return acpsdk.CloseSessionResponse{}, nil
 }
 
-// UnstableDeleteSession 实现 SDK 当前的 session/delete 钩子。
+// UnstableDeleteSession implements the SDK's current session/delete hook.
 func (a *Agent) UnstableDeleteSession(ctx context.Context, params acpsdk.UnstableDeleteSessionRequest) (acpsdk.UnstableDeleteSessionResponse, error) {
 	a.deleteSessionState(string(params.SessionId))
 	if err := a.rt.DeleteSessionIfExists(ctx, string(params.SessionId)); err != nil {
@@ -392,17 +392,17 @@ func (a *Agent) UnstableDeleteSession(ctx context.Context, params acpsdk.Unstabl
 	return acpsdk.UnstableDeleteSessionResponse{}, nil
 }
 
-// Authenticate 不受支持，因为 Atlas 尚未实现 ACP auth。
+// Authenticate is not supported because Atlas has not yet implemented ACP auth.
 func (a *Agent) Authenticate(context.Context, acpsdk.AuthenticateRequest) (acpsdk.AuthenticateResponse, error) {
 	return acpsdk.AuthenticateResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodAuthenticate)
 }
 
-// Logout 不受支持，因为 Atlas 尚未实现 ACP auth。
+// Logout is not supported because Atlas has not yet implemented ACP auth.
 func (a *Agent) Logout(context.Context, acpsdk.LogoutRequest) (acpsdk.LogoutResponse, error) {
 	return acpsdk.LogoutResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodLogout)
 }
 
-// SetSessionConfigOption 更新 ACP session 级配置。
+// SetSessionConfigOption updates the ACP session-level configuration.
 func (a *Agent) SetSessionConfigOption(ctx context.Context, params acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
 	if params.ValueId == nil {
 		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("session config requires a value id")
@@ -442,7 +442,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acpsdk.SetSes
 	}, nil
 }
 
-// SetSessionMode 不受支持，因为 Atlas 没有 ACP session mode。
+// SetSessionMode is not supported because Atlas does not have ACP session modes.
 func (a *Agent) SetSessionMode(context.Context, acpsdk.SetSessionModeRequest) (acpsdk.SetSessionModeResponse, error) {
 	return acpsdk.SetSessionModeResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionSetMode)
 }
@@ -483,7 +483,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd str
 				toolCallID(event),
 				opts...,
 			)
-			// todo_write 工具执行后发送 plan update。
+			// Send plan update after todo_write tool execution.
 			if len(event.ToolMetadata.Todos) > 0 {
 				entries := make([]acpsdk.PlanEntry, len(event.ToolMetadata.Todos))
 				for i, todo := range event.ToolMetadata.Todos {
@@ -519,7 +519,7 @@ func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolR
 	}
 }
 
-// runShellInClientTerminal 使用 ACP terminal 能力执行 run_shell 并返回最终输出。
+// runShellInClientTerminal executes run_shell using ACP terminal capabilities and returns the final output.
 func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall) (tool.RunResult, error) {
 	args, err := tool.ParseShellArgs(call.Arguments)
 	if err != nil {
@@ -758,7 +758,7 @@ func (a *Agent) sendSessionUpdate(ctx context.Context, sessionID acpsdk.SessionI
 	})
 }
 
-// sendAvailableCommands 通知客户端当前 session 可用的 slash command。
+// sendAvailableCommands notifies the client of the slash commands available in the current session.
 func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.SessionId) error {
 	state, ok := a.getSession(string(sessionID))
 	if !ok {
@@ -771,7 +771,7 @@ func (a *Agent) sendAvailableCommands(ctx context.Context, sessionID acpsdk.Sess
 	})
 }
 
-// sendSessionMetadataLater 在响应返回后补发非关键 session 元数据，避免客户端尚未注册会话。
+// sendSessionMetadataLater sends non-critical session metadata after the response is returned, avoiding issues when the client has not yet registered the session.
 func (a *Agent) sendSessionMetadataLater(sessionID acpsdk.SessionId, title string, updatedAt time.Time, used, size int) {
 	if a.sendUpdate == nil {
 		return
@@ -791,7 +791,7 @@ func (a *Agent) sendSessionMetadataLater(sessionID acpsdk.SessionId, title strin
 	}()
 }
 
-// sendStoredSessionMetadata 尽力发送 turn 结束后的标题和 usage。
+// sendStoredSessionMetadata best-effort sends the title and usage after a turn ends.
 func (a *Agent) sendStoredSessionMetadata(ctx context.Context, sessionID acpsdk.SessionId, used, size int) {
 	info, _, err := a.rt.ShowSession(ctx, string(sessionID))
 	if err != nil {
@@ -801,7 +801,7 @@ func (a *Agent) sendStoredSessionMetadata(ctx context.Context, sessionID acpsdk.
 	_ = a.sendUsageUpdate(ctx, sessionID, used, size)
 }
 
-// sendSessionInfoUpdate 通知客户端 session 标题或更新时间变化。
+// sendSessionInfoUpdate notifies the client of session title or update time changes.
 func (a *Agent) sendSessionInfoUpdate(ctx context.Context, sessionID acpsdk.SessionId, title string, updatedAt time.Time) error {
 	update := &acpsdk.SessionSessionInfoUpdate{
 		SessionUpdate: "session_info_update",
@@ -819,7 +819,7 @@ func (a *Agent) sendSessionInfoUpdate(ctx context.Context, sessionID acpsdk.Sess
 	return a.sendSessionUpdate(ctx, sessionID, acpsdk.SessionUpdate{SessionInfoUpdate: update})
 }
 
-// sendUsageUpdate 通知客户端当前上下文窗口使用情况。
+// sendUsageUpdate notifies the client of the current context window usage.
 func (a *Agent) sendUsageUpdate(ctx context.Context, sessionID acpsdk.SessionId, used, size int) error {
 	if used <= 0 || size <= 0 {
 		return nil
@@ -833,7 +833,7 @@ func (a *Agent) sendUsageUpdate(ctx context.Context, sessionID acpsdk.SessionId,
 	})
 }
 
-// compactAvailableCommand 返回 ACP 客户端展示的手动压缩命令定义。
+// compactAvailableCommand returns the manual compaction command definition for ACP client display.
 func compactAvailableCommand() acpsdk.AvailableCommand {
 	return acpsdk.AvailableCommand{
 		Name:        compactCommandName,
@@ -846,7 +846,7 @@ func compactAvailableCommand() acpsdk.AvailableCommand {
 	}
 }
 
-// skillAvailableCommand 返回 ACP 客户端展示的 skill slash command 定义。
+// skillAvailableCommand returns the skill slash command definition for ACP client display.
 func skillAvailableCommand(summary runtime.SkillSummary) acpsdk.AvailableCommand {
 	return acpsdk.AvailableCommand{
 		Name:        summary.Name,
@@ -859,7 +859,7 @@ func skillAvailableCommand(summary runtime.SkillSummary) acpsdk.AvailableCommand
 	}
 }
 
-// availableCommands 返回当前 session 工作目录下客户端可展示的 slash command。
+// availableCommands returns the slash commands displayable by the client in the current session working directory.
 func (a *Agent) availableCommands(ctx context.Context, cwd string) []acpsdk.AvailableCommand {
 	commands := []acpsdk.AvailableCommand{compactAvailableCommand()}
 	for _, summary := range a.skillCommands(ctx, cwd) {
@@ -868,7 +868,7 @@ func (a *Agent) availableCommands(ctx context.Context, cwd string) []acpsdk.Avai
 	return commands
 }
 
-// skillCommands 返回可作为 ACP slash command 暴露的 skill 摘要。
+// skillCommands returns skill summaries that can be exposed as ACP slash commands.
 func (a *Agent) skillCommands(ctx context.Context, cwd string) []runtime.SkillSummary {
 	summaries, err := a.rt.SkillSummaries(ctx, cwd)
 	if err != nil {
@@ -884,7 +884,7 @@ func (a *Agent) skillCommands(ctx context.Context, cwd string) []runtime.SkillSu
 	return commands
 }
 
-// runCommandPrompt 执行不进入模型 turn 的 ACP slash command。
+// runCommandPrompt executes an ACP slash command without entering a model turn.
 func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId, state sessionState, instruction string) (acpsdk.PromptResponse, error) {
 	a.cancelSession(string(sessionID))
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -999,7 +999,7 @@ func requireAbsoluteCWD(cwd string) error {
 	return nil
 }
 
-// requireAbsoluteDirectories 校验 ACP 额外工作目录根都是绝对路径。
+// requireAbsoluteDirectories validates that ACP additional working directory roots are all absolute paths.
 func requireAbsoluteDirectories(dirs []string) error {
 	for _, dir := range dirs {
 		if dir == "" {
@@ -1097,7 +1097,7 @@ func promptHasImage(parts []model.ContentPart) bool {
 	return false
 }
 
-// embeddedTextResource 将 ACP 内嵌文本资源转成模型可读的文本片段。
+// embeddedTextResource converts an ACP embedded text resource into model-readable text segments.
 func embeddedTextResource(resource *acpsdk.TextResourceContents) string {
 	lines := []string{fmt.Sprintf("Resource: %s", resource.Uri)}
 	if resource.MimeType != nil && *resource.MimeType != "" {
@@ -1107,7 +1107,7 @@ func embeddedTextResource(resource *acpsdk.TextResourceContents) string {
 	return strings.Join(lines, "\n")
 }
 
-// sessionInfo 将本地 session 元数据转换为 ACP session/list 结果。
+// sessionInfo converts local session metadata to ACP session/list results.
 func sessionInfo(sess session.Session) acpsdk.SessionInfo {
 	info := acpsdk.SessionInfo{
 		SessionId:             acpsdk.SessionId(sess.ID),
@@ -1125,7 +1125,7 @@ func sessionInfo(sess session.Session) acpsdk.SessionInfo {
 	return info
 }
 
-// acpUsage 将 Atlas 模型用量转换为 ACP prompt 响应用量。
+// acpUsage converts Atlas model usage to ACP prompt response usage.
 func acpUsage(usage model.Usage) *acpsdk.Usage {
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.TotalTokens == 0 {
 		return nil
@@ -1137,7 +1137,7 @@ func acpUsage(usage model.Usage) *acpsdk.Usage {
 	}
 }
 
-// usageUsed 返回 usage_update 中展示的上下文占用估计值。
+// usageUsed returns the estimated context usage displayed in usage_update.
 func usageUsed(usage model.Usage) int {
 	if usage.TotalTokens > 0 {
 		return usage.TotalTokens
@@ -1145,7 +1145,7 @@ func usageUsed(usage model.Usage) int {
 	return usage.InputTokens + usage.OutputTokens
 }
 
-// modelContextWindow 返回当前模型配置的上下文窗口大小。
+// modelContextWindow returns the configured context window size for the current model.
 func modelContextWindow(options runtime.ModelOptions, current string) int {
 	for _, model := range options.Models {
 		if model.Value == current {
@@ -1155,7 +1155,7 @@ func modelContextWindow(options runtime.ModelOptions, current string) int {
 	return 0
 }
 
-// compactCommandInstruction 解析 `/compact` 命令及其可选指令。
+// compactCommandInstruction parses the `/compact` command and its optional instruction.
 func compactCommandInstruction(text string) (string, bool) {
 	text = strings.TrimSpace(text)
 	if text == "/"+compactCommandName {
@@ -1168,7 +1168,7 @@ func compactCommandInstruction(text string) (string, bool) {
 	return "", false
 }
 
-// skillCommandName 解析 skill slash command 的名称。
+// skillCommandName parses the name of a skill slash command.
 func skillCommandName(text string, skills []runtime.SkillSummary) (string, bool) {
 	name, ok := slashCommandName(text)
 	if !ok {
@@ -1182,7 +1182,7 @@ func skillCommandName(text string, skills []runtime.SkillSummary) (string, bool)
 	return "", false
 }
 
-// slashCommandName 解析 `/name optional text` 形式 slash command 的名称。
+// slashCommandName parses the name from a `/name optional text` slash command.
 func slashCommandName(text string) (string, bool) {
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, "/") {
@@ -1206,7 +1206,7 @@ func slashCommandName(text string) (string, bool) {
 	return name, true
 }
 
-// validSlashCommandName 判断 skill 名称是否能安全映射为 ACP slash command。
+// validSlashCommandName determines whether a skill name can be safely mapped to an ACP slash command.
 func validSlashCommandName(name string) bool {
 	for _, r := range name {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
@@ -1244,7 +1244,7 @@ func replayToolResult(toolID acpsdk.ToolCallId, msg model.Message) acpsdk.Sessio
 	)
 }
 
-// toolCallUpdateOptions 将 Atlas 工具结果映射成 ACP tool_call_update。
+// toolCallUpdateOptions maps Atlas tool results to ACP tool_call_update.
 func toolCallUpdateOptions(status acpsdk.ToolCallStatus, result string, metadata model.ToolMetadata, includeContent bool) []acpsdk.ToolCallUpdateOpt {
 	opts := []acpsdk.ToolCallUpdateOpt{
 		acpsdk.WithUpdateStatus(status),
@@ -1259,7 +1259,7 @@ func toolCallUpdateOptions(status acpsdk.ToolCallStatus, result string, metadata
 	return opts
 }
 
-// toolCallContent 优先使用结构化 diff，否则回退为普通文本内容。
+// toolCallContent prioritizes structured diff, falling back to plain text content.
 func toolCallContent(result string, metadata model.ToolMetadata) []acpsdk.ToolCallContent {
 	if metadata.Diff != nil {
 		if metadata.Diff.OldText == nil {
@@ -1276,7 +1276,7 @@ func toolCallContent(result string, metadata model.ToolMetadata) []acpsdk.ToolCa
 	}
 }
 
-// toolCallLocations 将持久化的文件位置转换为 ACP 可跳转位置。
+// toolCallLocations converts persisted file locations to ACP navigable locations.
 func toolCallLocations(metadata model.ToolMetadata) []acpsdk.ToolCallLocation {
 	if len(metadata.Locations) == 0 {
 		return nil

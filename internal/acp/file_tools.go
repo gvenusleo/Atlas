@@ -23,7 +23,7 @@ const (
 	textProbeBytes      = 8 * 1024
 )
 
-// isFileTool 判断工具是否需要 ACP 文件展示增强。
+// isFileTool determines whether a tool needs ACP file display enhancement.
 func isFileTool(name string) bool {
 	switch name {
 	case "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep":
@@ -33,7 +33,7 @@ func isFileTool(name string) bool {
 	}
 }
 
-// runFileTool 为文件类工具补充 ACP filesystem 调用和展示 metadata。
+// runFileTool supplements file-type tools with ACP filesystem calls and display metadata.
 func (a *Agent) runFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	switch call.Name {
 	case "read_file":
@@ -53,7 +53,7 @@ func (a *Agent) runFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd
 	}
 }
 
-// runReadFileTool 优先使用客户端文件系统读取编辑器侧内容。
+// runReadFileTool prioritizes reading editor-side content via the client filesystem.
 func (a *Agent) runReadFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	args, err := tool.ParseReadFileArgs(call.Arguments)
 	if err != nil {
@@ -77,7 +77,7 @@ func (a *Agent) runReadFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 	return runLocalReadFileTool(ctx, call, path, args, metadata, fallback)
 }
 
-// runWriteFileTool 优先使用客户端文件系统写入，并生成 diff metadata。
+// runWriteFileTool prioritizes writing via the client filesystem and generates diff metadata.
 func (a *Agent) runWriteFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	args, err := tool.ParseWriteFileArgs(call.Arguments)
 	if err != nil {
@@ -101,7 +101,7 @@ func (a *Agent) runWriteFileTool(ctx context.Context, sessionID acpsdk.SessionId
 	return runLocalWriteFileTool(ctx, call, path, content, metadata, fallback)
 }
 
-// runLocalReadFileTool 使用 Atlas 本地工具读取文件并补充 ACP metadata。
+// runLocalReadFileTool reads a file using Atlas local tools and supplements ACP metadata.
 func runLocalReadFileTool(ctx context.Context, call model.ToolCall, path string, args tool.ReadFileArgs, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.ReadFileArgs{
 		Path:  path,
@@ -112,7 +112,7 @@ func runLocalReadFileTool(ctx context.Context, call model.ToolCall, path string,
 	return result, err
 }
 
-// runLocalWriteFileTool 使用 Atlas 本地工具写入文件并生成 diff metadata。
+// runLocalWriteFileTool writes a file using Atlas local tools and generates diff metadata.
 func runLocalWriteFileTool(ctx context.Context, call model.ToolCall, path, content string, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	oldText := readLocalToolOldText(path)
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.WriteFileArgs{
@@ -126,7 +126,7 @@ func runLocalWriteFileTool(ctx context.Context, call model.ToolCall, path, conte
 	return result, err
 }
 
-// runEditFileTool 基于客户端当前文件内容应用 Atlas 的唯一块替换规则。
+// runEditFileTool applies Atlas's unique block replacement rules based on the client's current file content.
 func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	args, err := tool.ParseEditFileArgs(call.Arguments)
 	if err != nil {
@@ -158,7 +158,7 @@ func (a *Agent) runEditFileTool(ctx context.Context, sessionID acpsdk.SessionId,
 	return runLocalEditFileTool(ctx, call, path, args, metadata, fallback)
 }
 
-// runLocalEditFileTool 使用 Atlas 本地工具编辑文件并生成 diff metadata。
+// runLocalEditFileTool edits a file using Atlas local tools and generates diff metadata.
 func runLocalEditFileTool(ctx context.Context, call model.ToolCall, path string, args tool.EditFileArgs, metadata model.ToolMetadata, fallback tool.RunFunc) (tool.RunResult, error) {
 	oldText := readLocalToolOldText(path)
 	result, err := fallback(ctx, toolCallWithArgs(call, tool.EditFileArgs{
@@ -175,7 +175,7 @@ func runLocalEditFileTool(ctx context.Context, call model.ToolCall, path string,
 	return result, err
 }
 
-// runApplyPatchTool 应用 patch 并为 ACP 补充位置和单文件 diff metadata。
+// runApplyPatchTool applies a patch and supplements ACP with location and single-file diff metadata.
 func (a *Agent) runApplyPatchTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	args, err := tool.ParseApplyPatchArgs(call.Arguments)
 	if err != nil {
@@ -199,7 +199,7 @@ func (a *Agent) runApplyPatchTool(ctx context.Context, cwd string, call model.To
 	return result, err
 }
 
-// runGlobTool 保持本地查找实现，同时补充目录位置 metadata。
+// runGlobTool keeps the local search implementation and supplements directory location metadata.
 func (a *Agent) runGlobTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	path, ok := searchRootFromArguments(cwd, call.Arguments)
 	if !ok {
@@ -212,7 +212,7 @@ func (a *Agent) runGlobTool(ctx context.Context, cwd string, call model.ToolCall
 	return result, err
 }
 
-// runGrepTool 保持本地搜索实现，同时从匹配行提取跳转位置。
+// runGrepTool keeps the local search implementation and extracts navigable locations from matching lines.
 func (a *Agent) runGrepTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 	path, ok := searchRootFromArguments(cwd, call.Arguments)
 	if !ok {
@@ -227,7 +227,7 @@ func (a *Agent) runGrepTool(ctx context.Context, cwd string, call model.ToolCall
 	return result, err
 }
 
-// readToolOldText 读取旧内容用于 diff；读不到时按新文件处理。
+// readToolOldText reads old content for diff; treats as new file when unreadable.
 func (a *Agent) readToolOldText(ctx context.Context, sessionID acpsdk.SessionId, path string) *string {
 	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil && clientOldTextReadAllowed(path) {
 		content, err := a.readClientToolText(ctx, sessionID, path)
@@ -239,7 +239,7 @@ func (a *Agent) readToolOldText(ctx context.Context, sessionID acpsdk.SessionId,
 	return readLocalToolOldText(path)
 }
 
-// readLocalToolOldText 读取本地旧内容，缺失时返回 nil 表示新文件。
+// readLocalToolOldText reads local old content; returns nil for new files.
 func readLocalToolOldText(path string) *string {
 	if !localTextFile(path) {
 		return nil
@@ -251,7 +251,7 @@ func readLocalToolOldText(path string) *string {
 	return &content
 }
 
-// readClientToolText 从 ACP 客户端读取文件内容。
+// readClientToolText reads file content from the ACP client.
 func (a *Agent) readClientToolText(ctx context.Context, sessionID acpsdk.SessionId, path string) (string, error) {
 	resp, err := a.fileClient.ReadTextFile(ctx, acpsdk.ReadTextFileRequest{SessionId: sessionID, Path: path})
 	if err != nil {
@@ -260,7 +260,7 @@ func (a *Agent) readClientToolText(ctx context.Context, sessionID acpsdk.Session
 	return resp.Content, nil
 }
 
-// readLocalToolText 从 Atlas 进程本地文件系统读取文件内容。
+// readLocalToolText reads file content from the Atlas process's local filesystem.
 func readLocalToolText(path string) (string, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -269,12 +269,12 @@ func readLocalToolText(path string) (string, bool) {
 	return string(data), true
 }
 
-// clientReadTextFileAllowed 避免把目录或二进制文件交给 ACP 客户端读取。
+// clientReadTextFileAllowed avoids passing directories or binary files to the ACP client for reading.
 func clientReadTextFileAllowed(path string) bool {
 	return localTextFile(path)
 }
 
-// clientOldTextReadAllowed 只在路径不存在或本地确认是文本文件时读取客户端旧内容。
+// clientOldTextReadAllowed reads client old content only when the path does not exist or is locally confirmed as a text file.
 func clientOldTextReadAllowed(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -286,7 +286,7 @@ func clientOldTextReadAllowed(path string) bool {
 	return localFileLooksText(path)
 }
 
-// clientWriteTextFileAllowed 避免请求客户端把目录或特殊文件当文本文件写入。
+// clientWriteTextFileAllowed avoids requesting the client to write directories or special files as text files.
 func clientWriteTextFileAllowed(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -298,7 +298,7 @@ func clientWriteTextFileAllowed(path string) bool {
 	return localFileLooksText(path)
 }
 
-// localTextFile 判断本地路径是否为可安全交给文本接口处理的普通文本文件。
+// localTextFile determines whether a local path is a plain text file safe for text interface handling.
 func localTextFile(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() || !info.Mode().IsRegular() {
@@ -307,7 +307,7 @@ func localTextFile(path string) bool {
 	return localFileLooksText(path)
 }
 
-// localFileLooksText 采样文件开头，排除 NUL 字节和非 UTF-8 内容。
+// localFileLooksText samples the file header, rejecting NUL bytes and non-UTF-8 content.
 func localFileLooksText(path string) bool {
 	file, err := os.Open(path)
 	if err != nil {
@@ -324,7 +324,7 @@ func localFileLooksText(path string) bool {
 	return bytes.IndexByte(sample, 0) < 0 && utf8.Valid(sample)
 }
 
-// acpToolDiff 在合理大小内生成可持久化的 diff metadata。
+// acpToolDiff generates persistable diff metadata within a reasonable size limit.
 func acpToolDiff(path string, oldText *string, newText string) *model.ToolDiff {
 	oldLen := 0
 	if oldText != nil {
@@ -336,7 +336,7 @@ func acpToolDiff(path string, oldText *string, newText string) *model.ToolDiff {
 	return &model.ToolDiff{Path: path, OldText: oldText, NewText: newText}
 }
 
-// mergeToolMetadata 保留已有 metadata，只填补缺失字段。
+// mergeToolMetadata preserves existing metadata and only fills in missing fields.
 func mergeToolMetadata(base, extra model.ToolMetadata) model.ToolMetadata {
 	if len(base.Locations) == 0 {
 		base.Locations = extra.Locations
@@ -347,7 +347,7 @@ func mergeToolMetadata(base, extra model.ToolMetadata) model.ToolMetadata {
 	return base
 }
 
-// absoluteToolPath 将工具路径解析到 ACP session cwd 下。
+// absoluteToolPath resolves a tool path under the ACP session cwd.
 func absoluteToolPath(cwd, path string) string {
 	if filepath.IsAbs(path) {
 		return filepath.Clean(path)
@@ -362,7 +362,7 @@ func absoluteToolPath(cwd, path string) string {
 	return abs
 }
 
-// lineOrZero 将非正行号规整为空行号。
+// lineOrZero normalizes non-positive line numbers to zero.
 func lineOrZero(line int) int {
 	if line > 0 {
 		return line
@@ -370,7 +370,7 @@ func lineOrZero(line int) int {
 	return 0
 }
 
-// searchRootFromArguments 从工具参数中提取 path；未传 path 时使用 cwd。
+// searchRootFromArguments extracts the path from tool parameters; uses cwd when path is not provided.
 func searchRootFromArguments(cwd, arguments string) (string, bool) {
 	var args struct {
 		Path string `json:"path"`
@@ -384,7 +384,7 @@ func searchRootFromArguments(cwd, arguments string) (string, bool) {
 	return absoluteToolPath(cwd, args.Path), true
 }
 
-// toolCallWithPath 保留原始参数，只把 path 标准化为 session cwd 下的绝对路径。
+// toolCallWithPath preserves the original parameters, only normalizing path to an absolute path under the session cwd.
 func toolCallWithPath(call model.ToolCall, path string) model.ToolCall {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
@@ -394,7 +394,7 @@ func toolCallWithPath(call model.ToolCall, path string) model.ToolCall {
 	return toolCallWithArgs(call, args)
 }
 
-// toolCallWithArgs 用结构化参数替换工具调用的原始 JSON。
+// toolCallWithArgs replaces the raw JSON of a tool call with structured parameters.
 func toolCallWithArgs(call model.ToolCall, args any) model.ToolCall {
 	data, err := json.Marshal(args)
 	if err != nil {
@@ -404,7 +404,7 @@ func toolCallWithArgs(call model.ToolCall, args any) model.ToolCall {
 	return call
 }
 
-// grepResultLocations 从 grep 的 file:line:content 输出中提取可跳转位置。
+// grepResultLocations extracts navigable locations from grep's file:line:content output.
 func grepResultLocations(root, output string) []model.ToolLocation {
 	var locations []model.ToolLocation
 	seen := map[string]struct{}{}

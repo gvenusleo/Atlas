@@ -18,12 +18,12 @@ const (
 
 var safeFileNamePattern = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// Store 读写微信通道的本地账号和状态文件。
+// Store reads and writes local account and state files for the WeChat channel.
 type Store struct {
 	dir string
 }
 
-// SenderState 保存某个微信发送人的当前 Atlas 会话状态。
+// SenderState holds the current Atlas session state for a WeChat sender.
 type SenderState struct {
 	CWD         string `json:"cwd"`
 	PreviousCWD string `json:"previous_cwd,omitempty"`
@@ -37,7 +37,7 @@ type channelState struct {
 	Senders          map[string]SenderState `json:"senders,omitempty"`
 }
 
-// DefaultStoreDir 返回微信通道默认本地状态目录。
+// DefaultStoreDir returns the default local state directory for the WeChat channel.
 func DefaultStoreDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -46,7 +46,7 @@ func DefaultStoreDir() (string, error) {
 	return filepath.Join(home, ".atlas", "weixin"), nil
 }
 
-// NewStore 创建微信通道本地存储。
+// NewStore creates local storage for the WeChat channel.
 func NewStore(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
 		var err error
@@ -64,7 +64,7 @@ func NewStore(dir string) (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-// SaveAccount 保存微信账号凭据。
+// SaveAccount saves WeChat account credentials.
 func (s *Store) SaveAccount(account Account) error {
 	if account.ID == "" {
 		return fmt.Errorf("weixin account id is required")
@@ -87,7 +87,7 @@ func (s *Store) SaveAccount(account Account) error {
 	return s.saveState(state)
 }
 
-// LoadAccount 读取指定微信账号；accountID 为空时读取当前账号。
+// LoadAccount reads the specified WeChat account; when accountID is empty, reads the current account.
 func (s *Store) LoadAccount(accountID string) (Account, error) {
 	if strings.TrimSpace(accountID) == "" {
 		state, err := s.loadState()
@@ -110,7 +110,7 @@ func (s *Store) LoadAccount(accountID string) (Account, error) {
 	return account, nil
 }
 
-// ListAccounts 返回本地保存的微信账号。
+// ListAccounts returns locally saved WeChat accounts.
 func (s *Store) ListAccounts() ([]Account, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dir, accountsDirName))
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *Store) ListAccounts() ([]Account, error) {
 	return accounts, nil
 }
 
-// DeleteAccount 删除指定微信账号。
+// DeleteAccount deletes the specified WeChat account.
 func (s *Store) DeleteAccount(accountID string) error {
 	if strings.TrimSpace(accountID) == "" {
 		return fmt.Errorf("weixin account id is required")
@@ -156,7 +156,7 @@ func (s *Store) DeleteAccount(accountID string) error {
 	return s.saveState(state)
 }
 
-// loadState 读取微信通道运行状态；不存在时返回空状态。
+// loadState reads the WeChat channel runtime state; returns empty state if not found.
 func (s *Store) loadState() (channelState, error) {
 	content, err := os.ReadFile(s.statePath())
 	if os.IsNotExist(err) {
@@ -175,7 +175,7 @@ func (s *Store) loadState() (channelState, error) {
 	return state, nil
 }
 
-// saveState 保存微信通道运行状态。
+// saveState saves the WeChat channel runtime state.
 func (s *Store) saveState(state channelState) error {
 	if state.Senders == nil {
 		state.Senders = map[string]SenderState{}
@@ -187,17 +187,17 @@ func (s *Store) saveState(state channelState) error {
 	return writeSecureFile(s.statePath(), content)
 }
 
-// accountPath 返回账号凭据文件路径。
+// accountPath returns the account credentials file path.
 func (s *Store) accountPath(accountID string) string {
 	return filepath.Join(s.dir, accountsDirName, safeFileName(accountID)+".json")
 }
 
-// statePath 返回微信通道状态文件路径。
+// statePath returns the WeChat channel state file path.
 func (s *Store) statePath() string {
 	return filepath.Join(s.dir, stateFileName)
 }
 
-// safeFileName 把外部账号 ID 转成可用作本地文件名的字符串。
+// safeFileName converts an external account ID to a string usable as a local filename.
 func safeFileName(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

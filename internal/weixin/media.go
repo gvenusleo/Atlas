@@ -17,7 +17,7 @@ import (
 
 const maxWeixinImageBytes = 20 * 1024 * 1024
 
-// imagePartFromItem 下载微信图片并转换为模型图片片段。
+// imagePartFromItem downloads a WeChat image and converts it to a model image segment.
 func (s *Server) imagePartFromItem(ctx context.Context, item MessageItem) (model.ContentPart, error) {
 	if item.Type != messageItemTypeImage || item.ImageItem == nil {
 		return model.ContentPart{}, fmt.Errorf("weixin image item is required")

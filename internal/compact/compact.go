@@ -1,4 +1,4 @@
-// Package compact 提供上下文压缩的规划和摘要辅助能力。
+// Package compact provides context compaction planning and summarization helpers.
 package compact
 
 import (
@@ -10,16 +10,16 @@ import (
 )
 
 const (
-	// DefaultTriggerRatio 是触发自动压缩的默认上下文窗口使用比例。
+	// DefaultTriggerRatio is the default context window usage ratio that triggers auto-compaction.
 	DefaultTriggerRatio = 0.8
-	// DefaultKeepRecentTokens 是压缩后保留最近上下文的目标 token 数。
+	// DefaultKeepRecentTokens is the target token count for retaining recent context after compaction.
 	DefaultKeepRecentTokens = 20000
 
 	toolResultMaxChars = 2000
 	summaryPrefix      = "Context summary from earlier conversation:"
 )
 
-// Plan 描述可摘要的历史前缀和必须原样保留的最近后缀。
+// Plan describes the summarizable history prefix and the recent suffix that must be preserved verbatim.
 type Plan struct {
 	CompactCount int
 	KeepCount    int
@@ -27,7 +27,7 @@ type Plan struct {
 	TokensAfter  int
 }
 
-// EstimateMessages 估算一组消息的 token 数。
+// EstimateMessages estimates the token count for a group of messages.
 func EstimateMessages(messages []model.Message) int {
 	total := 0
 	for _, msg := range messages {
@@ -36,7 +36,7 @@ func EstimateMessages(messages []model.Message) int {
 	return total
 }
 
-// EstimateMessage 估算单条消息的 token 数。
+// EstimateMessage estimates the token count for a single message.
 func EstimateMessage(msg model.Message) int {
 	total := estimateParts(model.MessageParts(msg)) + estimateText(msg.ReasoningContent) + estimateText(msg.ToolCallID) + 4
 	for _, call := range msg.ToolCalls {
@@ -45,7 +45,7 @@ func EstimateMessage(msg model.Message) int {
 	return total
 }
 
-// ShouldAutoCompact 判断上下文使用量是否达到配置的自动压缩比例。
+// ShouldAutoCompact determines whether context usage has reached the configured auto-compaction ratio.
 func ShouldAutoCompact(inputTokens, contextWindow int, triggerRatio float64) bool {
 	if inputTokens <= 0 || contextWindow <= 0 {
 		return false
@@ -56,7 +56,7 @@ func ShouldAutoCompact(inputTokens, contextWindow int, triggerRatio float64) boo
 	return float64(inputTokens) >= float64(contextWindow)*triggerRatio
 }
 
-// BuildActiveMessages 根据已保存的压缩元数据构造发送给模型的活动消息。
+// BuildActiveMessages constructs the active messages sent to the model based on saved compaction metadata.
 func BuildActiveMessages(summary string, compactedCount int, full []model.Message) []model.Message {
 	if compactedCount < 0 {
 		compactedCount = 0
@@ -72,12 +72,12 @@ func BuildActiveMessages(summary string, compactedCount int, full []model.Messag
 	return active
 }
 
-// SummaryMessage 将已保存摘要转换成模型上下文中的合成用户消息。
+// SummaryMessage converts a saved summary into a synthetic user message in the model context.
 func SummaryMessage(summary string) model.Message {
 	return model.TextMessage(model.RoleUser, summaryPrefix+"\n\n"+strings.TrimSpace(summary))
 }
 
-// SelectPlan 选择一个安全的自动压缩切分点。
+// SelectPlan selects a safe auto-compaction split point.
 func SelectPlan(messages []model.Message, alreadyCompacted, keepRecentTokens int) (Plan, bool) {
 	if alreadyCompacted < 0 {
 		alreadyCompacted = 0
@@ -116,7 +116,7 @@ func SelectPlan(messages []model.Message, alreadyCompacted, keepRecentTokens int
 	}, len(compactMessages) > 0
 }
 
-// SelectManualPlan 选择最近的安全切分点，并保留最新一轮完整对话。
+// SelectManualPlan selects the most recent safe split point, keeping the latest complete conversation turn.
 func SelectManualPlan(messages []model.Message, alreadyCompacted int) (Plan, bool) {
 	if alreadyCompacted < 0 {
 		alreadyCompacted = 0
@@ -139,7 +139,7 @@ func SelectManualPlan(messages []model.Message, alreadyCompacted int) (Plan, boo
 	return Plan{}, false
 }
 
-// SerializeMessages 将消息转换成摘要请求使用的纯文本。
+// SerializeMessages converts messages into plain text for use in summary requests.
 func SerializeMessages(messages []model.Message) string {
 	var parts []string
 	for _, msg := range messages {
@@ -171,7 +171,7 @@ func SerializeMessages(messages []model.Message) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// BuildSummaryMessages 构造生成压缩摘要时使用的请求消息。
+// BuildSummaryMessages constructs the request messages used to generate a compaction summary.
 func BuildSummaryMessages(previousSummary string, messages []model.Message, instruction string) []model.Message {
 	var b strings.Builder
 	b.WriteString("Summarize the conversation history below for future continuation.\n\n")
@@ -199,8 +199,8 @@ func BuildSummaryMessages(previousSummary string, messages []model.Message, inst
 	return []model.Message{model.TextMessage(model.RoleUser, b.String())}
 }
 
-// extractLastTodos 扫描消息中最后一次 todo_write 调用，返回其 todo 列表。
-// 只返回包含未完成项的列表；全部完成时返回 nil。
+// extractLastTodos scans messages for the last todo_write call and returns its todo list.
+// Only returns a list containing incomplete items; returns nil when all are completed.
 func extractLastTodos(messages []model.Message) []model.TodoEntry {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
@@ -244,7 +244,7 @@ func extractLastTodos(messages []model.Message) []model.TodoEntry {
 	return nil
 }
 
-// safeCutBefore 判断是否可以在指定消息前切分，避免拆开用户轮次和工具调用。
+// safeCutBefore determines whether it is safe to split before the specified message, avoiding breaking user turns and tool calls.
 func safeCutBefore(messages []model.Message, index int) bool {
 	if index <= 0 || index >= len(messages) {
 		return false
@@ -259,7 +259,7 @@ func safeCutBefore(messages []model.Message, index int) bool {
 	return true
 }
 
-// estimateText 用字符数粗略估算 token 数。
+// estimateText roughly estimates token count from character count.
 func estimateText(text string) int {
 	if text == "" {
 		return 0
@@ -267,7 +267,7 @@ func estimateText(text string) int {
 	return (len([]rune(text)) + 3) / 4
 }
 
-// estimateParts 估算结构化内容片段的 token 数，图片只按占位和固定开销计算。
+// estimateParts estimates the token count for structured content parts; images are counted by placeholder and fixed overhead only.
 func estimateParts(parts []model.ContentPart) int {
 	total := 0
 	for _, part := range parts {
@@ -281,7 +281,7 @@ func estimateParts(parts []model.ContentPart) int {
 	return total
 }
 
-// serializeContentParts 将结构化内容转为摘要和记忆使用的纯文本。
+// serializeContentParts converts structured content into plain text for use in summaries and memory.
 func serializeContentParts(parts []model.ContentPart) string {
 	lines := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -309,7 +309,7 @@ func imagePlaceholder(part model.ContentPart) string {
 	return fmt.Sprintf("[Image: %s, detail=%s]", mimeType, detail)
 }
 
-// truncate 按字符数截断文本，避免切坏 UTF-8 内容。
+// truncate truncates text by character count, avoiding corruption of UTF-8 content.
 func truncate(text string, maxChars int) string {
 	runes := []rune(text)
 	if maxChars <= 0 || len(runes) <= maxChars {

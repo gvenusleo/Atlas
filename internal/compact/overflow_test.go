@@ -11,7 +11,7 @@ func TestIsContextOverflow(t *testing.T) {
 		err  error
 		want bool
 	}{
-		// --- 真实 overflow 场景 ---
+		// --- Real overflow scenarios ---
 		{
 			name: "openai responses max items in input",
 			err:  errors.New(`responses request failed: status 400: {"error":{"code":"InvalidParameter","message":"The parameter input specified in the request are not valid: Invalid input: Maximum of 1000 items allowed in input."}}`),
@@ -53,7 +53,7 @@ func TestIsContextOverflow(t *testing.T) {
 			want: true,
 		},
 
-		// --- 非 overflow 场景（不应误触发压缩） ---
+		// --- Non-overflow scenarios (should not trigger compaction) ---
 		{
 			name: "network error",
 			err:  errors.New("connection refused"),

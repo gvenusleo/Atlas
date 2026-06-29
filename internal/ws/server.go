@@ -21,7 +21,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/transcript"
 )
 
-// Runtime 描述 WebSocket 通道需要调用的 Atlas 核心能力。
+// Runtime describes the Atlas core capabilities needed by the WebSocket channel.
 type Runtime interface {
 	RunTurn(context.Context, runtime.TurnOptions) (runtime.TurnResult, error)
 	CompactSession(context.Context, runtime.CompactOptions) (runtime.CompactResult, error)
@@ -34,7 +34,7 @@ type Runtime interface {
 	RunMemoryWorker(context.Context) error
 }
 
-// ServerOptions 描述 WebSocket 服务参数。
+// ServerOptions describes the WebSocket server parameters.
 type ServerOptions struct {
 	Runtime Runtime
 	Host    string
@@ -42,7 +42,7 @@ type ServerOptions struct {
 	Output  interface{ Write([]byte) (int, error) }
 }
 
-// Server 监听 WebSocket 连接并转发给 Atlas runtime。
+// Server listens for WebSocket connections and forwards them to the Atlas runtime.
 type Server struct {
 	rt     Runtime
 	host   string
@@ -50,7 +50,7 @@ type Server struct {
 	output interface{ Write([]byte) (int, error) }
 }
 
-// NewServer 创建 WebSocket 服务。
+// NewServer creates a WebSocket server.
 func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Runtime == nil {
 		return nil, fmt.Errorf("runtime is required")
@@ -71,7 +71,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}, nil
 }
 
-// Run 启动 HTTP 服务并接受 WebSocket 连接。
+// Run starts the HTTP server and accepts WebSocket connections.
 func (s *Server) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.handleWebSocket)
@@ -93,7 +93,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	s.logf("ws serving on %s", ln.Addr().String())
 
-	// 启动 memory worker，与 ACP / WeChat 通道一致
+	// Start memory worker, consistent with ACP / WeChat channels
 	go func() {
 		_ = s.rt.RunMemoryWorker(ctx)
 	}()
@@ -101,15 +101,15 @@ func (s *Server) Run(ctx context.Context) error {
 	return srv.Serve(ln)
 }
 
-// handleWebSocket 处理单个 WebSocket 连接。
+// handleWebSocket handles a single WebSocket connection.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // 允许任意 Origin，局域网使用
+		InsecureSkipVerify: true, // Allow any Origin, for LAN use
 	})
 	if err != nil {
 		return
 	}
-	// 默认 32KB 限制太小，手机截图/照片 base64 会超限。设为 16MB。
+	// Default 32KB limit is too small; mobile screenshots/photos base64 will exceed it. Set to 16MB.
 	conn.SetReadLimit(16 << 20)
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
@@ -130,7 +130,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// cancel 消息通过取消指定 session 的 turn context 实现
+		// cancel message cancels the specified session's turn context
 		if msg.Type == MsgCancel {
 			if msg.SessionID == "" {
 				s.sendError(ctx, conn, "", "session_id is required for cancel")
@@ -140,18 +140,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// prompt 消息在 goroutine 中执行，不阻塞读取循环
+		// prompt message executes in a goroutine without blocking the read loop
 		if msg.Type == MsgPrompt {
 			s.handlePrompt(ctx, conn, msg, state)
 			continue
 		}
 
-		// 非 prompt 消息：同步处理，不阻塞
+		// Non-prompt message: synchronous handling, non-blocking
 		s.handleMessage(ctx, conn, msg, state)
 	}
 }
 
-// sessionState 维护单个会话的状态。
+// sessionState maintains the state of a single session.
 type sessionState struct {
 	mu         sync.Mutex
 	cwd        string
@@ -159,7 +159,7 @@ type sessionState struct {
 	turnMu     sync.Mutex
 	turnCtx    context.Context
 	turnCancel context.CancelFunc
-	// running 控制同一 session 同一时间只有一个 turn 在执行。
+	// running ensures only one turn executes at a time per session.
 	running atomic.Bool
 }
 
@@ -187,7 +187,7 @@ func (ss *sessionState) getModel() string {
 	return ss.model
 }
 
-// connState 维护单个 WebSocket 连接的所有会话状态。
+// connState maintains all session states for a single WebSocket connection.
 type connState struct {
 	mu       sync.Mutex
 	sessions map[string]*sessionState
@@ -197,7 +197,7 @@ func newConnState() *connState {
 	return &connState{sessions: make(map[string]*sessionState)}
 }
 
-// getOrCreateSession 返回指定 session 的状态，不存在则创建。
+// getOrCreateSession returns the state for the specified session, creating it if it does not exist.
 func (c *connState) getOrCreateSession(id string) *sessionState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -209,14 +209,14 @@ func (c *connState) getOrCreateSession(id string) *sessionState {
 	return ss
 }
 
-// getSession 返回指定 session 的状态，不存在返回 nil。
+// getSession returns the state for the specified session, or nil if not found.
 func (c *connState) getSession(id string) *sessionState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sessions[id]
 }
 
-// cancelTurn 取消指定 session 的当前 turn。
+// cancelTurn cancels the current turn for the specified session.
 func (c *connState) cancelTurn(sessionID string) {
 	ss := c.getSession(sessionID)
 	if ss == nil {
@@ -229,7 +229,7 @@ func (c *connState) cancelTurn(sessionID string) {
 	}
 }
 
-// handleMessage 分发非 prompt 客户端消息到对应的处理函数。
+// handleMessage dispatches non-prompt client messages to their handlers.
 func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
 	switch msg.Type {
 	case MsgListSessions:
@@ -251,14 +251,14 @@ func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg Cl
 	}
 }
 
-// handlePrompt 处理用户对话请求。RunTurn 在 goroutine 中执行，不阻塞读取循环。
-// 不同 session 的 prompt 可以并发执行；同一 session 的第二个 prompt 会被拒绝。
-// running 在发送最终事件前释放，确保客户端收到 turn_finished 后可以立即发送下一条 prompt。
+// handlePrompt handles a user conversation request. RunTurn executes in a goroutine without blocking the read loop.
+// Prompts for different sessions can execute concurrently; the second prompt to the same session is rejected.
+// running is released before sending the final event, ensuring the client can immediately send the next prompt after receiving turn_finished.
 func (s *Server) handlePrompt(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
 	sessionID := msg.SessionID
 
-	// 新建会话：sessionID 为空时由 runtime 生成，turn_finished 回传。
-	// 此时先创建一个临时 sessionState，running CAS 在 goroutine 内执行。
+	// New session: when sessionID is empty, runtime generates it and returns via turn_finished.
+	// Create a temporary sessionState first; running CAS executes inside the goroutine.
 	var ss *sessionState
 	if sessionID != "" {
 		ss = state.getOrCreateSession(sessionID)
@@ -269,7 +269,7 @@ func (s *Server) handlePrompt(ctx context.Context, conn *websocket.Conn, msg Cli
 	}
 
 	go func() {
-		// panic 兜底：确保 handlePrompt 即使 panic 也能释放 turn 锁。
+		// Panic recovery: ensures handlePrompt releases the turn lock even on panic.
 		if ss != nil {
 			defer ss.running.Store(false)
 		}
@@ -277,9 +277,9 @@ func (s *Server) handlePrompt(ctx context.Context, conn *websocket.Conn, msg Cli
 	}()
 }
 
-// runPrompt 执行一次 turn 并推送事件。
+// runPrompt executes a turn and pushes events.
 func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState, sessionID string, ss *sessionState) {
-	// 确定 cwd：优先用消息中的，其次用 session 状态中缓存的
+	// Determine cwd: prefer message value, then cached session state
 	cwd := msg.CWD
 	if cwd == "" && ss != nil {
 		cwd = ss.getCWD()
@@ -288,13 +288,13 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 		ss.setCWD(cwd)
 	}
 
-	// 确定 model
+	// Determine model
 	selectedModel := ""
 	if ss != nil {
 		selectedModel = ss.getModel()
 	}
 
-	// 构建 content parts
+	// Build content parts
 	var parts []model.ContentPart
 	if len(msg.Parts) > 0 {
 		for _, p := range msg.Parts {
@@ -307,7 +307,7 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 					continue
 				}
 				part.MimeType = p.MimeType
-				// 客户端发送裸 base64，服务端拼接为完整 data URL
+				// client sends bare base64, server assembles full data URL
 				part.DataURL = "data:" + p.MimeType + ";base64," + p.Data
 			}
 			parts = append(parts, part)
@@ -316,8 +316,8 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 		parts = []model.ContentPart{{Type: model.ContentPartText, Text: msg.Content}}
 	}
 
-	// 为当前 turn 创建可取消的 context
-	// 新建会话场景：ss 为 nil，用连接级 context 派生
+	// Create a cancellable context for the current turn
+	// New session scenario: ss is nil, derive from connection-level context
 	var turnCtx context.Context
 	var turnCancel context.CancelFunc
 	if ss != nil {
@@ -337,7 +337,7 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 		defer turnCancel()
 	}
 
-	// 创建 observer 推送事件，所有事件携带 sessionID
+	// Create observer to push events, all events carry sessionID
 	observer := s.makeObserver(turnCtx, conn, sessionID)
 
 	opts := runtime.TurnOptions{
@@ -350,33 +350,33 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 
 	result, err := s.rt.RunTurn(turnCtx, opts)
 	if err != nil {
-		// 更新 sessionID（新建会话场景）
+		// Update sessionID (new session scenario)
 		if result.SessionID != "" {
 			sessionID = result.SessionID
 		}
-		// 新建会话场景：注册到 connState
+		// New session scenario: register to connState
 		if ss == nil && sessionID != "" {
 			ss = state.getOrCreateSession(sessionID)
 		}
-		// 释放 turn 锁
+		// Release turn lock
 		if ss != nil {
 			ss.running.Store(false)
 		}
 		if turnCtx.Err() != nil {
-			// turn 被取消：发 turn_finished 作为终态
+			// Turn cancelled: send turn_finished as terminal state
 			s.sendEvent(ctx, conn, EventTurnFinished, 0, "", nil, "", "cancelled", false, sessionID)
 		} else {
-			// turn 出错：发 error 事件作为终态（不发 turn_finished）。
-			// 客户端必须同时监听 turn_finished 和 error 作为终态信号。
+			// Turn error: send error event as terminal state (no turn_finished).
+			// Clients must listen for both turn_finished and error as terminal signals.
 			s.sendEvent(ctx, conn, EventError, 0, "", nil, "", err.Error(), true, sessionID)
 		}
 		return
 	}
 
-	// 更新 session ID（新建会话场景）
+	// Update session ID (new session scenario)
 	if result.SessionID != "" {
 		sessionID = result.SessionID
-		// 注册新会话到 connState
+		// Register new session to connState
 		if ss == nil {
 			ss = state.getOrCreateSession(sessionID)
 			ss.setCWD(cwd)
@@ -384,15 +384,15 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 		}
 	}
 
-	// 释放 turn 锁后再发送 turn_finished
+	// Release turn lock before sending turn_finished
 	if ss != nil {
 		ss.running.Store(false)
 	}
 	s.sendEvent(ctx, conn, EventTurnFinished, 0, "", nil, "", "", false, sessionID)
 }
 
-// makeObserver 创建将 agent 事件推送给 WebSocket 客户端的 observer。
-// 所有事件携带 sessionID，客户端据此路由事件到正确的会话。
+// makeObserver creates an observer that pushes agent events to the WebSocket client.
+// All events carry sessionID; clients route events to the correct session accordingly.
 func (s *Server) makeObserver(ctx context.Context, conn *websocket.Conn, sessionID string) agent.Observer {
 	return func(event agent.Event) {
 		switch event.Type {
@@ -431,7 +431,7 @@ func (s *Server) makeObserver(ctx context.Context, conn *websocket.Conn, session
 	}
 }
 
-// handleListSessions 处理会话列表请求。
+// handleListSessions handles a session list request.
 func (s *Server) handleListSessions(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	limit := msg.Limit
 	if limit <= 0 {
@@ -457,7 +457,7 @@ func (s *Server) handleListSessions(ctx context.Context, conn *websocket.Conn, m
 	s.send(ctx, conn, ServerMessage{Type: MsgSessions, Sessions: infos, NextCursor: page.NextCursor})
 }
 
-// handleShowSession 处理会话详情请求。
+// handleShowSession handles a session detail request.
 func (s *Server) handleShowSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	sess, trans, err := s.rt.ShowSession(ctx, msg.SessionID)
 	if err != nil {
@@ -489,7 +489,7 @@ func (s *Server) handleShowSession(ctx context.Context, conn *websocket.Conn, ms
 	})
 }
 
-// handleDeleteSession 处理会话删除请求。
+// handleDeleteSession handles a session deletion request.
 func (s *Server) handleDeleteSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	if err := s.rt.DeleteSessionIfExists(ctx, msg.SessionID); err != nil {
 		s.sendError(ctx, conn, msg.SessionID, err.Error())
@@ -498,7 +498,7 @@ func (s *Server) handleDeleteSession(ctx context.Context, conn *websocket.Conn, 
 	s.send(ctx, conn, ServerMessage{Type: MsgSessionDeleted, SessionID: msg.SessionID})
 }
 
-// handleCompactSession 处理会话压缩请求。
+// handleCompactSession handles a session compaction request.
 func (s *Server) handleCompactSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
 	ss := state.getSession(msg.SessionID)
 	selectedModel := ""
@@ -520,7 +520,7 @@ func (s *Server) handleCompactSession(ctx context.Context, conn *websocket.Conn,
 	})
 }
 
-// handleModelOptions 处理模型列表请求。
+// handleModelOptions handles a model list request.
 func (s *Server) handleModelOptions(ctx context.Context, conn *websocket.Conn) {
 	options, err := s.rt.ModelOptions(ctx)
 	if err != nil {
@@ -555,7 +555,7 @@ func (s *Server) handleModelOptions(ctx context.Context, conn *websocket.Conn) {
 	})
 }
 
-// handleSetModel 校验并保存指定会话选择的模型。
+// handleSetModel validates and saves the model selected for the specified session.
 func (s *Server) handleSetModel(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
 	modelValue := strings.TrimSpace(msg.Model)
 	if modelValue == "" {
@@ -591,7 +591,7 @@ func hasModel(options runtime.ModelOptions, value string) bool {
 	return false
 }
 
-// handleSkillSummaries 处理 skill 列表请求。
+// handleSkillSummaries handles a skill list request.
 func (s *Server) handleSkillSummaries(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	skills, err := s.rt.SkillSummaries(ctx, msg.CWD)
 	if err != nil {
@@ -606,7 +606,7 @@ func (s *Server) handleSkillSummaries(ctx context.Context, conn *websocket.Conn,
 	s.send(ctx, conn, ServerMessage{Type: MsgSkills, Skills: infos})
 }
 
-// send 发送一条 JSON 消息给客户端。
+// send sends a JSON message to the client.
 func (s *Server) send(ctx context.Context, conn *websocket.Conn, msg ServerMessage) {
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -620,12 +620,12 @@ func (s *Server) send(ctx context.Context, conn *websocket.Conn, msg ServerMessa
 	}
 }
 
-// sendError 发送一条错误消息。
+// sendError sends an error message.
 func (s *Server) sendError(ctx context.Context, conn *websocket.Conn, sessionID string, errMsg string) {
 	s.send(ctx, conn, ServerMessage{Type: MsgEvent, Event: EventError, Error: errMsg, HasError: true, SessionID: sessionID})
 }
 
-// sendEvent 发送一条事件消息。
+// sendEvent sends an event message.
 func (s *Server) sendEvent(ctx context.Context, conn *websocket.Conn, event string, step int, content string, tc *ToolCallInfo, result string, errMsg string, errFlag bool, sessionID string) {
 	s.send(ctx, conn, ServerMessage{
 		Type:      MsgEvent,
@@ -640,7 +640,7 @@ func (s *Server) sendEvent(ctx context.Context, conn *websocket.Conn, event stri
 	})
 }
 
-// toSessionInfo 将 session.Session 转换为 SessionInfo。
+// toSessionInfo converts session.Session to SessionInfo.
 func toSessionInfo(sess session.Session) SessionInfo {
 	return SessionInfo{
 		ID:              sess.ID,
@@ -651,12 +651,12 @@ func toSessionInfo(sess session.Session) SessionInfo {
 	}
 }
 
-// toolCallID 生成工具调用的唯一标识。
+// toolCallID generates a unique identifier for a tool call.
 func toolCallID(event agent.Event) string {
 	return fmt.Sprintf("step%d-%s", event.Step, event.ToolCall.ID)
 }
 
-// logf 输出日志到配置的 output。
+// logf writes logs to the configured output.
 func (s *Server) logf(format string, args ...any) {
 	if s.output != nil {
 		fmt.Fprintf(s.output, format+"\n", args...)

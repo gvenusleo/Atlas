@@ -1,4 +1,4 @@
-// Package responses 实现 Responses API 格式的流式模型 provider。
+// Package responses implements the Responses API format streaming model provider.
 package responses
 
 import (
@@ -18,7 +18,7 @@ import (
 
 const responsesPath = "/responses"
 
-// Config 是创建 Responses provider 所需的连接配置。
+// Config holds the connection configuration for creating a Responses provider.
 type Config struct {
 	BaseURL            string
 	APIKey             string
@@ -27,7 +27,7 @@ type Config struct {
 	HTTPClient         *http.Client
 }
 
-// Provider 调用 Responses API。
+// Provider calls the Responses API.
 type Provider struct {
 	baseURL            string
 	apiKey             string
@@ -36,7 +36,7 @@ type Provider struct {
 	httpClient         *http.Client
 }
 
-// New 创建一个 Responses provider。
+// New creates a Responses provider.
 func New(config Config) (*Provider, error) {
 	if config.BaseURL == "" {
 		return nil, fmt.Errorf("responses base url is required")
@@ -64,7 +64,7 @@ func New(config Config) (*Provider, error) {
 	}, nil
 }
 
-// Stream 执行一次流式 Responses 请求，并返回累计后的完整响应。
+// Stream executes a streaming Responses request and returns the accumulated complete response.
 func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
 	body, err := json.Marshal(p.buildRequest(req))
 	if err != nil {

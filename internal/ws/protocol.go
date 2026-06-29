@@ -1,4 +1,4 @@
-// Package ws 通过 WebSocket 暴露 Atlas 的 Agent 能力。
+// Package ws exposes Atlas's agent capabilities via WebSocket.
 package ws
 
 import (
@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// ClientMessage 是客户端发送的所有消息的公共字段。
+// ClientMessage holds the common fields for all client-sent messages.
 type ClientMessage struct {
 	Type      string        `json:"type"`
 	SessionID string        `json:"session_id,omitempty"`
@@ -18,7 +18,7 @@ type ClientMessage struct {
 	Limit     int           `json:"limit,omitempty"`
 }
 
-// ContentPart 描述一条消息中的一个内容片段。
+// ContentPart describes a single content segment within a message.
 type ContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
@@ -26,7 +26,7 @@ type ContentPart struct {
 	MimeType string `json:"mime_type,omitempty"`
 }
 
-// ServerMessage 是服务端发送的所有消息的公共字段。
+// ServerMessage holds the common fields for all server-sent messages.
 type ServerMessage struct {
 	Type          string         `json:"type"`
 	Event         string         `json:"event,omitempty"`
@@ -48,7 +48,7 @@ type ServerMessage struct {
 	ContextWindow int            `json:"context_window,omitempty"`
 }
 
-// ToolCallInfo 描述一个工具调用的展示信息。
+// ToolCallInfo describes the display information for a tool call.
 type ToolCallInfo struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -56,7 +56,7 @@ type ToolCallInfo struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
-// SessionInfo 描述会话列表中的一项。
+// SessionInfo describes a single item in a session list.
 type SessionInfo struct {
 	ID              string `json:"id"`
 	Title           string `json:"title"`
@@ -65,7 +65,7 @@ type SessionInfo struct {
 	LastTotalTokens int    `json:"last_total_tokens"`
 }
 
-// SessionDetail 描述单个会话的元数据。
+// SessionDetail describes the metadata for a single session.
 type SessionDetail struct {
 	ID              string `json:"id"`
 	Title           string `json:"title"`
@@ -74,13 +74,13 @@ type SessionDetail struct {
 	LastTotalTokens int    `json:"last_total_tokens"`
 }
 
-// MessageInfo 描述 transcript 中的一条消息。
+// MessageInfo describes a single message in a transcript.
 type MessageInfo struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// ModelInfo 描述一个可选模型。
+// ModelInfo describes a selectable model.
 type ModelInfo struct {
 	Value            string            `json:"value"`
 	Name             string            `json:"name"`
@@ -91,20 +91,20 @@ type ModelInfo struct {
 	ReasoningEfforts []ReasoningEffort `json:"reasoning_efforts,omitempty"`
 }
 
-// ReasoningEffort 描述模型支持的一个思考深度选项。
+// ReasoningEffort describes a reasoning depth option supported by a model.
 type ReasoningEffort struct {
 	Value       string `json:"value"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
-// SkillInfo 描述一个可调用 skill。
+// SkillInfo describes an invocable skill.
 type SkillInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// 客户端消息类型。
+// Client message types.
 const (
 	MsgPrompt         = "prompt"
 	MsgCancel         = "cancel"
@@ -117,7 +117,7 @@ const (
 	MsgSkillSummaries = "skill_summaries"
 )
 
-// 服务端消息类型。
+// Server message types.
 const (
 	MsgEvent            = "event"
 	MsgSessions         = "sessions"
@@ -129,7 +129,7 @@ const (
 	MsgSkills           = "skills"
 )
 
-// 事件类型（对应 agent.EventType）。
+// Event type (corresponding to agent.EventType).
 const (
 	EventTurnStarted         = "turn_started"
 	EventModelDelta          = "model_delta"
@@ -141,7 +141,7 @@ const (
 	EventError               = "error"
 )
 
-// ParseClientMessage 解析客户端 JSON 消息。
+// ParseClientMessage parses a client JSON message.
 func ParseClientMessage(data []byte) (ClientMessage, error) {
 	var msg ClientMessage
 	if err := json.Unmarshal(data, &msg); err != nil {

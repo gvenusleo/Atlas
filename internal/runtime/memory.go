@@ -22,12 +22,12 @@ const (
 	memoryJobLease        = 2 * time.Minute
 	memoryPromptMaxRunes  = 40000
 	memorySummaryMaxRunes = 16000
-	// 记忆抽取按增量触发，避免每轮对话都消耗后台模型 token。
+	// Memory extraction triggers incrementally, avoiding background model token consumption on every turn.
 	memoryExtractMinNewMessages    = 6
 	memoryExtractMinNewInputTokens = 4000
 )
 
-// memoryDecayDays 按记忆类型指定 confidence 衰减速率（每多少天衰减 1 点）。
+// memoryDecayDays specifies the confidence decay rate by memory type (days per 1-point decay).
 var memoryDecayDays = map[string]int{
 	memory.TypeInstruction: 180,
 	memory.TypeFact:        90,
@@ -39,7 +39,7 @@ const memoryPruneUnusedDays = 90
 var memoryWorkerIDPrefix = "atlas-memory-"
 var memoryExtractTriggerRatios = []float64{0.4, 0.6, 0.8}
 
-// ProcessMemoryJobs 处理有限数量的后台记忆任务，主要供测试和短生命周期入口复用。
+// ProcessMemoryJobs processes a limited number of background memory jobs, primarily for testing and short-lived entry points.
 func (r *Runtime) ProcessMemoryJobs(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = memoryWorkerBatchSize
@@ -47,7 +47,7 @@ func (r *Runtime) ProcessMemoryJobs(ctx context.Context, limit int) (int, error)
 	return r.processMemoryJobs(ctx, limit, newMemoryWorkerID())
 }
 
-// RunMemoryWorker 持续处理后台记忆任务，直到 ctx 取消。
+// RunMemoryWorker continuously processes background memory jobs until ctx is cancelled.
 func (r *Runtime) RunMemoryWorker(ctx context.Context) error {
 	workerID := newMemoryWorkerID()
 	ticker := time.NewTicker(memoryWorkerInterval)
@@ -68,7 +68,7 @@ func (r *Runtime) RunMemoryWorker(ctx context.Context) error {
 	}
 }
 
-// processMemoryJobs 批量领取后台任务，并按任务模型创建 provider；单条失败只影响该任务。
+// processMemoryJobs batch-claims background jobs and creates providers by job model; a single failure only affects that job.
 func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID string) (int, error) {
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
@@ -153,7 +153,7 @@ type memorySummaryOutput struct {
 	Summary string `json:"summary"`
 }
 
-// processMemoryExtractJob 从上次处理边界后的增量消息抽取长期记忆。
+// processMemoryExtractJob extracts long-term memory from incremental messages since the last processing boundary.
 func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.Store, sessionStore *session.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
 	info, err := sessionStore.GetSession(ctx, job.SessionID)
 	if err != nil {
@@ -258,7 +258,7 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	return sessionStore.SaveMemoryExtraction(ctx, job.SessionID, len(messages), inputTokens, inputHash)
 }
 
-// processMemorySummarizeJob 将某个作用域的 active 记忆压成短摘要，供后续提示词注入。
+// processMemorySummarizeJob compresses active memories in a scope into a short summary for subsequent prompt injection.
 func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memory.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
 	entries, err := memStore.ListEntries(ctx, job.Scope, job.ProjectKey)
 	if err != nil {
@@ -307,8 +307,8 @@ func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memor
 	})
 }
 
-// loadMemoryContext 以 best-effort 方式读取长期记忆，失败时不影响主 turn。
-// 同一 session 连续轮次中，上轮已注入且本轮仍在结果中的记忆会被跳过以防重复注入。
+// loadMemoryContext reads long-term memory on a best-effort basis; failures do not affect the main turn.
+// Across consecutive turns in the same session, memories injected in the previous turn and still in the current results are skipped to prevent duplicate injection.
 func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfig, sessionID, cwd, query string) string {
 	store, err := openMemoryStore(ctx, cfg)
 	if err != nil {
@@ -337,7 +337,7 @@ type memoryExtractTriggerOptions struct {
 	ContextWindow int
 }
 
-// maybeEnqueueMemoryExtract 按增量阈值安排记忆抽取，失败时不影响主 turn。
+// maybeEnqueueMemoryExtract schedules memory extraction based on incremental thresholds; failures do not affect the main turn.
 func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.SessionConfig, info session.Session, sessionID, cwd string, messages []model.Message, model string, opts memoryExtractTriggerOptions) {
 	if len(messages) == 0 {
 		return
@@ -358,7 +358,7 @@ func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.Sess
 	_ = store.EnqueueSessionExtract(ctx, sessionID, cwd, inputHash, model)
 }
 
-// shouldEnqueueMemoryExtract 判断新增 transcript 是否达到后台记忆抽取阈值。
+// shouldEnqueueMemoryExtract determines whether the new transcript has reached the background memory extraction threshold.
 func shouldEnqueueMemoryExtract(info session.Session, messages []model.Message, inputTokens, contextWindow int) bool {
 	start := info.MemoryExtractedMessageCount
 	if start < 0 {
@@ -379,7 +379,7 @@ func shouldEnqueueMemoryExtract(info session.Session, messages []model.Message, 
 	return containsExplicitMemoryDirective(messages[start:])
 }
 
-// crossedMemoryExtractRatio 判断上下文用量是否跨过固定水位档。
+// crossedMemoryExtractRatio determines whether context usage has crossed a fixed threshold level.
 func crossedMemoryExtractRatio(previousTokens, currentTokens, contextWindow int) bool {
 	if previousTokens < 0 {
 		previousTokens = 0
@@ -399,7 +399,7 @@ func crossedMemoryExtractRatio(previousTokens, currentTokens, contextWindow int)
 	return false
 }
 
-// containsExplicitMemoryDirective 检测用户是否明确要求记录长期偏好或约束。
+// containsExplicitMemoryDirective detects whether the user explicitly requested recording a long-term preference or constraint.
 func containsExplicitMemoryDirective(messages []model.Message) bool {
 	for _, msg := range messages {
 		if msg.Role != model.RoleUser {
@@ -439,7 +439,7 @@ Return only a JSON object. Do not include markdown.
 Keep the summary compact, concrete, and useful for a coding agent. Preserve user instructions, stable project facts, and repeatable workflows.`
 }
 
-// loadExistingMemories 读取抽取任务需要对照的现有记忆，不更新使用统计。
+// loadExistingMemories reads existing memories for extraction comparison without updating usage statistics.
 func loadExistingMemories(ctx context.Context, store *memory.Store, projectKey string, limit int) ([]memory.Entry, error) {
 	global, err := store.ListEntries(ctx, memory.ScopeGlobal, "")
 	if err != nil {
@@ -456,7 +456,7 @@ func loadExistingMemories(ctx context.Context, store *memory.Store, projectKey s
 	return entries, nil
 }
 
-// memoryExtractPrompt 序列化现有记忆和新增消息，供模型判断增删改。
+// memoryExtractPrompt serializes existing memories and new messages for the model to determine additions, deletions, and updates.
 func memoryExtractPrompt(info session.Session, messages []model.Message, existing []memory.Entry, previousMessageCount int) string {
 	var builder strings.Builder
 	builder.WriteString("Session ID: ")
@@ -491,7 +491,7 @@ func memoryExtractPrompt(info session.Session, messages []model.Message, existin
 	return builder.String()
 }
 
-// memorySummaryPrompt 序列化某个作用域的 active 记忆，供模型生成短摘要。
+// memorySummaryPrompt serializes active memories in a scope for the model to generate a short summary.
 func memorySummaryPrompt(job memory.Job, entries []memory.Entry) string {
 	var builder strings.Builder
 	builder.WriteString("Scope: ")

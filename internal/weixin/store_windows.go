@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// writeSecureFile 用 Windows ACL 写入只对当前用户可见的敏感状态。
+// writeSecureFile writes sensitive state visible only to the current user using Windows ACL.
 func writeSecureFile(path string, content []byte) error {
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		return err
@@ -16,7 +16,7 @@ func writeSecureFile(path string, content []byte) error {
 	return secureStorePath(path, false)
 }
 
-// secureStorePath 固定敏感状态目录或文件的私有访问权限。
+// secureStorePath sets private access permissions on sensitive state directories or files.
 func secureStorePath(path string, directory bool) error {
 	currentToken := windows.GetCurrentProcessToken()
 	currentUser, err := currentToken.GetTokenUser()
@@ -56,7 +56,7 @@ func secureStorePath(path string, directory bool) error {
 	)
 }
 
-// secureAccessEntry 构造授予指定 SID 完全控制权的 ACL 项。
+// secureAccessEntry constructs an ACL entry granting full control to the specified SID.
 func secureAccessEntry(sid *windows.SID, trusteeType windows.TRUSTEE_TYPE, inheritance uint32) windows.EXPLICIT_ACCESS {
 	return windows.EXPLICIT_ACCESS{
 		AccessPermissions: windows.GENERIC_ALL,

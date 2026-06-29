@@ -4,12 +4,12 @@ package weixin
 
 import "os"
 
-// writeSecureFile 用当前平台的私有文件权限写入敏感状态。
+// writeSecureFile writes sensitive state using the current platform's private file permissions.
 func writeSecureFile(path string, content []byte) error {
 	return os.WriteFile(path, content, 0o600)
 }
 
-// secureStorePath 固定敏感状态目录的私有访问权限。
+// secureStorePath sets private access permissions on sensitive state directories.
 func secureStorePath(path string, _ bool) error {
 	return os.Chmod(path, 0o700)
 }
