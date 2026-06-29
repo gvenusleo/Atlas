@@ -155,6 +155,26 @@ func TestStreamOmitsPromptCacheKeyByDefault(t *testing.T) {
 	}
 }
 
+// TestStreamSendsIncludeUsage 验证流式请求始终携带 stream_options.include_usage。
+func TestStreamSendsIncludeUsage(t *testing.T) {
+	var gotReq chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"choices":[{"delta":{},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{}, nil); err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if gotReq.StreamOptions == nil || !gotReq.StreamOptions.IncludeUsage {
+		t.Fatalf("stream_options.include_usage not set: %+v", gotReq.StreamOptions)
+	}
+}
+
 func TestStreamSendsToolMessages(t *testing.T) {
 	var gotReq chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

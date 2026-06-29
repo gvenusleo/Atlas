@@ -112,19 +112,28 @@ func (p *Provider) buildRequest(req model.ChatRequest) chatRequest {
 	if len(apiReq.Tools) == 0 {
 		apiReq.Tools = nil
 	}
+	// 请求 API 在流式响应的最后一个 chunk 中返回 usage 统计。
+	// 部分 provider（如 Ark）在流式模式下默认不返回 usage，需要显式开启。
+	apiReq.StreamOptions = &streamOptions{IncludeUsage: true}
 	return apiReq
 }
 
 type chatRequest struct {
-	Model           string       `json:"model"`
-	Messages        []apiMessage `json:"messages"`
-	Tools           []apiTool    `json:"tools,omitempty"`
-	MaxTokens       int          `json:"max_tokens,omitempty"`
-	Temperature     float64      `json:"temperature,omitempty"`
-	ReasoningEffort string       `json:"reasoning_effort,omitempty"`
-	ResponseFormat  *apiFormat   `json:"response_format,omitempty"`
-	PromptCacheKey  string       `json:"prompt_cache_key,omitempty"`
-	Stream          bool         `json:"stream"`
+	Model           string         `json:"model"`
+	Messages        []apiMessage   `json:"messages"`
+	Tools           []apiTool      `json:"tools,omitempty"`
+	MaxTokens       int            `json:"max_tokens,omitempty"`
+	Temperature     float64        `json:"temperature,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	ResponseFormat  *apiFormat     `json:"response_format,omitempty"`
+	PromptCacheKey  string         `json:"prompt_cache_key,omitempty"`
+	Stream          bool           `json:"stream"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+}
+
+// streamOptions 控制流式响应的附加行为。
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type apiFormat struct {
