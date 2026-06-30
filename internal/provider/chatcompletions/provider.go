@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/provider"
 	"github.com/liuyuxin/atlas/internal/version"
 )
 
@@ -71,15 +72,18 @@ func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(
 		return model.ChatResponse{}, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+chatCompletionsPath, bytes.NewReader(body))
-	if err != nil {
-		return model.ChatResponse{}, err
+	sendFunc := func() (*http.Request, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+chatCompletionsPath, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("User-Agent", "atlas/"+version.Current)
+		return httpReq, nil
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("User-Agent", "atlas/"+version.Current)
 
-	httpResp, err := p.httpClient.Do(httpReq)
+	httpResp, err := provider.DoWithRetry(ctx, p.httpClient, sendFunc)
 	if err != nil {
 		return model.ChatResponse{}, err
 	}
