@@ -219,16 +219,13 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		return acpsdk.PromptResponse{}, err
 	}
 	promptText := strings.TrimSpace(model.TextFromParts(promptParts))
-	var selectedSkills []string
 	if instruction, ok := compactCommandInstruction(promptText); ok {
 		if promptHasImage(promptParts) {
 			return acpsdk.PromptResponse{}, fmt.Errorf("slash commands do not support images")
 		}
 		return a.runCommandPrompt(ctx, params.SessionId, state, instruction)
 	}
-	if skillName, ok := skillCommandName(promptText, a.skillCommands(ctx, state.cwd)); ok {
-		selectedSkills = []string{skillName}
-	}
+	selectedSkills := skillNames(promptText, a.skillCommands(ctx, state.cwd))
 	a.cancelSession(string(params.SessionId))
 	turnCtx, cancel := context.WithCancel(ctx)
 	turn, ok := a.setSessionCancel(string(params.SessionId), cancel)
@@ -1168,18 +1165,24 @@ func compactCommandInstruction(text string) (string, bool) {
 	return "", false
 }
 
-// skillCommandName parses the name of a skill slash command.
-func skillCommandName(text string, skills []runtime.SkillSummary) (string, bool) {
-	name, ok := slashCommandName(text)
-	if !ok {
-		return "", false
+// skillNames scans text for whitespace-separated /name tokens and returns
+// matched skill names in order of first appearance, deduplicated.
+func skillNames(text string, skills []runtime.SkillSummary) []string {
+	skillSet := make(map[string]bool, len(skills))
+	for _, s := range skills {
+		skillSet[s.Name] = true
 	}
-	for _, summary := range skills {
-		if summary.Name == name {
-			return name, true
+	var matched []string
+	seen := make(map[string]bool)
+	for _, field := range strings.Fields(text) {
+		name, ok := slashCommandName(field)
+		if !ok || !skillSet[name] || seen[name] {
+			continue
 		}
+		matched = append(matched, name)
+		seen[name] = true
 	}
-	return "", false
+	return matched
 }
 
 // slashCommandName parses the name from a `/name optional text` slash command.

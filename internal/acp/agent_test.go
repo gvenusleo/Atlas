@@ -1290,6 +1290,92 @@ func TestPromptSkillCommandRunsTurnWithSelectedSkill(t *testing.T) {
 	}
 }
 
+func TestPromptSkillCommandMidMessage(t *testing.T) {
+	rt := &fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "think", Description: "plan work"},
+		},
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+
+	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("帮我用 /think 分析一下这个设计")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if !reflect.DeepEqual(rt.runOptions.Skills, []string{"think"}) {
+		t.Fatalf("skills = %#v, want [think]", rt.runOptions.Skills)
+	}
+}
+
+func TestPromptSkillCommandMultipleSkills(t *testing.T) {
+	rt := &fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "think", Description: "plan work"},
+			{Name: "write", Description: "write docs"},
+		},
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+
+	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("/think 然后 /write 文档")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if !reflect.DeepEqual(rt.runOptions.Skills, []string{"think", "write"}) {
+		t.Fatalf("skills = %#v, want [think write]", rt.runOptions.Skills)
+	}
+}
+
+func TestPromptSkillCommandDeduplicates(t *testing.T) {
+	rt := &fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "think", Description: "plan work"},
+		},
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+
+	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("/think /think /think")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if !reflect.DeepEqual(rt.runOptions.Skills, []string{"think"}) {
+		t.Fatalf("skills = %#v, want [think]", rt.runOptions.Skills)
+	}
+}
+
+func TestPromptSkillCommandNoSpacePrefix(t *testing.T) {
+	rt := &fakeRuntime{
+		skillSummaries: []atlasruntime.SkillSummary{
+			{Name: "think", Description: "plan work"},
+		},
+	}
+	a := NewAgent(rt)
+	a.setSession("sess", "/tmp/work", "test-model", "", nil)
+
+	// "/think" attached to preceding text without space should not match
+	_, err := a.Prompt(context.Background(), acpsdk.PromptRequest{
+		SessionId: "sess",
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("帮我用/think分析")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if len(rt.runOptions.Skills) != 0 {
+		t.Fatalf("skills = %#v, want empty", rt.runOptions.Skills)
+	}
+}
+
 func TestPromptResourceLinkText(t *testing.T) {
 	rt := &fakeRuntime{}
 	a := NewAgent(rt)
