@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,6 +43,10 @@ type Runtime struct {
 	deps                 Dependencies
 	lastInjectedMemories map[string][]string
 	lastInjectedMemMu    sync.Mutex
+	db                   *sql.DB // shared database connection (WAL, busy_timeout, MaxOpenConns=1)
+	dbPath               string  // cached database path for drift detection
+	dbMu                 sync.Mutex
+	dbWG                 sync.WaitGroup // tracks active DB users for safe Close
 }
 
 // TurnOptions describes the execution parameters for a single user input.
@@ -232,6 +237,55 @@ func New(deps Dependencies) *Runtime {
 	return &Runtime{deps: completeDependencies(deps), lastInjectedMemories: make(map[string][]string)}
 }
 
+// openDB returns the shared *sql.DB, initializing it on first call.
+// dbPath is resolved by the caller from the same config used for the rest of the operation,
+// ensuring a single turn never sees two different DB paths.
+// Sets WAL mode, busy_timeout, and MaxOpenConns(1) for safe concurrent access.
+func (r *Runtime) openDB(ctx context.Context, dbPath string) (*sql.DB, error) {
+	r.dbMu.Lock()
+	defer r.dbMu.Unlock()
+	if r.db != nil {
+		if r.dbPath != dbPath {
+			return nil, fmt.Errorf("database path changed from %q to %q; restart Atlas to switch databases", r.dbPath, dbPath)
+		}
+		return r.db, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.ExecContext(ctx, `PRAGMA busy_timeout=5000`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	r.db = db
+	r.dbPath = dbPath
+	return db, nil
+}
+
+// Close closes the shared database connection. It waits for all active DB users
+// (turns, memory jobs, etc.) to finish before closing. Safe to call multiple times.
+func (r *Runtime) Close() error {
+	r.dbWG.Wait()
+	r.dbMu.Lock()
+	defer r.dbMu.Unlock()
+	if r.db == nil {
+		return nil
+	}
+	err := r.db.Close()
+	r.db = nil
+	r.dbPath = ""
+	return err
+}
+
 // RunTurn restores or creates a session, executes an agent turn, and saves the transcript.
 func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, error) {
 	parts := turnContentParts(opts)
@@ -264,11 +318,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		return TurnResult{}, err
 	}
 
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return TurnResult{}, err
 	}
-	defer store.Close()
 
 	shellCommand, isDirectShell := directShellCommand(promptText)
 	if isDirectShell && hasImageParts(parts) {
@@ -672,11 +725,10 @@ func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (Comp
 		return CompactResult{}, err
 	}
 	provider = withSessionID(provider, opts.SessionID)
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return CompactResult{}, err
 	}
-	defer store.Close()
 
 	info, err := store.GetSession(ctx, opts.SessionID)
 	if err != nil {
@@ -897,11 +949,10 @@ func (r *Runtime) ListSessionsPage(ctx context.Context, cursor string, limit int
 	if err != nil {
 		return session.ListPage{}, err
 	}
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return session.ListPage{}, err
 	}
-	defer store.Close()
 	return store.ListSessionsPage(ctx, cursor, limit)
 }
 
@@ -920,11 +971,10 @@ func (r *Runtime) ListSessionsForCWDPage(ctx context.Context, cwd, cursor string
 	if err != nil {
 		return session.ListPage{}, err
 	}
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return session.ListPage{}, err
 	}
-	defer store.Close()
 	return store.ListSessionsForCWDPage(ctx, cwd, cursor, limit)
 }
 
@@ -934,11 +984,10 @@ func (r *Runtime) SaveSessionRoots(ctx context.Context, sessionID string, additi
 	if err != nil {
 		return err
 	}
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
 	return store.SaveSessionRoots(ctx, sessionID, additionalDirectories)
 }
 
@@ -948,11 +997,10 @@ func (r *Runtime) ShowSession(ctx context.Context, sessionID string) (session.Se
 	if err != nil {
 		return session.Session{}, nil, err
 	}
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return session.Session{}, nil, err
 	}
-	defer store.Close()
 
 	info, err := store.GetSession(ctx, sessionID)
 	if err != nil {
@@ -971,11 +1019,10 @@ func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	store, err := openSessionStore(ctx, cfg.Session)
+	store, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
 	if err := store.DeleteSession(ctx, sessionID); err != nil {
 		return err
 	}
@@ -1167,33 +1214,43 @@ func skillContext(found skill.Skill) string {
 	)
 }
 
-func openSessionStore(ctx context.Context, cfg config.SessionConfig) (*session.Store, error) {
+// openSessionStore returns a session Store backed by the shared *sql.DB.
+// cfg.Session provides the DB path, ensuring the caller uses the same config for the entire operation.
+// The caller must not call Store.Close; the Runtime owns the connection lifecycle.
+func (r *Runtime) openSessionStore(ctx context.Context, cfg config.SessionConfig) (*session.Store, error) {
 	dbPath, err := sessionDBPath(cfg)
 	if err != nil {
 		return nil, err
 	}
-	store, err := session.Open(dbPath)
+	r.dbWG.Add(1)
+	defer r.dbWG.Done()
+	db, err := r.openDB(ctx, dbPath)
 	if err != nil {
 		return nil, err
 	}
+	store := session.OpenDB(db)
 	if err := store.EnsureSchema(ctx); err != nil {
-		store.Close()
 		return nil, err
 	}
 	return store, nil
 }
 
-func openMemoryStore(ctx context.Context, cfg config.SessionConfig) (*memory.Store, error) {
+// openMemoryStore returns a memory Store backed by the shared *sql.DB.
+// cfg provides the DB path, ensuring the caller uses the same config for the entire operation.
+// The caller must not call Store.Close; the Runtime owns the connection lifecycle.
+func (r *Runtime) openMemoryStore(ctx context.Context, cfg config.SessionConfig) (*memory.Store, error) {
 	dbPath, err := sessionDBPath(cfg)
 	if err != nil {
 		return nil, err
 	}
-	store, err := memory.Open(dbPath)
+	r.dbWG.Add(1)
+	defer r.dbWG.Done()
+	db, err := r.openDB(ctx, dbPath)
 	if err != nil {
 		return nil, err
 	}
+	store := memory.OpenDB(db)
 	if err := store.EnsureSchema(ctx); err != nil {
-		store.Close()
 		return nil, err
 	}
 	return store, nil

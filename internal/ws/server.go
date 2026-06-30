@@ -94,11 +94,15 @@ func (s *Server) Run(ctx context.Context) error {
 	s.logf("ws serving on %s", ln.Addr().String())
 
 	// Start memory worker, consistent with ACP / WeChat channels
+	workerDone := make(chan struct{})
 	go func() {
+		defer close(workerDone)
 		_ = s.rt.RunMemoryWorker(ctx)
 	}()
 
-	return srv.Serve(ln)
+	err = srv.Serve(ln)
+	<-workerDone
+	return err
 }
 
 // handleWebSocket handles a single WebSocket connection.

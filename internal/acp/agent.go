@@ -91,7 +91,9 @@ func Run(ctx context.Context, opts Options) error {
 	a.SetAgentConnection(conn)
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	defer cancelWorker()
+	workerDone := make(chan struct{})
 	go func() {
+		defer close(workerDone)
 		if err := opts.Runtime.RunMemoryWorker(workerCtx); err != nil && opts.Logger != nil {
 			opts.Logger.Debug("memory worker stopped", "error", err)
 		}
@@ -99,8 +101,10 @@ func Run(ctx context.Context, opts Options) error {
 
 	select {
 	case <-ctx.Done():
+		<-workerDone
 		return ctx.Err()
 	case <-conn.Done():
+		<-workerDone
 		return nil
 	}
 }

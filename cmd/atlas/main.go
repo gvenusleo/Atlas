@@ -28,8 +28,10 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	rt := runtime.New(runtime.DefaultDependencies())
+	defer rt.Close()
 	return runWithDependencies(ctx, args, runDependencies{
-		runtime: runtime.New(runtime.DefaultDependencies()),
+		runtime: rt,
 		stdin:   os.Stdin,
 		stdout:  os.Stdout,
 		runACP:  atlasacp.Run,
@@ -44,7 +46,11 @@ type runDependencies struct {
 }
 
 func runWithDependencies(ctx context.Context, args []string, deps runDependencies) error {
+	createdRuntime := deps.runtime == nil
 	deps = completeRunDependencies(deps)
+	if createdRuntime {
+		defer deps.runtime.Close()
+	}
 	if isVersionCommand(args) {
 		return runVersionCommand(nil, deps)
 	}

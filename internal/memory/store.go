@@ -108,7 +108,7 @@ type Counts struct {
 	Failed  int
 }
 
-// Open opens the SQLite memory database.
+// Open opens the SQLite memory database. The caller owns the connection lifecycle.
 func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, fmt.Errorf("memory db path is required")
@@ -120,7 +120,17 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// OpenDB creates a memory Store from an existing *sql.DB. The caller owns the DB lifecycle;
+// do not call Store.Close when using this constructor.
+func OpenDB(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 // Close closes the underlying database connection.

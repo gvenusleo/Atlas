@@ -77,16 +77,14 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 	if !cfg.Memory.IsEnabled() {
 		return 0, nil
 	}
-	memStore, err := openMemoryStore(ctx, cfg.Session)
+	memStore, err := r.openMemoryStore(ctx, cfg.Session)
 	if err != nil {
 		return 0, err
 	}
-	defer memStore.Close()
-	sessionStore, err := openSessionStore(ctx, cfg.Session)
+	sessionStore, err := r.openSessionStore(ctx, cfg.Session)
 	if err != nil {
 		return 0, err
 	}
-	defer sessionStore.Close()
 
 	processed := 0
 	for processed < limit {
@@ -310,11 +308,10 @@ func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memor
 // loadMemoryContext reads long-term memory on a best-effort basis; failures do not affect the main turn.
 // Across consecutive turns in the same session, memories injected in the previous turn and still in the current results are skipped to prevent duplicate injection.
 func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfig, sessionID, cwd, query string) string {
-	store, err := openMemoryStore(ctx, cfg)
+	store, err := r.openMemoryStore(ctx, cfg)
 	if err != nil {
 		return ""
 	}
-	defer store.Close()
 
 	r.lastInjectedMemMu.Lock()
 	exclude := r.lastInjectedMemories[sessionID]
@@ -350,11 +347,10 @@ func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.Sess
 	if !opts.Force && !shouldEnqueueMemoryExtract(info, messages, inputTokens, opts.ContextWindow) {
 		return
 	}
-	store, err := openMemoryStore(ctx, cfg)
+	store, err := r.openMemoryStore(ctx, cfg)
 	if err != nil {
 		return
 	}
-	defer store.Close()
 	_ = store.EnqueueSessionExtract(ctx, sessionID, cwd, inputHash, model)
 }
 

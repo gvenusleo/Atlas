@@ -1442,11 +1442,50 @@ func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 	return r
 }
 
+// TestConcurrentRunTurnNoDatabaseLock verifies that concurrent turns and memory
+// processing on the same Runtime do not produce SQLITE_BUSY errors.
+func TestConcurrentRunTurnNoDatabaseLock(t *testing.T) {
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{Content: "reply"},
+		},
+	}
+	r, dbPath := newTestRuntimeWithDBPath(t, provider)
+
+	// Enable memory and enqueue a job so the worker competes for the DB.
+	memStore := openTestMemoryStore(t, dbPath)
+	r.deps.LoadConfig = func() (config.Config, error) {
+		cfg := testConfig(dbPath)
+		memEnabled := true
+		cfg.Memory.Enabled = &memEnabled
+		cfg.Memory.Model = cfg.Providers[0].Models[0].Value
+		return cfg, nil
+	}
+	_ = memStore.EnqueueSessionExtract(context.Background(), "work", "/tmp/atlas-work", "hash1", "test-model")
+
+	// Run a turn and process memory jobs concurrently.
+	errCh := make(chan error, 2)
+	go func() {
+		_, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "hello"})
+		errCh <- err
+	}()
+	go func() {
+		_, err := r.ProcessMemoryJobs(context.Background(), 1)
+		errCh <- err
+	}()
+
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil && !strings.Contains(err.Error(), "no jobs") {
+			t.Fatalf("concurrent operation %d error = %v", i, err)
+		}
+	}
+}
+
 func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, string) {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "atlas.db")
-	return New(Dependencies{
+	r := New(Dependencies{
 		LoadConfig: func() (config.Config, error) {
 			return testConfig(dbPath), nil
 		},
@@ -1474,7 +1513,9 @@ func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, 
 		},
 		NewSessionID: func(time.Time) (string, error) { return "20260608-120000-test", nil },
 		Now:          func() time.Time { return time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC) },
-	}), dbPath
+	})
+	t.Cleanup(func() { _ = r.Close() })
+	return r, dbPath
 }
 
 func openTestMemoryStore(t *testing.T, dbPath string) *memory.Store {
