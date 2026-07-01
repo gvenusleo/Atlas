@@ -349,7 +349,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		})
 		if err == nil {
-			r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, savedMessages, configuredMemoryModel(cfg, ""), memoryExtractTriggerOptions{})
+			r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, savedMessages, configuredMemoryModel(cfg, ""), memoryExtractTriggerOptions{})
 		}
 		return result, err
 	}
@@ -537,7 +537,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}); err != nil {
 		return TurnResult{}, err
 	}
-	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
+	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
 		Force:         memoryForceExtract,
 		ContextWindow: selectedModel.ContextWindow,
 	})
@@ -799,7 +799,7 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	info.ContextSummary = summary
 	info.CompactedMessageCount = plan.CompactCount
 	info.CompactedInputTokens = plan.TokensBefore
-	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, info, sessionID, info.CWD, messages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
+	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, info, sessionID, messages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
 		Force:         true,
 		ContextWindow: selectedModel.ContextWindow,
 	})

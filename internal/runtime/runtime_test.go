@@ -1000,7 +1000,7 @@ func TestRunTurnEnqueuesMemoryExtract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClaimNextJob() error = %v", err)
 	}
-	if !ok || job.Kind != memory.JobKindSessionExtract || job.SessionID != "work" {
+	if !ok || job.SessionID != "work" {
 		t.Fatalf("job = %#v, ok = %v", job, ok)
 	}
 	if job.Model != "test-model" {
@@ -1380,7 +1380,7 @@ func TestConcurrentRunTurnNoDatabaseLock(t *testing.T) {
 		cfg.Memory.Model = cfg.Providers[0].Models[0].Value
 		return cfg, nil
 	}
-	_ = memStore.EnqueueSessionExtract(context.Background(), "work", "/tmp/atlas-work", "hash1", "test-model")
+	_ = memStore.EnqueueSessionExtract(context.Background(), "work", "hash1", "test-model")
 
 	// Run a turn and process memory jobs concurrently.
 	errCh := make(chan error, 2)

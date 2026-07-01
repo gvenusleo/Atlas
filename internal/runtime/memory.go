@@ -83,6 +83,7 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 	}
 
 	processed := 0
+	decayed := false
 	for processed < limit {
 		job, ok, err := memStore.ClaimNextJob(ctx, workerID, memoryJobLease)
 		if err != nil {
@@ -93,6 +94,12 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 				_, _ = memStore.PruneStaleEntries(ctx, memoryPruneUnusedDays)
 			}
 			return processed, nil
+		}
+		if !decayed {
+			if err := memStore.DecayConfidence(ctx, memoryDecayDays); err != nil {
+				return processed, err
+			}
+			decayed = true
 		}
 		activeProvider, selectedModel, err := cfg.ResolveModel(job.Model)
 		if err != nil {
@@ -106,7 +113,7 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 			processed++
 			continue
 		}
-		if err := r.processMemoryJob(ctx, memStore, sessionStore, provider, selectedModel, job); err != nil {
+		if err := r.processMemoryExtractJob(ctx, memStore, sessionStore, provider, selectedModel, job); err != nil {
 			_ = memStore.FailJob(ctx, job, err)
 			processed++
 			continue
@@ -117,15 +124,6 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 		processed++
 	}
 	return processed, nil
-}
-
-func (r *Runtime) processMemoryJob(ctx context.Context, memStore *memory.Store, sessionStore *session.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
-	switch job.Kind {
-	case memory.JobKindSessionExtract:
-		return r.processMemoryExtractJob(ctx, memStore, sessionStore, provider, selectedModel, job)
-	default:
-		return fmt.Errorf("unknown memory job kind %q", job.Kind)
-	}
 }
 
 type memoryExtractOutput struct {
@@ -177,9 +175,6 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	projectKey, projectPath := memory.ProjectIdentity(info.CWD)
 	existing, err := loadExistingMemories(ctx, memStore, projectKey, 30)
 	if err != nil {
-		return err
-	}
-	if err := memStore.DecayConfidence(ctx, memoryDecayDays); err != nil {
 		return err
 	}
 	reasoningEffort, err := selectedReasoningEffort("", false, selectedModel)
@@ -234,7 +229,7 @@ type memoryExtractTriggerOptions struct {
 }
 
 // maybeEnqueueMemoryExtract schedules memory extraction based on incremental thresholds; failures do not affect the main turn.
-func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.SessionConfig, info session.Session, sessionID, cwd string, messages []model.Message, model string, opts memoryExtractTriggerOptions) {
+func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.SessionConfig, info session.Session, sessionID string, messages []model.Message, model string, opts memoryExtractTriggerOptions) {
 	if len(messages) == 0 {
 		return
 	}
@@ -250,7 +245,7 @@ func (r *Runtime) maybeEnqueueMemoryExtract(ctx context.Context, cfg config.Sess
 	if err != nil {
 		return
 	}
-	_ = store.EnqueueSessionExtract(ctx, sessionID, cwd, inputHash, model)
+	_ = store.EnqueueSessionExtract(ctx, sessionID, inputHash, model)
 }
 
 // shouldEnqueueMemoryExtract determines whether the new transcript has reached the background memory extraction threshold.

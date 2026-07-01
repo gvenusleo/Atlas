@@ -44,12 +44,12 @@ func TestStoreUpsertAndSearch(t *testing.T) {
 	if len(missing) != 0 {
 		t.Fatalf("missing results = %#v", missing)
 	}
-	recent, err := store.Search(ctx, projectPath, "", 5)
+	empty, err := store.Search(ctx, projectPath, "", 5)
 	if err != nil {
-		t.Fatalf("recent Search() error = %v", err)
+		t.Fatalf("empty Search() error = %v", err)
 	}
-	if len(recent) != 1 || recent[0].Content != entry.Content {
-		t.Fatalf("recent results = %#v", recent)
+	if len(empty) != 0 {
+		t.Fatalf("empty query should return no results, got %#v", empty)
 	}
 }
 
@@ -57,14 +57,14 @@ func TestStoreJobs(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
-	if err := store.EnqueueSessionExtract(ctx, "session-1", "/tmp/project", "hash-1", "deepseek-v4-pro"); err != nil {
+	if err := store.EnqueueSessionExtract(ctx, "session-1", "hash-1", "deepseek-v4-pro"); err != nil {
 		t.Fatalf("EnqueueSessionExtract() error = %v", err)
 	}
 	job, ok, err := store.ClaimNextJob(ctx, "worker-1", 0)
 	if err != nil {
 		t.Fatalf("ClaimNextJob() error = %v", err)
 	}
-	if !ok || job.Kind != JobKindSessionExtract || job.SessionID != "session-1" || job.Model != "deepseek-v4-pro" || job.Attempts != 1 || job.WorkerID != "worker-1" {
+	if !ok || job.SessionID != "session-1" || job.Model != "deepseek-v4-pro" || job.Attempts != 1 || job.WorkerID != "worker-1" {
 		t.Fatalf("job = %#v, ok = %v", job, ok)
 	}
 	if err := store.CompleteJob(ctx, job); err != nil {
@@ -106,7 +106,7 @@ func TestClaimNextJobRetriesExpiredRunningLease(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
-	if err := store.EnqueueSessionExtract(ctx, "session-1", "/tmp/project", "hash-1", "deepseek-v4-flash"); err != nil {
+	if err := store.EnqueueSessionExtract(ctx, "session-1", "hash-1", "deepseek-v4-flash"); err != nil {
 		t.Fatalf("EnqueueSessionExtract() error = %v", err)
 	}
 	first, ok, err := store.ClaimNextJob(ctx, "worker-1", -time.Second)
@@ -129,7 +129,7 @@ func TestClaimNextJobSkipsActiveLease(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
-	if err := store.EnqueueSessionExtract(ctx, "session-1", "/tmp/project", "hash-1", "deepseek-v4-flash"); err != nil {
+	if err := store.EnqueueSessionExtract(ctx, "session-1", "hash-1", "deepseek-v4-flash"); err != nil {
 		t.Fatalf("EnqueueSessionExtract() error = %v", err)
 	}
 	if _, ok, err := store.ClaimNextJob(ctx, "worker-1", time.Minute); err != nil || !ok {
@@ -144,7 +144,7 @@ func TestCompleteJobIgnoresStaleClaim(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
-	if err := store.EnqueueSessionExtract(ctx, "session-1", "/tmp/project", "hash-1", "deepseek-v4-flash"); err != nil {
+	if err := store.EnqueueSessionExtract(ctx, "session-1", "hash-1", "deepseek-v4-flash"); err != nil {
 		t.Fatalf("first EnqueueSessionExtract() error = %v", err)
 	}
 	oldJob, ok, err := store.ClaimNextJob(ctx, "worker-1", time.Minute)
@@ -154,7 +154,7 @@ func TestCompleteJobIgnoresStaleClaim(t *testing.T) {
 	if !ok {
 		t.Fatal("ClaimNextJob() ok = false")
 	}
-	if err := store.EnqueueSessionExtract(ctx, "session-1", "/tmp/project", "hash-2", "deepseek-v4-pro"); err != nil {
+	if err := store.EnqueueSessionExtract(ctx, "session-1", "hash-2", "deepseek-v4-pro"); err != nil {
 		t.Fatalf("second EnqueueSessionExtract() error = %v", err)
 	}
 	if err := store.CompleteJob(ctx, oldJob); err != nil {
@@ -164,7 +164,7 @@ func TestCompleteJobIgnoresStaleClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second ClaimNextJob() error = %v", err)
 	}
-	if !ok || newJob.InputHash != "hash-2" || newJob.Model != "deepseek-v4-pro" {
+	if !ok || newJob.Model != "deepseek-v4-pro" {
 		t.Fatalf("newJob = %#v, ok = %v", newJob, ok)
 	}
 }
@@ -192,37 +192,6 @@ func TestSearchRanksByConfidenceAndUsage(t *testing.T) {
 	results, err := store.Search(ctx, projectPath, "atlas test", 5)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
-	}
-	if len(results) < 2 {
-		t.Fatalf("expected at least 2 results, got %d", len(results))
-	}
-	if results[0].Confidence < results[1].Confidence {
-		t.Fatalf("expected higher confidence first, got %d then %d", results[0].Confidence, results[1].Confidence)
-	}
-}
-
-func TestListPromptEntriesRanksByConfidenceAndUsage(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-
-	projectKey, projectPath := ProjectIdentity(t.TempDir())
-
-	if _, err := store.UpsertEntry(ctx, Entry{
-		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: TypeFact, Content: "low confidence fact", Confidence: 1,
-	}); err != nil {
-		t.Fatalf("UpsertEntry() error = %v", err)
-	}
-	if _, err := store.UpsertEntry(ctx, Entry{
-		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: TypeFact, Content: "high confidence fact", Confidence: 5,
-	}); err != nil {
-		t.Fatalf("UpsertEntry() error = %v", err)
-	}
-
-	results, err := store.ListPromptEntries(ctx, projectPath, 5)
-	if err != nil {
-		t.Fatalf("ListPromptEntries() error = %v", err)
 	}
 	if len(results) < 2 {
 		t.Fatalf("expected at least 2 results, got %d", len(results))

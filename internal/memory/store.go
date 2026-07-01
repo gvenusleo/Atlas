@@ -36,9 +36,6 @@ const (
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"
 
-	// JobKindSessionExtract indicates extracting memory from a session transcript.
-	JobKindSessionExtract = "session_extract"
-
 	defaultPromptEntryLimit = 12
 )
 
@@ -68,18 +65,13 @@ type Entry struct {
 
 // Job describes a single background memory job.
 type Job struct {
-	Key         string
-	Kind        string
-	Scope       string
-	ProjectKey  string
-	ProjectPath string
-	SessionID   string
-	InputHash   string
-	Model       string
-	Status      string
-	Attempts    int
-	WorkerID    string
-	LastError   string
+	Key       string
+	SessionID string
+	Model     string
+	Status    string
+	Attempts  int
+	WorkerID  string
+	LastError string
 }
 
 // Counts summarizes background memory job counts.
@@ -147,23 +139,10 @@ create table if not exists memory_entries (
 
 create index if not exists memory_entries_lookup_idx
 	on memory_entries(status, scope, project_key, type, updated_at);
-create index if not exists memory_entries_source_idx
-	on memory_entries(source_session_id, updated_at);
-
--- Drop legacy FTS5 table and triggers from the previous unicode61-based search.
-drop trigger if exists memory_entries_ai;
-drop trigger if exists memory_entries_ad;
-drop trigger if exists memory_entries_au;
-drop table if exists memory_entries_fts;
 
 create table if not exists memory_jobs (
 	job_key text primary key,
-	kind text not null,
-	scope text not null default '',
-	project_key text not null default '',
-	project_path text not null default '',
 	session_id text not null default '',
-	input_hash text not null default '',
 	model text not null default '',
 	status text not null,
 	attempts integer not null default 0,
@@ -393,13 +372,13 @@ func (s *Store) PruneStaleEntries(ctx context.Context, maxUnusedDays int) (int, 
 // Search returns active memories matching the query using case-insensitive substring matching.
 // The query is split by whitespace into terms; an entry matches if any term appears as a
 // substring in its content, source_note, type, or project_path. Matches are ranked by
-// confidence, use_count, and recency. An empty query falls back to ListPromptEntries.
+// confidence, use_count, and recency. An empty query returns no results.
 func (s *Store) Search(ctx context.Context, cwd, query string, limit int) ([]Entry, error) {
-	projectKey, _ := ProjectIdentity(cwd)
 	terms := splitSearchTerms(query)
 	if len(terms) == 0 {
-		return s.ListPromptEntries(ctx, cwd, limit)
+		return nil, nil
 	}
+	projectKey, _ := ProjectIdentity(cwd)
 	if limit <= 0 {
 		limit = defaultPromptEntryLimit
 	}
@@ -436,34 +415,6 @@ order by confidence desc, use_count desc, updated_at desc, id desc`, projectKey)
 	return matched, nil
 }
 
-// ListPromptEntries returns recent memories for prompt injection when no query is provided.
-func (s *Store) ListPromptEntries(ctx context.Context, cwd string, limit int) ([]Entry, error) {
-	projectKey, _ := ProjectIdentity(cwd)
-	if limit <= 0 {
-		limit = defaultPromptEntryLimit
-	}
-	rows, err := s.db.QueryContext(ctx, `
-select id, scope, project_key, project_path, type, content, source_note, confidence, fingerprint, status, source_session_id, created_at, updated_at, last_used_at, use_count
-from memory_entries
-where status = 'active'
-	and (scope = 'global' or (scope = 'project' and project_key = ?))
-order by confidence desc, use_count desc, updated_at desc, id desc
-limit ?`, projectKey, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	entries, err := scanEntries(rows)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.markUsed(ctx, entries); err != nil {
-		return nil, err
-	}
-	return entries, nil
-}
-
 // ListEntries returns active memories under the specified scope.
 func (s *Store) ListEntries(ctx context.Context, scope, projectKey string) ([]Entry, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -479,19 +430,15 @@ order by type, updated_at desc, id desc`, scope, projectKey)
 }
 
 // EnqueueSessionExtract schedules memory extraction from the specified session.
-func (s *Store) EnqueueSessionExtract(ctx context.Context, sessionID, cwd, inputHash, model string) error {
+func (s *Store) EnqueueSessionExtract(ctx context.Context, sessionID, inputHash, model string) error {
 	if sessionID == "" || inputHash == "" {
 		return nil
 	}
-	projectKey, projectPath := ProjectIdentity(cwd)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := s.db.ExecContext(ctx, `
-insert into memory_jobs(job_key, kind, project_key, project_path, session_id, input_hash, model, status, attempts, retry_after, lease_until, worker_id, last_error, created_at, updated_at, finished_at)
-values(?, ?, ?, ?, ?, ?, ?, ?, 0, '', '', '', '', ?, ?, '')
+insert into memory_jobs(job_key, session_id, model, status, attempts, retry_after, lease_until, worker_id, last_error, created_at, updated_at, finished_at)
+values(?, ?, ?, ?, 0, '', '', '', '', ?, ?, '')
 on conflict(job_key) do update set
-	project_key = excluded.project_key,
-	project_path = excluded.project_path,
-	input_hash = excluded.input_hash,
 	model = excluded.model,
 	status = excluded.status,
 	attempts = 0,
@@ -501,7 +448,7 @@ on conflict(job_key) do update set
 	last_error = '',
 	updated_at = excluded.updated_at,
 	finished_at = ''`,
-		JobKindSessionExtract+":"+sessionID, JobKindSessionExtract, projectKey, projectPath, sessionID, inputHash, strings.TrimSpace(model), statusPending, now, now)
+		sessionID, sessionID, strings.TrimSpace(model), statusPending, now, now)
 	return err
 }
 
@@ -516,7 +463,7 @@ func (s *Store) ClaimNextJob(ctx context.Context, workerID string, lease time.Du
 	now := time.Now().UTC()
 	nowText := now.Format(time.RFC3339Nano)
 	row := tx.QueryRowContext(ctx, `
-select job_key, kind, scope, project_key, project_path, session_id, input_hash, model, status, attempts, worker_id, last_error
+select job_key, session_id, model, status, attempts, worker_id, last_error
 from memory_jobs
 where (
 	status = 'pending'
@@ -665,7 +612,7 @@ func scanEntry(row scanner) (Entry, error) {
 
 func scanJob(row scanner) (Job, error) {
 	var job Job
-	if err := row.Scan(&job.Key, &job.Kind, &job.Scope, &job.ProjectKey, &job.ProjectPath, &job.SessionID, &job.InputHash, &job.Model, &job.Status, &job.Attempts, &job.WorkerID, &job.LastError); err != nil {
+	if err := row.Scan(&job.Key, &job.SessionID, &job.Model, &job.Status, &job.Attempts, &job.WorkerID, &job.LastError); err != nil {
 		return Job{}, err
 	}
 	return job, nil
