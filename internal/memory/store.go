@@ -35,8 +35,10 @@ const (
 	statusRunning   = "running"
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"
+	statusDead      = "dead"
 
 	defaultPromptEntryLimit = 12
+	maxJobAttempts          = 10
 )
 
 // Store reads and writes the Atlas long-term memory database.
@@ -290,56 +292,24 @@ where fingerprint = ?`, statusArchived, now, strings.TrimSpace(fingerprint)); er
 
 // DecayConfidence applies discrete confidence decay to active memories by memory type.
 // decayDays specifies how many days per 1-point decay by type; unspecified types do not decay.
-// confidence never goes below 1.
+// confidence never goes below 1. Uses a single SQL UPDATE per type instead of row-by-row scans.
 func (s *Store) DecayConfidence(ctx context.Context, decayDays map[string]int) error {
 	if len(decayDays) == 0 {
 		return nil
 	}
-	now := time.Now().UTC()
 	for entryType, days := range decayDays {
 		if days <= 0 {
 			continue
 		}
-		rows, err := s.db.QueryContext(ctx, `
-select id, confidence, updated_at from memory_entries
-where status = 'active' and type = ?`, entryType)
-		if err != nil {
+		if _, err := s.db.ExecContext(ctx, `
+update memory_entries
+set confidence = max(1, confidence - cast(
+	(julianday('now') - julianday(updated_at)) / ? as integer
+))
+where status = 'active'
+	and type = ?
+	and julianday('now') - julianday(updated_at) >= ?`, days, entryType, days); err != nil {
 			return err
-		}
-		var ids []int64
-		var newConfidences []int
-		for rows.Next() {
-			var id int64
-			var confidence int
-			var updatedAtStr string
-			if err := rows.Scan(&id, &confidence, &updatedAtStr); err != nil {
-				rows.Close()
-				return err
-			}
-			updatedAt, err := time.Parse(time.RFC3339Nano, updatedAtStr)
-			if err != nil {
-				continue
-			}
-			ageDays := int(now.Sub(updatedAt).Hours() / 24)
-			decay := ageDays / days
-			newConf := confidence - decay
-			if newConf < 1 {
-				newConf = 1
-			}
-			if newConf != confidence {
-				ids = append(ids, id)
-				newConfidences = append(newConfidences, newConf)
-			}
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		for i, id := range ids {
-			if _, err := s.db.ExecContext(ctx, `
-update memory_entries set confidence = ? where id = ?`, newConfidences[i], id); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -533,16 +503,22 @@ where job_key = ?
 }
 
 // FailJob marks a background job as failed and sets the retry time.
+// Jobs that exceed maxJobAttempts are marked dead and no longer retried.
 func (s *Store) FailJob(ctx context.Context, job Job, jobErr error) error {
-	delay := time.Duration(min(max(job.Attempts, 1), 5)) * time.Minute
 	now := time.Now().UTC()
 	message := ""
 	if jobErr != nil {
 		message = jobErr.Error()
 	}
+	status := statusFailed
+	retryAfter := now.Add(time.Duration(min(max(job.Attempts, 1), 5)) * time.Minute).Format(time.RFC3339Nano)
+	if job.Attempts >= maxJobAttempts {
+		status = statusDead
+		retryAfter = ""
+	}
 	_, err := s.db.ExecContext(ctx, `
 update memory_jobs
-set status = 'failed',
+set status = ?,
 	retry_after = ?,
 	lease_until = '',
 	worker_id = '',
@@ -551,7 +527,7 @@ set status = 'failed',
 where job_key = ?
 	and status = 'running'
 	and worker_id = ?
-	and attempts = ?`, now.Add(delay).Format(time.RFC3339Nano), message, now.Format(time.RFC3339Nano), job.Key, job.WorkerID, job.Attempts)
+	and attempts = ?`, status, retryAfter, message, now.Format(time.RFC3339Nano), job.Key, job.WorkerID, job.Attempts)
 	return err
 }
 

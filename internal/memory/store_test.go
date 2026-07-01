@@ -169,6 +169,53 @@ func TestCompleteJobIgnoresStaleClaim(t *testing.T) {
 	}
 }
 
+func TestFailJobMarksDeadAfterMaxAttempts(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	if err := store.EnqueueSessionExtract(ctx, "session-1", "hash-1", "deepseek-v4-flash"); err != nil {
+		t.Fatalf("EnqueueSessionExtract() error = %v", err)
+	}
+	job, ok, err := store.ClaimNextJob(ctx, "worker-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("ClaimNextJob() error = %v, ok = %v", err, ok)
+	}
+	// Bump attempts to the limit so the next FailJob transitions to dead.
+	if _, err := store.db.ExecContext(ctx, `update memory_jobs set attempts = ? where job_key = ?`, maxJobAttempts, job.Key); err != nil {
+		t.Fatalf("update attempts error = %v", err)
+	}
+	job.Attempts = maxJobAttempts
+	if err := store.FailJob(ctx, job, nil); err != nil {
+		t.Fatalf("FailJob() error = %v", err)
+	}
+	// Dead jobs should not be claimable.
+	if _, ok, err := store.ClaimNextJob(ctx, "worker-2", time.Minute); err != nil || ok {
+		t.Fatalf("expected dead job to not be claimable, got ok = %v, err = %v", ok, err)
+	}
+}
+
+func TestDecayConfidenceSkipsRecentEntries(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+	entry, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "recent fact", Confidence: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	// updated_at is recent (just created), should not decay.
+	if err := store.DecayConfidence(ctx, map[string]int{TypeFact: 90}); err != nil {
+		t.Fatalf("DecayConfidence() error = %v", err)
+	}
+	unchanged, _ := store.GetEntryByFingerprint(ctx, entry.Fingerprint)
+	if unchanged.Confidence != 5 {
+		t.Fatalf("expected confidence unchanged at 5, got %d", unchanged.Confidence)
+	}
+}
+
 func TestSearchRanksByConfidenceAndUsage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

@@ -375,25 +375,43 @@ func memoryExtractPrompt(info session.Session, messages []model.Message, existin
 	return builder.String()
 }
 
+// formatMemoryTranscript formats messages for memory extraction, keeping the most
+// recent messages that fit within maxRunes to prioritize latest user intent.
 func formatMemoryTranscript(messages []model.Message, maxRunes int) string {
-	var builder strings.Builder
+	formatted := make([]string, 0, len(messages))
 	for _, msg := range messages {
-		builder.WriteString(string(msg.Role))
-		builder.WriteString(": ")
+		var b strings.Builder
+		b.WriteString(string(msg.Role))
+		b.WriteString(": ")
 		if len(msg.ToolCalls) > 0 {
-			builder.WriteString(formatToolCalls(msg.ToolCalls))
+			b.WriteString(formatToolCalls(msg.ToolCalls))
 		}
 		content := strings.TrimSpace(formatMessageContentForMemory(msg))
 		if msg.Role == model.RoleTool {
 			content = trimRunes(content, 4000)
 		}
-		builder.WriteString(content)
-		builder.WriteString("\n")
-		if builder.Len() > maxRunes*4 {
+		b.WriteString(content)
+		b.WriteString("\n")
+		formatted = append(formatted, b.String())
+	}
+	// Keep the most recent messages that fit within maxRunes, preserving chronological order.
+	var kept []string
+	total := 0
+	for i := len(formatted) - 1; i >= 0; i-- {
+		n := len([]rune(formatted[i]))
+		if total+n > maxRunes {
 			break
 		}
+		kept = append(kept, formatted[i])
+		total += n
 	}
-	return trimRunes(builder.String(), maxRunes)
+	for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+		kept[i], kept[j] = kept[j], kept[i]
+	}
+	if len(kept) == 0 && len(formatted) > 0 {
+		return trimRunes(formatted[len(formatted)-1], maxRunes)
+	}
+	return strings.Join(kept, "")
 }
 
 func formatMessageContentForMemory(msg model.Message) string {
