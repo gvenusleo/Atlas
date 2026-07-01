@@ -159,7 +159,7 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Memory.Model) != "" {
 		if _, _, err := c.ResolveModel(c.Memory.Model); err != nil {
-			return fmt.Errorf("memory.model %q is not in any provider models", c.Memory.Model)
+			return fmt.Errorf("memory.model: %w", err)
 		}
 	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
@@ -191,7 +191,10 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// validateProviders validates all provider configurations and checks that model values are globally unique across providers.
+// validateProviders validates all provider configurations and checks that
+// default_model resolves to exactly one provider/model pair. Model values
+// may appear in multiple providers; use the "provider/model" format to
+// disambiguate when needed.
 func (c Config) validateProviders() error {
 	if len(c.Providers) == 0 {
 		return fmt.Errorf("providers is required")
@@ -200,8 +203,6 @@ func (c Config) validateProviders() error {
 		return fmt.Errorf("default_model is required")
 	}
 	seenProviders := make(map[string]struct{}, len(c.Providers))
-	seenModels := make(map[string]string) // model value -> provider name
-	defaultFound := false
 	for i, provider := range c.Providers {
 		providerName := strings.TrimSpace(provider.Name)
 		if providerName == "" {
@@ -214,36 +215,63 @@ func (c Config) validateProviders() error {
 		if err := provider.Validate(i); err != nil {
 			return err
 		}
-		for _, model := range provider.Models {
-			if existing, ok := seenModels[model.Value]; ok {
-				return fmt.Errorf("model value %q is duplicated in providers %q and %q", model.Value, existing, providerName)
-			}
-			seenModels[model.Value] = providerName
-			if model.Value == c.DefaultModel {
-				defaultFound = true
-			}
-		}
 	}
-	if !defaultFound {
-		return fmt.Errorf("default_model %q is not in any provider models", c.DefaultModel)
+	if _, _, err := c.ResolveModel(c.DefaultModel); err != nil {
+		return err
 	}
 	return nil
 }
 
-// ResolveModel finds the model with the specified value across all providers, returning the provider and model.
+// ResolveModel finds the model matching the given value, returning the
+// provider and model. The value may be a bare model value (e.g.
+// "gpt-5") or a "provider/model" compound (e.g. "openai/gpt-5"). A bare
+// value must match exactly one provider; if it matches multiple, an
+// error is returned asking the caller to use the "provider/model" format.
 // When value is empty, returns the model corresponding to default_model.
 func (c Config) ResolveModel(value string) (ProviderConfig, ProviderModel, error) {
 	if strings.TrimSpace(value) == "" {
 		value = c.DefaultModel
 	}
+
+	// "provider/model" compound format.
+	if idx := strings.Index(value, "/"); idx > 0 {
+		providerName := value[:idx]
+		modelValue := value[idx+1:]
+		for _, provider := range c.Providers {
+			if provider.Name != providerName {
+				continue
+			}
+			for _, model := range provider.Models {
+				if model.Value == modelValue {
+					return provider, model, nil
+				}
+			}
+			return ProviderConfig{}, ProviderModel{}, fmt.Errorf("model %q not found in provider %q", modelValue, providerName)
+		}
+		return ProviderConfig{}, ProviderModel{}, fmt.Errorf("provider %q not found", providerName)
+	}
+
+	// Bare model value: search all providers.
+	var matches []ProviderModelInfo
 	for _, provider := range c.Providers {
 		for _, model := range provider.Models {
 			if model.Value == value {
-				return provider, model, nil
+				matches = append(matches, ProviderModelInfo{Provider: provider, Model: model})
 			}
 		}
 	}
-	return ProviderConfig{}, ProviderModel{}, fmt.Errorf("model %q is not configured in any provider", value)
+	switch len(matches) {
+	case 0:
+		return ProviderConfig{}, ProviderModel{}, fmt.Errorf("model %q is not configured in any provider", value)
+	case 1:
+		return matches[0].Provider, matches[0].Model, nil
+	default:
+		names := make([]string, len(matches))
+		for i, m := range matches {
+			names[i] = m.Provider.Name
+		}
+		return ProviderConfig{}, ProviderModel{}, fmt.Errorf("model %q is configured in multiple providers (%s); use \"provider/model\" format to disambiguate", value, strings.Join(names, ", "))
+	}
 }
 
 // Validate validates a single provider configuration.
@@ -366,6 +394,11 @@ func (c Config) AllModels() []ProviderModelInfo {
 type ProviderModelInfo struct {
 	Provider ProviderConfig
 	Model    ProviderModel
+}
+
+// CompoundValue returns the "provider/model" compound identifier for this model.
+func (i ProviderModelInfo) CompoundValue() string {
+	return i.Provider.Name + "/" + i.Model.Value
 }
 
 // SupportsReasoningEffort returns whether the model declares support for the specified reasoning effort.

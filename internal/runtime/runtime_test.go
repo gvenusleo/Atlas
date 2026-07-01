@@ -593,10 +593,10 @@ func TestModelOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ModelOptions() error = %v", err)
 	}
-	if options.Default != "test-model" {
+	if options.Default != "test/test-model" {
 		t.Fatalf("default = %q", options.Default)
 	}
-	if len(options.Models) != 2 || options.Models[1].Value != "other-model" || options.Models[1].ContextWindow != 1000000 || options.Models[1].MaxTokens != 128000 {
+	if len(options.Models) != 2 || options.Models[1].Value != "test/other-model" || options.Models[1].ContextWindow != 1000000 || options.Models[1].MaxTokens != 128000 {
 		t.Fatalf("models = %#v", options.Models)
 	}
 	if len(options.Models[0].ReasoningEfforts) != 2 || options.Models[0].ReasoningEfforts[0].Value != "high" {

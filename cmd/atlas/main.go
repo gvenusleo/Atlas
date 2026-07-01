@@ -426,7 +426,7 @@ func parseArgs(args []string) (parsedArgs, error) {
 	flags := flag.NewFlagSet("atlas", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	sessionID := flags.String("session", "", "session id")
-	model := flags.String("model", "", "model value")
+	model := flags.String("model", "", "model value (provider/model recommended)")
 	if err := flags.Parse(args); err != nil {
 		return parsedArgs{}, err
 	}

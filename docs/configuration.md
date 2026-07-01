@@ -6,7 +6,7 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 
 ```json
 {
-  "default_model": "deepseek-v4-flash",
+  "default_model": "deepseek/deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
@@ -92,7 +92,7 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 
 | Field | Description |
 |---|---|
-| `default_model` | Must match a `models[].value` across all providers. Used when no model is explicitly selected. |
+| `default_model` | Recommended in `provider/model` format (e.g. `"openai/gpt-5"`). A bare value (e.g. `"gpt-5"`) is also accepted when unambiguous. Used when no model is explicitly selected. |
 
 ### Provider
 
@@ -107,7 +107,7 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 
 | Field | Description |
 |---|---|
-| `models[].value` | Model name sent to the provider. |
+| `models[].value` | Model name sent to the provider. Must be unique within a provider; the same value may appear in multiple providers. |
 | `models[].name` | Display name. |
 | `models[].context_window` | Context window size, used for compaction and usage display. |
 | `models[].max_tokens` | Maximum output tokens per model request, must be ≤ `context_window`. |
@@ -129,7 +129,7 @@ Only enable `prompt_cache.enabled` after confirming the provider accepts the cor
 
 | Field | Default | Description |
 |---|---|---|
-| `memory.model` | empty | Model used for background memory tasks. Uses the session's model when empty. |
+| `memory.model` | empty | Model used for background memory tasks. Uses the session's model when empty. Accepts the same `provider/model` or bare value format as `default_model`. |
 
 ### Session
 

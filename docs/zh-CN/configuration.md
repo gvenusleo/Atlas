@@ -6,7 +6,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 ```json
 {
-  "default_model": "deepseek-v4-flash",
+  "default_model": "deepseek/deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
@@ -92,7 +92,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 | 字段 | 说明 |
 |---|---|
-| `default_model` | 必须匹配所有 provider 中某个 `models[].value`，未显式选择模型时使用 |
+| `default_model` | 推荐使用 `provider/model` 格式（如 `"openai/gpt-5"`）。无歧义时也可使用裸值（如 `"gpt-5"`）。未显式选择模型时使用 |
 
 ### Provider
 
@@ -107,7 +107,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 | 字段 | 说明 |
 |---|---|
-| `models[].value` | 发送给 Provider 的模型名 |
+| `models[].value` | 发送给 Provider 的模型名，同一 provider 内必须唯一，不同 provider 间可重复 |
 | `models[].name` | 显示名 |
 | `models[].context_window` | 上下文窗口，用于压缩和用量展示 |
 | `models[].max_tokens` | 每次模型请求的最大输出 token 数，需 ≤ `context_window` |
@@ -129,7 +129,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `memory.model` | 空 | 后台记忆任务使用的模型；为空时使用产生该会话的模型 |
+| `memory.model` | 空 | 后台记忆任务使用的模型；为空时使用产生该会话的模型。接受与 `default_model` 相同的 `provider/model` 或裸值格式 |
 
 ### Session
 

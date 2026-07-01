@@ -199,7 +199,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 				{"name": "deepseek", "base_url": "https://api.example.com", "api_key": "sk-test", "models": [{"value": "other", "name": "Other", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]}
 			]
 		}`},
-		{name: "duplicate model value across providers", content: `{
+		{name: "ambiguous default model across providers", content: `{
 			"default_model": "shared-model",
 			"providers": [
 				{"name": "deepseek", "base_url": "https://api.deepseek.com", "api_key": "sk-test", "models": [{"value": "shared-model", "name": "Shared", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]},
@@ -322,6 +322,84 @@ func TestConfigResolveModel(t *testing.T) {
 
 	if _, _, err := cfg.ResolveModel("missing"); err == nil {
 		t.Fatal("ResolveModel(missing) error = nil")
+	}
+}
+
+func TestResolveModelCompoundFormat(t *testing.T) {
+	cfg := Config{
+		DefaultModel: "provider-a/shared",
+		Providers: []ProviderConfig{
+			{
+				Name: "provider-a",
+				Models: []ProviderModel{
+					{Value: "shared", Name: "A Shared", ContextWindow: 1000000, MaxTokens: 384000, InputFormats: []string{ModelInputFormatText}},
+				},
+			},
+			{
+				Name: "provider-b",
+				Models: []ProviderModel{
+					{Value: "shared", Name: "B Shared", ContextWindow: 1000000, MaxTokens: 384000, InputFormats: []string{ModelInputFormatText}},
+				},
+			},
+		},
+	}
+
+	// default_model uses provider/model format and resolves unambiguously.
+	provider, got, err := cfg.ResolveModel("")
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if provider.Name != "provider-a" || got.Name != "A Shared" {
+		t.Fatalf("provider = %q, model = %#v", provider.Name, got)
+	}
+
+	// Explicit provider/model resolves to the correct provider.
+	provider, got, err = cfg.ResolveModel("provider-b/shared")
+	if err != nil {
+		t.Fatalf("ResolveModel(provider-b/shared) error = %v", err)
+	}
+	if provider.Name != "provider-b" || got.Name != "B Shared" {
+		t.Fatalf("provider = %q, model = %#v", provider.Name, got)
+	}
+
+	// Bare value is ambiguous across two providers.
+	_, _, err = cfg.ResolveModel("shared")
+	if err == nil || !strings.Contains(err.Error(), "multiple providers") {
+		t.Fatalf("ResolveModel(shared) error = %v", err)
+	}
+
+	// Unknown provider in compound format.
+	_, _, err = cfg.ResolveModel("unknown/shared")
+	if err == nil || !strings.Contains(err.Error(), "provider \"unknown\" not found") {
+		t.Fatalf("ResolveModel(unknown/shared) error = %v", err)
+	}
+
+	// Known provider, unknown model in compound format.
+	_, _, err = cfg.ResolveModel("provider-a/missing")
+	if err == nil || !strings.Contains(err.Error(), "not found in provider") {
+		t.Fatalf("ResolveModel(provider-a/missing) error = %v", err)
+	}
+}
+
+func TestLoadFileAllowsDuplicateModelAcrossProviders(t *testing.T) {
+	path := writeTestConfig(t, `{
+		"default_model": "deepseek/shared-model",
+		"providers": [
+			{"name": "deepseek", "base_url": "https://api.deepseek.com", "api_key": "sk-test", "models": [{"value": "shared-model", "name": "Shared", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]},
+			{"name": "openai", "base_url": "https://api.openai.com/v1", "api_key": "sk-test", "models": [{"value": "shared-model", "name": "Shared Copy", "context_window": 1000000, "max_tokens": 384000, "input_formats": ["text"]}]}
+		]
+	}`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	provider, model, err := cfg.ResolveModel("openai/shared-model")
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if provider.Name != "openai" || model.Value != "shared-model" {
+		t.Fatalf("provider = %q, model = %q", provider.Name, model.Value)
 	}
 }
 

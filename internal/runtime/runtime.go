@@ -881,7 +881,7 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 			})
 		}
 		options = append(options, ModelOption{
-			Value:            m.Model.Value,
+			Value:            m.CompoundValue(),
 			Name:             m.Model.Name,
 			Description:      m.Model.Description,
 			ContextWindow:    m.Model.ContextWindow,
@@ -890,8 +890,12 @@ func (r *Runtime) ModelOptions(context.Context) (ModelOptions, error) {
 			ReasoningEfforts: reasoningEfforts,
 		})
 	}
+	defaultProvider, defaultModel, err := cfg.ResolveModel(cfg.DefaultModel)
+	if err != nil {
+		return ModelOptions{}, err
+	}
 	return ModelOptions{
-		Default: cfg.DefaultModel,
+		Default: defaultProvider.Name + "/" + defaultModel.Value,
 		Models:  options,
 	}, nil
 }

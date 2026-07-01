@@ -57,7 +57,7 @@ Create a config file at `~/.atlas/config.json` (minimal example):
 
 ```json
 {
-  "default_model": "deepseek-v4-flash",
+  "default_model": "deepseek/deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
@@ -78,6 +78,8 @@ Create a config file at `~/.atlas/config.json` (minimal example):
 }
 ```
 
+`default_model` is recommended in `provider/model` format (e.g. `"deepseek/deepseek-v4-flash"`). A bare model value (e.g. `"deepseek-v4-flash"`) is also accepted when unambiguous. The same applies to `memory.model` and the `--model` flag.
+
 Verify your configuration:
 
 ```sh
@@ -96,7 +98,7 @@ The primary way to use Atlas is through [ACP](https://agentclientprotocol.com/) 
 
 ```sh
 atlas run "<prompt>"                    # run a one-shot task
-atlas run --model <value> "<prompt>"    # specify model
+atlas run --model <provider/model> "<prompt>"    # specify model (provider/model recommended)
 atlas run --session <id> "<prompt>"     # resume or create a specific session
 atlas acp                               # start ACP service
 atlas serve                             # start WebSocket service (LAN)
