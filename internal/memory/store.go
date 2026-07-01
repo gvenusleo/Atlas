@@ -385,13 +385,18 @@ order by confidence desc, use_count desc, updated_at desc, id desc`, projectKey)
 	return matched, nil
 }
 
-// ListEntries returns active memories under the specified scope.
-func (s *Store) ListEntries(ctx context.Context, scope, projectKey string) ([]Entry, error) {
+// ListRecentEntries returns active memories ranked by usage frequency and recency across global and project scopes.
+func (s *Store) ListRecentEntries(ctx context.Context, projectKey string, limit int) ([]Entry, error) {
+	if limit <= 0 {
+		limit = defaultPromptEntryLimit
+	}
 	rows, err := s.db.QueryContext(ctx, `
 select id, scope, project_key, project_path, type, content, source_note, confidence, fingerprint, status, source_session_id, created_at, updated_at, last_used_at, use_count
 from memory_entries
-where status = 'active' and scope = ? and project_key = ?
-order by type, updated_at desc, id desc`, scope, projectKey)
+where status = 'active'
+	and (scope = 'global' or (scope = 'project' and project_key = ?))
+order by use_count desc, updated_at desc, id desc
+limit ?`, projectKey, limit)
 	if err != nil {
 		return nil, err
 	}

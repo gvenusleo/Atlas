@@ -216,6 +216,96 @@ func TestDecayConfidenceSkipsRecentEntries(t *testing.T) {
 	}
 }
 
+func TestListRecentEntriesOrdersByUsageThenRecency(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	// high-use: use_count=5, oldest updated_at
+	// mid-use: use_count=2, middle updated_at
+	// low-use: use_count=0, newest updated_at
+	cases := []struct {
+		Content  string
+		UseCount int
+		DaysAgo  int
+	}{
+		{"high use fact", 5, 30},
+		{"mid use fact", 2, 20},
+		{"low use fact", 0, 1},
+	}
+	var ids []int64
+	for _, c := range cases {
+		entry, err := store.UpsertEntry(ctx, Entry{
+			Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+			Type: TypeFact, Content: c.Content,
+		})
+		if err != nil {
+			t.Fatalf("UpsertEntry() error = %v", err)
+		}
+		ids = append(ids, entry.ID)
+	}
+	for i, c := range cases {
+		oldTime := time.Now().UTC().AddDate(0, 0, -c.DaysAgo).Format(time.RFC3339Nano)
+		if _, err := store.db.ExecContext(ctx, `update memory_entries set use_count = ?, updated_at = ? where id = ?`, c.UseCount, oldTime, ids[i]); err != nil {
+			t.Fatalf("backdate error = %v", err)
+		}
+	}
+
+	results, err := store.ListRecentEntries(ctx, projectKey, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEntries() error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	// Order by use_count desc: high(5), mid(2), low(0), despite high being oldest.
+	if results[0].Content != "high use fact" || results[1].Content != "mid use fact" || results[2].Content != "low use fact" {
+		t.Fatalf("expected order by use_count: high, mid, low; got %s, %s, %s",
+			results[0].Content, results[1].Content, results[2].Content)
+	}
+}
+
+func TestListRecentEntriesIncludesGlobalScope(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	projectKey, projectPath := ProjectIdentity(t.TempDir())
+
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeGlobal, Type: TypeInstruction, Content: "global preference",
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+	if _, err := store.UpsertEntry(ctx, Entry{
+		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
+		Type: TypeFact, Content: "project fact",
+	}); err != nil {
+		t.Fatalf("UpsertEntry() error = %v", err)
+	}
+
+	results, err := store.ListRecentEntries(ctx, projectKey, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEntries() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	contents := []string{results[0].Content, results[1].Content}
+	if !contains(contents, "global preference") || !contains(contents, "project fact") {
+		t.Fatalf("expected both global and project entries, got %v", contents)
+	}
+}
+
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSearchRanksByConfidenceAndUsage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

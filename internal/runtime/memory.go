@@ -323,21 +323,9 @@ If an existing memory is contradicted or obsolete, list its fingerprint in archi
 Schema: {"entries":[{"scope":"global|project","type":"instruction|fact|workflow","content":"...","source_note":"...","confidence":1-5}],"archive_fingerprints":["..."]}`
 }
 
-// loadExistingMemories reads existing memories for extraction comparison without updating usage statistics.
+// loadExistingMemories reads recent memories for extraction comparison without updating usage statistics.
 func loadExistingMemories(ctx context.Context, store *memory.Store, projectKey string, limit int) ([]memory.Entry, error) {
-	global, err := store.ListEntries(ctx, memory.ScopeGlobal, "")
-	if err != nil {
-		return nil, err
-	}
-	project, err := store.ListEntries(ctx, memory.ScopeProject, projectKey)
-	if err != nil {
-		return nil, err
-	}
-	entries := append(global, project...)
-	if limit > 0 && len(entries) > limit {
-		entries = entries[:limit]
-	}
-	return entries, nil
+	return store.ListRecentEntries(ctx, projectKey, limit)
 }
 
 // memoryExtractPrompt serializes existing memories and new messages for the model to determine additions, deletions, and updates.
