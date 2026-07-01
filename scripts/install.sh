@@ -23,11 +23,11 @@ Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g., 0.10.0)
+    -v, --version <version> Install a specific version (e.g., 0.11.0)
 
 Examples:
     curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | bash
-    curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | bash -s -- --version 0.10.0
+    curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | bash -s -- --version 0.11.0
 EOF
       exit 0
       ;;
