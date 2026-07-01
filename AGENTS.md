@@ -32,7 +32,7 @@ Atlas reads configuration from `~/.atlas/config.json`. The top-level `default_mo
 
 `format`, `base_url`, `api_key`, and model `value` belong only to provider connection config and do not enter `model.ChatRequest`. The `agent` package only depends on `model.Provider` and generic generation parameters.
 
-Long-term memory config includes `memory.enabled` and `memory.model`. When `memory.enabled` is not configured, it defaults to enabled. When enabled but `memory.model` is empty, background memory tasks use the model that produced the session. When configured, it must match a model in any provider's model list.
+Long-term memory is always enabled; the only optional config is `memory.model`. When `memory.model` is empty, background memory tasks use the model that produced the session. When configured, it must match a model in any provider's model list.
 
 The system prompt is constructed by `internal/prompt`. It only describes model behavior, tool usage principles, verification habits, and reply style — it does not repeat tool JSON schemas.
 
@@ -97,7 +97,7 @@ CLI / ACP / Weixin / WS
 
 **Session**: `internal/session` uses SQLite to store transcripts, session metadata, context compaction metadata, memory extraction boundaries, and raw output items needed for provider continuation. The default path is `~/.atlas/atlas.db`, overridable via `session.db_path`. No migration framework is currently implemented; early schema changes require users to delete and recreate the old database.
 
-**Memory**: `internal/memory` maintains long-term memory entries, summaries, FTS retrieval, and background task queues. Long-term memory shares the SQLite database with sessions but uses separate tables. The runtime triggers extraction tasks based on incremental thresholds, explicit memory instructions, or context compaction. The worker only processes new messages since the last boundary and refreshes summaries for affected scopes. Memory types remain three: `instruction`, `fact`, and `workflow`.
+**Memory**: `internal/memory` maintains long-term memory entries, summaries, substring retrieval, and background task queues. Long-term memory shares the SQLite database with sessions but uses separate tables. The runtime triggers extraction tasks based on incremental thresholds, explicit memory instructions, or context compaction. The worker only processes new messages since the last boundary and refreshes summaries for affected scopes. Memory types remain three: `instruction`, `fact`, and `workflow`.
 
 ## Runtime Constraints
 

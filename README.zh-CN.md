@@ -10,7 +10,7 @@
 - **多 Provider 适配**：通过 `chat_completions` 和 `responses` 两种 API 格式适配器接入 OpenAI、DeepSeek 等兼容后端。
 - **本地工具集**：文件读写、文本搜索、精确编辑、Shell 执行、网页搜索与提取，开箱即用。
 - **上下文压缩**：达到上下文窗口阈值时自动摘要早期对话，保留最近消息继续。
-- **长期记忆**：从会话中增量抽取 instruction / fact / workflow 三类记忆，按 global / project 作用域组织，FTS5 检索后注入后续会话。
+- **长期记忆**：从会话中增量抽取 instruction / fact / workflow 三类记忆，按 global / project 作用域组织，子串匹配检索后注入后续会话。
 - **多入口**：CLI 单次执行、ACP 长连接（支持编辑器嵌入终端与文件 diff）、微信扫码远程控制。
 - **本地优先**：会话和记忆全部存于本地 SQLite，数据不离开用户机器（除模型 API 和可选的 Tavily 搜索外）。
 - **可扩展指令**：通过 `AGENTS.md` 和 skill 文件注入项目级与全局指令，skill 按需加载。

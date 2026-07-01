@@ -129,7 +129,6 @@ Only enable `prompt_cache.enabled` after confirming the provider accepts the cor
 
 | Field | Default | Description |
 |---|---|---|
-| `memory.enabled` | `true` | Enable long-term memory. Defaults to enabled when not configured. |
 | `memory.model` | empty | Model used for background memory tasks. Uses the session's model when empty. |
 
 ### Session

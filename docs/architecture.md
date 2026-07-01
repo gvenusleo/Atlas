@@ -33,7 +33,7 @@ graph TD
     subgraph Persistence Layer
         TR[transcript]
         SS[session SQLite]
-        MS[memory SQLite + FTS5]
+        MS[memory SQLite + substring matching]
     end
 
     CLI --> RT

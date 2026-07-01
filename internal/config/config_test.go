@@ -106,9 +106,6 @@ func TestLoadFile(t *testing.T) {
 	if cfg.Agent.CompactionTriggerRatio != 0.7 {
 		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
 	}
-	if cfg.Memory.IsEnabled() {
-		t.Fatal("Memory.IsEnabled() = true")
-	}
 	if cfg.Memory.Model != "deepseek-v4-pro" {
 		t.Fatalf("Memory.Model = %q", cfg.Memory.Model)
 	}
@@ -139,28 +136,12 @@ func TestLoadFileDefaults(t *testing.T) {
 		if cfg.Agent.CompactionTriggerRatio != defaultCompactionTriggerRatio {
 			t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
 		}
-		if !cfg.Memory.IsEnabled() {
-			t.Fatal("Memory.IsEnabled() = false")
-		}
 		provider, _, err := cfg.ResolveModel("deepseek-v4-flash")
 		if err != nil {
 			t.Fatalf("ResolveModel() error = %v", err)
 		}
 		if provider.Format != ProviderFormatChatCompletions {
 			t.Fatalf("Provider.Format = %q", provider.Format)
-		}
-	})
-
-	t.Run("disabled_memory_allows_unknown_model", func(t *testing.T) {
-		content := base[:len(base)-1] + `,
-		"memory": {"enabled": false, "model": "missing-model"}
-	}`
-		cfg, err := LoadFile(writeTestConfig(t, content))
-		if err != nil {
-			t.Fatalf("LoadFile() error = %v", err)
-		}
-		if cfg.Memory.IsEnabled() {
-			t.Fatal("Memory.IsEnabled() = true")
 		}
 	})
 

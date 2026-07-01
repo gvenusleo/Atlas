@@ -83,13 +83,7 @@ type AgentConfig struct {
 
 // MemoryConfig describes the long-term memory extraction and retrieval configuration.
 type MemoryConfig struct {
-	Enabled *bool  `json:"enabled"`
-	Model   string `json:"model"`
-}
-
-// IsEnabled returns whether long-term memory is enabled; defaults to enabled when not configured.
-func (c MemoryConfig) IsEnabled() bool {
-	return c.Enabled == nil || *c.Enabled
+	Model string `json:"model"`
 }
 
 // SessionConfig describes the local session storage parameters.
@@ -163,7 +157,7 @@ func (c Config) Validate() error {
 	if err := c.validateProviders(); err != nil {
 		return err
 	}
-	if c.Memory.IsEnabled() && strings.TrimSpace(c.Memory.Model) != "" {
+	if strings.TrimSpace(c.Memory.Model) != "" {
 		if _, _, err := c.ResolveModel(c.Memory.Model); err != nil {
 			return fmt.Errorf("memory.model %q is not in any provider models", c.Memory.Model)
 		}

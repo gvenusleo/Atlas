@@ -10,7 +10,7 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 - **Multi-provider adapters**: connect to OpenAI, DeepSeek, and other compatible backends via `chat_completions` and `responses` API formats.
 - **Built-in tools**: file read/write, text search, precise editing, shell execution, web search and extraction — ready out of the box.
 - **Context compaction**: automatically summarizes earlier conversation when the context window threshold is reached, keeping recent messages to continue.
-- **Long-term memory**: incrementally extracts instruction / fact / workflow memories from sessions, organized by global / project scope, retrieved via FTS5 and injected into subsequent sessions.
+- **Long-term memory**: incrementally extracts instruction / fact / workflow memories from sessions, organized by global / project scope, retrieved via case-insensitive substring matching and injected into subsequent sessions.
 - **Multiple entry points**: CLI one-shot execution, ACP persistent connection (with editor-embedded terminal and file diff), WeChat QR-code remote control.
 - **Local-first**: all sessions and memories stored in local SQLite. Data never leaves your machine (except model API calls and optional Tavily search).
 - **Extensible instructions**: inject project-level and global instructions via `AGENTS.md` and skill files. Skills are loaded on demand.

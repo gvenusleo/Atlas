@@ -10,7 +10,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-func TestStoreUpsertSearchAndPromptContext(t *testing.T) {
+func TestStoreUpsertAndSearch(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
@@ -50,13 +50,6 @@ func TestStoreUpsertSearchAndPromptContext(t *testing.T) {
 	}
 	if len(recent) != 1 || recent[0].Content != entry.Content {
 		t.Fatalf("recent results = %#v", recent)
-	}
-	contextText, _, err := store.PromptContext(ctx, projectPath, "test", nil)
-	if err != nil {
-		t.Fatalf("PromptContext() error = %v", err)
-	}
-	if !strings.Contains(contextText, "Run go test ./...") {
-		t.Fatalf("context = %q", contextText)
 	}
 }
 
@@ -239,47 +232,50 @@ func TestListPromptEntriesRanksByConfidenceAndUsage(t *testing.T) {
 	}
 }
 
-func TestSearchFiltersLowScoreEntries(t *testing.T) {
+func TestSearchChineseSubstring(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
 	projectKey, projectPath := ProjectIdentity(t.TempDir())
 
-	// Highly relevant: exact match on distinctive token.
 	if _, err := store.UpsertEntry(ctx, Entry{
 		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: TypeFact, Content: "atlas configuration json", Confidence: 3,
+		Type: TypeFact, Content: "ACP删除会话会从数据库中删除", Confidence: 3,
 	}); err != nil {
 		t.Fatalf("UpsertEntry() error = %v", err)
 	}
-	// Weakly relevant: shares one common token but is about something else.
 	if _, err := store.UpsertEntry(ctx, Entry{
 		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: TypeFact, Content: "json schema validation", Confidence: 3,
+		Type: TypeFact, Content: "SQLite FTS5 对中文分词无效", Confidence: 3,
 	}); err != nil {
 		t.Fatalf("UpsertEntry() error = %v", err)
 	}
 
-	results, err := store.Search(ctx, projectPath, "atlas configuration json", 10)
+	// Chinese substring search should match.
+	results, err := store.Search(ctx, projectPath, "删除会话", 10)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
-	// The highly-relevant entry must be present.
-	found := false
-	for _, r := range results {
-		if strings.Contains(r.Content, "atlas configuration") {
-			found = true
-			break
-		}
+	if len(results) != 1 || !strings.Contains(results[0].Content, "删除会话") {
+		t.Fatalf("expected 1 Chinese match, got %v", results)
 	}
-	if !found {
-		t.Fatalf("expected highly relevant entry in results, got %v", results)
+
+	// Mixed Chinese/English query.
+	results, err = store.Search(ctx, projectPath, "SQLite 中文", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
 	}
-	// The weakly-relevant entry should be filtered out by score floor.
-	for _, r := range results {
-		if r.Content == "json schema validation" {
-			t.Fatalf("expected weakly relevant entry to be filtered, got %v", results)
-		}
+	if len(results) != 1 || !strings.Contains(results[0].Content, "FTS5") {
+		t.Fatalf("expected 1 mixed match, got %v", results)
+	}
+
+	// Unrelated Chinese query returns nothing.
+	results, err = store.Search(ctx, projectPath, "网络协议", 10)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for unrelated query, got %v", results)
 	}
 }
 
@@ -302,66 +298,6 @@ func TestSearchKeepsAtLeastOne(t *testing.T) {
 	}
 	if len(results) < 1 {
 		t.Fatalf("expected at least 1 result, got %d", len(results))
-	}
-}
-
-func TestPromptContextExcludesPreviousFingerprints(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-
-	projectKey, projectPath := ProjectIdentity(t.TempDir())
-
-	e1, err := store.UpsertEntry(ctx, Entry{
-		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: TypeFact, Content: "atlas test command", Confidence: 3,
-	})
-	if err != nil {
-		t.Fatalf("UpsertEntry() error = %v", err)
-	}
-	e2, err := store.UpsertEntry(ctx, Entry{
-		Scope: ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: TypeFact, Content: "atlas test coverage", Confidence: 3,
-	})
-	if err != nil {
-		t.Fatalf("UpsertEntry() error = %v", err)
-	}
-
-	// First call: both entries returned.
-	_, fps, err := store.PromptContext(ctx, projectPath, "atlas test", nil)
-	if err != nil {
-		t.Fatalf("PromptContext() error = %v", err)
-	}
-	if len(fps) < 2 {
-		t.Fatalf("expected at least 2 fingerprints, got %d", len(fps))
-	}
-
-	// Second call excluding all previous fingerprints: should fall back to full set.
-	_, fps2, err := store.PromptContext(ctx, projectPath, "atlas test", fps)
-	if err != nil {
-		t.Fatalf("PromptContext() error = %v", err)
-	}
-	if len(fps2) == 0 {
-		t.Fatalf("expected fallback to full set, got 0 fingerprints")
-	}
-
-	// Third call excluding only e1: should return e2 only.
-	_, fps3, err := store.PromptContext(ctx, projectPath, "atlas test", []string{e1.Fingerprint})
-	if err != nil {
-		t.Fatalf("PromptContext() error = %v", err)
-	}
-	for _, fp := range fps3 {
-		if fp == e1.Fingerprint {
-			t.Fatalf("excluded fingerprint %s should not appear", e1.Fingerprint)
-		}
-	}
-	found := false
-	for _, fp := range fps3 {
-		if fp == e2.Fingerprint {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected e2 fingerprint in results")
 	}
 }
 

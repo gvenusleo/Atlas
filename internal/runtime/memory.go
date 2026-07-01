@@ -21,7 +21,6 @@ const (
 	memoryWorkerInterval  = 5 * time.Second
 	memoryJobLease        = 2 * time.Minute
 	memoryPromptMaxRunes  = 40000
-	memorySummaryMaxRunes = 16000
 	// Memory extraction triggers incrementally, avoiding background model token consumption on every turn.
 	memoryExtractMinNewMessages    = 6
 	memoryExtractMinNewInputTokens = 4000
@@ -74,9 +73,6 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 	if err != nil {
 		return 0, err
 	}
-	if !cfg.Memory.IsEnabled() {
-		return 0, nil
-	}
 	memStore, err := r.openMemoryStore(ctx, cfg.Session)
 	if err != nil {
 		return 0, err
@@ -127,8 +123,6 @@ func (r *Runtime) processMemoryJob(ctx context.Context, memStore *memory.Store, 
 	switch job.Kind {
 	case memory.JobKindSessionExtract:
 		return r.processMemoryExtractJob(ctx, memStore, sessionStore, provider, selectedModel, job)
-	case memory.JobKindScopeSummarize:
-		return r.processMemorySummarizeJob(ctx, memStore, provider, selectedModel, job)
 	default:
 		return fmt.Errorf("unknown memory job kind %q", job.Kind)
 	}
@@ -145,10 +139,6 @@ type memoryExtractEntry struct {
 	Content    string `json:"content"`
 	SourceNote string `json:"source_note"`
 	Confidence int    `json:"confidence"`
-}
-
-type memorySummaryOutput struct {
-	Summary string `json:"summary"`
 }
 
 // processMemoryExtractJob extracts long-term memory from incremental messages since the last processing boundary.
@@ -215,118 +205,27 @@ func (r *Runtime) processMemoryExtractJob(ctx context.Context, memStore *memory.
 	for _, entry := range existing {
 		existingByFingerprint[entry.Fingerprint] = entry
 	}
-	touched := make(map[string]memory.Summary)
 	for _, item := range output.Entries {
 		entry, ok := normalizeMemoryExtractEntry(item, projectKey, projectPath, info.ID)
 		if !ok {
 			continue
 		}
-		saved, err := memStore.UpsertEntry(ctx, entry)
-		if err != nil {
+		if _, err := memStore.UpsertEntry(ctx, entry); err != nil {
 			return err
-		}
-		touched[memoryScopeKey(saved.Scope, saved.ProjectKey)] = memory.Summary{
-			Scope:       saved.Scope,
-			ProjectKey:  saved.ProjectKey,
-			ProjectPath: saved.ProjectPath,
 		}
 	}
 	var archiveFingerprints []string
 	for _, fingerprint := range output.ArchiveFingerprints {
 		fingerprint = strings.TrimSpace(fingerprint)
-		entry, ok := existingByFingerprint[fingerprint]
-		if !ok {
+		if _, ok := existingByFingerprint[fingerprint]; !ok {
 			continue
 		}
 		archiveFingerprints = append(archiveFingerprints, fingerprint)
-		touched[memoryScopeKey(entry.Scope, entry.ProjectKey)] = memory.Summary{
-			Scope:       entry.Scope,
-			ProjectKey:  entry.ProjectKey,
-			ProjectPath: entry.ProjectPath,
-		}
 	}
 	if err := memStore.ArchiveFingerprints(ctx, archiveFingerprints); err != nil {
 		return err
 	}
-	for _, summary := range touched {
-		if err := memStore.EnqueueSummarize(ctx, summary.Scope, summary.ProjectKey, summary.ProjectPath, selectedModel.Value); err != nil {
-			return err
-		}
-	}
 	return sessionStore.SaveMemoryExtraction(ctx, job.SessionID, len(messages), inputTokens, inputHash)
-}
-
-// processMemorySummarizeJob compresses active memories in a scope into a short summary for subsequent prompt injection.
-func (r *Runtime) processMemorySummarizeJob(ctx context.Context, memStore *memory.Store, provider model.Provider, selectedModel config.ProviderModel, job memory.Job) error {
-	entries, err := memStore.ListEntries(ctx, job.Scope, job.ProjectKey)
-	if err != nil {
-		return err
-	}
-	inputHash := memory.EntriesInputHash(entries)
-	if len(entries) == 0 {
-		return memStore.SaveSummary(ctx, memory.Summary{
-			Scope:       job.Scope,
-			ProjectKey:  job.ProjectKey,
-			ProjectPath: job.ProjectPath,
-			EntryCount:  0,
-			InputHash:   inputHash,
-		})
-	}
-	reasoningEffort, err := selectedReasoningEffort("", false, selectedModel)
-	if err != nil {
-		return err
-	}
-	resp, err := provider.Stream(ctx, model.ChatRequest{
-		System:          memorySummarySystemPrompt(),
-		Messages:        []model.Message{model.TextMessage(model.RoleUser, memorySummaryPrompt(job, entries))},
-		MaxTokens:       summaryMaxTokens(selectedModel.MaxTokens),
-		Temperature:     0,
-		ReasoningEffort: reasoningEffort,
-		ResponseFormat:  model.ResponseFormatJSONObject,
-	}, nil)
-	if err != nil {
-		return err
-	}
-	var output memorySummaryOutput
-	if err := decodeJSONObject(resp.Content, &output); err != nil {
-		return err
-	}
-	summary := strings.TrimSpace(output.Summary)
-	if summary == "" {
-		return fmt.Errorf("memory summary is empty")
-	}
-	return memStore.SaveSummary(ctx, memory.Summary{
-		Scope:       job.Scope,
-		ProjectKey:  job.ProjectKey,
-		ProjectPath: job.ProjectPath,
-		Content:     summary,
-		EntryCount:  len(entries),
-		InputHash:   inputHash,
-	})
-}
-
-// loadMemoryContext reads long-term memory on a best-effort basis; failures do not affect the main turn.
-// Across consecutive turns in the same session, memories injected in the previous turn and still in the current results are skipped to prevent duplicate injection.
-func (r *Runtime) loadMemoryContext(ctx context.Context, cfg config.SessionConfig, sessionID, cwd, query string) string {
-	store, err := r.openMemoryStore(ctx, cfg)
-	if err != nil {
-		return ""
-	}
-
-	r.lastInjectedMemMu.Lock()
-	exclude := r.lastInjectedMemories[sessionID]
-	r.lastInjectedMemMu.Unlock()
-
-	contextText, fingerprints, err := store.PromptContext(ctx, cwd, query, exclude)
-	if err != nil {
-		return ""
-	}
-
-	r.lastInjectedMemMu.Lock()
-	r.lastInjectedMemories[sessionID] = fingerprints
-	r.lastInjectedMemMu.Unlock()
-
-	return contextText
 }
 
 type memoryExtractTriggerOptions struct {
@@ -429,12 +328,6 @@ If an existing memory is contradicted or obsolete, list its fingerprint in archi
 Schema: {"entries":[{"scope":"global|project","type":"instruction|fact|workflow","content":"...","source_note":"...","confidence":1-5}],"archive_fingerprints":["..."]}`
 }
 
-func memorySummarySystemPrompt() string {
-	return `Summarize Atlas long-term memories for prompt injection.
-Return only a JSON object. Do not include markdown.
-Keep the summary compact, concrete, and useful for a coding agent. Preserve user instructions, stable project facts, and repeatable workflows.`
-}
-
 // loadExistingMemories reads existing memories for extraction comparison without updating usage statistics.
 func loadExistingMemories(ctx context.Context, store *memory.Store, projectKey string, limit int) ([]memory.Entry, error) {
 	global, err := store.ListEntries(ctx, memory.ScopeGlobal, "")
@@ -485,31 +378,6 @@ func memoryExtractPrompt(info session.Session, messages []model.Message, existin
 	builder.WriteString("\nNew transcript messages since the previous memory extraction:\n")
 	builder.WriteString(formatMemoryTranscript(messages, memoryPromptMaxRunes))
 	return builder.String()
-}
-
-// memorySummaryPrompt serializes active memories in a scope for the model to generate a short summary.
-func memorySummaryPrompt(job memory.Job, entries []memory.Entry) string {
-	var builder strings.Builder
-	builder.WriteString("Scope: ")
-	builder.WriteString(job.Scope)
-	if job.ProjectPath != "" {
-		builder.WriteString("\nProject path: ")
-		builder.WriteString(filepath.ToSlash(job.ProjectPath))
-	}
-	builder.WriteString("\n\nActive memories:\n")
-	for _, entry := range entries {
-		builder.WriteString("- [")
-		builder.WriteString(entry.Type)
-		builder.WriteString("] ")
-		builder.WriteString(entry.Content)
-		if entry.SourceNote != "" {
-			builder.WriteString(" (source: ")
-			builder.WriteString(entry.SourceNote)
-			builder.WriteString(")")
-		}
-		builder.WriteString("\n")
-	}
-	return trimRunes(builder.String(), memorySummaryMaxRunes)
 }
 
 func formatMemoryTranscript(messages []model.Message, maxRunes int) string {
@@ -616,10 +484,6 @@ func decodeJSONObject(content string, target any) error {
 		return fmt.Errorf("json object not found")
 	}
 	return json.Unmarshal([]byte(content[start:end+1]), target)
-}
-
-func memoryScopeKey(scope, projectKey string) string {
-	return scope + "\x00" + projectKey
 }
 
 func trimRunes(content string, limit int) string {

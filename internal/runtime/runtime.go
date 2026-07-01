@@ -40,13 +40,11 @@ type Dependencies struct {
 
 // Runtime is the Atlas execution entry point shared by the CLI and future interactive interfaces.
 type Runtime struct {
-	deps                 Dependencies
-	lastInjectedMemories map[string][]string
-	lastInjectedMemMu    sync.Mutex
-	db                   *sql.DB // shared database connection (WAL, busy_timeout, MaxOpenConns=1)
-	dbPath               string  // cached database path for drift detection
-	dbMu                 sync.Mutex
-	dbWG                 sync.WaitGroup // tracks active DB users for safe Close
+	deps   Dependencies
+	db     *sql.DB // shared database connection (WAL, busy_timeout, MaxOpenConns=1)
+	dbPath string  // cached database path for drift detection
+	dbMu   sync.Mutex
+	dbWG   sync.WaitGroup // tracks active DB users for safe Close
 }
 
 // TurnOptions describes the execution parameters for a single user input.
@@ -234,7 +232,7 @@ func providerFormat(cfg config.ProviderConfig) string {
 
 // New creates a Runtime, filling in default implementations for unspecified dependencies.
 func New(deps Dependencies) *Runtime {
-	return &Runtime{deps: completeDependencies(deps), lastInjectedMemories: make(map[string][]string)}
+	return &Runtime{deps: completeDependencies(deps)}
 }
 
 // openDB returns the shared *sql.DB, initializing it on first call.
@@ -350,7 +348,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			AdditionalDirectories:    opts.AdditionalDirectories,
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		})
-		if err == nil && cfg.Memory.IsEnabled() {
+		if err == nil {
 			r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, savedMessages, configuredMemoryModel(cfg, ""), memoryExtractTriggerOptions{})
 		}
 		return result, err
@@ -380,7 +378,27 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	registry, err := buildToolRegistry(cwd, skills, cfg.Services)
+	// Open memory store and create search function for the memory_search tool.
+	var memorySearch tool.MemorySearchFunc
+	if memStore, err := r.openMemoryStore(ctx, cfg.Session); err == nil {
+		memorySearch = func(searchCtx context.Context, query string, limit int) ([]tool.MemoryEntry, error) {
+			entries, err := memStore.Search(searchCtx, cwd, query, limit)
+			if err != nil {
+				return nil, err
+			}
+			result := make([]tool.MemoryEntry, 0, len(entries))
+			for _, e := range entries {
+				result = append(result, tool.MemoryEntry{
+					Scope:      e.Scope,
+					Type:       e.Type,
+					Content:    e.Content,
+					SourceNote: e.SourceNote,
+				})
+			}
+			return result, nil
+		}
+	}
+	registry, err := buildToolRegistry(cwd, skills, cfg.Services, memorySearch)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -389,10 +407,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		registry = registry.WithRunner(func(ctx context.Context, call model.ToolCall) (tool.RunResult, error) {
 			return opts.ToolRunner(ctx, call, baseRunner)
 		})
-	}
-	memoryContext := ""
-	if cfg.Memory.IsEnabled() {
-		memoryContext = r.loadMemoryContext(ctx, cfg.Session, sessionID, cwd, promptText)
 	}
 	memoryForceExtract := false
 	selectedSkillMessages := skillMessages(opts.Skills, skills)
@@ -433,7 +447,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			WorkingDir:   cwd,
 			Now:          r.deps.Now(),
 			Shell:        tool.DefaultShell().DisplayName,
-			Memory:       memoryContext,
 			Instructions: instructions,
 			Skills:       promptSkillSummaries(skills),
 		}),
@@ -524,12 +537,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}); err != nil {
 		return TurnResult{}, err
 	}
-	if cfg.Memory.IsEnabled() {
-		r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
-			Force:         memoryForceExtract,
-			ContextWindow: selectedModel.ContextWindow,
-		})
-	}
+	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, cwd, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
+		Force:         memoryForceExtract,
+		ContextWindow: selectedModel.ContextWindow,
+	})
 	return TurnResult{
 		SessionID:     sessionID,
 		Content:       content,
@@ -785,15 +796,13 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	if err := store.SaveCompaction(ctx, sessionID, summary, plan.CompactCount, plan.TokensBefore); err != nil {
 		return CompactResult{}, err
 	}
-	if cfg.Memory.IsEnabled() {
-		info.ContextSummary = summary
-		info.CompactedMessageCount = plan.CompactCount
-		info.CompactedInputTokens = plan.TokensBefore
-		r.maybeEnqueueMemoryExtract(ctx, cfg.Session, info, sessionID, info.CWD, messages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
-			Force:         true,
-			ContextWindow: selectedModel.ContextWindow,
-		})
-	}
+	info.ContextSummary = summary
+	info.CompactedMessageCount = plan.CompactCount
+	info.CompactedInputTokens = plan.TokensBefore
+	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, info, sessionID, info.CWD, messages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
+		Force:         true,
+		ContextWindow: selectedModel.ContextWindow,
+	})
 	return CompactResult{
 		SessionID:     sessionID,
 		Compacted:     true,
@@ -1026,9 +1035,6 @@ func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 	if err := store.DeleteSession(ctx, sessionID); err != nil {
 		return err
 	}
-	r.lastInjectedMemMu.Lock()
-	delete(r.lastInjectedMemories, sessionID)
-	r.lastInjectedMemMu.Unlock()
 	return nil
 }
 
@@ -1069,10 +1075,6 @@ func (r *DoctorReport) addSession(ctx context.Context, cfg config.SessionConfig)
 }
 
 func (r *DoctorReport) addMemory(ctx context.Context, cfg config.Config) {
-	if !cfg.Memory.IsEnabled() {
-		r.add("memory", DoctorStatusWarn, "disabled")
-		return
-	}
 	dbPath, err := sessionDBPath(cfg.Session)
 	if err != nil {
 		r.add("memory", DoctorStatusFail, err.Error())
@@ -1146,7 +1148,7 @@ func completeDependencies(deps Dependencies) Dependencies {
 	return deps
 }
 
-func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
+func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig, memorySearch tool.MemorySearchFunc) (*tool.Registry, error) {
 	tools := []tool.Tool{
 		tool.Glob{CWD: cwd},
 		tool.Grep{CWD: cwd},
@@ -1167,6 +1169,9 @@ func buildToolRegistry(cwd string, skills *skill.Catalog, services config.Servic
 			tool.TavilySearch{Client: client},
 			tool.TavilyFetch{Client: client},
 		)
+	}
+	if memorySearch != nil {
+		tools = append(tools, tool.MemorySearch{Search: memorySearch})
 	}
 	return tool.NewRegistry(tools...)
 }

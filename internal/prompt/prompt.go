@@ -58,7 +58,11 @@ For multi-step tasks, use todo_write to plan and track progress. Create a todo l
 - Match the user's language.
 - Be concise and direct. Lead with the result, then mention important files, commands, or remaining risks.
 - When you changed code, summarize what changed and which verification commands passed.
-- Do not expose raw internal reasoning. Explain concrete assumptions, evidence, and tradeoffs when they matter.%s%s%s
+- Do not expose raw internal reasoning. Explain concrete assumptions, evidence, and tradeoffs when they matter.%s%s
+
+## Long-Term Memory
+
+You have long-term memory from prior Atlas sessions. Use memory_search to find relevant context when the task involves project history, user preferences, prior decisions, or repeatable workflows. Skip memory search only for self-contained requests (simple translations, one-line commands, trivial formatting). When unsure, do a quick search.
 
 ## Environment
 
@@ -73,7 +77,6 @@ type Options struct {
 	Platform     string
 	Shell        string
 	Now          time.Time
-	Memory       string
 	Instructions []InstructionFile
 	Skills       []SkillSummary
 }
@@ -106,20 +109,11 @@ func BuildSystem(options Options) string {
 		systemTemplate,
 		formatInstructions(options.Instructions),
 		formatSkills(options.Skills),
-		formatMemory(options.Memory),
 		filepath.ToSlash(workingDir),
 		now.Format("2006-01-02"),
 		platform,
 		shell,
 	)
-}
-
-func formatMemory(memory string) string {
-	memory = strings.TrimSpace(memory)
-	if memory == "" {
-		return ""
-	}
-	return "\n\n## Long-Term Memory\n\n" + memory
 }
 
 func formatSkills(skills []SkillSummary) string {

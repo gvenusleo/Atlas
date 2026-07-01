@@ -1,4 +1,4 @@
-// Package memory manages Atlas's long-term memory entries, retrieval summaries, and background tasks.
+// Package memory manages Atlas's long-term memory entries and background tasks.
 package memory
 
 import (
@@ -7,11 +7,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -41,14 +38,9 @@ const (
 
 	// JobKindSessionExtract indicates extracting memory from a session transcript.
 	JobKindSessionExtract = "session_extract"
-	// JobKindScopeSummarize indicates regenerating the summary for a memory scope.
-	JobKindScopeSummarize = "scope_summarize"
 
 	defaultPromptEntryLimit = 12
-	maxPromptContextRunes   = 6000
 )
-
-var ftsTokenPattern = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 
 // Store reads and writes the Atlas long-term memory database.
 type Store struct {
@@ -72,17 +64,6 @@ type Entry struct {
 	UpdatedAt       time.Time
 	LastUsedAt      time.Time
 	UseCount        int
-}
-
-// Summary is the model-generated summary for a memory scope.
-type Summary struct {
-	Scope       string
-	ProjectKey  string
-	ProjectPath string
-	Content     string
-	EntryCount  int
-	InputHash   string
-	UpdatedAt   time.Time
 }
 
 // Job describes a single background memory job.
@@ -169,36 +150,11 @@ create index if not exists memory_entries_lookup_idx
 create index if not exists memory_entries_source_idx
 	on memory_entries(source_session_id, updated_at);
 
-create virtual table if not exists memory_entries_fts
-	using fts5(body, content='memory_entries', content_rowid='id', tokenize='unicode61 remove_diacritics 1');
-
-create trigger if not exists memory_entries_ai after insert on memory_entries begin
-	insert into memory_entries_fts(rowid, body)
-	values (new.id, new.type || char(10) || new.content || char(10) || new.source_note || char(10) || new.project_path);
-end;
-
-create trigger if not exists memory_entries_ad after delete on memory_entries begin
-	insert into memory_entries_fts(memory_entries_fts, rowid, body)
-	values ('delete', old.id, old.type || char(10) || old.content || char(10) || old.source_note || char(10) || old.project_path);
-end;
-
-create trigger if not exists memory_entries_au after update on memory_entries begin
-	insert into memory_entries_fts(memory_entries_fts, rowid, body)
-	values ('delete', old.id, old.type || char(10) || old.content || char(10) || old.source_note || char(10) || old.project_path);
-	insert into memory_entries_fts(rowid, body)
-	values (new.id, new.type || char(10) || new.content || char(10) || new.source_note || char(10) || new.project_path);
-end;
-
-create table if not exists memory_summaries (
-	scope text not null,
-	project_key text not null default '',
-	project_path text not null default '',
-	content text not null,
-	entry_count integer not null default 0,
-	input_hash text not null default '',
-	updated_at text not null,
-	primary key(scope, project_key)
-);
+-- Drop legacy FTS5 table and triggers from the previous unicode61-based search.
+drop trigger if exists memory_entries_ai;
+drop trigger if exists memory_entries_ad;
+drop trigger if exists memory_entries_au;
+drop table if exists memory_entries_fts;
 
 create table if not exists memory_jobs (
 	job_key text primary key,
@@ -410,8 +366,6 @@ update memory_entries set confidence = ? where id = ?`, newConfidences[i], id); 
 	return nil
 }
 
-const scoreFloorRatio = 0.15
-
 // PruneStaleEntries archives active memories that have been unused for a long time and have low confidence.
 // Condition: confidence <= 1 and use_count == 0 and last_used_at exceeds maxUnusedDays.
 // Returns the number of archived entries. Entries with empty last_used_at are calculated by updated_at.
@@ -436,67 +390,50 @@ func (s *Store) PruneStaleEntries(ctx context.Context, maxUnusedDays int) (int, 
 	return int(n), nil
 }
 
-// Search returns global/project active memories related to the query.
+// Search returns active memories matching the query using case-insensitive substring matching.
+// The query is split by whitespace into terms; an entry matches if any term appears as a
+// substring in its content, source_note, type, or project_path. Matches are ranked by
+// confidence, use_count, and recency. An empty query falls back to ListPromptEntries.
 func (s *Store) Search(ctx context.Context, cwd, query string, limit int) ([]Entry, error) {
 	projectKey, _ := ProjectIdentity(cwd)
-	ftsQuery := buildFTSQuery(query)
-	if ftsQuery == "" {
+	terms := splitSearchTerms(query)
+	if len(terms) == 0 {
 		return s.ListPromptEntries(ctx, cwd, limit)
 	}
 	if limit <= 0 {
 		limit = defaultPromptEntryLimit
 	}
 	rows, err := s.db.QueryContext(ctx, `
-select e.id, e.scope, e.project_key, e.project_path, e.type, e.content, e.source_note, e.confidence, e.fingerprint, e.status, e.source_session_id, e.created_at, e.updated_at, e.last_used_at, e.use_count, bm25(memory_entries_fts) as rank
-from memory_entries_fts
-join memory_entries e on e.id = memory_entries_fts.rowid
-where memory_entries_fts match ?
-	and e.status = 'active'
-	and (e.scope = 'global' or (e.scope = 'project' and e.project_key = ?))
-order by rank, e.confidence desc, e.use_count desc, e.updated_at desc
-limit ?`, ftsQuery, projectKey, limit)
+select id, scope, project_key, project_path, type, content, source_note, confidence, fingerprint, status, source_session_id, created_at, updated_at, last_used_at, use_count
+from memory_entries
+where status = 'active'
+	and (scope = 'global' or (scope = 'project' and project_key = ?))
+order by confidence desc, use_count desc, updated_at desc, id desc`, projectKey)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var entries []Entry
-	var ranks []float64
-	for rows.Next() {
-		var entry Entry
-		var createdAt, updatedAt, lastUsedAt string
-		var rank float64
-		if err := rows.Scan(&entry.ID, &entry.Scope, &entry.ProjectKey, &entry.ProjectPath, &entry.Type, &entry.Content, &entry.SourceNote, &entry.Confidence, &entry.Fingerprint, &entry.Status, &entry.SourceSessionID, &createdAt, &updatedAt, &lastUsedAt, &entry.UseCount, &rank); err != nil {
-			return nil, err
-		}
-		entry.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
-		if err != nil {
-			return nil, err
-		}
-		entry.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt)
-		if err != nil {
-			return nil, err
-		}
-		if lastUsedAt != "" {
-			entry.LastUsedAt, err = time.Parse(time.RFC3339Nano, lastUsedAt)
-			if err != nil {
-				return nil, err
+	all, err := scanEntries(rows)
+	if err != nil {
+		return nil, err
+	}
+	matched := make([]Entry, 0, limit)
+	for _, entry := range all {
+		if entryMatchesAnyTerm(entry, terms) {
+			matched = append(matched, entry)
+			if len(matched) >= limit {
+				break
 			}
 		}
-		entries = append(entries, entry)
-		ranks = append(ranks, rank)
 	}
-	if err := rows.Err(); err != nil {
+	if len(matched) == 0 {
+		return matched, nil
+	}
+	if err := s.markUsed(ctx, matched); err != nil {
 		return nil, err
 	}
-	if len(entries) == 0 {
-		return entries, nil
-	}
-	entries = filterByScore(entries, ranks)
-	if err := s.markUsed(ctx, entries); err != nil {
-		return nil, err
-	}
-	return entries, nil
+	return matched, nil
 }
 
 // ListPromptEntries returns recent memories for prompt injection when no query is provided.
@@ -541,80 +478,6 @@ order by type, updated_at desc, id desc`, scope, projectKey)
 	return scanEntries(rows)
 }
 
-// SaveSummary saves the memory summary for the specified scope.
-func (s *Store) SaveSummary(ctx context.Context, summary Summary) error {
-	if err := validateScope(summary.Scope); err != nil {
-		return err
-	}
-	if summary.Scope == ScopeGlobal {
-		summary.ProjectKey = ""
-		summary.ProjectPath = ""
-	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := s.db.ExecContext(ctx, `
-insert into memory_summaries(scope, project_key, project_path, content, entry_count, input_hash, updated_at)
-values(?, ?, ?, ?, ?, ?, ?)
-on conflict(scope, project_key) do update set
-	project_path = excluded.project_path,
-	content = excluded.content,
-	entry_count = excluded.entry_count,
-	input_hash = excluded.input_hash,
-	updated_at = excluded.updated_at`,
-		summary.Scope, summary.ProjectKey, summary.ProjectPath, strings.TrimSpace(summary.Content), summary.EntryCount, summary.InputHash, now)
-	return err
-}
-
-// LoadSummaries returns summaries for the global and current project scopes.
-func (s *Store) LoadSummaries(ctx context.Context, cwd string) ([]Summary, error) {
-	projectKey, _ := ProjectIdentity(cwd)
-	rows, err := s.db.QueryContext(ctx, `
-select scope, project_key, project_path, content, entry_count, input_hash, updated_at
-from memory_summaries
-where scope = 'global' or (scope = 'project' and project_key = ?)
-order by scope`, projectKey)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var summaries []Summary
-	for rows.Next() {
-		summary, err := scanSummary(rows)
-		if err != nil {
-			return nil, err
-		}
-		summaries = append(summaries, summary)
-	}
-	return summaries, rows.Err()
-}
-
-// PromptContext constructs long-term memory context for direct injection into the system prompt.
-// Memories in excludeFingerprints do not appear in results; if all are excluded, falls back to full set.
-// Returns formatted text and the fingerprint list of entries actually injected this turn.
-func (s *Store) PromptContext(ctx context.Context, cwd, query string, excludeFingerprints []string) (string, []string, error) {
-	summaries, err := s.LoadSummaries(ctx, cwd)
-	if err != nil {
-		return "", nil, err
-	}
-	entries, err := s.Search(ctx, cwd, query, defaultPromptEntryLimit)
-	if err != nil {
-		return "", nil, err
-	}
-	entries = filterExcluded(entries, excludeFingerprints)
-	if len(summaries) == 0 && len(entries) == 0 {
-		return "", nil, nil
-	}
-	var builder strings.Builder
-	builder.WriteString("The following long-term memories were automatically retrieved from prior Atlas sessions. They may be stale; verify project facts with tools when precision matters.\n")
-	writeSummaries(&builder, summaries)
-	writeEntries(&builder, entries)
-	fingerprints := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		fingerprints = append(fingerprints, entry.Fingerprint)
-	}
-	return trimPromptContext(builder.String()), fingerprints, nil
-}
-
 // EnqueueSessionExtract schedules memory extraction from the specified session.
 func (s *Store) EnqueueSessionExtract(ctx context.Context, sessionID, cwd, inputHash, model string) error {
 	if sessionID == "" || inputHash == "" {
@@ -639,34 +502,6 @@ on conflict(job_key) do update set
 	updated_at = excluded.updated_at,
 	finished_at = ''`,
 		JobKindSessionExtract+":"+sessionID, JobKindSessionExtract, projectKey, projectPath, sessionID, inputHash, strings.TrimSpace(model), statusPending, now, now)
-	return err
-}
-
-// EnqueueSummarize schedules regeneration of the summary for the specified memory scope.
-func (s *Store) EnqueueSummarize(ctx context.Context, scope, projectKey, projectPath, model string) error {
-	if err := validateScope(scope); err != nil {
-		return err
-	}
-	if scope == ScopeGlobal {
-		projectKey = ""
-		projectPath = ""
-	}
-	jobKey := JobKindScopeSummarize + ":" + scope + ":" + projectKey
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := s.db.ExecContext(ctx, `
-insert into memory_jobs(job_key, kind, scope, project_key, project_path, model, status, attempts, retry_after, lease_until, worker_id, last_error, created_at, updated_at, finished_at)
-values(?, ?, ?, ?, ?, ?, ?, 0, '', '', '', '', ?, ?, '')
-on conflict(job_key) do update set
-	model = excluded.model,
-	status = excluded.status,
-	attempts = 0,
-	retry_after = '',
-	lease_until = '',
-	worker_id = '',
-	last_error = '',
-	updated_at = excluded.updated_at,
-	finished_at = ''`,
-		jobKey, JobKindScopeSummarize, scope, projectKey, projectPath, strings.TrimSpace(model), statusPending, now, now)
 	return err
 }
 
@@ -828,20 +663,6 @@ func scanEntry(row scanner) (Entry, error) {
 	return entry, nil
 }
 
-func scanSummary(row scanner) (Summary, error) {
-	var summary Summary
-	var updatedAt string
-	if err := row.Scan(&summary.Scope, &summary.ProjectKey, &summary.ProjectPath, &summary.Content, &summary.EntryCount, &summary.InputHash, &updatedAt); err != nil {
-		return Summary{}, err
-	}
-	updated, err := time.Parse(time.RFC3339Nano, updatedAt)
-	if err != nil {
-		return Summary{}, err
-	}
-	summary.UpdatedAt = updated
-	return summary, nil
-}
-
 func scanJob(row scanner) (Job, error) {
 	var job Job
 	if err := row.Scan(&job.Key, &job.Kind, &job.Scope, &job.ProjectKey, &job.ProjectPath, &job.SessionID, &job.InputHash, &job.Model, &job.Status, &job.Attempts, &job.WorkerID, &job.LastError); err != nil {
@@ -866,110 +687,25 @@ where id = ?`, now, entry.ID); err != nil {
 	return nil
 }
 
-func writeSummaries(builder *strings.Builder, summaries []Summary) {
-	for _, summary := range summaries {
-		if strings.TrimSpace(summary.Content) == "" {
-			continue
-		}
-		builder.WriteString("\n### ")
-		if summary.Scope == ScopeGlobal {
-			builder.WriteString("Global summary\n")
-		} else {
-			builder.WriteString("Project summary")
-			if summary.ProjectPath != "" {
-				builder.WriteString(" (")
-				builder.WriteString(filepath.ToSlash(summary.ProjectPath))
-				builder.WriteString(")")
-			}
-			builder.WriteString("\n")
-		}
-		builder.WriteString(strings.TrimSpace(summary.Content))
-		builder.WriteString("\n")
+// splitSearchTerms splits a query string into lowercase search terms by whitespace.
+func splitSearchTerms(query string) []string {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return nil
 	}
+	return strings.Fields(query)
 }
 
-func writeEntries(builder *strings.Builder, entries []Entry) {
-	if len(entries) == 0 {
-		return
-	}
-	builder.WriteString("\n### Retrieved entries\n")
-	for _, entry := range entries {
-		builder.WriteString("- [")
-		builder.WriteString(entry.Scope)
-		builder.WriteString("/")
-		builder.WriteString(entry.Type)
-		builder.WriteString("] ")
-		builder.WriteString(strings.TrimSpace(entry.Content))
-		builder.WriteString("\n")
-	}
-}
-
-func trimPromptContext(content string) string {
-	runes := []rune(strings.TrimSpace(content))
-	if len(runes) <= maxPromptContextRunes {
-		return string(runes)
-	}
-	return string(runes[:maxPromptContextRunes]) + "\n..."
-}
-
-// filterExcluded filters out memories in the exclusion set. If all are excluded, returns the original list to preserve coverage.
-func filterExcluded(entries []Entry, excludeFingerprints []string) []Entry {
-	if len(excludeFingerprints) == 0 || len(entries) == 0 {
-		return entries
-	}
-	excludeSet := make(map[string]struct{}, len(excludeFingerprints))
-	for _, fp := range excludeFingerprints {
-		excludeSet[fp] = struct{}{}
-	}
-	filtered := make([]Entry, 0, len(entries))
-	for _, entry := range entries {
-		if _, excluded := excludeSet[entry.Fingerprint]; !excluded {
-			filtered = append(filtered, entry)
+// entryMatchesAnyTerm returns true if any term appears as a case-insensitive substring
+// in the entry's content, source_note, type, or project_path.
+func entryMatchesAnyTerm(entry Entry, terms []string) bool {
+	haystack := strings.ToLower(entry.Content + "\n" + entry.SourceNote + "\n" + entry.Type + "\n" + entry.ProjectPath)
+	for _, term := range terms {
+		if strings.Contains(haystack, term) {
+			return true
 		}
 	}
-	if len(filtered) == 0 {
-		return entries
-	}
-	return filtered
-}
-
-// filterByScore retains memories with BM25 scores close to the top hit, filtering tail noise.
-// Lower (more negative) BM25 scores indicate lower relevance; the top hit is always retained.
-func filterByScore(entries []Entry, ranks []float64) []Entry {
-	if len(entries) <= 1 {
-		return entries
-	}
-	topRank := ranks[0]
-	absTop := math.Abs(topRank)
-	if absTop < 1e-9 {
-		return entries
-	}
-	filtered := make([]Entry, 0, len(entries))
-	for i, entry := range entries {
-		if i == 0 || math.Abs(ranks[i]-topRank)/absTop <= scoreFloorRatio {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
-}
-
-func buildFTSQuery(query string) string {
-	tokens := ftsTokenPattern.FindAllString(strings.ToLower(query), -1)
-	if len(tokens) == 0 {
-		return ""
-	}
-	if len(tokens) > 12 {
-		tokens = tokens[:12]
-	}
-	uniq := slices.Compact(tokens)
-	quoted := make([]string, 0, len(uniq))
-	for _, token := range uniq {
-		if token == "" {
-			continue
-		}
-		quoted = append(quoted, `"`+token+`"`)
-	}
-	return strings.Join(quoted, " OR ")
+	return false
 }
 
 func validateScope(scope string) error {
@@ -991,19 +727,6 @@ func clampConfidence(confidence int) int {
 		return 3
 	}
 	return min(max(confidence, 1), 5)
-}
-
-// EntriesInputHash returns the summary input hash for a set of memory entries.
-func EntriesInputHash(entries []Entry) string {
-	var builder strings.Builder
-	for _, entry := range entries {
-		builder.WriteString(entry.Fingerprint)
-		builder.WriteByte('\x00')
-		builder.WriteString(entry.UpdatedAt.UTC().Format(time.RFC3339Nano))
-		builder.WriteByte('\x00')
-	}
-	sum := sha256.Sum256([]byte(builder.String()))
-	return hex.EncodeToString(sum[:])
 }
 
 func errorsIsNoRows(err error) bool {

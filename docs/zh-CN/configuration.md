@@ -129,7 +129,6 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `memory.enabled` | `true` | 是否启用长期记忆，未配置时默认启用 |
 | `memory.model` | 空 | 后台记忆任务使用的模型；为空时使用产生该会话的模型 |
 
 ### Session
