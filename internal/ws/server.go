@@ -157,12 +157,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // sessionState maintains the state of a single session.
 type sessionState struct {
-	mu         sync.Mutex
-	cwd        string
-	model      string
-	turnMu     sync.Mutex
-	turnCtx    context.Context
-	turnCancel context.CancelFunc
+	mu              sync.Mutex
+	cwd             string
+	model           string
+	reasoningEffort string
+	turnMu          sync.Mutex
+	turnCtx         context.Context
+	turnCancel      context.CancelFunc
 	// running ensures only one turn executes at a time per session.
 	running atomic.Bool
 }
@@ -189,6 +190,18 @@ func (ss *sessionState) getModel() string {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	return ss.model
+}
+
+func (ss *sessionState) setReasoningEffort(effort string) {
+	ss.mu.Lock()
+	ss.reasoningEffort = effort
+	ss.mu.Unlock()
+}
+
+func (ss *sessionState) getReasoningEffort() string {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.reasoningEffort
 }
 
 // connState maintains all session states for a single WebSocket connection.
@@ -248,6 +261,8 @@ func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg Cl
 		s.handleModelOptions(ctx, conn)
 	case MsgSetModel:
 		s.handleSetModel(ctx, conn, msg, state)
+	case MsgSetReasoningEffort:
+		s.handleSetReasoningEffort(ctx, conn, msg, state)
 	case MsgSkillSummaries:
 		s.handleSkillSummaries(ctx, conn, msg)
 	default:
@@ -292,10 +307,12 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 		ss.setCWD(cwd)
 	}
 
-	// Determine model
+	// Determine model and reasoning effort
 	selectedModel := ""
+	selectedReasoningEffort := ""
 	if ss != nil {
 		selectedModel = ss.getModel()
+		selectedReasoningEffort = ss.getReasoningEffort()
 	}
 
 	// Build content parts
@@ -345,11 +362,13 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 	observer := s.makeObserver(turnCtx, conn, sessionID)
 
 	opts := runtime.TurnOptions{
-		SessionID: sessionID,
-		CWD:       cwd,
-		Model:     selectedModel,
-		Observer:  observer,
-		Parts:     parts,
+		SessionID:          sessionID,
+		CWD:                cwd,
+		Model:              selectedModel,
+		ReasoningEffort:    selectedReasoningEffort,
+		ReasoningEffortSet: selectedReasoningEffort != "",
+		Observer:           observer,
+		Parts:              parts,
 	}
 
 	result, err := s.rt.RunTurn(turnCtx, opts)
@@ -503,15 +522,24 @@ func (s *Server) handleDeleteSession(ctx context.Context, conn *websocket.Conn, 
 }
 
 // handleCompactSession handles a session compaction request.
+// Rejects compaction if a turn is currently running in the session to prevent concurrent transcript access.
 func (s *Server) handleCompactSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
 	ss := state.getSession(msg.SessionID)
+	if ss != nil && ss.running.Load() {
+		s.sendError(ctx, conn, msg.SessionID, "a turn is running in this session, send cancel first")
+		return
+	}
 	selectedModel := ""
+	selectedReasoningEffort := ""
 	if ss != nil {
 		selectedModel = ss.getModel()
+		selectedReasoningEffort = ss.getReasoningEffort()
 	}
 	result, err := s.rt.CompactSession(ctx, runtime.CompactOptions{
-		SessionID: msg.SessionID,
-		Model:     selectedModel,
+		SessionID:          msg.SessionID,
+		Model:              selectedModel,
+		ReasoningEffort:    selectedReasoningEffort,
+		ReasoningEffortSet: selectedReasoningEffort != "",
 	})
 	if err != nil {
 		s.sendError(ctx, conn, msg.SessionID, err.Error())
@@ -521,6 +549,9 @@ func (s *Server) handleCompactSession(ctx context.Context, conn *websocket.Conn,
 		Type:          MsgSessionCompacted,
 		SessionID:     result.SessionID,
 		ContextWindow: result.ContextWindow,
+		Compacted:     result.Compacted,
+		TokensBefore:  result.TokensBefore,
+		TokensAfter:   result.TokensAfter,
 	})
 }
 
@@ -590,6 +621,54 @@ func hasModel(options runtime.ModelOptions, value string) bool {
 	for _, model := range options.Models {
 		if model.Value == value {
 			return true
+		}
+	}
+	return false
+}
+
+// handleSetReasoningEffort validates and saves the reasoning effort for the specified session.
+func (s *Server) handleSetReasoningEffort(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
+	effort := strings.TrimSpace(msg.ReasoningEffort)
+	if effort == "" {
+		s.sendError(ctx, conn, msg.SessionID, "reasoning_effort is required")
+		return
+	}
+	if msg.SessionID == "" {
+		s.sendError(ctx, conn, "", "session_id is required for set_reasoning_effort")
+		return
+	}
+
+	options, err := s.rt.ModelOptions(ctx)
+	if err != nil {
+		s.sendError(ctx, conn, msg.SessionID, err.Error())
+		return
+	}
+
+	// Determine which model to validate against: session's model or default.
+	ss := state.getOrCreateSession(msg.SessionID)
+	modelValue := ss.getModel()
+	if modelValue == "" {
+		modelValue = options.Default
+	}
+	if !hasReasoningEffort(options, modelValue, effort) {
+		s.sendError(ctx, conn, msg.SessionID, fmt.Sprintf("reasoning_effort %q is not supported by model %q", effort, modelValue))
+		return
+	}
+
+	ss.setReasoningEffort(effort)
+	s.send(ctx, conn, ServerMessage{Type: MsgReasoningEffortSet, SessionID: msg.SessionID, ReasoningEffort: effort})
+}
+
+// hasReasoningEffort checks whether the given effort value is supported by the specified model.
+func hasReasoningEffort(options runtime.ModelOptions, modelValue, effort string) bool {
+	for _, m := range options.Models {
+		if m.Value == modelValue {
+			for _, re := range m.ReasoningEfforts {
+				if re.Value == effort {
+					return true
+				}
+			}
+			return false
 		}
 	}
 	return false

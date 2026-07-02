@@ -57,7 +57,7 @@ func (f *fakeRuntime) RunTurn(ctx context.Context, opts runtime.TurnOptions) (ru
 }
 
 func (f *fakeRuntime) CompactSession(ctx context.Context, opts runtime.CompactOptions) (runtime.CompactResult, error) {
-	return runtime.CompactResult{SessionID: opts.SessionID, ContextWindow: 1000000}, nil
+	return runtime.CompactResult{SessionID: opts.SessionID, ContextWindow: 1000000, Compacted: true, TokensBefore: 5000, TokensAfter: 2000}, nil
 }
 
 func (f *fakeRuntime) ModelOptions(ctx context.Context) (runtime.ModelOptions, error) {
@@ -444,6 +444,115 @@ func TestCompactSession(t *testing.T) {
 	}
 	if msg.ContextWindow != 1000000 {
 		t.Fatalf("context_window = %d", msg.ContextWindow)
+	}
+	if !msg.Compacted {
+		t.Fatalf("compacted = false, want true")
+	}
+	if msg.TokensBefore != 5000 || msg.TokensAfter != 2000 {
+		t.Fatalf("tokens = before=%d after=%d, want 5000/2000", msg.TokensBefore, msg.TokensAfter)
+	}
+}
+
+func TestCompactRejectedWhileTurnRunning(t *testing.T) {
+	rt := &blockingRuntime{}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	// Start a blocking turn
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "long task"})
+	recvMsg(t, conn) // turn_started
+
+	// Compact should be rejected
+	sendMsg(t, conn, ClientMessage{Type: MsgCompactSession, SessionID: "s1"})
+	msg := recvMsg(t, conn)
+	if msg.Type != MsgEvent || msg.Event != EventError {
+		t.Fatalf("msg = %#v, want event/error", msg)
+	}
+	if !strings.Contains(msg.Error, "turn is running") {
+		t.Fatalf("error = %q", msg.Error)
+	}
+
+	// Cancel turn for cleanup
+	sendMsg(t, conn, ClientMessage{Type: MsgCancel, SessionID: "s1"})
+	recvMsg(t, conn) // turn_finished
+}
+
+func TestSetReasoningEffort(t *testing.T) {
+	rt := &fakeRuntime{
+		modelOptions: runtime.ModelOptions{
+			Default: "gpt-5",
+			Models: []runtime.ModelOption{
+				{Value: "gpt-5", Name: "GPT-5", ReasoningEfforts: []runtime.ReasoningEffortOption{
+					{Value: "high", Name: "High"},
+					{Value: "low", Name: "Low"},
+				}},
+			},
+		},
+	}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	sendMsg(t, conn, ClientMessage{Type: MsgSetReasoningEffort, SessionID: "s1", ReasoningEffort: "high"})
+	msg := recvMsg(t, conn)
+	if msg.Type != MsgReasoningEffortSet || msg.ReasoningEffort != "high" {
+		t.Fatalf("msg = %#v", msg)
+	}
+
+	// Prompt should carry the reasoning effort
+	sendMsg(t, conn, ClientMessage{Type: MsgPrompt, SessionID: "s1", Content: "hello"})
+	recvMsg(t, conn) // turn_started
+	recvMsg(t, conn) // model_delta
+	recvMsg(t, conn) // turn_finished
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.lastTurnOpts.ReasoningEffort != "high" || !rt.lastTurnOpts.ReasoningEffortSet {
+		t.Fatalf("reasoning effort = %q, set = %v", rt.lastTurnOpts.ReasoningEffort, rt.lastTurnOpts.ReasoningEffortSet)
+	}
+}
+
+func TestSetReasoningEffortRejectsInvalid(t *testing.T) {
+	rt := &fakeRuntime{
+		modelOptions: runtime.ModelOptions{
+			Default: "gpt-5",
+			Models: []runtime.ModelOption{
+				{Value: "gpt-5", Name: "GPT-5", ReasoningEfforts: []runtime.ReasoningEffortOption{
+					{Value: "high", Name: "High"},
+				}},
+			},
+		},
+	}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	sendMsg(t, conn, ClientMessage{Type: MsgSetReasoningEffort, SessionID: "s1", ReasoningEffort: "max"})
+	msg := recvMsg(t, conn)
+	if msg.Type != MsgEvent || msg.Event != EventError {
+		t.Fatalf("msg = %#v, want event/error", msg)
+	}
+	if !strings.Contains(msg.Error, "not supported") {
+		t.Fatalf("error = %q", msg.Error)
+	}
+}
+
+func TestSetReasoningEffortRequiresSessionID(t *testing.T) {
+	rt := &fakeRuntime{
+		modelOptions: runtime.ModelOptions{
+			Models: []runtime.ModelOption{
+				{Value: "gpt-5", ReasoningEfforts: []runtime.ReasoningEffortOption{{Value: "high"}}},
+			},
+		},
+	}
+	_, addr := startTestServer(t, rt)
+	conn := dialWS(t, addr)
+
+	sendMsg(t, conn, ClientMessage{Type: MsgSetReasoningEffort, ReasoningEffort: "high"})
+	msg := recvMsg(t, conn)
+	if msg.Type != MsgEvent || msg.Event != EventError {
+		t.Fatalf("msg = %#v", msg)
+	}
+	if !strings.Contains(msg.Error, "session_id is required") {
+		t.Fatalf("error = %q", msg.Error)
 	}
 }
 

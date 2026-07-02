@@ -8,14 +8,15 @@ import (
 
 // ClientMessage holds the common fields for all client-sent messages.
 type ClientMessage struct {
-	Type      string        `json:"type"`
-	SessionID string        `json:"session_id,omitempty"`
-	CWD       string        `json:"cwd,omitempty"`
-	Content   string        `json:"content,omitempty"`
-	Parts     []ContentPart `json:"parts,omitempty"`
-	Model     string        `json:"model,omitempty"`
-	Cursor    string        `json:"cursor,omitempty"`
-	Limit     int           `json:"limit,omitempty"`
+	Type            string        `json:"type"`
+	SessionID       string        `json:"session_id,omitempty"`
+	CWD             string        `json:"cwd,omitempty"`
+	Content         string        `json:"content,omitempty"`
+	Parts           []ContentPart `json:"parts,omitempty"`
+	Model           string        `json:"model,omitempty"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	Cursor          string        `json:"cursor,omitempty"`
+	Limit           int           `json:"limit,omitempty"`
 }
 
 // ContentPart describes a single content segment within a message.
@@ -28,24 +29,28 @@ type ContentPart struct {
 
 // ServerMessage holds the common fields for all server-sent messages.
 type ServerMessage struct {
-	Type          string         `json:"type"`
-	Event         string         `json:"event,omitempty"`
-	Step          int            `json:"step,omitempty"`
-	Content       string         `json:"content,omitempty"`
-	ToolCall      *ToolCallInfo  `json:"tool_call,omitempty"`
-	Result        string         `json:"result,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	HasError      bool           `json:"error_flag,omitempty"`
-	SessionID     string         `json:"session_id,omitempty"`
-	Model         string         `json:"model,omitempty"`
-	Sessions      []SessionInfo  `json:"sessions,omitempty"`
-	Session       *SessionDetail `json:"session,omitempty"`
-	Messages      []MessageInfo  `json:"messages,omitempty"`
-	Default       string         `json:"default,omitempty"`
-	Models        []ModelInfo    `json:"models,omitempty"`
-	Skills        []SkillInfo    `json:"skills,omitempty"`
-	NextCursor    string         `json:"next_cursor,omitempty"`
-	ContextWindow int            `json:"context_window,omitempty"`
+	Type            string         `json:"type"`
+	Event           string         `json:"event,omitempty"`
+	Step            int            `json:"step,omitempty"`
+	Content         string         `json:"content,omitempty"`
+	ToolCall        *ToolCallInfo  `json:"tool_call,omitempty"`
+	Result          string         `json:"result,omitempty"`
+	Error           string         `json:"error,omitempty"`
+	HasError        bool           `json:"error_flag,omitempty"`
+	SessionID       string         `json:"session_id,omitempty"`
+	Model           string         `json:"model,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Sessions        []SessionInfo  `json:"sessions,omitempty"`
+	Session         *SessionDetail `json:"session,omitempty"`
+	Messages        []MessageInfo  `json:"messages,omitempty"`
+	Default         string         `json:"default,omitempty"`
+	Models          []ModelInfo    `json:"models,omitempty"`
+	Skills          []SkillInfo    `json:"skills,omitempty"`
+	NextCursor      string         `json:"next_cursor,omitempty"`
+	ContextWindow   int            `json:"context_window,omitempty"`
+	Compacted       bool           `json:"compacted,omitempty"`
+	TokensBefore    int            `json:"tokens_before,omitempty"`
+	TokensAfter     int            `json:"tokens_after,omitempty"`
 }
 
 // ToolCallInfo describes the display information for a tool call.
@@ -106,27 +111,29 @@ type SkillInfo struct {
 
 // Client message types.
 const (
-	MsgPrompt         = "prompt"
-	MsgCancel         = "cancel"
-	MsgListSessions   = "list_sessions"
-	MsgShowSession    = "show_session"
-	MsgDeleteSession  = "delete_session"
-	MsgCompactSession = "compact_session"
-	MsgModelOptions   = "model_options"
-	MsgSetModel       = "set_model"
-	MsgSkillSummaries = "skill_summaries"
+	MsgPrompt             = "prompt"
+	MsgCancel             = "cancel"
+	MsgListSessions       = "list_sessions"
+	MsgShowSession        = "show_session"
+	MsgDeleteSession      = "delete_session"
+	MsgCompactSession     = "compact_session"
+	MsgModelOptions       = "model_options"
+	MsgSetModel           = "set_model"
+	MsgSetReasoningEffort = "set_reasoning_effort"
+	MsgSkillSummaries     = "skill_summaries"
 )
 
 // Server message types.
 const (
-	MsgEvent            = "event"
-	MsgSessions         = "sessions"
-	MsgSessionDetail    = "session_detail"
-	MsgSessionDeleted   = "session_deleted"
-	MsgSessionCompacted = "session_compacted"
-	MsgModelOptionsResp = "model_options"
-	MsgModelSet         = "model_set"
-	MsgSkills           = "skills"
+	MsgEvent              = "event"
+	MsgSessions           = "sessions"
+	MsgSessionDetail      = "session_detail"
+	MsgSessionDeleted     = "session_deleted"
+	MsgSessionCompacted   = "session_compacted"
+	MsgModelOptionsResp   = "model_options"
+	MsgModelSet           = "model_set"
+	MsgReasoningEffortSet = "reasoning_effort_set"
+	MsgSkills             = "skills"
 )
 
 // Event type (corresponding to agent.EventType).
