@@ -7,7 +7,7 @@ INSTALL_DIR="${ATLAS_INSTALL_DIR:-$HOME/.local/bin}"
 info() { printf '\033[1;34m%s\033[0m\n' "$*"; }
 err()  { printf '\033[1;31merror: %s\033[0m\n' "$*" >&2; exit 1; }
 
-# 解析参数
+# Parse arguments
 version=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,7 +37,7 @@ EOF
   esac
 done
 
-# 检测 OS
+# Detect OS
 OS="$(uname -s)"
 case "$OS" in
   Linux)  os="linux" ;;
@@ -45,7 +45,7 @@ case "$OS" in
   *)      err "Unsupported OS: $OS (try building from source: https://github.com/$REPO)" ;;
 esac
 
-# 检测 ARCH
+# Detect architecture
 ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64)        arch="amd64" ;;
@@ -53,7 +53,7 @@ case "$ARCH" in
   *)             err "Unsupported architecture: $ARCH" ;;
 esac
 
-# 查询版本
+# Resolve version
 if [[ -z "$version" ]]; then
   info "Fetching latest version..."
   version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
@@ -66,20 +66,20 @@ url="https://github.com/$REPO/releases/download/v${version}/${artifact}"
 
 info "Installing Atlas v${version} (${os}/${arch})"
 
-# 下载
+# Download
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
 info "Downloading $artifact..."
 curl -fsSL "$url" -o "$tmpdir/$artifact" || err "Download failed: $url"
 
-# 解压
+# Extract
 mkdir -p "$INSTALL_DIR"
 tar xzf "$tmpdir/$artifact" -C "$tmpdir"
 mv "$tmpdir/atlas" "$INSTALL_DIR/atlas"
 chmod +x "$INSTALL_DIR/atlas"
 
-# PATH 检查
+# PATH check
 case ":$PATH:" in
   *":$INSTALL_DIR:"*)
     info "Atlas installed to $INSTALL_DIR/atlas"
@@ -101,7 +101,7 @@ case ":$PATH:" in
     ;;
 esac
 
-# 验证
+# Verify
 if "$INSTALL_DIR/atlas" version >/dev/null 2>&1; then
   info "Verification: $("$INSTALL_DIR/atlas" version)"
 else

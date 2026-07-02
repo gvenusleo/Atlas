@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "gvenusleo/atlas"
 $InstallDir = if ($env:ATLAS_INSTALL_DIR) { $env:ATLAS_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".local\bin" }
 
-# 解析参数
+# Parse arguments
 $version = ""
 for ($i = 0; $i -lt $args.Length; $i++) {
     switch ($args[$i]) {
@@ -15,14 +15,14 @@ for ($i = 0; $i -lt $args.Length; $i++) {
     }
 }
 
-# 检测 ARCH
+# Detect architecture
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "amd64" }
     "ARM64" { "arm64" }
     default { Write-Error "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE"; exit 1 }
 }
 
-# 查询版本
+# Resolve version
 if (-not $version) {
     Write-Host "Fetching latest version..."
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
@@ -38,20 +38,20 @@ $url = "https://github.com/$Repo/releases/download/v$version/$artifact"
 
 Write-Host "Installing Atlas v$version (windows/$arch)"
 
-# 下载
+# Download
 $tmpdir = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "atlas-install-$(Get-Random)")
 $zipPath = Join-Path $tmpdir.FullName $artifact
 
 Write-Host "Downloading $artifact..."
 Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
 
-# 解压
+# Extract
 if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 }
 Expand-Archive -Path $zipPath -DestinationPath $InstallDir -Force
 
-# PATH 检查
+# PATH check
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$InstallDir*") {
     Write-Host ""
@@ -65,11 +65,11 @@ if ($userPath -notlike "*$InstallDir*") {
 
 Write-Host "Atlas installed to $InstallDir\atlas.exe"
 
-# 验证
+# Verify
 $atlasExe = Join-Path $InstallDir "atlas.exe"
 if (Test-Path $atlasExe) {
     Write-Host "Verification: $(& $atlasExe version)"
 }
 
-# 清理
+# Cleanup
 Remove-Item -Recurse -Force $tmpdir.FullName -ErrorAction SilentlyContinue
