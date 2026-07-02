@@ -269,8 +269,11 @@ func (r *Runtime) openDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Close closes the shared database connection. It waits for all active DB users
-// (turns, memory jobs, etc.) to finish before closing. Safe to call multiple times.
+// Close closes the shared database connection. It waits for all active
+// long-running operations (turns, compactions, memory jobs) to finish
+// before closing. Quick read operations (list, show, delete) are
+// synchronous and complete before the caller reaches Close.
+// Safe to call multiple times.
 func (r *Runtime) Close() error {
 	r.dbWG.Wait()
 	r.dbMu.Lock()
@@ -286,6 +289,9 @@ func (r *Runtime) Close() error {
 
 // RunTurn restores or creates a session, executes an agent turn, and saves the transcript.
 func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, error) {
+	r.dbWG.Add(1)
+	defer r.dbWG.Done()
+
 	parts := turnContentParts(opts)
 	promptText := strings.TrimSpace(model.TextFromParts(parts))
 	if len(parts) == 0 || promptText == "" && !hasImageParts(parts) {
@@ -717,6 +723,9 @@ func emit(observer agent.Observer, event agent.Event) {
 
 // CompactSession manually compacts the active context of the specified session.
 func (r *Runtime) CompactSession(ctx context.Context, opts CompactOptions) (CompactResult, error) {
+	r.dbWG.Add(1)
+	defer r.dbWG.Done()
+
 	if err := session.ValidateID(opts.SessionID); err != nil {
 		return CompactResult{}, err
 	}
@@ -1231,8 +1240,6 @@ func (r *Runtime) openSessionStore(ctx context.Context, cfg config.SessionConfig
 	if err != nil {
 		return nil, err
 	}
-	r.dbWG.Add(1)
-	defer r.dbWG.Done()
 	db, err := r.openDB(ctx, dbPath)
 	if err != nil {
 		return nil, err
@@ -1252,8 +1259,6 @@ func (r *Runtime) openMemoryStore(ctx context.Context, cfg config.SessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	r.dbWG.Add(1)
-	defer r.dbWG.Done()
 	db, err := r.openDB(ctx, dbPath)
 	if err != nil {
 		return nil, err

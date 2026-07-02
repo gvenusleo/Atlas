@@ -10,7 +10,7 @@ internal/acp           ACP 协议适配与客户端能力桥接
 internal/agent         headless agent loop（核心循环）
 internal/compact       上下文压缩规划与摘要
 internal/config        配置加载与校验
-internal/memory        长期记忆条目、摘要、FTS 检索与任务队列
+internal/memory        长期记忆条目、摘要、子串检索与任务队列
 internal/model         通用聊天协议与 Provider 接口
 internal/prompt        系统提示词构造
 internal/provider      按 API 格式实现的 Provider 适配器

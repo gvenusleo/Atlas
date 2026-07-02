@@ -90,7 +90,7 @@ Key constraints:
 
 ## Long-Term Memory
 
-The memory system works asynchronously via a background worker. There are three trigger conditions: session message count reaches an incremental threshold, the user explicitly asks to remember something, or context compaction completes. When triggered, an extraction task is enqueued. The worker only processes new messages since the last boundary, calls the model to extract memory entries and writes them to the database, then refreshes summaries for affected scopes. Relevant memories are automatically retrieved and injected into the system prompt at the start of the next session.
+The memory system works asynchronously via a background worker. There are three trigger conditions: session message count reaches an incremental threshold, the user explicitly asks to remember something, or context compaction completes. When triggered, an extraction task is enqueued. The worker only processes new messages since the last boundary, calls the model to extract memory entries and writes them to the database, then refreshes summaries for affected scopes. Relevant memories are available on demand via the `memory_search` tool, which the model can call to retrieve context from prior sessions.
 
 Memory types:
 

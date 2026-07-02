@@ -10,7 +10,7 @@ internal/acp           ACP protocol adapter and client capability bridge
 internal/agent         headless agent loop (core loop)
 internal/compact       context compaction planning and summarization
 internal/config        config loading and validation
-internal/memory        long-term memory entries, summaries, FTS retrieval, and task queue
+internal/memory        long-term memory entries, summaries, substring retrieval, and task queue
 internal/model         generic chat protocol and Provider interface
 internal/prompt        system prompt construction
 internal/provider      provider adapters by API format

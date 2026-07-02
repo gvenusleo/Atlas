@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -90,7 +91,6 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	a.SetAgentConnection(conn)
 	workerCtx, cancelWorker := context.WithCancel(ctx)
-	defer cancelWorker()
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)
@@ -99,11 +99,15 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}()
 
+	// Cancel the worker before waiting for it to finish, ensuring Run returns
+	// promptly regardless of whether ctx or conn triggered the exit.
 	select {
 	case <-ctx.Done():
+		cancelWorker()
 		<-workerDone
 		return ctx.Err()
 	case <-conn.Done():
+		cancelWorker()
 		<-workerDone
 		return nil
 	}
@@ -116,6 +120,8 @@ type sessionState struct {
 	additionalDirectories []string
 	cancel                context.CancelFunc
 	turn                  int
+	// running prevents concurrent turns within the same session.
+	running atomic.Bool
 }
 
 // Agent adapts the Atlas runtime to ACP agent methods.
@@ -127,7 +133,7 @@ type Agent struct {
 	clientCapabilities acpsdk.ClientCapabilities
 
 	mu                sync.Mutex
-	sessions          map[string]sessionState
+	sessions          map[string]*sessionState
 	terminalToolCalls map[string]struct{}
 }
 
@@ -135,7 +141,7 @@ type Agent struct {
 func NewAgent(rt Runtime) *Agent {
 	return &Agent{
 		rt:                rt,
-		sessions:          make(map[string]sessionState),
+		sessions:          make(map[string]*sessionState),
 		terminalToolCalls: make(map[string]struct{}),
 	}
 }
@@ -230,6 +236,11 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		return a.runCommandPrompt(ctx, params.SessionId, state, instruction)
 	}
 	selectedSkills := skillNames(promptText, a.skillCommands(ctx, state.cwd))
+	// Reject if a turn is already running in this session, matching WS/WeChat behavior.
+	if !state.running.CompareAndSwap(false, true) {
+		return acpsdk.PromptResponse{}, fmt.Errorf("a turn is already running in session %q, send cancel first", params.SessionId)
+	}
+	defer state.running.Store(false)
 	a.cancelSession(string(params.SessionId))
 	turnCtx, cancel := context.WithCancel(ctx)
 	turn, ok := a.setSessionCancel(string(params.SessionId), cancel)
@@ -886,7 +897,11 @@ func (a *Agent) skillCommands(ctx context.Context, cwd string) []runtime.SkillSu
 }
 
 // runCommandPrompt executes an ACP slash command without entering a model turn.
-func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId, state sessionState, instruction string) (acpsdk.PromptResponse, error) {
+func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId, state *sessionState, instruction string) (acpsdk.PromptResponse, error) {
+	if !state.running.CompareAndSwap(false, true) {
+		return acpsdk.PromptResponse{}, fmt.Errorf("a turn is already running in session %q, send cancel first", sessionID)
+	}
+	defer state.running.Store(false)
 	a.cancelSession(string(sessionID))
 	turnCtx, cancel := context.WithCancel(ctx)
 	turn, ok := a.setSessionCancel(string(sessionID), cancel)
@@ -923,21 +938,24 @@ func (a *Agent) runCommandPrompt(ctx context.Context, sessionID acpsdk.SessionId
 func (a *Agent) setSession(id, cwd, model, reasoningEffort string, additionalDirectories []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	state := a.sessions[id]
+	state, ok := a.sessions[id]
+	if !ok {
+		state = &sessionState{}
+		a.sessions[id] = state
+	}
 	state.cwd = cwd
 	state.model = model
 	state.reasoningEffort = reasoningEffort
 	state.additionalDirectories = append([]string(nil), additionalDirectories...)
-	a.sessions[id] = state
 }
 
-func (a *Agent) setSessionState(id string, state sessionState) {
+func (a *Agent) setSessionState(id string, state *sessionState) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions[id] = state
 }
 
-func (a *Agent) getSession(id string) (sessionState, bool) {
+func (a *Agent) getSession(id string) (*sessionState, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	state, ok := a.sessions[id]
@@ -952,7 +970,7 @@ func (a *Agent) deleteSessionState(id string) {
 	state := a.sessions[id]
 	delete(a.sessions, id)
 	a.mu.Unlock()
-	if state.cancel != nil {
+	if state != nil && state.cancel != nil {
 		state.cancel()
 	}
 }
@@ -966,7 +984,6 @@ func (a *Agent) setSessionCancel(id string, cancel context.CancelFunc) (int, boo
 	}
 	state.turn++
 	state.cancel = cancel
-	a.sessions[id] = state
 	return state.turn, true
 }
 
@@ -978,15 +995,14 @@ func (a *Agent) clearSessionCancel(id string, turn int) {
 		return
 	}
 	state.cancel = nil
-	a.sessions[id] = state
 }
 
 func (a *Agent) cancelSession(id string) {
 	a.mu.Lock()
-	cancel := a.sessions[id].cancel
+	state := a.sessions[id]
 	a.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if state != nil && state.cancel != nil {
+		state.cancel()
 	}
 }
 

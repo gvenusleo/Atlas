@@ -1816,14 +1816,14 @@ func TestSetSessionConfigOptionUpdatesConfig(t *testing.T) {
 		name       string
 		configID   acpsdk.SessionConfigId
 		value      string
-		checkState func(t *testing.T, state sessionState)
+		checkState func(t *testing.T, state *sessionState)
 		checkRun   func(t *testing.T, opts atlasruntime.TurnOptions)
 	}{
 		{
 			name:     "model",
 			configID: modelSessionConfigID(),
 			value:    "other-model",
-			checkState: func(t *testing.T, state sessionState) {
+			checkState: func(t *testing.T, state *sessionState) {
 				if state.model != "other-model" {
 					t.Fatalf("session model = %q", state.model)
 				}
@@ -1844,7 +1844,7 @@ func TestSetSessionConfigOptionUpdatesConfig(t *testing.T) {
 			name:     "reasoning_effort",
 			configID: reasoningEffortSessionConfigID(),
 			value:    "max",
-			checkState: func(t *testing.T, state sessionState) {
+			checkState: func(t *testing.T, state *sessionState) {
 				if state.reasoningEffort != "max" {
 					t.Fatalf("session reasoning effort = %q", state.reasoningEffort)
 				}

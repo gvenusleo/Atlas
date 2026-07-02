@@ -69,6 +69,9 @@ func (r *Runtime) RunMemoryWorker(ctx context.Context) error {
 
 // processMemoryJobs batch-claims background jobs and creates providers by job model; a single failure only affects that job.
 func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID string) (int, error) {
+	r.dbWG.Add(1)
+	defer r.dbWG.Done()
+
 	cfg, err := r.deps.LoadConfig()
 	if err != nil {
 		return 0, err

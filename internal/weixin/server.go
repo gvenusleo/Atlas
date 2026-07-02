@@ -100,7 +100,6 @@ func NewServer(opts ServerOptions) (*Server, error) {
 // Run starts long-polling WeChat messages until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	workerCtx, cancelWorker := context.WithCancel(ctx)
-	defer cancelWorker()
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)
@@ -108,6 +107,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 
 	err := s.pollLoop(ctx)
+	cancelWorker()
 	<-workerDone
 	return err
 }
