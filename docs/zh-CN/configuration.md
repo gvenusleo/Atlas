@@ -65,7 +65,6 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
     "compaction_trigger_ratio": 0.8
   },
   "memory": {
-    "enabled": true,
     "model": ""
   },
   "session": {

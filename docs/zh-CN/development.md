@@ -23,6 +23,7 @@ internal/tool          工具注册表与内置工具
 internal/transcript    内存消息序列
 internal/version       版本信息
 internal/weixin        微信通道
+internal/ws            WebSocket 通道
 ```
 
 ## 构建与测试
@@ -31,7 +32,7 @@ internal/weixin        微信通道
 go build ./cmd/atlas           # 构建
 go test ./...                  # 运行全部测试
 go test ./internal/agent/...   # 运行单个包的测试
-just check                     # fmt + tidy + test（需安装 just）
+just ci                        # fmt + tidy + build + vet + race test（需安装 just）
 ```
 
 ## 设计原则
@@ -39,4 +40,4 @@ just check                     # fmt + tidy + test（需安装 just）
 - **小而可验证**：agent loop 保持纯粹无副作用，所有副作用集中在 runtime，便于用 fake Provider 测试。
 - **不提前抽象**：两个真实调用点出现前不抽象，不为"可能以后"保留两套接口。
 - **本地权限边界**：不引入权限抽象，工具拥有本机进程的全部权限。
-- **单一核心**：CLI、ACP、微信共享同一个 `runtime.Runtime` 和 agent loop，通道层只做协议适配。
+- **单一核心**：CLI、ACP、微信、WebSocket 共享同一个 `runtime.Runtime` 和 agent loop，通道层只做协议适配。

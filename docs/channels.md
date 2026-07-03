@@ -76,6 +76,7 @@ The WebSocket channel is designed for LAN-only use with no authentication. It ex
 - Streaming events: model deltas, reasoning deltas, tool calls
 - Session listing, detail, deletion, compaction
 - Model switching and listing
+- Reasoning effort switching
 - Skill summaries
 - Turn cancellation
 - Long-term memory background worker

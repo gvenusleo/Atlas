@@ -23,6 +23,7 @@ internal/tool          tool registry and built-in tools
 internal/transcript    in-memory message sequence
 internal/version       version info
 internal/weixin        WeChat channel
+internal/ws            WebSocket channel
 ```
 
 ## Build and Test
@@ -31,7 +32,7 @@ internal/weixin        WeChat channel
 go build ./cmd/atlas           # build
 go test ./...                  # run all tests
 go test ./internal/agent/...   # run a single package's tests
-just check                     # fmt + tidy + test (requires just)
+just ci                        # fmt + tidy + build + vet + race test (requires just)
 ```
 
 ## Design Principles
@@ -39,4 +40,4 @@ just check                     # fmt + tidy + test (requires just)
 - **Small and verifiable**: the agent loop stays pure and side-effect-free. All side effects are concentrated in runtime, making it easy to test with fake providers.
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
 - **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
-- **Single core**: CLI, ACP, and WeChat share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.
+- **Single core**: CLI, ACP, WeChat, and WebSocket share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.

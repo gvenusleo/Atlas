@@ -17,6 +17,7 @@
 | `web_search` | 使用 Tavily 搜索公网网页，需配置 `services.tavily.api_key` |
 | `web_fetch` | 使用 Tavily 提取公网网页内容，需配置 `services.tavily.api_key` |
 | `todo_write` | 管理多步骤任务的结构化任务列表，每次调用全量替换 |
+| `memory_search` | 按关键词搜索长期记忆条目；记忆存储可用时自动注册 |
 
 ## 任务追踪
 

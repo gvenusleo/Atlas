@@ -65,7 +65,6 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
     "compaction_trigger_ratio": 0.8
   },
   "memory": {
-    "enabled": true,
     "model": ""
   },
   "session": {

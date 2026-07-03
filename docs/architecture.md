@@ -12,6 +12,7 @@ graph TD
         CLI[CLI]
         ACP[ACP Adapter]
         WX[WeChat Channel]
+        WS[WebSocket Channel]
     end
 
     subgraph Orchestration Layer
@@ -39,6 +40,7 @@ graph TD
     CLI --> RT
     ACP --> RT
     WX --> RT
+    WS --> RT
     RT --> AG
     RT --> MW
     AG --> PR
