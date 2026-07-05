@@ -239,6 +239,12 @@ func toAPIMessages(req model.ChatRequest) []apiMessage {
 		})
 	}
 	for _, msg := range req.Messages {
+		// Skip assistant messages with no content, no parts, and no tool calls.
+		// These result from interrupted streams and cause API rejection because
+		// the serialized content is an empty array, which some APIs treat as missing.
+		if msg.Role == model.RoleAssistant && msg.Content == "" && len(msg.Parts) == 0 && len(msg.ToolCalls) == 0 {
+			continue
+		}
 		messages = append(messages, toAPIMessage(msg))
 	}
 	return messages
@@ -351,6 +357,13 @@ func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.Chat
 	}
 	if !sawChoice {
 		return model.ChatResponse{}, fmt.Errorf("chat completion stream returned no choices")
+	}
+	// An empty finish reason means the stream was interrupted before the model
+	// finished generating (e.g. connection dropped mid-stream). Returning a
+	// partial response would produce an assistant message with empty content,
+	// which the API rejects on the next request.
+	if finishReason == "" {
+		return model.ChatResponse{}, fmt.Errorf("chat completion stream ended without finish reason")
 	}
 	return model.ChatResponse{
 		Content:          content.String(),

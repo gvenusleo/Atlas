@@ -332,7 +332,10 @@ func TestStreamSendsJSONResponseFormat(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatal(err)
 		}
-		writeSSE(w, `{"type":"response.output_text.delta","delta":"{}"}`)
+		writeSSE(w,
+			`{"type":"response.output_text.delta","delta":"{}"}`,
+			`{"type":"response.completed","response":{"status":"completed"}}`,
+		)
 	}))
 	defer server.Close()
 
@@ -484,6 +487,21 @@ func TestStreamRejectsNoEvents(t *testing.T) {
 	provider := newTestProvider(t, server.URL)
 	if _, err := provider.Stream(context.Background(), model.ChatRequest{}, nil); err == nil {
 		t.Fatal("Stream() error = nil")
+	}
+}
+
+// TestStreamRejectsMissingCompletion verifies that a stream interrupted before
+// response.completed is received returns an error instead of a partial response.
+func TestStreamRejectsMissingCompletion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Send a delta event but never send response.completed, then [DONE].
+		writeSSE(w, `{"type":"response.output_text.delta","delta":"partial"}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{}, nil); err == nil {
+		t.Fatal("Stream() error = nil, want error for missing completion")
 	}
 }
 

@@ -399,6 +399,58 @@ func TestStreamRejectsNoChoices(t *testing.T) {
 	}
 }
 
+// TestStreamRejectsMissingFinishReason verifies that a stream interrupted before
+// the model finishes (no finish_reason) returns an error instead of a partial response.
+func TestStreamRejectsMissingFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Send reasoning deltas but never send a finish_reason, then [DONE].
+		writeSSE(w, `{"choices":[{"delta":{"reasoning_content":"thinking"},"finish_reason":null}]}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	if _, err := provider.Stream(context.Background(), model.ChatRequest{}, nil); err == nil {
+		t.Fatal("Stream() error = nil, want error for missing finish reason")
+	}
+}
+
+// TestStreamSkipsEmptyAssistantMessage verifies that assistant messages with no
+// content, no parts, and no tool calls are skipped when building the request,
+// preventing an empty content array that some APIs reject as missing.
+func TestStreamSkipsEmptyAssistantMessage(t *testing.T) {
+	var gotReq chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		writeSSE(w, `{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(t, server.URL)
+	_, err := provider.Stream(context.Background(), model.ChatRequest{
+		Messages: []model.Message{
+			{Role: model.RoleUser, Content: "first"},
+			// Simulate an assistant message left by an interrupted stream.
+			{Role: model.RoleAssistant, ReasoningContent: "partial thinking"},
+			{Role: model.RoleUser, Content: "second"},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	// The empty assistant message should be skipped, leaving: system? no, user, user.
+	if len(gotReq.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (empty assistant skipped)", len(gotReq.Messages))
+	}
+	if gotReq.Messages[0].Role != "user" || gotReq.Messages[0].Content == nil {
+		t.Fatalf("message 0 = %#v", gotReq.Messages[0])
+	}
+	if gotReq.Messages[1].Role != "user" || gotReq.Messages[1].Content == nil {
+		t.Fatalf("message 1 = %#v", gotReq.Messages[1])
+	}
+}
+
 func TestNewRejectsInvalidConfig(t *testing.T) {
 	tests := []struct {
 		name   string

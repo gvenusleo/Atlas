@@ -361,6 +361,12 @@ func parseStream(body io.Reader, emit func(model.StreamEvent) error) (model.Chat
 	if !sawEvent {
 		return model.ChatResponse{}, fmt.Errorf("responses stream returned no events")
 	}
+	// An empty status means response.completed was never received — the stream
+	// was interrupted before the model finished. Returning a partial response
+	// would produce an assistant message with empty content.
+	if status == "" {
+		return model.ChatResponse{}, fmt.Errorf("responses stream ended without completion")
+	}
 	return model.ChatResponse{
 		Content:          content.String(),
 		ReasoningContent: reasoningContent.String(),
