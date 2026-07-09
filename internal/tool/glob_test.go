@@ -17,7 +17,23 @@ func TestGlobRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	want := "b.txt\nnested/"
+	want := "b.txt"
+	if got != want {
+		t.Fatalf("Run() = %q, want %q", got, want)
+	}
+}
+
+func TestGlobRunBraceExpansion(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "config", "a.js"))
+	writeTestFile(t, filepath.Join(dir, "config", "b.json"))
+	writeTestFile(t, filepath.Join(dir, "config", "c.txt"))
+
+	got, err := (Glob{}).Run(context.Background(), `{"path":`+quoteJSON(dir)+`,"pattern":"**/config/*.{js,json}"}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := "config/a.js\nconfig/b.json"
 	if got != want {
 		t.Fatalf("Run() = %q, want %q", got, want)
 	}
@@ -51,7 +67,7 @@ func TestGlobRunSkipsVCSMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	want := ".github/\n.github/workflows/\n.github/workflows/ci.yml\nkeep.txt"
+	want := ".github/workflows/ci.yml\nkeep.txt"
 	if got != want {
 		t.Fatalf("Run() = %q, want %q", got, want)
 	}

@@ -68,6 +68,22 @@ func TestGrepRunIncludeGlob(t *testing.T) {
 	}
 }
 
+func TestGrepRunIncludeBraceGlob(t *testing.T) {
+	dir := t.TempDir()
+	writeTextFile(t, filepath.Join(dir, "a.js"), "needle\n")
+	writeTextFile(t, filepath.Join(dir, "b.json"), "needle\n")
+	writeTextFile(t, filepath.Join(dir, "c.txt"), "needle\n")
+
+	got, err := (Grep{}).Run(context.Background(), grepArgs(dir, "needle", "*.{js,json}"))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := "a.js:1:needle\nb.json:1:needle"
+	if got != want {
+		t.Fatalf("Run() = %q, want %q", got, want)
+	}
+}
+
 func TestGrepRunRespectsGitignore(t *testing.T) {
 	dir := t.TempDir()
 	writeTextFile(t, filepath.Join(dir, ".gitignore"), "ignored.txt\n")

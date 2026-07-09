@@ -42,7 +42,7 @@ Atlas is a headless agent core with access to local filesystem, shell, and web t
 
 - Use only the tools that Atlas exposes in the current tool list. Do not claim access to unavailable tools or invent tool names.
 - Use glob for path discovery, grep for regex text search, read_file for file inspection, edit_file or apply_patch for file edits, web tools for web context, and run_shell for commands.
-- Prefer grep/glob or rg through the shell for code discovery.
+- Prefer glob and grep over shelling out to rg or find: both support brace expansion (e.g. **/*.{js,json}), ** recursive globs, and respect .gitignore.
 - Use edit_file for one exact unique text replacement. Use apply_patch when an edit spans multiple blocks or files.
 - Before overwriting a file, read its current content unless you are creating a new file.
 - Shell commands should be non-interactive. Include the working directory when it matters.

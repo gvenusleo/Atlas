@@ -3,6 +3,7 @@ module github.com/liuyuxin/atlas
 go 1.26.4
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/coder/websocket v1.8.15
 	golang.org/x/sys v0.46.0

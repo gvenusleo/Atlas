@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
@@ -83,6 +84,10 @@ func ParseGrepArgs(arguments string) (GrepArgs, error) {
 	return args, nil
 }
 
+// grep searches root for pattern. Directories prefer ripgrep for speed and
+// brace-expansion support in the include filter, falling back to a Go regexp
+// walk when rg is unavailable or fails. Single files always use the Go path.
+// Output is "rel:line:content" lines, sorted, so ACP can parse locations.
 func grep(ctx context.Context, root, pattern, include string, limit int) (string, error) {
 	info, err := os.Stat(root)
 	if err != nil {
@@ -95,20 +100,33 @@ func grep(ctx context.Context, root, pattern, include string, limit int) (string
 	if err := validatePathGlob(include, "grep include"); err != nil {
 		return "", err
 	}
+
 	if !info.IsDir() {
-		matched, err := matchesIncludeGlob(filepath.Base(root), include, "grep include")
-		if err != nil {
-			return "", err
-		}
-		if !matched {
+		if !matchIncludePattern(include, filepath.Base(root)) {
 			return "No matches found", nil
 		}
 		matches, err := grepFile(filepath.Dir(root), root, re)
 		if err != nil {
 			return "", err
 		}
-		return formatGrepMatches(matches, false), nil
+		return formatGrepMatches(matches, limit, false), nil
 	}
+
+	if rgMatches, ok := rgGrepSearch(ctx, pattern, root, include, limit); ok {
+		lines := make([]string, 0, len(rgMatches))
+		for _, m := range rgMatches {
+			lines = append(lines, fmt.Sprintf("%s:%d:%s", m.rel, m.line, m.text))
+		}
+		sort.Strings(lines)
+		return formatGrepMatches(lines, limit, false), nil
+	}
+
+	return grepWithRegex(ctx, root, re, include, limit)
+}
+
+// grepWithRegex walks root and matches each file with the compiled regexp,
+// used as the fallback when ripgrep is unavailable.
+func grepWithRegex(ctx context.Context, root string, re *regexp.Regexp, include string, limit int) (string, error) {
 	ignorer, err := loadGitIgnore(root, true)
 	if err != nil {
 		return "", err
@@ -146,32 +164,44 @@ func grep(ctx context.Context, root, pattern, include string, limit int) (string
 		if isGitIgnored(ignorer, rel, false) {
 			return nil
 		}
-		matched, err := matchesIncludeGlob(rel, include, "grep include")
-		if err != nil {
-			return err
-		}
-		if !matched {
+		if !matchIncludePattern(include, rel) {
 			return nil
 		}
 		fileMatches, err := grepFile(root, path, re)
 		if err != nil {
 			return nil
 		}
-		for _, match := range fileMatches {
-			matches = append(matches, match)
-			if len(matches) >= limit {
-				truncated = true
-				return errStopGrep
-			}
+		matches = append(matches, fileMatches...)
+		if len(matches) >= limit {
+			truncated = true
+			return errStopGrep
 		}
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopGrep) {
 		return "", err
 	}
-
 	sort.Strings(matches)
-	return formatGrepMatches(matches, truncated), nil
+	return formatGrepMatches(matches, limit, truncated), nil
+}
+
+// matchIncludePattern reports whether rel matches the include glob. A single
+// segment pattern (e.g. "*.go") matches by basename at any level, matching
+// ripgrep's --glob behavior without a leading slash; a multi-segment pattern
+// (e.g. "src/*.go") matches the full relative path.
+func matchIncludePattern(include, rel string) bool {
+	if include == "" {
+		return true
+	}
+	if matched, err := doublestar.Match(include, rel); err == nil && matched {
+		return true
+	}
+	if !strings.Contains(include, "/") {
+		if matched, err := doublestar.Match(include, filepath.Base(rel)); err == nil && matched {
+			return true
+		}
+	}
+	return false
 }
 
 func grepFile(root, filePath string, re *regexp.Regexp) ([]string, error) {
@@ -203,16 +233,17 @@ func grepFile(root, filePath string, re *regexp.Regexp) ([]string, error) {
 	return matches, nil
 }
 
-func formatGrepMatches(matches []string, truncated bool) string {
+func formatGrepMatches(matches []string, limit int, truncated bool) string {
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+		truncated = true
+	}
 	result := strings.Join(matches, "\n")
 	if result == "" {
 		result = "No matches found"
 	}
 	if truncated {
-		if result != "" {
-			result += "\n"
-		}
-		result += "[output truncated]"
+		result += "\n[output truncated]"
 	}
 	return result
 }
@@ -231,6 +262,9 @@ func isVCSMetadataPath(pathValue, root string) bool {
 	}
 }
 
+// validatePathGlob checks each segment of a glob pattern for basic syntax
+// validity via path.Match. Brace expansion ({js,json}) is treated as literal
+// by path.Match and therefore passes; doublestar handles it during matching.
 func validatePathGlob(pattern, label string) error {
 	if pattern == "" {
 		return nil
@@ -244,58 +278,6 @@ func validatePathGlob(pattern, label string) error {
 		}
 	}
 	return nil
-}
-
-func matchesPathGlob(rel, pattern, label string) (bool, error) {
-	if pattern == "" {
-		return true, nil
-	}
-	if err := validatePathGlob(pattern, label); err != nil {
-		return false, err
-	}
-	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
-	relParts := strings.Split(strings.Trim(rel, "/"), "/")
-	if matchGlobSegments(patternParts, relParts) {
-		return true, nil
-	}
-	return false, nil
-}
-
-func matchesIncludeGlob(rel, pattern, label string) (bool, error) {
-	matched, err := matchesPathGlob(rel, pattern, label)
-	if err != nil || matched || pattern == "" {
-		return matched, err
-	}
-	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
-	if len(patternParts) == 1 {
-		return matchGlobSegments(patternParts, []string{path.Base(rel)}), nil
-	}
-	return false, nil
-}
-
-func matchGlobSegments(pattern, rel []string) bool {
-	if len(pattern) == 0 {
-		return len(rel) == 0
-	}
-	if pattern[0] == "**" {
-		if len(pattern) == 1 {
-			return true
-		}
-		for i := 0; i <= len(rel); i++ {
-			if matchGlobSegments(pattern[1:], rel[i:]) {
-				return true
-			}
-		}
-		return false
-	}
-	if len(rel) == 0 {
-		return false
-	}
-	matched, err := path.Match(pattern[0], rel[0])
-	if err != nil || !matched {
-		return false
-	}
-	return matchGlobSegments(pattern[1:], rel[1:])
 }
 
 func resolveToolPath(cwd, pathValue string) string {

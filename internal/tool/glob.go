@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
@@ -78,6 +79,9 @@ func ParseGlobArgs(arguments string) (GlobArgs, error) {
 	return args, nil
 }
 
+// globPaths matches files under root against pattern. It prefers ripgrep for
+// speed and brace-expansion support, falling back to a doublestar walk when rg
+// is unavailable or fails. Only files are returned.
 func globPaths(ctx context.Context, root, pattern string, limit int) (string, error) {
 	info, err := os.Stat(root)
 	if err != nil {
@@ -86,9 +90,26 @@ func globPaths(ctx context.Context, root, pattern string, limit int) (string, er
 	if !info.IsDir() {
 		return "", fmt.Errorf("glob path is not a directory: %s", root)
 	}
-	ignorer, err := loadGitIgnore(root, true)
+
+	if matches, ok := rgGlobFiles(ctx, pattern, root, limit); ok {
+		sort.Strings(matches)
+		return formatGlobMatches(matches, limit, false), nil
+	}
+
+	matches, truncated, err := globWithDoublestar(ctx, root, pattern, limit)
 	if err != nil {
 		return "", err
+	}
+	sort.Strings(matches)
+	return formatGlobMatches(matches, limit, truncated), nil
+}
+
+// globWithDoublestar walks the tree and matches each file with doublestar,
+// supporting brace expansion and ** that path.Match cannot.
+func globWithDoublestar(ctx context.Context, root, pattern string, limit int) ([]string, bool, error) {
+	ignorer, err := loadGitIgnore(root, true)
+	if err != nil {
+		return nil, false, err
 	}
 
 	var files []string
@@ -122,17 +143,16 @@ func globPaths(ctx context.Context, root, pattern string, limit int) (string, er
 			}
 			return nil
 		}
-
-		matched, err := matchesPathGlob(rel, pattern, "pattern")
-		if err != nil {
-			return err
+		// Only files are returned, matching ripgrep --files behavior.
+		if isDir {
+			return nil
+		}
+		matched, mErr := doublestar.Match(pattern, rel)
+		if mErr != nil {
+			return nil
 		}
 		if matched {
-			item := rel
-			if isDir {
-				item += "/"
-			}
-			files = append(files, item)
+			files = append(files, rel)
 			if len(files) >= limit {
 				truncated = true
 				return errStopGlob
@@ -141,18 +161,24 @@ func globPaths(ctx context.Context, root, pattern string, limit int) (string, er
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopGlob) {
-		return "", err
+		return nil, false, err
 	}
+	return files, truncated, nil
+}
 
-	sort.Strings(files)
-	result := strings.Join(files, "\n")
+func formatGlobMatches(matches []string, limit int, truncated bool) string {
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+		truncated = true
+	}
+	result := strings.Join(matches, "\n")
 	if result == "" {
 		result = "No matches found"
 	}
 	if truncated {
 		result += "\n[output truncated]"
 	}
-	return result, nil
+	return result
 }
 
 func isGlobSkippedPath(rel string) bool {
