@@ -545,7 +545,7 @@ func (s *Store) Counts(ctx context.Context) (Counts, error) {
 	if err := s.db.QueryRowContext(ctx, `select count(*) from memory_jobs where status = 'pending' or status = 'running'`).Scan(&counts.Pending); err != nil {
 		return Counts{}, err
 	}
-	if err := s.db.QueryRowContext(ctx, `select count(*) from memory_jobs where status = 'failed'`).Scan(&counts.Failed); err != nil {
+	if err := s.db.QueryRowContext(ctx, `select count(*) from memory_jobs where status = 'failed' or status = 'dead'`).Scan(&counts.Failed); err != nil {
 		return Counts{}, err
 	}
 	return counts, nil

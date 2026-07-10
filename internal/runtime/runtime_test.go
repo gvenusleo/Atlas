@@ -1,9 +1,11 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -583,6 +585,27 @@ func TestRunTurnDirectShellRejectsEmptyCommand(t *testing.T) {
 	_, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "!"})
 	if err == nil || !strings.Contains(err.Error(), "shell command is required") {
 		t.Fatalf("RunTurn() error = %v", err)
+	}
+}
+
+func TestRunMemoryWorkerReportsInfrastructureErrors(t *testing.T) {
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	r := New(Dependencies{
+		LoadConfig: func() (config.Config, error) {
+			return config.Config{}, errors.New("config unavailable")
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := r.RunMemoryWorker(ctx); err != nil {
+		t.Fatalf("RunMemoryWorker() error = %v", err)
+	}
+	if !strings.Contains(output.String(), "config unavailable") {
+		t.Fatalf("log output = %q", output.String())
 	}
 }
 

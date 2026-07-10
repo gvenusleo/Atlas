@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -55,7 +56,13 @@ func (r *Runtime) RunMemoryWorker(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		processed, _ := r.processMemoryJobs(ctx, memoryWorkerBatchSize, workerID)
+		processed, err := r.processMemoryJobs(ctx, memoryWorkerBatchSize, workerID)
+		if err != nil {
+			if ctx.Err() == nil {
+				slog.Error("memory worker processing failed", "error", err)
+			}
+			processed = 0
+		}
 		if processed == memoryWorkerBatchSize {
 			continue
 		}
@@ -94,7 +101,9 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 		}
 		if !ok {
 			if processed == 0 {
-				_, _ = memStore.PruneStaleEntries(ctx, memoryPruneUnusedDays)
+				if _, err := memStore.PruneStaleEntries(ctx, memoryPruneUnusedDays); err != nil {
+					return processed, err
+				}
 			}
 			return processed, nil
 		}
@@ -106,18 +115,24 @@ func (r *Runtime) processMemoryJobs(ctx context.Context, limit int, workerID str
 		}
 		activeProvider, selectedModel, err := cfg.ResolveModel(job.Model)
 		if err != nil {
-			_ = memStore.FailJob(ctx, job, err)
+			if failErr := memStore.FailJob(ctx, job, err); failErr != nil {
+				return processed, failErr
+			}
 			processed++
 			continue
 		}
 		provider, err := r.deps.NewProvider(activeProvider, selectedModel)
 		if err != nil {
-			_ = memStore.FailJob(ctx, job, err)
+			if failErr := memStore.FailJob(ctx, job, err); failErr != nil {
+				return processed, failErr
+			}
 			processed++
 			continue
 		}
 		if err := r.processMemoryExtractJob(ctx, memStore, sessionStore, provider, selectedModel, job); err != nil {
-			_ = memStore.FailJob(ctx, job, err)
+			if failErr := memStore.FailJob(ctx, job, err); failErr != nil {
+				return processed, failErr
+			}
 			processed++
 			continue
 		}

@@ -192,6 +192,13 @@ func TestFailJobMarksDeadAfterMaxAttempts(t *testing.T) {
 	if _, ok, err := store.ClaimNextJob(ctx, "worker-2", time.Minute); err != nil || ok {
 		t.Fatalf("expected dead job to not be claimable, got ok = %v, err = %v", ok, err)
 	}
+	counts, err := store.Counts(ctx)
+	if err != nil {
+		t.Fatalf("Counts() error = %v", err)
+	}
+	if counts.Failed != 1 {
+		t.Fatalf("Failed = %d, want dead job included", counts.Failed)
+	}
 }
 
 func TestDecayConfidenceSkipsRecentEntries(t *testing.T) {
