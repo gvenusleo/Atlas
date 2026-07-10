@@ -35,15 +35,35 @@ if (-not $version) {
 
 $artifact = "atlas-windows-$arch-v$version.zip"
 $url = "https://github.com/$Repo/releases/download/v$version/$artifact"
+$checksumUrl = "https://github.com/$Repo/releases/download/v$version/SHA256SUMS"
 
 Write-Host "Installing Atlas v$version (windows/$arch)"
 
 # Download
 $tmpdir = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "atlas-install-$(Get-Random)")
 $zipPath = Join-Path $tmpdir.FullName $artifact
+$checksumPath = Join-Path $tmpdir.FullName "SHA256SUMS"
 
 Write-Host "Downloading $artifact..."
 Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
+Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -UseBasicParsing
+
+$expectedHash = $null
+foreach ($line in Get-Content $checksumPath) {
+    $parts = $line -split '\s+', 2
+    if ($parts.Count -eq 2 -and $parts[1].TrimStart([char]'*') -eq $artifact) {
+        $expectedHash = $parts[0]
+        break
+    }
+}
+if (-not $expectedHash) {
+    throw "Checksum not found for $artifact"
+}
+$actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash
+if ($actualHash -ne $expectedHash) {
+    throw "Checksum verification failed for $artifact"
+}
+Write-Host "Checksum verified"
 
 # Extract
 if (-not (Test-Path $InstallDir)) {

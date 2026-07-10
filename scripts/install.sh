@@ -63,6 +63,7 @@ fi
 
 artifact="atlas-${os}-${arch}-v${version}.tar.gz"
 url="https://github.com/$REPO/releases/download/v${version}/${artifact}"
+checksum_url="https://github.com/$REPO/releases/download/v${version}/SHA256SUMS"
 
 info "Installing Atlas v${version} (${os}/${arch})"
 
@@ -72,6 +73,19 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 info "Downloading $artifact..."
 curl -fsSL "$url" -o "$tmpdir/$artifact" || err "Download failed: $url"
+curl -fsSL "$checksum_url" -o "$tmpdir/SHA256SUMS" || err "Checksum download failed: $checksum_url"
+
+expected=$(awk -v artifact="$artifact" '$2 == artifact || $2 == "*" artifact { print $1; exit }' "$tmpdir/SHA256SUMS")
+[[ -n "$expected" ]] || err "Checksum not found for $artifact"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual=$(sha256sum "$tmpdir/$artifact" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+  actual=$(shasum -a 256 "$tmpdir/$artifact" | awk '{print $1}')
+else
+  err "sha256sum or shasum is required to verify the download"
+fi
+[[ "$actual" == "$expected" ]] || err "Checksum verification failed for $artifact"
+info "Checksum verified"
 
 # Extract
 mkdir -p "$INSTALL_DIR"
