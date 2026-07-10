@@ -68,9 +68,9 @@ Slash commands available in WeChat chat:
 
 ## WebSocket
 
-`atlas serve` starts a WebSocket server for local network clients (e.g. a mobile app) to connect. The server listens on `0.0.0.0:8765` by default, configurable via `services.ws.host` and `services.ws.port` in `~/.atlas/config.json`.
+`atlas serve` starts a WebSocket server for clients such as a mobile app. The server listens on `127.0.0.1:8765` by default, configurable via `services.ws.host` and `services.ws.port` in `~/.atlas/config.json`.
 
-The WebSocket channel is designed for LAN-only use with no authentication. It exposes the same agent capabilities as other channels:
+Loopback connections do not require authentication. Binding to a non-loopback address, such as `0.0.0.0`, requires `services.ws.token`; clients must send it as `Authorization: Bearer <token>`. WebSocket handshakes also enforce same-origin checks. The channel exposes the same agent capabilities as other channels:
 
 - Prompt with text and image input
 - Streaming events: model deltas, reasoning deltas, tool calls
@@ -83,7 +83,7 @@ The WebSocket channel is designed for LAN-only use with no authentication. It ex
 
 ### Multi-session concurrency
 
-A single WebSocket connection supports multiple concurrent sessions. Each session maintains its own working directory, selected model, and turn state. Different sessions can run turns in parallel; the same session rejects a second prompt while a turn is running.
+A single WebSocket connection supports multiple concurrent sessions. Each session maintains its own working directory, selected model, and turn state. Different sessions can run turns in parallel; the same session rejects a second prompt while a turn is running, including prompts from another connection.
 
 All messages are routed by `session_id`:
 

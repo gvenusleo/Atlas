@@ -78,7 +78,7 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
       "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c"
     },
     "ws": {
-      "host": "0.0.0.0",
+      "host": "127.0.0.1",
       "port": 8765
     }
   }
@@ -144,7 +144,8 @@ Only enable `prompt_cache.enabled` after confirming the provider accepts the cor
 | `services.tavily.api_key` | Enables `web_search` and `web_fetch` when configured. |
 | `services.weixin.base_url` | Optional, defaults to `https://ilinkai.weixin.qq.com`. |
 | `services.weixin.cdn_base_url` | Optional, defaults to `https://novac2c.cdn.weixin.qq.com/c2c`. Used for WeChat image downloads. |
-| `services.ws.host` | WebSocket server bind address. Defaults to `0.0.0.0`. |
+| `services.ws.host` | WebSocket server bind address. Defaults to `127.0.0.1`. Non-loopback addresses require `services.ws.token`. |
 | `services.ws.port` | WebSocket server port. Defaults to `8765`. |
+| `services.ws.token` | Bearer token required by WebSocket clients when binding to a non-loopback address. |
 
 > **Database migration**: The project is in early stage and does not provide a migration framework. After schema changes, delete the old `~/.atlas/atlas.db` to recreate.
