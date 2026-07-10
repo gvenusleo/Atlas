@@ -4,7 +4,7 @@
 
 ## Layered Design
 
-Atlas is divided into entry layer, orchestration layer, core loop, capability layer, and persistence layer. All entry points share the same `runtime.Runtime`, and the core agent loop remains pure and side-effect-free.
+Atlas is divided into entry layer, orchestration layer, core loop, capability layer, and persistence layer. All entry points share the same `runtime.Runtime`. The core agent loop remains headless, dependency-injected, and independently testable; runtime owns configuration, persistence, and background orchestration.
 
 ```mermaid
 graph TD

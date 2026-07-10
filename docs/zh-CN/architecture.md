@@ -4,7 +4,7 @@
 
 ## 分层架构
 
-Atlas 分为入口层、编排层、核心循环、能力层和持久化层。所有入口共享同一个 `runtime.Runtime`，核心 agent loop 保持纯粹无副作用。
+Atlas 分为入口层、编排层、核心循环、能力层和持久化层。所有入口共享同一个 `runtime.Runtime`。核心 agent loop 保持 headless、依赖注入且可独立测试；配置、持久化和后台编排由 runtime 负责。
 
 ```mermaid
 graph TD

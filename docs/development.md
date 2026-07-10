@@ -37,7 +37,7 @@ just ci                        # fmt + tidy + build + vet + race test (requires 
 
 ## Design Principles
 
-- **Small and verifiable**: the agent loop stays pure and side-effect-free. All side effects are concentrated in runtime, making it easy to test with fake providers.
+- **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, compaction, and background work.
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
 - **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
 - **Single core**: CLI, ACP, WeChat, and WebSocket share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.
