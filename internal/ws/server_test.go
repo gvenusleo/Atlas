@@ -742,6 +742,38 @@ func TestConcurrentPromptSameSessionRejected(t *testing.T) {
 	recvMsg(t, conn) // turn_finished (cancelled)
 }
 
+func TestCoordinatesSameSessionAcrossConnections(t *testing.T) {
+	rt := &blockingRuntime{}
+	_, addr := startTestServer(t, rt)
+	first := dialWS(t, addr)
+	second := dialWS(t, addr)
+
+	sendMsg(t, first, ClientMessage{Type: MsgPrompt, SessionID: "shared", Content: "first"})
+	if msg := recvMsg(t, first); msg.Event != EventTurnStarted {
+		t.Fatalf("first message = %#v, want turn_started", msg)
+	}
+
+	sendMsg(t, second, ClientMessage{Type: MsgPrompt, SessionID: "shared", Content: "second"})
+	if msg := recvMsg(t, second); msg.Event != EventError || !strings.Contains(msg.Error, "already running") {
+		t.Fatalf("second prompt message = %#v, want already running error", msg)
+	}
+
+	sendMsg(t, second, ClientMessage{Type: MsgCompactSession, SessionID: "shared"})
+	if msg := recvMsg(t, second); msg.Event != EventError || !strings.Contains(msg.Error, "turn is running") {
+		t.Fatalf("compact message = %#v, want running error", msg)
+	}
+
+	sendMsg(t, second, ClientMessage{Type: MsgDeleteSession, SessionID: "shared"})
+	if msg := recvMsg(t, second); msg.Event != EventError || !strings.Contains(msg.Error, "turn is running") {
+		t.Fatalf("delete message = %#v, want running error", msg)
+	}
+
+	sendMsg(t, second, ClientMessage{Type: MsgCancel, SessionID: "shared"})
+	if msg := recvMsg(t, first); msg.Event != EventTurnFinished || msg.SessionID != "shared" {
+		t.Fatalf("cancel message = %#v, want shared turn_finished", msg)
+	}
+}
+
 // blockingRuntime blocks in RunTurn until the context is cancelled.
 type blockingRuntime struct{}
 

@@ -46,11 +46,13 @@ type ServerOptions struct {
 
 // Server listens for WebSocket connections and forwards them to the Atlas runtime.
 type Server struct {
-	rt     Runtime
-	host   string
-	port   int
-	token  string
-	output interface{ Write([]byte) (int, error) }
+	rt         Runtime
+	host       string
+	port       int
+	token      string
+	output     interface{ Write([]byte) (int, error) }
+	sessionsMu sync.Mutex
+	sessions   map[string]*sessionState
 }
 
 // NewServer creates a WebSocket server.
@@ -71,11 +73,12 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		port = 8765
 	}
 	return &Server{
-		rt:     opts.Runtime,
-		host:   host,
-		port:   port,
-		token:  token,
-		output: opts.Output,
+		rt:       opts.Runtime,
+		host:     host,
+		port:     port,
+		token:    token,
+		output:   opts.Output,
+		sessions: make(map[string]*sessionState),
 	}, nil
 }
 
@@ -143,8 +146,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelConn := context.WithCancel(r.Context())
 	defer cancelConn()
 
-	state := newConnState()
-
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -163,18 +164,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				s.sendError(ctx, conn, "", "session_id is required for cancel")
 				continue
 			}
-			state.cancelTurn(msg.SessionID)
+			s.cancelTurn(msg.SessionID)
 			continue
 		}
 
 		// prompt message executes in a goroutine without blocking the read loop
 		if msg.Type == MsgPrompt {
-			s.handlePrompt(ctx, conn, msg, state)
+			s.handlePrompt(ctx, conn, msg)
 			continue
 		}
 
 		// Non-prompt message: synchronous handling, non-blocking
-		s.handleMessage(ctx, conn, msg, state)
+		s.handleMessage(ctx, conn, msg)
 	}
 }
 
@@ -238,38 +239,34 @@ func (ss *sessionState) getReasoningEffort() string {
 	return ss.reasoningEffort
 }
 
-// connState maintains all session states for a single WebSocket connection.
-type connState struct {
-	mu       sync.Mutex
-	sessions map[string]*sessionState
-}
-
-func newConnState() *connState {
-	return &connState{sessions: make(map[string]*sessionState)}
-}
-
 // getOrCreateSession returns the state for the specified session, creating it if it does not exist.
-func (c *connState) getOrCreateSession(id string) *sessionState {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	ss, ok := c.sessions[id]
+func (s *Server) getOrCreateSession(id string) *sessionState {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	ss, ok := s.sessions[id]
 	if !ok {
 		ss = &sessionState{}
-		c.sessions[id] = ss
+		s.sessions[id] = ss
 	}
 	return ss
 }
 
 // getSession returns the state for the specified session, or nil if not found.
-func (c *connState) getSession(id string) *sessionState {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.sessions[id]
+func (s *Server) getSession(id string) *sessionState {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	return s.sessions[id]
+}
+
+func (s *Server) deleteSessionState(id string) {
+	s.sessionsMu.Lock()
+	delete(s.sessions, id)
+	s.sessionsMu.Unlock()
 }
 
 // cancelTurn cancels the current turn for the specified session.
-func (c *connState) cancelTurn(sessionID string) {
-	ss := c.getSession(sessionID)
+func (s *Server) cancelTurn(sessionID string) {
+	ss := s.getSession(sessionID)
 	if ss == nil {
 		return
 	}
@@ -281,7 +278,7 @@ func (c *connState) cancelTurn(sessionID string) {
 }
 
 // handleMessage dispatches non-prompt client messages to their handlers.
-func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
+func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	switch msg.Type {
 	case MsgListSessions:
 		s.handleListSessions(ctx, conn, msg)
@@ -290,13 +287,13 @@ func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg Cl
 	case MsgDeleteSession:
 		s.handleDeleteSession(ctx, conn, msg)
 	case MsgCompactSession:
-		s.handleCompactSession(ctx, conn, msg, state)
+		s.handleCompactSession(ctx, conn, msg)
 	case MsgModelOptions:
 		s.handleModelOptions(ctx, conn)
 	case MsgSetModel:
-		s.handleSetModel(ctx, conn, msg, state)
+		s.handleSetModel(ctx, conn, msg)
 	case MsgSetReasoningEffort:
-		s.handleSetReasoningEffort(ctx, conn, msg, state)
+		s.handleSetReasoningEffort(ctx, conn, msg)
 	case MsgSkillSummaries:
 		s.handleSkillSummaries(ctx, conn, msg)
 	default:
@@ -307,14 +304,14 @@ func (s *Server) handleMessage(ctx context.Context, conn *websocket.Conn, msg Cl
 // handlePrompt handles a user conversation request. RunTurn executes in a goroutine without blocking the read loop.
 // Prompts for different sessions can execute concurrently; the second prompt to the same session is rejected.
 // running is released before sending the final event, ensuring the client can immediately send the next prompt after receiving turn_finished.
-func (s *Server) handlePrompt(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
+func (s *Server) handlePrompt(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	sessionID := msg.SessionID
 
 	// New session: when sessionID is empty, runtime generates it and returns via turn_finished.
 	// Create a temporary sessionState first; running CAS executes inside the goroutine.
 	var ss *sessionState
 	if sessionID != "" {
-		ss = state.getOrCreateSession(sessionID)
+		ss = s.getOrCreateSession(sessionID)
 		if !ss.running.CompareAndSwap(false, true) {
 			s.sendError(ctx, conn, sessionID, "a turn is already running in this session, send cancel first")
 			return
@@ -326,12 +323,12 @@ func (s *Server) handlePrompt(ctx context.Context, conn *websocket.Conn, msg Cli
 		if ss != nil {
 			defer ss.running.Store(false)
 		}
-		s.runPrompt(ctx, conn, msg, state, sessionID, ss)
+		s.runPrompt(ctx, conn, msg, sessionID, ss)
 	}()
 }
 
 // runPrompt executes a turn and pushes events.
-func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState, sessionID string, ss *sessionState) {
+func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg ClientMessage, sessionID string, ss *sessionState) {
 	// Determine cwd: prefer message value, then cached session state
 	cwd := msg.CWD
 	if cwd == "" && ss != nil {
@@ -411,9 +408,9 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 		if result.SessionID != "" {
 			sessionID = result.SessionID
 		}
-		// New session scenario: register to connState
+		// New session scenario: register the shared session state.
 		if ss == nil && sessionID != "" {
-			ss = state.getOrCreateSession(sessionID)
+			ss = s.getOrCreateSession(sessionID)
 		}
 		// Release turn lock
 		if ss != nil {
@@ -433,9 +430,9 @@ func (s *Server) runPrompt(ctx context.Context, conn *websocket.Conn, msg Client
 	// Update session ID (new session scenario)
 	if result.SessionID != "" {
 		sessionID = result.SessionID
-		// Register new session to connState
+		// Register the shared state for the newly assigned session ID.
 		if ss == nil {
-			ss = state.getOrCreateSession(sessionID)
+			ss = s.getOrCreateSession(sessionID)
 			ss.setCWD(cwd)
 			ss.setModel(selectedModel)
 		}
@@ -548,17 +545,22 @@ func (s *Server) handleShowSession(ctx context.Context, conn *websocket.Conn, ms
 
 // handleDeleteSession handles a session deletion request.
 func (s *Server) handleDeleteSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
+	if ss := s.getSession(msg.SessionID); ss != nil && ss.running.Load() {
+		s.sendError(ctx, conn, msg.SessionID, "a turn is running in this session, send cancel first")
+		return
+	}
 	if err := s.rt.DeleteSessionIfExists(ctx, msg.SessionID); err != nil {
 		s.sendError(ctx, conn, msg.SessionID, err.Error())
 		return
 	}
+	s.deleteSessionState(msg.SessionID)
 	s.send(ctx, conn, ServerMessage{Type: MsgSessionDeleted, SessionID: msg.SessionID})
 }
 
 // handleCompactSession handles a session compaction request.
 // Rejects compaction if a turn is currently running in the session to prevent concurrent transcript access.
-func (s *Server) handleCompactSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
-	ss := state.getSession(msg.SessionID)
+func (s *Server) handleCompactSession(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
+	ss := s.getSession(msg.SessionID)
 	if ss != nil && ss.running.Load() {
 		s.sendError(ctx, conn, msg.SessionID, "a turn is running in this session, send cancel first")
 		return
@@ -625,7 +627,7 @@ func (s *Server) handleModelOptions(ctx context.Context, conn *websocket.Conn) {
 }
 
 // handleSetModel validates and saves the model selected for the specified session.
-func (s *Server) handleSetModel(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
+func (s *Server) handleSetModel(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	modelValue := strings.TrimSpace(msg.Model)
 	if modelValue == "" {
 		s.sendError(ctx, conn, msg.SessionID, "model is required")
@@ -646,7 +648,7 @@ func (s *Server) handleSetModel(ctx context.Context, conn *websocket.Conn, msg C
 		return
 	}
 
-	ss := state.getOrCreateSession(msg.SessionID)
+	ss := s.getOrCreateSession(msg.SessionID)
 	ss.setModel(modelValue)
 	s.send(ctx, conn, ServerMessage{Type: MsgModelSet, SessionID: msg.SessionID, Model: modelValue})
 }
@@ -661,7 +663,7 @@ func hasModel(options runtime.ModelOptions, value string) bool {
 }
 
 // handleSetReasoningEffort validates and saves the reasoning effort for the specified session.
-func (s *Server) handleSetReasoningEffort(ctx context.Context, conn *websocket.Conn, msg ClientMessage, state *connState) {
+func (s *Server) handleSetReasoningEffort(ctx context.Context, conn *websocket.Conn, msg ClientMessage) {
 	effort := strings.TrimSpace(msg.ReasoningEffort)
 	if effort == "" {
 		s.sendError(ctx, conn, msg.SessionID, "reasoning_effort is required")
@@ -679,7 +681,7 @@ func (s *Server) handleSetReasoningEffort(ctx context.Context, conn *websocket.C
 	}
 
 	// Determine which model to validate against: session's model or default.
-	ss := state.getOrCreateSession(msg.SessionID)
+	ss := s.getOrCreateSession(msg.SessionID)
 	modelValue := ss.getModel()
 	if modelValue == "" {
 		modelValue = options.Default
