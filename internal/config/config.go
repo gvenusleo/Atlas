@@ -113,8 +113,9 @@ type WeixinConfig struct {
 
 // WSConfig describes the WebSocket channel configuration.
 type WSConfig struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host  string `json:"host"`
+	Port  int    `json:"port"`
+	Token string `json:"token"`
 }
 
 // DefaultPath returns the Atlas configuration path under the current user's home directory.

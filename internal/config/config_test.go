@@ -48,10 +48,13 @@ func TestLoadFile(t *testing.T) {
 			"enabled": false,
 			"model": "deepseek-v4-pro"
 		},
-		"session": {
-			"db_path": "/tmp/atlas.db"
-		}
-	}`)
+			"session": {
+				"db_path": "/tmp/atlas.db"
+			},
+			"services": {
+				"ws": {"host": "0.0.0.0", "port": 8765, "token": "secret"}
+			}
+		}`)
 
 	cfg, err := LoadFile(path)
 	if err != nil {
@@ -111,6 +114,9 @@ func TestLoadFile(t *testing.T) {
 	}
 	if cfg.Session.DBPath != "/tmp/atlas.db" {
 		t.Fatalf("Session.DBPath = %q", cfg.Session.DBPath)
+	}
+	if cfg.Services.WS.Token != "secret" {
+		t.Fatalf("WS.Token = %q", cfg.Services.WS.Token)
 	}
 }
 

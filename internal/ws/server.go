@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -39,6 +40,7 @@ type ServerOptions struct {
 	Runtime Runtime
 	Host    string
 	Port    int
+	Token   string
 	Output  interface{ Write([]byte) (int, error) }
 }
 
@@ -47,6 +49,7 @@ type Server struct {
 	rt     Runtime
 	host   string
 	port   int
+	token  string
 	output interface{ Write([]byte) (int, error) }
 }
 
@@ -57,7 +60,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 	host := opts.Host
 	if host == "" {
-		host = "0.0.0.0"
+		host = "127.0.0.1"
+	}
+	token := strings.TrimSpace(opts.Token)
+	if !isLoopbackHost(host) && token == "" {
+		return nil, fmt.Errorf("WebSocket token is required for non-loopback host %q", host)
 	}
 	port := opts.Port
 	if port == 0 {
@@ -67,8 +74,18 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		rt:     opts.Runtime,
 		host:   host,
 		port:   port,
+		token:  token,
 		output: opts.Output,
 	}, nil
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Run starts the HTTP server and accepts WebSocket connections.
@@ -111,9 +128,11 @@ func (s *Server) Run(ctx context.Context) error {
 
 // handleWebSocket handles a single WebSocket connection.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // Allow any Origin, for LAN use
-	})
+	if !s.authorized(r) {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -157,6 +176,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// Non-prompt message: synchronous handling, non-blocking
 		s.handleMessage(ctx, conn, msg, state)
 	}
+}
+
+func (s *Server) authorized(r *http.Request) bool {
+	if s.token == "" {
+		return true
+	}
+	scheme, token, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token)), []byte(s.token)) == 1
 }
 
 // sessionState maintains the state of a single session.

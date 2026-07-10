@@ -134,6 +134,7 @@ func runServeCommand(ctx context.Context, args []string, deps runDependencies) e
 		Runtime: deps.runtime,
 		Host:    cfg.Services.WS.Host,
 		Port:    cfg.Services.WS.Port,
+		Token:   cfg.Services.WS.Token,
 		Output:  deps.stdout,
 	})
 	if err != nil {

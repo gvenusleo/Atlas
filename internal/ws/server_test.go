@@ -110,6 +110,27 @@ func (f *fakeRuntime) RunMemoryWorker(ctx context.Context) error {
 	return nil
 }
 
+func TestNewServerDefaultsToLoopback(t *testing.T) {
+	srv, err := NewServer(ServerOptions{Runtime: &fakeRuntime{}})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	if srv.host != "127.0.0.1" {
+		t.Fatalf("host = %q, want 127.0.0.1", srv.host)
+	}
+}
+
+func TestNewServerRequiresTokenForNonLoopbackHost(t *testing.T) {
+	_, err := NewServer(ServerOptions{Runtime: &fakeRuntime{}, Host: "0.0.0.0"})
+	if err == nil || !strings.Contains(err.Error(), "token") {
+		t.Fatalf("NewServer() error = %v, want token requirement", err)
+	}
+
+	if _, err := NewServer(ServerOptions{Runtime: &fakeRuntime{}, Host: "0.0.0.0", Token: "secret"}); err != nil {
+		t.Fatalf("NewServer() with token error = %v", err)
+	}
+}
+
 // startTestServer starts a test WebSocket server and returns its address.
 func startTestServer(t *testing.T, rt Runtime) (*Server, string) {
 	t.Helper()
@@ -151,6 +172,70 @@ func dialWS(t *testing.T, addr string) *websocket.Conn {
 	}
 	t.Cleanup(func() { conn.Close(websocket.StatusNormalClosure, "") })
 	return conn
+}
+
+func TestWebSocketRequiresConfiguredToken(t *testing.T) {
+	srv, err := NewServer(ServerOptions{
+		Runtime: &fakeRuntime{},
+		Host:    "127.0.0.1",
+		Token:   "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := startHTTPTestServer(t, srv)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, resp, err := websocket.Dial(ctx, fmt.Sprintf("ws://%s/ws", addr), nil)
+	if err == nil {
+		t.Fatal("websocket.Dial() error = nil")
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("response = %#v, want status %d", resp, http.StatusUnauthorized)
+	}
+
+	conn, _, err := websocket.Dial(ctx, fmt.Sprintf("ws://%s/ws", addr), &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer secret"}},
+	})
+	if err != nil {
+		t.Fatalf("authenticated websocket.Dial() error = %v", err)
+	}
+	conn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestWebSocketRejectsCrossOrigin(t *testing.T) {
+	srv, err := NewServer(ServerOptions{Runtime: &fakeRuntime{}, Host: "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := startHTTPTestServer(t, srv)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, resp, err := websocket.Dial(ctx, fmt.Sprintf("ws://%s/ws", addr), &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://evil.example"}},
+	})
+	if err == nil {
+		t.Fatal("websocket.Dial() error = nil")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("response = %#v, want status %d", resp, http.StatusForbidden)
+	}
+}
+
+func startHTTPTestServer(t *testing.T, srv *Server) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", srv.handleWebSocket)
+	httpSrv := &http.Server{Handler: mux}
+	go httpSrv.Serve(ln)
+	t.Cleanup(func() { httpSrv.Close() })
+	return ln.Addr().String()
 }
 
 // sendMsg sends a JSON message.
