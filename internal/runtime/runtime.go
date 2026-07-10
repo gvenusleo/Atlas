@@ -444,9 +444,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}
 	compacted := false
 	persistFrom := 0
-	// Full history and post-reset message count recorded during compaction recovery, used for correct transcript saving.
+	// Full history and post-reset message count recorded during compaction recovery, used to rebuild the logical transcript.
 	var preCompactionMessages []model.Message
 	postCompactionStart := 0
+	var persistErr error
 	a, err := agent.New(agent.Config{
 		Provider:   provider,
 		Tools:      registry,
@@ -488,21 +489,16 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			for _, msg := range selectedSkillMessages {
 				trans.Append(msg)
 			}
-			// Record the full history before compaction and the message count after reset.
-			// When saving, the full transcript (including compacted prefix) is needed, not just active messages,
-			// Otherwise the next BuildActiveMessages would re-cut the compacted prefix.
+			// Record the full history and the first real post-compaction message index.
+			// Temporary skill context remains model-visible but outside the persisted transcript.
 			preCompactionMessages = currentMessages
-			postCompactionStart = len(activeMsgs)
+			postCompactionStart = len(trans.Messages())
 			compacted = true
-			// Persist immediately after compaction to ensure compaction results are not lost
-			persistNow(ctx, store, sessionID, cwd, preCompactionMessages, trans, postCompactionStart, opts)
 			return nil
 		},
-		OnAppend: func(_ model.Message) {
-			if compacted {
-				persistNow(ctx, store, sessionID, cwd, preCompactionMessages, trans, postCompactionStart, opts)
-			} else {
-				persistNow(ctx, store, sessionID, cwd, fullTrans.Messages(), trans, persistFrom, opts)
+		OnAppend: func(msg model.Message) {
+			if persistErr == nil {
+				persistErr = appendNow(store, sessionID, cwd, msg, opts)
 			}
 		},
 		Observer: opts.Observer,
@@ -528,21 +524,20 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 		fullMessages = append(fullTrans.Messages(), activeAfter[persistFrom:]...)
 	}
-	if err != nil {
+	if persistErr != nil {
 		saveCtx, cancel := context.WithTimeout(context.Background(), interruptedTurnSaveTimeout)
 		defer cancel()
 		if saveErr := store.SaveTranscriptWithOptions(saveCtx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
 			AdditionalDirectories:    opts.AdditionalDirectories,
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		}); saveErr != nil {
-			return TurnResult{}, fmt.Errorf("%w; failed to save interrupted turn: %v", err, saveErr)
+			if err != nil {
+				return TurnResult{}, fmt.Errorf("%w; incremental persistence failed: %v; snapshot fallback failed: %v", err, persistErr, saveErr)
+			}
+			return TurnResult{}, fmt.Errorf("incremental persistence failed: %v; snapshot fallback failed: %w", persistErr, saveErr)
 		}
-		return TurnResult{}, err
 	}
-	if err := store.SaveTranscriptWithOptions(ctx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
-		AdditionalDirectories:    opts.AdditionalDirectories,
-		AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
-	}); err != nil {
+	if err != nil {
 		return TurnResult{}, err
 	}
 	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
@@ -557,18 +552,11 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	}, nil
 }
 
-// persistNow writes the current transcript state to the database in real time.
-// preMessages is the full history before compaction (fullTrans when not compacted), startIdx is the starting index of new messages in trans.
-// Used for incremental persistence after each Append in the agent loop, ensuring work is not lost on process crash.
-func persistNow(ctx context.Context, store *session.Store, sessionID, cwd string, preMessages []model.Message, trans *transcript.Transcript, startIdx int, opts TurnOptions) {
-	transMsgs := trans.Messages()
-	if startIdx > len(transMsgs) {
-		startIdx = len(transMsgs)
-	}
-	fullMessages := append(preMessages, transMsgs[startIdx:]...)
-	saveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+// appendNow persists one newly appended transcript message without rewriting history.
+func appendNow(store *session.Store, sessionID, cwd string, msg model.Message, opts TurnOptions) error {
+	saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = store.SaveTranscriptWithOptions(saveCtx, sessionID, cwd, fullMessages, session.SaveTranscriptOptions{
+	return store.AppendMessagesWithOptions(saveCtx, sessionID, cwd, []model.Message{msg}, session.SaveTranscriptOptions{
 		AdditionalDirectories:    opts.AdditionalDirectories,
 		AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 	})
@@ -625,8 +613,7 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 	})
 	emit(observer, agent.Event{Type: agent.EventTurnFinished, Step: 1, Content: result.Content, Err: runErr})
 
-	messages := append([]model.Message(nil), existing...)
-	messages = append(messages,
+	newMessages := []model.Message{
 		model.TextMessage(model.RoleUser, strings.TrimSpace(promptText)),
 		model.Message{
 			Role: model.RoleAssistant,
@@ -635,8 +622,9 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 			},
 		},
 		model.Message{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
-	)
-	if err := store.SaveTranscriptWithOptions(ctx, sessionID, cwd, messages, saveOpts); err != nil {
+	}
+	messages := append(append([]model.Message(nil), existing...), newMessages...)
+	if err := store.AppendMessagesWithOptions(ctx, sessionID, cwd, newMessages, saveOpts); err != nil {
 		return TurnResult{}, nil, err
 	}
 	return TurnResult{

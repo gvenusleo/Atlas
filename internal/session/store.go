@@ -500,6 +500,62 @@ on conflict(id) do update set
 	if _, err := tx.ExecContext(ctx, `delete from messages where session_id = ?`, sessionID); err != nil {
 		return err
 	}
+	if err := insertMessages(ctx, tx, sessionID, messages, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// AppendMessagesWithOptions atomically appends messages and refreshes session metadata without rewriting history.
+func (s *Store) AppendMessagesWithOptions(ctx context.Context, sessionID, cwd string, messages []model.Message, opts SaveTranscriptOptions) error {
+	if err := ValidateID(sessionID); err != nil {
+		return err
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	additionalDirectoriesSQL := "coalesce((select additional_directories_json from sessions where id = ?), '')"
+	additionalDirectoriesArgs := []any{sessionID}
+	if opts.AdditionalDirectoriesSet {
+		additionalDirectoriesJSON, err := encodeAdditionalDirectories(opts.AdditionalDirectories)
+		if err != nil {
+			return err
+		}
+		additionalDirectoriesSQL = "?"
+		additionalDirectoriesArgs = []any{additionalDirectoriesJSON}
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	title := titleFromMessages(messages)
+	usage := lastUsageFromMessages(messages)
+	args := []any{sessionID, title, cwd}
+	args = append(args, additionalDirectoriesArgs...)
+	args = append(args, usage.InputTokens, usage.OutputTokens, usage.TotalTokens, now, now)
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+insert into sessions(id, title, cwd, additional_directories_json, last_input_tokens, last_output_tokens, last_total_tokens, created_at, updated_at)
+values(?, ?, ?, %s, ?, ?, ?, ?, ?)
+on conflict(id) do update set
+	title = case when sessions.title = '' then excluded.title else sessions.title end,
+	cwd = excluded.cwd,
+	additional_directories_json = excluded.additional_directories_json,
+	last_input_tokens = case when excluded.last_input_tokens != 0 or excluded.last_output_tokens != 0 or excluded.last_total_tokens != 0 then excluded.last_input_tokens else sessions.last_input_tokens end,
+	last_output_tokens = case when excluded.last_input_tokens != 0 or excluded.last_output_tokens != 0 or excluded.last_total_tokens != 0 then excluded.last_output_tokens else sessions.last_output_tokens end,
+	last_total_tokens = case when excluded.last_input_tokens != 0 or excluded.last_output_tokens != 0 or excluded.last_total_tokens != 0 then excluded.last_total_tokens else sessions.last_total_tokens end,
+	updated_at = excluded.updated_at`, additionalDirectoriesSQL), args...); err != nil {
+		return err
+	}
+	if err := insertMessages(ctx, tx, sessionID, messages, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertMessages(ctx context.Context, tx *sql.Tx, sessionID string, messages []model.Message, now string) error {
 	for _, msg := range messages {
 		toolCallsJSON, err := encodeToolCalls(msg.ToolCalls)
 		if err != nil {
@@ -523,7 +579,7 @@ values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, sessionID, string(msg.Role), msg
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 type sessionScanner interface {

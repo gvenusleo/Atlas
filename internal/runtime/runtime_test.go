@@ -1767,6 +1767,16 @@ func TestRunTurnOverflowRecoveryPreservesSkillContext(t *testing.T) {
 	if !foundSkill {
 		t.Fatal("retry request missing skill context after overflow recovery")
 	}
+
+	_, saved, err := r.ShowSession(context.Background(), "skill-overflow")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	for _, msg := range saved.Messages() {
+		if strings.Contains(msg.Content, "<skill>") {
+			t.Fatalf("saved transcript contains temporary skill context: %q", msg.Content)
+		}
+	}
 }
 
 // TestRunTurnStripsImageFromHistoryWhenModelDoesNotSupportImage verifies that when the model does not support images,

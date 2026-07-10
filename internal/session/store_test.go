@@ -142,6 +142,55 @@ func TestStoreSaveTranscriptReplacesMessages(t *testing.T) {
 	}
 }
 
+func TestStoreAppendMessagesPreservesExistingRowsAndMetadata(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	defer store.Close()
+
+	if err := store.SaveTranscript(ctx, "work", "/tmp/work", []model.Message{
+		{Role: model.RoleUser, Content: "first"},
+		{Role: model.RoleAssistant, Content: "reply", Usage: model.Usage{InputTokens: 10, OutputTokens: 2, TotalTokens: 12}},
+	}); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	before := messageIDs(t, store, "work")
+
+	roots := []string{"/tmp/extra"}
+	if err := store.AppendMessagesWithOptions(ctx, "work", "/tmp/work", []model.Message{
+		{Role: model.RoleUser, Content: "second"},
+	}, SaveTranscriptOptions{AdditionalDirectories: roots, AdditionalDirectoriesSet: true}); err != nil {
+		t.Fatalf("AppendMessagesWithOptions() error = %v", err)
+	}
+	after := messageIDs(t, store, "work")
+	if len(after) != 3 || after[0] != before[0] || after[1] != before[1] {
+		t.Fatalf("message IDs = %v, want preserved prefix %v", after, before)
+	}
+
+	info, err := store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.Title != "first" || info.LastTotalTokens != 12 {
+		t.Fatalf("session metadata = %#v", info)
+	}
+	if strings.Join(info.AdditionalDirectories, ",") != strings.Join(roots, ",") {
+		t.Fatalf("additional directories = %#v", info.AdditionalDirectories)
+	}
+
+	if err := store.AppendMessagesWithOptions(ctx, "work", "/tmp/work", []model.Message{
+		{Role: model.RoleAssistant, Content: "second reply", Usage: model.Usage{InputTokens: 20, OutputTokens: 3, TotalTokens: 23}},
+	}, SaveTranscriptOptions{}); err != nil {
+		t.Fatalf("AppendMessagesWithOptions() error = %v", err)
+	}
+	info, err = store.GetSession(ctx, "work")
+	if err != nil {
+		t.Fatalf("GetSession() error = %v", err)
+	}
+	if info.LastTotalTokens != 23 {
+		t.Fatalf("LastTotalTokens = %d, want 23", info.LastTotalTokens)
+	}
+}
+
 func TestStoreSaveCompactionPreservesFullTranscript(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
@@ -445,4 +494,25 @@ func openTestStore(t *testing.T) *Store {
 		t.Fatalf("EnsureSchema() error = %v", err)
 	}
 	return store
+}
+
+func messageIDs(t *testing.T, store *Store, sessionID string) []int64 {
+	t.Helper()
+	rows, err := store.db.Query(`select id from messages where session_id = ? order by id`, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return ids
 }
