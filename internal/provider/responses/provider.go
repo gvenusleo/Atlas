@@ -24,6 +24,7 @@ type Config struct {
 	BaseURL            string
 	APIKey             string
 	Model              string
+	UserAgent          string
 	PromptCacheEnabled bool
 	HTTPClient         *http.Client
 }
@@ -33,6 +34,7 @@ type Provider struct {
 	baseURL            string
 	apiKey             string
 	model              string
+	userAgent          string
 	promptCacheEnabled bool
 	httpClient         *http.Client
 }
@@ -56,10 +58,15 @@ func New(config Config) (*Provider, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	userAgent := config.UserAgent
+	if userAgent == "" {
+		userAgent = "atlas/" + version.Current
+	}
 	return &Provider{
 		baseURL:            strings.TrimRight(config.BaseURL, "/"),
 		apiKey:             config.APIKey,
 		model:              config.Model,
+		userAgent:          userAgent,
 		promptCacheEnabled: config.PromptCacheEnabled,
 		httpClient:         httpClient,
 	}, nil
@@ -79,7 +86,7 @@ func (p *Provider) Stream(ctx context.Context, req model.ChatRequest, emit func(
 		}
 		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("User-Agent", "atlas/"+version.Current)
+		httpReq.Header.Set("User-Agent", p.userAgent)
 		return httpReq, nil
 	}
 

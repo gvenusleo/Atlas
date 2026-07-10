@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/version"
 )
 
 func TestStreamSendsChatCompletionsRequest(t *testing.T) {
@@ -511,6 +512,61 @@ func assertContentParts(t *testing.T, content any, want []apiContentPart) {
 		if got[i].ImageURL == nil || *got[i].ImageURL != *want[i].ImageURL {
 			t.Fatalf("content parts = %#v, want %#v", got, want)
 		}
+	}
+}
+
+func TestStreamSendsCustomUserAgent(t *testing.T) {
+	var gotUA string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		writeSSE(w,
+			`{"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		)
+	}))
+	defer server.Close()
+
+	provider, err := New(Config{
+		BaseURL:   server.URL,
+		APIKey:    "sk-test",
+		Model:     "m",
+		UserAgent: "my-app/2.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = provider.Stream(context.Background(), model.ChatRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	}, nil)
+	if gotUA != "my-app/2.0" {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, "my-app/2.0")
+	}
+}
+
+func TestStreamSendsDefaultUserAgent(t *testing.T) {
+	var gotUA string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		writeSSE(w,
+			`{"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		)
+	}))
+	defer server.Close()
+
+	provider, err := New(Config{
+		BaseURL: server.URL,
+		APIKey:  "sk-test",
+		Model:   "m",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = provider.Stream(context.Background(), model.ChatRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	}, nil)
+	if gotUA != "atlas/"+version.Current {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, "atlas/"+version.Current)
 	}
 }
 

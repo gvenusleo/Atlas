@@ -190,6 +190,7 @@ func newAPIProvider(cfg config.ProviderConfig, selected config.ProviderModel) (m
 			BaseURL:            cfg.BaseURL,
 			APIKey:             cfg.APIKey,
 			Model:              selected.Value,
+			UserAgent:          cfg.UserAgent,
 			PromptCacheEnabled: selected.PromptCache.Enabled,
 		})
 	case config.ProviderFormatResponses:
@@ -197,6 +198,7 @@ func newAPIProvider(cfg config.ProviderConfig, selected config.ProviderModel) (m
 			BaseURL:            cfg.BaseURL,
 			APIKey:             cfg.APIKey,
 			Model:              selected.Value,
+			UserAgent:          cfg.UserAgent,
 			PromptCacheEnabled: selected.PromptCache.Enabled,
 		})
 	default:

@@ -43,11 +43,12 @@ type Config struct {
 
 // ProviderConfig describes a model API provider.
 type ProviderConfig struct {
-	Name    string          `json:"name"`
-	Format  string          `json:"format"`
-	BaseURL string          `json:"base_url"`
-	APIKey  string          `json:"api_key"`
-	Models  []ProviderModel `json:"models"`
+	Name      string          `json:"name"`
+	Format    string          `json:"format"`
+	BaseURL   string          `json:"base_url"`
+	APIKey    string          `json:"api_key"`
+	UserAgent string          `json:"user_agent,omitempty"`
+	Models    []ProviderModel `json:"models"`
 }
 
 // ProviderModel describes a selectable model.
