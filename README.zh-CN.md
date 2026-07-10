@@ -1,6 +1,6 @@
 # Atlas
 
-用 Go 编写的**通用 Agent**。核心是一个可测试的 headless agent loop，可读写文件、执行 Shell、搜索网页、长期记忆，CLI、ACP（供 Zed 等编辑器连接）和微信通道都通过 `internal/runtime` 调用同一套能力，不重复实现循环逻辑。
+用 Go 编写的**通用 Agent**。核心是一个可测试的 headless agent loop，可读写文件、执行 Shell、搜索网页、长期记忆，CLI、ACP（供 Zed 等编辑器连接）、微信和 WebSocket 通道都通过 `internal/runtime` 调用同一套能力，不重复实现循环逻辑。
 
 [English](README.md)
 
@@ -11,8 +11,8 @@
 - **本地工具集**：文件读写、文本搜索、精确编辑、Shell 执行、网页搜索与提取，开箱即用。
 - **上下文压缩**：达到上下文窗口阈值时自动摘要早期对话，保留最近消息继续。
 - **长期记忆**：从会话中增量抽取 instruction / fact / workflow 三类记忆，按 global / project 作用域组织，通过 `memory_search` 工具按子串匹配按需检索。
-- **多入口**：CLI 单次执行、ACP 长连接（支持编辑器嵌入终端与文件 diff）、微信扫码远程控制。
-- **本地优先**：会话和记忆全部存于本地 SQLite，数据不离开用户机器（除模型 API 和可选的 Tavily 搜索外）。
+- **多入口**：CLI 单次执行、ACP 长连接（支持编辑器嵌入终端与文件 diff）、微信扫码远程控制和 WebSocket 服务。
+- **本地优先存储**：会话和记忆记录保存在本地 SQLite；任务内容和结果可能通过已配置的模型 API、Tavily、微信或已连接的 WebSocket 客户端传输。
 - **可扩展指令**：通过 `AGENTS.md` 和 skill 文件注入项目级与全局指令，skill 按需加载。
 
 ## 快速开始
@@ -122,7 +122,7 @@ go run ./cmd/atlas run '!pwd'
 
 Atlas 以当前进程的本地权限运行。内置工具可以读写文件、搜索文本并执行 shell 命令；**Atlas 不提供沙箱、权限提示或 approval gate**。请只在可信工作区中运行。
 
-所有会话和记忆数据存储在本地 SQLite，不离开用户机器——除模型 API 调用和可选的 Tavily 搜索外。
+会话和记忆记录存储在本地 SQLite。Atlas 仍会向已配置的模型 Provider 发送请求上下文，并通过用户启用的服务或通道通信，包括 Tavily、微信和 WebSocket 客户端。
 
 ## 文档
 
