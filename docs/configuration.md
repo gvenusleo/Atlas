@@ -101,6 +101,7 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 | `providers[].format` | Optional, defaults to `chat_completions`. Use `responses` for OpenAI Responses API. |
 | `providers[].base_url` | Provider API URL. |
 | `providers[].api_key` | Authentication key. |
+| `providers[].user_agent` | Optional, overrides the `User-Agent` header sent to the provider API. Defaults to `atlas/<version>`. |
 
 ### Models
 

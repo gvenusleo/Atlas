@@ -101,6 +101,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 | `providers[].format` | 可省略，默认 `chat_completions`；OpenAI Responses API 使用 `responses` |
 | `providers[].base_url` | Provider API 地址 |
 | `providers[].api_key` | 鉴权密钥 |
+| `providers[].user_agent` | 可省略，覆盖发送给 Provider API 的 `User-Agent` 请求头，默认 `atlas/<version>` |
 
 ### 模型
 
