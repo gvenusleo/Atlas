@@ -61,8 +61,6 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 		"read_file":   acpsdk.ToolKindRead,
 		"edit_file":   acpsdk.ToolKindEdit,
 		"write_file":  acpsdk.ToolKindEdit,
-		"glob":        acpsdk.ToolKindSearch,
-		"grep":        acpsdk.ToolKindSearch,
 		"apply_patch": acpsdk.ToolKindEdit,
 		"web_search":  acpsdk.ToolKindSearch,
 		"web_fetch":   acpsdk.ToolKindFetch,
@@ -1032,42 +1030,6 @@ func TestToolRunnerDoesNotAskClientFileSystemForNonTextPaths(t *testing.T) {
 				t.Fatalf("result = %#v", got)
 			}
 		})
-	}
-}
-
-func TestSearchResultLocationsUsesFileParentForSingleFileOutput(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "note.txt")
-	if err := os.WriteFile(path, []byte("needle\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	got := grepResultLocations(path, "note.txt:1:needle")
-
-	if len(got) != 1 || got[0].Path != path || got[0].Line != 1 {
-		t.Fatalf("locations = %#v", got)
-	}
-}
-
-func TestToolRunnerUsesCWDForGlobWithoutPath(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
-	cwd := testCWD(t)
-	runner := a.toolRunner("sess", cwd)
-
-	_, err := runner(context.Background(), model.ToolCall{
-		ID:        "call_1",
-		Name:      "glob",
-		Arguments: `{"pattern":"*.go"}`,
-	}, func(_ context.Context, call model.ToolCall) (tool.RunResult, error) {
-		args, err := tool.ParseGlobArgs(call.Arguments)
-		if err != nil || args.Path != cwd || args.Pattern != "*.go" {
-			t.Fatalf("arguments = %s", call.Arguments)
-		}
-		return tool.RunResult{Content: "main.go"}, nil
-	})
-
-	if err != nil {
-		t.Fatalf("ToolRunner() error = %v", err)
 	}
 }
 

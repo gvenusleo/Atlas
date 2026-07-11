@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,4 +119,14 @@ func TestApplyPatchDefinition(t *testing.T) {
 
 func applyPatchArgs(patch string) string {
 	return `{"patch":` + quoteJSON(patch) + `}`
+}
+
+func writeTextFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -1153,8 +1153,6 @@ func completeDependencies(deps Dependencies) Dependencies {
 
 func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig, memorySearch tool.MemorySearchFunc) (*tool.Registry, error) {
 	tools := []tool.Tool{
-		tool.Glob{CWD: cwd},
-		tool.Grep{CWD: cwd},
 		tool.ReadFile{CWD: cwd},
 		tool.EditFile{CWD: cwd},
 		tool.ApplyPatch{CWD: cwd},

@@ -33,10 +33,6 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 		prefix, key = "Edit: ", "path"
 	case "apply_patch":
 		prefix, key = "Patch: ", "patch"
-	case "glob":
-		prefix, key = "Glob: ", "pattern"
-	case "grep":
-		prefix, key = "Grep: ", "pattern"
 	case "web_search":
 		prefix, key = "WebSearch: ", "query"
 	case "web_fetch":

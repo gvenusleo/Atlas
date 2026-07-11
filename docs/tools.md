@@ -6,13 +6,11 @@
 
 | Tool | Description |
 |---|---|
-| `glob` | Find files and directories by glob pattern, defaulting to the session working directory |
 | `read_file` | Read a text file |
-| `grep` | Search text with regex, defaulting to the session working directory |
 | `edit_file` | Replace a single unique text block |
 | `apply_patch` | Apply a unified diff patch, can modify multiple files at once |
 | `write_file` | Write file content |
-| `run_shell` | Execute a command using the platform-default shell; PowerShell on Windows, `/bin/sh` elsewhere |
+| `run_shell` | Execute with PowerShell on Windows or `/bin/sh` elsewhere; supports accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
 | `load_skill` | Load a local skill's instructions by name |
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
 | `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |

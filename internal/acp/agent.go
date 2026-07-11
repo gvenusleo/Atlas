@@ -1334,7 +1334,7 @@ func toolKind(name string) acpsdk.ToolKind {
 		return acpsdk.ToolKindRead
 	case "edit_file", "write_file", "apply_patch":
 		return acpsdk.ToolKindEdit
-	case "glob", "grep", "web_search":
+	case "web_search":
 		return acpsdk.ToolKindSearch
 	case "web_fetch":
 		return acpsdk.ToolKindFetch

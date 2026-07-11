@@ -117,7 +117,7 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if provider.request.ReasoningEffort != "high" {
 		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
 	}
-	assertToolNames(t, provider.request.Tools, "glob", "grep", "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
+	assertToolNames(t, provider.request.Tools, "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
 	if provider.providerModel != "test-model" {
 		t.Fatalf("provider model = %q", provider.providerModel)
 	}

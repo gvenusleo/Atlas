@@ -338,7 +338,7 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
-	assertToolNames(t, provider.request.Tools, "glob", "grep", "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
+	assertToolNames(t, provider.request.Tools, "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
 	}

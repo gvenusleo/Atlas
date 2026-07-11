@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -19,14 +17,13 @@ import (
 
 const (
 	maxACPToolDiffBytes = 512 * 1024
-	maxACPToolLocations = 50
 	textProbeBytes      = 8 * 1024
 )
 
 // isFileTool determines whether a tool needs ACP file display enhancement.
 func isFileTool(name string) bool {
 	switch name {
-	case "read_file", "write_file", "edit_file", "apply_patch", "glob", "grep":
+	case "read_file", "write_file", "edit_file", "apply_patch":
 		return true
 	default:
 		return false
@@ -44,10 +41,6 @@ func (a *Agent) runFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd
 		return a.runEditFileTool(ctx, sessionID, cwd, call, fallback)
 	case "apply_patch":
 		return a.runApplyPatchTool(ctx, cwd, call, fallback)
-	case "glob":
-		return a.runGlobTool(ctx, cwd, call, fallback)
-	case "grep":
-		return a.runGrepTool(ctx, cwd, call, fallback)
 	default:
 		return fallback(ctx, call)
 	}
@@ -199,34 +192,6 @@ func (a *Agent) runApplyPatchTool(ctx context.Context, cwd string, call model.To
 	return result, err
 }
 
-// runGlobTool keeps the local search implementation and supplements directory location metadata.
-func (a *Agent) runGlobTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
-	path, ok := searchRootFromArguments(cwd, call.Arguments)
-	if !ok {
-		return fallback(ctx, call)
-	}
-	result, err := fallback(ctx, toolCallWithPath(call, path))
-	result.Metadata = mergeToolMetadata(result.Metadata, model.ToolMetadata{
-		Locations: []model.ToolLocation{{Path: path}},
-	})
-	return result, err
-}
-
-// runGrepTool keeps the local search implementation and extracts navigable locations from matching lines.
-func (a *Agent) runGrepTool(ctx context.Context, cwd string, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
-	path, ok := searchRootFromArguments(cwd, call.Arguments)
-	if !ok {
-		return fallback(ctx, call)
-	}
-	result, err := fallback(ctx, toolCallWithPath(call, path))
-	locations := grepResultLocations(path, result.Content)
-	if len(locations) == 0 {
-		locations = []model.ToolLocation{{Path: path}}
-	}
-	result.Metadata = mergeToolMetadata(result.Metadata, model.ToolMetadata{Locations: locations})
-	return result, err
-}
-
 // readToolOldText reads old content for diff; treats as new file when unreadable.
 func (a *Agent) readToolOldText(ctx context.Context, sessionID acpsdk.SessionId, path string) *string {
 	if a.clientCapabilities.Fs.ReadTextFile && a.fileClient != nil && clientOldTextReadAllowed(path) {
@@ -370,30 +335,6 @@ func lineOrZero(line int) int {
 	return 0
 }
 
-// searchRootFromArguments extracts the path from tool parameters; uses cwd when path is not provided.
-func searchRootFromArguments(cwd, arguments string) (string, bool) {
-	var args struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return "", false
-	}
-	if args.Path == "" {
-		args.Path = cwd
-	}
-	return absoluteToolPath(cwd, args.Path), true
-}
-
-// toolCallWithPath preserves the original parameters, only normalizing path to an absolute path under the session cwd.
-func toolCallWithPath(call model.ToolCall, path string) model.ToolCall {
-	var args map[string]any
-	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-		return call
-	}
-	args["path"] = path
-	return toolCallWithArgs(call, args)
-}
-
 // toolCallWithArgs replaces the raw JSON of a tool call with structured parameters.
 func toolCallWithArgs(call model.ToolCall, args any) model.ToolCall {
 	data, err := json.Marshal(args)
@@ -402,48 +343,6 @@ func toolCallWithArgs(call model.ToolCall, args any) model.ToolCall {
 	}
 	call.Arguments = string(data)
 	return call
-}
-
-// grepResultLocations extracts navigable locations from grep's file:line:content output.
-func grepResultLocations(root, output string) []model.ToolLocation {
-	var locations []model.ToolLocation
-	seen := map[string]struct{}{}
-	locationRoot := root
-	if info, err := os.Stat(root); err == nil && !info.IsDir() {
-		locationRoot = filepath.Dir(root)
-	}
-	for _, line := range strings.Split(output, "\n") {
-		if line == "" || strings.HasPrefix(line, "[") || line == "No matches found" {
-			continue
-		}
-		pathPart, rest, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		linePart, _, ok := strings.Cut(rest, ":")
-		if !ok {
-			continue
-		}
-		lineNumber, err := strconv.Atoi(linePart)
-		if err != nil {
-			continue
-		}
-		path := pathPart
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(locationRoot, filepath.FromSlash(path))
-		}
-		path = filepath.Clean(path)
-		key := path + "\x00" + strconv.Itoa(lineNumber)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		locations = append(locations, model.ToolLocation{Path: path, Line: lineNumber})
-		if len(locations) >= maxACPToolLocations {
-			break
-		}
-	}
-	return locations
 }
 
 func toolLocationsForPaths(paths []string) []model.ToolLocation {

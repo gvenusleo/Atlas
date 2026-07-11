@@ -22,8 +22,6 @@ func TestDisplayTitleUsesPrimaryArgument(t *testing.T) {
 		{name: "write file under cwd", call: model.ToolCall{Name: "write_file", Arguments: `{"path":"/Users/alice/project/notes.txt"}`}, cwd: cwd, want: "Write: notes.txt"},
 		{name: "edit file under cwd", call: model.ToolCall{Name: "edit_file", Arguments: `{"path":"/Users/alice/project/main.go"}`}, cwd: cwd, want: "Edit: main.go"},
 		{name: "apply patch", call: model.ToolCall{Name: "apply_patch", Arguments: `{"patch":"--- a/a.txt\n+++ b/a.txt"}`}, cwd: "", want: "Patch: --- a/a.txt"},
-		{name: "glob", call: model.ToolCall{Name: "glob", Arguments: `{"pattern":"**/*.go"}`}, cwd: "", want: "Glob: **/*.go"},
-		{name: "grep", call: model.ToolCall{Name: "grep", Arguments: `{"pattern":"Tool:"}`}, cwd: "", want: "Grep: Tool:"},
 		{name: "web search", call: model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas acp"}`}, cwd: "", want: "WebSearch: atlas acp"},
 		{name: "web fetch", call: model.ToolCall{Name: "web_fetch", Arguments: `{"url":"https://example.com"}`}, cwd: "", want: "WebFetch: https://example.com"},
 		{name: "load skill", call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"think"}`}, cwd: "", want: "LoadSkill: think"},

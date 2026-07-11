@@ -6,13 +6,11 @@
 
 | 工具 | 说明 |
 |---|---|
-| `glob` | 按 glob pattern 查找文件和目录，默认从会话工作目录开始 |
 | `read_file` | 读取文本文件 |
-| `grep` | 用正则搜索文本，默认从会话工作目录开始 |
 | `edit_file` | 精确替换一个唯一文本块 |
 | `apply_patch` | 应用 unified diff patch，可一次修改多个文件 |
 | `write_file` | 写入文件内容 |
-| `run_shell` | 使用平台默认 shell 执行命令；Windows 用 PowerShell，其他平台用 `/bin/sh` |
+| `run_shell` | Windows 使用 PowerShell，其他平台使用 `/bin/sh`；支持可接受退出码，本地执行的有界输出截断时保留完整临时日志 |
 | `load_skill` | 按名称加载本地 skill 指令 |
 | `web_search` | 使用 Tavily 搜索公网网页，需配置 `services.tavily.api_key` |
 | `web_fetch` | 使用 Tavily 提取公网网页内容，需配置 `services.tavily.api_key` |
