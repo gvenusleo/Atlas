@@ -25,12 +25,6 @@ func DisplayTitle(call model.ToolCall, cwd string) string {
 func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 	prefix, key := "", ""
 	switch call.Name {
-	case "read_file":
-		prefix, key = "Read: ", "path"
-	case "write_file":
-		prefix, key = "Write: ", "path"
-	case "edit_file":
-		prefix, key = "Edit: ", "path"
 	case "apply_patch":
 		prefix, key = "Patch: ", "patch"
 	case "web_search":
@@ -79,19 +73,7 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 		}
 		return prefix + shortenPath(actions[0].path, cwd)
 	}
-	if isFileTool(call.Name) {
-		value = shortenPath(value, cwd)
-	}
 	return prefix + value
-}
-
-// isFileTool determines whether a tool uses a file path as its primary parameter.
-func isFileTool(name string) bool {
-	switch name {
-	case "read_file", "write_file", "edit_file":
-		return true
-	}
-	return false
 }
 
 // shortenPath shortens an absolute path to a cwd-relative path (if the file is under cwd).

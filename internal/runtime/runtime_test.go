@@ -338,7 +338,8 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
-	assertToolNames(t, provider.request.Tools, "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
+	assertToolNames(t, provider.request.Tools, "apply_patch", "run_shell", "load_skill")
+	assertMissingToolNames(t, provider.request.Tools, "read_file", "write_file", "edit_file")
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
 	}
@@ -347,18 +348,15 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	}
 }
 
-func TestRunTurnLocalFileToolsUseSessionCWD(t *testing.T) {
+func TestRunTurnApplyPatchUsesSessionCWD(t *testing.T) {
 	cwd := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("from cwd"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	provider := &sequenceProvider{
 		responses: []model.ChatResponse{
 			{
 				ToolCalls: []model.ToolCall{{
 					ID:        "call_1",
-					Name:      "read_file",
-					Arguments: `{"path":"note.txt"}`,
+					Name:      "apply_patch",
+					Arguments: `{"patch":"*** Begin Patch\n*** Add File: note.txt\n+from cwd\n*** End Patch"}`,
 				}},
 			},
 			{Content: "done"},
@@ -368,7 +366,7 @@ func TestRunTurnLocalFileToolsUseSessionCWD(t *testing.T) {
 
 	result, err := r.RunTurn(context.Background(), TurnOptions{
 		SessionID: "work",
-		Prompt:    "read note",
+		Prompt:    "create note",
 		CWD:       cwd,
 	})
 	if err != nil {
@@ -379,8 +377,12 @@ func TestRunTurnLocalFileToolsUseSessionCWD(t *testing.T) {
 	}
 	requestMessages := provider.requests[1].Messages
 	last := requestMessages[len(requestMessages)-1]
-	if last.Role != model.RoleTool || last.Content != "from cwd" {
+	if last.Role != model.RoleTool || !strings.Contains(last.Content, "A note.txt") {
 		t.Fatalf("tool message = %#v", last)
+	}
+	content, err := os.ReadFile(filepath.Join(cwd, "note.txt"))
+	if err != nil || string(content) != "from cwd\n" {
+		t.Fatalf("note.txt = %q, %v", content, err)
 	}
 }
 
@@ -1557,6 +1559,17 @@ func assertToolNames(t *testing.T, tools []model.ToolDefinition, names ...string
 	for _, name := range names {
 		if !seen[name] {
 			t.Fatalf("missing tool %q in %#v", name, tools)
+		}
+	}
+}
+
+func assertMissingToolNames(t *testing.T, tools []model.ToolDefinition, names ...string) {
+	t.Helper()
+	for _, definition := range tools {
+		for _, name := range names {
+			if definition.Name == name {
+				t.Fatalf("unexpected tool %q in %#v", name, tools)
+			}
 		}
 	}
 }

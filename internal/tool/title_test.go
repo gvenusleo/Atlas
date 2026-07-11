@@ -8,19 +8,12 @@ import (
 )
 
 func TestDisplayTitleUsesPrimaryArgument(t *testing.T) {
-	cwd := "/Users/alice/project"
 	tests := []struct {
 		name string
 		call model.ToolCall
 		cwd  string
 		want string
 	}{
-		{name: "read file relative", call: model.ToolCall{Name: "read_file", Arguments: `{"path":"README.md"}`}, cwd: "", want: "Read: README.md"},
-		{name: "read file under cwd", call: model.ToolCall{Name: "read_file", Arguments: `{"path":"/Users/alice/project/src/main.go"}`}, cwd: cwd, want: "Read: src/main.go"},
-		{name: "read file outside cwd", call: model.ToolCall{Name: "read_file", Arguments: `{"path":"/etc/hosts"}`}, cwd: cwd, want: "Read: /etc/hosts"},
-		{name: "read file empty cwd", call: model.ToolCall{Name: "read_file", Arguments: `{"path":"/Users/alice/project/main.go"}`}, cwd: "", want: "Read: /Users/alice/project/main.go"},
-		{name: "write file under cwd", call: model.ToolCall{Name: "write_file", Arguments: `{"path":"/Users/alice/project/notes.txt"}`}, cwd: cwd, want: "Write: notes.txt"},
-		{name: "edit file under cwd", call: model.ToolCall{Name: "edit_file", Arguments: `{"path":"/Users/alice/project/main.go"}`}, cwd: cwd, want: "Edit: main.go"},
 		{name: "apply patch", call: model.ToolCall{Name: "apply_patch", Arguments: `{"patch":"*** Begin Patch\n*** Add File: a.txt\n+new\n*** End Patch"}`}, cwd: "", want: "Patch: a.txt"},
 		{name: "apply multi-file patch", call: model.ToolCall{Name: "apply_patch", Arguments: `{"patch":"*** Begin Patch\n*** Add File: a.txt\n+a\n*** Add File: b.txt\n+b\n*** End Patch"}`}, cwd: "", want: "Patch: 2 files"},
 		{name: "web search", call: model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas acp"}`}, cwd: "", want: "WebSearch: atlas acp"},

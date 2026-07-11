@@ -117,7 +117,7 @@ func TestRunWithDependenciesPassesDefaultSystemPrompt(t *testing.T) {
 	if provider.request.ReasoningEffort != "high" {
 		t.Fatalf("reasoning effort = %q", provider.request.ReasoningEffort)
 	}
-	assertToolNames(t, provider.request.Tools, "read_file", "edit_file", "apply_patch", "write_file", "run_shell", "load_skill")
+	assertToolNames(t, provider.request.Tools, "apply_patch", "run_shell", "load_skill")
 	if provider.providerModel != "test-model" {
 		t.Fatalf("provider model = %q", provider.providerModel)
 	}
@@ -495,17 +495,17 @@ func TestPrintEventWritesToolStatus(t *testing.T) {
 	observer := printEvent(&out)
 
 	observer(agentEventModelDelta("hi"))
-	observer(agentEventToolStarted("read_file"))
-	observer(agentEventToolFinished("read_file", true))
+	observer(agentEventToolStarted("run_shell"))
+	observer(agentEventToolFinished("run_shell", true))
 
 	got := out.String()
 	if !strings.Contains(got, "hi") {
 		t.Fatalf("output = %q", got)
 	}
-	if !strings.Contains(got, "[tool] read_file") {
+	if !strings.Contains(got, "[tool] run_shell") {
 		t.Fatalf("output = %q", got)
 	}
-	if !strings.Contains(got, "[tool failed] read_file") {
+	if !strings.Contains(got, "[tool failed] run_shell") {
 		t.Fatalf("output = %q", got)
 	}
 }
@@ -515,9 +515,9 @@ func TestPrintEventBreaksLineBeforeToolStatus(t *testing.T) {
 	observer := printEvent(&out)
 
 	observer(agentEventModelDelta("hello"))
-	observer(agentEventToolStarted("read_file"))
+	observer(agentEventToolStarted("run_shell"))
 
-	if got := out.String(); got != "hello\n[tool] read_file\n" {
+	if got := out.String(); got != "hello\n[tool] run_shell\n" {
 		t.Fatalf("output = %q", got)
 	}
 }

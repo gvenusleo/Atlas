@@ -26,19 +26,14 @@ ACP supported features:
 - Embedded text resources
 - Session info and usage updates
 - Client terminal for `run_shell` output
-- File tool locations/diff display
+- `apply_patch` locations/diff display
 - Image input
 - Long-term memory background worker
 - `/compact` slash command
 - Skill slash commands, e.g. `/think ...`
 - Plan updates: `todo_write` tool calls are mapped to `plan_update` session updates, rendered as a structured plan panel in editors
 
-When connected via ACP, Atlas prefers client-declared capabilities:
-
-- **Terminal capability**: `run_shell` requests the client terminal to execute and embeds the output.
-- **Filesystem capability**: file tools request the client to read/write files and display locations/diffs.
-
-When the client doesn't support a capability or the call fails, Atlas falls back to local tool execution.
+When connected via ACP, `run_shell` requests the client terminal when available and embeds its output. If terminal creation is unavailable, Atlas falls back to its local shell. `apply_patch` always modifies the filesystem visible to the Atlas process and sends locations/diffs to the client.
 
 `additionalDirectories` are saved and returned as session metadata, but relative paths are still resolved from `cwd`. ACP auth, permission requests, MCP connections, audio, and non-image binary resource input are not currently supported.
 

@@ -36,7 +36,7 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 			}},
 			ToolCalls: []model.ToolCall{{
 				ID:        "call-1",
-				Name:      "read_file",
+				Name:      "test_tool",
 				Arguments: `{"path":"README.md"}`,
 			}},
 		},
@@ -65,7 +65,7 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	if len(got[0].Parts) != 2 || got[0].Parts[1].Type != model.ContentPartImage || got[0].Parts[1].MimeType != "image/png" {
 		t.Fatalf("parts = %#v", got[0].Parts)
 	}
-	if got[1].ToolCalls[0].Name != "read_file" {
+	if got[1].ToolCalls[0].Name != "test_tool" {
 		t.Fatalf("tool calls = %#v", got[1].ToolCalls)
 	}
 	if got[1].ReasoningContent != "need file" {

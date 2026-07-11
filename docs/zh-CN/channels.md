@@ -26,19 +26,14 @@ ACP 支持的功能：
 - embedded text resource
 - session info 和 usage update
 - 客户端 terminal 展示 `run_shell` 输出
-- 文件工具 locations/diff 展示
+- `apply_patch` locations/diff 展示
 - 图片输入
 - 长期记忆后台 worker
 - `/compact` slash command
 - skill slash command，例如 `/think ...`
 - 计划更新：`todo_write` 工具调用映射为 `plan_update` session update，在编辑器中渲染为结构化计划面板
 
-通过 ACP 连接时，Atlas 会优先使用客户端声明的能力：
-
-- **terminal capability**：`run_shell` 请求客户端 terminal 执行，并嵌入输出
-- **filesystem capability**：文件工具请求客户端读写文件，并展示 locations/diff
-
-客户端不支持或调用失败时，Atlas 回退到本地工具执行。
+通过 ACP 连接时，`run_shell` 优先请求客户端 terminal 执行并嵌入输出；terminal 不可用时回退到 Atlas 本地 shell。`apply_patch` 始终修改 Atlas 进程可见的文件系统，并向客户端发送 locations/diff。
 
 `additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准。当前不支持 ACP auth、权限请求、MCP 连接，也不支持音频和非图片二进制资源输入。
 

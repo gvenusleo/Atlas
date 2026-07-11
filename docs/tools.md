@@ -6,11 +6,8 @@
 
 | Tool | Description |
 |---|---|
-| `read_file` | Read a text file |
-| `edit_file` | Replace a single unique text block |
 | `apply_patch` | Apply a Codex-style text patch to add, update, delete, or move one or more files |
-| `write_file` | Write file content |
-| `run_shell` | Execute with PowerShell on Windows or `/bin/sh` elsewhere; supports accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
+| `run_shell` | Discover, search, inspect, and verify with PowerShell on Windows or `/bin/sh` elsewhere; supports accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
 | `load_skill` | Load a local skill's instructions by name |
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
 | `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |

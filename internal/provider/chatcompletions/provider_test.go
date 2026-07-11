@@ -45,7 +45,7 @@ func TestStreamSendsChatCompletionsRequest(t *testing.T) {
 			{Role: model.RoleUser, Content: "hi"},
 		},
 		Tools: []model.ToolDefinition{{
-			Name:        "read_file",
+			Name:        "test_tool",
 			Description: "Read a file.",
 			Parameters:  map[string]any{"type": "object"},
 		}},
@@ -80,7 +80,7 @@ func TestStreamSendsChatCompletionsRequest(t *testing.T) {
 		t.Fatalf("user message = %#v", gotReq.Messages[1])
 	}
 	assertContentParts(t, gotReq.Messages[1].Content, []apiContentPart{{Type: "text", Text: "hi"}})
-	if len(gotReq.Tools) != 1 || gotReq.Tools[0].Function.Name != "read_file" {
+	if len(gotReq.Tools) != 1 || gotReq.Tools[0].Function.Name != "test_tool" {
 		t.Fatalf("tools = %#v", gotReq.Tools)
 	}
 	if gotReq.Temperature != 0.2 {
@@ -195,7 +195,7 @@ func TestStreamSendsToolMessages(t *testing.T) {
 				ReasoningContent: "need file",
 				ToolCalls: []model.ToolCall{{
 					ID:        "call-1",
-					Name:      "read_file",
+					Name:      "test_tool",
 					Arguments: `{"path":"README.md"}`,
 				}},
 			},
@@ -222,7 +222,7 @@ func TestStreamSendsToolMessages(t *testing.T) {
 	if assistant.ToolCalls[0].ID != "call-1" {
 		t.Fatalf("tool call id = %q", assistant.ToolCalls[0].ID)
 	}
-	if assistant.ToolCalls[0].Function.Name != "read_file" {
+	if assistant.ToolCalls[0].Function.Name != "test_tool" {
 		t.Fatalf("tool call name = %q", assistant.ToolCalls[0].Function.Name)
 	}
 	if assistant.ToolCalls[0].Function.Arguments != `{"path":"README.md"}` {
@@ -350,7 +350,7 @@ func TestStreamParsesReasoningDeltas(t *testing.T) {
 func TestStreamParsesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeSSE(w,
-			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read_file","arguments":"{\"path\""}}]},"finish_reason":null}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"test_tool","arguments":"{\"path\""}}]},"finish_reason":null}]}`,
 			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"README.md\"}"}}]},"finish_reason":null}]}`,
 			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
 		)
@@ -368,7 +368,7 @@ func TestStreamParsesToolCallDeltas(t *testing.T) {
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls = %d", len(resp.ToolCalls))
 	}
-	if resp.ToolCalls[0].ID != "call-1" || resp.ToolCalls[0].Name != "read_file" {
+	if resp.ToolCalls[0].ID != "call-1" || resp.ToolCalls[0].Name != "test_tool" {
 		t.Fatalf("ToolCall = %#v", resp.ToolCalls[0])
 	}
 	if resp.ToolCalls[0].Arguments != `{"path":"README.md"}` {

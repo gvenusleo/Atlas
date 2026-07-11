@@ -59,12 +59,6 @@ type terminalClient interface {
 	WaitForTerminalExit(context.Context, acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error)
 }
 
-// fileClient is the minimal interface for ACP client filesystem capabilities.
-type fileClient interface {
-	ReadTextFile(context.Context, acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error)
-	WriteTextFile(context.Context, acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error)
-}
-
 // Options describes the parameters for starting the ACP stdio service.
 type Options struct {
 	Runtime Runtime
@@ -128,7 +122,6 @@ type sessionState struct {
 type Agent struct {
 	rt                 Runtime
 	terminalClient     terminalClient
-	fileClient         fileClient
 	sendUpdate         func(context.Context, acpsdk.SessionNotification) error
 	clientCapabilities acpsdk.ClientCapabilities
 
@@ -151,12 +144,10 @@ func (a *Agent) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
 	if conn == nil {
 		a.sendUpdate = nil
 		a.terminalClient = nil
-		a.fileClient = nil
 		return
 	}
 	a.sendUpdate = conn.SessionUpdate
 	a.terminalClient = conn
-	a.fileClient = conn
 }
 
 // Initialize returns the ACP v1 capabilities supported by Atlas.
@@ -523,9 +514,6 @@ func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolR
 				return fallback(ctx, call)
 			}
 			return result, err
-		}
-		if isFileTool(call.Name) {
-			return a.runFileTool(ctx, sessionID, cwd, call, fallback)
 		}
 		return fallback(ctx, call)
 	}
@@ -1341,9 +1329,7 @@ func replayToolCallID(messageIndex, toolIndex int, id string) acpsdk.ToolCallId 
 
 func toolKind(name string) acpsdk.ToolKind {
 	switch name {
-	case "read_file":
-		return acpsdk.ToolKindRead
-	case "edit_file", "write_file", "apply_patch":
+	case "apply_patch":
 		return acpsdk.ToolKindEdit
 	case "web_search":
 		return acpsdk.ToolKindSearch

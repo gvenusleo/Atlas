@@ -38,7 +38,7 @@ func TestSelectPlanDoesNotCutToolExchange(t *testing.T) {
 			Content: "checking",
 			ToolCalls: []model.ToolCall{{
 				ID:   "call-1",
-				Name: "read_file",
+				Name: "run_shell",
 			}},
 		},
 		{Role: model.RoleTool, Content: "result", ToolCallID: "call-1"},

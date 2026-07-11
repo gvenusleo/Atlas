@@ -37,7 +37,7 @@ func (t *fakeTool) Run(_ context.Context, arguments string) (string, error) {
 
 func TestRegistryRun(t *testing.T) {
 	ft := &fakeTool{
-		definition: model.ToolDefinition{Name: "read_file"},
+		definition: model.ToolDefinition{Name: "test_tool"},
 		result:     "ok",
 	}
 	registry, err := NewRegistry(ft)
@@ -46,7 +46,7 @@ func TestRegistryRun(t *testing.T) {
 	}
 
 	got, err := registry.Run(context.Background(), model.ToolCall{
-		Name:      "read_file",
+		Name:      "test_tool",
 		Arguments: `{"path":"README.md"}`,
 	})
 	if err != nil {
@@ -73,8 +73,8 @@ func TestRegistryRunUnknownTool(t *testing.T) {
 
 func TestNewRegistryDuplicateTool(t *testing.T) {
 	_, err := NewRegistry(
-		&fakeTool{definition: model.ToolDefinition{Name: "read_file"}},
-		&fakeTool{definition: model.ToolDefinition{Name: "read_file"}},
+		&fakeTool{definition: model.ToolDefinition{Name: "test_tool"}},
+		&fakeTool{definition: model.ToolDefinition{Name: "test_tool"}},
 	)
 	if err == nil {
 		t.Fatal("NewRegistry() error = nil, want duplicate tool error")

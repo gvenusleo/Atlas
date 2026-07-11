@@ -45,7 +45,7 @@ func TestStreamSendsResponsesRequest(t *testing.T) {
 			{Role: model.RoleUser, Content: "hi"},
 		},
 		Tools: []model.ToolDefinition{{
-			Name:        "read_file",
+			Name:        "test_tool",
 			Description: "Read a file.",
 			Parameters:  map[string]any{"type": "object"},
 		}},
@@ -76,7 +76,7 @@ func TestStreamSendsResponsesRequest(t *testing.T) {
 		t.Fatalf("input = %#v", gotReq.Input)
 	}
 	assertInputContentParts(t, gotReq.Input[0].Content, []inputContentPart{{Type: "input_text", Text: "hi"}})
-	if len(gotReq.Tools) != 1 || gotReq.Tools[0].Name != "read_file" || gotReq.Tools[0].Type != "function" {
+	if len(gotReq.Tools) != 1 || gotReq.Tools[0].Name != "test_tool" || gotReq.Tools[0].Type != "function" {
 		t.Fatalf("tools = %#v", gotReq.Tools)
 	}
 	if gotReq.Tools[0].Strict {
@@ -222,7 +222,7 @@ func TestStreamSendsFunctionCallOutput(t *testing.T) {
 				ReasoningContent: "need file",
 				ToolCalls: []model.ToolCall{{
 					ID:        "call-1",
-					Name:      "read_file",
+					Name:      "test_tool",
 					Arguments: `{"path":"README.md"}`,
 				}},
 			},
@@ -240,7 +240,7 @@ func TestStreamSendsFunctionCallOutput(t *testing.T) {
 		t.Fatalf("input = %#v", gotReq.Input)
 	}
 	call := gotReq.Input[1]
-	if call.Type != "function_call" || call.CallID != "call-1" || call.Name != "read_file" || call.Arguments != `{"path":"README.md"}` {
+	if call.Type != "function_call" || call.CallID != "call-1" || call.Name != "test_tool" || call.Arguments != `{"path":"README.md"}` {
 		t.Fatalf("function call input = %#v", call)
 	}
 	output := gotReq.Input[2]
@@ -310,7 +310,7 @@ func TestStreamSkipsReasoningOnlyAssistantMessage(t *testing.T) {
 				ReasoningContent: "need file",
 				ToolCalls: []model.ToolCall{{
 					ID:        "call-1",
-					Name:      "read_file",
+					Name:      "test_tool",
 					Arguments: `{"path":"README.md"}`,
 				}},
 			},
@@ -395,7 +395,7 @@ func TestStreamParsesReasoningDeltas(t *testing.T) {
 func TestStreamParsesFunctionCall(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeSSE(w,
-			`{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-1","name":"read_file","arguments":"{\"path\":\"README.md\"}"}}`,
+			`{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-1","name":"test_tool","arguments":"{\"path\":\"README.md\"}"}}`,
 			`{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}`,
 		)
 	}))
@@ -412,7 +412,7 @@ func TestStreamParsesFunctionCall(t *testing.T) {
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls = %d", len(resp.ToolCalls))
 	}
-	if resp.ToolCalls[0].ID != "call-1" || resp.ToolCalls[0].Name != "read_file" {
+	if resp.ToolCalls[0].ID != "call-1" || resp.ToolCalls[0].Name != "test_tool" {
 		t.Fatalf("ToolCall = %#v", resp.ToolCalls[0])
 	}
 	if resp.ToolCalls[0].Arguments != `{"path":"README.md"}` {
@@ -444,7 +444,7 @@ func TestStreamParsesCompletedOutput(t *testing.T) {
 
 func TestStreamStoresProviderItems(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeSSE(w, `{"type":"response.completed","response":{"status":"completed","output":[{"type":"reasoning","id":"rs_1","summary":[]},{"type":"function_call","call_id":"call-1","name":"read_file","arguments":"{}"}]}}`)
+		writeSSE(w, `{"type":"response.completed","response":{"status":"completed","output":[{"type":"reasoning","id":"rs_1","summary":[]},{"type":"function_call","call_id":"call-1","name":"test_tool","arguments":"{}"}]}}`)
 	}))
 	defer server.Close()
 

@@ -20,9 +20,7 @@ State assumptions before proposing solutions. When ambiguity arises, list possib
 
 Atlas tools have the same local permissions as the Atlas process itself — they can read and write files, search text, and execute shell commands. Atlas does not provide a sandbox, permission prompts, or an approval gate. This is a product boundary, not a missing implementation. Do not introduce permission abstractions into the code unless the product direction changes.
 
-When an ACP client declares terminal capability, `run_shell` can request the client terminal to execute and embed the output. When a client declares filesystem capability, file tools can request the client filesystem and display locations/diff. When the client doesn't support a capability or the call fails, fall back to Atlas local tools.
-
-Before calling the client text file interface, ACP file tools only pass confirmed local plain UTF-8 text files. Directories, special files, and binary content fall back to local tools.
+When an ACP client declares terminal capability, `run_shell` requests the client terminal to execute and embed the output. When terminal creation is unavailable, it falls back to the Atlas local shell. `apply_patch` always modifies the filesystem visible to the Atlas process and sends locations/diffs to the client. Remote ACP workspaces where the client terminal and Atlas process see different filesystems are not supported.
 
 README, CLI copy, and tests must all reflect this boundary. Tests only verify tool behavior, fallback, and error propagation — not permission prompts.
 
@@ -81,7 +79,7 @@ CLI / ACP / Weixin / WS
   -> transcript + session store
 ```
 
-`internal/acp` only does ACP protocol adaptation, session/update notifications, client terminal/filesystem bridging, embedded text resource parsing, and session state management. It does not duplicate the agent loop.
+`internal/acp` only does ACP protocol adaptation, session/update notifications, client terminal bridging, embedded text resource parsing, and session state management. It does not duplicate the agent loop.
 
 `internal/weixin` only does iLink Bot login, message polling, typing, slash commands, reply sending, and lightweight user-to-session binding. It does not duplicate the agent loop.
 
@@ -124,11 +122,11 @@ Atlas pursues small, clear, and verifiable. Current real usage paths take priori
 Key behaviors are tested with fake providers and temp directories. Priority coverage areas:
 
 - Agent loop: plain text replies, tool calls, error writeback, ordering, `max_steps`.
-- Tools: file read/write, text search, shell success and failure, Tavily tools.
+- Tools: Codex-style text patches, shell execution, Tavily tools.
 - Prompt: global and current-directory instructions, skill summaries, long-term memory injection.
 - Session: save, restore, list, view, delete, additional working directories, context compaction, image content fragment persistence.
 - Memory: schema, retrieval, enqueue, incremental extraction, summary refresh, disable, model selection, and image placeholders.
-- ACP: initialization, session lifecycle, history replay, cancel, paginated listing, usage, terminal/filesystem capability, image input, `/compact`.
+- ACP: initialization, session lifecycle, history replay, cancel, paginated listing, usage, terminal capability, patch diff display, image input, `/compact`.
 - WeChat: QR login, account saving, typing, image input, working directory switching, session listing, restore, compaction, cancel.
 - WebSocket: prompt events, multi-session concurrency, per-session cancel/model, image parts, session listing/detail/delete/compact, skills.
 
