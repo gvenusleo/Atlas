@@ -49,7 +49,7 @@ type ShellArgs struct {
 func (RunShell) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "run_shell",
-		Description: "Run a local shell command and return combined output.",
+		Description: "Run a shell command in the session working directory and return combined output.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -59,7 +59,7 @@ func (RunShell) Definition() model.ToolDefinition {
 				},
 				"cwd": map[string]any{
 					"type":        "string",
-					"description": "Optional working directory.",
+					"description": "Working directory override. Omit to use the session working directory.",
 				},
 				"timeout_seconds": map[string]any{
 					"type":        "integer",

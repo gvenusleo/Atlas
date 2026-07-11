@@ -29,6 +29,8 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 		"Get-Content piped to Select-Object",
 		"Do not modify files through shell redirection",
 		"Before patching an existing file, inspect the relevant content with run_shell",
+		"Do not prepend cd when running there",
+		"set cwd only to run elsewhere",
 		"Do not treat command completion alone as proof",
 		"Match the user's language",
 		"Current date: 2026-06-08",

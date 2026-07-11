@@ -185,6 +185,17 @@ func TestRunShellDefinition(t *testing.T) {
 	if def.Parameters == nil {
 		t.Fatal("Definition().Parameters = nil")
 	}
+	if !strings.Contains(def.Description, "session working directory") {
+		t.Fatalf("Definition().Description = %q", def.Description)
+	}
+	properties, ok := def.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("Definition().Parameters[properties] = %#v", def.Parameters["properties"])
+	}
+	cwd, ok := properties["cwd"].(map[string]any)
+	if !ok || !strings.Contains(fmt.Sprint(cwd["description"]), "Omit to use the session working directory") {
+		t.Fatalf("cwd definition = %#v", cwd)
+	}
 }
 
 func TestDefaultShellSpec(t *testing.T) {
