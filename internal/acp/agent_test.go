@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -838,76 +837,6 @@ func TestToolRunnerFallsBackWhenClientEditFileWriteFails(t *testing.T) {
 	}
 }
 
-func TestToolRunnerAddsMetadataForApplyPatch(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
-	cwd := testCWD(t)
-	path := filepath.Join(cwd, "README.md")
-	writeTestTextFile(t, path, "old\n")
-	runner := a.toolRunner("sess", cwd)
-	patch := strings.Join([]string{
-		"--- a/README.md",
-		"+++ b/README.md",
-		"@@ -1 +1 @@",
-		"-old",
-		"+new",
-		"",
-	}, "\n")
-
-	got, err := runner(context.Background(), model.ToolCall{
-		ID:        "call_1",
-		Name:      "apply_patch",
-		Arguments: `{"patch":` + strconv.Quote(patch) + `}`,
-	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
-		if err := os.WriteFile(path, []byte("new\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return tool.RunResult{Content: "applied patch"}, nil
-	})
-
-	if err != nil {
-		t.Fatalf("ToolRunner() error = %v", err)
-	}
-	if len(got.Metadata.Locations) != 1 || got.Metadata.Locations[0].Path != path {
-		t.Fatalf("locations = %#v", got.Metadata.Locations)
-	}
-	if got.Metadata.Diff == nil || got.Metadata.Diff.OldText == nil || *got.Metadata.Diff.OldText != "old\n" || got.Metadata.Diff.NewText != "new\n" {
-		t.Fatalf("diff = %#v", got.Metadata.Diff)
-	}
-}
-
-func TestToolRunnerAddsDiffForApplyPatchDelete(t *testing.T) {
-	a := NewAgent(&fakeRuntime{})
-	cwd := testCWD(t)
-	path := filepath.Join(cwd, "README.md")
-	writeTestTextFile(t, path, "old\n")
-	runner := a.toolRunner("sess", cwd)
-	patch := strings.Join([]string{
-		"--- a/README.md",
-		"+++ /dev/null",
-		"@@ -1 +0,0 @@",
-		"-old",
-		"",
-	}, "\n")
-
-	got, err := runner(context.Background(), model.ToolCall{
-		ID:        "call_1",
-		Name:      "apply_patch",
-		Arguments: `{"patch":` + strconv.Quote(patch) + `}`,
-	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-		return tool.RunResult{Content: "applied patch"}, nil
-	})
-
-	if err != nil {
-		t.Fatalf("ToolRunner() error = %v", err)
-	}
-	if got.Metadata.Diff == nil || got.Metadata.Diff.OldText == nil || *got.Metadata.Diff.OldText != "old\n" || got.Metadata.Diff.NewText != "" {
-		t.Fatalf("diff = %#v", got.Metadata.Diff)
-	}
-}
-
 func TestToolRunnerFallsBackForEmptyClientFileSystemWrite(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{WriteTextFile: true}}
@@ -1611,7 +1540,10 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 		ToolCallID: "call_1",
 		ToolMetadata: model.ToolMetadata{
 			Locations: []model.ToolLocation{{Path: filepath.Join(cwd, "README.md"), Line: 4}},
-			Diff:      &model.ToolDiff{Path: filepath.Join(cwd, "README.md"), OldText: &oldText, NewText: "new"},
+			Diffs: []model.ToolDiff{
+				{Path: filepath.Join(cwd, "README.md"), OldText: &oldText, NewText: "new"},
+				{Path: filepath.Join(cwd, "other.txt"), NewText: "added"},
+			},
 		},
 	})
 	trans.Append(model.Message{Role: model.RoleAssistant, Content: "done"})
@@ -1675,7 +1607,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	if len(finish.Locations) != 1 || finish.Locations[0].Path != filepath.Join(cwd, "README.md") || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 4 {
 		t.Fatalf("tool locations = %#v", finish.Locations)
 	}
-	if len(finish.Content) != 1 || finish.Content[0].Diff == nil || finish.Content[0].Diff.NewText != "new" {
+	if len(finish.Content) != 2 || finish.Content[0].Diff == nil || finish.Content[0].Diff.NewText != "new" || finish.Content[1].Diff == nil || finish.Content[1].Diff.NewText != "added" {
 		t.Fatalf("tool content = %#v", finish.Content)
 	}
 	if sixth.Update.AgentMessageChunk == nil || sixth.Update.AgentMessageChunk.Content.Text.Text != "done" {

@@ -61,8 +61,10 @@ type TodoEntry struct {
 // ToolMetadata holds UI-facing presentation data for a tool call.
 type ToolMetadata struct {
 	Locations []ToolLocation `json:"locations,omitempty"`
-	Diff      *ToolDiff      `json:"diff,omitempty"`
-	Todos     []TodoEntry    `json:"todos,omitempty"`
+	Diffs     []ToolDiff     `json:"diffs,omitempty"`
+	// Diff is retained for transcripts written before multi-file diffs were supported.
+	Diff  *ToolDiff   `json:"diff,omitempty"`
+	Todos []TodoEntry `json:"todos,omitempty"`
 }
 
 // ContentPartType represents the modality type of a message content segment.

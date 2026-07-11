@@ -75,11 +75,19 @@ type MetadataTool interface {
 	Metadata(arguments string, content string) model.ToolMetadata
 }
 
+// RunResultTool is an optional tool interface for returning structured data, including on errors.
+type RunResultTool interface {
+	RunResult(context.Context, string) (RunResult, error)
+}
+
 // RunDefault executes a single call using the tool implementation from the registry.
 func (r *Registry) RunDefault(ctx context.Context, call model.ToolCall) (RunResult, error) {
 	tool, ok := r.tools[call.Name]
 	if !ok {
 		return RunResult{}, fmt.Errorf("unknown tool %q", call.Name)
+	}
+	if resultTool, ok := tool.(RunResultTool); ok {
+		return resultTool.RunResult(ctx, call.Arguments)
 	}
 	result, err := tool.Run(ctx, call.Arguments)
 	runResult := RunResult{Content: result}

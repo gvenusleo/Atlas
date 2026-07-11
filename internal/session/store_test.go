@@ -46,7 +46,7 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 			ToolCallID: "call-1",
 			ToolMetadata: model.ToolMetadata{
 				Locations: []model.ToolLocation{{Path: "/tmp/work/README.md", Line: 2}},
-				Diff:      &model.ToolDiff{Path: "/tmp/work/README.md", OldText: &oldText, NewText: "new"},
+				Diffs:     []model.ToolDiff{{Path: "/tmp/work/README.md", OldText: &oldText, NewText: "new"}},
 			},
 		},
 	}
@@ -83,8 +83,8 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	if len(got[2].ToolMetadata.Locations) != 1 || got[2].ToolMetadata.Locations[0].Path != "/tmp/work/README.md" || got[2].ToolMetadata.Locations[0].Line != 2 {
 		t.Fatalf("tool locations = %#v", got[2].ToolMetadata.Locations)
 	}
-	if got[2].ToolMetadata.Diff == nil || got[2].ToolMetadata.Diff.NewText != "new" {
-		t.Fatalf("tool diff = %#v", got[2].ToolMetadata.Diff)
+	if len(got[2].ToolMetadata.Diffs) != 1 || got[2].ToolMetadata.Diffs[0].NewText != "new" {
+		t.Fatalf("tool diffs = %#v", got[2].ToolMetadata.Diffs)
 	}
 	info, err := store.GetSession(ctx, "work")
 	if err != nil {
@@ -92,6 +92,16 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	}
 	if info.LastInputTokens != 10 || info.LastOutputTokens != 3 || info.LastTotalTokens != 13 {
 		t.Fatalf("session usage = %#v", info)
+	}
+}
+
+func TestDecodeToolMetadataSupportsLegacyDiff(t *testing.T) {
+	metadata, err := decodeToolMetadata(`{"diff":{"path":"/tmp/file.txt","old_text":"old","new_text":"new"}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Diff == nil || metadata.Diff.Path != "/tmp/file.txt" || metadata.Diff.NewText != "new" {
+		t.Fatalf("metadata = %#v", metadata)
 	}
 }
 

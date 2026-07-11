@@ -1,18 +1,15 @@
 package tool
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// ApplyPatch applies a unified diff patch.
+// ApplyPatch applies Codex-style text file patches.
 type ApplyPatch struct {
 	CWD string
 }
@@ -25,14 +22,15 @@ type ApplyPatchArgs struct {
 // Definition returns the model-visible definition for apply_patch.
 func (ApplyPatch) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
-		Name:        "apply_patch",
-		Description: "Apply a unified diff patch to one or more local text files.",
+		Name: "apply_patch",
+		Description: "Apply a Codex-style text patch. The patch must start with '*** Begin Patch' and end with '*** End Patch', " +
+			"and may contain Add File, Update File, Delete File, and Move to operations.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"patch": map[string]any{
 					"type":        "string",
-					"description": "Unified diff patch text.",
+					"description": "Codex-style patch text. Add File content lines start with '+'. Update File uses @@ sections whose lines start with ' ', '+', or '-'; an optional Move to line follows the Update File header.",
 				},
 			},
 			"required": []string{"patch"},
@@ -40,23 +38,23 @@ func (ApplyPatch) Definition() model.ToolDefinition {
 	}
 }
 
-// Run applies a unified diff using the patch from the JSON parameters.
+// Run applies a patch and returns its text summary.
 func (a ApplyPatch) Run(ctx context.Context, arguments string) (string, error) {
+	result, err := a.RunResult(ctx, arguments)
+	return result.Content, err
+}
+
+// RunResult applies a patch and returns its summary and actual file changes.
+func (a ApplyPatch) RunResult(ctx context.Context, arguments string) (RunResult, error) {
 	args, err := ParseApplyPatchArgs(arguments)
 	if err != nil {
-		return "", err
+		return RunResult{}, err
 	}
-	paths := ApplyPatchPaths(args.Patch, a.CWD)
-	if err := runGitApply(ctx, a.CWD, args.Patch, "--check"); err != nil {
-		return "", err
+	actions, err := parsePatch(args.Patch)
+	if err != nil {
+		return RunResult{}, err
 	}
-	if err := runGitApply(ctx, a.CWD, args.Patch); err != nil {
-		return "", err
-	}
-	if len(paths) == 0 {
-		return "applied patch", nil
-	}
-	return "applied patch to " + strings.Join(paths, ", "), nil
+	return applyPatchActions(ctx, a.CWD, actions)
 }
 
 // ParseApplyPatchArgs parses and validates apply_patch parameters.
@@ -71,69 +69,11 @@ func ParseApplyPatchArgs(arguments string) (ApplyPatchArgs, error) {
 	return args, nil
 }
 
-// ApplyPatchPaths extracts the target paths involved in a unified diff.
+// ApplyPatchPaths extracts resolved paths from a valid Codex-style patch.
 func ApplyPatchPaths(patch, cwd string) []string {
-	seen := map[string]struct{}{}
-	var paths []string
-	var oldPath string
-	for _, line := range strings.Split(patch, "\n") {
-		switch {
-		case strings.HasPrefix(line, "--- "):
-			oldPath = parsePatchPath(strings.TrimPrefix(line, "--- "))
-		case strings.HasPrefix(line, "+++ "):
-			newPath := parsePatchPath(strings.TrimPrefix(line, "+++ "))
-			pathValue := newPath
-			if pathValue == "" {
-				pathValue = oldPath
-			}
-			oldPath = ""
-			if pathValue == "" {
-				continue
-			}
-			pathValue = resolveToolPath(cwd, pathValue)
-			if _, ok := seen[pathValue]; ok {
-				continue
-			}
-			seen[pathValue] = struct{}{}
-			paths = append(paths, pathValue)
-		}
+	actions, err := parsePatch(patch)
+	if err != nil {
+		return nil
 	}
-	return paths
-}
-
-func parsePatchPath(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || value == "/dev/null" {
-		return ""
-	}
-	return trimPatchPathPrefix(strings.Fields(value)[0])
-}
-
-func runGitApply(ctx context.Context, cwd, patch string, args ...string) error {
-	cmdArgs := append([]string{"apply"}, args...)
-	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
-	if cwd != "" {
-		cmd.Dir = cwd
-	}
-	cmd.Stdin = strings.NewReader(patch)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = err.Error()
-		}
-		return fmt.Errorf("apply_patch failed: %s", message)
-	}
-	return nil
-}
-
-func trimPatchPathPrefix(pathValue string) string {
-	pathValue = filepath.ToSlash(strings.TrimSpace(pathValue))
-	for _, prefix := range []string{"a/", "b/"} {
-		if strings.HasPrefix(pathValue, prefix) {
-			return strings.TrimPrefix(pathValue, prefix)
-		}
-	}
-	return pathValue
+	return resolvedPatchPaths(actions, cwd)
 }

@@ -63,7 +63,21 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 		return ""
 	}
 	if call.Name == "apply_patch" {
-		value, _, _ = strings.Cut(value, "\n")
+		actions, err := parsePatch(value)
+		if err != nil || len(actions) == 0 {
+			return prefix + patchBeginMarker
+		}
+		paths := make(map[string]struct{})
+		for _, action := range actions {
+			paths[action.path] = struct{}{}
+			if action.movePath != "" {
+				paths[action.movePath] = struct{}{}
+			}
+		}
+		if len(paths) > 1 {
+			return fmt.Sprintf("Patch: %d files", len(paths))
+		}
+		return prefix + shortenPath(actions[0].path, cwd)
 	}
 	if isFileTool(call.Name) {
 		value = shortenPath(value, cwd)

@@ -23,7 +23,7 @@ const (
 // isFileTool determines whether a tool needs ACP file display enhancement.
 func isFileTool(name string) bool {
 	switch name {
-	case "read_file", "write_file", "edit_file", "apply_patch":
+	case "read_file", "write_file", "edit_file":
 		return true
 	default:
 		return false
@@ -39,8 +39,6 @@ func (a *Agent) runFileTool(ctx context.Context, sessionID acpsdk.SessionId, cwd
 		return a.runWriteFileTool(ctx, sessionID, cwd, call, fallback)
 	case "edit_file":
 		return a.runEditFileTool(ctx, sessionID, cwd, call, fallback)
-	case "apply_patch":
-		return a.runApplyPatchTool(ctx, cwd, call, fallback)
 	default:
 		return fallback(ctx, call)
 	}
@@ -308,6 +306,9 @@ func mergeToolMetadata(base, extra model.ToolMetadata) model.ToolMetadata {
 	}
 	if base.Diff == nil {
 		base.Diff = extra.Diff
+	}
+	if len(base.Diffs) == 0 {
+		base.Diffs = extra.Diffs
 	}
 	return base
 }

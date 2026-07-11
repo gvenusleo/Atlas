@@ -1287,8 +1287,19 @@ func toolCallUpdateOptions(status acpsdk.ToolCallStatus, result string, metadata
 	return opts
 }
 
-// toolCallContent prioritizes structured diff, falling back to plain text content.
+// toolCallContent prioritizes structured diffs, falling back to plain text content.
 func toolCallContent(result string, metadata model.ToolMetadata) []acpsdk.ToolCallContent {
+	if len(metadata.Diffs) > 0 {
+		content := make([]acpsdk.ToolCallContent, 0, len(metadata.Diffs))
+		for _, diff := range metadata.Diffs {
+			if diff.OldText == nil {
+				content = append(content, acpsdk.ToolDiffContent(diff.Path, diff.NewText))
+			} else {
+				content = append(content, acpsdk.ToolDiffContent(diff.Path, diff.NewText, *diff.OldText))
+			}
+		}
+		return content
+	}
 	if metadata.Diff != nil {
 		if metadata.Diff.OldText == nil {
 			return []acpsdk.ToolCallContent{

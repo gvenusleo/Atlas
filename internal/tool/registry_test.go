@@ -15,6 +15,17 @@ type fakeTool struct {
 	gotArgs    string
 }
 
+type fakeRunResultTool struct {
+	fakeTool
+	runResult RunResult
+	resultErr error
+}
+
+func (t *fakeRunResultTool) RunResult(_ context.Context, arguments string) (RunResult, error) {
+	t.gotArgs = arguments
+	return t.runResult, t.resultErr
+}
+
 func (t *fakeTool) Definition() model.ToolDefinition {
 	return t.definition
 }
@@ -114,5 +125,28 @@ func TestRegistryRunReturnsToolError(t *testing.T) {
 	_, err = registry.Run(context.Background(), model.ToolCall{Name: "fail"})
 	if !errors.Is(err, want) {
 		t.Fatalf("Run() error = %v, want %v", err, want)
+	}
+}
+
+func TestRegistryRunUsesStructuredResultOnError(t *testing.T) {
+	want := errors.New("partial failure")
+	structured := &fakeRunResultTool{
+		fakeTool: fakeTool{definition: model.ToolDefinition{Name: "structured"}},
+		runResult: RunResult{
+			Content: "partial",
+			Metadata: model.ToolMetadata{
+				Locations: []model.ToolLocation{{Path: "/tmp/file.txt"}},
+			},
+		},
+		resultErr: want,
+	}
+	registry, err := NewRegistry(structured)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := registry.Run(context.Background(), model.ToolCall{Name: "structured", Arguments: `{}`})
+	if !errors.Is(err, want) || got.Content != "partial" || len(got.Metadata.Locations) != 1 {
+		t.Fatalf("Run() = %#v, %v", got, err)
 	}
 }

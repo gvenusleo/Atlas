@@ -8,7 +8,7 @@
 |---|---|
 | `read_file` | 读取文本文件 |
 | `edit_file` | 精确替换一个唯一文本块 |
-| `apply_patch` | 应用 unified diff patch，可一次修改多个文件 |
+| `apply_patch` | 应用 Codex 风格文本 patch，可新增、更新、删除或移动一个或多个文件 |
 | `write_file` | 写入文件内容 |
 | `run_shell` | Windows 使用 PowerShell，其他平台使用 `/bin/sh`；支持可接受退出码，本地执行的有界输出截断时保留完整临时日志 |
 | `load_skill` | 按名称加载本地 skill 指令 |
