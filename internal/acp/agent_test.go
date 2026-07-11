@@ -1099,6 +1099,29 @@ func TestToolRunnerReturnsClientTerminalExitErrorWithoutFallback(t *testing.T) {
 	}
 }
 
+func TestToolRunnerAcceptsConfiguredClientTerminalExitCode(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	exitCode := 1
+	a.terminalClient = &fakeTerminalClient{output: "no matches\n", exitCode: &exitCode}
+	runner := a.toolRunner("sess", "/tmp/work")
+
+	got, err := runner(context.Background(), model.ToolCall{
+		ID:        "call_1",
+		Name:      "run_shell",
+		Arguments: `{"command":"rg missing","success_exit_codes":[0,1]}`,
+	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		return tool.RunResult{}, fmt.Errorf("fallback should not run")
+	})
+
+	if err != nil {
+		t.Fatalf("ToolRunner() error = %v", err)
+	}
+	if !strings.Contains(got.Content, "no matches") || !strings.Contains(got.Content, "[command exited with accepted code 1]") {
+		t.Fatalf("ToolRunner() output = %q", got.Content)
+	}
+}
+
 func TestToolRunnerFallsBackWhenClientTerminalCreateFails(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}

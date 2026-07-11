@@ -580,7 +580,7 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 		if waitErr == context.DeadlineExceeded {
 			status = fmt.Sprintf("command timed out after %s", tool.ShellTimeout(args.TimeoutSeconds))
 		}
-		output, outputErr := a.terminalOutputWithStatus(context.Background(), sessionID, terminal.TerminalId, status)
+		output, outputErr := a.terminalOutputWithStatus(context.Background(), sessionID, terminal.TerminalId, status, true)
 		if waitErr == context.DeadlineExceeded && outputErr != nil {
 			return tool.RunResult{Content: output}, outputErr
 		}
@@ -590,8 +590,8 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 		a.killClientTerminal(sessionID, terminal.TerminalId)
 		return tool.RunResult{}, err
 	}
-	status := terminalExitStatus(exit)
-	output, err := a.terminalOutputWithStatus(ctx, sessionID, terminal.TerminalId, status)
+	status, failed := terminalExitStatus(exit, args.SuccessExitCodes)
+	output, err := a.terminalOutputWithStatus(ctx, sessionID, terminal.TerminalId, status, failed)
 	return tool.RunResult{Content: output}, err
 }
 
@@ -618,7 +618,7 @@ func (a *Agent) sendTerminalToolCallContent(ctx context.Context, sessionID acpsd
 	return nil
 }
 
-func (a *Agent) terminalOutputWithStatus(ctx context.Context, sessionID acpsdk.SessionId, terminalID, status string) (string, error) {
+func (a *Agent) terminalOutputWithStatus(ctx context.Context, sessionID acpsdk.SessionId, terminalID, status string, failed bool) (string, error) {
 	output, err := a.terminalClient.TerminalOutput(ctx, acpsdk.TerminalOutputRequest{
 		SessionId:  sessionID,
 		TerminalId: terminalID,
@@ -632,19 +632,24 @@ func (a *Agent) terminalOutputWithStatus(ctx context.Context, sessionID acpsdk.S
 	}
 	if status != "" {
 		content = appendToolStatus(content, status)
-		return content, fmt.Errorf("%s", status)
+		if failed {
+			return content, fmt.Errorf("%s", status)
+		}
 	}
 	return content, nil
 }
 
-func terminalExitStatus(exit acpsdk.WaitForTerminalExitResponse) string {
+func terminalExitStatus(exit acpsdk.WaitForTerminalExitResponse, successExitCodes []int) (string, bool) {
 	if exit.Signal != nil && *exit.Signal != "" {
-		return "command terminated by signal " + *exit.Signal
+		return "command terminated by signal " + *exit.Signal, true
+	}
+	if exit.ExitCode != nil && !tool.IsSuccessfulExitCode(successExitCodes, *exit.ExitCode) {
+		return fmt.Sprintf("command exited with code %d", *exit.ExitCode), true
 	}
 	if exit.ExitCode != nil && *exit.ExitCode != 0 {
-		return fmt.Sprintf("command exited with code %d", *exit.ExitCode)
+		return fmt.Sprintf("command exited with accepted code %d", *exit.ExitCode), false
 	}
-	return ""
+	return "", false
 }
 
 func appendToolStatus(output, status string) string {

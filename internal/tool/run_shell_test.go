@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestRunShellRun(t *testing.T) {
@@ -27,6 +28,16 @@ func TestRunShellRunFailure(t *testing.T) {
 	}
 	if !strings.Contains(got, "fail") || !strings.Contains(got, "command exited with code 7") {
 		t.Fatalf("Run() = %q, want output and exit code", got)
+	}
+}
+
+func TestRunShellRunAcceptsConfiguredExitCode(t *testing.T) {
+	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellFailCommand("no-matches", 1))+`,"success_exit_codes":[0,1]}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(got, "no-matches") || !strings.Contains(got, "[command exited with accepted code 1]") {
+		t.Fatalf("Run() = %q, want output and accepted exit code", got)
 	}
 }
 
@@ -72,6 +83,28 @@ func TestRunShellRunMissingCommand(t *testing.T) {
 	}
 }
 
+func TestParseShellArgsNormalizesSuccessExitCodes(t *testing.T) {
+	args, err := ParseShellArgs(`{"command":"check","success_exit_codes":[0,1,1]}`)
+	if err != nil {
+		t.Fatalf("ParseShellArgs() error = %v", err)
+	}
+	if got := fmt.Sprint(args.SuccessExitCodes); got != "[0 1]" {
+		t.Fatalf("SuccessExitCodes = %s, want [0 1]", got)
+	}
+
+	args, err = ParseShellArgs(`{"command":"check","success_exit_codes":[]}`)
+	if err != nil {
+		t.Fatalf("ParseShellArgs() error = %v", err)
+	}
+	if got := fmt.Sprint(args.SuccessExitCodes); got != "[0]" {
+		t.Fatalf("default SuccessExitCodes = %s, want [0]", got)
+	}
+
+	if _, err := ParseShellArgs(`{"command":"check","success_exit_codes":[-1]}`); err == nil {
+		t.Fatal("ParseShellArgs() error = nil, want negative exit code error")
+	}
+}
+
 func TestRunShellRunTimeout(t *testing.T) {
 	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellTimeoutCommand())+`,"timeout_seconds":1}`)
 	if err == nil {
@@ -82,13 +115,59 @@ func TestRunShellRunTimeout(t *testing.T) {
 	}
 }
 
-func TestRunShellRunTruncatesOutput(t *testing.T) {
-	got := truncateShellOutput([]byte("prefix" + strings.Repeat("x", maxShellOutputBytes) + "suffix"))
-	if !strings.Contains(got, "[output truncated]") {
-		t.Fatalf("truncateShellOutput() = %q, want truncated marker", got[:64])
+func TestShellOutputCaptureKeepsEdgesAndFullLog(t *testing.T) {
+	capture, err := newShellOutputCapture()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(got, "prefix") || !strings.Contains(got, "suffix") {
-		t.Fatalf("truncateShellOutput() should keep tail, got prefix=%v suffix=%v", strings.Contains(got, "prefix"), strings.Contains(got, "suffix"))
+	full := []byte(strings.Repeat("h", shellOutputEdgeBytes) + "omitted-output" + strings.Repeat("t", shellOutputEdgeBytes))
+	if _, err := capture.Write(full); err != nil {
+		t.Fatal(err)
+	}
+	got, err := capture.finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(capture.path)
+	if !strings.HasPrefix(got, strings.Repeat("h", shellOutputEdgeBytes)) || !strings.HasSuffix(got, strings.Repeat("t", shellOutputEdgeBytes)) {
+		t.Fatal("captured output did not preserve its first and last 64 KiB")
+	}
+	if !strings.Contains(got, "[output truncated: omitted 14 bytes; full output: "+capture.path+"]") {
+		t.Fatalf("captured output missing truncation details: %q", got[shellOutputEdgeBytes:shellOutputEdgeBytes+128])
+	}
+	stored, err := os.ReadFile(capture.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stored) != string(full) {
+		t.Fatal("full output log does not match command output")
+	}
+}
+
+func TestShellOutputCaptureRemovesUntruncatedLog(t *testing.T) {
+	capture, err := newShellOutputCapture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := capture.Write([]byte("complete output")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := capture.finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "complete output" {
+		t.Fatalf("finish() = %q, want exact output", got)
+	}
+	if _, err := os.Stat(capture.path); !os.IsNotExist(err) {
+		t.Fatalf("temporary log still exists: %v", err)
+	}
+}
+
+func TestValidShellOutputReplacesInvalidUTF8(t *testing.T) {
+	got := validShellOutput([]byte{'a', 0xff, 'b'})
+	if !strings.Contains(got, "\uFFFD") || !utf8.ValidString(got) {
+		t.Fatalf("validShellOutput() = %q, want valid UTF-8 replacement", got)
 	}
 }
 
