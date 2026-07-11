@@ -260,7 +260,7 @@ func TestApplyPatchRunInvalidArguments(t *testing.T) {
 
 func TestApplyPatchDefinition(t *testing.T) {
 	def := (ApplyPatch{}).Definition()
-	if def.Name != "apply_patch" || def.Parameters == nil || !strings.Contains(def.Description, "Codex-style") {
+	if def.Name != "apply_patch" || def.Parameters == nil || !strings.Contains(def.Description, "Add, update, delete, or move text files") {
 		t.Fatalf("Definition() = %#v", def)
 	}
 }

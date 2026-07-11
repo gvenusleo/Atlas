@@ -122,7 +122,7 @@ Atlas pursues small, clear, and verifiable. Current real usage paths take priori
 Key behaviors are tested with fake providers and temp directories. Priority coverage areas:
 
 - Agent loop: plain text replies, tool calls, error writeback, ordering, `max_steps`.
-- Tools: Codex-style text patches, shell execution, Tavily tools.
+- Tools: text patches, shell execution, Tavily tools.
 - Prompt: global and current-directory instructions, skill summaries, long-term memory injection.
 - Session: save, restore, list, view, delete, additional working directories, context compaction, image content fragment persistence.
 - Memory: schema, retrieval, enqueue, incremental extraction, summary refresh, disable, model selection, and image placeholders.

@@ -6,7 +6,7 @@
 
 | Tool | Description |
 |---|---|
-| `apply_patch` | Apply a Codex-style text patch to add, update, delete, or move one or more files |
+| `apply_patch` | Add, update, delete, or move one or more text files with a patch |
 | `run_shell` | Discover, search, inspect, and verify with PowerShell on Windows or `/bin/sh` elsewhere; supports accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
 | `load_skill` | Load a local skill's instructions by name |
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |

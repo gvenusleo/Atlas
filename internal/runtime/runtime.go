@@ -1207,7 +1207,7 @@ func skillMessages(names []string, catalog *skill.Catalog) []model.Message {
 	return messages
 }
 
-// skillContext wraps the full SKILL.md content using Codex-style XML.
+// skillContext wraps the full SKILL.md content in XML instruction tags.
 func skillContext(found skill.Skill) string {
 	return fmt.Sprintf(
 		"<skill>\n<name>%s</name>\n<path>%s</path>\n%s\n</skill>",

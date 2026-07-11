@@ -9,7 +9,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
-// ApplyPatch applies Codex-style text file patches.
+// ApplyPatch applies text file patches.
 type ApplyPatch struct {
 	CWD string
 }
@@ -23,14 +23,14 @@ type ApplyPatchArgs struct {
 func (ApplyPatch) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name: "apply_patch",
-		Description: "Apply a Codex-style text patch. The patch must start with '*** Begin Patch' and end with '*** End Patch', " +
+		Description: "Add, update, delete, or move text files with a patch. The patch must start with '*** Begin Patch' and end with '*** End Patch', " +
 			"and may contain Add File, Update File, Delete File, and Move to operations.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"patch": map[string]any{
 					"type":        "string",
-					"description": "Codex-style patch text. Add File content lines start with '+'. Update File uses @@ sections whose lines start with ' ', '+', or '-'; an optional Move to line follows the Update File header.",
+					"description": "Patch text whose Add File content lines start with '+'. Update File uses @@ sections whose lines start with ' ', '+', or '-'; an optional Move to line follows the Update File header.",
 				},
 			},
 			"required": []string{"patch"},
@@ -69,7 +69,7 @@ func ParseApplyPatchArgs(arguments string) (ApplyPatchArgs, error) {
 	return args, nil
 }
 
-// ApplyPatchPaths extracts resolved paths from a valid Codex-style patch.
+// ApplyPatchPaths extracts resolved paths from a valid patch.
 func ApplyPatchPaths(patch, cwd string) []string {
 	actions, err := parsePatch(patch)
 	if err != nil {
