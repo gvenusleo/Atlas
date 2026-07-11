@@ -32,7 +32,7 @@ internal/ws            WebSocket channel
 go build ./cmd/atlas           # build
 go test ./...                  # run all tests
 go test ./internal/agent/...   # run a single package's tests
-just ci                        # fmt + tidy + build + vet + race test (requires just)
+just ci                        # full non-modifying CI check (requires just)
 ```
 
 ## Design Principles

@@ -25,7 +25,7 @@ Open an issue first to align before investing time in a PR:
 
 ## Development Setup
 
-Prerequisites: Go 1.26+, Git.
+Prerequisites: Go 1.26+, Git, [just](https://github.com/casey/just).
 
 ```sh
 git clone https://github.com/gvenusleo/atlas.git
@@ -35,7 +35,7 @@ go test ./...                 # run all tests
 go test ./internal/agent/...  # run a single package's tests
 ```
 
-If you have [just](https://github.com/casey/just) installed, `just check` runs fmt + tidy + test in one command.
+Before submitting a change, run `just ci` to check formatting, module files, builds, vet, race tests, and release-target cross-builds.
 
 ## Commit Convention
 

@@ -32,7 +32,7 @@ internal/ws            WebSocket 通道
 go build ./cmd/atlas           # 构建
 go test ./...                  # 运行全部测试
 go test ./internal/agent/...   # 运行单个包的测试
-just ci                        # fmt + tidy + build + vet + race test（需安装 just）
+just ci                        # 完整且不修改文件的 CI 检查（需安装 just）
 ```
 
 ## 设计原则

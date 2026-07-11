@@ -14,14 +14,35 @@ fmt:
 tidy:
     go mod tidy
 
+fmt-check:
+    @just --justfile {{ quote(justfile()) }} _fmt_check_{{ os_family() }}
+
+_fmt_check_windows:
+    $sources = @(git ls-files --cached --others --exclude-standard '*.go'); $files = @(gofmt -l $sources); if ($files.Count -gt 0) { $files; exit 1 }
+
+_fmt_check_unix:
+    @files="$(gofmt -l $(git ls-files --cached --others --exclude-standard '*.go'))"; if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
+
 test:
     go test ./...
 
-# ci mirrors the GitHub Actions CI pipeline (adds -race -failfast).
-ci: fmt tidy
+# ci mirrors the GitHub Actions verification pipeline without modifying files.
+ci: fmt-check
+    go mod tidy -diff
     go build ./...
     go vet ./...
-    go test -race -failfast ./...
+    go test -race ./...
+    @just --justfile {{ quote(justfile()) }} _cross_build_{{ os_family() }}
+
+_cross_build_windows:
+    $env:CGO_ENABLED = "0"; $env:GOOS = "linux"; $env:GOARCH = "amd64"; go build ./...
+    $env:CGO_ENABLED = "0"; $env:GOOS = "darwin"; $env:GOARCH = "amd64"; go build ./...
+    $env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = "amd64"; go build ./...
+
+_cross_build_unix:
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...
+    CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build ./...
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...
 
 build:
     @just --justfile {{ quote(justfile()) }} _build_{{ os_family() }}
