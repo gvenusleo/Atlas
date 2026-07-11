@@ -20,8 +20,9 @@ import (
 const (
 	defaultShellTimeoutSeconds = 30
 	maxShellTimeoutSeconds     = 300
-	maxShellOutputBytes        = 128 * 1024
-	shellOutputEdgeBytes       = maxShellOutputBytes / 2
+	// ShellOutputByteLimit is the maximum command output returned to the model.
+	ShellOutputByteLimit = 50 * 1024
+	shellOutputEdgeBytes = ShellOutputByteLimit / 2
 )
 
 // ShellSpec describes the default shell used by Atlas on the current platform.
@@ -273,7 +274,7 @@ func (c *shellOutputCapture) finish() (string, error) {
 		_ = os.Remove(c.path)
 		return "", fmt.Errorf("close command output log: %w", err)
 	}
-	if c.total <= maxShellOutputBytes {
+	if c.total <= ShellOutputByteLimit {
 		output, err := os.ReadFile(c.path)
 		_ = os.Remove(c.path)
 		if err != nil {

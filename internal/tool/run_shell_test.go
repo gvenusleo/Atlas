@@ -130,7 +130,7 @@ func TestShellOutputCaptureKeepsEdgesAndFullLog(t *testing.T) {
 	}
 	defer os.Remove(capture.path)
 	if !strings.HasPrefix(got, strings.Repeat("h", shellOutputEdgeBytes)) || !strings.HasSuffix(got, strings.Repeat("t", shellOutputEdgeBytes)) {
-		t.Fatal("captured output did not preserve its first and last 64 KiB")
+		t.Fatal("captured output did not preserve its first and last 25 KiB")
 	}
 	if !strings.Contains(got, "[output truncated: omitted 14 bytes; full output: "+capture.path+"]") {
 		t.Fatalf("captured output missing truncation details: %q", got[shellOutputEdgeBytes:shellOutputEdgeBytes+128])
@@ -141,6 +141,12 @@ func TestShellOutputCaptureKeepsEdgesAndFullLog(t *testing.T) {
 	}
 	if string(stored) != string(full) {
 		t.Fatal("full output log does not match command output")
+	}
+}
+
+func TestShellOutputByteLimit(t *testing.T) {
+	if ShellOutputByteLimit != 50*1024 {
+		t.Fatalf("ShellOutputByteLimit = %d, want %d", ShellOutputByteLimit, 50*1024)
 	}
 }
 

@@ -25,6 +25,8 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 		"Use only the tools that Atlas exposes",
 		"Use run_shell for path discovery and regex text search",
 		"Pass success_exit_codes [0,1] for rg searches",
+		"Keep shell-based file inspection bounded",
+		"Get-Content piped to Select-Object",
 		"Use edit_file for one exact unique text replacement",
 		"Do not treat command completion alone as proof",
 		"Match the user's language",

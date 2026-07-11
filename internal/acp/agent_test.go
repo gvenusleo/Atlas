@@ -482,6 +482,9 @@ func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
 	if !terminalCreateMatches(client.create, "pwd", cwd) {
 		t.Fatalf("create request = %#v", client.create)
 	}
+	if client.create.OutputByteLimit == nil || *client.create.OutputByteLimit != tool.ShellOutputByteLimit {
+		t.Fatalf("output byte limit = %v, want %d", client.create.OutputByteLimit, tool.ShellOutputByteLimit)
+	}
 	if !client.waitCalled || !client.outputCalled || !client.releaseCalled {
 		t.Fatalf("terminal calls wait=%v output=%v release=%v", client.waitCalled, client.outputCalled, client.releaseCalled)
 	}

@@ -544,7 +544,7 @@ func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.S
 	if terminalCWD == "" {
 		terminalCWD = cwd
 	}
-	limit := 128 * 1024
+	limit := tool.ShellOutputByteLimit
 	createReq := acpsdk.CreateTerminalRequest{
 		SessionId:       sessionID,
 		Command:         spec.Command,
