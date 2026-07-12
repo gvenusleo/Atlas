@@ -113,7 +113,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	s.logf("ws serving on %s", ln.Addr().String())
 
-	// Start memory worker, consistent with ACP / WeChat channels.
+	// Start memory worker, consistent with the ACP channel.
 	// Use a derived context so the worker stops when Serve returns, not only
 	// when the parent ctx is cancelled.
 	workerCtx, cancelWorker := context.WithCancel(ctx)

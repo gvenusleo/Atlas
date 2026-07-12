@@ -74,9 +74,6 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
     "tavily": {
       "api_key": "tvly-..."
     },
-    "weixin": {
-      "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c"
-    },
     "ws": {
       "host": "127.0.0.1",
       "port": 8765
@@ -142,8 +139,6 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 | 字段 | 说明 |
 |---|---|
 | `services.tavily.api_key` | 配置后启用 `web_search` 和 `web_fetch` |
-| `services.weixin.base_url` | 可省略，默认 `https://ilinkai.weixin.qq.com` |
-| `services.weixin.cdn_base_url` | 可省略，默认 `https://novac2c.cdn.weixin.qq.com/c2c`，用于微信图片下载 |
 | `services.ws.host` | WebSocket 服务绑定地址，默认 `127.0.0.1`；非 loopback 地址必须配置 `services.ws.token` |
 | `services.ws.port` | WebSocket 服务端口，默认 `8765` |
 | `services.ws.token` | 绑定非 loopback 地址时，WebSocket 客户端必须发送的 Bearer token |

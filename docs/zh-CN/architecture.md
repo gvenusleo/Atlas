@@ -11,7 +11,6 @@ graph TD
     subgraph 入口层
         CLI[CLI]
         ACP[ACP 适配层]
-        WX[微信通道]
         WS[WebSocket 通道]
     end
 
@@ -39,7 +38,6 @@ graph TD
 
     CLI --> RT
     ACP --> RT
-    WX --> RT
     WS --> RT
     RT --> AG
     RT --> MW

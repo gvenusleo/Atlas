@@ -55,6 +55,6 @@ Atlas aims to be small, clear, and verifiable. Before submitting, confirm:
 - **Minimal changes**: only touch code directly related to the task. No drive-by refactors.
 - **Testable**: cover key behavior with fake providers and temp directories.
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep interfaces for "maybe later."
-- **Single core**: CLI, ACP, and WeChat share the same `runtime.Runtime`. Channel layers only do protocol adaptation.
+- **Single core**: CLI, ACP, and WebSocket share the same `runtime.Runtime`. Channel layers only do protocol adaptation.
 
 See [AGENTS.md](AGENTS.md) for full design principles.

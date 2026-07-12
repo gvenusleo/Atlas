@@ -23,7 +23,6 @@ Todo state is not persisted to the database. Instead, when context compaction oc
 Channel-specific rendering:
 
 - **ACP**: todo updates are sent as `plan_update` session updates, mapping each entry to a `PlanEntry`. Editors like Zed render them as a structured plan panel.
-- **WeChat**: items with `in_progress` status are sent as progress messages to the user.
 - **CLI**: todos appear as a tool call in the transcript with a `Todo: N items` title.
 
 ## Instructions and Skills

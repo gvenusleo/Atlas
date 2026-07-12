@@ -37,30 +37,6 @@ When connected via ACP, `run_shell` requests the client terminal when available 
 
 `additionalDirectories` are saved and returned as session metadata, but relative paths are still resolved from `cwd`. ACP auth, permission requests, MCP connections, audio, and non-image binary resource input are not currently supported.
 
-## WeChat
-
-`atlas weixin login` logs in via WeChat QR code and saves the account token to `~/.atlas/weixin/accounts`. `atlas weixin serve` connects to the WeChat Bot, long-polls text and image messages, and invokes the local Atlas runtime.
-
-When the model updates its task list via `todo_write`, items with `in_progress` status are sent to the user as progress messages.
-
-The WeChat channel has the same file and shell permissions as the local Atlas process. The working directory for the first message uses the current directory when `atlas weixin serve` starts. Only the WeChat user who logged in via QR code can control Atlas. Group chats, audio, video, and adding other controllers are not supported.
-
-Slash commands available in WeChat chat:
-
-| Command | Description |
-|---|---|
-| `/help` | Show commands |
-| `/status` | Show current working directory and session |
-| `/cwd` | Show current working directory |
-| `/cwd /absolute/path` | Switch working directory; next regular message starts a new conversation |
-| `/cwd -` | Switch back to the previous working directory |
-| `/new` | Start a new conversation in the current working directory |
-| `/sessions` | List recent sessions for the current working directory |
-| `/sessions all` | List recent sessions across all working directories |
-| `/resume <session-id>` | Resume a session and switch to its working directory |
-| `/compact` | Compact current session context |
-| `/cancel` | Cancel the currently running turn |
-
 ## WebSocket
 
 `atlas serve` starts a WebSocket server for clients such as a mobile app. The server listens on `127.0.0.1:8765` by default, configurable via `services.ws.host` and `services.ws.port` in `~/.atlas/config.json`.

@@ -37,30 +37,6 @@ ACP 支持的功能：
 
 `additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准。当前不支持 ACP auth、权限请求、MCP 连接，也不支持音频和非图片二进制资源输入。
 
-## 微信
-
-`atlas weixin login` 使用微信扫码登录，并把账号 token 保存到 `~/.atlas/weixin/accounts`。`atlas weixin serve` 连接微信 Bot，长轮询文本和图片消息并调用本地 Atlas runtime。
-
-当模型通过 `todo_write` 更新任务列表时，`in_progress` 状态的条目会作为进度消息发送给用户。
-
-微信通道拥有与本机 Atlas 进程相同的文件和 shell 权限。首次收到消息时，工作目录使用 `atlas weixin serve` 启动时的当前目录。当前只支持扫码登录的微信用户本人控制 Atlas，不支持群聊、音频、视频或添加其他控制人。
-
-微信聊天支持的斜杠命令：
-
-| 命令 | 说明 |
-|---|---|
-| `/help` | 查看命令 |
-| `/status` | 查看当前工作目录和 session |
-| `/cwd` | 查看当前工作目录 |
-| `/cwd /absolute/path` | 切换工作目录，下一条普通消息开启新对话 |
-| `/cwd -` | 切回上一个工作目录 |
-| `/new` | 在当前工作目录开启新对话 |
-| `/sessions` | 查看当前工作目录最近会话 |
-| `/sessions all` | 查看全局最近会话 |
-| `/resume <session-id>` | 恢复指定会话，并切换到该会话的工作目录 |
-| `/compact` | 压缩当前会话上下文 |
-| `/cancel` | 取消当前正在运行的 turn |
-
 ## WebSocket
 
 `atlas serve` 启动 WebSocket 服务，供手机 App 等客户端连接。默认监听 `127.0.0.1:8765`，可通过 `~/.atlas/config.json` 中的 `services.ws.host` 和 `services.ws.port` 配置。

@@ -116,7 +116,7 @@ func (TodoWrite) Run(_ context.Context, arguments string) (string, error) {
 	return b.String(), nil
 }
 
-// Metadata returns structured presentation data for the todo list, used by ACP plan update and WeChat progress notifications.
+// Metadata returns structured presentation data for todo list presentation.
 func (TodoWrite) Metadata(arguments string, _ string) model.ToolMetadata {
 	var params todoWriteParams
 	if err := json.Unmarshal([]byte(arguments), &params); err != nil {

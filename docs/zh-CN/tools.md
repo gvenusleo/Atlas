@@ -23,7 +23,6 @@ Todo 状态不持久化到数据库。上下文压缩时，会从 transcript 中
 各通道的展示方式：
 
 - **ACP**：todo 更新作为 `plan_update` session update 发送，每个条目映射为 `PlanEntry`。Zed 等编辑器会渲染为结构化计划面板。
-- **微信**：`in_progress` 状态的条目作为进度消息发送给用户。
 - **CLI**：todo 以工具调用形式出现在 transcript 中，标题为 `Todo: N items`。
 
 ## 指令与 Skill

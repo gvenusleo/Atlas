@@ -18,10 +18,10 @@ fmt-check:
     @just --justfile {{ quote(justfile()) }} _fmt_check_{{ os_family() }}
 
 _fmt_check_windows:
-    $sources = @(git ls-files --cached --others --exclude-standard '*.go'); $files = @(gofmt -l $sources); if ($files.Count -gt 0) { $files; exit 1 }
+    $sources = @(git ls-files --cached --others --exclude-standard '*.go' | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); $files = @(gofmt -l $sources); if ($files.Count -gt 0) { $files; exit 1 }
 
 _fmt_check_unix:
-    @files="$(gofmt -l $(git ls-files --cached --others --exclude-standard '*.go'))"; if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
+    @sources=(); while IFS= read -r file; do if [ -f "$file" ]; then sources+=("$file"); fi; done < <(git ls-files --cached --others --exclude-standard '*.go'); files="$(gofmt -l "${sources[@]}")"; if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
 
 test:
     go test ./...

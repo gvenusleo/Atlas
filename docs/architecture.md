@@ -11,7 +11,6 @@ graph TD
     subgraph Entry Layer
         CLI[CLI]
         ACP[ACP Adapter]
-        WX[WeChat Channel]
         WS[WebSocket Channel]
     end
 
@@ -39,7 +38,6 @@ graph TD
 
     CLI --> RT
     ACP --> RT
-    WX --> RT
     WS --> RT
     RT --> AG
     RT --> MW

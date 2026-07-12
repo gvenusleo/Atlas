@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
 	"github.com/liuyuxin/atlas/internal/version"
-	"github.com/liuyuxin/atlas/internal/weixin"
 )
 
 func TestRunWithDependenciesShowsInteractivePlaceholder(t *testing.T) {
@@ -301,84 +299,6 @@ func TestRunWithDependenciesReportsDoctorFailure(t *testing.T) {
 func TestRunWithDependenciesRejectsDoctorUsage(t *testing.T) {
 	err := runWithDependencies(context.Background(), []string{"doctor", "extra"}, runDependencies{})
 	if err == nil || !strings.Contains(err.Error(), "usage: atlas doctor") {
-		t.Fatalf("runWithDependencies() error = %v", err)
-	}
-}
-
-func TestRunWithDependenciesListsWeixinAccounts(t *testing.T) {
-	setTestHome(t)
-	store, err := weixin.NewStore("")
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if err := store.SaveAccount(weixin.Account{
-		ID:        "bot-1",
-		Token:     "token",
-		BaseURL:   "https://weixin.example.com",
-		UserID:    "user-1",
-		UpdatedAt: time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC),
-	}); err != nil {
-		t.Fatalf("SaveAccount() error = %v", err)
-	}
-
-	var stdout bytes.Buffer
-	if err := runWithDependencies(context.Background(), []string{"weixin", "accounts"}, runDependencies{stdout: &stdout}); err != nil {
-		t.Fatalf("runWithDependencies() error = %v", err)
-	}
-	if got := stdout.String(); !strings.Contains(got, "bot-1") || !strings.Contains(got, "user-1") {
-		t.Fatalf("stdout = %q", got)
-	}
-}
-
-func TestRunWithDependenciesLogsOutWeixinAccount(t *testing.T) {
-	setTestHome(t)
-	store, err := weixin.NewStore("")
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if err := store.SaveAccount(weixin.Account{ID: "bot-1", Token: "token", BaseURL: "https://weixin.example.com", UserID: "user-1"}); err != nil {
-		t.Fatalf("SaveAccount() error = %v", err)
-	}
-
-	var stdout bytes.Buffer
-	if err := runWithDependencies(context.Background(), []string{"weixin", "logout", "bot-1"}, runDependencies{stdout: &stdout}); err != nil {
-		t.Fatalf("runWithDependencies() error = %v", err)
-	}
-	if got := stdout.String(); !strings.Contains(got, "logged out weixin account bot-1") {
-		t.Fatalf("stdout = %q", got)
-	}
-	if _, err := store.LoadAccount("bot-1"); err == nil {
-		t.Fatal("LoadAccount() error = nil")
-	}
-}
-
-func TestRunWithDependenciesWeixinServeReturnsConfigError(t *testing.T) {
-	home := setTestHome(t)
-	configDir := filepath.Join(home, ".atlas")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	configPath := filepath.Join(configDir, "config.json")
-	content := `{
-  "default_model": "test-model",
-  "providers": [{
-    "name": "test",
-    "base_url": "https://api.example.com",
-    "api_key": "sk-test",
-    "models": [{
-      "value": "test-model",
-      "name": "Test Model",
-      "context_window": 1000,
-      "max_tokens": 100
-    }]
-  }]
-}`
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	err := runWithDependencies(context.Background(), []string{"weixin", "serve"}, runDependencies{})
-	if err == nil || !strings.Contains(err.Error(), "input_formats is required") {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
 }

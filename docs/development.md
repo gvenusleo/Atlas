@@ -22,7 +22,6 @@ internal/skill         skill scanning and loading
 internal/tool          tool registry and built-in tools
 internal/transcript    in-memory message sequence
 internal/version       version info
-internal/weixin        WeChat channel
 internal/ws            WebSocket channel
 ```
 
@@ -40,4 +39,4 @@ just ci                        # full non-modifying CI check (requires just)
 - **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, compaction, and background work.
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
 - **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
-- **Single core**: CLI, ACP, WeChat, and WebSocket share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.
+- **Single core**: CLI, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.

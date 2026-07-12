@@ -27,8 +27,6 @@ const (
 	defaultMaxSteps               = 20
 	defaultCompactionTriggerRatio = 0.8
 	defaultTavilyBaseURL          = "https://api.tavily.com"
-	defaultWeixinBaseURL          = "https://ilinkai.weixin.qq.com"
-	defaultWeixinCDNBaseURL       = "https://novac2c.cdn.weixin.qq.com/c2c"
 )
 
 // Config is the application configuration required at Atlas CLI startup.
@@ -95,7 +93,6 @@ type SessionConfig struct {
 // ServicesConfig describes optional external services Atlas can integrate with.
 type ServicesConfig struct {
 	Tavily TavilyConfig `json:"tavily"`
-	Weixin WeixinConfig `json:"weixin"`
 	WS     WSConfig     `json:"ws"`
 }
 
@@ -103,12 +100,6 @@ type ServicesConfig struct {
 type TavilyConfig struct {
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
-}
-
-// WeixinConfig describes the WeChat remote control channel configuration.
-type WeixinConfig struct {
-	BaseURL    string `json:"base_url"`
-	CDNBaseURL string `json:"cdn_base_url"`
 }
 
 // WSConfig describes the WebSocket channel configuration.
@@ -177,18 +168,6 @@ func (c Config) Validate() error {
 		}
 	} else if c.Services.Tavily.BaseURL != "" && c.Services.Tavily.BaseURL != defaultTavilyBaseURL {
 		return fmt.Errorf("services.tavily.api_key is required when services.tavily.base_url is set")
-	}
-	if c.Services.Weixin.BaseURL != "" {
-		weixinURL, err := url.Parse(c.Services.Weixin.BaseURL)
-		if err != nil || weixinURL.Scheme == "" || weixinURL.Host == "" || !isHTTPURL(weixinURL) {
-			return fmt.Errorf("services.weixin.base_url is invalid")
-		}
-	}
-	if c.Services.Weixin.CDNBaseURL != "" {
-		cdnURL, err := url.Parse(c.Services.Weixin.CDNBaseURL)
-		if err != nil || cdnURL.Scheme == "" || cdnURL.Host == "" || !isHTTPURL(cdnURL) {
-			return fmt.Errorf("services.weixin.cdn_base_url is invalid")
-		}
 	}
 	return nil
 }
@@ -437,12 +416,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Services.Tavily.BaseURL == "" {
 		c.Services.Tavily.BaseURL = defaultTavilyBaseURL
-	}
-	if c.Services.Weixin.BaseURL == "" {
-		c.Services.Weixin.BaseURL = defaultWeixinBaseURL
-	}
-	if c.Services.Weixin.CDNBaseURL == "" {
-		c.Services.Weixin.CDNBaseURL = defaultWeixinCDNBaseURL
 	}
 }
 

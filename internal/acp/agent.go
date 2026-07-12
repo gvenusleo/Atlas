@@ -227,7 +227,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		return a.runCommandPrompt(ctx, params.SessionId, state, instruction)
 	}
 	selectedSkills := skillNames(promptText, a.skillCommands(ctx, state.cwd))
-	// Reject if a turn is already running in this session, matching WS/WeChat behavior.
+	// Reject if a turn is already running in this session, matching WebSocket behavior.
 	if !state.running.CompareAndSwap(false, true) {
 		return acpsdk.PromptResponse{}, fmt.Errorf("a turn is already running in session %q, send cancel first", params.SessionId)
 	}

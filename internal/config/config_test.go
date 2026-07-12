@@ -151,7 +151,7 @@ func TestLoadFileDefaults(t *testing.T) {
 		}
 	})
 
-	t.Run("tavily_and_weixin_base_url", func(t *testing.T) {
+	t.Run("tavily_base_url", func(t *testing.T) {
 		content := base[:len(base)-1] + `,
 		"services": {"tavily": {"api_key": "tvly-test"}}
 	}`
@@ -164,12 +164,6 @@ func TestLoadFileDefaults(t *testing.T) {
 		}
 		if cfg.Services.Tavily.APIKey != "tvly-test" {
 			t.Fatalf("Tavily.APIKey = %q", cfg.Services.Tavily.APIKey)
-		}
-		if cfg.Services.Weixin.BaseURL != defaultWeixinBaseURL {
-			t.Fatalf("Weixin.BaseURL = %q", cfg.Services.Weixin.BaseURL)
-		}
-		if cfg.Services.Weixin.CDNBaseURL != defaultWeixinCDNBaseURL {
-			t.Fatalf("Weixin.CDNBaseURL = %q", cfg.Services.Weixin.CDNBaseURL)
 		}
 	})
 }
@@ -245,9 +239,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 		{name: "invalid tavily base url", content: validConfigWith(`"services": {"tavily": {"base_url": ":", "api_key": "tvly-test"}},`)},
 		{name: "unsupported tavily base url scheme", content: validConfigWith(`"services": {"tavily": {"base_url": "ftp://api.tavily.com", "api_key": "tvly-test"}},`)},
 		{name: "custom tavily base url without api key", content: validConfigWith(`"services": {"tavily": {"base_url": "https://tavily.example.com"}},`)},
-		{name: "invalid weixin base url", content: validConfigWith(`"services": {"weixin": {"base_url": ":"}},`)},
-		{name: "unsupported weixin base url scheme", content: validConfigWith(`"services": {"weixin": {"base_url": "ftp://ilinkai.weixin.qq.com"}},`)},
-		{name: "invalid weixin cdn base url", content: validConfigWith(`"services": {"weixin": {"cdn_base_url": ":"}},`)},
 	}
 
 	for _, tt := range tests {
