@@ -28,7 +28,6 @@ ACP supported features:
 - Client terminal for `run_shell` output
 - `apply_patch` locations/diff display
 - Image input
-- Long-term memory background worker
 - `/compact` slash command
 - Skill slash commands, e.g. `/think ...`
 - Plan updates: `todo_write` tool calls are mapped to `plan_update` session updates, rendered as a structured plan panel in editors
@@ -50,7 +49,6 @@ Loopback connections do not require authentication. Binding to a non-loopback ad
 - Reasoning effort switching
 - Skill summaries
 - Turn cancellation
-- Long-term memory background worker
 
 ### Multi-session concurrency
 

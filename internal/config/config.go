@@ -34,7 +34,6 @@ type Config struct {
 	DefaultModel string           `json:"default_model"`
 	Providers    []ProviderConfig `json:"providers"`
 	Agent        AgentConfig      `json:"agent"`
-	Memory       MemoryConfig     `json:"memory"`
 	Session      SessionConfig    `json:"session"`
 	Services     ServicesConfig   `json:"services"`
 }
@@ -78,11 +77,6 @@ type AgentConfig struct {
 	MaxSteps               int     `json:"max_steps"`
 	Temperature            float64 `json:"temperature"`
 	CompactionTriggerRatio float64 `json:"compaction_trigger_ratio"`
-}
-
-// MemoryConfig describes the long-term memory extraction and retrieval configuration.
-type MemoryConfig struct {
-	Model string `json:"model"`
 }
 
 // SessionConfig describes the local session storage parameters.
@@ -149,11 +143,6 @@ func LoadFile(path string) (Config, error) {
 func (c Config) Validate() error {
 	if err := c.validateProviders(); err != nil {
 		return err
-	}
-	if strings.TrimSpace(c.Memory.Model) != "" {
-		if _, _, err := c.ResolveModel(c.Memory.Model); err != nil {
-			return fmt.Errorf("memory.model: %w", err)
-		}
 	}
 	if c.Agent.Temperature < 0 || c.Agent.Temperature > 2 {
 		return fmt.Errorf("agent.temperature must be between 0 and 2")

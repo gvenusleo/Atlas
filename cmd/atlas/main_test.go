@@ -264,7 +264,6 @@ func TestRunWithDependenciesRunsDoctor(t *testing.T) {
 		"OK config:",
 		"OK provider: test, chat_completions, https://api.example.com, 2 models",
 		"OK session:",
-		"OK memory: 0 entries, 0 pending, 0 failed, model session model",
 		"WARN tavily: disabled",
 		"OK shell: " + tool.DefaultShell().DisplayName,
 		"doctor: ok",

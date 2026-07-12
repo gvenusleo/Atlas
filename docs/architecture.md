@@ -4,7 +4,7 @@
 
 ## Layered Design
 
-Atlas is divided into entry layer, orchestration layer, core loop, capability layer, and persistence layer. All entry points share the same `runtime.Runtime`. The core agent loop remains headless, dependency-injected, and independently testable; runtime owns configuration, persistence, and background orchestration.
+Atlas is divided into entry layer, orchestration layer, core loop, capability layer, and persistence layer. All entry points share the same `runtime.Runtime`. The core agent loop remains headless, dependency-injected, and independently testable; runtime owns configuration, persistence, and orchestration.
 
 ```mermaid
 graph TD
@@ -16,7 +16,6 @@ graph TD
 
     subgraph Orchestration Layer
         RT[runtime.RunTurn]
-        MW[Memory Worker]
     end
 
     subgraph Core Loop
@@ -33,19 +32,16 @@ graph TD
     subgraph Persistence Layer
         TR[transcript]
         SS[session SQLite]
-        MS[memory SQLite + substring matching]
     end
 
     CLI --> RT
     ACP --> RT
     WS --> RT
     RT --> AG
-    RT --> MW
     AG --> PR
     AG --> TOOLS
     RT --> PRMPT
     RT --> CMP
-    RT --> MS
     AG --> TR
     RT --> SS
 ```
@@ -87,18 +83,6 @@ Key constraints:
 - Every tool call has a paired tool result, in the same order the model returned them.
 - Tool errors are written back as model-visible tool results, letting the model adjust accordingly.
 - The loop ends when there are no tool calls, an error occurs, or `max_steps` (default 20) is reached.
-
-## Long-Term Memory
-
-The memory system works asynchronously via a background worker. There are three trigger conditions: session message count reaches an incremental threshold, the user explicitly asks to remember something, or context compaction completes. When triggered, an extraction task is enqueued. The worker only processes new messages since the last boundary, calls the model to extract memory entries and writes them to the database, then refreshes summaries for affected scopes. Relevant memories are available on demand via the `memory_search` tool, which the model can call to retrieve context from prior sessions.
-
-Memory types:
-
-- `instruction`: long-term user preferences or constraints
-- `fact`: project facts
-- `workflow`: reusable project workflows
-
-Organized by `global` (cross-project) and `project` (per project directory) scopes.
 
 ## Context Compaction and Todos
 

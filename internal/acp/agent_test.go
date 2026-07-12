@@ -1666,10 +1666,6 @@ func (f *fakeRuntime) DeleteSessionIfExists(_ context.Context, sessionID string)
 	return nil
 }
 
-func (f *fakeRuntime) RunMemoryWorker(context.Context) error {
-	return nil
-}
-
 func currentModelValue(options []acpsdk.SessionConfigOption) string {
 	return currentConfigValue(options, modelSessionConfigID())
 }

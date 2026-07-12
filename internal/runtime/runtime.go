@@ -15,7 +15,6 @@ import (
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/compact"
 	"github.com/liuyuxin/atlas/internal/config"
-	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/provider/chatcompletions"
@@ -272,7 +271,7 @@ func (r *Runtime) openDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 }
 
 // Close closes the shared database connection. It waits for all active
-// long-running operations (turns, compactions, memory jobs) to finish
+// long-running operations (turns and compactions) to finish
 // before closing. Quick read operations (list, show, delete) are
 // synchronous and complete before the caller reaches Close.
 // Safe to call multiple times.
@@ -352,13 +351,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	if isDirectShell {
-		result, savedMessages, err := runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), promptText, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
+		result, err := runDirectShellTurn(ctx, store, sessionID, cwd, fullTrans.Messages(), promptText, shellCommand, opts.Observer, opts.ToolRunner, session.SaveTranscriptOptions{
 			AdditionalDirectories:    opts.AdditionalDirectories,
 			AdditionalDirectoriesSet: opts.AdditionalDirectoriesSet,
 		})
-		if err == nil {
-			r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, savedMessages, configuredMemoryModel(cfg, ""), memoryExtractTriggerOptions{})
-		}
 		return result, err
 	}
 
@@ -386,27 +382,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	// Open memory store and create search function for the memory_search tool.
-	var memorySearch tool.MemorySearchFunc
-	if memStore, err := r.openMemoryStore(ctx, cfg.Session); err == nil {
-		memorySearch = func(searchCtx context.Context, query string, limit int) ([]tool.MemoryEntry, error) {
-			entries, err := memStore.Search(searchCtx, cwd, query, limit)
-			if err != nil {
-				return nil, err
-			}
-			result := make([]tool.MemoryEntry, 0, len(entries))
-			for _, e := range entries {
-				result = append(result, tool.MemoryEntry{
-					Scope:      e.Scope,
-					Type:       e.Type,
-					Content:    e.Content,
-					SourceNote: e.SourceNote,
-				})
-			}
-			return result, nil
-		}
-	}
-	registry, err := buildToolRegistry(cwd, skills, cfg.Services, memorySearch)
+	registry, err := buildToolRegistry(cwd, skills, cfg.Services)
 	if err != nil {
 		return TurnResult{}, err
 	}
@@ -416,7 +392,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			return opts.ToolRunner(ctx, call, baseRunner)
 		})
 	}
-	memoryForceExtract := false
 	selectedSkillMessages := skillMessages(opts.Skills, skills)
 	if resumeSession {
 		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), selectedSkillMessages, parts, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
@@ -428,7 +403,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 				sessionInfo.ContextSummary = result.Summary
 				sessionInfo.CompactedMessageCount = result.CompactCount
 				sessionInfo.CompactedInputTokens = result.TokensBefore
-				memoryForceExtract = true
 			}
 		}
 	}
@@ -540,10 +514,6 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 	if err != nil {
 		return TurnResult{}, err
 	}
-	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, sessionInfo, sessionID, fullMessages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
-		Force:         memoryForceExtract,
-		ContextWindow: selectedModel.ContextWindow,
-	})
 	return TurnResult{
 		SessionID:     sessionID,
 		Content:       content,
@@ -573,13 +543,13 @@ func directShellCommand(promptText string) (string, bool) {
 }
 
 // runDirectShellTurn skips the model call, directly executes a shell command, and saves it as a complete turn.
-func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner, saveOpts session.SaveTranscriptOptions) (TurnResult, []model.Message, error) {
+func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cwd string, existing []model.Message, promptText, command string, observer agent.Observer, runner ToolRunner, saveOpts session.SaveTranscriptOptions) (TurnResult, error) {
 	if command == "" {
-		return TurnResult{}, nil, fmt.Errorf("shell command is required after !")
+		return TurnResult{}, fmt.Errorf("shell command is required after !")
 	}
 	call, err := directShellToolCall(fmt.Sprintf("direct_shell_%d", len(existing)+1), command, cwd)
 	if err != nil {
-		return TurnResult{}, nil, err
+		return TurnResult{}, err
 	}
 
 	emit(observer, agent.Event{Type: agent.EventTurnStarted})
@@ -596,7 +566,7 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		result, runErr = runDefault(ctx, call)
 	}
 	if ctx.Err() != nil {
-		return TurnResult{}, nil, ctx.Err()
+		return TurnResult{}, ctx.Err()
 	}
 	if runErr != nil && strings.TrimSpace(result.Content) == "" {
 		result.Content = runErr.Error()
@@ -623,14 +593,13 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		},
 		model.Message{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
 	}
-	messages := append(append([]model.Message(nil), existing...), newMessages...)
 	if err := store.AppendMessagesWithOptions(ctx, sessionID, cwd, newMessages, saveOpts); err != nil {
-		return TurnResult{}, nil, err
+		return TurnResult{}, err
 	}
 	return TurnResult{
 		SessionID: sessionID,
 		Content:   result.Content,
-	}, messages, nil
+	}, nil
 }
 
 // turnContentParts returns the structured content for the current turn's input.
@@ -798,10 +767,6 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	info.ContextSummary = summary
 	info.CompactedMessageCount = plan.CompactCount
 	info.CompactedInputTokens = plan.TokensBefore
-	r.maybeEnqueueMemoryExtract(ctx, cfg.Session, info, sessionID, messages, configuredMemoryModel(cfg, selectedModel.Value), memoryExtractTriggerOptions{
-		Force:         true,
-		ContextWindow: selectedModel.ContextWindow,
-	})
 	return CompactResult{
 		SessionID:     sessionID,
 		Compacted:     true,
@@ -943,7 +908,6 @@ func (r *Runtime) Doctor(ctx context.Context) DoctorReport {
 	}
 	report.add("agent", DoctorStatusOK, fmt.Sprintf("max_steps %d, temperature %.2f, compaction_trigger_ratio %.2f", cfg.Agent.MaxSteps, cfg.Agent.Temperature, cfg.Agent.CompactionTriggerRatio))
 	report.addSession(ctx, cfg.Session)
-	report.addMemory(ctx, cfg)
 	report.addTavily(cfg.Services.Tavily)
 	report.addShell()
 	return report
@@ -1077,34 +1041,6 @@ func (r *DoctorReport) addSession(ctx context.Context, cfg config.SessionConfig)
 	r.add("session", DoctorStatusOK, dbPath)
 }
 
-func (r *DoctorReport) addMemory(ctx context.Context, cfg config.Config) {
-	dbPath, err := sessionDBPath(cfg.Session)
-	if err != nil {
-		r.add("memory", DoctorStatusFail, err.Error())
-		return
-	}
-	store, err := memory.Open(dbPath)
-	if err != nil {
-		r.add("memory", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
-		return
-	}
-	defer store.Close()
-	if err := store.EnsureSchema(ctx); err != nil {
-		r.add("memory", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
-		return
-	}
-	counts, err := store.Counts(ctx)
-	if err != nil {
-		r.add("memory", DoctorStatusFail, fmt.Sprintf("%s: %v", dbPath, err))
-		return
-	}
-	status := DoctorStatusOK
-	if counts.Failed > 0 {
-		status = DoctorStatusWarn
-	}
-	r.add("memory", status, fmt.Sprintf("%d entries, %d pending, %d failed, model %s", counts.Entries, counts.Pending, counts.Failed, displayMemoryModel(cfg.Memory.Model)))
-}
-
 func (r *DoctorReport) addTavily(cfg config.TavilyConfig) {
 	if cfg.APIKey == "" {
 		r.add("tavily", DoctorStatusWarn, "disabled")
@@ -1151,7 +1087,7 @@ func completeDependencies(deps Dependencies) Dependencies {
 	return deps
 }
 
-func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig, memorySearch tool.MemorySearchFunc) (*tool.Registry, error) {
+func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
 	tools := []tool.Tool{
 		tool.ApplyPatch{CWD: cwd},
 		tool.RunShell{CWD: cwd},
@@ -1167,9 +1103,6 @@ func buildToolRegistry(cwd string, skills *skill.Catalog, services config.Servic
 			tool.TavilySearch{Client: client},
 			tool.TavilyFetch{Client: client},
 		)
-	}
-	if memorySearch != nil {
-		tools = append(tools, tool.MemorySearch{Search: memorySearch})
 	}
 	return tool.NewRegistry(tools...)
 }
@@ -1236,25 +1169,6 @@ func (r *Runtime) openSessionStore(ctx context.Context, cfg config.SessionConfig
 	return store, nil
 }
 
-// openMemoryStore returns a memory Store backed by the shared *sql.DB.
-// cfg provides the DB path, ensuring the caller uses the same config for the entire operation.
-// The caller must not call Store.Close; the Runtime owns the connection lifecycle.
-func (r *Runtime) openMemoryStore(ctx context.Context, cfg config.SessionConfig) (*memory.Store, error) {
-	dbPath, err := sessionDBPath(cfg)
-	if err != nil {
-		return nil, err
-	}
-	db, err := r.openDB(ctx, dbPath)
-	if err != nil {
-		return nil, err
-	}
-	store := memory.OpenDB(db)
-	if err := store.EnsureSchema(ctx); err != nil {
-		return nil, err
-	}
-	return store, nil
-}
-
 func sessionDBPath(cfg config.SessionConfig) (string, error) {
 	if cfg.DBPath == "" {
 		return session.DefaultPath()
@@ -1297,11 +1211,4 @@ func selectedReasoningEffort(override string, overrideSet bool, selectedModel co
 		return "", nil
 	}
 	return selectedModel.ReasoningEfforts[0].Value, nil
-}
-
-func displayMemoryModel(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "session model"
-	}
-	return value
 }

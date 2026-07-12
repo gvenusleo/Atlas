@@ -12,7 +12,6 @@
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
 | `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |
 | `todo_write` | Manage a structured task list for multi-step work; each call replaces the entire list |
-| `memory_search` | Search long-term memory entries by keyword; available when memory store is open |
 
 ## Task Tracking
 

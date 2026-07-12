@@ -44,10 +44,6 @@ func TestLoadFile(t *testing.T) {
 			"temperature": 0.2,
 			"compaction_trigger_ratio": 0.7
 		},
-		"memory": {
-			"enabled": false,
-			"model": "deepseek-v4-pro"
-		},
 			"session": {
 				"db_path": "/tmp/atlas.db"
 			},
@@ -108,9 +104,6 @@ func TestLoadFile(t *testing.T) {
 	}
 	if cfg.Agent.CompactionTriggerRatio != 0.7 {
 		t.Fatalf("CompactionTriggerRatio = %f", cfg.Agent.CompactionTriggerRatio)
-	}
-	if cfg.Memory.Model != "deepseek-v4-pro" {
-		t.Fatalf("Memory.Model = %q", cfg.Memory.Model)
 	}
 	if cfg.Session.DBPath != "/tmp/atlas.db" {
 		t.Fatalf("Session.DBPath = %q", cfg.Session.DBPath)
@@ -235,7 +228,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 		}`},
 		{name: "invalid temperature", content: validConfigWith(`"agent": {"temperature": 3},`)},
 		{name: "invalid compaction trigger ratio", content: validConfigWith(`"agent": {"compaction_trigger_ratio": 1},`)},
-		{name: "memory model not configured", content: validConfigWith(`"memory": {"model": "missing"},`)},
 		{name: "invalid tavily base url", content: validConfigWith(`"services": {"tavily": {"base_url": ":", "api_key": "tvly-test"}},`)},
 		{name: "unsupported tavily base url scheme", content: validConfigWith(`"services": {"tavily": {"base_url": "ftp://api.tavily.com", "api_key": "tvly-test"}},`)},
 		{name: "custom tavily base url without api key", content: validConfigWith(`"services": {"tavily": {"base_url": "https://tavily.example.com"}},`)},

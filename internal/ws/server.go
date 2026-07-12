@@ -32,7 +32,6 @@ type Runtime interface {
 	ListSessionsPage(context.Context, string, int) (session.ListPage, error)
 	ListSessionsForCWDPage(context.Context, string, string, int) (session.ListPage, error)
 	DeleteSessionIfExists(context.Context, string) error
-	RunMemoryWorker(context.Context) error
 }
 
 // ServerOptions describes the WebSocket server parameters.
@@ -113,20 +112,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	s.logf("ws serving on %s", ln.Addr().String())
 
-	// Start memory worker, consistent with the ACP channel.
-	// Use a derived context so the worker stops when Serve returns, not only
-	// when the parent ctx is cancelled.
-	workerCtx, cancelWorker := context.WithCancel(ctx)
-	workerDone := make(chan struct{})
-	go func() {
-		defer close(workerDone)
-		_ = s.rt.RunMemoryWorker(workerCtx)
-	}()
-
-	err = srv.Serve(ln)
-	cancelWorker()
-	<-workerDone
-	return err
+	return srv.Serve(ln)
 }
 
 // handleWebSocket handles a single WebSocket connection.

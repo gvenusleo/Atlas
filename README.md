@@ -1,6 +1,6 @@
 # Atlas
 
-A general-purpose agent built in Go. The core is a testable headless agent loop that can read and write files, execute shell commands, search the web, and maintain long-term memory. CLI, ACP (for editors like Zed), and WebSocket channels all call into the same capabilities via `internal/runtime` without duplicating loop logic.
+A general-purpose agent built in Go. The core is a testable headless agent loop that can read and write files, execute shell commands, and search the web. CLI, ACP (for editors like Zed), and WebSocket channels all call into the same capabilities via `internal/runtime` without duplicating loop logic.
 
 [中文文档](README.zh-CN.md)
 
@@ -10,9 +10,8 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 - **Multi-provider adapters**: connect to OpenAI, DeepSeek, and other compatible backends via `chat_completions` and `responses` API formats.
 - **Built-in tools**: file read/write, text search, precise editing, shell execution, web search and extraction — ready out of the box.
 - **Context compaction**: automatically summarizes earlier conversation when the context window threshold is reached, keeping recent messages to continue.
-- **Long-term memory**: incrementally extracts instruction / fact / workflow memories from sessions, organized by global / project scope, retrieved on demand via the `memory_search` tool using case-insensitive substring matching.
 - **Multiple entry points**: CLI one-shot execution, ACP persistent connection (with editor-embedded terminal and file diff), and a WebSocket service.
-- **Local-first storage**: session and memory records stay in local SQLite. Task content and results may be transmitted through configured model APIs, Tavily, or connected WebSocket clients.
+- **Local-first storage**: session records stay in local SQLite. Task content and results may be transmitted through configured model APIs, Tavily, or connected WebSocket clients.
 - **Extensible instructions**: inject project-level and global instructions via `AGENTS.md` and skill files. Skills are loaded on demand.
 
 ## Quick Start
@@ -78,7 +77,7 @@ Create a config file at `~/.atlas/config.json` (minimal example):
 }
 ```
 
-`default_model` is recommended in `provider/model` format (e.g. `"deepseek/deepseek-v4-flash"`). A bare model value (e.g. `"deepseek-v4-flash"`) is also accepted when unambiguous. The same applies to `memory.model` and the `--model` flag.
+`default_model` is recommended in `provider/model` format (e.g. `"deepseek/deepseek-v4-flash"`). A bare model value (e.g. `"deepseek-v4-flash"`) is also accepted when unambiguous. The same applies to the `--model` flag.
 
 Verify your configuration:
 
@@ -120,11 +119,11 @@ go run ./cmd/atlas run '!pwd'
 
 Atlas runs with the local permissions of the current process. Built-in tools can read and write files, search text, and execute shell commands. **Atlas does not provide a sandbox, permission prompts, or an approval gate.** Only run in trusted workspaces.
 
-Session and memory records are stored in local SQLite. Atlas still sends request context to configured model providers and communicates through services or channels you enable, including Tavily and WebSocket clients.
+Session records are stored in local SQLite. Atlas still sends request context to configured model providers and communicates through services or channels you enable, including Tavily and WebSocket clients.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — layered design, core loop, long-term memory
+- [Architecture](docs/architecture.md) — layered design, core loop, context compaction
 - [Configuration](docs/configuration.md) — full config reference and field descriptions
 - [Channels](docs/channels.md) — ACP and WebSocket integration details
 - [Tools and Skills](docs/tools.md) — built-in tools, AGENTS.md, skill system

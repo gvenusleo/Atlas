@@ -10,13 +10,12 @@ internal/acp           ACP protocol adapter and client capability bridge
 internal/agent         headless agent loop (core loop)
 internal/compact       context compaction planning and summarization
 internal/config        config loading and validation
-internal/memory        long-term memory entries, summaries, substring retrieval, and task queue
 internal/model         generic chat protocol and Provider interface
 internal/prompt        system prompt construction
 internal/provider      provider adapters by API format
   ├── chatcompletions  Chat Completions API
   └── responses        OpenAI Responses API
-internal/runtime       orchestration layer, connecting agent, tools, session, and memory
+internal/runtime       orchestration layer, connecting agent, tools, and session
 internal/session       SQLite session persistence
 internal/skill         skill scanning and loading
 internal/tool          tool registry and built-in tools
@@ -36,7 +35,7 @@ just ci                        # full non-modifying CI check (requires just)
 
 ## Design Principles
 
-- **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, compaction, and background work.
+- **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, and compaction.
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
 - **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
 - **Single core**: CLI, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.

@@ -281,7 +281,7 @@ func estimateParts(parts []model.ContentPart) int {
 	return total
 }
 
-// serializeContentParts converts structured content into plain text for use in summaries and memory.
+// serializeContentParts converts structured content into plain text for summaries.
 func serializeContentParts(parts []model.ContentPart) string {
 	lines := make([]string, 0, len(parts))
 	for _, part := range parts {

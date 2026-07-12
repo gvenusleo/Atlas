@@ -64,9 +64,6 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
     "temperature": 0.2,
     "compaction_trigger_ratio": 0.8
   },
-  "memory": {
-    "model": ""
-  },
   "session": {
     "db_path": "~/.atlas/atlas.db"
   },
@@ -121,12 +118,6 @@ Only enable `prompt_cache.enabled` after confirming the provider accepts the cor
 | `agent.max_steps` | `20` | Maximum loop steps per turn. |
 | `agent.temperature` | `0` | Sampling temperature, range 0–2. |
 | `agent.compaction_trigger_ratio` | `0.8` | Auto-compaction triggers when context input reaches this ratio of the window. |
-
-### Memory
-
-| Field | Default | Description |
-|---|---|---|
-| `memory.model` | empty | Model used for background memory tasks. Uses the session's model when empty. Accepts the same `provider/model` or bare value format as `default_model`. |
 
 ### Session
 

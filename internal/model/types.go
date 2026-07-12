@@ -156,7 +156,7 @@ func MessageParts(msg Message) []ContentPart {
 	return []ContentPart{{Type: ContentPartText, Text: msg.Content}}
 }
 
-// TextFromParts extracts text from content segments for use in titles, memory, and compatibility fields.
+// TextFromParts extracts text from content segments for use in titles and compatibility fields.
 func TextFromParts(parts []ContentPart) string {
 	var text string
 	for _, part := range parts {

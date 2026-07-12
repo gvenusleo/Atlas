@@ -106,10 +106,6 @@ func (f *fakeRuntime) DeleteSessionIfExists(ctx context.Context, id string) erro
 	return nil
 }
 
-func (f *fakeRuntime) RunMemoryWorker(ctx context.Context) error {
-	return nil
-}
-
 func TestNewServerDefaultsToLoopback(t *testing.T) {
 	srv, err := NewServer(ServerOptions{Runtime: &fakeRuntime{}})
 	if err != nil {
@@ -813,10 +809,6 @@ func (b *blockingRuntime) DeleteSessionIfExists(ctx context.Context, id string) 
 	return nil
 }
 
-func (b *blockingRuntime) RunMemoryWorker(ctx context.Context) error {
-	return nil
-}
-
 func TestSetModel(t *testing.T) {
 	rt := &fakeRuntime{
 		modelOptions: runtime.ModelOptions{
@@ -1039,10 +1031,6 @@ func (m *multiSessionRuntime) ListSessionsForCWDPage(ctx context.Context, cwd, c
 }
 
 func (m *multiSessionRuntime) DeleteSessionIfExists(ctx context.Context, id string) error {
-	return nil
-}
-
-func (m *multiSessionRuntime) RunMemoryWorker(ctx context.Context) error {
 	return nil
 }
 

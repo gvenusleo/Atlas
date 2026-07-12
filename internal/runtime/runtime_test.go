@@ -1,11 +1,9 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +12,6 @@ import (
 
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/config"
-	"github.com/liuyuxin/atlas/internal/memory"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/prompt"
 	"github.com/liuyuxin/atlas/internal/provider/responses"
@@ -590,27 +587,6 @@ func TestRunTurnDirectShellRejectsEmptyCommand(t *testing.T) {
 	}
 }
 
-func TestRunMemoryWorkerReportsInfrastructureErrors(t *testing.T) {
-	var output bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
-
-	r := New(Dependencies{
-		LoadConfig: func() (config.Config, error) {
-			return config.Config{}, errors.New("config unavailable")
-		},
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if err := r.RunMemoryWorker(ctx); err != nil {
-		t.Fatalf("RunMemoryWorker() error = %v", err)
-	}
-	if !strings.Contains(output.String(), "config unavailable") {
-		t.Fatalf("log output = %q", output.String())
-	}
-}
-
 func TestModelOptions(t *testing.T) {
 	r := newTestRuntime(t, &recordingProvider{})
 
@@ -640,7 +616,6 @@ func TestDoctorReportsOfflineRuntimeChecks(t *testing.T) {
 	assertDoctorCheck(t, report, "provider", DoctorStatusOK, "test, chat_completions, https://api.example.com, 2 models")
 	assertDoctorCheck(t, report, "agent", DoctorStatusOK, "max_steps 4, temperature 0.20, compaction_trigger_ratio 0.80")
 	assertDoctorCheck(t, report, "session", DoctorStatusOK, "atlas.db")
-	assertDoctorCheck(t, report, "memory", DoctorStatusOK, "0 entries, 0 pending, 0 failed, model session model")
 	assertDoctorCheck(t, report, "tavily", DoctorStatusWarn, "disabled")
 	assertDoctorCheck(t, report, "shell", DoctorStatusOK, expectedShellDetail())
 }
@@ -962,318 +937,6 @@ func TestDeleteSessionIfExistsIgnoresMissingSession(t *testing.T) {
 	}
 }
 
-func TestRunTurnRegistersMemorySearchTool(t *testing.T) {
-	provider := &recordingProvider{
-		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-		response: model.ChatResponse{Content: "ok"},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-	memStore := openTestMemoryStore(t, dbPath)
-	projectKey, projectPath := memory.ProjectIdentity("/tmp/atlas-work")
-	if _, err := memStore.UpsertEntry(context.Background(), memory.Entry{
-		Scope:       memory.ScopeProject,
-		ProjectKey:  projectKey,
-		ProjectPath: projectPath,
-		Type:        memory.TypeFact,
-		Content:     "Atlas stores long-term memory in SQLite.",
-	}); err != nil {
-		t.Fatalf("UpsertEntry() error = %v", err)
-	}
-
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		SessionID: "work",
-		CWD:       "/tmp/atlas-work",
-		Prompt:    "where is memory stored?",
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	// memory_search tool should be registered when memory is enabled.
-	found := false
-	for _, def := range provider.request.Tools {
-		if def.Name == "memory_search" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("memory_search tool not registered, tools = %v", provider.request.Tools)
-	}
-	// System prompt should contain memory guidance, not injected memory content.
-	if !strings.Contains(provider.request.System, "## Long-Term Memory") {
-		t.Fatalf("system prompt missing memory guidance")
-	}
-	if strings.Contains(provider.request.System, "Atlas stores long-term memory in SQLite.") {
-		t.Fatalf("system prompt should not contain auto-injected memory content")
-	}
-}
-
-func TestRunTurnEnqueuesMemoryExtract(t *testing.T) {
-	provider := &recordingProvider{
-		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-		response: model.ChatResponse{Content: "ok"},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		SessionID: "work",
-		Prompt:    "remember project workflow",
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	memStore := openTestMemoryStore(t, dbPath)
-	job, ok, err := memStore.ClaimNextJob(context.Background(), "test-worker", time.Minute)
-	if err != nil {
-		t.Fatalf("ClaimNextJob() error = %v", err)
-	}
-	if !ok || job.SessionID != "work" {
-		t.Fatalf("job = %#v, ok = %v", job, ok)
-	}
-	if job.Model != "test-model" {
-		t.Fatalf("job model = %q", job.Model)
-	}
-}
-
-func TestRunTurnSkipsMemoryExtractBelowThreshold(t *testing.T) {
-	provider := &recordingProvider{
-		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
-		response: model.ChatResponse{Content: "ok"},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		SessionID: "work",
-		Prompt:    "hello",
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	memStore := openTestMemoryStore(t, dbPath)
-	if job, ok, err := memStore.ClaimNextJob(context.Background(), "test-worker", time.Minute); err != nil || ok {
-		t.Fatalf("job = %#v, ok = %v, err = %v", job, ok, err)
-	}
-}
-
-func TestShouldEnqueueMemoryExtract(t *testing.T) {
-	tests := []struct {
-		name          string
-		info          session.Session
-		messages      []model.Message
-		inputTokens   int
-		contextWindow int
-		want          bool
-	}{
-		{
-			name:        "short unrelated turn",
-			messages:    []model.Message{{Role: model.RoleUser, Content: "hello"}, {Role: model.RoleAssistant, Content: "ok"}},
-			inputTokens: 20,
-			want:        false,
-		},
-		{
-			name: "message threshold",
-			messages: []model.Message{
-				{Role: model.RoleUser, Content: "one"},
-				{Role: model.RoleAssistant, Content: "two"},
-				{Role: model.RoleUser, Content: "three"},
-				{Role: model.RoleAssistant, Content: "four"},
-				{Role: model.RoleUser, Content: "five"},
-				{Role: model.RoleAssistant, Content: "six"},
-			},
-			inputTokens: 60,
-			want:        true,
-		},
-		{
-			name:        "token threshold",
-			info:        session.Session{MemoryExtractedMessageCount: 2, MemoryExtractedInputTokens: 100},
-			messages:    []model.Message{{Role: model.RoleUser, Content: "old"}, {Role: model.RoleAssistant, Content: "old"}, {Role: model.RoleUser, Content: "new"}},
-			inputTokens: 4100,
-			want:        true,
-		},
-		{
-			name:          "context ratio threshold",
-			info:          session.Session{MemoryExtractedInputTokens: 3900},
-			messages:      []model.Message{{Role: model.RoleUser, Content: "new"}},
-			inputTokens:   4000,
-			contextWindow: 10000,
-			want:          true,
-		},
-		{
-			name:        "explicit memory directive",
-			messages:    []model.Message{{Role: model.RoleUser, Content: "please remember this workflow"}},
-			inputTokens: 30,
-			want:        true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := shouldEnqueueMemoryExtract(tt.info, tt.messages, tt.inputTokens, tt.contextWindow)
-			if got != tt.want {
-				t.Fatalf("shouldEnqueueMemoryExtract() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestProcessMemoryJobsExtracts(t *testing.T) {
-	provider := &sequenceProvider{
-		responses: []model.ChatResponse{
-			{Content: "normal reply"},
-			{Content: `{"entries":[{"scope":"project","type":"workflow","content":"Run go test ./... before committing.","source_note":"user asked for checks","confidence":4}],"archive_fingerprints":[]}`},
-		},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		SessionID: "work",
-		Prompt:    "always run tests before commit",
-	}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-
-	processed, err := r.ProcessMemoryJobs(context.Background(), 1)
-	if err != nil {
-		t.Fatalf("ProcessMemoryJobs() error = %v", err)
-	}
-	if processed != 1 {
-		t.Fatalf("processed = %d, want 1", processed)
-	}
-	if len(provider.requests) != 2 {
-		t.Fatalf("requests = %d", len(provider.requests))
-	}
-	if provider.requests[1].ResponseFormat != model.ResponseFormatJSONObject {
-		t.Fatalf("response format = %#v", provider.requests[1].ResponseFormat)
-	}
-	if provider.requests[1].ReasoningEffort != "high" {
-		t.Fatalf("memory reasoning effort = %#v", provider.requests[1].ReasoningEffort)
-	}
-	if len(provider.providerModels) != 2 || provider.providerModels[1] != "test-model" {
-		t.Fatalf("provider models = %#v", provider.providerModels)
-	}
-
-	memStore := openTestMemoryStore(t, dbPath)
-	results, err := memStore.Search(context.Background(), "/tmp/atlas-work", "go test", 10)
-	if err != nil {
-		t.Fatalf("Search() error = %v", err)
-	}
-	found := false
-	for _, r := range results {
-		if strings.Contains(strings.ToLower(r.Content), "run go test") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("Search results = %v", results)
-	}
-}
-
-func TestProcessMemoryJobsExtractsOnlyNewMessages(t *testing.T) {
-	provider := &sequenceProvider{
-		responses: []model.ChatResponse{
-			{Content: "first normal reply"},
-			{Content: `{"entries":[],"archive_fingerprints":[]}`},
-			{Content: "second normal reply"},
-			{Content: `{"entries":[],"archive_fingerprints":[]}`},
-		},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		SessionID: "work",
-		Prompt:    "remember alpha detail",
-	}); err != nil {
-		t.Fatalf("first RunTurn() error = %v", err)
-	}
-	if processed, err := r.ProcessMemoryJobs(context.Background(), 1); err != nil || processed != 1 {
-		t.Fatalf("first ProcessMemoryJobs() processed = %d, err = %v", processed, err)
-	}
-	if _, err := r.RunTurn(context.Background(), TurnOptions{
-		SessionID: "work",
-		Prompt:    "remember beta detail",
-	}); err != nil {
-		t.Fatalf("second RunTurn() error = %v", err)
-	}
-	if processed, err := r.ProcessMemoryJobs(context.Background(), 1); err != nil || processed != 1 {
-		t.Fatalf("second ProcessMemoryJobs() processed = %d, err = %v", processed, err)
-	}
-	if len(provider.requests) != 4 {
-		t.Fatalf("requests = %d", len(provider.requests))
-	}
-	secondExtractPrompt := provider.requests[3].Messages[0].Content
-	if strings.Contains(secondExtractPrompt, "alpha detail") {
-		t.Fatalf("second extract prompt contains old message: %q", secondExtractPrompt)
-	}
-	if !strings.Contains(secondExtractPrompt, "beta detail") {
-		t.Fatalf("second extract prompt missing new message: %q", secondExtractPrompt)
-	}
-
-	store := openTestSessionStore(t, dbPath)
-	info, err := store.GetSession(context.Background(), "work")
-	if err != nil {
-		t.Fatalf("GetSession() error = %v", err)
-	}
-	if info.MemoryExtractedMessageCount != 4 || info.MemoryExtractedHash == "" {
-		t.Fatalf("memory extraction boundary = %#v", info)
-	}
-}
-
-func TestProcessMemoryJobsContinuesAfterFailedJob(t *testing.T) {
-	provider := &sequenceProvider{
-		responses: []model.ChatResponse{
-			{Content: "normal reply"},
-			{Content: "second reply"},
-			{Content: `not json`},
-			{Content: `{"entries":[],"archive_fingerprints":[]}`},
-		},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "bad", Prompt: "remember first"}); err != nil {
-		t.Fatalf("bad RunTurn() error = %v", err)
-	}
-	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "good", Prompt: "remember second"}); err != nil {
-		t.Fatalf("good RunTurn() error = %v", err)
-	}
-
-	processed, err := r.ProcessMemoryJobs(context.Background(), 2)
-	if err != nil {
-		t.Fatalf("ProcessMemoryJobs() error = %v", err)
-	}
-	if processed != 2 {
-		t.Fatalf("processed = %d, want 2", processed)
-	}
-	counts, err := openTestMemoryStore(t, dbPath).Counts(context.Background())
-	if err != nil {
-		t.Fatalf("Counts() error = %v", err)
-	}
-	if counts.Failed != 1 {
-		t.Fatalf("counts = %#v", counts)
-	}
-}
-
-func TestMemoryUsesConfiguredModel(t *testing.T) {
-	provider := &sequenceProvider{
-		responses: []model.ChatResponse{
-			{Content: "normal reply"},
-			{Content: `{"entries":[{"scope":"project","type":"fact","content":"Use go test ./... before commit.","source_note":"user said this during the session","confidence":5}],"archive_fingerprints":[]}`},
-		},
-	}
-	r, _ := newTestRuntimeWithDBPath(t, provider)
-	baseLoadConfig := r.deps.LoadConfig
-	r.deps.LoadConfig = func() (config.Config, error) {
-		cfg, err := baseLoadConfig()
-		if err != nil {
-			return config.Config{}, err
-		}
-		cfg.Memory.Model = "other-model"
-		return cfg, nil
-	}
-	if _, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "remember model preference"}); err != nil {
-		t.Fatalf("RunTurn() error = %v", err)
-	}
-	if _, err := r.ProcessMemoryJobs(context.Background(), 1); err != nil {
-		t.Fatalf("ProcessMemoryJobs() error = %v", err)
-	}
-	if len(provider.providerModels) != 2 || provider.providerModels[0] != "test-model" || provider.providerModels[1] != "other-model" {
-		t.Fatalf("provider models = %#v", provider.providerModels)
-	}
-}
-
 type recordingProvider struct {
 	request       model.ChatRequest
 	events        []model.StreamEvent
@@ -1296,11 +959,10 @@ func (p *recordingProvider) Stream(_ context.Context, req model.ChatRequest, emi
 }
 
 type sequenceProvider struct {
-	requests       []model.ChatRequest
-	responses      []model.ChatResponse
-	errors         []error
-	providerModel  string
-	providerModels []string
+	requests      []model.ChatRequest
+	responses     []model.ChatResponse
+	errors        []error
+	providerModel string
 }
 
 func (p *sequenceProvider) Stream(_ context.Context, req model.ChatRequest, emit func(model.StreamEvent) error) (model.ChatResponse, error) {
@@ -1339,90 +1001,10 @@ func (p *cancelingProvider) Stream(ctx context.Context, _ model.ChatRequest, _ f
 	return model.ChatResponse{}, context.Canceled
 }
 
-func TestProcessMemoryJobsPrunesWhenIdle(t *testing.T) {
-	provider := &sequenceProvider{
-		responses: []model.ChatResponse{
-			{Content: "normal reply"},
-		},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-	memStore := openTestMemoryStore(t, dbPath)
-	projectKey, projectPath := memory.ProjectIdentity("/tmp/atlas-work")
-
-	// Insert a stale, unused, low-confidence entry that should be pruned.
-	entry, err := memStore.UpsertEntry(context.Background(), memory.Entry{
-		Scope: memory.ScopeProject, ProjectKey: projectKey, ProjectPath: projectPath,
-		Type: memory.TypeFact, Content: "stale unused fact", Confidence: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertEntry() error = %v", err)
-	}
-	oldTime := time.Now().UTC().AddDate(0, 0, -100).Format(time.RFC3339Nano)
-	if _, err := memStore.DB().ExecContext(context.Background(),
-		`update memory_entries set updated_at = ? where id = ?`, oldTime, entry.ID); err != nil {
-		t.Fatalf("backdate error = %v", err)
-	}
-
-	// No jobs queued, so ProcessMemoryJobs should trigger pruning.
-	processed, err := r.ProcessMemoryJobs(context.Background(), 4)
-	if err != nil {
-		t.Fatalf("ProcessMemoryJobs() error = %v", err)
-	}
-	if processed != 0 {
-		t.Fatalf("expected 0 processed jobs, got %d", processed)
-	}
-
-	// Verify the stale entry was archived.
-	pruned, err := memStore.GetEntryByFingerprint(context.Background(), entry.Fingerprint)
-	if err != nil {
-		t.Fatalf("GetEntryByFingerprint() error = %v", err)
-	}
-	if pruned.Status != "archived" {
-		t.Fatalf("expected status archived, got %s", pruned.Status)
-	}
-}
-
 func newTestRuntime(t *testing.T, provider model.Provider) *Runtime {
 	t.Helper()
 	r, _ := newTestRuntimeWithDBPath(t, provider)
 	return r
-}
-
-// TestConcurrentRunTurnNoDatabaseLock verifies that concurrent turns and memory
-// processing on the same Runtime do not produce SQLITE_BUSY errors.
-func TestConcurrentRunTurnNoDatabaseLock(t *testing.T) {
-	provider := &sequenceProvider{
-		responses: []model.ChatResponse{
-			{Content: "reply"},
-		},
-	}
-	r, dbPath := newTestRuntimeWithDBPath(t, provider)
-
-	// Enable memory and enqueue a job so the worker competes for the DB.
-	memStore := openTestMemoryStore(t, dbPath)
-	r.deps.LoadConfig = func() (config.Config, error) {
-		cfg := testConfig(dbPath)
-		cfg.Memory.Model = cfg.Providers[0].Models[0].Value
-		return cfg, nil
-	}
-	_ = memStore.EnqueueSessionExtract(context.Background(), "work", "hash1", "test-model")
-
-	// Run a turn and process memory jobs concurrently.
-	errCh := make(chan error, 2)
-	go func() {
-		_, err := r.RunTurn(context.Background(), TurnOptions{SessionID: "work", Prompt: "hello"})
-		errCh <- err
-	}()
-	go func() {
-		_, err := r.ProcessMemoryJobs(context.Background(), 1)
-		errCh <- err
-	}()
-
-	for i := 0; i < 2; i++ {
-		if err := <-errCh; err != nil && !strings.Contains(err.Error(), "no jobs") {
-			t.Fatalf("concurrent operation %d error = %v", i, err)
-		}
-	}
 }
 
 func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, string) {
@@ -1442,7 +1024,6 @@ func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, 
 			}
 			if provider, ok := provider.(*sequenceProvider); ok {
 				provider.providerModel = selected.Value
-				provider.providerModels = append(provider.providerModels, selected.Value)
 			}
 			return provider, nil
 		},
@@ -1460,19 +1041,6 @@ func newTestRuntimeWithDBPath(t *testing.T, provider model.Provider) (*Runtime, 
 	})
 	t.Cleanup(func() { _ = r.Close() })
 	return r, dbPath
-}
-
-func openTestMemoryStore(t *testing.T, dbPath string) *memory.Store {
-	t.Helper()
-	store, err := memory.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	if err := store.EnsureSchema(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	return store
 }
 
 func openTestSessionStore(t *testing.T, dbPath string) *session.Store {
