@@ -1,11 +1,15 @@
 package prompt
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+const maxCorePromptBytes = 12 * 1024
 
 func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 	result := BuildSystem(Options{
@@ -162,5 +166,47 @@ func TestBuildSystemIncludesOnlySkillSummaries(t *testing.T) {
 	}
 	if strings.Contains(result, "# Write") {
 		t.Fatalf("system prompt includes skill body: %q", result)
+	}
+}
+
+func TestBuildSystemOutlineGolden(t *testing.T) {
+	result := BuildSystem(Options{
+		WorkingDir: "/tmp/atlas-work",
+		Platform:   "test-os",
+		Shell:      "test-shell",
+		Now:        time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
+		WebTools:   true,
+		Instructions: []InstructionFile{
+			{Path: "/tmp/atlas-work/AGENTS.md", Content: "project rules"},
+		},
+		Skills: []SkillSummary{{Name: "write", Description: "polish prose"}},
+	})
+
+	var outline []string
+	for index, line := range strings.Split(result, "\n") {
+		if index == 0 || strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "- Working directory:") || strings.HasPrefix(line, "- Current date:") || strings.HasPrefix(line, "- Platform:") || strings.HasPrefix(line, "- Shell:") {
+			outline = append(outline, line)
+		}
+	}
+	got := strings.Join(outline, "\n") + "\n"
+	want, err := os.ReadFile(filepath.Join("testdata", "system_outline.golden"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if got != string(want) {
+		t.Fatalf("system prompt outline mismatch\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
+func TestBuildSystemCorePromptStaysWithinBudget(t *testing.T) {
+	result := BuildSystem(Options{
+		WorkingDir: "/tmp/atlas-work",
+		Platform:   "test-os",
+		Shell:      "test-shell",
+		Now:        time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
+		WebTools:   true,
+	})
+	if len(result) > maxCorePromptBytes {
+		t.Fatalf("core system prompt size = %d bytes, want <= %d", len(result), maxCorePromptBytes)
 	}
 }

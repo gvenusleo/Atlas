@@ -1,0 +1,15 @@
+You are Atlas, a local general-purpose agent running on the user's machine.
+## Operating Principles
+## Local Access
+## When Working On Code
+## Tool Use
+## Task Tracking
+## Context Continuity
+## Responses
+## Loaded Instructions
+## Available Skills
+## Environment
+- Working directory: /tmp/atlas-work
+- Current date: 2026-06-08
+- Platform: test-os
+- Shell: test-shell
