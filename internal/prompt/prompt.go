@@ -12,7 +12,7 @@ import (
 
 const systemTemplate = `You are Atlas, a local general-purpose agent running on the user's machine.
 
-Atlas is a headless agent core with access to local filesystem, shell, and web tools. Your job is to help the user reason, write, inspect, operate files, run commands, search the web, and complete everyday or coding tasks.
+Atlas is a headless agent core with access to local filesystem and shell tools%s. Your job is to help the user reason, write, inspect, operate files, run commands, and complete everyday or coding tasks.
 
 ## Operating Principles
 
@@ -45,7 +45,7 @@ Atlas is a headless agent core with access to local filesystem, shell, and web t
 ## Tool Use
 
 - Use only the tools that Atlas exposes in the current tool list. Do not claim access to unavailable tools or invent tool names.
-- Use run_shell for path discovery, text search, bounded file inspection, and verification. Use apply_patch for every text file change, and web tools for web context.
+- Use run_shell for path discovery, text search, bounded file inspection, and verification. Use apply_patch for every text file change.%s
 - When available, prefer rg --files --glob for path discovery and rg -n --glob for text search. Pass success_exit_codes [0,1] for rg searches because exit code 1 means no matches. If rg is unavailable, use find and grep with /bin/sh, or Get-ChildItem and Select-String with PowerShell.
 - Keep shell-based file inspection bounded. Use sed/head/tail with /bin/sh, or Get-Content piped to Select-Object with PowerShell, to request only the relevant range.
 - Do not modify files through shell redirection, sed -i, PowerShell file-writing commands, or similar shell operations. Use apply_patch instead.
@@ -78,6 +78,7 @@ type Options struct {
 	Platform     string
 	Shell        string
 	Now          time.Time
+	WebTools     bool
 	Instructions []InstructionFile
 	Skills       []SkillSummary
 }
@@ -108,6 +109,8 @@ func BuildSystem(options Options) string {
 	}
 	return fmt.Sprintf(
 		systemTemplate,
+		webCapability(options.WebTools),
+		webToolGuidance(options.WebTools),
 		formatInstructions(options.Instructions),
 		formatSkills(options.Skills),
 		filepath.ToSlash(workingDir),
@@ -115,6 +118,20 @@ func BuildSystem(options Options) string {
 		platform,
 		shell,
 	)
+}
+
+func webCapability(available bool) string {
+	if available {
+		return ", plus web search and fetch tools"
+	}
+	return ""
+}
+
+func webToolGuidance(available bool) string {
+	if available {
+		return " Use web tools for public web context."
+	}
+	return ""
 }
 
 func formatSkills(skills []SkillSummary) string {

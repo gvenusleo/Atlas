@@ -79,6 +79,25 @@ func TestBuildSystemDefaultsWorkingDirectory(t *testing.T) {
 	}
 }
 
+func TestBuildSystemDescribesOnlyAvailableWebTools(t *testing.T) {
+	withoutWeb := BuildSystem(Options{Now: time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)})
+	for _, unexpected := range []string{"web search and fetch tools", "Use web tools for public web context"} {
+		if strings.Contains(withoutWeb, unexpected) {
+			t.Fatalf("system prompt includes unavailable capability %q: %q", unexpected, withoutWeb)
+		}
+	}
+
+	withWeb := BuildSystem(Options{
+		Now:      time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC),
+		WebTools: true,
+	})
+	for _, expected := range []string{"web search and fetch tools", "Use web tools for public web context"} {
+		if !strings.Contains(withWeb, expected) {
+			t.Fatalf("system prompt missing available capability %q: %q", expected, withWeb)
+		}
+	}
+}
+
 func TestBuildSystemIncludesInstructions(t *testing.T) {
 	result := BuildSystem(Options{
 		WorkingDir: "/tmp/atlas-work",

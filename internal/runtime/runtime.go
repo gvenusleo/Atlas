@@ -430,6 +430,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			WorkingDir:   cwd,
 			Now:          r.deps.Now(),
 			Shell:        tool.DefaultShell().DisplayName,
+			WebTools:     cfg.Services.Tavily.APIKey != "",
 			Instructions: instructions,
 			Skills:       promptSkillSummaries(skills),
 		}),
