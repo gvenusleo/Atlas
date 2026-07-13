@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +106,39 @@ func TestCatalogHidesDisabledSkills(t *testing.T) {
 	}
 	if _, ok := catalog.Lookup("hidden"); ok {
 		t.Fatal("Lookup() found disabled skill")
+	}
+}
+
+func TestLoadRejectsOversizedSkillFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "SKILL.md")
+	writeSkill(t, path, strings.Repeat("a", maxSkillBytes+1))
+
+	_, err := loadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "SKILL.md is too large") {
+		t.Fatalf("loadFile() error = %v", err)
+	}
+}
+
+func TestNewCatalogRejectsOversizedDescription(t *testing.T) {
+	_, err := NewCatalog([]Skill{{
+		Name:        "large",
+		Description: strings.Repeat("a", maxDescriptionBytes+1),
+	}})
+	if err == nil || !strings.Contains(err.Error(), "description is too large") {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+}
+
+func TestNewCatalogRejectsOversizedSummarySet(t *testing.T) {
+	description := strings.Repeat("a", maxDescriptionBytes)
+	var skills []Skill
+	for i := 0; i < maxSkillSummaryBytes/maxDescriptionBytes+1; i++ {
+		skills = append(skills, Skill{Name: fmt.Sprintf("skill-%d", i), Description: description})
+	}
+
+	_, err := NewCatalog(skills)
+	if err == nil || !strings.Contains(err.Error(), "skill summaries are too large") {
+		t.Fatalf("NewCatalog() error = %v", err)
 	}
 }
 

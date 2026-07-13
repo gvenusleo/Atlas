@@ -392,7 +392,10 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			return opts.ToolRunner(ctx, call, baseRunner)
 		})
 	}
-	selectedSkillMessages := skillMessages(opts.Skills, skills)
+	selectedSkillMessages, err := skillMessages(opts.Skills, skills)
+	if err != nil {
+		return TurnResult{}, err
+	}
 	if resumeSession {
 		if shouldAutoCompact(sessionInfo, fullTrans.Messages(), selectedSkillMessages, parts, selectedModel.ContextWindow, cfg.Agent.CompactionTriggerRatio) {
 			result, err := r.compactLoadedSession(ctx, store, provider, cfg, selectedModel, sessionID, sessionInfo, fullTrans.Messages(), "", opts.ReasoningEffort, opts.ReasoningEffortSet, false)
@@ -1121,12 +1124,15 @@ func promptSkillSummaries(catalog *skill.Catalog) []prompt.SkillSummary {
 }
 
 // skillMessages renders explicitly selected skills as model-visible, non-persistent context messages for the current turn.
-func skillMessages(names []string, catalog *skill.Catalog) []model.Message {
+const maxSelectedSkillBytes = 64 * 1024
+
+func skillMessages(names []string, catalog *skill.Catalog) ([]model.Message, error) {
 	if len(names) == 0 || catalog == nil {
-		return nil
+		return nil, nil
 	}
 	messages := make([]model.Message, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
+	total := 0
 	for _, name := range names {
 		if _, ok := seen[name]; ok {
 			continue
@@ -1136,9 +1142,13 @@ func skillMessages(names []string, catalog *skill.Catalog) []model.Message {
 		if !ok {
 			continue
 		}
+		total += len(found.Content)
+		if total > maxSelectedSkillBytes {
+			return nil, fmt.Errorf("selected skill instructions exceed %d bytes", maxSelectedSkillBytes)
+		}
 		messages = append(messages, model.TextMessage(model.RoleUser, skillContext(found)))
 	}
-	return messages
+	return messages, nil
 }
 
 // skillContext wraps the full SKILL.md content in XML instruction tags.

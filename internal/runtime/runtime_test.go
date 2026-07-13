@@ -785,6 +785,24 @@ func TestRunTurnInjectsSelectedSkillWithoutPersistingIt(t *testing.T) {
 	}
 }
 
+func TestRunTurnRejectsOversizedSelectedSkills(t *testing.T) {
+	provider := &recordingProvider{}
+	catalog, err := skill.NewCatalog([]skill.Skill{
+		{Name: "one", Description: "one", Content: strings.Repeat("a", maxSelectedSkillBytes/2+1)},
+		{Name: "two", Description: "two", Content: strings.Repeat("b", maxSelectedSkillBytes/2+1)},
+	})
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	r := newTestRuntime(t, provider)
+	r.deps.LoadSkills = func(string) (*skill.Catalog, error) { return catalog, nil }
+
+	_, err = r.RunTurn(context.Background(), TurnOptions{Prompt: "hello", Skills: []string{"one", "two"}})
+	if err == nil || !strings.Contains(err.Error(), "selected skill instructions exceed") {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+}
+
 func TestRunTurnUsesCWDForSkillLoading(t *testing.T) {
 	provider := &recordingProvider{
 		events:   []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},

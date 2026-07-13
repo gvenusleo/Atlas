@@ -8,7 +8,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/skill"
 )
 
-func TestLoadSkillDefinitionListsSkills(t *testing.T) {
+func TestLoadSkillDefinitionDoesNotRepeatSkillSummaries(t *testing.T) {
 	catalog, err := skill.NewCatalog([]skill.Skill{{
 		Name:        "write",
 		Description: "polish prose",
@@ -21,8 +21,8 @@ func TestLoadSkillDefinitionListsSkills(t *testing.T) {
 	if def.Name != "load_skill" {
 		t.Fatalf("name = %q", def.Name)
 	}
-	if !strings.Contains(def.Description, "write: polish prose") {
-		t.Fatalf("description = %q", def.Description)
+	if strings.Contains(def.Description, "write") || strings.Contains(def.Description, "polish prose") {
+		t.Fatalf("description repeats skill summary: %q", def.Description)
 	}
 }
 

@@ -20,7 +20,7 @@ type LoadSkill struct {
 func (l LoadSkill) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "load_skill",
-		Description: l.description(),
+		Description: "Load the full SKILL.md instructions for one available Atlas skill before using it.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -60,22 +60,4 @@ func (l LoadSkill) Run(ctx context.Context, arguments string) (string, error) {
 		filepath.ToSlash(found.Path),
 		found.Content,
 	), nil
-}
-
-func (l LoadSkill) description() string {
-	var builder strings.Builder
-	builder.WriteString("Load the full SKILL.md instructions for one available Atlas skill before using it.")
-	summaries := l.Skills.Summaries()
-	if len(summaries) == 0 {
-		builder.WriteString("\n\nNo skills are currently available.")
-		return builder.String()
-	}
-	builder.WriteString("\n\nAvailable skills:")
-	for _, summary := range summaries {
-		builder.WriteString("\n- ")
-		builder.WriteString(summary.Name)
-		builder.WriteString(": ")
-		builder.WriteString(summary.Description)
-	}
-	return builder.String()
 }

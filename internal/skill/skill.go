@@ -10,6 +10,12 @@ import (
 	"strings"
 )
 
+const (
+	maxSkillBytes        = 64 * 1024
+	maxDescriptionBytes  = 2 * 1024
+	maxSkillSummaryBytes = 32 * 1024
+)
+
 // Skill represents a local skill loaded from SKILL.md.
 type Skill struct {
 	Name                   string
@@ -55,7 +61,13 @@ func NewCatalog(skills []Skill) (*Catalog, error) {
 		if _, ok := byName[skill.Name]; ok {
 			return nil, fmt.Errorf("duplicate skill %q", skill.Name)
 		}
+		if err := validateSkillSize(skill); err != nil {
+			return nil, err
+		}
 		byName[skill.Name] = skill
+	}
+	if err := validateSummarySize(byName); err != nil {
+		return nil, err
 	}
 	return newCatalogFromMap(byName), nil
 }
@@ -114,6 +126,9 @@ func loadFromRoots(roots []root) (*Catalog, error) {
 			byName[skill.Name] = skill
 		}
 	}
+	if err := validateSummarySize(byName); err != nil {
+		return nil, err
+	}
 	return newCatalogFromMap(byName), nil
 }
 
@@ -144,6 +159,13 @@ func loadRoot(path string) ([]Skill, error) {
 }
 
 func loadFile(path string) (Skill, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Skill{}, err
+	}
+	if info.Size() > maxSkillBytes {
+		return Skill{}, fmt.Errorf("%s: SKILL.md is too large", path)
+	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return Skill{}, err
@@ -199,6 +221,9 @@ func parse(path, content string) (Skill, error) {
 	if skill.Description == "" {
 		return Skill{}, fmt.Errorf("%s: skill description is required", path)
 	}
+	if len(skill.Description) > maxDescriptionBytes {
+		return Skill{}, fmt.Errorf("%s: skill description is too large", path)
+	}
 	if value := meta["disable-model-invocation"]; value != "" {
 		disabled, err := strconv.ParseBool(value)
 		if err != nil {
@@ -207,6 +232,30 @@ func parse(path, content string) (Skill, error) {
 		skill.DisableModelInvocation = disabled
 	}
 	return skill, nil
+}
+
+func validateSkillSize(skill Skill) error {
+	if len(skill.Description) > maxDescriptionBytes {
+		return fmt.Errorf("skill %q description is too large", skill.Name)
+	}
+	if len(skill.Content) > maxSkillBytes {
+		return fmt.Errorf("skill %q content is too large", skill.Name)
+	}
+	return nil
+}
+
+func validateSummarySize(skills map[string]Skill) error {
+	total := 0
+	for _, skill := range skills {
+		if skill.DisableModelInvocation {
+			continue
+		}
+		total += len(skill.Name) + len(skill.Description)
+		if total > maxSkillSummaryBytes {
+			return fmt.Errorf("skill summaries are too large")
+		}
+	}
+	return nil
 }
 
 func unquote(value string) string {
