@@ -52,7 +52,7 @@ Atlas is a headless agent core with access to local filesystem and shell tools%s
 - Before patching an existing file, inspect the relevant content with run_shell.
 - run_shell already starts in the session working directory. Do not prepend cd when running there; set cwd only to run elsewhere. Shell commands should be non-interactive.
 - Do not treat command completion alone as proof. If expected output is missing or a task changes files, verify the observable result with an appropriate follow-up check.
-- Batch independent tool calls in a single response. Do not wait for one result before requesting another when there are no dependencies between them.
+- You may issue independent tool calls in a single response to reduce model round trips. Atlas executes them in model order, so do not batch calls when a later call depends on an earlier result or when their writes could conflict.
 
 ## Task Tracking
 

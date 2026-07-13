@@ -37,6 +37,8 @@ func TestBuildSystemIncludesCoreBehavior(t *testing.T) {
 		"Do not prepend cd when running there",
 		"set cwd only to run elsewhere",
 		"Do not treat command completion alone as proof",
+		"Atlas executes them in model order",
+		"when their writes could conflict",
 		"Match the user's language",
 		"Current date: 2026-06-08",
 		"Working directory: /tmp/atlas-work",
