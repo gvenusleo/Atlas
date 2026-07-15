@@ -20,6 +20,7 @@ import (
 const (
 	defaultShellTimeoutSeconds = 30
 	maxShellTimeoutSeconds     = 300
+	shellPipeWaitDelay         = time.Second
 	// ShellOutputByteLimit is the maximum command output returned to the model.
 	ShellOutputByteLimit = 50 * 1024
 	shellOutputEdgeBytes = ShellOutputByteLimit / 2
@@ -40,6 +41,7 @@ type RunShell struct {
 // ShellArgs describes the JSON parameters received by run_shell.
 type ShellArgs struct {
 	Command          string `json:"command"`
+	Stdin            string `json:"stdin"`
 	CWD              string `json:"cwd"`
 	TimeoutSeconds   int    `json:"timeout_seconds"`
 	SuccessExitCodes []int  `json:"success_exit_codes"`
@@ -49,13 +51,17 @@ type ShellArgs struct {
 func (RunShell) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "run_shell",
-		Description: "Run a shell command in the session working directory and return combined output.",
+		Description: "Run a shell command in the session working directory, optionally pass text to standard input, and return combined output.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
 					"description": "Command to execute with the platform default shell.",
+				},
+				"stdin": map[string]any{
+					"type":        "string",
+					"description": "Optional text passed unchanged to the command's standard input.",
 				},
 				"cwd": map[string]any{
 					"type":        "string",
@@ -90,7 +96,7 @@ func (r RunShell) Run(ctx context.Context, arguments string) (string, error) {
 	if cwd == "" {
 		cwd = r.CWD
 	}
-	return runShellCommand(ctx, args.Command, cwd, timeout, args.SuccessExitCodes)
+	return runShellCommand(ctx, args.Command, args.Stdin, cwd, timeout, args.SuccessExitCodes)
 }
 
 // ParseShellArgs parses and validates the JSON parameters for run_shell.
@@ -152,7 +158,7 @@ func CheckDefaultShell() (ShellSpec, error) {
 	return spec, nil
 }
 
-func runShellCommand(ctx context.Context, command, workdir string, timeout time.Duration, successExitCodes []int) (string, error) {
+func runShellCommand(ctx context.Context, command, stdin, workdir string, timeout time.Duration, successExitCodes []int) (string, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -160,6 +166,10 @@ func runShellCommand(ctx context.Context, command, workdir string, timeout time.
 	args := append([]string(nil), spec.Args...)
 	args = append(args, command)
 	cmd := exec.CommandContext(runCtx, spec.Command, args...)
+	cmd.WaitDelay = shellPipeWaitDelay
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	if workdir != "" {
 		cmd.Dir = workdir
 	}

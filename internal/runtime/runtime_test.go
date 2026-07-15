@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -335,7 +336,7 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
-	assertToolNames(t, provider.request.Tools, "apply_patch", "run_shell", "load_skill")
+	assertToolNames(t, provider.request.Tools, "run_shell", "load_skill")
 	assertMissingToolNames(t, provider.request.Tools, "read_file", "write_file", "edit_file")
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
@@ -345,15 +346,22 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	}
 }
 
-func TestRunTurnApplyPatchUsesSessionCWD(t *testing.T) {
+func TestRunTurnRunShellUsesSessionCWDAndStdin(t *testing.T) {
 	cwd := t.TempDir()
+	arguments, err := json.Marshal(tool.ShellArgs{
+		Command: shellWriteStdinCommand(),
+		Stdin:   "from cwd\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	provider := &sequenceProvider{
 		responses: []model.ChatResponse{
 			{
 				ToolCalls: []model.ToolCall{{
 					ID:        "call_1",
-					Name:      "apply_patch",
-					Arguments: `{"patch":"*** Begin Patch\n*** Add File: note.txt\n+from cwd\n*** End Patch"}`,
+					Name:      "run_shell",
+					Arguments: string(arguments),
 				}},
 			},
 			{Content: "done"},
@@ -374,7 +382,7 @@ func TestRunTurnApplyPatchUsesSessionCWD(t *testing.T) {
 	}
 	requestMessages := provider.requests[1].Messages
 	last := requestMessages[len(requestMessages)-1]
-	if last.Role != model.RoleTool || !strings.Contains(last.Content, "A note.txt") {
+	if last.Role != model.RoleTool || last.ToolCallID != "call_1" {
 		t.Fatalf("tool message = %#v", last)
 	}
 	content, err := os.ReadFile(filepath.Join(cwd, "note.txt"))
@@ -1180,6 +1188,13 @@ func shellEchoCommand(text string) string {
 		return "printf '%s\\n' " + quoteShell(text)
 	}
 	return "Write-Output " + quotePowerShell(text)
+}
+
+func shellWriteStdinCommand() string {
+	if tool.DefaultShell().Command == "/bin/sh" {
+		return "cat > note.txt"
+	}
+	return "$utf8 = New-Object System.Text.UTF8Encoding($false); [IO.File]::WriteAllText('note.txt', [Console]::In.ReadToEnd(), $utf8)"
 }
 
 func shellCWD(t *testing.T, arguments string) string {

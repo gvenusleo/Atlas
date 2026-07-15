@@ -454,7 +454,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd str
 		case agent.EventToolStarted:
 			update = acpsdk.StartToolCall(
 				toolCallID(event),
-				tool.DisplayTitle(event.ToolCall, cwd),
+				tool.DisplayTitle(event.ToolCall),
 				acpsdk.WithStartKind(toolKind(event.ToolCall.Name)),
 				acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
 				acpsdk.WithStartRawInput(rawToolInput(event.ToolCall.Arguments)),
@@ -465,7 +465,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd str
 				status = acpsdk.ToolCallStatusFailed
 			}
 			includeContent := !a.takeTerminalToolCall(sessionID, toolCallID(event))
-			opts := toolCallUpdateOptions(status, event.ToolResult, event.ToolMetadata, includeContent)
+			opts := toolCallUpdateOptions(status, event.ToolResult, includeContent)
 			update = acpsdk.UpdateToolCall(
 				toolCallID(event),
 				opts...,
@@ -493,7 +493,14 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd str
 func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolRunner {
 	return func(ctx context.Context, call model.ToolCall, fallback tool.RunFunc) (tool.RunResult, error) {
 		if call.Name == "run_shell" && a.clientCapabilities.Terminal && a.terminalClient != nil {
-			result, err := a.runShellInClientTerminal(ctx, sessionID, cwd, call)
+			args, err := tool.ParseShellArgs(call.Arguments)
+			if err != nil {
+				return tool.RunResult{}, err
+			}
+			if args.Stdin != "" {
+				return fallback(ctx, call)
+			}
+			result, err := a.runShellInClientTerminal(ctx, sessionID, cwd, call, args)
 			if errors.Is(err, errClientTerminalUnavailable) {
 				return fallback(ctx, call)
 			}
@@ -504,11 +511,7 @@ func (a *Agent) toolRunner(sessionID acpsdk.SessionId, cwd string) runtime.ToolR
 }
 
 // runShellInClientTerminal executes run_shell using ACP terminal capabilities and returns the final output.
-func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall) (tool.RunResult, error) {
-	args, err := tool.ParseShellArgs(call.Arguments)
-	if err != nil {
-		return tool.RunResult{}, err
-	}
+func (a *Agent) runShellInClientTerminal(ctx context.Context, sessionID acpsdk.SessionId, cwd string, call model.ToolCall, args tool.ShellArgs) (tool.RunResult, error) {
 	spec := tool.DefaultShell()
 	terminalArgs := append([]string(nil), spec.Args...)
 	terminalArgs = append(terminalArgs, args.Command)
@@ -685,7 +688,7 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 			for toolIndex, call := range msg.ToolCalls {
 				toolID := replayToolCallID(messageIndex, toolIndex, call.ID)
 				pendingToolIDs = append(pendingToolIDs, toolID)
-				if err := a.sendSessionUpdate(ctx, sessionID, replayToolStart(toolID, call, cwd)); err != nil {
+				if err := a.sendSessionUpdate(ctx, sessionID, replayToolStart(toolID, call)); err != nil {
 					return err
 				}
 			}
@@ -1227,10 +1230,10 @@ func toolCallID(event agent.Event) acpsdk.ToolCallId {
 	return acpsdk.ToolCallId(fmt.Sprintf("tool_%d", event.Step))
 }
 
-func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall, cwd string) acpsdk.SessionUpdate {
+func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall) acpsdk.SessionUpdate {
 	return acpsdk.StartToolCall(
 		toolID,
-		tool.DisplayTitle(call, cwd),
+		tool.DisplayTitle(call),
 		acpsdk.WithStartKind(toolKind(call.Name)),
 		acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
 		acpsdk.WithStartRawInput(rawToolInput(call.Arguments)),
@@ -1240,68 +1243,22 @@ func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall, cwd string) 
 func replayToolResult(toolID acpsdk.ToolCallId, msg model.Message) acpsdk.SessionUpdate {
 	return acpsdk.UpdateToolCall(
 		toolID,
-		toolCallUpdateOptions(acpsdk.ToolCallStatusCompleted, msg.Content, msg.ToolMetadata, true)...,
+		toolCallUpdateOptions(acpsdk.ToolCallStatusCompleted, msg.Content, true)...,
 	)
 }
 
 // toolCallUpdateOptions maps Atlas tool results to ACP tool_call_update.
-func toolCallUpdateOptions(status acpsdk.ToolCallStatus, result string, metadata model.ToolMetadata, includeContent bool) []acpsdk.ToolCallUpdateOpt {
+func toolCallUpdateOptions(status acpsdk.ToolCallStatus, result string, includeContent bool) []acpsdk.ToolCallUpdateOpt {
 	opts := []acpsdk.ToolCallUpdateOpt{
 		acpsdk.WithUpdateStatus(status),
 		acpsdk.WithUpdateRawOutput(result),
 	}
-	if locations := toolCallLocations(metadata); len(locations) > 0 {
-		opts = append(opts, acpsdk.WithUpdateLocations(locations))
-	}
 	if includeContent {
-		opts = append(opts, acpsdk.WithUpdateContent(toolCallContent(result, metadata)))
+		opts = append(opts, acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{
+			acpsdk.ToolContent(acpsdk.TextBlock(result)),
+		}))
 	}
 	return opts
-}
-
-// toolCallContent prioritizes structured diffs, falling back to plain text content.
-func toolCallContent(result string, metadata model.ToolMetadata) []acpsdk.ToolCallContent {
-	if len(metadata.Diffs) > 0 {
-		content := make([]acpsdk.ToolCallContent, 0, len(metadata.Diffs))
-		for _, diff := range metadata.Diffs {
-			if diff.OldText == nil {
-				content = append(content, acpsdk.ToolDiffContent(diff.Path, diff.NewText))
-			} else {
-				content = append(content, acpsdk.ToolDiffContent(diff.Path, diff.NewText, *diff.OldText))
-			}
-		}
-		return content
-	}
-	if metadata.Diff != nil {
-		if metadata.Diff.OldText == nil {
-			return []acpsdk.ToolCallContent{
-				acpsdk.ToolDiffContent(metadata.Diff.Path, metadata.Diff.NewText),
-			}
-		}
-		return []acpsdk.ToolCallContent{
-			acpsdk.ToolDiffContent(metadata.Diff.Path, metadata.Diff.NewText, *metadata.Diff.OldText),
-		}
-	}
-	return []acpsdk.ToolCallContent{
-		acpsdk.ToolContent(acpsdk.TextBlock(result)),
-	}
-}
-
-// toolCallLocations converts persisted file locations to ACP navigable locations.
-func toolCallLocations(metadata model.ToolMetadata) []acpsdk.ToolCallLocation {
-	if len(metadata.Locations) == 0 {
-		return nil
-	}
-	locations := make([]acpsdk.ToolCallLocation, 0, len(metadata.Locations))
-	for _, location := range metadata.Locations {
-		item := acpsdk.ToolCallLocation{Path: location.Path}
-		if location.Line > 0 {
-			line := location.Line
-			item.Line = &line
-		}
-		locations = append(locations, item)
-	}
-	return locations
 }
 
 func replayToolCallID(messageIndex, toolIndex int, id string) acpsdk.ToolCallId {
@@ -1313,8 +1270,6 @@ func replayToolCallID(messageIndex, toolIndex int, id string) acpsdk.ToolCallId 
 
 func toolKind(name string) acpsdk.ToolKind {
 	switch name {
-	case "apply_patch":
-		return acpsdk.ToolKindEdit
 	case "web_search":
 		return acpsdk.ToolKindSearch
 	case "web_fetch":

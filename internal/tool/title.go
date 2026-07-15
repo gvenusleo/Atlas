@@ -3,16 +3,14 @@ package tool
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
 )
 
 // DisplayTitle returns a user-facing display title for a tool call.
-// cwd is used to shorten file paths: if a file is under cwd, only the relative path is shown.
-func DisplayTitle(call model.ToolCall, cwd string) string {
-	if title := primaryDisplayTitle(call, cwd); title != "" {
+func DisplayTitle(call model.ToolCall) string {
+	if title := primaryDisplayTitle(call); title != "" {
 		return title
 	}
 	if call.Name == "" {
@@ -22,11 +20,9 @@ func DisplayTitle(call model.ToolCall, cwd string) string {
 }
 
 // primaryDisplayTitle extracts the most descriptive field from built-in tool parameters.
-func primaryDisplayTitle(call model.ToolCall, cwd string) string {
+func primaryDisplayTitle(call model.ToolCall) string {
 	prefix, key := "", ""
 	switch call.Name {
-	case "apply_patch":
-		prefix, key = "Patch: ", "patch"
 	case "web_search":
 		prefix, key = "WebSearch: ", "query"
 	case "web_fetch":
@@ -56,34 +52,5 @@ func primaryDisplayTitle(call model.ToolCall, cwd string) string {
 	if !ok || strings.TrimSpace(value) == "" {
 		return ""
 	}
-	if call.Name == "apply_patch" {
-		actions, err := parsePatch(value)
-		if err != nil || len(actions) == 0 {
-			return prefix + patchBeginMarker
-		}
-		paths := make(map[string]struct{})
-		for _, action := range actions {
-			paths[action.path] = struct{}{}
-			if action.movePath != "" {
-				paths[action.movePath] = struct{}{}
-			}
-		}
-		if len(paths) > 1 {
-			return fmt.Sprintf("Patch: %d files", len(paths))
-		}
-		return prefix + shortenPath(actions[0].path, cwd)
-	}
 	return prefix + value
-}
-
-// shortenPath shortens an absolute path to a cwd-relative path (if the file is under cwd).
-func shortenPath(path, cwd string) string {
-	if cwd == "" || !filepath.IsAbs(path) {
-		return path
-	}
-	rel, err := filepath.Rel(cwd, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return path
-	}
-	return rel
 }

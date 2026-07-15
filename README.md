@@ -8,9 +8,9 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 
 - **Headless agent core**: model → tool calls → tool results, written back to transcript in order, looping until completion or step limit.
 - **Multi-provider adapters**: connect to OpenAI, DeepSeek, and other compatible backends via `chat_completions` and `responses` API formats.
-- **Built-in tools**: file read/write, text search, precise editing, shell execution, web search and extraction — ready out of the box.
+- **Built-in tools**: shell-based file inspection, editing, and search, plus web search and extraction — ready out of the box.
 - **Context compaction**: automatically summarizes earlier conversation when the context window threshold is reached, keeping recent messages to continue.
-- **Multiple entry points**: CLI one-shot execution, ACP persistent connection (with editor-embedded terminal and file diff), and a WebSocket service.
+- **Multiple entry points**: CLI one-shot execution, ACP persistent connection with an editor-embedded terminal, and a WebSocket service.
 - **Local-first storage**: session records stay in local SQLite. Task content and results may be transmitted through configured model APIs, Tavily, or connected WebSocket clients.
 - **Extensible instructions**: inject project-level and global instructions via `AGENTS.md` and skill files. Skills are loaded on demand.
 

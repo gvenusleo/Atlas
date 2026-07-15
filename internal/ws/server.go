@@ -452,7 +452,7 @@ func (s *Server) makeObserver(ctx context.Context, conn *websocket.Conn, session
 			tc := &ToolCallInfo{
 				ID:        toolCallID(event),
 				Name:      event.ToolCall.Name,
-				Title:     tool.DisplayTitle(event.ToolCall, ""),
+				Title:     tool.DisplayTitle(event.ToolCall),
 				Arguments: event.ToolCall.Arguments,
 			}
 			s.sendEvent(ctx, conn, EventToolStarted, event.Step, "", tc, "", "", false, sessionID)

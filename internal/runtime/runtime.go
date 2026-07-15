@@ -1093,7 +1093,6 @@ func completeDependencies(deps Dependencies) Dependencies {
 
 func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
 	tools := []tool.Tool{
-		tool.ApplyPatch{CWD: cwd},
 		tool.RunShell{CWD: cwd},
 		tool.TodoWrite{},
 		tool.LoadSkill{Skills: skills},

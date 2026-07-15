@@ -56,11 +56,10 @@ func TestInitializeReportsSupportedCapabilities(t *testing.T) {
 
 func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 	tests := map[string]acpsdk.ToolKind{
-		"apply_patch": acpsdk.ToolKindEdit,
-		"web_search":  acpsdk.ToolKindSearch,
-		"web_fetch":   acpsdk.ToolKindFetch,
-		"run_shell":   acpsdk.ToolKindExecute,
-		"custom":      acpsdk.ToolKindOther,
+		"web_search": acpsdk.ToolKindSearch,
+		"web_fetch":  acpsdk.ToolKindFetch,
+		"run_shell":  acpsdk.ToolKindExecute,
+		"custom":     acpsdk.ToolKindOther,
 	}
 	for name, want := range tests {
 		if got := toolKind(name); got != want {
@@ -545,6 +544,34 @@ func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
 	}
 	if len(updates) != 3 || updates[1].Update.ToolCallUpdate == nil || updates[1].Update.ToolCallUpdate.Content[0].Terminal == nil || len(updates[2].Update.ToolCallUpdate.Content) != 0 {
 		t.Fatalf("updates = %#v", updates)
+	}
+}
+
+func TestToolRunnerUsesLocalShellWhenStdinIsPresent(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities = acpsdk.ClientCapabilities{Terminal: true}
+	client := &fakeTerminalClient{}
+	a.terminalClient = client
+	runner := a.toolRunner("sess", "/tmp/work")
+	call := model.ToolCall{
+		ID:        "call_1",
+		Name:      "run_shell",
+		Arguments: `{"command":"git apply --recount -","stdin":"patch content"}`,
+	}
+	var fallbackCall model.ToolCall
+
+	got, err := runner(context.Background(), call, func(_ context.Context, got model.ToolCall) (tool.RunResult, error) {
+		fallbackCall = got
+		return tool.RunResult{Content: "local-output"}, nil
+	})
+	if err != nil || got.Content != "local-output" {
+		t.Fatalf("ToolRunner() = %#v, %v", got, err)
+	}
+	if !reflect.DeepEqual(fallbackCall, call) {
+		t.Fatalf("fallback call = %#v, want %#v", fallbackCall, call)
+	}
+	if client.create.Command != "" {
+		t.Fatalf("client terminal was created: %#v", client.create)
 	}
 }
 
@@ -1131,7 +1158,6 @@ func TestLoadSessionSavesAdditionalDirectories(t *testing.T) {
 
 func TestLoadSessionReplaysTranscript(t *testing.T) {
 	cwd := testCWD(t)
-	oldText := "old"
 	trans := transcript.New()
 	trans.Append(model.Message{Role: model.RoleUser, Content: "hi"})
 	trans.Append(model.Message{
@@ -1148,13 +1174,6 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 		Role:       model.RoleTool,
 		Content:    "ok",
 		ToolCallID: "call_1",
-		ToolMetadata: model.ToolMetadata{
-			Locations: []model.ToolLocation{{Path: filepath.Join(cwd, "README.md"), Line: 4}},
-			Diffs: []model.ToolDiff{
-				{Path: filepath.Join(cwd, "README.md"), OldText: &oldText, NewText: "new"},
-				{Path: filepath.Join(cwd, "other.txt"), NewText: "added"},
-			},
-		},
 	})
 	trans.Append(model.Message{Role: model.RoleAssistant, Content: "done"})
 	rt := &fakeRuntime{
@@ -1214,10 +1233,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 	if finish == nil || finish.ToolCallId != "call_1" || finish.Status == nil || *finish.Status != acpsdk.ToolCallStatusCompleted || finish.RawOutput != "ok" {
 		t.Fatalf("tool finish = %#v", fifth.Update)
 	}
-	if len(finish.Locations) != 1 || finish.Locations[0].Path != filepath.Join(cwd, "README.md") || finish.Locations[0].Line == nil || *finish.Locations[0].Line != 4 {
-		t.Fatalf("tool locations = %#v", finish.Locations)
-	}
-	if len(finish.Content) != 2 || finish.Content[0].Diff == nil || finish.Content[0].Diff.NewText != "new" || finish.Content[1].Diff == nil || finish.Content[1].Diff.NewText != "added" {
+	if len(finish.Content) != 1 || finish.Content[0].Content == nil || finish.Content[0].Content.Content.Text == nil || finish.Content[0].Content.Content.Text.Text != "ok" {
 		t.Fatalf("tool content = %#v", finish.Content)
 	}
 	if sixth.Update.AgentMessageChunk == nil || sixth.Update.AgentMessageChunk.Content.Text.Text != "done" {

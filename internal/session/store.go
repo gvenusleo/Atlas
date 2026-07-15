@@ -601,7 +601,7 @@ func decodeToolCalls(content string) ([]model.ToolCall, error) {
 }
 
 func encodeToolMetadata(metadata model.ToolMetadata) (string, error) {
-	if len(metadata.Locations) == 0 && len(metadata.Diffs) == 0 && metadata.Diff == nil && len(metadata.Todos) == 0 {
+	if len(metadata.Todos) == 0 {
 		return "", nil
 	}
 	content, err := json.Marshal(metadata)

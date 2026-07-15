@@ -8,9 +8,9 @@
 
 - **Headless agent 核心**：模型 → 工具调用 → 工具结果，按顺序写回 transcript，循环直到完成或达到步数上限。
 - **多 Provider 适配**：通过 `chat_completions` 和 `responses` 两种 API 格式适配器接入 OpenAI、DeepSeek 等兼容后端。
-- **本地工具集**：文件读写、文本搜索、精确编辑、Shell 执行、网页搜索与提取，开箱即用。
+- **本地工具集**：通过 Shell 完成文件检查、编辑与搜索，并支持网页搜索与提取，开箱即用。
 - **上下文压缩**：达到上下文窗口阈值时自动摘要早期对话，保留最近消息继续。
-- **多入口**：CLI 单次执行、ACP 长连接（支持编辑器嵌入终端与文件 diff）和 WebSocket 服务。
+- **多入口**：CLI 单次执行、支持编辑器嵌入终端的 ACP 长连接和 WebSocket 服务。
 - **本地优先存储**：会话记录保存在本地 SQLite；任务内容和结果可能通过已配置的模型 API、Tavily 或已连接的 WebSocket 客户端传输。
 - **可扩展指令**：通过 `AGENTS.md` 和 skill 文件注入项目级与全局指令，skill 按需加载。
 

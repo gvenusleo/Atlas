@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -18,6 +20,17 @@ func TestRunShellRun(t *testing.T) {
 	}
 	if strings.TrimSpace(got) != "hello" {
 		t.Fatalf("Run() = %q, want %q", got, "hello")
+	}
+}
+
+func TestRunShellRunPassesStdin(t *testing.T) {
+	input := "first line\nsecond line with $ and `\n"
+	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellStdinCommand())+`,"stdin":`+quoteJSON(input)+`}`)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got != input {
+		t.Fatalf("Run() = %q, want %q", got, input)
 	}
 }
 
@@ -84,12 +97,15 @@ func TestRunShellRunMissingCommand(t *testing.T) {
 }
 
 func TestParseShellArgsNormalizesSuccessExitCodes(t *testing.T) {
-	args, err := ParseShellArgs(`{"command":"check","success_exit_codes":[0,1,1]}`)
+	args, err := ParseShellArgs(`{"command":"check","stdin":"input","success_exit_codes":[0,1,1]}`)
 	if err != nil {
 		t.Fatalf("ParseShellArgs() error = %v", err)
 	}
 	if got := fmt.Sprint(args.SuccessExitCodes); got != "[0 1]" {
 		t.Fatalf("SuccessExitCodes = %s, want [0 1]", got)
+	}
+	if args.Stdin != "input" {
+		t.Fatalf("Stdin = %q, want input", args.Stdin)
 	}
 
 	args, err = ParseShellArgs(`{"command":"check","success_exit_codes":[]}`)
@@ -112,6 +128,45 @@ func TestRunShellRunTimeout(t *testing.T) {
 	}
 	if !strings.Contains(got, "before") || !strings.Contains(got, "command timed out") {
 		t.Fatalf("Run() = %q, want output and timeout status", got)
+	}
+}
+
+func TestRunShellCommandTimeoutBoundsInheritedStdinPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX file descriptors")
+	}
+	workdir := t.TempDir()
+	command := "exec 3<&0; sleep 10 <&3 >/dev/null 2>&1 & echo $! > child.pid; exec 3<&-; exit 0"
+	started := time.Now()
+	got, err := runShellCommand(
+		context.Background(),
+		command,
+		strings.Repeat("x", 1024*1024),
+		workdir,
+		100*time.Millisecond,
+		[]int{0},
+	)
+	pidText, readErr := os.ReadFile(filepath.Join(workdir, "child.pid"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	pid, parseErr := strconv.Atoi(strings.TrimSpace(string(pidText)))
+	if parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	process, findErr := os.FindProcess(pid)
+	if findErr != nil {
+		t.Fatal(findErr)
+	}
+	t.Cleanup(func() {
+		_ = process.Kill()
+		_ = process.Release()
+	})
+	if err == nil || !strings.Contains(got, "command timed out") {
+		t.Fatalf("runShellCommand() = %q, %v, want timeout", got, err)
+	}
+	if elapsed := time.Since(started); elapsed >= 5*time.Second {
+		t.Fatalf("runShellCommand() returned after %s, want less than background process lifetime", elapsed)
 	}
 }
 
@@ -196,6 +251,10 @@ func TestRunShellDefinition(t *testing.T) {
 	if !ok || !strings.Contains(fmt.Sprint(cwd["description"]), "Omit to use the session working directory") {
 		t.Fatalf("cwd definition = %#v", cwd)
 	}
+	stdin, ok := properties["stdin"].(map[string]any)
+	if !ok || !strings.Contains(fmt.Sprint(stdin["description"]), "standard input") {
+		t.Fatalf("stdin definition = %#v", stdin)
+	}
 }
 
 func TestDefaultShellSpec(t *testing.T) {
@@ -234,6 +293,13 @@ func shellEchoCommand(text string) string {
 		return "Write-Output " + text
 	}
 	return "printf " + text
+}
+
+func shellStdinCommand() string {
+	if runtime.GOOS == "windows" {
+		return "[Console]::Out.Write([Console]::In.ReadToEnd())"
+	}
+	return "cat"
 }
 
 func shellFailCommand(text string, code int) string {

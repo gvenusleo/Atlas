@@ -27,19 +27,6 @@ type ToolCall struct {
 	Arguments string
 }
 
-// ToolLocation describes a file location associated with a tool call.
-type ToolLocation struct {
-	Path string `json:"path"`
-	Line int    `json:"line,omitempty"`
-}
-
-// ToolDiff describes a file content change produced by a tool call.
-type ToolDiff struct {
-	Path    string  `json:"path"`
-	OldText *string `json:"old_text,omitempty"`
-	NewText string  `json:"new_text"`
-}
-
 // TodoStatus represents the execution status of a single todo item.
 type TodoStatus string
 
@@ -60,10 +47,6 @@ type TodoEntry struct {
 
 // ToolMetadata holds UI-facing presentation data for a tool call.
 type ToolMetadata struct {
-	Locations []ToolLocation `json:"locations,omitempty"`
-	Diffs     []ToolDiff     `json:"diffs,omitempty"`
-	// Diff is retained for transcripts written before multi-file diffs were supported.
-	Diff  *ToolDiff   `json:"diff,omitempty"`
 	Todos []TodoEntry `json:"todos,omitempty"`
 }
 

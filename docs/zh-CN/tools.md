@@ -6,8 +6,7 @@
 
 | 工具 | 说明 |
 |---|---|
-| `apply_patch` | 通过 patch 新增、更新、删除或移动一个或多个文本文件 |
-| `run_shell` | 使用 Windows PowerShell 或其他平台的 `/bin/sh` 发现、搜索、读取和验证；支持可接受退出码，本地输出截断时保留完整临时日志 |
+| `run_shell` | 使用 Windows PowerShell 或其他平台的 `/bin/sh` 发现、搜索、读取、编辑和验证；支持可选标准输入与可接受退出码，本地输出截断时保留完整临时日志 |
 | `load_skill` | 按名称加载本地 skill 指令 |
 | `web_search` | 使用 Tavily 搜索公网网页，需配置 `services.tavily.api_key` |
 | `web_fetch` | 使用 Tavily 提取公网网页内容，需配置 `services.tavily.api_key` |

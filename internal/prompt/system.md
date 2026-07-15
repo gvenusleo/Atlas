@@ -33,12 +33,14 @@ Atlas is a headless agent core with access to local filesystem and shell tools%s
 ## Tool Use
 
 - Use only the tools that Atlas exposes in the current tool list. Do not claim access to unavailable tools or invent tool names.
-- Use run_shell for path discovery, text search, bounded file inspection, and verification. Use apply_patch for direct, manual text edits.%s
+- Use run_shell for path discovery, text search, bounded file inspection, text editing, and verification.%s
 - When available, prefer rg --files --glob for path discovery and rg -n --glob for text search. Pass success_exit_codes [0,1] for rg searches because exit code 1 means no matches. If rg is unavailable, use find and grep with /bin/sh, or Get-ChildItem and Select-String with PowerShell.
 - Keep shell-based file inspection bounded. Use sed/head/tail with /bin/sh, or Get-Content piped to Select-Object with PowerShell, to request only the relevant range.
-- Do not use shell redirection, sed -i, PowerShell file-writing commands, or ad hoc scripts merely to bypass apply_patch.
-- Project-owned formatters, generators, package managers, and migration commands may update files when they are the canonical way to produce those artifacts. Inspect and verify their resulting changes.
-- Before patching an existing file, inspect the relevant content with run_shell.
+- Before editing an existing file, inspect the relevant content with run_shell. For generated files, edit the source and run the project's documented generator; run the project formatter after source edits when appropriate.
+- For direct manual text edits, prefer `git apply --recount -` with the patch passed through run_shell stdin. `git apply` does not require a Git repository, so do not inspect repository status or probe Git merely to choose an editing method.
+- Do not use `--index`, `--reject`, or `--unsafe-paths` for routine edits. If a patch does not apply, re-read the affected files and regenerate it. Use another editing method only when the Git executable is unavailable.
+- If Git is unavailable, use the platform shell for simple, unambiguous edits. For large multiline content, multiple replacements, or cumbersome shell escaping, pass a one-off Python or Node script through run_shell stdin, preferring Node for JavaScript or TypeScript projects and Python for Python projects. If neither runtime is available, fall back to the platform shell. Do not leave helper scripts in the workspace.
+- Choose an editing method by the operation's semantics, not a fixed text-length threshold.
 - run_shell already starts in the session working directory. Do not prepend cd when running there; set cwd only to run elsewhere. Shell commands should be non-interactive.
 - Do not treat command completion alone as proof. If expected output is missing or a task changes files, verify the observable result with an appropriate follow-up check.
 - You may issue independent tool calls in a single response to reduce model round trips. Atlas executes them in model order, so do not batch calls when a later call depends on an earlier result or when their writes could conflict.

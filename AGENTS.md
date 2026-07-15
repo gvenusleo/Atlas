@@ -6,7 +6,7 @@
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
 - All channels use the shared runtime and agent loop. Channel packages only adapt protocols and manage channel-specific state; they must not duplicate the agent loop.
 - `model.Provider` is the only interface to model backends. Provider adapters own connection settings, authentication, provider-specific request formats, and response conversion. Provider connection fields must not enter `model.ChatRequest`.
-- ACP `run_shell` may execute through a client terminal, while `apply_patch` always modifies the filesystem visible to the Atlas process. Remote ACP workspaces where those filesystems differ are not supported.
+- ACP `run_shell` may execute through a client terminal, but calls with non-empty `stdin` execute through the Atlas process because ACP terminals do not accept standard input. Remote ACP workspaces where those filesystems differ are not supported.
 
 ## Change Constraints
 
