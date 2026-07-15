@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -121,12 +122,7 @@ func IsSuccessfulExitCode(successCodes []int, code int) bool {
 	if len(successCodes) == 0 {
 		return code == 0
 	}
-	for _, successCode := range successCodes {
-		if successCode == code {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(successCodes, code)
 }
 
 // ShellTimeout returns the actual timeout duration used by run_shell.
@@ -189,8 +185,7 @@ func runShellCommand(ctx context.Context, command, stdin, workdir string, timeou
 		return content, ctx.Err()
 	}
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			code := exitErr.ExitCode()
 			if IsSuccessfulExitCode(successExitCodes, code) {
 				return appendShellStatus(content, fmt.Sprintf("command exited with accepted code %d", code)), outputErr

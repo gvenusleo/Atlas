@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -236,7 +237,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		AdditionalDirectories:    state.additionalDirectories,
 		AdditionalDirectoriesSet: true,
 		CWD:                      state.cwd,
-		Observer:                 a.observe(turnCtx, params.SessionId, state.cwd),
+		Observer:                 a.observe(turnCtx, params.SessionId),
 		ToolRunner:               a.toolRunner(params.SessionId, state.cwd),
 	})
 	if err != nil {
@@ -281,10 +282,9 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 	if err := a.rt.SaveSessionRoots(ctx, string(params.SessionId), params.AdditionalDirectories); err != nil {
 		return acpsdk.LoadSessionResponse{}, err
 	}
-	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
 	defaultReasoning := modelInitialReasoningEffort(models, models.Default)
 	a.setSession(string(params.SessionId), params.Cwd, models.Default, defaultReasoning, params.AdditionalDirectories)
-	if err := a.replayTranscript(ctx, params.SessionId, params.Cwd, trans); err != nil {
+	if err := a.replayTranscript(ctx, params.SessionId, trans); err != nil {
 		a.deleteSessionState(string(params.SessionId))
 		return acpsdk.LoadSessionResponse{}, err
 	}
@@ -322,7 +322,6 @@ func (a *Agent) ResumeSession(ctx context.Context, params acpsdk.ResumeSessionRe
 	if err := a.rt.SaveSessionRoots(ctx, string(params.SessionId), params.AdditionalDirectories); err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
-	sess.AdditionalDirectories = append([]string(nil), params.AdditionalDirectories...)
 	defaultReasoning := modelInitialReasoningEffort(models, models.Default)
 	a.setSession(string(params.SessionId), params.Cwd, models.Default, defaultReasoning, params.AdditionalDirectories)
 	a.sendSessionMetadataLater(params.SessionId, sess.Title, sess.UpdatedAt, sess.LastTotalTokens, modelContextWindow(models, models.Default))
@@ -434,7 +433,7 @@ func (a *Agent) SetSessionMode(context.Context, acpsdk.SetSessionModeRequest) (a
 	return acpsdk.SetSessionModeResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionSetMode)
 }
 
-func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd string) agent.Observer {
+func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.Observer {
 	return func(event agent.Event) {
 		if a.sendUpdate == nil {
 			return
@@ -657,7 +656,7 @@ func terminalToolCallKey(sessionID acpsdk.SessionId, toolCallID acpsdk.ToolCallI
 	return string(sessionID) + "\x00" + string(toolCallID)
 }
 
-func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId, cwd string, trans *transcript.Transcript) error {
+func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId, trans *transcript.Transcript) error {
 	if a.sendUpdate == nil || trans == nil {
 		return nil
 	}
@@ -720,7 +719,7 @@ func userMessageUpdate(part model.ContentPart) (acpsdk.SessionUpdate, bool) {
 		}
 		block := acpsdk.ImageBlock(data, part.MimeType)
 		if part.URI != "" {
-			block.Image.Uri = acpsdk.Ptr(part.URI)
+			block.Image.Uri = new(part.URI)
 		}
 		return acpsdk.UpdateUserMessage(block), true
 	default:
@@ -733,11 +732,11 @@ func userMessageUpdate(part model.ContentPart) (acpsdk.SessionUpdate, bool) {
 
 func base64FromDataURL(value string) (string, bool) {
 	const marker = ";base64,"
-	index := strings.Index(value, marker)
-	if index < 0 {
+	_, after, ok := strings.Cut(value, marker)
+	if !ok {
 		return "", false
 	}
-	return value[index+len(marker):], true
+	return after, true
 }
 
 func (a *Agent) sendSessionUpdate(ctx context.Context, sessionID acpsdk.SessionId, update acpsdk.SessionUpdate) error {
@@ -1174,7 +1173,7 @@ func skillNames(text string, skills []runtime.SkillSummary) []string {
 	}
 	var matched []string
 	seen := make(map[string]bool)
-	for _, field := range strings.Fields(text) {
+	for field := range strings.FieldsSeq(text) {
 		name, ok := slashCommandName(field)
 		if !ok || !skillSet[name] || seen[name] {
 			continue
@@ -1390,10 +1389,8 @@ func modelInitialReasoningEffort(options runtime.ModelOptions, modelValue string
 
 func modelOptionsSupportInput(options runtime.ModelOptions, inputFormat string) bool {
 	for _, modelOption := range options.Models {
-		for _, format := range modelOption.InputFormats {
-			if format == inputFormat {
-				return true
-			}
+		if slices.Contains(modelOption.InputFormats, inputFormat) {
+			return true
 		}
 	}
 	return false

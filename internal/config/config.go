@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -56,7 +57,7 @@ type ProviderModel struct {
 	ContextWindow    int                       `json:"context_window"`
 	MaxTokens        int                       `json:"max_tokens"`
 	InputFormats     []string                  `json:"input_formats"`
-	PromptCache      PromptCacheConfig         `json:"prompt_cache,omitempty"`
+	PromptCache      PromptCacheConfig         `json:"prompt_cache"`
 	ReasoningEfforts []ProviderReasoningEffort `json:"reasoning_efforts,omitempty"`
 }
 
@@ -383,12 +384,7 @@ func (m ProviderModel) SupportsReasoningEffort(value string) bool {
 
 // SupportsInputFormat returns whether the model declares support for the specified input format.
 func (m ProviderModel) SupportsInputFormat(value string) bool {
-	for _, format := range m.InputFormats {
-		if format == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.InputFormats, value)
 }
 
 func (c *Config) applyDefaults() {

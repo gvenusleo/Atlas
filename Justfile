@@ -17,17 +17,26 @@ tidy:
 fmt-check:
     @just --justfile {{ quote(justfile()) }} _fmt_check_{{ os_family() }}
 
+gopls-check:
+    @just --justfile {{ quote(justfile()) }} _gopls_check_{{ os_family() }}
+
 _fmt_check_windows:
     $sources = @(git ls-files --cached --others --exclude-standard '*.go' | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); $files = @(gofmt -l $sources); if ($files.Count -gt 0) { $files; exit 1 }
 
 _fmt_check_unix:
     @sources=(); while IFS= read -r file; do if [ -f "$file" ]; then sources+=("$file"); fi; done < <(git ls-files --cached --others --exclude-standard '*.go'); files="$(gofmt -l "${sources[@]}")"; if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
 
+_gopls_check_windows:
+    & go run golang.org/x/tools/gopls@v0.23.0 version *> $null; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $sources = @(git ls-files --cached --others --exclude-standard '*.go' | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); if ($sources.Count -eq 0) { exit 0 }; $output = @(& go run golang.org/x/tools/gopls@v0.23.0 check -severity=hint @sources 2>&1); if ($LASTEXITCODE -ne 0 -or $output.Count -gt 0) { $output; exit 1 }
+
+_gopls_check_unix:
+    @go run golang.org/x/tools/gopls@v0.23.0 version >/dev/null 2>&1; sources=(); while IFS= read -r file; do if [ -f "$file" ]; then sources+=("$file"); fi; done < <(git ls-files --cached --others --exclude-standard '*.go'); if [ "${#sources[@]}" -eq 0 ]; then exit 0; fi; if ! output="$(go run golang.org/x/tools/gopls@v0.23.0 check -severity=hint "${sources[@]}" 2>&1)"; then printf '%s\n' "$output"; exit 1; fi; if [ -n "$output" ]; then printf '%s\n' "$output"; exit 1; fi
+
 test:
     go test ./...
 
-# ci mirrors the GitHub Actions verification pipeline without modifying files.
-ci: fmt-check
+# ci runs the full local verification pipeline without modifying files.
+ci: fmt-check gopls-check
     go mod tidy -diff
     go build ./...
     go vet ./...

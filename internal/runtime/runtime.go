@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -589,13 +590,13 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 
 	newMessages := []model.Message{
 		model.TextMessage(model.RoleUser, strings.TrimSpace(promptText)),
-		model.Message{
+		{
 			Role: model.RoleAssistant,
 			ToolCalls: []model.ToolCall{
 				call,
 			},
 		},
-		model.Message{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
+		{Role: model.RoleTool, Content: result.Content, ToolCallID: call.ID, ToolMetadata: result.Metadata},
 	}
 	if err := store.AppendMessagesWithOptions(ctx, sessionID, cwd, newMessages, saveOpts); err != nil {
 		return TurnResult{}, err
@@ -741,13 +742,7 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 			Reason:        "no safe compaction boundary",
 		}, nil
 	}
-	start := info.CompactedMessageCount
-	if start < 0 {
-		start = 0
-	}
-	if start > len(messages) {
-		start = len(messages)
-	}
+	start := min(max(info.CompactedMessageCount, 0), len(messages))
 	selectedReasoning, err := selectedReasoningEffort(reasoningEffort, reasoningEffortSet, selectedModel)
 	if err != nil {
 		return CompactResult{}, err
@@ -768,9 +763,6 @@ func (r *Runtime) compactLoadedSession(ctx context.Context, store *session.Store
 	if err := store.SaveCompaction(ctx, sessionID, summary, plan.CompactCount, plan.TokensBefore); err != nil {
 		return CompactResult{}, err
 	}
-	info.ContextSummary = summary
-	info.CompactedMessageCount = plan.CompactCount
-	info.CompactedInputTokens = plan.TokensBefore
 	return CompactResult{
 		SessionID:     sessionID,
 		Compacted:     true,
@@ -817,8 +809,7 @@ func autoKeepRecentTokens(contextWindow int, triggerRatio float64) int {
 
 // latestAssistantUsage returns the token usage recorded by the most recent model reply.
 func latestAssistantUsage(messages []model.Message) model.Usage {
-	for i := len(messages) - 1; i >= 0; i-- {
-		msg := messages[i]
+	for _, msg := range slices.Backward(messages) {
 		if msg.Role == model.RoleAssistant && (msg.Usage.InputTokens != 0 || msg.Usage.OutputTokens != 0 || msg.Usage.TotalTokens != 0) {
 			return msg.Usage
 		}

@@ -4,6 +4,7 @@ package compact
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
@@ -202,8 +203,7 @@ func BuildSummaryMessages(previousSummary string, messages []model.Message, inst
 // extractLastTodos scans messages for the last todo_write call and returns its todo list.
 // Only returns a list containing incomplete items; returns nil when all are completed.
 func extractLastTodos(messages []model.Message) []model.TodoEntry {
-	for i := len(messages) - 1; i >= 0; i-- {
-		msg := messages[i]
+	for _, msg := range slices.Backward(messages) {
 		if msg.Role != model.RoleAssistant {
 			continue
 		}

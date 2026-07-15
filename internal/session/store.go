@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -714,8 +715,7 @@ func titleFromMessages(messages []model.Message) string {
 }
 
 func lastUsageFromMessages(messages []model.Message) model.Usage {
-	for i := len(messages) - 1; i >= 0; i-- {
-		msg := messages[i]
+	for _, msg := range slices.Backward(messages) {
 		if msg.Role == model.RoleAssistant && (msg.Usage.InputTokens != 0 || msg.Usage.OutputTokens != 0 || msg.Usage.TotalTokens != 0) {
 			return msg.Usage
 		}

@@ -132,7 +132,7 @@ func TestNewCatalogRejectsOversizedDescription(t *testing.T) {
 func TestNewCatalogRejectsOversizedSummarySet(t *testing.T) {
 	description := strings.Repeat("a", maxDescriptionBytes)
 	var skills []Skill
-	for i := 0; i < maxSkillSummaryBytes/maxDescriptionBytes+1; i++ {
+	for i := range maxSkillSummaryBytes/maxDescriptionBytes + 1 {
 		skills = append(skills, Skill{Name: fmt.Sprintf("skill-%d", i), Description: description})
 	}
 
