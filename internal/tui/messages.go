@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/model"
@@ -24,8 +25,17 @@ type turnUpdateMsg struct {
 
 // sessionLoadedMsg contains the persisted messages requested at startup.
 type sessionLoadedMsg struct {
-	messages []model.Message
-	err      error
+	messages      []model.Message
+	contextTokens int
+	err           error
+}
+
+// modelStatusLoadedMsg contains the default model information shown in the footer.
+type modelStatusLoadedMsg struct {
+	modelName       string
+	reasoningEffort string
+	contextWindow   int
+	err             error
 }
 
 // chatMessage represents a single rendered message block in the conversation.
@@ -77,24 +87,26 @@ func (m *chatMessage) handleEvent(e agent.Event) {
 }
 
 // render produces the styled string for this message block.
-func (m *chatMessage) render(width int) string {
+func (m *chatMessage) render(width int, hasDarkBackground bool) string {
 	switch m.role {
 	case "user":
-		return userStyle.Render("▸ ") + m.content.String()
+		return userMessageStyle(hasDarkBackground).
+			Width(width).
+			Render("› " + m.content.String())
 	case "assistant":
 		var parts []string
 		if m.content.Len() > 0 {
-			parts = append(parts, assistantStyle.Render("◂ ")+m.content.String())
+			parts = append(parts, renderIndented(m.content.String(), width, "• ", messageStyle))
 		}
 		for _, tc := range m.toolCalls {
 			parts = append(parts, renderToolCall(tc, width))
 		}
 		if m.cancelled {
-			parts = append(parts, mutedStyle.Render("◂ Cancelled"))
+			parts = append(parts, renderIndented("Cancelled", width, "• ", mutedStyle))
 		} else if m.err != nil {
-			parts = append(parts, errorStyle.Render("✗ "+ansi.Strip(m.err.Error())))
+			parts = append(parts, renderIndented(ansi.Strip(m.err.Error()), width, "• ", errorStyle))
 		}
-		return strings.Join(parts, "\n")
+		return strings.Join(parts, "\n\n")
 	}
 	return m.content.String()
 }
@@ -104,27 +116,43 @@ func renderToolCall(tc toolCallView, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	prefix := "⚡ "
 	style := toolStyle
 	if tc.err {
-		prefix = "✗ "
 		style = errorStyle
 	} else if tc.done {
-		prefix = "✓ "
 		style = assistantStyle
 	}
-	line := style.Render(ansi.Truncate(prefix+ansi.Strip(tc.title), width, "…"))
+	line := renderIndented(ansi.Strip(tc.title), width, "• ", style)
 	if tc.done && tc.result != "" && !tc.err {
 		firstLine := tc.result
 		if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
 			firstLine = firstLine[:idx]
 		}
-		resultWidth := max(width-2, 0)
-		if resultWidth > 0 {
-			line += "\n" + mutedStyle.Render("  "+ansi.Truncate(firstLine, resultWidth, "…"))
+		if width > 2 {
+			line += "\n" + renderIndented(firstLine, width, "  ", mutedStyle)
 		}
 	}
 	return line
+}
+
+func renderIndented(content string, width int, firstPrefix string, style lipgloss.Style) string {
+	if width <= 0 {
+		return ""
+	}
+	if width <= 2 {
+		return style.Render(ansi.Truncate(firstPrefix, width, ""))
+	}
+
+	wrapped := ansi.Hardwrap(ansi.Strip(content), width-2, true)
+	lines := strings.Split(wrapped, "\n")
+	for i := range lines {
+		prefix := "  "
+		if i == 0 {
+			prefix = firstPrefix
+		}
+		lines[i] = style.Render(prefix + lines[i])
+	}
+	return strings.Join(lines, "\n")
 }
 
 // messagesFromTranscript converts persisted model messages into TUI blocks.

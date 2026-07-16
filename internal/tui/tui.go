@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/cursor"
@@ -13,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/agent"
+	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
 )
 
@@ -28,9 +30,10 @@ type Options struct {
 
 // Model is the top-level TUI model managing layout, input, and content display.
 type Model struct {
-	width  int
-	height int
-	ready  bool
+	width             int
+	height            int
+	ready             bool
+	hasDarkBackground bool
 
 	// viewport renders the accumulated message log.
 	viewport viewport.Model
@@ -43,6 +46,13 @@ type Model struct {
 	sessionID string
 	ctx       context.Context
 	loading   bool
+
+	// Footer status reflects the runtime's active default model.
+	modelName       string
+	reasoningEffort string
+	contextTokens   int
+	contextWindow   int
+	modelStatusErr  error
 
 	// Turn state.
 	turnActive  bool
@@ -75,6 +85,7 @@ func New(opts Options) Model {
 	s.Focused.CursorLine = lipgloss.NewStyle()
 	s.Cursor.Shape = tea.CursorBar
 	ta.SetStyles(s)
+	setInputBackground(&ta, false)
 
 	ctx := opts.context
 	if ctx == nil {
@@ -104,12 +115,13 @@ func Run(ctx context.Context, opts Options) error {
 	return err
 }
 
-// Init starts the cursor blink cycle.
+// Init starts the cursor blink cycle and loads footer metadata.
 func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{textarea.Blink, loadModelStatus(m.ctx, m.rt)}
 	if m.loading {
-		return tea.Batch(textarea.Blink, loadSession(m.ctx, m.rt, m.sessionID))
+		cmds = append(cmds, loadSession(m.ctx, m.rt, m.sessionID))
 	}
-	return textarea.Blink
+	return tea.Batch(cmds...)
 }
 
 // Update handles terminal events, user input, and agent events.
@@ -119,9 +131,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		m.input.MaxHeight = max(min(maxComposerHeight, msg.Height-2), 1)
-		m.input.SetWidth(msg.Width)
+		m.input.MaxHeight = max(min(maxComposerHeight, msg.Height-6), 1)
+		m.input.SetWidth(max(msg.Width-2, 1))
 		m.viewport.SetWidth(msg.Width)
+		m.rebuild()
+		return m, nil
+
+	case tea.BackgroundColorMsg:
+		m.hasDarkBackground = msg.IsDark()
+		setInputBackground(&m.input, m.hasDarkBackground)
 		m.rebuild()
 		return m, nil
 
@@ -196,8 +214,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, failed)
 		} else {
 			m.messages = messagesFromTranscript(msg.messages)
+			m.contextTokens = msg.contextTokens
 		}
 		m.input.Focus()
+		m.rebuild()
+		return m, nil
+
+	case modelStatusLoadedMsg:
+		m.modelName = msg.modelName
+		m.reasoningEffort = msg.reasoningEffort
+		m.contextWindow = msg.contextWindow
+		m.modelStatusErr = msg.err
 		m.rebuild()
 		return m, nil
 
@@ -321,6 +348,10 @@ func (m *Model) handleTurnDone(msg turnDoneMsg) {
 	if msg.err == nil && msg.result.SessionID != "" {
 		m.sessionID = msg.result.SessionID
 	}
+	if msg.err == nil && msg.result.ContextWindow > 0 {
+		m.contextTokens = usageTokens(msg.result.Usage)
+		m.contextWindow = msg.result.ContextWindow
+	}
 
 	m.input.Focus()
 }
@@ -333,29 +364,30 @@ func (m Model) View() tea.View {
 
 	vpView := m.viewport.View()
 	layout := calculateLayout(m.height, m.input.Height())
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 5)
 	cursorY := 0
-	if layout.showHeader {
-		header := m.headerView()
-		parts = append(parts, header)
-		cursorY += lipgloss.Height(header)
-	}
 	if vpView != "" {
 		parts = append(parts, vpView)
 		cursorY += lipgloss.Height(vpView)
 	}
-	if layout.showDivider {
-		divider := dividerStyle.Render(strings.Repeat("─", max(m.width, 0)))
-		parts = append(parts, divider)
-		cursorY += lipgloss.Height(divider)
+	if layout.showInputGap {
+		parts = append(parts, "")
+		cursorY++
 	}
-	parts = append(parts, m.input.View())
+	composer := userMessageStyle(m.hasDarkBackground).
+		Width(m.width).
+		Render(m.input.View())
+	parts = append(parts, composer)
+	if layout.showStatus {
+		parts = append(parts, m.statusView())
+	}
 
 	v := tea.NewView(strings.Join(parts, "\n"))
 
 	c := m.input.Cursor()
 	if c != nil {
-		c.Y += cursorY
+		c.X++
+		c.Y += cursorY + 1
 	}
 	v.Cursor = c
 	v.AltScreen = true
@@ -373,7 +405,7 @@ func (m *Model) rebuild() {
 	followBottom := m.viewport.AtBottom()
 	var parts []string
 	for _, msg := range m.messages {
-		rendered := msg.render(m.width)
+		rendered := msg.render(m.width, m.hasDarkBackground)
 		if rendered != "" {
 			parts = append(parts, rendered)
 		}
@@ -393,62 +425,109 @@ func (m *Model) rebuild() {
 
 type screenLayout struct {
 	viewportHeight int
-	showHeader     bool
-	showDivider    bool
+	showInputGap   bool
+	showStatus     bool
 }
 
-// calculateLayout reserves stable header and composer rows before the viewport.
+// calculateLayout keeps the composer and footer stable while preserving history space.
 func calculateLayout(totalHeight, inputHeight int) screenLayout {
-	remaining := max(totalHeight-inputHeight, 0)
-	layout := screenLayout{showHeader: remaining > 0}
-	if layout.showHeader {
+	const composerVerticalPadding = 2
+	remaining := max(totalHeight-inputHeight-composerVerticalPadding, 0)
+	layout := screenLayout{showStatus: remaining > 0}
+	if layout.showStatus {
 		remaining--
 	}
-	layout.showDivider = remaining > 1
-	if layout.showDivider {
+	layout.showInputGap = remaining > 1
+	if layout.showInputGap {
 		remaining--
 	}
 	layout.viewportHeight = remaining
 	return layout
 }
 
-func (m Model) headerView() string {
-	line := headerStyle.Render("Atlas")
-	status := ""
-	switch {
-	case m.loading:
-		status = "loading"
-	case m.turnActive:
-		status = "working"
-	case m.sessionID != "":
-		status = "session " + shortSessionID(m.sessionID)
+func setInputBackground(input *textarea.Model, hasDarkBackground bool) {
+	background := userMessageStyle(hasDarkBackground).GetBackground()
+	styles := input.Styles()
+	styles.Focused.Base = lipgloss.NewStyle().Background(background)
+	styles.Blurred.Base = lipgloss.NewStyle().Background(background)
+	input.SetStyles(styles)
+}
+
+func (m Model) statusView() string {
+	if m.modelStatusErr != nil {
+		return ansi.Truncate(errorStyle.Render("Model unavailable"), max(m.width, 0), "…")
 	}
-	if status != "" {
-		line += mutedStyle.Render("  ·  " + status)
+	if m.modelName == "" {
+		return ansi.Truncate(mutedStyle.Render("Loading model…"), max(m.width, 0), "…")
 	}
-	if m.cwd != "" {
-		line += mutedStyle.Render("  ·  " + ansi.Strip(m.cwd))
+
+	modelStatus := m.modelName
+	if m.reasoningEffort != "" {
+		modelStatus += " " + m.reasoningEffort
 	}
+	line := userStyle.Render(modelStatus)
+	line += mutedStyle.Render(" · ")
+	line += assistantStyle.Render(fmt.Sprintf("Context %d%% used", contextUsagePercent(m.contextTokens, m.contextWindow)))
 	return ansi.Truncate(line, max(m.width, 0), "…")
 }
 
-func shortSessionID(sessionID string) string {
-	const maxLength = 12
-	if len(sessionID) <= maxLength {
-		return sessionID
+func contextUsagePercent(tokens, contextWindow int) int {
+	if tokens <= 0 || contextWindow <= 0 {
+		return 0
 	}
-	return sessionID[:maxLength] + "…"
+	return min(tokens*100/contextWindow, 100)
+}
+
+func usageTokens(usage model.Usage) int {
+	if usage.TotalTokens > 0 {
+		return usage.TotalTokens
+	}
+	return usage.InputTokens + usage.OutputTokens
 }
 
 func loadSession(ctx context.Context, rt *runtime.Runtime, sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		_, transcript, err := rt.ShowSession(ctx, sessionID)
+		info, transcript, err := rt.ShowSession(ctx, sessionID)
 		if runtime.IsSessionNotFound(err) {
 			return sessionLoadedMsg{}
 		}
 		if err != nil {
 			return sessionLoadedMsg{err: err}
 		}
-		return sessionLoadedMsg{messages: transcript.Messages()}
+		return sessionLoadedMsg{
+			messages: transcript.Messages(),
+			contextTokens: usageTokens(model.Usage{
+				InputTokens:  info.LastInputTokens,
+				OutputTokens: info.LastOutputTokens,
+				TotalTokens:  info.LastTotalTokens,
+			}),
+		}
+	}
+}
+
+func loadModelStatus(ctx context.Context, rt *runtime.Runtime) tea.Cmd {
+	return func() tea.Msg {
+		options, err := rt.ModelOptions(ctx)
+		if err != nil {
+			return modelStatusLoadedMsg{err: err}
+		}
+		for _, option := range options.Models {
+			if option.Value != options.Default {
+				continue
+			}
+			name := option.Name
+			if name == "" {
+				name = option.Value
+			}
+			status := modelStatusLoadedMsg{
+				modelName:     name,
+				contextWindow: option.ContextWindow,
+			}
+			if len(option.ReasoningEfforts) > 0 {
+				status.reasoningEffort = option.ReasoningEfforts[0].Value
+			}
+			return status
+		}
+		return modelStatusLoadedMsg{err: fmt.Errorf("default model %q is unavailable", options.Default)}
 	}
 }

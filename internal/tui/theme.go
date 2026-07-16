@@ -11,10 +11,14 @@ var (
 	errorColor     = lipgloss.Color("1") // terminal-defined red
 
 	userStyle      = lipgloss.NewStyle().Foreground(userColor)
+	messageStyle   = lipgloss.NewStyle()
 	assistantStyle = lipgloss.NewStyle().Foreground(assistantColor)
 	toolStyle      = lipgloss.NewStyle().Foreground(toolColor)
 	mutedStyle     = lipgloss.NewStyle().Foreground(mutedColor)
 	errorStyle     = lipgloss.NewStyle().Foreground(errorColor)
-	headerStyle    = lipgloss.NewStyle().Bold(true)
-	dividerStyle   = lipgloss.NewStyle().Foreground(mutedColor)
 )
+
+func userMessageStyle(hasDarkBackground bool) lipgloss.Style {
+	background := lipgloss.LightDark(hasDarkBackground)(lipgloss.Color("255"), lipgloss.Color("234"))
+	return lipgloss.NewStyle().Background(background).Padding(1, 1)
+}
