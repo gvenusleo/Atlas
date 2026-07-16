@@ -17,6 +17,7 @@ atlas --session <id>
 
 - `Enter` 发送当前输入。
 - `Page Up`、`Page Down` 和鼠标滚轮用于滚动对话历史。
+- 在对话文本上拖动鼠标即可选择并复制到剪贴板。
 - `Ctrl+C` 取消正在执行的 turn；没有 turn 运行时退出。
 - `Esc` 取消正在执行的 turn 并立即退出。
 

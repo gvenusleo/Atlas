@@ -22,6 +22,7 @@ var (
 	toolStyle      = lipgloss.NewStyle().Foreground(toolColor)
 	mutedStyle     = lipgloss.NewStyle().Foreground(mutedColor)
 	errorStyle     = lipgloss.NewStyle().Foreground(errorColor)
+	selectionStyle = lipgloss.NewStyle().Reverse(true)
 )
 
 func userMessageStyle(hasDarkBackground bool, terminalBackground color.Color) lipgloss.Style {

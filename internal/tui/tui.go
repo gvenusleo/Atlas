@@ -64,6 +64,7 @@ type Model struct {
 	turnCancel  context.CancelFunc
 	turnAbandon context.CancelFunc
 	eventCh     chan turnUpdateMsg
+	selection   textSelection
 
 	// Conversation messages.
 	messages []*chatMessage
@@ -183,7 +184,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuild()
 		return m, cmd
 
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft && msg.Y >= 0 && msg.Y < m.viewport.Height() {
+			m.selection.begin(selectionPoint{x: msg.X, y: msg.Y}, m.viewport.AtBottom())
+		}
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		if m.selection.active {
+			m.selection.move(selectionPoint{x: msg.X, y: msg.Y})
+		}
+		return m, nil
+
+	case tea.MouseReleaseMsg:
+		if !m.selection.active {
+			return m, nil
+		}
+		m.selection.move(selectionPoint{x: msg.X, y: msg.Y})
+		text := m.selection.content(m.viewport.View())
+		if text == "" {
+			m.clearSelection(true)
+			return m, nil
+		}
+		return m, func() tea.Msg { return copySelectionMsg{text: text} }
+
 	case tea.MouseWheelMsg:
+		m.selection = textSelection{}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -196,6 +222,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input, cmd = m.input.Update(msg)
 		m.rebuild()
 		return m, cmd
+
+	case copySelectionMsg:
+		m.clearSelection(true)
+		return m, tea.SetClipboard(msg.text)
 
 	case turnUpdateMsg:
 		if msg.event != nil {
@@ -366,7 +396,7 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 
-	vpView := m.viewport.View()
+	vpView := m.selection.render(m.viewport.View(), selectionStyle)
 	composerState := m.renderComposer()
 	layout := calculateLayout(m.height, composerState.height)
 	parts := make([]string, 0, 5)
@@ -401,13 +431,22 @@ func (m Model) View() tea.View {
 	return v
 }
 
+// clearSelection resets the drag and optionally restores automatic following.
+func (m *Model) clearSelection(resumeFollow bool) {
+	shouldFollow := resumeFollow && m.selection.resumeFollow
+	m.selection = textSelection{}
+	if shouldFollow {
+		m.viewport.GotoBottom()
+	}
+}
+
 // rebuild refreshes viewport content and recalculates the layout split.
 func (m *Model) rebuild() {
 	if !m.ready || m.height == 0 {
 		return
 	}
 
-	followBottom := m.viewport.AtBottom()
+	followBottom := m.viewport.AtBottom() && !m.selection.active
 	var parts []string
 	for _, msg := range m.messages {
 		rendered := msg.render(m.width, m.hasDarkBackground, m.terminalBackground)

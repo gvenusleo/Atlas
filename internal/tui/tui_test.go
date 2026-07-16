@@ -104,6 +104,22 @@ func TestPageUpScrollsConversationHistory(t *testing.T) {
 	}
 }
 
+func TestMouseWheelScrollsConversationHistory(t *testing.T) {
+	m := New(Options{})
+	for i := range 30 {
+		m.messages = append(m.messages, newUserMessage(strings.Repeat("x", i+1)))
+	}
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	m = updated.(Model)
+	start := m.viewport.YOffset()
+
+	updated, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	m = updated.(Model)
+	if got := m.viewport.YOffset(); got >= start {
+		t.Fatalf("viewport offset after wheel up = %d, want less than %d", got, start)
+	}
+}
+
 func TestPasteUpdatesPrompt(t *testing.T) {
 	m := New(Options{})
 	updated, _ := m.Update(tea.PasteMsg{Content: "first line\nsecond line"})

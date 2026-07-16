@@ -17,6 +17,7 @@ Controls:
 
 - `Enter` sends the current input.
 - `Page Up`, `Page Down`, and the mouse wheel scroll conversation history.
+- Drag across conversation text to select and copy it to the clipboard.
 - `Ctrl+C` cancels the active turn. When no turn is running, it exits.
 - `Esc` cancels the active turn and exits immediately.
 
