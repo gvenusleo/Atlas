@@ -22,3 +22,7 @@ func userMessageStyle(hasDarkBackground bool) lipgloss.Style {
 	background := lipgloss.LightDark(hasDarkBackground)(lipgloss.Color("255"), lipgloss.Color("234"))
 	return lipgloss.NewStyle().Background(background).Padding(1, 1)
 }
+
+func composerStyle(hasDarkBackground bool) lipgloss.Style {
+	return userMessageStyle(hasDarkBackground).PaddingLeft(0)
+}

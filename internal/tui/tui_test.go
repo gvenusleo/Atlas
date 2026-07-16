@@ -34,7 +34,7 @@ func TestEmptyConversationUsesFullTerminalHeight(t *testing.T) {
 		t.Fatalf("viewport height = %d, want 19", got)
 	}
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
-	if got := lines[len(lines)-1]; got != "gpt-5.6-sol high · Context 79% used" {
+	if got := lines[len(lines)-1]; got != "  gpt-5.6-sol high · Context 79% used" {
 		t.Fatalf("footer = %q", got)
 	}
 	if strings.Contains(lines[0], "Atlas") {
@@ -89,12 +89,16 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	m = updated.(Model)
 
 	composerState := m.renderComposer()
-	composer := userMessageStyle(m.hasDarkBackground).Width(m.width).Render(composerState.content)
+	composer := composerStyle(m.hasDarkBackground).Width(m.width).Render(composerState.content)
 	if got := lipgloss.Width(composer); got != 20 {
 		t.Fatalf("composer width = %d, want 20", got)
 	}
 	if got := lipgloss.Height(composer); got != 3 {
 		t.Fatalf("composer height = %d, want 3", got)
+	}
+	lines := strings.Split(ansi.Strip(composer), "\n")
+	if !strings.HasPrefix(lines[1], "›") {
+		t.Fatalf("composer input line has left padding: %q", lines[1])
 	}
 	view := m.View()
 	if strings.Contains(ansi.Strip(view.Content), "─") {
@@ -107,7 +111,7 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	if view.Cursor.Y != wantY {
 		t.Fatalf("cursor Y = %d, want %d", view.Cursor.Y, wantY)
 	}
-	lines := strings.Split(ansi.Strip(view.Content), "\n")
+	lines = strings.Split(ansi.Strip(view.Content), "\n")
 	statusLine := lines[len(lines)-1]
 	if lines[len(lines)-2] == "" {
 		t.Fatalf("blank line remains before status line %q", statusLine)
@@ -263,7 +267,7 @@ func TestTurnResultUpdatesContextUsage(t *testing.T) {
 		ContextWindow: 1000,
 	}})
 
-	if got := ansi.Strip(m.statusView()); got != "gpt-5.6-sol high · Context 79% used" {
+	if got := ansi.Strip(m.statusView()); got != "  gpt-5.6-sol high · Context 79% used" {
 		t.Fatalf("statusView() = %q", got)
 	}
 	if !strings.Contains(m.statusView(), userStyle.Render("gpt-5.6-sol high")) {

@@ -18,7 +18,10 @@ import (
 	"github.com/liuyuxin/atlas/internal/runtime"
 )
 
-const maxComposerHeight = 10
+const (
+	maxComposerHeight = 10
+	statusIndent      = "  "
+)
 
 // Options configures the TUI at startup.
 type Options struct {
@@ -373,7 +376,7 @@ func (m Model) View() tea.View {
 		parts = append(parts, "")
 		cursorY++
 	}
-	composer := userMessageStyle(m.hasDarkBackground).
+	composer := composerStyle(m.hasDarkBackground).
 		Width(m.width).
 		Render(composerState.content)
 	parts = append(parts, composer)
@@ -385,7 +388,7 @@ func (m Model) View() tea.View {
 
 	c := m.input.Cursor()
 	if c != nil {
-		c.X = 3 + composerState.cursorColumn
+		c.X = 2 + composerState.cursorColumn
 		c.Y = cursorY + 1 + composerState.cursorRow
 	}
 	v.Cursor = c
@@ -452,7 +455,7 @@ type composerRender struct {
 }
 
 func (m Model) renderComposer() composerRender {
-	contentWidth := max(m.width-4, 1) // outer padding and the two-cell prompt
+	contentWidth := max(m.width-3, 1) // right padding and the two-cell prompt
 	maxRows := max(m.input.MaxHeight, 1)
 	cursorInfo := m.input.LineInfo()
 	cursorColumn := cursorInfo.StartColumn + cursorInfo.ColumnOffset
@@ -546,17 +549,17 @@ func wrapComposerLine(line string, width, cursorColumn int) ([]string, int, int)
 
 func (m Model) statusView() string {
 	if m.modelStatusErr != nil {
-		return ansi.Truncate(errorStyle.Render("Model unavailable"), max(m.width, 0), "…")
+		return ansi.Truncate(statusIndent+errorStyle.Render("Model unavailable"), max(m.width, 0), "…")
 	}
 	if m.modelName == "" {
-		return ansi.Truncate(mutedStyle.Render("Loading model…"), max(m.width, 0), "…")
+		return ansi.Truncate(statusIndent+mutedStyle.Render("Loading model…"), max(m.width, 0), "…")
 	}
 
 	modelStatus := m.modelName
 	if m.reasoningEffort != "" {
 		modelStatus += " " + m.reasoningEffort
 	}
-	line := userStyle.Render(modelStatus)
+	line := statusIndent + userStyle.Render(modelStatus)
 	line += mutedStyle.Render(" · ")
 	line += assistantStyle.Render(fmt.Sprintf("Context %d%% used", contextUsagePercent(m.contextTokens, m.contextWindow)))
 	return ansi.Truncate(line, max(m.width, 0), "…")
