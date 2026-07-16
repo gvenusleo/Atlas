@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -344,7 +345,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 			return TurnResult{}, err
 		}
 		sessionInfo, err = store.GetSession(ctx, sessionID)
-		if err != nil && !isSessionNotFound(err) {
+		if err != nil && !IsSessionNotFound(err) {
 			return TurnResult{}, err
 		}
 		if err != nil {
@@ -817,9 +818,9 @@ func latestAssistantUsage(messages []model.Message) model.Usage {
 	return model.Usage{}
 }
 
-// isSessionNotFound determines whether an error indicates the session was not found.
-func isSessionNotFound(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "not found")
+// IsSessionNotFound reports whether err indicates that a session does not exist.
+func IsSessionNotFound(err error) bool {
+	return errors.Is(err, session.ErrNotFound)
 }
 
 // ModelOptions returns the selectable models from the current configuration file.
@@ -1003,7 +1004,7 @@ func (r *Runtime) DeleteSession(ctx context.Context, sessionID string) error {
 // DeleteSessionIfExists deletes the specified local session, ignoring non-existent sessions.
 func (r *Runtime) DeleteSessionIfExists(ctx context.Context, sessionID string) error {
 	err := r.DeleteSession(ctx, sessionID)
-	if err != nil && strings.Contains(err.Error(), "not found") {
+	if IsSessionNotFound(err) {
 		return nil
 	}
 	return err

@@ -16,26 +16,37 @@ import (
 	atlasruntime "github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
+	"github.com/liuyuxin/atlas/internal/tui"
 	"github.com/liuyuxin/atlas/internal/version"
 )
 
-func TestRunWithDependenciesShowsInteractivePlaceholder(t *testing.T) {
-	var stdout bytes.Buffer
-	if err := runWithDependencies(context.Background(), nil, runDependencies{stdout: &stdout}); err != nil {
+func TestRunWithDependenciesStartsInteractiveTUI(t *testing.T) {
+	called := false
+	if err := runWithDependencies(context.Background(), nil, runDependencies{
+		runTUI: func(context.Context, tui.Options) error {
+			called = true
+			return nil
+		},
+	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "interactive mode is not implemented yet") {
-		t.Fatalf("stdout = %q", stdout.String())
+	if !called {
+		t.Fatal("interactive TUI was not started")
 	}
 }
 
-func TestRunWithDependenciesShowsInteractivePlaceholderWithSession(t *testing.T) {
-	var stdout bytes.Buffer
-	if err := runWithDependencies(context.Background(), []string{"--session", "work"}, runDependencies{stdout: &stdout}); err != nil {
+func TestRunWithDependenciesPassesSessionToInteractiveTUI(t *testing.T) {
+	var gotSessionID string
+	if err := runWithDependencies(context.Background(), []string{"--session", "work"}, runDependencies{
+		runTUI: func(_ context.Context, opts tui.Options) error {
+			gotSessionID = opts.SessionID
+			return nil
+		},
+	}); err != nil {
 		t.Fatalf("runWithDependencies() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Requested session: work") {
-		t.Fatalf("stdout = %q", stdout.String())
+	if gotSessionID != "work" {
+		t.Fatalf("SessionID = %q, want work", gotSessionID)
 	}
 }
 

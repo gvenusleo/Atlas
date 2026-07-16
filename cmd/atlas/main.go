@@ -15,6 +15,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/runtime"
 	"github.com/liuyuxin/atlas/internal/session"
+	"github.com/liuyuxin/atlas/internal/tui"
 	"github.com/liuyuxin/atlas/internal/version"
 	"github.com/liuyuxin/atlas/internal/ws"
 )
@@ -34,6 +35,7 @@ func run(ctx context.Context, args []string) error {
 		stdin:   os.Stdin,
 		stdout:  os.Stdout,
 		runACP:  atlasacp.Run,
+		runTUI:  tui.Run,
 	})
 }
 
@@ -42,6 +44,7 @@ type runDependencies struct {
 	stdin   io.Reader
 	stdout  io.Writer
 	runACP  func(context.Context, atlasacp.Options) error
+	runTUI  func(context.Context, tui.Options) error
 }
 
 func runWithDependencies(ctx context.Context, args []string, deps runDependencies) error {
@@ -54,7 +57,7 @@ func runWithDependencies(ctx context.Context, args []string, deps runDependencie
 		return runVersionCommand(nil, deps)
 	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return runInteractivePlaceholder(ctx, args, deps)
+		return runInteractive(ctx, deps, args)
 	}
 	switch args[0] {
 	case "run":
@@ -156,22 +159,31 @@ func runDoctorCommand(ctx context.Context, args []string, deps runDependencies) 
 	return nil
 }
 
-func runInteractivePlaceholder(_ context.Context, args []string, deps runDependencies) error {
-	parsed, err := parseInteractiveArgs(args)
-	if err != nil {
+// runInteractive starts the terminal UI.
+func runInteractive(ctx context.Context, deps runDependencies, args []string) error {
+	flags := flag.NewFlagSet("atlas", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	sessionID := flags.String("session", "", "session id to resume")
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if parsed.sessionID != "" {
-		if err := session.ValidateID(parsed.sessionID); err != nil {
+	if flags.NArg() != 0 {
+		return errors.New("usage: atlas [--session <id>]")
+	}
+	if *sessionID != "" {
+		if err := session.ValidateID(*sessionID); err != nil {
 			return err
 		}
 	}
-	if parsed.sessionID == "" {
-		fmt.Fprintln(deps.stdout, "Atlas interactive mode is not implemented yet. Use `atlas run <prompt>` for now.")
-		return nil
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
 	}
-	fmt.Fprintf(deps.stdout, "Atlas interactive mode is not implemented yet. Requested session: %s\n", parsed.sessionID)
-	return nil
+	return deps.runTUI(ctx, tui.Options{
+		Runtime:   deps.runtime,
+		SessionID: *sessionID,
+		CWD:       cwd,
+	})
 }
 
 func runSessionsCommand(ctx context.Context, args []string, deps runDependencies) error {
@@ -295,19 +307,6 @@ func parseArgs(args []string) (parsedArgs, error) {
 	}, nil
 }
 
-func parseInteractiveArgs(args []string) (parsedArgs, error) {
-	flags := flag.NewFlagSet("atlas", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	sessionID := flags.String("session", "", "session id")
-	if err := flags.Parse(args); err != nil {
-		return parsedArgs{}, err
-	}
-	if flags.NArg() != 0 {
-		return parsedArgs{}, errors.New("usage: atlas [--session <id>]")
-	}
-	return parsedArgs{sessionID: *sessionID}, nil
-}
-
 func completeRunDependencies(deps runDependencies) runDependencies {
 	if deps.runtime == nil {
 		deps.runtime = runtime.New(runtime.DefaultDependencies())
@@ -320,6 +319,9 @@ func completeRunDependencies(deps runDependencies) runDependencies {
 	}
 	if deps.runACP == nil {
 		deps.runACP = atlasacp.Run
+	}
+	if deps.runTUI == nil {
+		deps.runTUI = tui.Run
 	}
 	return deps
 }

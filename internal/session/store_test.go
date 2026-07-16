@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -304,8 +305,8 @@ func TestStoreListGetAndDeleteSessions(t *testing.T) {
 	if err := store.DeleteSession(ctx, "first"); err != nil {
 		t.Fatalf("DeleteSession() error = %v", err)
 	}
-	if _, err := store.GetSession(ctx, "first"); err == nil {
-		t.Fatal("GetSession() error = nil")
+	if _, err := store.GetSession(ctx, "first"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetSession() error = %v, want ErrNotFound", err)
 	}
 	trans, err := store.LoadTranscript(ctx, "first")
 	if err != nil {

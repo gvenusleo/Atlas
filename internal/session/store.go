@@ -26,6 +26,9 @@ const defaultDBFileName = "atlas.db"
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// ErrNotFound indicates that a requested session does not exist.
+var ErrNotFound = errors.New("session not found")
+
 // Store reads and writes the Atlas local session database.
 type Store struct {
 	db *sql.DB
@@ -308,7 +311,7 @@ from sessions
 where id = ?`, sessionID)
 	session, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, fmt.Errorf("session %q not found", sessionID)
+		return Session{}, fmt.Errorf("%w: %q", ErrNotFound, sessionID)
 	}
 	return session, err
 }
@@ -333,7 +336,7 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("%w: %q", ErrNotFound, sessionID)
 	}
 	if _, err := tx.ExecContext(ctx, `delete from messages where session_id = ?`, sessionID); err != nil {
 		return err
@@ -368,7 +371,7 @@ where id = ?`, summary, compactedMessageCount, compactedInputTokens, now, sessio
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("%w: %q", ErrNotFound, sessionID)
 	}
 	return nil
 }
@@ -394,7 +397,7 @@ where id = ?`, additionalDirectoriesJSON, sessionID)
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("%w: %q", ErrNotFound, sessionID)
 	}
 	return nil
 }
