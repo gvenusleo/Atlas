@@ -10,8 +10,15 @@ import (
 
 // DisplayTitle returns a user-facing display title for a tool call.
 func DisplayTitle(call model.ToolCall) string {
-	if title := primaryDisplayTitle(call); title != "" {
-		return title
+	if detail := DisplayDetail(call); detail != "" {
+		prefix := map[string]string{
+			"web_search": "WebSearch: ",
+			"web_fetch":  "WebFetch: ",
+			"load_skill": "LoadSkill: ",
+			"todo_write": "Todo: ",
+			"run_shell":  "Run: ",
+		}[call.Name]
+		return prefix + detail
 	}
 	if call.Name == "" {
 		return "Tool"
@@ -19,20 +26,20 @@ func DisplayTitle(call model.ToolCall) string {
 	return "Tool: " + call.Name
 }
 
-// primaryDisplayTitle extracts the most descriptive field from built-in tool parameters.
-func primaryDisplayTitle(call model.ToolCall) string {
-	prefix, key := "", ""
+// DisplayDetail extracts the primary user-facing argument from a built-in tool call.
+func DisplayDetail(call model.ToolCall) string {
+	key := ""
 	switch call.Name {
 	case "web_search":
-		prefix, key = "WebSearch: ", "query"
+		key = "query"
 	case "web_fetch":
-		prefix, key = "WebFetch: ", "url"
+		key = "url"
 	case "load_skill":
-		prefix, key = "LoadSkill: ", "name"
+		key = "name"
 	case "todo_write":
-		prefix, key = "Todo: ", "todos"
+		key = "todos"
 	case "run_shell":
-		prefix, key = "Run: ", "command"
+		key = "command"
 	default:
 		return ""
 	}
@@ -46,11 +53,11 @@ func primaryDisplayTitle(call model.ToolCall) string {
 		if !ok || len(items) == 0 {
 			return ""
 		}
-		return fmt.Sprintf("%s%d items", prefix, len(items))
+		return fmt.Sprintf("%d items", len(items))
 	}
 	value, ok := args[key].(string)
 	if !ok || strings.TrimSpace(value) == "" {
 		return ""
 	}
-	return prefix + value
+	return value
 }

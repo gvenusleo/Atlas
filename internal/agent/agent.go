@@ -191,6 +191,7 @@ func (a *Agent) RunTurnParts(ctx context.Context, parts []model.ContentPart) (st
 			})
 			result, err := a.tools.Run(ctx, call)
 			toolError := err != nil
+			result.Metadata.Error = toolError
 			if err != nil {
 				result.Content = toolErrorResult(result.Content, err)
 			}

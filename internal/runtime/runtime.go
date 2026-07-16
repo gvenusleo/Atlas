@@ -578,6 +578,8 @@ func runDirectShellTurn(ctx context.Context, store *session.Store, sessionID, cw
 		result.Content = runErr.Error()
 	}
 	toolError := runErr != nil
+	result.Metadata.Error = toolError
+	result.Metadata.DirectShell = true
 	emit(observer, agent.Event{
 		Type:         agent.EventToolFinished,
 		Step:         1,

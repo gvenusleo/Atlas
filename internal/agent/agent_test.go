@@ -348,6 +348,9 @@ func TestRunTurnKeepsToolResultWhenToolReturnsError(t *testing.T) {
 	if last.Content != "partial output\ntool failed" {
 		t.Fatalf("tool result content = %q, want partial output and error", last.Content)
 	}
+	if !last.ToolMetadata.Error {
+		t.Fatalf("tool error metadata = %#v", last.ToolMetadata)
+	}
 	for _, event := range events {
 		if event.Type == EventToolFinished && (!event.ToolError || event.ToolResult != "partial output\ntool failed") {
 			t.Fatalf("tool event = %#v", event)

@@ -47,7 +47,9 @@ type TodoEntry struct {
 
 // ToolMetadata holds UI-facing presentation data for a tool call.
 type ToolMetadata struct {
-	Todos []TodoEntry `json:"todos,omitempty"`
+	Todos       []TodoEntry `json:"todos,omitempty"`
+	Error       bool        `json:"error,omitempty"`
+	DirectShell bool        `json:"direct_shell,omitempty"`
 }
 
 // ContentPartType represents the modality type of a message content segment.

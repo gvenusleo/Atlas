@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image/color"
 	"path/filepath"
 	"reflect"
@@ -265,13 +266,13 @@ func TestAssistantAndToolBlocksUseBulletsAndIndentedContent(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("first line\nsecond line")
 	message.toolCalls = append(message.toolCalls, toolCallView{
-		title:  "Explored",
+		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"Search Atlas"}`},
 		result: "Search Atlas",
 		done:   true,
 	})
 
 	rendered := ansi.Strip(message.render(40, false, nil))
-	want := "• first line second line\n\n• Explored\n  Search Atlas"
+	want := "• first line second line\n\n• Ran Search Atlas\n  └ Search Atlas"
 	if rendered != want {
 		t.Fatalf("rendered message = %q, want %q", rendered, want)
 	}
@@ -564,7 +565,7 @@ func TestLoadModelStatusUsesRuntimeDefault(t *testing.T) {
 func TestToolResultTruncationPreservesUTF8(t *testing.T) {
 	result := strings.Repeat("中", 27)
 	rendered := renderToolCall(toolCallView{
-		title:  "Read output",
+		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"read output"}`},
 		result: result,
 		done:   true,
 	}, 80)
@@ -576,6 +577,141 @@ func TestToolResultTruncationPreservesUTF8(t *testing.T) {
 		if got := ansi.StringWidth(line); got > 80 {
 			t.Fatalf("rendered line width = %d, want at most 80", got)
 		}
+	}
+}
+
+func TestToolInputLimitsWrappedContinuationRows(t *testing.T) {
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
+	}, 20))
+	lines := strings.Split(rendered, "\n")
+
+	if len(lines) != 4 {
+		t.Fatalf("rendered input rows = %d, want header, two continuations, and ellipsis: %q", len(lines), rendered)
+	}
+	if !strings.Contains(lines[3], "… +") {
+		t.Fatalf("last input row = %q, want omission marker", lines[3])
+	}
+	for _, line := range lines {
+		if got := ansi.StringWidth(line); got > 20 {
+			t.Fatalf("rendered line width = %d, want at most 20: %q", got, line)
+		}
+	}
+}
+
+func TestToolInputOmissionMarkerFitsNarrowWidths(t *testing.T) {
+	tc := toolCallView{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
+	}
+	for width := 5; width <= 10; width++ {
+		rendered := renderToolCall(tc, width)
+		for line := range strings.SplitSeq(rendered, "\n") {
+			if got := ansi.StringWidth(line); got > width {
+				t.Fatalf("width %d rendered line width = %d: %q", width, got, ansi.Strip(line))
+			}
+		}
+	}
+}
+
+func TestToolOutputKeepsHeadAndTailWithinScreenRowLimit(t *testing.T) {
+	resultLines := make([]string, 12)
+	for i := range resultLines {
+		resultLines[i] = fmt.Sprintf("line %02d", i+1)
+	}
+	tc := toolCallView{
+		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
+		result: strings.Join(resultLines, "\n"),
+		done:   true,
+	}
+	rendered := ansi.Strip(renderToolCall(tc, 40))
+	lines := strings.Split(rendered, "\n")
+
+	if got := len(lines) - 1; got != toolOutputRows {
+		t.Fatalf("rendered output rows = %d, want %d: %q", got, toolOutputRows, rendered)
+	}
+	for _, want := range []string{"line 01", "line 12", "… +8 lines"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered output missing %q: %q", want, rendered)
+		}
+	}
+	if tc.result != strings.Join(resultLines, "\n") {
+		t.Fatal("rendering mutated the stored tool result")
+	}
+}
+
+func TestToolOutputLimitCountsWrappedScreenRows(t *testing.T) {
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
+		result: strings.Repeat("abcdefghij", 30),
+		done:   true,
+	}, 20))
+	lines := strings.Split(rendered, "\n")
+
+	if got := len(lines) - 1; got != toolOutputRows {
+		t.Fatalf("wrapped output rows = %d, want %d: %q", got, toolOutputRows, rendered)
+	}
+	if !strings.Contains(rendered, "… +") {
+		t.Fatalf("wrapped output missing omission marker: %q", rendered)
+	}
+	for _, line := range lines {
+		if got := ansi.StringWidth(line); got > 20 {
+			t.Fatalf("rendered line width = %d, want at most 20: %q", got, line)
+		}
+	}
+}
+
+func TestDirectShellOutputUsesExpandedRowLimit(t *testing.T) {
+	result := strings.Repeat("0123456789\n", 12)
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call:     model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
+		result:   result,
+		metadata: model.ToolMetadata{DirectShell: true},
+		done:     true,
+	}, 40))
+
+	if strings.Contains(rendered, "… +") {
+		t.Fatalf("direct shell output was limited as a model tool call: %q", rendered)
+	}
+	if got := len(strings.Split(rendered, "\n")) - 1; got <= toolOutputRows || got > directShellOutputRows {
+		t.Fatalf("direct shell output rows = %d, want > %d and <= %d", got, toolOutputRows, directShellOutputRows)
+	}
+}
+
+func TestFailedToolAlwaysShowsResult(t *testing.T) {
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call:   model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas"}`},
+		result: "network unavailable",
+		err:    true,
+		done:   true,
+	}, 80))
+
+	if !strings.Contains(rendered, "Failed to search the web for atlas") || !strings.Contains(rendered, "network unavailable") {
+		t.Fatalf("failed tool did not show its action and result: %q", rendered)
+	}
+}
+
+func TestSuccessfulSemanticToolHidesRawResult(t *testing.T) {
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call:   model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas"}`},
+		result: "large raw result",
+		done:   true,
+	}, 80))
+
+	if rendered != "• Searched the web for atlas" {
+		t.Fatalf("rendered web search = %q", rendered)
+	}
+}
+
+func TestToolCompletionsMatchCallsByID(t *testing.T) {
+	message := newAssistantMessage()
+	first := model.ToolCall{ID: "call-1", Name: "run_shell", Arguments: `{"command":"first"}`}
+	second := model.ToolCall{ID: "call-2", Name: "run_shell", Arguments: `{"command":"second"}`}
+	message.handleEvent(agent.Event{Type: agent.EventToolStarted, ToolCall: first})
+	message.handleEvent(agent.Event{Type: agent.EventToolStarted, ToolCall: second})
+	message.handleEvent(agent.Event{Type: agent.EventToolFinished, ToolCall: first, ToolResult: "one"})
+
+	if !message.toolCalls[0].done || message.toolCalls[0].result != "one" || message.toolCalls[1].done {
+		t.Fatalf("tool calls were not matched by ID: %#v", message.toolCalls)
 	}
 }
 
@@ -673,7 +809,7 @@ func TestMessagesFromTranscriptRestoresToolResults(t *testing.T) {
 	messages := messagesFromTranscript([]model.Message{
 		model.TextMessage(model.RoleUser, "Where am I?"),
 		{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{call}},
-		{Role: model.RoleTool, ToolCallID: call.ID, Content: "/tmp/work"},
+		{Role: model.RoleTool, ToolCallID: call.ID, Content: "/tmp/work", ToolMetadata: model.ToolMetadata{Error: true, DirectShell: true}},
 		model.TextMessage(model.RoleAssistant, "You are in /tmp/work."),
 	})
 
@@ -684,7 +820,7 @@ func TestMessagesFromTranscriptRestoresToolResults(t *testing.T) {
 		t.Fatalf("tool call count = %d, want 1", len(messages[1].toolCalls))
 	}
 	toolCall := messages[1].toolCalls[0]
-	if !toolCall.done || toolCall.result != "/tmp/work" {
+	if !toolCall.done || toolCall.result != "/tmp/work" || !toolCall.err || !toolCall.metadata.DirectShell {
 		t.Fatalf("restored tool call = %+v", toolCall)
 	}
 	var blocks []string

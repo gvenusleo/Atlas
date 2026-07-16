@@ -541,6 +541,9 @@ func TestRunTurnDirectShellRunsCommandWithoutProvider(t *testing.T) {
 	if messages[0].Content == "" || messages[1].Role != model.RoleAssistant || len(messages[1].ToolCalls) != 1 || messages[2].Role != model.RoleTool {
 		t.Fatalf("messages = %#v", messages)
 	}
+	if !messages[2].ToolMetadata.DirectShell || messages[2].ToolMetadata.Error {
+		t.Fatalf("direct shell metadata = %#v", messages[2].ToolMetadata)
+	}
 }
 
 func TestRunTurnDirectShellUsesToolRunner(t *testing.T) {
