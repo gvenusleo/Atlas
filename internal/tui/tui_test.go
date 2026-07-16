@@ -386,11 +386,27 @@ func TestAssistantMarkdownPreservesBlankLineBeforeHeading(t *testing.T) {
 	}
 }
 
-func TestMarkdownInlineCodeHasNoBackground(t *testing.T) {
+func TestMarkdownInlineCodeHasNoBackgroundOrPadding(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		if background := markdownStyle(dark).Code.BackgroundColor; background != nil {
+		code := markdownStyle(dark).Code
+		if background := code.BackgroundColor; background != nil {
 			t.Fatalf("markdownStyle(%t) inline code background = %q, want nil", dark, *background)
 		}
+		if code.Prefix != "" || code.Suffix != "" {
+			t.Fatalf("markdownStyle(%t) inline code padding = %q/%q, want empty", dark, code.Prefix, code.Suffix)
+		}
+	}
+}
+
+func TestAssistantMarkdownInlineCodeDoesNotForceSentenceWrap(t *testing.T) {
+	markdown := "需要我进一步查看某个依赖的具体使用位置，或运行 `go mod why`/`go list` 分析吗？"
+	plain := strings.ReplaceAll(markdown, "`", "")
+	message := newAssistantMessage()
+	message.content.WriteString(markdown)
+
+	rendered := ansi.Strip(message.render(ansi.StringWidth(plain)+2, true, nil))
+	if strings.Contains(rendered, "\n") {
+		t.Fatalf("inline code padding forced a sentence wrap: %q", rendered)
 	}
 }
 

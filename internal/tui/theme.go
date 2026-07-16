@@ -75,6 +75,8 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	style.H5 = glamouransi.StyleBlock{}
 	style.H6 = glamouransi.StyleBlock{}
 	style.Code.BackgroundColor = nil
+	style.Code.Prefix = ""
+	style.Code.Suffix = ""
 	style.CodeBlock.Margin = nil
 	style.CodeBlock.Theme = ""
 	style.CodeBlock.Chroma = nil
