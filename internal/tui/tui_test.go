@@ -88,17 +88,13 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 10})
 	m = updated.(Model)
 
-	composer := userMessageStyle(m.hasDarkBackground).Width(m.width).Render(m.input.View())
+	composerState := m.renderComposer()
+	composer := userMessageStyle(m.hasDarkBackground).Width(m.width).Render(composerState.content)
 	if got := lipgloss.Width(composer); got != 20 {
 		t.Fatalf("composer width = %d, want 20", got)
 	}
 	if got := lipgloss.Height(composer); got != 3 {
 		t.Fatalf("composer height = %d, want 3", got)
-	}
-	inputBackground := m.input.Styles().Focused.Base.GetBackground()
-	wantBackground := userMessageStyle(m.hasDarkBackground).GetBackground()
-	if inputBackground != wantBackground {
-		t.Fatal("textarea background does not match its outer container")
 	}
 	view := m.View()
 	if strings.Contains(ansi.Strip(view.Content), "─") {
@@ -118,6 +114,57 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	}
 }
 
+func TestComposerDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.PasteMsg{Content: "你好！我是 Atlas，可以帮你处理本地文件、运行命令、写代码、查资料等。有什么需要帮忙的吗？"})
+	m = updated.(Model)
+
+	assertWordsShareVisualLine(t, ansi.Strip(m.renderComposer().content), "我是", "Atlas")
+}
+
+func TestComposerHardWrapMapsCursorPosition(t *testing.T) {
+	rendered := renderComposerValue("abcdef", 4, 10, 0, 4)
+
+	if rendered.content != "› abcd\n  ef" {
+		t.Fatalf("composer content = %q", rendered.content)
+	}
+	if rendered.cursorRow != 1 || rendered.cursorColumn != 0 {
+		t.Fatalf("cursor = (%d, %d), want (1, 0)", rendered.cursorRow, rendered.cursorColumn)
+	}
+}
+
+func TestComposerPreservesExplicitNewlineAndCursor(t *testing.T) {
+	rendered := renderComposerValue("one\ntwo", 20, 10, 1, 3)
+
+	if rendered.content != "› one\n  two" {
+		t.Fatalf("composer content = %q", rendered.content)
+	}
+	if rendered.cursorRow != 1 || rendered.cursorColumn != 3 {
+		t.Fatalf("cursor = (%d, %d), want (1, 3)", rendered.cursorRow, rendered.cursorColumn)
+	}
+}
+
+func TestComposerUpMovesToPreviousVisualLine(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.PasteMsg{Content: "你好！我是 Atlas，可以帮你处理本地文件、运行命令、写代码、查资料等。有什么需要帮忙的吗？"})
+	m = updated.(Model)
+	before := m.renderComposer()
+	if before.cursorRow < 1 {
+		t.Fatalf("test input did not wrap: %+v", before)
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m = updated.(Model)
+	after := m.renderComposer()
+	if after.cursorRow != before.cursorRow-1 {
+		t.Fatalf("cursor row after Up = %d, want %d", after.cursorRow, before.cursorRow-1)
+	}
+}
+
 func TestUserMessageUsesFullWidthBackgroundWithVerticalPadding(t *testing.T) {
 	rendered := newUserMessage("hello").render(20, false)
 
@@ -134,6 +181,12 @@ func TestUserMessageUsesFullWidthBackgroundWithVerticalPadding(t *testing.T) {
 	if !strings.Contains(lines[1], "› hello") {
 		t.Fatalf("user content line = %q", lines[1])
 	}
+}
+
+func TestUserMessageDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
+	message := newUserMessage("你好！我是 Atlas，可以帮你处理本地文件、运行命令、写代码、查资料等。有什么需要帮忙的吗？")
+
+	assertWordsShareVisualLine(t, ansi.Strip(message.render(60, false)), "我是", "Atlas")
 }
 
 func TestAssistantAndToolBlocksUseBulletsAndIndentedContent(t *testing.T) {
@@ -170,6 +223,16 @@ func TestAssistantDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
 	if strings.Contains(rendered, "我是\n  Atlas") {
 		t.Fatalf("assistant rendering inserted an unexpected line break: %q", rendered)
 	}
+}
+
+func assertWordsShareVisualLine(t *testing.T, rendered, first, second string) {
+	t.Helper()
+	for line := range strings.SplitSeq(rendered, "\n") {
+		if strings.Contains(line, first) && strings.Contains(line, second) {
+			return
+		}
+	}
+	t.Fatalf("%q and %q are split across visual lines: %q", first, second, rendered)
 }
 
 func TestTurnErrorRestoresInputFocus(t *testing.T) {

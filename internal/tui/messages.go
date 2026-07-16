@@ -90,9 +90,10 @@ func (m *chatMessage) handleEvent(e agent.Event) {
 func (m *chatMessage) render(width int, hasDarkBackground bool) string {
 	switch m.role {
 	case "user":
+		content := renderIndented(m.content.String(), max(width-2, 1), "› ", messageStyle)
 		return userMessageStyle(hasDarkBackground).
 			Width(width).
-			Render("› " + m.content.String())
+			Render(content)
 	case "assistant":
 		var parts []string
 		if m.content.Len() > 0 {

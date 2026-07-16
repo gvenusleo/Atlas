@@ -85,7 +85,6 @@ func New(opts Options) Model {
 	s.Focused.CursorLine = lipgloss.NewStyle()
 	s.Cursor.Shape = tea.CursorBar
 	ta.SetStyles(s)
-	setInputBackground(&ta, false)
 
 	ctx := opts.context
 	if ctx == nil {
@@ -131,7 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		m.input.MaxHeight = max(min(maxComposerHeight, msg.Height-6), 1)
+		m.input.MaxHeight = max(min(maxComposerHeight, msg.Height-5), 1)
 		m.input.SetWidth(max(msg.Width-2, 1))
 		m.viewport.SetWidth(msg.Width)
 		m.rebuild()
@@ -139,7 +138,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.BackgroundColorMsg:
 		m.hasDarkBackground = msg.IsDark()
-		setInputBackground(&m.input, m.hasDarkBackground)
 		m.rebuild()
 		return m, nil
 
@@ -363,7 +361,8 @@ func (m Model) View() tea.View {
 	}
 
 	vpView := m.viewport.View()
-	layout := calculateLayout(m.height, m.input.Height())
+	composerState := m.renderComposer()
+	layout := calculateLayout(m.height, composerState.height)
 	parts := make([]string, 0, 5)
 	cursorY := 0
 	if vpView != "" {
@@ -376,7 +375,7 @@ func (m Model) View() tea.View {
 	}
 	composer := userMessageStyle(m.hasDarkBackground).
 		Width(m.width).
-		Render(m.input.View())
+		Render(composerState.content)
 	parts = append(parts, composer)
 	if layout.showStatus {
 		parts = append(parts, m.statusView())
@@ -386,8 +385,8 @@ func (m Model) View() tea.View {
 
 	c := m.input.Cursor()
 	if c != nil {
-		c.X++
-		c.Y += cursorY + 1
+		c.X = 3 + composerState.cursorColumn
+		c.Y = cursorY + 1 + composerState.cursorRow
 	}
 	v.Cursor = c
 	v.AltScreen = true
@@ -416,7 +415,7 @@ func (m *Model) rebuild() {
 		m.viewport.SetContent(strings.Join(parts, "\n\n"))
 	}
 
-	layout := calculateLayout(m.height, m.input.Height())
+	layout := calculateLayout(m.height, m.renderComposer().height)
 	m.viewport.SetHeight(layout.viewportHeight)
 	if followBottom {
 		m.viewport.GotoBottom()
@@ -430,9 +429,9 @@ type screenLayout struct {
 }
 
 // calculateLayout keeps the composer and footer stable while preserving history space.
-func calculateLayout(totalHeight, inputHeight int) screenLayout {
+func calculateLayout(totalHeight, composerHeight int) screenLayout {
 	const composerVerticalPadding = 2
-	remaining := max(totalHeight-inputHeight-composerVerticalPadding, 0)
+	remaining := max(totalHeight-composerHeight-composerVerticalPadding, 0)
 	layout := screenLayout{showStatus: remaining > 0}
 	if layout.showStatus {
 		remaining--
@@ -445,12 +444,104 @@ func calculateLayout(totalHeight, inputHeight int) screenLayout {
 	return layout
 }
 
-func setInputBackground(input *textarea.Model, hasDarkBackground bool) {
-	background := userMessageStyle(hasDarkBackground).GetBackground()
-	styles := input.Styles()
-	styles.Focused.Base = lipgloss.NewStyle().Background(background)
-	styles.Blurred.Base = lipgloss.NewStyle().Background(background)
-	input.SetStyles(styles)
+type composerRender struct {
+	content      string
+	height       int
+	cursorRow    int
+	cursorColumn int
+}
+
+func (m Model) renderComposer() composerRender {
+	contentWidth := max(m.width-4, 1) // outer padding and the two-cell prompt
+	maxRows := max(m.input.MaxHeight, 1)
+	cursorInfo := m.input.LineInfo()
+	cursorColumn := cursorInfo.StartColumn + cursorInfo.ColumnOffset
+	return renderComposerValue(m.input.Value(), contentWidth, maxRows, m.input.Line(), cursorColumn)
+}
+
+// renderComposerValue hard-wraps the draft and keeps the cursor inside the visible row window.
+func renderComposerValue(value string, width, maxRows, cursorLine, cursorColumn int) composerRender {
+	logicalLines := strings.Split(value, "\n")
+	cursorLine = min(max(cursorLine, 0), len(logicalLines)-1)
+
+	var lines []string
+	cursorRow := 0
+	cursorCell := 0
+	for i, line := range logicalLines {
+		trackedColumn := -1
+		if i == cursorLine {
+			trackedColumn = cursorColumn
+		}
+		wrapped, row, column := wrapComposerLine(line, width, trackedColumn)
+		if i == cursorLine {
+			cursorRow = len(lines) + row
+			cursorCell = column
+		}
+		lines = append(lines, wrapped...)
+	}
+
+	maxRows = max(maxRows, 1)
+	start := 0
+	if len(lines) > maxRows {
+		start = min(max(cursorRow-maxRows+1, 0), len(lines)-maxRows)
+	}
+	end := min(start+maxRows, len(lines))
+	visible := lines[start:end]
+	rendered := make([]string, 0, len(visible))
+	for i, line := range visible {
+		prefix := "  "
+		if start+i == 0 {
+			prefix = "› "
+		}
+		rendered = append(rendered, prefix+line)
+	}
+
+	return composerRender{
+		content:      strings.Join(rendered, "\n"),
+		height:       max(len(visible), 1),
+		cursorRow:    cursorRow - start,
+		cursorColumn: cursorCell,
+	}
+}
+
+// wrapComposerLine wraps one logical line by terminal cell width and maps its cursor position.
+func wrapComposerLine(line string, width, cursorColumn int) ([]string, int, int) {
+	width = max(width, 1)
+	runes := []rune(line)
+	if cursorColumn >= 0 {
+		cursorColumn = min(max(cursorColumn, 0), len(runes))
+	}
+
+	lines := make([]string, 0, 1)
+	var chunk strings.Builder
+	used := 0
+	cursorRow := 0
+	cursorCell := 0
+	for i, r := range runes {
+		cellWidth := lipgloss.Width(string(r))
+		if used > 0 && used+cellWidth > width {
+			lines = append(lines, chunk.String())
+			chunk.Reset()
+			used = 0
+		}
+		if i == cursorColumn {
+			cursorRow = len(lines)
+			cursorCell = used
+		}
+		chunk.WriteRune(r)
+		used += cellWidth
+	}
+	if cursorColumn == len(runes) {
+		cursorRow = len(lines)
+		cursorCell = used
+	}
+	lines = append(lines, chunk.String())
+	if cursorColumn == len(runes) && cursorCell == width {
+		lines = append(lines, "")
+		cursorRow++
+		cursorCell = 0
+	}
+	return lines, cursorRow, cursorCell
 }
 
 func (m Model) statusView() string {
