@@ -20,6 +20,7 @@ internal/session       SQLite session persistence
 internal/skill         skill scanning and loading
 internal/tool          tool registry and built-in tools
 internal/transcript    in-memory message sequence
+internal/tui           interactive terminal UI
 internal/version       version info
 internal/ws            WebSocket channel
 ```
@@ -30,6 +31,7 @@ internal/ws            WebSocket channel
 go build ./cmd/atlas           # build
 go test ./...                  # run all tests
 go test ./internal/agent/...   # run a single package's tests
+go test ./internal/tui         # run terminal UI tests
 just ci                        # full non-modifying CI check (requires just)
 ```
 
@@ -38,4 +40,4 @@ just ci                        # full non-modifying CI check (requires just)
 - **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, and compaction.
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
 - **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
-- **Single core**: CLI, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Channel layers only do protocol adaptation.
+- **Single core**: TUI, CLI commands, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Entry layers only adapt their interface or protocol.

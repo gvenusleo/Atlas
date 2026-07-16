@@ -1,6 +1,6 @@
 # Atlas
 
-A general-purpose agent built in Go. The core is a testable headless agent loop that can read and write files, execute shell commands, and search the web. CLI, ACP (for editors like Zed), and WebSocket channels all call into the same capabilities via `internal/runtime` without duplicating loop logic.
+A general-purpose agent built in Go. The core is a testable headless agent loop that can read and write files, execute shell commands, and search the web. The terminal UI, CLI commands, ACP clients such as Zed, and WebSocket channels all use the same capabilities through `internal/runtime` without duplicating loop logic.
 
 [中文文档](README.zh-CN.md)
 
@@ -8,9 +8,9 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 
 - **Headless agent core**: model → tool calls → tool results, written back to transcript in order, looping until completion or step limit.
 - **Multi-provider adapters**: connect to OpenAI, DeepSeek, and other compatible backends via `chat_completions` and `responses` API formats.
-- **Built-in tools**: shell-based file inspection, editing, and search, plus web search and extraction — ready out of the box.
+- **Built-in tools**: shell-based file inspection, editing, and search, plus web search and extraction, ready out of the box.
 - **Context compaction**: automatically summarizes earlier conversation when the context window threshold is reached, keeping recent messages to continue.
-- **Multiple entry points**: CLI one-shot execution, ACP persistent connection with an editor-embedded terminal, and a WebSocket service.
+- **Multiple entry points**: an interactive terminal UI, CLI one-shot execution, ACP persistent connections, and a WebSocket service, all backed by the same runtime.
 - **Local-first storage**: session records stay in local SQLite. Task content and results may be transmitted through configured model APIs, Tavily, or connected WebSocket clients.
 - **Extensible instructions**: inject project-level and global instructions via `AGENTS.md` and skill files. Skills are loaded on demand.
 
@@ -87,29 +87,45 @@ go run ./cmd/atlas doctor
 
 ### Run Your First Task
 
+Start the interactive terminal UI:
+
+```sh
+atlas
+```
+
+When running from source:
+
+```sh
+go run ./cmd/atlas
+```
+
+For a one-shot task:
+
 ```sh
 go run ./cmd/atlas run "Read README and summarize"
 ```
 
 ## Usage
 
-The primary way to use Atlas is through [ACP](https://agentclientprotocol.com/) in editors like Zed. See [Channels](docs/channels.md) for ACP features and Zed configuration.
+Run `atlas` without a subcommand to open the local terminal UI. Atlas also supports one-shot CLI tasks, [ACP](https://agentclientprotocol.com/) clients such as Zed, and WebSocket clients. See [Channels](docs/channels.md) for details.
 
 ```sh
-atlas run "<prompt>"                    # run a one-shot task
+atlas                                     # start the interactive terminal UI
+atlas --session <id>                      # resume or create a session in the TUI
+atlas run "<prompt>"                      # run a one-shot task
 atlas run --model <provider/model> "<prompt>"    # specify model (provider/model recommended)
-atlas run --session <id> "<prompt>"     # resume or create a specific session
-atlas acp                               # start ACP service
-atlas serve                             # start WebSocket service (LAN)
-atlas doctor                            # offline diagnostics
-atlas sessions                          # list sessions
-atlas session show <id>                 # view session content
-atlas session compact <id>              # compact session context
-atlas session delete <id>               # delete a session
-atlas version                           # show version
+atlas run --session <id> "<prompt>"       # resume or create a specific session
+atlas acp                                 # start ACP service
+atlas serve                               # start WebSocket service (LAN)
+atlas doctor                              # offline diagnostics
+atlas sessions                            # list sessions
+atlas session show <id>                   # view session content
+atlas session compact <id>                # compact session context
+atlas session delete <id>                 # delete a session
+atlas version                             # show version
 ```
 
-When user input starts with `!`, Atlas skips the model and directly executes the rest as a shell command, e.g. `!pwd`. Use single quotes or escape `!` in zsh/bash:
+When input in the TUI or `atlas run` starts with `!`, Atlas skips the model and directly executes the rest as a shell command, e.g. `!pwd`. Use single quotes or escape `!` in zsh/bash:
 
 ```sh
 go run ./cmd/atlas run '!pwd'
@@ -123,11 +139,11 @@ Session records are stored in local SQLite. Atlas still sends request context to
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — layered design, core loop, context compaction
-- [Configuration](docs/configuration.md) — full config reference and field descriptions
-- [Channels](docs/channels.md) — ACP and WebSocket integration details
-- [Tools and Skills](docs/tools.md) — built-in tools, AGENTS.md, skill system
-- [Development](docs/development.md) — project structure, build, test, design principles
+- [Architecture](docs/architecture.md): layered design, core loop, context compaction
+- [Configuration](docs/configuration.md): full config reference and field descriptions
+- [Channels](docs/channels.md): terminal UI usage, ACP, and WebSocket integration
+- [Tools and Skills](docs/tools.md): built-in tools, AGENTS.md, skill system
+- [Development](docs/development.md): project structure, build, test, design principles
 
 ## License
 

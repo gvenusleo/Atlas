@@ -9,7 +9,8 @@ Atlas is divided into entry layer, orchestration layer, core loop, capability la
 ```mermaid
 graph TD
     subgraph Entry Layer
-        CLI[CLI]
+        TUI[Terminal UI]
+        CLI[CLI Commands]
         ACP[ACP Adapter]
         WS[WebSocket Channel]
     end
@@ -34,6 +35,7 @@ graph TD
         SS[session SQLite]
     end
 
+    TUI --> RT
     CLI --> RT
     ACP --> RT
     WS --> RT
@@ -45,6 +47,8 @@ graph TD
     AG --> TR
     RT --> SS
 ```
+
+The TUI is an entry-layer adapter like ACP and WebSocket. It turns keyboard and mouse input into runtime turns, consumes ordered observer events for streaming output and tool activity, and leaves orchestration and persistence in `runtime.Runtime`.
 
 ## Core Loop
 
@@ -82,6 +86,7 @@ Key constraints:
 
 - Every tool call has a paired tool result, in the same order the model returned them.
 - Tool errors are written back as model-visible tool results, letting the model adjust accordingly.
+- Observer events preserve occurrence order so streaming clients can render model output, tool calls, and completion without regrouping them.
 - The loop ends when there are no tool calls, an error occurs, or `max_steps` (default 20) is reached.
 
 ## Context Compaction and Todos

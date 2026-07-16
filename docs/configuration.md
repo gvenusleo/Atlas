@@ -102,12 +102,12 @@ Atlas reads configuration from `~/.atlas/config.json`. Full example:
 | Field | Description |
 |---|---|
 | `models[].value` | Model name sent to the provider. Must be unique within a provider; the same value may appear in multiple providers. |
-| `models[].name` | Display name. |
-| `models[].context_window` | Context window size, used for compaction and usage display. |
+| `models[].name` | Display name shown by clients, including the TUI footer. |
+| `models[].context_window` | Context window size, used for compaction and ACP/TUI usage display. |
 | `models[].max_tokens` | Maximum output tokens per model request, must be ≤ `context_window`. |
 | `models[].input_formats` | Supported input formats: `text` and `image`. Must include `text`. |
 | `models[].prompt_cache.enabled` | Optional, defaults to off. When `true`, sends a stable `prompt_cache_key` to compatible providers within the same session. |
-| `models[].reasoning_efforts` | Declares supported reasoning depth options. Uses the first option when not explicitly selected. |
+| `models[].reasoning_efforts` | Declares supported reasoning depth options. Uses the first option when not explicitly selected; the TUI displays that default in its footer. |
 
 Only enable `prompt_cache.enabled` after confirming the provider accepts the corresponding field. OpenAI-compatible services vary in compatibility; if requests return unknown field errors or 400s after enabling, remove the `prompt_cache` config for that model to fall back.
 
@@ -116,7 +116,7 @@ Only enable `prompt_cache.enabled` after confirming the provider accepts the cor
 | Field | Default | Description |
 |---|---|---|
 | `agent.max_steps` | `20` | Maximum loop steps per turn. |
-| `agent.temperature` | `0` | Sampling temperature, range 0–2. |
+| `agent.temperature` | `0` | Sampling temperature, from 0 to 2. |
 | `agent.compaction_trigger_ratio` | `0.8` | Auto-compaction triggers when context input reaches this ratio of the window. |
 
 ### Session

@@ -102,12 +102,12 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 | 字段 | 说明 |
 |---|---|
 | `models[].value` | 发送给 Provider 的模型名，同一 provider 内必须唯一，不同 provider 间可重复 |
-| `models[].name` | 显示名 |
-| `models[].context_window` | 上下文窗口，用于压缩和用量展示 |
+| `models[].name` | 客户端显示名，也会显示在 TUI 底栏 |
+| `models[].context_window` | 上下文窗口，用于压缩以及 ACP 和 TUI 的用量展示 |
 | `models[].max_tokens` | 每次模型请求的最大输出 token 数，需 ≤ `context_window` |
 | `models[].input_formats` | 支持的输入格式，当前支持 `text` 和 `image`，且必须包含 `text` |
 | `models[].prompt_cache.enabled` | 可省略，默认关闭；设为 `true` 时，同一 Atlas session 会向兼容 Provider 发送稳定的 `prompt_cache_key` |
-| `models[].reasoning_efforts` | 声明支持的思考深度选项；未显式选择时使用第一项 |
+| `models[].reasoning_efforts` | 声明支持的思考深度选项；未显式选择时使用第一项，TUI 会在底栏显示该默认值 |
 
 `prompt_cache.enabled` 只应在确认 Provider 接受对应字段后开启。OpenAI-compatible 服务兼容性不一致；如果开启后请求返回未知字段或 400 错误，删除该模型的 `prompt_cache` 配置即可回退。
 
@@ -116,7 +116,7 @@ Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
 | 字段 | 默认值 | 说明 |
 |---|---|---|
 | `agent.max_steps` | `20` | 单次 turn 最大循环步数 |
-| `agent.temperature` | `0` | 采样温度，范围 0–2 |
+| `agent.temperature` | `0` | 采样温度，范围为 0 到 2 |
 | `agent.compaction_trigger_ratio` | `0.8` | 上下文输入达到窗口的该比例时自动压缩 |
 
 ### Session

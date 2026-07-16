@@ -2,6 +2,26 @@
 
 [中文](zh-CN/channels.md)
 
+## Terminal UI
+
+Run `atlas` without a subcommand to start the full-screen terminal UI in the current working directory:
+
+```sh
+atlas
+atlas --session <id>
+```
+
+The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. The footer shows the configured model display name, its default reasoning effort, and the most recent context usage as a percentage of `context_window`.
+
+Controls:
+
+- `Enter` sends the current input.
+- `Page Up`, `Page Down`, and the mouse wheel scroll conversation history.
+- `Ctrl+C` cancels the active turn. When no turn is running, it exits.
+- `Esc` cancels the active turn and exits immediately.
+
+The TUI currently uses `default_model` and the first configured `reasoning_efforts` option. Use `atlas run --model`, ACP, or WebSocket when a task needs a different model. Image input and model switching are not available in the TUI yet.
+
 ## ACP
 
 `atlas acp` starts an [Agent Client Protocol](https://agentclientprotocol.com/) service via stdin/stdout for ACP clients like Zed to connect.
@@ -55,7 +75,7 @@ A single WebSocket connection supports multiple concurrent sessions. Each sessio
 
 All messages are routed by `session_id`:
 
-- `prompt` with `session_id` — runs in that session's context. Without `session_id`, creates a new session; the assigned ID is returned in `turn_finished`.
-- `cancel` — requires `session_id`, cancels only that session's turn without affecting others.
-- `set_model` — requires `session_id`, sets the model for that session only.
+- `prompt` with `session_id`: runs in that session's context. Without `session_id`, creates a new session; the assigned ID is returned in `turn_finished`.
+- `cancel`: requires `session_id`, cancels only that session's turn without affecting others.
+- `set_model`: requires `session_id`, sets the model for that session only.
 - All streaming events (`turn_started`, `model_delta`, `tool_started`, etc.) carry `session_id` so the client can route them to the correct session UI.
