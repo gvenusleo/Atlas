@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"strings"
 
 	"charm.land/bubbles/v2/cursor"
@@ -33,10 +34,11 @@ type Options struct {
 
 // Model is the top-level TUI model managing layout, input, and content display.
 type Model struct {
-	width             int
-	height            int
-	ready             bool
-	hasDarkBackground bool
+	width              int
+	height             int
+	ready              bool
+	hasDarkBackground  bool
+	terminalBackground color.Color
 
 	// viewport renders the accumulated message log.
 	viewport viewport.Model
@@ -119,7 +121,7 @@ func Run(ctx context.Context, opts Options) error {
 
 // Init starts the cursor blink cycle and loads footer metadata.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, loadModelStatus(m.ctx, m.rt)}
+	cmds := []tea.Cmd{tea.RequestBackgroundColor, textarea.Blink, loadModelStatus(m.ctx, m.rt)}
 	if m.loading {
 		cmds = append(cmds, loadSession(m.ctx, m.rt, m.sessionID))
 	}
@@ -141,6 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.BackgroundColorMsg:
 		m.hasDarkBackground = msg.IsDark()
+		m.terminalBackground = msg.Color
 		m.rebuild()
 		return m, nil
 
@@ -376,7 +379,7 @@ func (m Model) View() tea.View {
 		parts = append(parts, "")
 		cursorY++
 	}
-	composer := composerStyle(m.hasDarkBackground).
+	composer := composerStyle(m.hasDarkBackground, m.terminalBackground).
 		Width(m.width).
 		Render(composerState.content)
 	parts = append(parts, composer)
@@ -407,7 +410,7 @@ func (m *Model) rebuild() {
 	followBottom := m.viewport.AtBottom()
 	var parts []string
 	for _, msg := range m.messages {
-		rendered := msg.render(m.width, m.hasDarkBackground)
+		rendered := msg.render(m.width, m.hasDarkBackground, m.terminalBackground)
 		if rendered != "" {
 			parts = append(parts, rendered)
 		}

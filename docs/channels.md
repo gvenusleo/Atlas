@@ -11,7 +11,7 @@ atlas
 atlas --session <id>
 ```
 
-The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. The footer shows the configured model display name, its default reasoning effort, and the most recent context usage as a percentage of `context_window`.
+The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. The footer shows the configured model display name, its default reasoning effort, and the most recent context usage as a percentage of `context_window`.
 
 Controls:
 
