@@ -16,12 +16,13 @@ The optional `--session` flag loads an existing transcript or creates that sessi
 Controls:
 
 - `Enter` sends the current input when no command suggestion is active.
-- Type `/` at the start of the input to see supported commands and available skills. Use the arrow keys to choose a suggestion, `Tab` or `Enter` to complete it, or `Esc` to dismiss the suggestions.
-- Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select; `Esc` returns to the model list or closes the picker.
+- Type `/` at the start of the input to see supported commands and available skills. Use the arrow keys to choose a suggestion, then `Tab` or `Enter` to complete it.
+- Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select.
+- Enter `/quit` to exit the TUI.
 - `Page Up`, `Page Down`, and the mouse wheel scroll conversation history.
 - Drag across conversation text to select and copy it to the clipboard.
-- `Ctrl+C` cancels the active turn. When no turn is running, it exits.
-- Outside the suggestion list and model picker, `Esc` cancels the active turn and exits immediately.
+- `Esc` interrupts the active turn. It has no effect while idle.
+- `Ctrl+C` has no effect.
 
 The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
 

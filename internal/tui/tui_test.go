@@ -84,10 +84,10 @@ func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
 
 	raw := status.viewAt(80, startedAt.Add(64*time.Second))
 	rendered := ansi.Strip(raw)
-	if !strings.Contains(rendered, "Thinking (1m 04s • ctrl+c to interrupt)") {
+	if !strings.Contains(rendered, "Thinking (1m 04s • esc to interrupt)") {
 		t.Fatalf("turn status = %q", rendered)
 	}
-	meta := subtleStyle.Render("(1m 04s • ctrl+c to interrupt)")
+	meta := subtleStyle.Render("(1m 04s • esc to interrupt)")
 	if !strings.Contains(raw, meta) {
 		t.Fatal("turn status metadata does not use the light gray style")
 	}
@@ -390,7 +390,7 @@ func TestEnterCompletesSelectedSlashCommandWithoutSubmitting(t *testing.T) {
 	}
 }
 
-func TestEscapeDismissesSlashPopupWithoutQuitting(t *testing.T) {
+func TestEscapeDoesNotDismissSlashPopup(t *testing.T) {
 	m := New(Options{})
 	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updated.(Model)
@@ -400,8 +400,41 @@ func TestEscapeDismissesSlashPopupWithoutQuitting(t *testing.T) {
 
 	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updated.(Model)
-	if cmd != nil || m.slashPopup.active() || m.input.Value() != "/" {
+	if cmd != nil || !m.slashPopup.active() || m.input.Value() != "/" {
 		t.Fatalf("dismiss state: active=%t value=%q cmd=%v", m.slashPopup.active(), m.input.Value(), cmd)
+	}
+}
+
+func TestQuitCommandExits(t *testing.T) {
+	m := New(Options{})
+	m.input.SetValue("/quit")
+
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("quit command did not return a command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("quit command returned %T, want tea.QuitMsg", cmd())
+	}
+}
+
+func TestEscapeInterruptsTurnAndCtrlCDoesNothing(t *testing.T) {
+	m := New(Options{})
+	m.turnActive = true
+	cancelled := false
+	abandoned := false
+	m.turnCancel = func() { cancelled = true }
+	m.turnAbandon = func() { abandoned = true }
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	m = updated.(Model)
+	if cmd != nil || cancelled || abandoned {
+		t.Fatalf("ctrl+c state: cmd=%v cancelled=%t abandoned=%t", cmd, cancelled, abandoned)
+	}
+
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if cmd != nil || !cancelled || abandoned {
+		t.Fatalf("escape state: cmd=%v cancelled=%t abandoned=%t", cmd, cancelled, abandoned)
 	}
 }
 
@@ -465,7 +498,7 @@ func TestModelPickerUpdatesFooterState(t *testing.T) {
 	}
 }
 
-func TestEscapeClosesModelPickerWithoutQuitting(t *testing.T) {
+func TestEscapeAndCtrlCDoNotCloseModelPicker(t *testing.T) {
 	m := New(Options{})
 	m.models = pickerTestModels()
 	m.modelValue = m.models[0].Value
@@ -473,8 +506,13 @@ func TestEscapeClosesModelPickerWithoutQuitting(t *testing.T) {
 
 	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updated.(Model)
-	if cmd != nil || m.modelPicker.active() || !m.input.Focused() {
+	if cmd != nil || !m.modelPicker.active() || m.input.Focused() {
 		t.Fatalf("escape picker state: cmd=%v active=%t focused=%t", cmd, m.modelPicker.active(), m.input.Focused())
+	}
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	m = updated.(Model)
+	if cmd != nil || !m.modelPicker.active() || m.input.Focused() {
+		t.Fatalf("ctrl+c picker state: cmd=%v active=%t focused=%t", cmd, m.modelPicker.active(), m.input.Focused())
 	}
 }
 

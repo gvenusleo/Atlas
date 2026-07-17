@@ -163,11 +163,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		if m.modelPicker.active() {
-			if msg.String() == "ctrl+c" {
-				return m, tea.Quit
+		key := msg.String()
+		switch key {
+		case "ctrl+c":
+			return m, nil
+		case "esc":
+			if m.turnActive && m.turnCancel != nil {
+				m.turnCancel()
 			}
-			selection := m.modelPicker.update(msg.String())
+			return m, nil
+		}
+		if m.modelPicker.active() {
+			selection := m.modelPicker.update(key)
 			if selection != nil {
 				m.applyModelSelection(*selection)
 			} else if !m.modelPicker.active() {
@@ -177,7 +184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.slashPopup.active() {
-			switch msg.String() {
+			switch key {
 			case "up":
 				m.slashPopup.move(-1)
 				m.rebuild()
@@ -193,27 +200,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.rebuild()
 				}
 				return m, nil
-			case "esc":
-				m.slashPopup.dismiss(m.input.Value())
-				m.rebuild()
-				return m, nil
 			}
 		}
-		switch msg.String() {
-		case "ctrl+c":
-			if m.turnActive && m.turnCancel != nil {
-				m.turnCancel()
-				return m, nil
-			}
-			return m, tea.Quit
-		case "esc":
-			if m.turnCancel != nil {
-				m.turnCancel()
-			}
-			if m.turnAbandon != nil {
-				m.turnAbandon()
-			}
-			return m, tea.Quit
+		switch key {
 		case "pgup", "pgdown":
 			m.viewport, _ = m.viewport.Update(msg)
 			return m, nil
@@ -224,6 +213,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text := strings.TrimSpace(m.input.Value())
 			if text == "" {
 				return m, nil
+			}
+			if text == "/quit" {
+				return m, tea.Quit
 			}
 			if text == "/model" {
 				if len(m.models) == 0 {

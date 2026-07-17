@@ -90,19 +90,20 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	popup := newSlashPopup()
 	popup.setSkills([]runtime.SkillSummary{
 		{Name: modelCommandName, Description: "shadow built-in"},
+		{Name: "quit", Description: "shadow built-in"},
 		{Name: "browser:control", Description: "invalid command name"},
 		{Name: "valid-skill", Description: "valid command name"},
 	})
 	popup.sync("/")
 
 	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows))
-	if strings.Count(rendered, "/model") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
+	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
 		t.Fatalf("popup catalog = %q", rendered)
 	}
 }
 
 func TestSelectedSkillNamesMatchesSlashTokens(t *testing.T) {
-	got := selectedSkillNames("/think review this with /hunt /think and /invalid:name")
+	got := selectedSkillNames("/think review this with /hunt /think /quit and /invalid:name")
 	want := []string{"think", "hunt"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("selectedSkillNames() = %v, want %v", got, want)
@@ -149,10 +150,10 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 	for index, line := range rawLines {
 		lines[index] = ansi.Strip(line)
 	}
-	if len(lines) != 3 {
+	if len(lines) != 4 {
 		t.Fatalf("popup lines = %q", lines)
 	}
-	descriptions := []string{"Choose a model", "[Skill] Short description", "[Skill] Long description"}
+	descriptions := []string{"Choose a model", "Quit Atlas", "[Skill] Short description", "[Skill] Long description"}
 	descriptionColumn := -1
 	for index, description := range descriptions {
 		column := ansi.StringWidth(lines[index][:strings.Index(lines[index], description)])
@@ -165,11 +166,11 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 	if rawLines[1] != userStyle.Render(lines[1]) {
 		t.Fatalf("selected row does not use one foreground style: %q", rawLines[1])
 	}
-	if !strings.Contains(rawLines[2], subtleStyle.Render("[Skill] Long description")) {
-		t.Fatalf("unselected description does not use subtle style: %q", rawLines[2])
+	if !strings.Contains(rawLines[3], subtleStyle.Render("[Skill] Long description")) {
+		t.Fatalf("unselected description does not use subtle style: %q", rawLines[3])
 	}
-	if strings.Contains(lines[0], "[Skill]") {
-		t.Fatalf("built-in command is labeled as a skill: %q", lines[0])
+	if strings.Contains(lines[0], "[Skill]") || strings.Contains(lines[1], "[Skill]") {
+		t.Fatalf("built-in command is labeled as a skill: %q", lines[:2])
 	}
 	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
 		t.Fatal("selected slash style has a background color")

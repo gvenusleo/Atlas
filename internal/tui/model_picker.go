@@ -65,12 +65,6 @@ func (p *modelPicker) update(key string) *modelSelection {
 		p.move(-1)
 	case "down":
 		p.move(1)
-	case "esc":
-		if p.stage == modelPickerReasoning {
-			p.stage = modelPickerModels
-		} else {
-			p.close()
-		}
 	case "enter":
 		return p.selectCurrent()
 	}

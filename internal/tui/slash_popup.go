@@ -10,6 +10,7 @@ import (
 
 const (
 	modelCommandName  = "model"
+	quitCommandName   = "quit"
 	maxSlashPopupRows = 5
 )
 
@@ -28,16 +29,22 @@ type slashPopup struct {
 }
 
 func newSlashPopup() slashPopup {
-	return slashPopup{commands: []slashCommand{{
-		name:        modelCommandName,
-		description: "Choose a model and reasoning effort",
-	}}}
+	return slashPopup{commands: []slashCommand{
+		{
+			name:        modelCommandName,
+			description: "Choose a model and reasoning effort",
+		},
+		{
+			name:        quitCommandName,
+			description: "Quit Atlas",
+		},
+	}}
 }
 
 // setSkills rebuilds the suggestion catalog while reserving built-in commands.
 func (p *slashPopup) setSkills(summaries []runtime.SkillSummary) {
 	commands := newSlashPopup().commands
-	seen := map[string]bool{modelCommandName: true}
+	seen := map[string]bool{modelCommandName: true, quitCommandName: true}
 	for _, summary := range summaries {
 		if !validSlashCommandName(summary.Name) || seen[summary.Name] {
 			continue
@@ -201,7 +208,7 @@ func selectedSkillNames(text string) []string {
 	seen := make(map[string]bool)
 	for field := range strings.FieldsSeq(text) {
 		name, ok := slashCommandName(field)
-		if !ok || name == modelCommandName || seen[name] {
+		if !ok || name == modelCommandName || name == quitCommandName || seen[name] {
 			continue
 		}
 		names = append(names, name)

@@ -50,18 +50,14 @@ func TestModelPickerUsesModelReasoningDefaults(t *testing.T) {
 	}
 }
 
-func TestModelPickerEscapeReturnsThenCloses(t *testing.T) {
+func TestModelPickerIgnoresEscape(t *testing.T) {
 	models := pickerTestModels()
 	var picker modelPicker
 	picker.open(models, models[0].Value, "high")
 	picker.update("enter")
 	picker.update("esc")
-	if picker.stage != modelPickerModels {
-		t.Fatalf("picker stage after first escape = %d, want models", picker.stage)
-	}
-	picker.update("esc")
-	if picker.active() {
-		t.Fatal("picker remained active after second escape")
+	if picker.stage != modelPickerReasoning {
+		t.Fatalf("picker stage after escape = %d, want reasoning", picker.stage)
 	}
 }
 
