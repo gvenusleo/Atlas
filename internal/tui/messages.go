@@ -23,6 +23,12 @@ type turnDoneMsg struct {
 	err    error
 }
 
+// compactDoneMsg signals that manual context compaction has returned.
+type compactDoneMsg struct {
+	result runtime.CompactResult
+	err    error
+}
+
 // turnUpdateMsg serializes agent events and turn completion through one channel.
 type turnUpdateMsg struct {
 	event *agent.Event
@@ -54,11 +60,12 @@ type skillSummariesLoadedMsg struct {
 
 // chatMessage represents a single rendered message block in the conversation.
 type chatMessage struct {
-	role          string          // "user" | "assistant"
+	role          string          // "user" | "assistant" | "notice"
 	content       strings.Builder // accumulated text (streamed for assistant)
 	toolCalls     []toolCallView  // tool calls within this assistant message
 	err           error
 	cancelled     bool
+	noticeError   bool
 	markdownCache markdownRenderCache
 }
 
@@ -117,6 +124,12 @@ func newAssistantMessage() *chatMessage {
 	return &chatMessage{role: "assistant"}
 }
 
+func newNoticeMessage(text string, failed bool) *chatMessage {
+	m := &chatMessage{role: "notice", noticeError: failed}
+	m.content.WriteString(ansi.Strip(text))
+	return m
+}
+
 // handleEvent updates the message state based on an agent.Event.
 func (m *chatMessage) handleEvent(e agent.Event) {
 	switch e.Type {
@@ -172,6 +185,12 @@ func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackgrou
 			parts = append(parts, renderIndented(ansi.Strip(m.err.Error()), width, "• ", errorStyle))
 		}
 		return strings.Join(parts, "\n\n")
+	case "notice":
+		style := mutedStyle
+		if m.noticeError {
+			style = errorStyle
+		}
+		return renderIndented(m.content.String(), width, "• ", style)
 	}
 	return m.content.String()
 }

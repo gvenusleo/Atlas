@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	modelCommandName  = "model"
-	quitCommandName   = "quit"
-	maxSlashPopupRows = 5
+	modelCommandName   = "model"
+	compactCommandName = "compact"
+	quitCommandName    = "quit"
+	maxSlashPopupRows  = 5
 )
 
 type slashCommand struct {
@@ -35,6 +36,10 @@ func newSlashPopup() slashPopup {
 			description: "Choose a model and reasoning effort",
 		},
 		{
+			name:        compactCommandName,
+			description: "Compact earlier context",
+		},
+		{
 			name:        quitCommandName,
 			description: "Quit Atlas",
 		},
@@ -44,7 +49,7 @@ func newSlashPopup() slashPopup {
 // setSkills rebuilds the suggestion catalog while reserving built-in commands.
 func (p *slashPopup) setSkills(summaries []runtime.SkillSummary) {
 	commands := newSlashPopup().commands
-	seen := map[string]bool{modelCommandName: true, quitCommandName: true}
+	seen := map[string]bool{modelCommandName: true, compactCommandName: true, quitCommandName: true}
 	for _, summary := range summaries {
 		if !validSlashCommandName(summary.Name) || seen[summary.Name] {
 			continue
@@ -208,13 +213,26 @@ func selectedSkillNames(text string) []string {
 	seen := make(map[string]bool)
 	for field := range strings.FieldsSeq(text) {
 		name, ok := slashCommandName(field)
-		if !ok || name == modelCommandName || name == quitCommandName || seen[name] {
+		if !ok || name == modelCommandName || name == compactCommandName || name == quitCommandName || seen[name] {
 			continue
 		}
 		names = append(names, name)
 		seen[name] = true
 	}
 	return names
+}
+
+// compactCommandInstruction parses the built-in command and its optional instruction.
+func compactCommandInstruction(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	prefix := "/" + compactCommandName
+	if text == prefix {
+		return "", true
+	}
+	if strings.HasPrefix(text, prefix+" ") || strings.HasPrefix(text, prefix+"\t") || strings.HasPrefix(text, prefix+"\n") {
+		return strings.TrimSpace(strings.TrimPrefix(text, prefix)), true
+	}
+	return "", false
 }
 
 func slashCommandName(text string) (string, bool) {

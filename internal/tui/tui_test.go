@@ -418,6 +418,74 @@ func TestQuitCommandExits(t *testing.T) {
 	}
 }
 
+func TestCompactCommandInstruction(t *testing.T) {
+	tests := []struct {
+		input           string
+		wantInstruction string
+		wantCompact     bool
+	}{
+		{input: "/compact", wantCompact: true},
+		{input: "/compact keep decisions", wantInstruction: "keep decisions", wantCompact: true},
+		{input: "/compact\nkeep files", wantInstruction: "keep files", wantCompact: true},
+		{input: "/compactness matters"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			instruction, ok := compactCommandInstruction(tt.input)
+			if ok != tt.wantCompact || instruction != tt.wantInstruction {
+				t.Fatalf("compactCommandInstruction(%q) = %q, %t", tt.input, instruction, ok)
+			}
+		})
+	}
+}
+
+func TestCompactCommandWithoutSessionShowsNotice(t *testing.T) {
+	m := New(Options{})
+	m.input.SetValue("/compact keep decisions")
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd != nil || m.compactActive || m.input.Value() != "" || !m.input.Focused() {
+		t.Fatalf("compact state: cmd=%v active=%t value=%q focused=%t", cmd, m.compactActive, m.input.Value(), m.input.Focused())
+	}
+	if len(m.messages) != 1 || !strings.Contains(ansi.Strip(m.messages[0].render(80, false, nil)), "No session to compact") {
+		t.Fatalf("compact notice = %#v", m.messages)
+	}
+}
+
+func TestCompactCompletionShowsNoSafeBoundaryAndErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		msg        compactDoneMsg
+		want       string
+		wantFailed bool
+	}{
+		{name: "no safe boundary", msg: compactDoneMsg{result: runtime.CompactResult{Reason: "no safe compaction boundary"}}, want: "No safe context to compact."},
+		{name: "provider error", msg: compactDoneMsg{err: errors.New("provider failed")}, want: "Compaction failed: provider failed", wantFailed: true},
+		{name: "cancelled", msg: compactDoneMsg{err: context.Canceled}, want: "Compaction cancelled."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(Options{})
+			m.compactActive = true
+			m.input.Blur()
+			m.turnStatus.start(time.Now())
+
+			updated, cmd := m.Update(tt.msg)
+			m = updated.(Model)
+			if cmd != nil || m.compactActive || m.turnStatus.active() || !m.input.Focused() {
+				t.Fatalf("completion state: cmd=%v active=%t status=%t focused=%t", cmd, m.compactActive, m.turnStatus.active(), m.input.Focused())
+			}
+			if len(m.messages) != 1 || m.messages[0].noticeError != tt.wantFailed {
+				t.Fatalf("notice state = %#v", m.messages)
+			}
+			if rendered := ansi.Strip(m.messages[0].render(80, false, nil)); !strings.Contains(rendered, tt.want) {
+				t.Fatalf("notice = %q, want %q", rendered, tt.want)
+			}
+		})
+	}
+}
+
 func TestEscapeInterruptsTurnAndCtrlCDoesNothing(t *testing.T) {
 	m := New(Options{})
 	m.turnActive = true
@@ -435,6 +503,21 @@ func TestEscapeInterruptsTurnAndCtrlCDoesNothing(t *testing.T) {
 	updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if cmd != nil || !cancelled || abandoned {
 		t.Fatalf("escape state: cmd=%v cancelled=%t abandoned=%t", cmd, cancelled, abandoned)
+	}
+
+	m.turnActive = false
+	m.turnCancel = nil
+	m.compactActive = true
+	compactCancelled := false
+	m.compactCancel = func() { compactCancelled = true }
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	m = updated.(Model)
+	if cmd != nil || compactCancelled {
+		t.Fatalf("compact ctrl+c state: cmd=%v cancelled=%t", cmd, compactCancelled)
+	}
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if cmd != nil || !compactCancelled {
+		t.Fatalf("compact escape state: cmd=%v cancelled=%t", cmd, compactCancelled)
 	}
 }
 
@@ -557,6 +640,91 @@ func TestSubmitTurnUsesSelectedModelAndReasoningEffort(t *testing.T) {
 
 	if provider.selectedModel != "model-a" || provider.request.ReasoningEffort != "xhigh" {
 		t.Fatalf("provider selection = model:%q effort:%q", provider.selectedModel, provider.request.ReasoningEffort)
+	}
+}
+
+func TestCompactCommandUsesRuntimeWithoutPersistingCommand(t *testing.T) {
+	provider := &tuiRecordingProvider{response: model.ChatResponse{Content: "reply"}}
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	cwd := t.TempDir()
+	rt := runtime.New(runtime.Dependencies{
+		LoadConfig: func() (config.Config, error) {
+			return config.Config{
+				DefaultModel: "provider/model-a",
+				Providers: []config.ProviderConfig{{
+					Name: "provider",
+					Models: []config.ProviderModel{{
+						Value: "model-a", ContextWindow: 1000, MaxTokens: 100,
+						InputFormats:     []string{config.ModelInputFormatText},
+						ReasoningEfforts: []config.ProviderReasoningEffort{{Value: "high", Name: "High"}},
+					}},
+				}},
+				Agent:   config.AgentConfig{MaxSteps: 2},
+				Session: config.SessionConfig{DBPath: dbPath},
+			}, nil
+		},
+		NewProvider: func(config.ProviderConfig, config.ProviderModel) (model.Provider, error) {
+			return provider, nil
+		},
+	})
+	t.Cleanup(func() {
+		if err := rt.Close(); err != nil {
+			t.Errorf("Runtime.Close() error = %v", err)
+		}
+	})
+
+	for _, prompt := range []string{"first", "second"} {
+		if _, err := rt.RunTurn(t.Context(), runtime.TurnOptions{SessionID: "work", Prompt: prompt, CWD: cwd}); err != nil {
+			t.Fatalf("RunTurn(%q) error = %v", prompt, err)
+		}
+	}
+	provider.response = model.ChatResponse{Content: "summary"}
+
+	m := New(Options{Runtime: rt, SessionID: "work", CWD: cwd})
+	m.loading = false
+	m.input.Focus()
+	m.width = 80
+	m.modelValue = "provider/model-a"
+	m.modelName = "Model A"
+	m.reasoningEffort = "high"
+	m.contextTokens = 900
+	m.contextWindow = 1000
+	m.input.SetValue("/compact keep decisions")
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd == nil || !m.compactActive || !m.turnStatus.active() || m.input.Focused() || len(m.messages) != 0 {
+		t.Fatalf("running state: cmd=%v active=%t status=%t focused=%t messages=%d", cmd, m.compactActive, m.turnStatus.active(), m.input.Focused(), len(m.messages))
+	}
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("compact command = %T with %d entries, want tea.BatchMsg with 2", batch, len(batch))
+	}
+	done, ok := batch[0]().(compactDoneMsg)
+	if !ok || done.err != nil || !done.result.Compacted {
+		t.Fatalf("compact result = %#v, %t", done, ok)
+	}
+	if provider.request.ReasoningEffort != "high" || len(provider.request.Messages) != 1 || !strings.Contains(provider.request.Messages[0].Content, "Additional user instruction:\nkeep decisions") {
+		t.Fatalf("compact request = %#v", provider.request)
+	}
+
+	updated, _ = m.Update(done)
+	m = updated.(Model)
+	if m.compactActive || !m.input.Focused() || m.contextTokens != done.result.TokensAfter || m.contextWindow != done.result.ContextWindow {
+		t.Fatalf("completed state: active=%t focused=%t tokens=%d window=%d", m.compactActive, m.input.Focused(), m.contextTokens, m.contextWindow)
+	}
+	wantContext := fmt.Sprintf("Context %d%% used", contextUsagePercent(done.result.TokensAfter, done.result.ContextWindow))
+	if status := ansi.Strip(m.statusView()); !strings.Contains(status, wantContext) {
+		t.Fatalf("status = %q, want %q", status, wantContext)
+	}
+	if len(m.messages) != 1 || !strings.Contains(ansi.Strip(m.messages[0].render(80, false, nil)), "Context compacted. Kept 2 recent messages.") {
+		t.Fatalf("compact notice = %#v", m.messages)
+	}
+	info, transcript, err := rt.ShowSession(t.Context(), "work")
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	if info.ContextSummary != "summary" || len(transcript.Messages()) != 4 {
+		t.Fatalf("persisted session = info:%#v messages:%d", info, len(transcript.Messages()))
 	}
 }
 

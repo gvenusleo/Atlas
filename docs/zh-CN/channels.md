@@ -18,13 +18,14 @@ atlas --session <id>
 - 没有激活命令候选项时，`Enter` 发送当前输入。
 - 在输入开头键入 `/` 可查看支持的命令和当前可用的 skills；使用方向键选择候选项，再按 `Tab` 或 `Enter` 补全。
 - 输入 `/model` 选择已配置的模型及其思考深度；使用方向键和 `Enter` 选择。
+- 输入 `/compact [instruction]` 总结早期上下文并保留最近消息；可选 instruction 用于指定压缩时需要重点保留的内容。
 - 输入 `/quit` 退出 TUI。
 - `Page Up`、`Page Down` 和鼠标滚轮用于滚动对话历史。
 - 在对话文本上拖动鼠标即可选择并复制到剪贴板。
-- `Esc` 中断正在执行的 turn；空闲时不起作用。
+- `Esc` 中断正在执行的 turn 或手动 compact；空闲时不起作用。
 - `Ctrl+C` 不起作用。
 
-TUI 启动时使用 `default_model` 和 `reasoning_efforts` 中的第一项。通过 `/model` 做出的选择会应用于当前 TUI 进程中的后续 turn，但不会改写配置文件，也不会跨重启保存。输入 `/think plan this change` 之类的可用 skill 命令时，TUI 会只为当前 turn 注入对应 skill，并在 transcript 中保留原始输入。TUI 暂不支持图片输入。
+TUI 启动时使用 `default_model` 和 `reasoning_efforts` 中的第一项。通过 `/model` 做出的选择会应用于当前 TUI 进程中的后续 turn，但不会改写配置文件，也不会跨重启保存。手动 compact 会保留完整 transcript，只改写后续 turn 使用的已保存上下文摘要；compact 命令和结果提示不会作为对话消息持久化。输入 `/think plan this change` 之类的可用 skill 命令时，TUI 会只为当前 turn 注入对应 skill，并在 transcript 中保留原始输入。TUI 暂不支持图片输入。
 
 ## ACP
 

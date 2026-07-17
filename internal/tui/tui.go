@@ -73,6 +73,10 @@ type Model struct {
 	selection   textSelection
 	turnStatus  turnStatus
 
+	// Manual compaction runs outside the agent turn loop.
+	compactActive bool
+	compactCancel context.CancelFunc
+
 	// Conversation messages.
 	messages []*chatMessage
 	// current points to the assistant message being streamed (or nil).
@@ -170,6 +174,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			if m.turnActive && m.turnCancel != nil {
 				m.turnCancel()
+			} else if m.compactActive && m.compactCancel != nil {
+				m.compactCancel()
 			}
 			return m, nil
 		}
@@ -207,7 +213,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, _ = m.viewport.Update(msg)
 			return m, nil
 		case "enter":
-			if m.turnActive || m.loading {
+			if m.turnActive || m.compactActive || m.loading {
 				return m, nil // ignore input while running
 			}
 			text := strings.TrimSpace(m.input.Value())
@@ -216,6 +222,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if text == "/quit" {
 				return m, tea.Quit
+			}
+			if instruction, ok := compactCommandInstruction(text); ok {
+				m.input.Reset()
+				m.slashPopup.sync("")
+				return m.submitCompaction(instruction)
 			}
 			if text == "/model" {
 				if len(m.models) == 0 {
@@ -268,7 +279,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.PasteMsg:
-		if m.turnActive || m.loading || m.modelPicker.active() {
+		if m.turnActive || m.compactActive || m.loading || m.modelPicker.active() {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -293,6 +304,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, pollTurnUpdates(m.eventCh)
+
+	case compactDoneMsg:
+		m.handleCompactDone(msg)
+		m.rebuild()
+		return m, nil
 
 	case sessionLoadedMsg:
 		m.loading = false
@@ -391,6 +407,36 @@ func (m Model) submitTurn(text string) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// submitCompaction starts manual compaction without adding a transcript turn.
+func (m Model) submitCompaction(instruction string) (tea.Model, tea.Cmd) {
+	if m.sessionID == "" {
+		m.messages = append(m.messages, newNoticeMessage("No session to compact.", false))
+		m.rebuild()
+		return m, nil
+	}
+
+	m.compactActive = true
+	statusCmd := m.turnStatus.start(time.Now())
+	m.input.Blur()
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.compactCancel = cancel
+	m.viewport.GotoBottom()
+	m.rebuild()
+
+	compactCmd := func() tea.Msg {
+		result, err := m.rt.CompactSession(ctx, runtime.CompactOptions{
+			SessionID:          m.sessionID,
+			Model:              m.modelValue,
+			ReasoningEffort:    m.reasoningEffort,
+			ReasoningEffortSet: m.reasoningEffort != "",
+			CWD:                m.cwd,
+			Instruction:        instruction,
+		})
+		return compactDoneMsg{result: result, err: err}
+	}
+	return m, tea.Batch(compactCmd, statusCmd)
+}
+
 // pollTurnUpdates reads one ordered event or completion update from a turn.
 func pollTurnUpdates(ch <-chan turnUpdateMsg) tea.Cmd {
 	return func() tea.Msg {
@@ -484,6 +530,32 @@ func (m *Model) handleTurnDone(msg turnDoneMsg) {
 		m.contextWindow = msg.result.ContextWindow
 	}
 
+	m.input.Focus()
+}
+
+// handleCompactDone restores input state and reports the non-transcript result.
+func (m *Model) handleCompactDone(msg compactDoneMsg) {
+	m.compactActive = false
+	m.turnStatus.stop()
+	if m.compactCancel != nil {
+		m.compactCancel()
+	}
+	m.compactCancel = nil
+
+	switch {
+	case errors.Is(msg.err, context.Canceled):
+		m.messages = append(m.messages, newNoticeMessage("Compaction cancelled.", false))
+	case msg.err != nil:
+		m.messages = append(m.messages, newNoticeMessage("Compaction failed: "+msg.err.Error(), true))
+	case !msg.result.Compacted:
+		m.messages = append(m.messages, newNoticeMessage("No safe context to compact.", false))
+	default:
+		m.contextTokens = msg.result.TokensAfter
+		if msg.result.ContextWindow > 0 {
+			m.contextWindow = msg.result.ContextWindow
+		}
+		m.messages = append(m.messages, newNoticeMessage(fmt.Sprintf("Context compacted. Kept %d recent messages.", msg.result.KeepCount), false))
+	}
 	m.input.Focus()
 }
 

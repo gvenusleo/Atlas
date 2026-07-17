@@ -18,13 +18,14 @@ Controls:
 - `Enter` sends the current input when no command suggestion is active.
 - Type `/` at the start of the input to see supported commands and available skills. Use the arrow keys to choose a suggestion, then `Tab` or `Enter` to complete it.
 - Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select.
+- Enter `/compact [instruction]` to summarize earlier context while keeping recent messages. The optional instruction tells the compactor what to preserve.
 - Enter `/quit` to exit the TUI.
 - `Page Up`, `Page Down`, and the mouse wheel scroll conversation history.
 - Drag across conversation text to select and copy it to the clipboard.
-- `Esc` interrupts the active turn. It has no effect while idle.
+- `Esc` interrupts the active turn or manual compaction. It has no effect while idle.
 - `Ctrl+C` has no effect.
 
-The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
+The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Manual compaction preserves the full transcript while rewriting the saved context summary used by subsequent turns; its command and result notice are not persisted as conversation messages. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
 
 ## ACP
 
