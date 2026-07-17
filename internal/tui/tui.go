@@ -618,15 +618,15 @@ func (m Model) renderInputArea() composerRender {
 		return m.modelPicker.render(m.width, m.input.MaxHeight)
 	}
 	composer := m.renderComposer()
-	popupRows := min(maxSlashPopupRows, max(m.height-composer.height-2, 0))
+	popupRows := min(maxSlashPopupRows, max(m.height-composer.height-3, 0))
 	popup := m.slashPopup.render(max(m.width-1, 1), popupRows)
 	if popup == "" {
 		return composer
 	}
 	popupHeight := lipgloss.Height(popup)
-	composer.content = popup + "\n" + composer.content
-	composer.height += popupHeight
-	composer.cursorRow += popupHeight
+	composer.content = popup + "\n\n" + composer.content
+	composer.height += popupHeight + 1
+	composer.cursorRow += popupHeight + 1
 	return composer
 }
 

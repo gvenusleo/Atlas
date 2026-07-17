@@ -87,7 +87,7 @@ func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
 	if !strings.Contains(rendered, "Thinking (1m 04s • ctrl+c to interrupt)") {
 		t.Fatalf("turn status = %q", rendered)
 	}
-	meta := turnMetaStyle.Render("(1m 04s • ctrl+c to interrupt)")
+	meta := subtleStyle.Render("(1m 04s • ctrl+c to interrupt)")
 	if !strings.Contains(raw, meta) {
 		t.Fatal("turn status metadata does not use the light gray style")
 	}
@@ -350,9 +350,17 @@ func TestSlashPopupCompletesSelectedSkill(t *testing.T) {
 	if !m.slashPopup.active() {
 		t.Fatal("slash popup did not open")
 	}
-	rendered := ansi.Strip(m.renderInputArea().content)
+	inputArea := m.renderInputArea()
+	rendered := ansi.Strip(inputArea.content)
 	if !strings.Contains(rendered, "/think") || strings.Contains(rendered, "/hunt") {
 		t.Fatalf("input area = %q", rendered)
+	}
+	lines := strings.Split(rendered, "\n")
+	if len(lines) != 3 || lines[1] != "" || !strings.HasPrefix(lines[2], "› /th") {
+		t.Fatalf("popup spacing = %q", rendered)
+	}
+	if inputArea.height != 3 || inputArea.cursorRow != 2 {
+		t.Fatalf("input area layout = height:%d cursorRow:%d", inputArea.height, inputArea.cursorRow)
 	}
 	for line := range strings.SplitSeq(rendered, "\n") {
 		if width := ansi.StringWidth(line); width > m.width-1 {

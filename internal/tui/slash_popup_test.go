@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,5 +73,46 @@ func TestSlashPopupDescriptionStaysOnOneLine(t *testing.T) {
 	rendered := ansi.Strip(popup.render(40, maxSlashPopupRows))
 	if strings.Contains(rendered, "\n") || !strings.Contains(rendered, "Plan work") {
 		t.Fatalf("popup description = %q", rendered)
+	}
+}
+
+func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
+	popup := newSlashPopup()
+	popup.setSkills([]runtime.SkillSummary{
+		{Name: "short", Description: "Short description"},
+		{Name: "long-command", Description: "Long description"},
+	})
+	popup.sync("/")
+	popup.move(1)
+
+	rawLines := strings.Split(popup.render(80, maxSlashPopupRows), "\n")
+	lines := make([]string, len(rawLines))
+	for index, line := range rawLines {
+		lines[index] = ansi.Strip(line)
+	}
+	if len(lines) != 3 {
+		t.Fatalf("popup lines = %q", lines)
+	}
+	descriptions := []string{"Choose a model", "[Skill] Short description", "[Skill] Long description"}
+	descriptionColumn := -1
+	for index, description := range descriptions {
+		column := ansi.StringWidth(lines[index][:strings.Index(lines[index], description)])
+		if descriptionColumn < 0 {
+			descriptionColumn = column
+		} else if column != descriptionColumn {
+			t.Fatalf("description columns = %d and %d: %q", descriptionColumn, column, lines)
+		}
+	}
+	if rawLines[1] != userStyle.Render(lines[1]) {
+		t.Fatalf("selected row does not use one foreground style: %q", rawLines[1])
+	}
+	if !strings.Contains(rawLines[2], subtleStyle.Render("[Skill] Long description")) {
+		t.Fatalf("unselected description does not use subtle style: %q", rawLines[2])
+	}
+	if strings.Contains(lines[0], "[Skill]") {
+		t.Fatalf("built-in command is labeled as a skill: %q", lines[0])
+	}
+	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
+		t.Fatal("selected slash style has a background color")
 	}
 }

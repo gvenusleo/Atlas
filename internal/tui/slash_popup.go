@@ -15,6 +15,7 @@ const (
 type slashCommand struct {
 	name        string
 	description string
+	skill       bool
 }
 
 type slashPopup struct {
@@ -43,6 +44,7 @@ func (p *slashPopup) setSkills(summaries []runtime.SkillSummary) {
 		commands = append(commands, slashCommand{
 			name:        summary.Name,
 			description: summary.Description,
+			skill:       true,
 		})
 	}
 	p.commands = commands
@@ -104,21 +106,39 @@ func (p slashPopup) render(width, maxRows int) string {
 	maxRows = min(maxRows, len(p.matches))
 	start := pickerWindowStart(len(p.matches), p.selected, maxRows)
 	end := min(start+maxRows, len(p.matches))
+	nameColumnWidth := 1
+	for _, command := range p.matches[start:end] {
+		nameColumnWidth = max(nameColumnWidth, ansi.StringWidth("/"+command.name))
+	}
+	nameColumnWidth = min(nameColumnWidth, max((width-2)/2, 1))
+	descriptionWidth := max(width-2-nameColumnWidth-2, 0)
 	lines := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
 		command := p.matches[i]
-		prefix := "  "
-		nameStyle := messageStyle
-		if i == p.selected {
-			prefix = userStyle.Render("› ")
-			nameStyle = userStyle
-		}
-		name := ansi.Truncate("/"+command.name, max(width-2, 1), "…")
-		line := prefix + nameStyle.Render(name)
-		remaining := max(width-ansi.StringWidth(prefix)-ansi.StringWidth(name)-2, 0)
+		name := ansi.Truncate("/"+command.name, nameColumnWidth, "…")
+		name += strings.Repeat(" ", max(nameColumnWidth-ansi.StringWidth(name), 0))
 		description := singleLineDisplayText(command.description)
-		if description != "" && remaining > 0 {
-			line += "  " + mutedStyle.Render(ansi.Truncate(description, remaining, "…"))
+		if command.skill {
+			description = "[Skill] " + description
+		}
+		if descriptionWidth > 0 {
+			description = ansi.Truncate(description, descriptionWidth, "…")
+		} else {
+			description = ""
+		}
+
+		if i == p.selected {
+			line := "› " + name
+			if description != "" {
+				line += "  " + description
+			}
+			lines = append(lines, userStyle.Render(line))
+			continue
+		}
+
+		line := "  " + messageStyle.Render(name)
+		if description != "" {
+			line += "  " + subtleStyle.Render(description)
 		}
 		lines = append(lines, line)
 	}

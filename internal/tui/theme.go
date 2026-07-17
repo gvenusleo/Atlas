@@ -14,7 +14,7 @@ var (
 	assistantColor = lipgloss.Color("2") // terminal-defined green
 	toolColor      = lipgloss.Color("3") // terminal-defined yellow
 	mutedColor     = lipgloss.Color("8") // terminal-defined grey
-	turnMetaColor  = lipgloss.Color("245")
+	subtleColor    = lipgloss.Color("245")
 	errorColor     = lipgloss.Color("1") // terminal-defined red
 
 	userStyle      = lipgloss.NewStyle().Foreground(userColor)
@@ -22,7 +22,7 @@ var (
 	assistantStyle = lipgloss.NewStyle().Foreground(assistantColor)
 	toolStyle      = lipgloss.NewStyle().Foreground(toolColor)
 	mutedStyle     = lipgloss.NewStyle().Foreground(mutedColor)
-	turnMetaStyle  = lipgloss.NewStyle().Foreground(turnMetaColor)
+	subtleStyle    = lipgloss.NewStyle().Foreground(subtleColor)
 	errorStyle     = lipgloss.NewStyle().Foreground(errorColor)
 	selectionStyle = lipgloss.NewStyle().Reverse(true)
 )

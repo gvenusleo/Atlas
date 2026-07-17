@@ -73,7 +73,7 @@ func (s turnStatus) viewAt(width int, now time.Time) string {
 	}
 	elapsed := max(now.Sub(s.startedAt), 0)
 	line := s.spinner.View() + " " + messageStyle.Bold(true).Render(label)
-	line += " " + turnMetaStyle.Render(fmt.Sprintf("(%s • ctrl+c to interrupt)", formatTurnElapsed(elapsed)))
+	line += " " + subtleStyle.Render(fmt.Sprintf("(%s • ctrl+c to interrupt)", formatTurnElapsed(elapsed)))
 	return ansi.Truncate(line, max(width, 0), "…")
 }
 
