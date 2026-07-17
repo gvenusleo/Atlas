@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -72,6 +73,142 @@ func TestEmptyConversationUsesFullTerminalHeight(t *testing.T) {
 	}
 	if strings.Contains(lines[0], "Atlas") {
 		t.Fatalf("top line still contains a header: %q", lines[0])
+	}
+}
+
+func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
+	status := newTurnStatus()
+	startedAt := time.Date(2026, time.July, 17, 12, 0, 0, 0, time.UTC)
+	status.start(startedAt)
+	status.setPhase(turnPhaseThinking)
+
+	raw := status.viewAt(80, startedAt.Add(64*time.Second))
+	rendered := ansi.Strip(raw)
+	if !strings.Contains(rendered, "Thinking (1m 04s • ctrl+c to interrupt)") {
+		t.Fatalf("turn status = %q", rendered)
+	}
+	meta := turnMetaStyle.Render("(1m 04s • ctrl+c to interrupt)")
+	if !strings.Contains(raw, meta) {
+		t.Fatal("turn status metadata does not use the light gray style")
+	}
+	if narrow := status.viewAt(20, startedAt.Add(64*time.Second)); ansi.StringWidth(narrow) > 20 {
+		t.Fatalf("narrow turn status width = %d, want at most 20", ansi.StringWidth(narrow))
+	}
+	status.stop()
+	if rendered := status.viewAt(80, startedAt.Add(65*time.Second)); rendered != "" {
+		t.Fatalf("stopped turn status = %q", rendered)
+	}
+}
+
+func TestFormatTurnElapsed(t *testing.T) {
+	tests := []struct {
+		elapsed time.Duration
+		want    string
+	}{
+		{elapsed: 0, want: "0s"},
+		{elapsed: 59 * time.Second, want: "59s"},
+		{elapsed: 64 * time.Second, want: "1m 04s"},
+		{elapsed: 3661 * time.Second, want: "1h 01m 01s"},
+	}
+	for _, test := range tests {
+		if got := formatTurnElapsed(test.elapsed); got != test.want {
+			t.Fatalf("formatTurnElapsed(%s) = %q, want %q", test.elapsed, got, test.want)
+		}
+	}
+}
+
+func TestTurnStatusTracksAgentPhase(t *testing.T) {
+	m := New(Options{})
+	m.current = newAssistantMessage()
+	m.turnStatus.start(time.Now())
+
+	m.handleAgentEvent(agent.Event{Type: agent.EventModelReasoningDelta, Content: "reasoning"})
+	if m.turnStatus.phase != turnPhaseThinking {
+		t.Fatalf("reasoning phase = %d, want thinking", m.turnStatus.phase)
+	}
+	m.handleAgentEvent(agent.Event{Type: agent.EventModelDelta, Content: "answer"})
+	if m.turnStatus.phase != turnPhaseWorking {
+		t.Fatalf("model output phase = %d, want working", m.turnStatus.phase)
+	}
+	m.handleAgentEvent(agent.Event{Type: agent.EventModelReasoningDelta, Content: "reasoning"})
+	m.handleAgentEvent(agent.Event{Type: agent.EventModelResponse})
+	if m.turnStatus.phase != turnPhaseWorking {
+		t.Fatalf("model response phase = %d, want working", m.turnStatus.phase)
+	}
+	m.handleAgentEvent(agent.Event{Type: agent.EventModelReasoningDelta, Content: "reasoning"})
+	m.handleAgentEvent(agent.Event{Type: agent.EventToolStarted, ToolCall: model.ToolCall{ID: "tool-1", Name: "run_shell"}})
+	if m.turnStatus.phase != turnPhaseWorking {
+		t.Fatalf("tool phase = %d, want working", m.turnStatus.phase)
+	}
+}
+
+func TestTurnStatusStopsWithTurn(t *testing.T) {
+	m := New(Options{})
+	m.turnActive = true
+	m.turnStatus.start(time.Now())
+	tick := m.turnStatus.spinner.Tick()
+
+	updated, cmd := m.Update(tick)
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("active spinner tick did not schedule another frame")
+	}
+	m.handleTurnDone(turnDoneMsg{})
+	if m.turnStatus.active() {
+		t.Fatal("turn status remained active after completion")
+	}
+	_, cmd = m.Update(tick)
+	if cmd != nil {
+		t.Fatal("inactive spinner tick scheduled another frame")
+	}
+}
+
+func TestTurnStatusRendersAboveComposer(t *testing.T) {
+	m := New(Options{})
+	m.modelName = "gpt-5.6-sol"
+	m.turnActive = true
+	m.turnStatus.start(time.Now())
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	m = updated.(Model)
+
+	rendered := ansi.Strip(m.View().Content)
+	statusIndex := strings.Index(rendered, "Working (")
+	composerIndex := strings.Index(rendered, "›")
+	if statusIndex < 0 || composerIndex < 0 || statusIndex >= composerIndex {
+		t.Fatalf("status/composer order = status:%d composer:%d content:%q", statusIndex, composerIndex, rendered)
+	}
+	rawLines := strings.Split(m.View().Content, "\n")
+	for index, line := range rawLines {
+		if !strings.Contains(ansi.Strip(line), "Working (") {
+			continue
+		}
+		if index == 0 || ansi.Strip(rawLines[index-1]) != "" {
+			t.Fatal("blank line is missing between conversation and turn status")
+		}
+		if index+1 >= len(rawLines) || rawLines[index+1] == "" {
+			t.Fatal("blank line remains between turn status and composer")
+		}
+		break
+	}
+	if got := lipgloss.Height(m.View().Content); got != 12 {
+		t.Fatalf("View height = %d, want 12", got)
+	}
+}
+
+func TestSmallTerminalPrioritizesTurnStatus(t *testing.T) {
+	m := New(Options{})
+	m.modelName = "gpt-5.6-sol"
+	m.turnActive = true
+	m.turnStatus.start(time.Now())
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 4})
+	m = updated.(Model)
+
+	rendered := ansi.Strip(m.View().Content)
+	if !strings.Contains(rendered, "Working (") || strings.Contains(rendered, "gpt-5.6-sol") {
+		t.Fatalf("small terminal content = %q", rendered)
+	}
+	if got := lipgloss.Height(m.View().Content); got != 4 {
+		t.Fatalf("View height = %d, want 4", got)
 	}
 }
 
@@ -367,8 +504,8 @@ func TestSubmitTurnUsesSelectedModelAndReasoningEffort(t *testing.T) {
 	m.reasoningEffort = "xhigh"
 	_, cmd := m.submitTurn("hello")
 	batch, ok := cmd().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
-		t.Fatalf("submit command = %T with %d entries, want tea.BatchMsg with 2", batch, len(batch))
+	if !ok || len(batch) != 3 {
+		t.Fatalf("submit command = %T with %d entries, want tea.BatchMsg with 3", batch, len(batch))
 	}
 	batch[1]()
 
@@ -419,8 +556,8 @@ func TestSubmitTurnInjectsSelectedSkillAndPreservesPrompt(t *testing.T) {
 	m := New(Options{Runtime: rt, CWD: t.TempDir()})
 	_, cmd := m.submitTurn("/think design this")
 	batch, ok := cmd().(tea.BatchMsg)
-	if !ok || len(batch) != 2 {
-		t.Fatalf("submit command = %T with %d entries, want tea.BatchMsg with 2", batch, len(batch))
+	if !ok || len(batch) != 3 {
+		t.Fatalf("submit command = %T with %d entries, want tea.BatchMsg with 3", batch, len(batch))
 	}
 	batch[1]()
 

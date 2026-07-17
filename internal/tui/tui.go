@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/cursor"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -69,6 +71,7 @@ type Model struct {
 	turnAbandon context.CancelFunc
 	eventCh     chan turnUpdateMsg
 	selection   textSelection
+	turnStatus  turnStatus
 
 	// Conversation messages.
 	messages []*chatMessage
@@ -110,6 +113,7 @@ func New(opts Options) Model {
 		ctx:        ctx,
 		loading:    opts.SessionID != "",
 		slashPopup: newSlashPopup(),
+		turnStatus: newTurnStatus(),
 	}
 	if model.loading {
 		model.input.Blur()
@@ -330,6 +334,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuild()
 		return m, nil
 
+	case spinner.TickMsg:
+		return m, m.turnStatus.update(msg)
+
 	case cursor.BlinkMsg:
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
@@ -345,6 +352,7 @@ func (m Model) submitTurn(text string) (tea.Model, tea.Cmd) {
 	m.appendAssistantMessage()
 
 	m.turnActive = true
+	statusCmd := m.turnStatus.start(time.Now())
 	m.input.Blur()
 
 	ch := make(chan turnUpdateMsg, 64)
@@ -386,6 +394,7 @@ func (m Model) submitTurn(text string) (tea.Model, tea.Cmd) {
 			close(ch)
 			return nil
 		},
+		statusCmd,
 	)
 	return m, cmd
 }
@@ -405,17 +414,21 @@ func pollTurnUpdates(ch <-chan turnUpdateMsg) tea.Cmd {
 func (m *Model) handleAgentEvent(e agent.Event) {
 	switch e.Type {
 	case agent.EventTurnStarted:
-		// Nothing to do; assistant message already created.
+		m.turnStatus.setPhase(turnPhaseWorking)
 	case agent.EventModelDelta:
+		m.turnStatus.setPhase(turnPhaseWorking)
 		if m.current == nil || len(m.current.toolCalls) > 0 {
 			m.appendAssistantMessage()
 		}
 		m.current.handleEvent(e)
 	case agent.EventModelReasoningDelta:
+		m.turnStatus.setPhase(turnPhaseThinking)
 		// Reasoning deltas are intentionally not shown in the conversation.
 	case agent.EventModelResponse:
+		m.turnStatus.setPhase(turnPhaseWorking)
 		// If tools follow, the next model delta starts a new message block.
 	case agent.EventToolStarted, agent.EventToolFinished:
+		m.turnStatus.setPhase(turnPhaseWorking)
 		if m.current == nil {
 			m.appendAssistantMessage()
 		}
@@ -462,6 +475,7 @@ func (m *Model) handleTurnDone(msg turnDoneMsg) {
 	}
 
 	m.turnActive = false
+	m.turnStatus.stop()
 	m.turnCancel = nil
 	if m.turnAbandon != nil {
 		m.turnAbandon()
@@ -489,8 +503,8 @@ func (m Model) View() tea.View {
 
 	vpView := m.selection.render(m.viewport.View(), selectionStyle)
 	composerState := m.renderInputArea()
-	layout := calculateLayout(m.height, composerState.height)
-	parts := make([]string, 0, 5)
+	layout := calculateLayout(m.height, composerState.height, m.turnStatus.active())
+	parts := make([]string, 0, 6)
 	cursorY := 0
 	if vpView != "" {
 		parts = append(parts, vpView)
@@ -498,6 +512,10 @@ func (m Model) View() tea.View {
 	}
 	if layout.showInputGap {
 		parts = append(parts, "")
+		cursorY++
+	}
+	if layout.showTurnStatus {
+		parts = append(parts, m.turnStatus.viewAt(m.width, time.Now()))
 		cursorY++
 	}
 	composer := composerStyle(m.hasDarkBackground, m.terminalBackground).
@@ -554,7 +572,7 @@ func (m *Model) rebuild() {
 		m.viewport.SetContent(strings.Join(parts, "\n\n"))
 	}
 
-	layout := calculateLayout(m.height, m.renderInputArea().height)
+	layout := calculateLayout(m.height, m.renderInputArea().height, m.turnStatus.active())
 	m.viewport.SetHeight(layout.viewportHeight)
 	if followBottom {
 		m.viewport.GotoBottom()
@@ -565,13 +583,18 @@ type screenLayout struct {
 	viewportHeight int
 	showInputGap   bool
 	showStatus     bool
+	showTurnStatus bool
 }
 
 // calculateLayout keeps the composer and footer stable while preserving history space.
-func calculateLayout(totalHeight, composerHeight int) screenLayout {
+func calculateLayout(totalHeight, composerHeight int, turnActive bool) screenLayout {
 	const composerVerticalPadding = 2
 	remaining := max(totalHeight-composerHeight-composerVerticalPadding, 0)
-	layout := screenLayout{showStatus: remaining > 0}
+	layout := screenLayout{showTurnStatus: turnActive && remaining > 0}
+	if layout.showTurnStatus {
+		remaining--
+	}
+	layout.showStatus = remaining > 0
 	if layout.showStatus {
 		remaining--
 	}
