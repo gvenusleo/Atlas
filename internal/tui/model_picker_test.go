@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -81,6 +82,25 @@ func TestModelPickerRenderIsBoundedAndKeepsSelectionVisible(t *testing.T) {
 		if got := ansi.StringWidth(line); got > 24 {
 			t.Fatalf("rendered line width = %d, want at most 24: %q", got, ansi.Strip(line))
 		}
+	}
+}
+
+func TestModelPickerRenderSeparatesTitleAndUsesForegroundSelection(t *testing.T) {
+	models := pickerTestModels()
+	var picker modelPicker
+	picker.open(models, models[0].Value, "")
+
+	rendered := picker.render(60, 5)
+	rawLines := strings.Split(rendered.content, "\n")
+	if len(rawLines) != 5 || ansi.Strip(rawLines[0]) != "  Select model" || rawLines[1] != "" {
+		t.Fatalf("picker title spacing = %q", ansi.Strip(rendered.content))
+	}
+	selected := ansi.Strip(rawLines[2])
+	if rawLines[2] != userStyle.Render(selected) {
+		t.Fatalf("selected model does not use one foreground style: %q", rawLines[2])
+	}
+	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
+		t.Fatal("selected model style has a background color")
 	}
 }
 

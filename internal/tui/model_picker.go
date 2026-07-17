@@ -153,20 +153,20 @@ func (p modelPicker) render(width, maxRows int) composerRender {
 
 	lines := make([]string, 0, maxRows)
 	itemRows := maxRows
-	if maxRows > 1 {
+	if maxRows > 2 {
 		lines = append(lines, "  "+messageStyle.Bold(true).Render(ansi.Truncate(title, contentWidth, "…")))
-		itemRows--
+		lines = append(lines, "")
+		itemRows -= 2
 	}
 	start := pickerWindowStart(len(items), selected, itemRows)
 	end := min(start+itemRows, len(items))
 	for i := start; i < end; i++ {
 		label := ansi.Truncate(items[i], contentWidth, "…")
-		prefix := "  "
 		if i == selected {
-			prefix = userStyle.Render("› ")
-			label = userStyle.Render(label)
+			lines = append(lines, userStyle.Render("› "+label))
+			continue
 		}
-		lines = append(lines, prefix+label)
+		lines = append(lines, "  "+label)
 	}
 	return composerRender{content: strings.Join(lines, "\n"), height: max(len(lines), 1)}
 }
