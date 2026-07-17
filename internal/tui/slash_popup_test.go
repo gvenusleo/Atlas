@@ -27,6 +27,65 @@ func TestSlashPopupFiltersSkillsByPrefix(t *testing.T) {
 	}
 }
 
+func TestSlashPopupRanksExactPrefixSubstringAndFuzzyMatches(t *testing.T) {
+	popup := newSlashPopup()
+	popup.setSkills([]runtime.SkillSummary{
+		{Name: "command-it", Description: "Fuzzy match"},
+		{Name: "git-commit", Description: "Substring match"},
+		{Name: "commit-helper", Description: "Prefix match"},
+		{Name: "commit", Description: "Exact match"},
+	})
+	popup.sync("/CoMmIt")
+
+	var names []string
+	for _, command := range popup.matches {
+		names = append(names, command.name)
+	}
+	want := []string{"commit", "commit-helper", "git-commit", "command-it"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("matched commands = %v, want %v", names, want)
+	}
+}
+
+func TestSlashPopupMatchesOrderedCharactersOutsidePrefix(t *testing.T) {
+	popup := newSlashPopup()
+	popup.setSkills([]runtime.SkillSummary{
+		{Name: "git-commit", Description: "Commit changes"},
+		{Name: "find-skills", Description: "Discover skills"},
+	})
+
+	popup.sync("/gc")
+	command, ok := popup.selectedCommand()
+	if !ok || command.name != "git-commit" {
+		t.Fatalf("selected command = %+v, %t", command, ok)
+	}
+
+	popup.sync("/fs")
+	command, ok = popup.selectedCommand()
+	if !ok || command.name != "find-skills" {
+		t.Fatalf("selected command = %+v, %t", command, ok)
+	}
+}
+
+func TestSlashPopupResetsSelectionWhenQueryChanges(t *testing.T) {
+	popup := newSlashPopup()
+	popup.setSkills([]runtime.SkillSummary{
+		{Name: "hunt", Description: "Find root causes"},
+		{Name: "think", Description: "Plan work"},
+	})
+	popup.sync("/")
+	popup.move(2)
+	popup.sync("/")
+	if popup.selected != 2 {
+		t.Fatalf("selection after unchanged query = %d, want 2", popup.selected)
+	}
+
+	popup.sync("/th")
+	if popup.selected != 0 {
+		t.Fatalf("selection after changed query = %d, want 0", popup.selected)
+	}
+}
+
 func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	popup := newSlashPopup()
 	popup.setSkills([]runtime.SkillSummary{

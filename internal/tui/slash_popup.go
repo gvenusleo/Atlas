@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/list"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/runtime"
 )
@@ -23,6 +24,7 @@ type slashPopup struct {
 	matches        []slashCommand
 	selected       int
 	dismissedValue string
+	query          string
 }
 
 func newSlashPopup() slashPopup {
@@ -50,6 +52,7 @@ func (p *slashPopup) setSkills(summaries []runtime.SkillSummary) {
 	p.commands = commands
 	p.matches = nil
 	p.selected = 0
+	p.query = ""
 }
 
 // sync updates the visible matches for a command token at the start of the draft.
@@ -61,17 +64,52 @@ func (p *slashPopup) sync(value string) {
 	if !ok || value == p.dismissedValue {
 		p.matches = nil
 		p.selected = 0
+		p.query = ""
 		return
 	}
 
 	query = strings.ToLower(query)
-	p.matches = p.matches[:0]
-	for _, command := range p.commands {
-		if strings.HasPrefix(strings.ToLower(command.name), query) {
-			p.matches = append(p.matches, command)
-		}
+	queryChanged := query != p.query
+	p.query = query
+	p.matches = rankSlashCommands(p.commands, query)
+	if queryChanged {
+		p.selected = 0
+	} else {
+		p.selected = min(p.selected, max(len(p.matches)-1, 0))
 	}
-	p.selected = min(p.selected, max(len(p.matches)-1, 0))
+}
+
+// rankSlashCommands keeps obvious matches ahead of looser fuzzy matches.
+func rankSlashCommands(commands []slashCommand, query string) []slashCommand {
+	if query == "" {
+		return append([]slashCommand(nil), commands...)
+	}
+
+	targets := make([]string, len(commands))
+	for index, command := range commands {
+		targets[index] = strings.ToLower(command.name)
+	}
+
+	var groups [4][]slashCommand
+	for _, rank := range list.DefaultFilter(query, targets) {
+		name := targets[rank.Index]
+		group := 3
+		switch {
+		case name == query:
+			group = 0
+		case strings.HasPrefix(name, query):
+			group = 1
+		case strings.Contains(name, query):
+			group = 2
+		}
+		groups[group] = append(groups[group], commands[rank.Index])
+	}
+
+	matches := make([]slashCommand, 0, len(commands))
+	for _, group := range groups {
+		matches = append(matches, group...)
+	}
+	return matches
 }
 
 func (p slashPopup) active() bool {
@@ -96,6 +134,7 @@ func (p *slashPopup) dismiss(value string) {
 	p.dismissedValue = value
 	p.matches = nil
 	p.selected = 0
+	p.query = ""
 }
 
 // render displays a bounded command list with descriptions truncated to the terminal width.
