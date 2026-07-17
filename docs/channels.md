@@ -11,17 +11,19 @@ atlas
 atlas --session <id>
 ```
 
-The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. The footer shows the configured model display name, its default reasoning effort, and the most recent context usage as a percentage of `context_window`.
+The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. The footer shows the active model, reasoning effort, and the most recent context usage as a percentage of `context_window`.
 
 Controls:
 
-- `Enter` sends the current input.
+- `Enter` sends the current input when no command suggestion is active.
+- Type `/` at the start of the input to see supported commands and available skills. Use the arrow keys to choose a suggestion, `Tab` or `Enter` to complete it, or `Esc` to dismiss the suggestions.
+- Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select; `Esc` returns to the model list or closes the picker.
 - `Page Up`, `Page Down`, and the mouse wheel scroll conversation history.
 - Drag across conversation text to select and copy it to the clipboard.
 - `Ctrl+C` cancels the active turn. When no turn is running, it exits.
-- `Esc` cancels the active turn and exits immediately.
+- Outside the suggestion list and model picker, `Esc` cancels the active turn and exits immediately.
 
-The TUI currently uses `default_model` and the first configured `reasoning_efforts` option. Use `atlas run --model`, ACP, or WebSocket when a task needs a different model. Image input and model switching are not available in the TUI yet.
+The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
 
 ## ACP
 

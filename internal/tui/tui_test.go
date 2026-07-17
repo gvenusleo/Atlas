@@ -18,6 +18,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/config"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
+	"github.com/liuyuxin/atlas/internal/skill"
 	"github.com/liuyuxin/atlas/internal/tool"
 )
 
@@ -195,6 +196,243 @@ func TestComposerDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
 	m = updated.(Model)
 
 	assertWordsShareVisualLine(t, ansi.Strip(m.renderComposer().content), "我是", "Atlas")
+}
+
+func TestSlashPopupCompletesSelectedSkill(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(skillSummariesLoadedMsg{summaries: []runtime.SkillSummary{
+		{Name: "hunt", Description: "Find root causes"},
+		{Name: "think", Description: strings.Repeat("Plan work ", 10)},
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.PasteMsg{Content: "/th"})
+	m = updated.(Model)
+
+	if !m.slashPopup.active() {
+		t.Fatal("slash popup did not open")
+	}
+	rendered := ansi.Strip(m.renderInputArea().content)
+	if !strings.Contains(rendered, "/think") || strings.Contains(rendered, "/hunt") {
+		t.Fatalf("input area = %q", rendered)
+	}
+	for line := range strings.SplitSeq(rendered, "\n") {
+		if width := ansi.StringWidth(line); width > m.width-1 {
+			t.Fatalf("input area line width = %d, want at most %d: %q", width, m.width-1, line)
+		}
+	}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updated.(Model)
+	if cmd != nil || m.input.Value() != "/think " || m.slashPopup.active() {
+		t.Fatalf("completion state: value=%q active=%t cmd=%v", m.input.Value(), m.slashPopup.active(), cmd)
+	}
+}
+
+func TestEnterCompletesSelectedSlashCommandWithoutSubmitting(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	m = updated.(Model)
+	if !m.slashPopup.active() {
+		t.Fatal("slash popup did not open")
+	}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd != nil || m.input.Value() != "/model " || m.slashPopup.active() || len(m.messages) != 0 {
+		t.Fatalf("completion state: value=%q active=%t messages=%d cmd=%v", m.input.Value(), m.slashPopup.active(), len(m.messages), cmd)
+	}
+}
+
+func TestEscapeDismissesSlashPopupWithoutQuitting(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	m = updated.(Model)
+	if !m.slashPopup.active() {
+		t.Fatal("slash popup did not open")
+	}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = updated.(Model)
+	if cmd != nil || m.slashPopup.active() || m.input.Value() != "/" {
+		t.Fatalf("dismiss state: active=%t value=%q cmd=%v", m.slashPopup.active(), m.input.Value(), cmd)
+	}
+}
+
+func TestModelCommandOpensPickerWithoutEnteringHistory(t *testing.T) {
+	m := New(Options{})
+	m.models = pickerTestModels()
+	m.modelValue = m.models[0].Value
+	m.modelName = m.models[0].Name
+	m.reasoningEffort = "high"
+	m.input.SetValue("/model")
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil || !m.modelPicker.active() || len(m.messages) != 0 {
+		t.Fatalf("model command state: active=%t messages=%d cmd=%v", m.modelPicker.active(), len(m.messages), cmd)
+	}
+	if m.input.Focused() || m.input.Value() != "" {
+		t.Fatalf("input remained active after opening picker: focused=%t value=%q", m.input.Focused(), m.input.Value())
+	}
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
+	m = updated.(Model)
+	view := m.View()
+	if view.Cursor != nil || !strings.Contains(ansi.Strip(view.Content), "Select model") {
+		t.Fatalf("picker view cursor=%v content=%q", view.Cursor, ansi.Strip(view.Content))
+	}
+}
+
+func TestModelCommandWaitsForModelOptions(t *testing.T) {
+	m := New(Options{})
+	m.input.SetValue("/model")
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil || m.modelPicker.active() || m.input.Value() != "/model" || !m.input.Focused() {
+		t.Fatalf("unavailable model command state: cmd=%v active=%t value=%q focused=%t", cmd, m.modelPicker.active(), m.input.Value(), m.input.Focused())
+	}
+}
+
+func TestModelPickerUpdatesFooterState(t *testing.T) {
+	m := New(Options{})
+	m.models = pickerTestModels()
+	m.modelValue = m.models[0].Value
+	m.modelName = m.models[0].Name
+	m.reasoningEffort = "high"
+	m.contextTokens = 200
+	m.contextWindow = 1000
+	m.openModelPicker()
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+
+	if m.modelValue != "provider/model-c" || m.modelName != "Model C" || m.reasoningEffort != "medium" {
+		t.Fatalf("selected model state = value:%q name:%q effort:%q", m.modelValue, m.modelName, m.reasoningEffort)
+	}
+	if m.contextWindow != 2000 || !m.input.Focused() || m.modelPicker.active() {
+		t.Fatalf("selection completion state: context=%d focused=%t active=%t", m.contextWindow, m.input.Focused(), m.modelPicker.active())
+	}
+}
+
+func TestEscapeClosesModelPickerWithoutQuitting(t *testing.T) {
+	m := New(Options{})
+	m.models = pickerTestModels()
+	m.modelValue = m.models[0].Value
+	m.openModelPicker()
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = updated.(Model)
+	if cmd != nil || m.modelPicker.active() || !m.input.Focused() {
+		t.Fatalf("escape picker state: cmd=%v active=%t focused=%t", cmd, m.modelPicker.active(), m.input.Focused())
+	}
+}
+
+func TestSubmitTurnUsesSelectedModelAndReasoningEffort(t *testing.T) {
+	provider := &tuiRecordingProvider{response: model.ChatResponse{Content: "ok"}}
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	rt := runtime.New(runtime.Dependencies{
+		LoadConfig: func() (config.Config, error) {
+			return config.Config{
+				DefaultModel: "provider/model-b",
+				Providers: []config.ProviderConfig{{
+					Name: "provider",
+					Models: []config.ProviderModel{
+						{Value: "model-a", Name: "Model A", ContextWindow: 1000, MaxTokens: 100, InputFormats: []string{config.ModelInputFormatText}, ReasoningEfforts: []config.ProviderReasoningEffort{{Value: "high", Name: "High"}, {Value: "xhigh", Name: "XHigh"}}},
+						{Value: "model-b", Name: "Model B", ContextWindow: 1000, MaxTokens: 100, InputFormats: []string{config.ModelInputFormatText}},
+					},
+				}},
+				Agent:   config.AgentConfig{MaxSteps: 2},
+				Session: config.SessionConfig{DBPath: dbPath},
+			}, nil
+		},
+		NewProvider: func(_ config.ProviderConfig, selected config.ProviderModel) (model.Provider, error) {
+			provider.selectedModel = selected.Value
+			return provider, nil
+		},
+	})
+	t.Cleanup(func() {
+		if err := rt.Close(); err != nil {
+			t.Errorf("Runtime.Close() error = %v", err)
+		}
+	})
+
+	m := New(Options{Runtime: rt, CWD: t.TempDir()})
+	m.modelValue = "provider/model-a"
+	m.reasoningEffort = "xhigh"
+	_, cmd := m.submitTurn("hello")
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("submit command = %T with %d entries, want tea.BatchMsg with 2", batch, len(batch))
+	}
+	batch[1]()
+
+	if provider.selectedModel != "model-a" || provider.request.ReasoningEffort != "xhigh" {
+		t.Fatalf("provider selection = model:%q effort:%q", provider.selectedModel, provider.request.ReasoningEffort)
+	}
+}
+
+func TestSubmitTurnInjectsSelectedSkillAndPreservesPrompt(t *testing.T) {
+	provider := &tuiRecordingProvider{response: model.ChatResponse{Content: "ok"}}
+	catalog, err := skill.NewCatalog([]skill.Skill{{
+		Name:        "think",
+		Description: "Plan work",
+		Content:     "# Think\nPlan first.",
+	}})
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	dbPath := filepath.Join(t.TempDir(), "atlas.db")
+	rt := runtime.New(runtime.Dependencies{
+		LoadConfig: func() (config.Config, error) {
+			return config.Config{
+				DefaultModel: "provider/model-a",
+				Providers: []config.ProviderConfig{{
+					Name: "provider",
+					Models: []config.ProviderModel{{
+						Value: "model-a", ContextWindow: 1000, MaxTokens: 100,
+						InputFormats: []string{config.ModelInputFormatText},
+					}},
+				}},
+				Agent:   config.AgentConfig{MaxSteps: 2},
+				Session: config.SessionConfig{DBPath: dbPath},
+			}, nil
+		},
+		NewProvider: func(config.ProviderConfig, config.ProviderModel) (model.Provider, error) {
+			return provider, nil
+		},
+		LoadSkills: func(string) (*skill.Catalog, error) {
+			return catalog, nil
+		},
+	})
+	t.Cleanup(func() {
+		if err := rt.Close(); err != nil {
+			t.Errorf("Runtime.Close() error = %v", err)
+		}
+	})
+
+	m := New(Options{Runtime: rt, CWD: t.TempDir()})
+	_, cmd := m.submitTurn("/think design this")
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("submit command = %T with %d entries, want tea.BatchMsg with 2", batch, len(batch))
+	}
+	batch[1]()
+
+	if len(provider.request.Messages) != 2 {
+		t.Fatalf("provider messages = %#v", provider.request.Messages)
+	}
+	if !strings.Contains(provider.request.Messages[0].Content, "<name>think</name>") || !strings.Contains(provider.request.Messages[0].Content, "# Think") {
+		t.Fatalf("skill message = %q", provider.request.Messages[0].Content)
+	}
+	if provider.request.Messages[1].Content != "/think design this" {
+		t.Fatalf("user prompt = %q", provider.request.Messages[1].Content)
+	}
 }
 
 func TestComposerHardWrapMapsCursorPosition(t *testing.T) {
@@ -573,9 +811,45 @@ func TestLoadModelStatusUsesRuntimeDefault(t *testing.T) {
 	if loaded.err != nil {
 		t.Fatalf("loadModelStatus() error = %v", loaded.err)
 	}
-	if loaded.modelName != "gpt-5.6-sol" || loaded.reasoningEffort != "high" || loaded.contextWindow != 1000 {
+	if len(loaded.models) != 1 || loaded.modelValue != "openai/gpt-5.6-sol" || loaded.modelName != "gpt-5.6-sol" || loaded.reasoningEffort != "high" || loaded.contextWindow != 1000 {
 		t.Fatalf("loaded model status = %+v", loaded)
 	}
+}
+
+func TestLoadSkillSummariesUsesRuntimeCWD(t *testing.T) {
+	catalog, err := skill.NewCatalog([]skill.Skill{{Name: "think", Description: "Plan work"}})
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	var loadedCWD string
+	rt := runtime.New(runtime.Dependencies{
+		LoadSkills: func(cwd string) (*skill.Catalog, error) {
+			loadedCWD = cwd
+			return catalog, nil
+		},
+	})
+
+	loaded, ok := loadSkillSummaries(t.Context(), rt, "/tmp/atlas-work")().(skillSummariesLoadedMsg)
+	if !ok {
+		t.Fatal("loadSkillSummaries() returned an unexpected message type")
+	}
+	if loaded.err != nil {
+		t.Fatalf("loadSkillSummaries() error = %v", loaded.err)
+	}
+	if loadedCWD != "/tmp/atlas-work" || len(loaded.summaries) != 1 || loaded.summaries[0].Name != "think" {
+		t.Fatalf("loaded skill summaries: cwd=%q summaries=%+v", loadedCWD, loaded.summaries)
+	}
+}
+
+type tuiRecordingProvider struct {
+	selectedModel string
+	request       model.ChatRequest
+	response      model.ChatResponse
+}
+
+func (p *tuiRecordingProvider) Stream(_ context.Context, request model.ChatRequest, _ func(model.StreamEvent) error) (model.ChatResponse, error) {
+	p.request = request
+	return p.response, nil
 }
 
 func TestToolResultTruncationPreservesUTF8(t *testing.T) {

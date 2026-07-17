@@ -52,12 +52,16 @@ type Model struct {
 	ctx       context.Context
 	loading   bool
 
-	// Footer status reflects the runtime's active default model.
+	// Footer status reflects the model selection used for subsequent turns.
+	models          []runtime.ModelOption
+	modelValue      string
 	modelName       string
 	reasoningEffort string
 	contextTokens   int
 	contextWindow   int
 	modelStatusErr  error
+	modelPicker     modelPicker
+	slashPopup      slashPopup
 
 	// Turn state.
 	turnActive  bool
@@ -98,13 +102,14 @@ func New(opts Options) Model {
 	}
 
 	model := Model{
-		viewport:  vp,
-		input:     ta,
-		rt:        opts.Runtime,
-		cwd:       opts.CWD,
-		sessionID: opts.SessionID,
-		ctx:       ctx,
-		loading:   opts.SessionID != "",
+		viewport:   vp,
+		input:      ta,
+		rt:         opts.Runtime,
+		cwd:        opts.CWD,
+		sessionID:  opts.SessionID,
+		ctx:        ctx,
+		loading:    opts.SessionID != "",
+		slashPopup: newSlashPopup(),
 	}
 	if model.loading {
 		model.input.Blur()
@@ -120,9 +125,14 @@ func Run(ctx context.Context, opts Options) error {
 	return err
 }
 
-// Init starts the cursor blink cycle and loads footer metadata.
+// Init starts the cursor blink cycle and loads TUI metadata.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestBackgroundColor, textarea.Blink, loadModelStatus(m.ctx, m.rt)}
+	cmds := []tea.Cmd{
+		tea.RequestBackgroundColor,
+		textarea.Blink,
+		loadModelStatus(m.ctx, m.rt),
+		loadSkillSummaries(m.ctx, m.rt, m.cwd),
+	}
 	if m.loading {
 		cmds = append(cmds, loadSession(m.ctx, m.rt, m.sessionID))
 	}
@@ -149,6 +159,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.modelPicker.active() {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			selection := m.modelPicker.update(msg.String())
+			if selection != nil {
+				m.applyModelSelection(*selection)
+			} else if !m.modelPicker.active() {
+				m.input.Focus()
+			}
+			m.rebuild()
+			return m, nil
+		}
+		if m.slashPopup.active() {
+			switch msg.String() {
+			case "up":
+				m.slashPopup.move(-1)
+				m.rebuild()
+				return m, nil
+			case "down":
+				m.slashPopup.move(1)
+				m.rebuild()
+				return m, nil
+			case "tab", "enter":
+				if command, ok := m.slashPopup.selectedCommand(); ok {
+					m.input.SetValue("/" + command.name + " ")
+					m.slashPopup.dismiss(m.input.Value())
+					m.rebuild()
+				}
+				return m, nil
+			case "esc":
+				m.slashPopup.dismiss(m.input.Value())
+				m.rebuild()
+				return m, nil
+			}
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			if m.turnActive && m.turnCancel != nil {
@@ -175,12 +221,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text == "" {
 				return m, nil
 			}
+			if text == "/model" {
+				if len(m.models) == 0 {
+					return m, nil
+				}
+				m.input.Reset()
+				m.slashPopup.sync("")
+				m.openModelPicker()
+				return m, nil
+			}
 			m.input.Reset()
+			m.slashPopup.sync("")
 			return m.submitTurn(text)
 		}
 		// Forward all other keypresses to the textarea.
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		m.slashPopup.sync(m.input.Value())
 		m.rebuild()
 		return m, cmd
 
@@ -215,11 +272,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.PasteMsg:
-		if m.turnActive || m.loading {
+		if m.turnActive || m.loading || m.modelPicker.active() {
 			return m, nil
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		m.slashPopup.sync(m.input.Value())
 		m.rebuild()
 		return m, cmd
 
@@ -255,10 +313,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modelStatusLoadedMsg:
+		m.models = msg.models
+		m.modelValue = msg.modelValue
 		m.modelName = msg.modelName
 		m.reasoningEffort = msg.reasoningEffort
 		m.contextWindow = msg.contextWindow
 		m.modelStatusErr = msg.err
+		m.rebuild()
+		return m, nil
+
+	case skillSummariesLoadedMsg:
+		if msg.err == nil {
+			m.slashPopup.setSkills(msg.summaries)
+			m.slashPopup.sync(m.input.Value())
+		}
 		m.rebuild()
 		return m, nil
 
@@ -288,9 +356,13 @@ func (m Model) submitTurn(text string) (tea.Model, tea.Cmd) {
 	m.turnAbandon = abandon
 
 	opts := runtime.TurnOptions{
-		SessionID: m.sessionID,
-		Prompt:    text,
-		CWD:       m.cwd,
+		SessionID:          m.sessionID,
+		Prompt:             text,
+		Skills:             selectedSkillNames(text),
+		Model:              m.modelValue,
+		ReasoningEffort:    m.reasoningEffort,
+		ReasoningEffortSet: m.reasoningEffort != "",
+		CWD:                m.cwd,
 		Observer: func(e agent.Event) {
 			event := e
 			select {
@@ -360,6 +432,25 @@ func (m *Model) appendAssistantMessage() {
 	m.messages = append(m.messages, m.current)
 }
 
+// openModelPicker replaces the composer with the configured model selector.
+func (m *Model) openModelPicker() {
+	m.modelPicker.open(m.models, m.modelValue, m.reasoningEffort)
+	if m.modelPicker.active() {
+		m.input.Blur()
+		m.rebuild()
+	}
+}
+
+// applyModelSelection updates the footer and subsequent turn overrides together.
+func (m *Model) applyModelSelection(selection modelSelection) {
+	m.modelValue = selection.model.Value
+	m.modelName = modelOptionName(selection.model)
+	m.reasoningEffort = selection.effort
+	m.contextWindow = selection.model.ContextWindow
+	m.modelStatusErr = nil
+	m.input.Focus()
+}
+
 // handleTurnDone processes the RunTurn result.
 func (m *Model) handleTurnDone(msg turnDoneMsg) {
 	if msg.err != nil && m.current != nil {
@@ -397,7 +488,7 @@ func (m Model) View() tea.View {
 	}
 
 	vpView := m.selection.render(m.viewport.View(), selectionStyle)
-	composerState := m.renderComposer()
+	composerState := m.renderInputArea()
 	layout := calculateLayout(m.height, composerState.height)
 	parts := make([]string, 0, 5)
 	cursorY := 0
@@ -420,6 +511,9 @@ func (m Model) View() tea.View {
 	v := tea.NewView(strings.Join(parts, "\n"))
 
 	c := m.input.Cursor()
+	if m.modelPicker.active() {
+		c = nil
+	}
 	if c != nil {
 		c.X = 2 + composerState.cursorColumn
 		c.Y = cursorY + 1 + composerState.cursorRow
@@ -460,7 +554,7 @@ func (m *Model) rebuild() {
 		m.viewport.SetContent(strings.Join(parts, "\n\n"))
 	}
 
-	layout := calculateLayout(m.height, m.renderComposer().height)
+	layout := calculateLayout(m.height, m.renderInputArea().height)
 	m.viewport.SetHeight(layout.viewportHeight)
 	if followBottom {
 		m.viewport.GotoBottom()
@@ -494,6 +588,23 @@ type composerRender struct {
 	height       int
 	cursorRow    int
 	cursorColumn int
+}
+
+func (m Model) renderInputArea() composerRender {
+	if m.modelPicker.active() {
+		return m.modelPicker.render(m.width, m.input.MaxHeight)
+	}
+	composer := m.renderComposer()
+	popupRows := min(maxSlashPopupRows, max(m.height-composer.height-2, 0))
+	popup := m.slashPopup.render(max(m.width-1, 1), popupRows)
+	if popup == "" {
+		return composer
+	}
+	popupHeight := lipgloss.Height(popup)
+	composer.content = popup + "\n" + composer.content
+	composer.height += popupHeight
+	composer.cursorRow += popupHeight
+	return composer
 }
 
 func (m Model) renderComposer() composerRender {
@@ -651,12 +762,10 @@ func loadModelStatus(ctx context.Context, rt *runtime.Runtime) tea.Cmd {
 			if option.Value != options.Default {
 				continue
 			}
-			name := option.Name
-			if name == "" {
-				name = option.Value
-			}
 			status := modelStatusLoadedMsg{
-				modelName:     name,
+				models:        options.Models,
+				modelValue:    option.Value,
+				modelName:     modelOptionName(option),
 				contextWindow: option.ContextWindow,
 			}
 			if len(option.ReasoningEfforts) > 0 {
@@ -665,5 +774,12 @@ func loadModelStatus(ctx context.Context, rt *runtime.Runtime) tea.Cmd {
 			return status
 		}
 		return modelStatusLoadedMsg{err: fmt.Errorf("default model %q is unavailable", options.Default)}
+	}
+}
+
+func loadSkillSummaries(ctx context.Context, rt *runtime.Runtime, cwd string) tea.Cmd {
+	return func() tea.Msg {
+		summaries, err := rt.SkillSummaries(ctx, cwd)
+		return skillSummariesLoadedMsg{summaries: summaries, err: err}
 	}
 }

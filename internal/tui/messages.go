@@ -36,12 +36,20 @@ type sessionLoadedMsg struct {
 	err           error
 }
 
-// modelStatusLoadedMsg contains the default model information shown in the footer.
+// modelStatusLoadedMsg contains configured models and the initial footer selection.
 type modelStatusLoadedMsg struct {
+	models          []runtime.ModelOption
+	modelValue      string
 	modelName       string
 	reasoningEffort string
 	contextWindow   int
 	err             error
+}
+
+// skillSummariesLoadedMsg contains skills available as TUI slash commands.
+type skillSummariesLoadedMsg struct {
+	summaries []runtime.SkillSummary
+	err       error
 }
 
 // chatMessage represents a single rendered message block in the conversation.
