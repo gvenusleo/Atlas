@@ -50,6 +50,8 @@ just build        # build to dist/atlas
 just install      # build and install to ~/.local/bin
 ```
 
+See [Development](docs/development.md) for source development workflows.
+
 ### Initial Configuration
 
 Create a config file at `~/.atlas/config.json` (minimal example):
@@ -82,7 +84,7 @@ Create a config file at `~/.atlas/config.json` (minimal example):
 Verify your configuration:
 
 ```sh
-go run ./cmd/atlas doctor
+atlas doctor
 ```
 
 ### Run Your First Task
@@ -93,16 +95,10 @@ Start the interactive terminal UI:
 atlas
 ```
 
-When running from source:
-
-```sh
-go run ./cmd/atlas
-```
-
 For a one-shot task:
 
 ```sh
-go run ./cmd/atlas run "Read README and summarize"
+atlas run "Read README and summarize"
 ```
 
 ## Usage
@@ -128,7 +124,7 @@ atlas version                             # show version
 When input in the TUI or `atlas run` starts with `!`, Atlas skips the model and directly executes the rest as a shell command, e.g. `!pwd`. Use single quotes or escape `!` in zsh/bash:
 
 ```sh
-go run ./cmd/atlas run '!pwd'
+atlas run '!pwd'
 ```
 
 ## Permissions and Security

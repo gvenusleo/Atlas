@@ -35,6 +35,14 @@ go test ./internal/tui         # run terminal UI tests
 just ci                        # full non-modifying CI check (requires just)
 ```
 
+## Run from Source
+
+```sh
+go run ./cmd/atlas                              # start the terminal UI
+go run ./cmd/atlas run "Read README and summarize"  # run a one-shot task
+go run ./cmd/atlas doctor                       # verify configuration
+```
+
 ## Design Principles
 
 - **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, and compaction.

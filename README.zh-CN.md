@@ -50,6 +50,8 @@ just build        # 构建到 dist/atlas
 just install      # 构建并安装到 ~/.local/bin
 ```
 
+源码开发方式见[开发文档](docs/zh-CN/development.md)。
+
 ### 首次配置
 
 在 `~/.atlas/config.json` 创建配置文件（最小示例）：
@@ -82,7 +84,7 @@ just install      # 构建并安装到 ~/.local/bin
 验证配置：
 
 ```sh
-go run ./cmd/atlas doctor
+atlas doctor
 ```
 
 ### 运行第一个任务
@@ -93,16 +95,10 @@ go run ./cmd/atlas doctor
 atlas
 ```
 
-从源码运行：
-
-```sh
-go run ./cmd/atlas
-```
-
 执行单次任务：
 
 ```sh
-go run ./cmd/atlas run "读取 README 并总结"
+atlas run "读取 README 并总结"
 ```
 
 ## 使用
@@ -128,7 +124,7 @@ atlas version                             # 查看版本
 TUI 或 `atlas run` 中的输入以 `!` 开头时，Atlas 会跳过模型，直接把后续内容作为 shell 命令执行，比如 `!pwd`。通过 shell 调 CLI 时建议用单引号或转义 `!`：
 
 ```sh
-go run ./cmd/atlas run '!pwd'
+atlas run '!pwd'
 ```
 
 ## 权限与安全

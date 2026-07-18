@@ -35,6 +35,14 @@ go test ./internal/tui         # 运行终端界面测试
 just ci                        # 完整且不修改文件的 CI 检查（需安装 just）
 ```
 
+## 从源码运行
+
+```sh
+go run ./cmd/atlas                              # 启动终端界面
+go run ./cmd/atlas run "读取 README 并总结"          # 执行单次任务
+go run ./cmd/atlas doctor                       # 验证配置
+```
+
 ## 设计原则
 
 - **小而可验证**：agent loop 保持 headless 和依赖注入，Provider 与工具副作用通过窄接口进入；配置、持久化和压缩由 runtime 负责。
