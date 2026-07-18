@@ -9,7 +9,7 @@
 - **Headless agent 核心**：模型 → 工具调用 → 工具结果，按顺序写回 transcript，循环直到完成或达到步数上限。
 - **多 Provider 适配**：通过 `chat_completions` 和 `responses` 两种 API 格式适配器接入 OpenAI、DeepSeek 等兼容后端。
 - **本地工具集**：通过 Shell 完成文件检查、编辑与搜索，并支持网页搜索与提取，开箱即用。
-- **上下文压缩**：达到上下文窗口阈值时自动摘要早期对话，保留最近消息继续。
+- **上下文压缩**：达到配置阈值时自动压缩，也可手动触发；完整 transcript 保持不变，最近消息继续参与对话。
 - **多入口**：交互式终端界面、CLI 单次执行、ACP 长连接和 WebSocket 服务，共享同一个运行时。
 - **本地优先存储**：会话记录保存在本地 SQLite；任务内容和结果可能通过已配置的模型 API、Tavily 或已连接的 WebSocket 客户端传输。
 - **可扩展指令**：通过 `AGENTS.md` 和 skill 文件注入项目级与全局指令，skill 按需加载。
@@ -56,7 +56,7 @@ just install      # 构建并安装到 ~/.local/bin
 
 ```json
 {
-  "default_model": "deepseek-v4-flash",
+  "default_model": "deepseek/deepseek-v4-flash",
   "providers": [
     {
       "name": "deepseek",
@@ -76,6 +76,8 @@ just install      # 构建并安装到 ~/.local/bin
   ]
 }
 ```
+
+`default_model` 推荐使用 `provider/model` 格式（如 `"deepseek/deepseek-v4-flash"`）。无歧义时也可使用裸模型值（如 `"deepseek-v4-flash"`）；`--model` 参数同样适用。
 
 验证配置：
 
@@ -114,7 +116,7 @@ atlas run "<prompt>"                      # 执行单次任务
 atlas run --model <provider/model> "<prompt>"    # 指定模型，推荐 provider/model 格式
 atlas run --session <id> "<prompt>"       # 恢复或创建指定 session
 atlas acp                                 # 启动 ACP 服务
-atlas serve                               # 启动 WebSocket 服务（局域网）
+atlas serve                               # 启动 WebSocket 服务（默认监听本机回环地址）
 atlas doctor                              # 离线诊断
 atlas sessions                            # 列出会话
 atlas session show <id>                   # 查看会话内容

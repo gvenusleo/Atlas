@@ -16,7 +16,7 @@ graph TD
     end
 
     subgraph Orchestration Layer
-        RT[runtime.RunTurn]
+        RT[runtime.Runtime]
     end
 
     subgraph Core Loop
@@ -48,7 +48,7 @@ graph TD
     RT --> SS
 ```
 
-The TUI is an entry-layer adapter like ACP and WebSocket. It turns keyboard and mouse input into runtime turns, consumes ordered observer events for streaming output and tool activity, and leaves orchestration and persistence in `runtime.Runtime`.
+The TUI is an entry-layer adapter like ACP and WebSocket. It converts keyboard and mouse input into runtime turns and manual compaction requests, consumes ordered observer events for streaming output and tool activity, and leaves orchestration and persistence in `runtime.Runtime`.
 
 ## Core Loop
 
@@ -91,4 +91,4 @@ Key constraints:
 
 ## Context Compaction and Todos
 
-When context compaction triggers, earlier messages are summarized while recent messages are kept to continue the conversation. If the model has been using `todo_write` to track tasks, the last todo list is extracted from the transcript and incomplete items are injected into the summary prompt. This ensures the model retains awareness of pending work after compaction, without persisting todo state to the database.
+Runtime triggers context compaction automatically at the configured threshold. Entry adapters and CLI commands can also request it manually through `CompactSession`. Both paths summarize earlier messages, keep recent messages active, and preserve the full transcript. If the model has been using `todo_write` to track tasks, the last todo list is extracted from the transcript and incomplete items are injected into the summary prompt. This keeps pending work available after compaction without persisting todo state to the database.

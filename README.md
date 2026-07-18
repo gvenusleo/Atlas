@@ -9,7 +9,7 @@ A general-purpose agent built in Go. The core is a testable headless agent loop 
 - **Headless agent core**: model → tool calls → tool results, written back to transcript in order, looping until completion or step limit.
 - **Multi-provider adapters**: connect to OpenAI, DeepSeek, and other compatible backends via `chat_completions` and `responses` API formats.
 - **Built-in tools**: shell-based file inspection, editing, and search, plus web search and extraction, ready out of the box.
-- **Context compaction**: automatically summarizes earlier conversation when the context window threshold is reached, keeping recent messages to continue.
+- **Context compaction**: summarizes earlier conversation automatically at the configured threshold or on demand, preserving the full transcript while keeping recent messages active.
 - **Multiple entry points**: an interactive terminal UI, CLI one-shot execution, ACP persistent connections, and a WebSocket service, all backed by the same runtime.
 - **Local-first storage**: session records stay in local SQLite. Task content and results may be transmitted through configured model APIs, Tavily, or connected WebSocket clients.
 - **Extensible instructions**: inject project-level and global instructions via `AGENTS.md` and skill files. Skills are loaded on demand.
@@ -116,7 +116,7 @@ atlas run "<prompt>"                      # run a one-shot task
 atlas run --model <provider/model> "<prompt>"    # specify model (provider/model recommended)
 atlas run --session <id> "<prompt>"       # resume or create a specific session
 atlas acp                                 # start ACP service
-atlas serve                               # start WebSocket service (LAN)
+atlas serve                               # start WebSocket service (loopback by default)
 atlas doctor                              # offline diagnostics
 atlas sessions                            # list sessions
 atlas session show <id>                   # view session content

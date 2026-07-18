@@ -11,7 +11,7 @@ atlas
 atlas --session <id>
 ```
 
-The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. While a turn is active, a transient row above the composer shows `Thinking` for streamed reasoning and `Working` for model output or tool execution, together with elapsed time. The footer shows the active model, reasoning effort, and the most recent context usage as a percentage of `context_window`.
+The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. While a turn or manual compaction is active, a transient row above the composer shows elapsed time. It uses `Thinking` for streamed reasoning and `Working` for model output, tool execution, or compaction. The footer shows the active model, reasoning effort, and the most recent context usage as a percentage of `context_window`.
 
 Controls:
 
@@ -52,7 +52,7 @@ ACP supported features:
 - Session info and usage updates
 - Client terminal for `run_shell` output
 - Image input
-- `/compact` slash command
+- `/compact [instruction]` slash command; the optional instruction tells the compactor what to preserve
 - Skill slash commands, e.g. `/think ...`
 - Plan updates: `todo_write` tool calls are mapped to `plan_update` session updates, rendered as a structured plan panel in editors
 

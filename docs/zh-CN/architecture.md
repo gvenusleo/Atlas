@@ -16,7 +16,7 @@ graph TD
     end
 
     subgraph 编排层
-        RT[runtime.RunTurn]
+        RT[runtime.Runtime]
     end
 
     subgraph 核心循环
@@ -48,7 +48,7 @@ graph TD
     RT --> SS
 ```
 
-TUI 与 ACP、WebSocket 一样属于入口层适配。它把键盘和鼠标输入转换为运行时 turn，按顺序消费 observer 事件以展示流式输出和工具活动；编排和持久化仍由 `runtime.Runtime` 负责。
+TUI 与 ACP、WebSocket 一样属于入口层适配。它把键盘和鼠标输入转换为运行时 turn 和手动压缩请求，按顺序消费 observer 事件以展示流式输出和工具活动；编排和持久化仍由 `runtime.Runtime` 负责。
 
 ## 核心循环
 
@@ -91,4 +91,4 @@ sequenceDiagram
 
 ## 上下文压缩与 Todo
 
-上下文压缩触发时，较早的消息会被摘要化，保留最近的消息继续对话。如果模型正在使用 `todo_write` 追踪任务，最后一次 todo 列表会从 transcript 中提取，未完成的条目会被注入摘要提示词。这样模型在压缩后仍能感知待办任务，无需将 todo 状态持久化到数据库。
+上下文达到配置阈值时，运行时会自动压缩；入口适配层和 CLI 命令也可通过 `CompactSession` 手动触发。两种路径都会摘要早期消息、保留最近消息，并保持完整 transcript 不变。如果模型正在使用 `todo_write` 追踪任务，最后一次 todo 列表会从 transcript 中提取，未完成的条目会被注入摘要提示词。这样模型在压缩后仍能感知待办任务，无需将 todo 状态持久化到数据库。
