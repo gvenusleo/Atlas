@@ -18,12 +18,15 @@ Controls:
 - `Enter` sends the current input when no command suggestion is active.
 - Type `/` at the start of the input to see supported commands and available skills. Use the arrow keys to choose a suggestion, then `Tab` or `Enter` to complete it.
 - Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select.
+- Enter `/resume` to choose a saved session. Type to search by title, ID, or working directory; use the left and right arrows to switch between the current directory and all sessions, then press `Enter` to resume. `/resume <session-id>` resumes an exact ID directly.
 - Enter `/compact [instruction]` to summarize earlier context while keeping recent messages. The optional instruction tells the compactor what to preserve.
 - Enter `/quit` to exit the TUI.
 - `Page Up`, `Page Down`, and the mouse wheel scroll conversation history.
 - Drag across conversation text to select and copy it to the clipboard.
-- `Esc` interrupts the active turn or manual compaction. It has no effect while idle.
+- `Esc` interrupts the active turn or manual compaction. In the resume picker it returns to the current conversation; it otherwise has no effect while idle.
 - `Ctrl+C` has no effect.
+
+The resume picker initially lists sessions saved under the current working directory and can switch to an all-session view. Resuming a session from another directory requires confirmation; after confirmation, subsequent instructions, skills, and tools use that session's saved working directory. The current TUI model and reasoning effort remain selected because sessions do not persist those settings.
 
 The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Manual compaction preserves the full transcript while rewriting the saved context summary used by subsequent turns; its command and result notice are not persisted as conversation messages. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
 

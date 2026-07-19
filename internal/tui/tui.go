@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/liuyuxin/atlas/internal/agent"
 	"github.com/liuyuxin/atlas/internal/model"
 	"github.com/liuyuxin/atlas/internal/runtime"
+	"github.com/liuyuxin/atlas/internal/session"
 )
 
 const (
@@ -63,6 +66,7 @@ type Model struct {
 	contextWindow   int
 	modelStatusErr  error
 	modelPicker     modelPicker
+	resumePicker    sessionPicker
 	slashPopup      slashPopup
 
 	// Turn state.
@@ -168,6 +172,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		key := msg.String()
+		if m.resumePicker.active() {
+			return m.handleResumePickerKey(msg)
+		}
 		switch key {
 		case "ctrl+c":
 			return m, nil
@@ -223,6 +230,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text == "/quit" {
 				return m, tea.Quit
 			}
+			if sessionID, ok := resumeCommandSessionID(text); ok {
+				m.input.Reset()
+				m.slashPopup.sync("")
+				if sessionID != "" {
+					if err := session.ValidateID(sessionID); err != nil {
+						m.messages = append(m.messages, newNoticeMessage("Resume failed: "+err.Error(), true))
+						m.rebuild()
+						return m, nil
+					}
+					if sessionID == m.sessionID {
+						m.messages = append(m.messages, newNoticeMessage("Already in this session.", false))
+						m.rebuild()
+						return m, nil
+					}
+					generation := m.resumePicker.openDirect(m.cwd, m.sessionID, time.Now())
+					m.selection = textSelection{}
+					m.input.Blur()
+					m.rebuild()
+					return m, loadResumedSession(m.ctx, m.rt, sessionID, generation)
+				}
+				generation := m.resumePicker.open(m.cwd, m.sessionID, time.Now())
+				m.selection = textSelection{}
+				m.input.Blur()
+				m.rebuild()
+				return m, loadSessionPage(m.ctx, m.rt, m.cwd, m.resumePicker.scope, "", generation)
+			}
 			if instruction, ok := compactCommandInstruction(text); ok {
 				m.input.Reset()
 				m.slashPopup.sync("")
@@ -249,18 +282,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.MouseClickMsg:
+		if m.resumePicker.active() {
+			return m, nil
+		}
 		if msg.Button == tea.MouseLeft && msg.Y >= 0 && msg.Y < m.viewport.Height() {
 			m.selection.begin(selectionPoint{x: msg.X, y: msg.Y}, m.viewport.AtBottom())
 		}
 		return m, nil
 
 	case tea.MouseMotionMsg:
+		if m.resumePicker.active() {
+			return m, nil
+		}
 		if m.selection.active {
 			m.selection.move(selectionPoint{x: msg.X, y: msg.Y})
 		}
 		return m, nil
 
 	case tea.MouseReleaseMsg:
+		if m.resumePicker.active() {
+			return m, nil
+		}
 		if !m.selection.active {
 			return m, nil
 		}
@@ -273,12 +315,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return copySelectionMsg{text: text} }
 
 	case tea.MouseWheelMsg:
+		if m.resumePicker.active() {
+			delta := 0
+			switch msg.Button {
+			case tea.MouseWheelUp:
+				delta = -3
+			case tea.MouseWheelDown:
+				delta = 3
+			}
+			m.resumePicker.move(delta)
+			m.rebuild()
+			if delta > 0 {
+				return m, m.loadMoreResumeSessionsIfNeeded()
+			}
+			return m, nil
+		}
 		m.selection = textSelection{}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
 
 	case tea.PasteMsg:
+		if m.resumePicker.active() {
+			if m.resumePicker.stage == sessionPickerList {
+				m.resumePicker.appendQuery(msg.Content)
+				m.rebuild()
+			}
+			return m, m.continueResumeSearchIfNeeded()
+		}
 		if m.turnActive || m.compactActive || m.loading || m.modelPicker.active() {
 			return m, nil
 		}
@@ -324,6 +388,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuild()
 		return m, nil
 
+	case sessionPageLoadedMsg:
+		if !m.resumePicker.active() || msg.generation != m.resumePicker.generation {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.resumePicker.pageLoading = false
+			m.resumePicker.err = "Failed to load sessions: " + msg.err.Error()
+			m.rebuild()
+			return m, nil
+		} else {
+			m.resumePicker.appendPage(msg.page)
+		}
+		m.rebuild()
+		return m, m.continueResumeSearchIfNeeded()
+
+	case resumedSessionLoadedMsg:
+		if !m.resumePicker.active() || msg.generation != m.resumePicker.generation {
+			return m, nil
+		}
+		if msg.err != nil {
+			direct := m.resumePicker.direct
+			m.resumePicker.failLoad(msg.err)
+			if direct {
+				m.messages = append(m.messages, newNoticeMessage("Resume failed: "+msg.err.Error(), true))
+				m.input.Focus()
+			}
+			m.rebuild()
+			return m, nil
+		}
+		if !m.resumePicker.sameCWD(msg.session.info.CWD) {
+			m.resumePicker.confirm(msg.session)
+			m.rebuild()
+			return m, nil
+		}
+		cmd := m.applyResumedSession(msg.session)
+		m.rebuild()
+		return m, cmd
+
 	case modelStatusLoadedMsg:
 		m.models = msg.models
 		m.modelValue = msg.modelValue
@@ -335,6 +437,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case skillSummariesLoadedMsg:
+		if msg.cwd != m.cwd {
+			return m, nil
+		}
 		if msg.err == nil {
 			m.slashPopup.setSkills(msg.summaries)
 			m.slashPopup.sync(m.input.Value())
@@ -352,6 +457,153 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// handleResumePickerKey routes keys while the session picker owns the screen.
+func (m Model) handleResumePickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	loadAfterNavigation := false
+	continueSearch := false
+	switch key {
+	case "ctrl+c":
+		return m, nil
+	case "esc":
+		m.resumePicker.close()
+		m.input.Focus()
+		m.rebuild()
+		return m, nil
+	case "enter":
+		switch m.resumePicker.stage {
+		case sessionPickerList:
+			candidate, ok := m.resumePicker.selectedSession()
+			if !ok {
+				return m, nil
+			}
+			m.resumePicker.startSessionLoad()
+			m.rebuild()
+			return m, loadResumedSession(m.ctx, m.rt, candidate.ID, m.resumePicker.generation)
+		case sessionPickerConfirm:
+			if m.resumePicker.pending == nil {
+				return m, nil
+			}
+			cmd := m.applyResumedSession(*m.resumePicker.pending)
+			m.rebuild()
+			return m, cmd
+		}
+		return m, nil
+	case "left", "right":
+		if m.resumePicker.stage != sessionPickerList {
+			return m, nil
+		}
+		scope := sessionPickerCWD
+		if key == "right" {
+			scope = sessionPickerAll
+		}
+		generation, changed := m.resumePicker.setScope(scope)
+		if !changed {
+			return m, nil
+		}
+		m.rebuild()
+		return m, loadSessionPage(m.ctx, m.rt, m.cwd, m.resumePicker.scope, "", generation)
+	case "up":
+		m.resumePicker.move(-1)
+	case "down":
+		m.resumePicker.move(1)
+		loadAfterNavigation = true
+	case "pgup":
+		m.resumePicker.move(-max((m.height-4)/3, 1))
+	case "pgdown":
+		m.resumePicker.move(max((m.height-4)/3, 1))
+		loadAfterNavigation = true
+	case "home":
+		m.resumePicker.selectFirst()
+	case "end":
+		m.resumePicker.selectLast()
+		loadAfterNavigation = true
+	case "backspace":
+		if m.resumePicker.stage == sessionPickerList {
+			m.resumePicker.deleteQueryRune()
+			continueSearch = true
+		}
+	default:
+		if m.resumePicker.stage == sessionPickerList && msg.Text != "" {
+			m.resumePicker.appendQuery(msg.Text)
+			continueSearch = true
+		}
+	}
+	m.rebuild()
+	if loadAfterNavigation {
+		return m, m.loadMoreResumeSessionsIfNeeded()
+	}
+	if continueSearch {
+		return m, m.continueResumeSearchIfNeeded()
+	}
+	return m, nil
+}
+
+func (m *Model) loadMoreResumeSessionsIfNeeded() tea.Cmd {
+	if !m.resumePicker.shouldLoadMore() {
+		return nil
+	}
+	return m.loadNextResumePage()
+}
+
+func (m *Model) continueResumeSearchIfNeeded() tea.Cmd {
+	picker := &m.resumePicker
+	if picker.stage != sessionPickerList || picker.query == "" || len(picker.matches) > 0 || picker.pageLoading || picker.nextCursor == "" {
+		return nil
+	}
+	return m.loadNextResumePage()
+}
+
+func (m *Model) loadNextResumePage() tea.Cmd {
+	m.resumePicker.markPageLoading()
+	return loadSessionPage(
+		m.ctx,
+		m.rt,
+		m.cwd,
+		m.resumePicker.scope,
+		m.resumePicker.nextCursor,
+		m.resumePicker.generation,
+	)
+}
+
+// applyResumedSession replaces conversation state only after loading and directory validation.
+func (m *Model) applyResumedSession(resumed resumedSession) tea.Cmd {
+	if !m.resumePicker.sameCWD(resumed.info.CWD) {
+		if err := validateResumeCWD(resumed.info.CWD); err != nil {
+			m.resumePicker.err = err.Error()
+			return nil
+		}
+	}
+
+	m.sessionID = resumed.info.ID
+	m.cwd = filepath.Clean(resumed.info.CWD)
+	m.messages = messagesFromTranscript(resumed.messages)
+	m.contextTokens = resumed.contextTokens
+	m.current = nil
+	m.selection = textSelection{}
+	m.input.Reset()
+	m.input.Focus()
+	m.resumePicker.close()
+	m.slashPopup.setSkills(nil)
+	m.rebuild()
+	m.viewport.GotoBottom()
+	return loadSkillSummaries(m.ctx, m.rt, m.cwd)
+}
+
+func validateResumeCWD(cwd string) error {
+	if strings.TrimSpace(cwd) == "" {
+		return fmt.Errorf("saved working directory is empty")
+	}
+	info, err := os.Stat(cwd)
+	if err != nil {
+		return fmt.Errorf("saved working directory is unavailable: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("saved working directory is not a directory: %s", cwd)
+	}
+	return nil
 }
 
 // submitTurn starts a RunTurn goroutine with an Observer that writes to a channel.
@@ -563,6 +815,17 @@ func (m *Model) handleCompactDone(msg compactDoneMsg) {
 func (m Model) View() tea.View {
 	if !m.ready {
 		return tea.NewView("")
+	}
+	if m.resumePicker.active() {
+		rendered := m.resumePicker.render(m.width, m.height)
+		v := tea.NewView(rendered.content)
+		if rendered.showCursor {
+			v.Cursor = tea.NewCursor(rendered.cursorX, rendered.cursorY)
+			v.Cursor.Shape = tea.CursorBar
+		}
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	vpView := m.selection.render(m.viewport.View(), selectionStyle)
@@ -867,6 +1130,28 @@ func loadModelStatus(ctx context.Context, rt *runtime.Runtime) tea.Cmd {
 func loadSkillSummaries(ctx context.Context, rt *runtime.Runtime, cwd string) tea.Cmd {
 	return func() tea.Msg {
 		summaries, err := rt.SkillSummaries(ctx, cwd)
-		return skillSummariesLoadedMsg{summaries: summaries, err: err}
+		return skillSummariesLoadedMsg{cwd: cwd, summaries: summaries, err: err}
+	}
+}
+
+// loadResumedSession retrieves metadata and transcript as one atomic picker result.
+func loadResumedSession(ctx context.Context, rt *runtime.Runtime, sessionID string, generation uint64) tea.Cmd {
+	return func() tea.Msg {
+		info, transcript, err := rt.ShowSession(ctx, sessionID)
+		if err != nil {
+			return resumedSessionLoadedMsg{generation: generation, err: err}
+		}
+		return resumedSessionLoadedMsg{
+			generation: generation,
+			session: resumedSession{
+				info:     info,
+				messages: transcript.Messages(),
+				contextTokens: usageTokens(model.Usage{
+					InputTokens:  info.LastInputTokens,
+					OutputTokens: info.LastOutputTokens,
+					TotalTokens:  info.LastTotalTokens,
+				}),
+			},
+		}
 	}
 }

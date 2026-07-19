@@ -18,12 +18,15 @@ atlas --session <id>
 - 没有激活命令候选项时，`Enter` 发送当前输入。
 - 在输入开头键入 `/` 可查看支持的命令和当前可用的 skills；使用方向键选择候选项，再按 `Tab` 或 `Enter` 补全。
 - 输入 `/model` 选择已配置的模型及其思考深度；使用方向键和 `Enter` 选择。
+- 输入 `/resume` 选择已保存的 session。直接输入文本可按标题、ID 或工作目录搜索；使用左右方向键切换当前目录与全部 session，再按 `Enter` 恢复。`/resume <session-id>` 可按精确 ID 直接恢复。
 - 输入 `/compact [instruction]` 总结早期上下文并保留最近消息；可选指令用于指定压缩时需要重点保留的内容。
 - 输入 `/quit` 退出 TUI。
 - `Page Up`、`Page Down` 和鼠标滚轮用于滚动对话历史。
 - 在对话文本上拖动鼠标即可选择并复制到剪贴板。
-- `Esc` 中断正在执行的 turn 或手动压缩；空闲时不起作用。
+- `Esc` 中断正在执行的 turn 或手动压缩；在 Resume 选择器中用于返回当前会话，其他空闲状态下不起作用。
 - `Ctrl+C` 不起作用。
+
+Resume 选择器默认列出保存在当前工作目录下的 session，也可切换到全部 session。恢复其他目录下的 session 时需要确认；确认后，后续 instructions、skills 和工具会使用该 session 保存的工作目录。由于 session 不持久化模型设置，当前 TUI 选择的模型和思考深度会保持不变。
 
 TUI 启动时使用 `default_model` 和 `reasoning_efforts` 中的第一项。通过 `/model` 做出的选择会应用于当前 TUI 进程中的后续 turn，但不会改写配置文件，也不会跨重启保存。手动压缩会保留完整 transcript，只改写后续 turn 使用的已保存上下文摘要；压缩命令和结果提示不会作为对话消息持久化。输入 `/think plan this change` 之类的可用 skill 命令时，TUI 会只为当前 turn 注入对应 skill，并在 transcript 中保留原始输入。TUI 暂不支持图片输入。
 

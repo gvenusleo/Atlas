@@ -90,6 +90,7 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	popup := newSlashPopup()
 	popup.setSkills([]runtime.SkillSummary{
 		{Name: modelCommandName, Description: "shadow built-in"},
+		{Name: resumeCommandName, Description: "shadow built-in"},
 		{Name: "compact", Description: "shadow built-in"},
 		{Name: "quit", Description: "shadow built-in"},
 		{Name: "browser:control", Description: "invalid command name"},
@@ -98,13 +99,13 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	popup.sync("/")
 
 	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows))
-	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/compact") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
+	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/resume") != 1 || strings.Count(rendered, "/compact") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
 		t.Fatalf("popup catalog = %q", rendered)
 	}
 }
 
 func TestSelectedSkillNamesMatchesSlashTokens(t *testing.T) {
-	got := selectedSkillNames("/think review this with /hunt /think /compact /quit and /invalid:name")
+	got := selectedSkillNames("/think review this with /hunt /think /resume /compact /quit and /invalid:name")
 	want := []string{"think", "hunt"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("selectedSkillNames() = %v, want %v", got, want)
@@ -144,17 +145,17 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 		{Name: "long-command", Description: "Long description"},
 	})
 	popup.sync("/")
-	popup.move(1)
+	popup.move(5)
 
-	rawLines := strings.Split(popup.render(80, maxSlashPopupRows), "\n")
+	rawLines := strings.Split(popup.render(80, 6), "\n")
 	lines := make([]string, len(rawLines))
 	for index, line := range rawLines {
 		lines[index] = ansi.Strip(line)
 	}
-	if len(lines) != 5 {
+	if len(lines) != 6 {
 		t.Fatalf("popup lines = %q", lines)
 	}
-	descriptions := []string{"Choose a model", "Compact earlier context", "Quit Atlas", "[Skill] Short description", "[Skill] Long description"}
+	descriptions := []string{"Choose a model", "Resume a saved session", "Compact earlier context", "Quit Atlas", "[Skill] Short description", "[Skill] Long description"}
 	descriptionColumn := -1
 	for index, description := range descriptions {
 		column := ansi.StringWidth(lines[index][:strings.Index(lines[index], description)])
@@ -164,16 +165,37 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 			t.Fatalf("description columns = %d and %d: %q", descriptionColumn, column, lines)
 		}
 	}
-	if rawLines[1] != userStyle.Render(lines[1]) {
-		t.Fatalf("selected row does not use one foreground style: %q", rawLines[1])
+	if rawLines[5] != userStyle.Render(lines[5]) {
+		t.Fatalf("selected row does not use one foreground style: %q", rawLines[5])
 	}
-	if !strings.Contains(rawLines[4], subtleStyle.Render("[Skill] Long description")) {
+	if !strings.Contains(rawLines[4], subtleStyle.Render("[Skill] Short description")) {
 		t.Fatalf("unselected description does not use subtle style: %q", rawLines[4])
 	}
-	if strings.Contains(lines[0], "[Skill]") || strings.Contains(lines[1], "[Skill]") || strings.Contains(lines[2], "[Skill]") {
-		t.Fatalf("built-in command is labeled as a skill: %q", lines[:3])
+	for _, line := range lines[:4] {
+		if strings.Contains(line, "[Skill]") {
+			t.Fatalf("built-in command is labeled as a skill: %q", lines[:4])
+		}
 	}
 	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
 		t.Fatal("selected slash style has a background color")
+	}
+}
+
+func TestResumeCommandSessionID(t *testing.T) {
+	tests := []struct {
+		input string
+		id    string
+		ok    bool
+	}{
+		{input: "/resume", ok: true},
+		{input: "/resume work", id: "work", ok: true},
+		{input: "/resume\nwork", id: "work", ok: true},
+		{input: "/resumed"},
+	}
+	for _, test := range tests {
+		id, ok := resumeCommandSessionID(test.input)
+		if id != test.id || ok != test.ok {
+			t.Fatalf("resumeCommandSessionID(%q) = %q, %t; want %q, %t", test.input, id, ok, test.id, test.ok)
+		}
 	}
 }

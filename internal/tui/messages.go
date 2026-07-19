@@ -54,6 +54,7 @@ type modelStatusLoadedMsg struct {
 
 // skillSummariesLoadedMsg contains skills available as TUI slash commands.
 type skillSummariesLoadedMsg struct {
+	cwd       string
 	summaries []runtime.SkillSummary
 	err       error
 }
