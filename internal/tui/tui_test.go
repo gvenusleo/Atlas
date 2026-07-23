@@ -441,7 +441,7 @@ func TestEnterCompletesSelectedSlashCommandWithoutSubmitting(t *testing.T) {
 	}
 }
 
-func TestEscapeDoesNotDismissSlashPopup(t *testing.T) {
+func TestEscapeDismissesSlashPopup(t *testing.T) {
 	m := New(Options{})
 	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	m = updated.(Model)
@@ -451,8 +451,14 @@ func TestEscapeDoesNotDismissSlashPopup(t *testing.T) {
 
 	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = updated.(Model)
-	if cmd != nil || !m.slashPopup.active() || m.input.Value() != "/" {
+	if cmd != nil || m.slashPopup.active() || m.input.Value() != "/" {
 		t.Fatalf("dismiss state: active=%t value=%q cmd=%v", m.slashPopup.active(), m.input.Value(), cmd)
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	m = updated.(Model)
+	if !m.slashPopup.active() || m.input.Value() != "/m" {
+		t.Fatalf("reopen state: active=%t value=%q", m.slashPopup.active(), m.input.Value())
 	}
 }
 
@@ -632,21 +638,22 @@ func TestModelPickerUpdatesFooterState(t *testing.T) {
 	}
 }
 
-func TestEscapeAndCtrlCDoNotCloseModelPicker(t *testing.T) {
+func TestEscapeClosesModelPickerAndCtrlCDoesNothing(t *testing.T) {
 	m := New(Options{})
 	m.models = pickerTestModels()
 	m.modelValue = m.models[0].Value
 	m.openModelPicker()
 
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m = updated.(Model)
-	if cmd != nil || !m.modelPicker.active() || m.input.Focused() {
-		t.Fatalf("escape picker state: cmd=%v active=%t focused=%t", cmd, m.modelPicker.active(), m.input.Focused())
-	}
-	updated, cmd = m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	m = updated.(Model)
 	if cmd != nil || !m.modelPicker.active() || m.input.Focused() {
 		t.Fatalf("ctrl+c picker state: cmd=%v active=%t focused=%t", cmd, m.modelPicker.active(), m.input.Focused())
+	}
+
+	updated, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = updated.(Model)
+	if cmd != nil || m.modelPicker.active() || !m.input.Focused() {
+		t.Fatalf("escape picker state: cmd=%v active=%t focused=%t", cmd, m.modelPicker.active(), m.input.Focused())
 	}
 }
 

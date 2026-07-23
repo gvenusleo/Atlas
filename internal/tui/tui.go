@@ -186,7 +186,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, nil
 		case "esc":
-			if m.turnActive && m.turnCancel != nil {
+			if m.modelPicker.active() {
+				m.modelPicker.close()
+				m.input.Focus()
+				m.rebuild()
+			} else if m.slashPopup.active() {
+				m.slashPopup.dismiss(m.input.Value())
+				m.rebuild()
+			} else if m.turnActive && m.turnCancel != nil {
 				m.turnCancel()
 			} else if m.compactActive && m.compactCancel != nil {
 				m.compactCancel()
