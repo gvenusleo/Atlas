@@ -407,6 +407,12 @@ func TestSlashPopupCompletesSelectedSkill(t *testing.T) {
 	if inputArea.height != 3 || inputArea.cursorRow != 2 {
 		t.Fatalf("input area layout = height:%d cursorRow:%d", inputArea.height, inputArea.cursorRow)
 	}
+	expected := composerStyle(m.hasDarkBackground, m.terminalBackground).
+		Width(m.width).
+		Render(inputArea.content)
+	if !strings.Contains(m.View().Content, expected) {
+		t.Fatal("slash popup is rendered outside the composer background")
+	}
 	for line := range strings.SplitSeq(rendered, "\n") {
 		if width := ansi.StringWidth(line); width > m.width-1 {
 			t.Fatalf("input area line width = %d, want at most %d: %q", width, m.width-1, line)

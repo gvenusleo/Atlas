@@ -68,6 +68,7 @@ type Model struct {
 	modelPicker     modelPicker
 	resumePicker    sessionPicker
 	slashPopup      slashPopup
+	filePicker      fileMentionPicker
 
 	// Turn state.
 	turnActive  bool
@@ -175,6 +176,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.resumePicker.active() {
 			return m.handleResumePickerKey(msg)
 		}
+		if m.filePicker.browsing() {
+			return m.handleFileBrowserKey(msg)
+		}
+		if handled, cmd := m.handleFileMentionKey(msg); handled {
+			return m, cmd
+		}
 		switch key {
 		case "ctrl+c":
 			return m, nil
@@ -233,6 +240,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if sessionID, ok := resumeCommandSessionID(text); ok {
 				m.input.Reset()
 				m.slashPopup.sync("")
+				m.filePicker.reset()
 				if sessionID != "" {
 					if err := session.ValidateID(sessionID); err != nil {
 						m.messages = append(m.messages, newNoticeMessage("Resume failed: "+err.Error(), true))
@@ -259,6 +267,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if instruction, ok := compactCommandInstruction(text); ok {
 				m.input.Reset()
 				m.slashPopup.sync("")
+				m.filePicker.reset()
 				return m.submitCompaction(instruction)
 			}
 			if text == "/model" {
@@ -267,22 +276,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.input.Reset()
 				m.slashPopup.sync("")
+				m.filePicker.reset()
 				m.openModelPicker()
 				return m, nil
 			}
 			m.input.Reset()
 			m.slashPopup.sync("")
+			m.filePicker.reset()
 			return m.submitTurn(text)
 		}
 		// Forward all other keypresses to the textarea.
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.slashPopup.sync(m.input.Value())
+		fileCmd := m.syncFileMention()
 		m.rebuild()
-		return m, cmd
+		return m, tea.Batch(cmd, fileCmd)
 
 	case tea.MouseClickMsg:
-		if m.resumePicker.active() {
+		if m.resumePicker.active() || m.filePicker.browsing() {
 			return m, nil
 		}
 		if msg.Button == tea.MouseLeft && msg.Y >= 0 && msg.Y < m.viewport.Height() {
@@ -291,7 +303,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMotionMsg:
-		if m.resumePicker.active() {
+		if m.resumePicker.active() || m.filePicker.browsing() {
 			return m, nil
 		}
 		if m.selection.active {
@@ -300,7 +312,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseReleaseMsg:
-		if m.resumePicker.active() {
+		if m.resumePicker.active() || m.filePicker.browsing() {
 			return m, nil
 		}
 		if !m.selection.active {
@@ -330,6 +342,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.filePicker.browsing() {
+			return m, nil
+		}
 		m.selection = textSelection{}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -343,14 +358,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.continueResumeSearchIfNeeded()
 		}
+		if m.filePicker.browsing() {
+			return m, nil
+		}
 		if m.turnActive || m.compactActive || m.loading || m.modelPicker.active() {
 			return m, nil
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.slashPopup.sync(m.input.Value())
+		fileCmd := m.syncFileMention()
 		m.rebuild()
-		return m, cmd
+		return m, tea.Batch(cmd, fileCmd)
 
 	case copySelectionMsg:
 		m.clearSelection(true)
@@ -426,6 +445,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuild()
 		return m, cmd
 
+	case fileCatalogLoadedMsg:
+		if m.filePicker.acceptCatalog(msg) {
+			m.rebuild()
+		}
+		return m, nil
+
 	case modelStatusLoadedMsg:
 		m.models = msg.models
 		m.modelValue = msg.modelValue
@@ -453,6 +478,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case cursor.BlinkMsg:
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
+	if m.filePicker.browsing() {
+		cmd, path, selected := m.filePicker.updateBrowser(msg)
+		if selected {
+			m.input.Focus()
+			m.insertSelectedFile(path)
+		}
+		m.rebuild()
 		return m, cmd
 	}
 
@@ -587,6 +622,7 @@ func (m *Model) applyResumedSession(resumed resumedSession) tea.Cmd {
 	m.input.Focus()
 	m.resumePicker.close()
 	m.slashPopup.setSkills(nil)
+	m.filePicker.reset()
 	m.rebuild()
 	m.viewport.GotoBottom()
 	return loadSkillSummaries(m.ctx, m.rt, m.cwd)
@@ -856,7 +892,7 @@ func (m Model) View() tea.View {
 	v := tea.NewView(strings.Join(parts, "\n"))
 
 	c := m.input.Cursor()
-	if m.modelPicker.active() {
+	if m.modelPicker.active() || m.filePicker.browsing() {
 		c = nil
 	}
 	if c != nil {
@@ -946,7 +982,14 @@ func (m Model) renderInputArea() composerRender {
 	}
 	composer := m.renderComposer()
 	popupRows := min(maxSlashPopupRows, max(m.height-composer.height-3, 0))
-	popup := m.slashPopup.render(max(m.width-1, 1), popupRows)
+	popup := m.filePicker.render(
+		max(m.width-1, 1),
+		popupRows,
+		userMessageBackground(m.hasDarkBackground, m.terminalBackground),
+	)
+	if popup == "" {
+		popup = m.slashPopup.render(max(m.width-1, 1), popupRows)
+	}
 	if popup == "" {
 		return composer
 	}
