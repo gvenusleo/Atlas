@@ -100,7 +100,7 @@ func New(opts Options) Model {
 	ta.DynamicHeight = true
 	ta.MinHeight = 1
 	ta.MaxHeight = maxComposerHeight
-	ta.KeyMap.InsertNewline.SetEnabled(false)
+	ta.KeyMap.InsertNewline.SetKeys("shift+enter", "ctrl+j")
 
 	s := ta.Styles()
 	s.Focused.CursorLine = lipgloss.NewStyle()

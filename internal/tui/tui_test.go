@@ -335,6 +335,51 @@ func TestComposerDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
 	assertWordsShareVisualLine(t, ansi.Strip(m.renderComposer().content), "我是", "Atlas")
 }
 
+func TestComposerNewlineKeysInsertLineBreakWithoutSubmitting(t *testing.T) {
+	tests := []struct {
+		name string
+		key  tea.KeyPressMsg
+	}{
+		{name: "shift enter", key: tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}},
+		{name: "ctrl j", key: tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m := New(Options{})
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+			m = updated.(Model)
+			m.input.SetValue("first")
+			m.input.MoveToEnd()
+
+			updated, _ = m.Update(test.key)
+			m = updated.(Model)
+			if got := m.input.Value(); got != "first\n" {
+				t.Fatalf("input value = %q, want %q", got, "first\n")
+			}
+			if len(m.messages) != 0 || m.turnActive {
+				t.Fatalf("newline submitted input: messages=%d active=%t", len(m.messages), m.turnActive)
+			}
+			if got := m.renderComposer().height; got != 2 {
+				t.Fatalf("composer height = %d, want 2", got)
+			}
+		})
+	}
+}
+
+func TestEnterSubmitsMultilineInput(t *testing.T) {
+	m := New(Options{})
+	m.input.SetValue("first\nsecond")
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd == nil || len(m.messages) != 2 || !m.turnActive {
+		t.Fatalf("submit state: cmd=%v messages=%d active=%t", cmd, len(m.messages), m.turnActive)
+	}
+	if got := m.messages[0].content.String(); got != "first\nsecond" {
+		t.Fatalf("submitted message = %q", got)
+	}
+}
+
 func TestSlashPopupCompletesSelectedSkill(t *testing.T) {
 	m := New(Options{})
 	updated, _ := m.Update(skillSummariesLoadedMsg{summaries: []runtime.SkillSummary{

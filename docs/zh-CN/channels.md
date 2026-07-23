@@ -16,6 +16,7 @@ atlas --session <id>
 按键：
 
 - 没有激活命令候选项时，`Enter` 发送当前输入。
+- `Shift+Enter` 插入换行；如果终端无法区分 `Shift+Enter` 和 `Enter`，可使用 `Ctrl+J`。
 - 在输入开头键入 `/` 可查看支持的命令和当前可用的 skills；使用方向键选择候选项，再按 `Tab` 或 `Enter` 补全。
 - 输入 `/model` 选择已配置的模型及其思考深度；使用方向键和 `Enter` 选择。
 - 输入 `/resume` 选择已保存的 session。直接输入文本可按标题、ID 或工作目录搜索；使用左右方向键切换当前目录与全部 session，再按 `Enter` 恢复。`/resume <session-id>` 可按精确 ID 直接恢复。
