@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/textarea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/runtime"
 )
@@ -15,7 +16,7 @@ func TestSlashPopupFiltersSkillsByPrefix(t *testing.T) {
 		{Name: "hunt", Description: "Find root causes"},
 		{Name: "think", Description: "Plan work"},
 	})
-	popup.sync("/th")
+	syncSlashPopupValue(&popup, "/th")
 
 	command, ok := popup.selectedCommand()
 	if !ok || command.name != "think" {
@@ -35,7 +36,7 @@ func TestSlashPopupRanksExactPrefixSubstringAndFuzzyMatches(t *testing.T) {
 		{Name: "commit-helper", Description: "Prefix match"},
 		{Name: "commit", Description: "Exact match"},
 	})
-	popup.sync("/CoMmIt")
+	syncSlashPopupValue(&popup, "/CoMmIt")
 
 	var names []string
 	for _, command := range popup.matches {
@@ -54,13 +55,13 @@ func TestSlashPopupMatchesOrderedCharactersOutsidePrefix(t *testing.T) {
 		{Name: "find-skills", Description: "Discover skills"},
 	})
 
-	popup.sync("/gc")
+	syncSlashPopupValue(&popup, "/gc")
 	command, ok := popup.selectedCommand()
 	if !ok || command.name != "git-commit" {
 		t.Fatalf("selected command = %+v, %t", command, ok)
 	}
 
-	popup.sync("/fs")
+	syncSlashPopupValue(&popup, "/fs")
 	command, ok = popup.selectedCommand()
 	if !ok || command.name != "find-skills" {
 		t.Fatalf("selected command = %+v, %t", command, ok)
@@ -73,14 +74,14 @@ func TestSlashPopupResetsSelectionWhenQueryChanges(t *testing.T) {
 		{Name: "hunt", Description: "Find root causes"},
 		{Name: "think", Description: "Plan work"},
 	})
-	popup.sync("/")
+	syncSlashPopupValue(&popup, "/")
 	popup.move(2)
-	popup.sync("/")
+	syncSlashPopupValue(&popup, "/")
 	if popup.selected != 2 {
 		t.Fatalf("selection after unchanged query = %d, want 2", popup.selected)
 	}
 
-	popup.sync("/th")
+	syncSlashPopupValue(&popup, "/th")
 	if popup.selected != 0 {
 		t.Fatalf("selection after changed query = %d, want 0", popup.selected)
 	}
@@ -96,7 +97,7 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 		{Name: "browser:control", Description: "invalid command name"},
 		{Name: "valid-skill", Description: "valid command name"},
 	})
-	popup.sync("/")
+	syncSlashPopupValue(&popup, "/")
 
 	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows))
 	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/resume") != 1 || strings.Count(rendered, "/compact") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
@@ -114,10 +115,10 @@ func TestSelectedSkillNamesMatchesSlashTokens(t *testing.T) {
 
 func TestSlashPopupReopensAfterDismissedDraftChanges(t *testing.T) {
 	popup := newSlashPopup()
-	popup.sync("/")
+	syncSlashPopupValue(&popup, "/")
 	popup.dismiss("/")
-	popup.sync("")
-	popup.sync("/")
+	syncSlashPopupValue(&popup, "")
+	syncSlashPopupValue(&popup, "/")
 
 	if !popup.active() {
 		t.Fatal("popup did not reopen after the draft changed")
@@ -130,7 +131,7 @@ func TestSlashPopupDescriptionStaysOnOneLine(t *testing.T) {
 		Name:        "think",
 		Description: "Plan\n\x1b[31mwork\x1b[0m",
 	}})
-	popup.sync("/think")
+	syncSlashPopupValue(&popup, "/think")
 
 	rendered := ansi.Strip(popup.render(40, maxSlashPopupRows))
 	if strings.Contains(rendered, "\n") || !strings.Contains(rendered, "Plan work") {
@@ -144,7 +145,7 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 		{Name: "short", Description: "Short description"},
 		{Name: "long-command", Description: "Long description"},
 	})
-	popup.sync("/")
+	syncSlashPopupValue(&popup, "/")
 	popup.move(5)
 
 	rawLines := strings.Split(popup.render(80, 6), "\n")
@@ -179,6 +180,66 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
 		t.Fatal("selected slash style has a background color")
 	}
+}
+
+func TestInlineSlashPopupShowsOnlySkills(t *testing.T) {
+	popup := newSlashPopup()
+	popup.setSkills([]runtime.SkillSummary{
+		{Name: "hunt", Description: "Find root causes"},
+		{Name: "think", Description: "Plan work"},
+	})
+	input := textarea.New()
+	input.SetValue("review with /th please")
+	input.MoveToEnd()
+	input.SetCursorColumn(len("review with /th"))
+	popup.sync(input)
+
+	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows))
+	if !strings.Contains(rendered, "/think") || strings.Contains(rendered, "/model") || strings.Contains(rendered, "/resume") || strings.Contains(rendered, "/compact") || strings.Contains(rendered, "/quit") {
+		t.Fatalf("inline popup = %q", rendered)
+	}
+	if !popup.target.skillsOnly {
+		t.Fatal("inline popup did not enter skills-only mode")
+	}
+}
+
+func TestSlashPopupIgnoresEmbeddedSlash(t *testing.T) {
+	for _, value := range []string{"https://example.com", "path/to/file", "word/"} {
+		popup := newSlashPopup()
+		syncSlashPopupValue(&popup, value)
+		if popup.active() {
+			t.Fatalf("popup opened for %q", value)
+		}
+	}
+}
+
+func TestReplaceSlashCompletionPreservesMultilineDraft(t *testing.T) {
+	input := textarea.New()
+	_ = input.Focus()
+	input.SetValue("first line\nreview /th please")
+	input.MoveToEnd()
+	input.SetCursorColumn(len("review /th"))
+	target, ok := currentSlashCompletionTarget(input)
+	if !ok || !target.skillsOnly {
+		t.Fatalf("target = %#v, %t", target, ok)
+	}
+
+	if !replaceSlashCompletion(&input, target, "think") {
+		t.Fatal("replaceSlashCompletion() = false")
+	}
+	if got := input.Value(); got != "first line\nreview /think please" {
+		t.Fatalf("input value = %q", got)
+	}
+	if got := input.Column(); got != len("review /think ") {
+		t.Fatalf("cursor column = %d", got)
+	}
+}
+
+func syncSlashPopupValue(popup *slashPopup, value string) {
+	input := textarea.New()
+	input.SetValue(value)
+	input.MoveToEnd()
+	popup.sync(input)
 }
 
 func TestResumeCommandSessionID(t *testing.T) {

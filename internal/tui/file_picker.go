@@ -677,6 +677,6 @@ func (m *Model) insertSelectedFile(path string) {
 	target := m.filePicker.target
 	if replaceFileMention(&m.input, target, path) {
 		m.filePicker.reset()
-		m.slashPopup.sync(m.input.Value())
+		m.slashPopup.sync(m.input)
 	}
 }

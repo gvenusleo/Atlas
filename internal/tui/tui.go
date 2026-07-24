@@ -222,9 +222,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "tab", "enter":
 				if command, ok := m.slashPopup.selectedCommand(); ok {
-					m.input.SetValue("/" + command.name + " ")
-					m.slashPopup.dismiss(m.input.Value())
-					m.rebuild()
+					if replaceSlashCompletion(&m.input, m.slashPopup.target, command.name) {
+						m.slashPopup.dismiss(m.input.Value())
+						m.rebuild()
+					}
 				}
 				return m, nil
 			}
@@ -246,7 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if sessionID, ok := resumeCommandSessionID(text); ok {
 				m.input.Reset()
-				m.slashPopup.sync("")
+				m.slashPopup.sync(m.input)
 				m.filePicker.reset()
 				if sessionID != "" {
 					if err := session.ValidateID(sessionID); err != nil {
@@ -273,7 +274,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if instruction, ok := compactCommandInstruction(text); ok {
 				m.input.Reset()
-				m.slashPopup.sync("")
+				m.slashPopup.sync(m.input)
 				m.filePicker.reset()
 				return m.submitCompaction(instruction)
 			}
@@ -282,20 +283,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.input.Reset()
-				m.slashPopup.sync("")
+				m.slashPopup.sync(m.input)
 				m.filePicker.reset()
 				m.openModelPicker()
 				return m, nil
 			}
 			m.input.Reset()
-			m.slashPopup.sync("")
+			m.slashPopup.sync(m.input)
 			m.filePicker.reset()
 			return m.submitTurn(text)
 		}
 		// Forward all other keypresses to the textarea.
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
-		m.slashPopup.sync(m.input.Value())
+		m.slashPopup.sync(m.input)
 		fileCmd := m.syncFileMention()
 		m.rebuild()
 		return m, tea.Batch(cmd, fileCmd)
@@ -373,7 +374,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
-		m.slashPopup.sync(m.input.Value())
+		m.slashPopup.sync(m.input)
 		fileCmd := m.syncFileMention()
 		m.rebuild()
 		return m, tea.Batch(cmd, fileCmd)
@@ -474,7 +475,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			m.slashPopup.setSkills(msg.summaries)
-			m.slashPopup.sync(m.input.Value())
+			m.slashPopup.sync(m.input)
 		}
 		m.rebuild()
 		return m, nil

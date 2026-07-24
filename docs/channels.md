@@ -17,7 +17,7 @@ Controls:
 
 - `Enter` sends the current input when no command suggestion is active.
 - `Shift+Enter` inserts a line break. Use `Ctrl+J` as a fallback in terminals that cannot distinguish `Shift+Enter` from `Enter`.
-- Type `/` at the start of the input to see supported commands and available skills. Use the arrow keys to choose a suggestion, then `Tab` or `Enter` to complete it; `Esc` dismisses the suggestions without changing the draft.
+- Type `/` at the start of the input to see supported commands and available skills. Within an existing draft, type `/` at a whitespace boundary to see skill-only suggestions. Use the arrow keys to choose a suggestion, then `Tab` or `Enter` to complete it; `Esc` dismisses the suggestions without changing the draft.
 - Type `@` at a token boundary to browse files under the current working directory, or continue typing to fuzzy-search file paths. Use the arrow keys to choose a match, then press `Tab` or `Enter` to insert its relative path; `Esc` dismisses the picker.
 - Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select; `Esc` closes the picker without changing the current model.
 - Enter `/resume` to choose a saved session. Type to search by title, ID, or working directory; use the left and right arrows to switch between the current directory and all sessions, then press `Enter` to resume. `/resume <session-id>` resumes an exact ID directly.

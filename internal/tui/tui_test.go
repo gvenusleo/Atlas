@@ -426,6 +426,50 @@ func TestSlashPopupCompletesSelectedSkill(t *testing.T) {
 	}
 }
 
+func TestInlineSlashPopupCompletesSkillWithoutSubmitting(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(skillSummariesLoadedMsg{summaries: []runtime.SkillSummary{
+		{Name: "think", Description: "Plan work"},
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.PasteMsg{Content: "review /th"})
+	m = updated.(Model)
+	if !m.slashPopup.active() {
+		t.Fatal("inline slash popup did not open")
+	}
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd != nil || m.input.Value() != "review /think " || m.slashPopup.active() || len(m.messages) != 0 {
+		t.Fatalf("completion state: value=%q active=%t messages=%d cmd=%v", m.input.Value(), m.slashPopup.active(), len(m.messages), cmd)
+	}
+}
+
+func TestEscapeDismissesInlineSlashPopupUntilDraftChanges(t *testing.T) {
+	m := New(Options{})
+	updated, _ := m.Update(skillSummariesLoadedMsg{summaries: []runtime.SkillSummary{
+		{Name: "think", Description: "Plan work"},
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.PasteMsg{Content: "review /"})
+	m = updated.(Model)
+	if !m.slashPopup.active() {
+		t.Fatal("inline slash popup did not open")
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = updated.(Model)
+	if m.slashPopup.active() || m.input.Value() != "review /" {
+		t.Fatalf("dismissed state: value=%q active=%t", m.input.Value(), m.slashPopup.active())
+	}
+
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
+	m = updated.(Model)
+	if !m.slashPopup.active() || m.input.Value() != "review /t" {
+		t.Fatalf("reopened state: value=%q active=%t", m.input.Value(), m.slashPopup.active())
+	}
+}
+
 func TestEnterCompletesSelectedSlashCommandWithoutSubmitting(t *testing.T) {
 	m := New(Options{})
 	updated, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})

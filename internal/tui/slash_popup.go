@@ -2,8 +2,11 @@ package tui
 
 import (
 	"strings"
+	"unicode"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/runtime"
 )
@@ -22,11 +25,22 @@ type slashCommand struct {
 	skill       bool
 }
 
+type slashCompletionTarget struct {
+	line       int
+	start      int
+	end        int
+	token      string
+	query      string
+	skillsOnly bool
+}
+
 type slashPopup struct {
 	commands       []slashCommand
 	matches        []slashCommand
 	selected       int
 	dismissedValue string
+	dismissed      slashCompletionTarget
+	target         slashCompletionTarget
 	query          string
 }
 
@@ -72,24 +86,37 @@ func (p *slashPopup) setSkills(summaries []runtime.SkillSummary) {
 	p.query = ""
 }
 
-// sync updates the visible matches for a command token at the start of the draft.
-func (p *slashPopup) sync(value string) {
-	if p.dismissedValue != "" && value != p.dismissedValue {
+// sync updates matches for the slash token at the textarea cursor.
+func (p *slashPopup) sync(input textarea.Model) {
+	value := input.Value()
+	target, ok := currentSlashCompletionTarget(input)
+	if p.dismissedValue != "" && (value != p.dismissedValue || target != p.dismissed) {
 		p.dismissedValue = ""
+		p.dismissed = slashCompletionTarget{}
 	}
-	query, ok := slashCommandQuery(value)
-	if !ok || value == p.dismissedValue {
+	if !ok || (value == p.dismissedValue && target == p.dismissed) {
 		p.matches = nil
 		p.selected = 0
+		p.target = slashCompletionTarget{}
 		p.query = ""
 		return
 	}
 
-	query = strings.ToLower(query)
-	queryChanged := query != p.query
+	query := strings.ToLower(target.query)
+	targetChanged := target != p.target
+	p.target = target
 	p.query = query
-	p.matches = rankSlashCommands(p.commands, query)
-	if queryChanged {
+	commands := p.commands
+	if target.skillsOnly {
+		commands = make([]slashCommand, 0, len(p.commands))
+		for _, command := range p.commands {
+			if command.skill {
+				commands = append(commands, command)
+			}
+		}
+	}
+	p.matches = rankSlashCommands(commands, query)
+	if targetChanged {
 		p.selected = 0
 	} else {
 		p.selected = min(p.selected, max(len(p.matches)-1, 0))
@@ -149,6 +176,7 @@ func (p slashPopup) selectedCommand() (slashCommand, bool) {
 
 func (p *slashPopup) dismiss(value string) {
 	p.dismissedValue = value
+	p.dismissed = p.target
 	p.matches = nil
 	p.selected = 0
 	p.query = ""
@@ -201,15 +229,80 @@ func (p slashPopup) render(width, maxRows int) string {
 	return strings.Join(lines, "\n")
 }
 
-func slashCommandQuery(value string) (string, bool) {
-	if !strings.HasPrefix(value, "/") || strings.ContainsAny(value, " \t\r\n") {
-		return "", false
+// currentSlashCompletionTarget locates the whitespace-delimited slash token at the cursor.
+func currentSlashCompletionTarget(input textarea.Model) (slashCompletionTarget, bool) {
+	lines := strings.Split(input.Value(), "\n")
+	lineIndex := input.Line()
+	if lineIndex < 0 || lineIndex >= len(lines) {
+		return slashCompletionTarget{}, false
 	}
-	query := strings.TrimPrefix(value, "/")
+
+	line := []rune(lines[lineIndex])
+	column := min(max(input.Column(), 0), len(line))
+	if column > 0 && unicode.IsSpace(line[column-1]) {
+		return slashCompletionTarget{}, false
+	}
+	start := column
+	for start > 0 && !unicode.IsSpace(line[start-1]) {
+		start--
+	}
+	end := column
+	for end < len(line) && !unicode.IsSpace(line[end]) {
+		end++
+	}
+	if start >= end || line[start] != '/' {
+		return slashCompletionTarget{}, false
+	}
+	token := string(line[start:end])
+	query := strings.TrimPrefix(token, "/")
 	if query != "" && !validSlashCommandName(query) {
-		return "", false
+		return slashCompletionTarget{}, false
 	}
-	return query, true
+
+	remainingLine := string(line[:start]) + string(line[end:])
+	remaining := append([]string(nil), lines...)
+	remaining[lineIndex] = remainingLine
+	return slashCompletionTarget{
+		line:       lineIndex,
+		start:      start,
+		end:        end,
+		token:      token,
+		query:      query,
+		skillsOnly: strings.TrimSpace(strings.Join(remaining, "\n")) != "",
+	}, true
+}
+
+// replaceSlashCompletion replaces only the active slash token and preserves the draft.
+func replaceSlashCompletion(input *textarea.Model, target slashCompletionTarget, name string) bool {
+	if input.Line() != target.line {
+		return false
+	}
+	lines := strings.Split(input.Value(), "\n")
+	if target.line < 0 || target.line >= len(lines) {
+		return false
+	}
+	line := []rune(lines[target.line])
+	if target.start < 0 || target.end > len(line) || target.start >= target.end || string(line[target.start:target.end]) != target.token {
+		return false
+	}
+
+	suffix := line[target.end:]
+	input.SetCursorColumn(target.end)
+	for range target.end - target.start {
+		updated, _ := input.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		*input = updated
+	}
+	input.InsertString("/" + name)
+	if len(suffix) == 0 {
+		input.InsertRune(' ')
+		return true
+	}
+	if unicode.IsSpace(suffix[0]) {
+		input.SetCursorColumn(input.Column() + 1)
+		return true
+	}
+	input.InsertRune(' ')
+	return true
 }
 
 // selectedSkillNames preserves ACP's whitespace-delimited slash command semantics.
