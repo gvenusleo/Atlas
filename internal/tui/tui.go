@@ -85,7 +85,8 @@ type Model struct {
 	// Conversation messages.
 	messages []*chatMessage
 	// current points to the assistant message being streamed (or nil).
-	current *chatMessage
+	current     *chatMessage
+	showWelcome bool
 }
 
 // New creates the initial TUI model.
@@ -114,15 +115,16 @@ func New(opts Options) Model {
 	}
 
 	model := Model{
-		viewport:   vp,
-		input:      ta,
-		rt:         opts.Runtime,
-		cwd:        opts.CWD,
-		sessionID:  opts.SessionID,
-		ctx:        ctx,
-		loading:    opts.SessionID != "",
-		slashPopup: newSlashPopup(),
-		turnStatus: newTurnStatus(),
+		viewport:    vp,
+		input:       ta,
+		rt:          opts.Runtime,
+		cwd:         opts.CWD,
+		sessionID:   opts.SessionID,
+		ctx:         ctx,
+		loading:     opts.SessionID != "",
+		slashPopup:  newSlashPopup(),
+		turnStatus:  newTurnStatus(),
+		showWelcome: opts.SessionID == "",
 	}
 	if model.loading {
 		model.input.Blur()
@@ -623,6 +625,7 @@ func (m *Model) applyResumedSession(resumed resumedSession) tea.Cmd {
 	m.sessionID = resumed.info.ID
 	m.cwd = filepath.Clean(resumed.info.CWD)
 	m.messages = messagesFromTranscript(resumed.messages)
+	m.showWelcome = false
 	m.contextTokens = resumed.contextTokens
 	m.current = nil
 	m.selection = textSelection{}
@@ -931,6 +934,9 @@ func (m *Model) rebuild() {
 
 	followBottom := m.viewport.AtBottom() && !m.selection.active
 	var parts []string
+	if m.showWelcome {
+		parts = append(parts, m.welcomeView())
+	}
 	for _, msg := range m.messages {
 		rendered := msg.render(m.width, m.hasDarkBackground, m.terminalBackground)
 		if rendered != "" {

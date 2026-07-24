@@ -53,7 +53,7 @@ func TestBackgroundColorMessageSelectsDarkTheme(t *testing.T) {
 }
 
 func TestEmptyConversationUsesFullTerminalHeight(t *testing.T) {
-	m := New(Options{})
+	m := New(Options{CWD: "/work/atlas"})
 	m.modelName = "gpt-5.6-sol"
 	m.reasoningEffort = "high"
 	m.contextTokens = 790
@@ -71,8 +71,61 @@ func TestEmptyConversationUsesFullTerminalHeight(t *testing.T) {
 	if got := lines[len(lines)-1]; got != "  gpt-5.6-sol high · Context 79% used" {
 		t.Fatalf("footer = %q", got)
 	}
-	if strings.Contains(lines[0], "Atlas") {
-		t.Fatalf("top line still contains a header: %q", lines[0])
+	if content := ansi.Strip(m.viewport.View()); !strings.Contains(content, "Atlas  v") ||
+		!strings.Contains(content, "cwd    /work/atlas") ||
+		!strings.Contains(content, "model  gpt-5.6-sol high") {
+		t.Fatalf("welcome content = %q", content)
+	}
+}
+
+func TestWelcomeAdaptsToNarrowTerminal(t *testing.T) {
+	m := New(Options{CWD: "/a/very/long/path/to/atlas"})
+	m.modelName = "gpt-5.6-sol"
+	m.reasoningEffort = "high"
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 24, Height: 14})
+	m = updated.(Model)
+
+	rendered := ansi.Strip(m.viewport.View())
+	if strings.Contains(rendered, "▟█████▙") {
+		t.Fatalf("narrow welcome still contains the large mark: %q", rendered)
+	}
+	if !strings.Contains(rendered, "Atlas  v") || !strings.Contains(rendered, "gpt-5.6-sol high") {
+		t.Fatalf("narrow welcome content = %q", rendered)
+	}
+	for line := range strings.SplitSeq(rendered, "\n") {
+		if width := lipgloss.Width(line); width > 24 {
+			t.Fatalf("narrow welcome line width = %d, line = %q", width, line)
+		}
+	}
+}
+
+func TestWelcomeUpdatesWhenModelStatusLoads(t *testing.T) {
+	m := New(Options{CWD: "/work"})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	m = updated.(Model)
+	if rendered := ansi.Strip(m.viewport.View()); !strings.Contains(rendered, "model  loading...") {
+		t.Fatalf("loading welcome = %q", rendered)
+	}
+
+	updated, _ = m.Update(modelStatusLoadedMsg{modelName: "Model A", reasoningEffort: "high"})
+	m = updated.(Model)
+	if rendered := ansi.Strip(m.viewport.View()); !strings.Contains(rendered, "model  Model A high") {
+		t.Fatalf("loaded welcome = %q", rendered)
+	}
+}
+
+func TestWelcomeLabelsAdaptToDarkBackground(t *testing.T) {
+	m := New(Options{CWD: "/work"})
+	m.modelName = "Model A"
+	light := m.welcomeMetadata(80, true)
+	if !strings.Contains(light, mutedStyle.Render("cwd    ")) {
+		t.Fatalf("light welcome labels do not use muted style: %q", light)
+	}
+
+	m.hasDarkBackground = true
+	dark := m.welcomeMetadata(80, true)
+	if !strings.Contains(dark, subtleStyle.Render("cwd    ")) {
+		t.Fatalf("dark welcome labels do not use readable grey: %q", dark)
 	}
 }
 

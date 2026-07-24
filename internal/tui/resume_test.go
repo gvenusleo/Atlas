@@ -80,6 +80,9 @@ func TestResumeExactSessionReplacesConversationAtomically(t *testing.T) {
 	if skillCmd == nil || m.sessionID != "target" || m.cwd != cwd || m.contextTokens != 420 || m.resumePicker.active() {
 		t.Fatalf("resumed state: session=%q cwd=%q tokens=%d active=%t cmd=%v", m.sessionID, m.cwd, m.contextTokens, m.resumePicker.active(), skillCmd)
 	}
+	if m.showWelcome {
+		t.Fatal("resumed session still shows the new-session welcome")
+	}
 	if len(m.messages) != 2 || m.messages[0].content.String() != "Target prompt" || m.messages[1].content.String() != "Target answer" {
 		t.Fatalf("resumed messages = %#v", m.messages)
 	}
