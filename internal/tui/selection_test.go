@@ -52,7 +52,7 @@ func TestTextSelectionExtractsStyledAndWideText(t *testing.T) {
 			if got := selection.content(tt.content); got != tt.want {
 				t.Fatalf("selected content = %q, want %q", got, tt.want)
 			}
-			rendered := selection.render(tt.content, selectionStyle)
+			rendered := selection.render(tt.content, lightTheme.selection)
 			if ansi.Strip(rendered) != ansi.Strip(tt.content) {
 				t.Fatalf("highlight changed visible content: %q", rendered)
 			}
@@ -150,7 +150,7 @@ func TestSelectionRenderOnlyChangesSelectedCells(t *testing.T) {
 		cursor:  selectionPoint{x: 1, y: 1},
 	}
 
-	rendered := selection.render(content, selectionStyle)
+	rendered := selection.render(content, lightTheme.selection)
 	if ansi.Strip(rendered) != content {
 		t.Fatalf("rendered content = %q, want %q", ansi.Strip(rendered), content)
 	}

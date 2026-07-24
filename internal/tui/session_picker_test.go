@@ -46,7 +46,7 @@ func TestSessionPickerRenderUsesForegroundSelectionAndAllScopeMetadata(t *testin
 		UpdatedAt: now.Add(-4 * time.Minute),
 	}}})
 
-	rendered := picker.render(80, 20)
+	rendered := picker.render(80, 20, false)
 	plain := ansi.Strip(rendered.content)
 	lines := strings.Split(plain, "\n")
 	if len(lines) < 6 || lines[0] != "  Resume a previous session" || lines[1] != "" {
@@ -58,10 +58,10 @@ func TestSessionPickerRenderUsesForegroundSelectionAndAllScopeMetadata(t *testin
 	if !strings.Contains(plain, "Esc to cancel") {
 		t.Fatalf("picker cancel hint = %q", plain)
 	}
-	if !strings.Contains(rendered.content, userStyle.Render("› Continue Atlas TUI")) {
+	if !strings.Contains(rendered.content, lightTheme.highlight.Render("› Continue Atlas TUI")) {
 		t.Fatalf("selected row is not foreground highlighted: %q", rendered.content)
 	}
-	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
+	if !reflect.DeepEqual(lightTheme.highlight.GetBackground(), lightTheme.text.GetBackground()) {
 		t.Fatal("session selection style has a background color")
 	}
 }
@@ -69,12 +69,12 @@ func TestSessionPickerRenderUsesForegroundSelectionAndAllScopeMetadata(t *testin
 func TestSessionPickerLoadingAndConfirmationShowCancelHint(t *testing.T) {
 	var picker sessionPicker
 	picker.openDirect("/work", "current", time.Now())
-	if plain := ansi.Strip(picker.render(60, 20).content); !strings.Contains(plain, "Esc to cancel") {
+	if plain := ansi.Strip(picker.render(60, 20, false).content); !strings.Contains(plain, "Esc to cancel") {
 		t.Fatalf("loading cancel hint = %q", plain)
 	}
 
 	picker.confirm(resumedSession{info: session.Session{ID: "target", Title: "Target", CWD: "/target"}})
-	if plain := ansi.Strip(picker.render(60, 20).content); !strings.Contains(plain, "Esc to cancel") {
+	if plain := ansi.Strip(picker.render(60, 20, false).content); !strings.Contains(plain, "Esc to cancel") {
 		t.Fatalf("confirmation cancel hint = %q", plain)
 	}
 }
@@ -129,7 +129,7 @@ func TestSessionPickerConfirmationShowsDirectoryChange(t *testing.T) {
 	picker.open("/current", "", time.Now())
 	picker.confirm(resumedSession{info: session.Session{ID: "target", Title: "Target", CWD: "/target"}})
 
-	plain := ansi.Strip(picker.render(60, 20).content)
+	plain := ansi.Strip(picker.render(60, 20, false).content)
 	if !strings.Contains(plain, "/current") || !strings.Contains(plain, "→ /target") || !strings.Contains(plain, "Resume and switch directory") {
 		t.Fatalf("confirmation = %q", plain)
 	}

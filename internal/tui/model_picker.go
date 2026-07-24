@@ -125,7 +125,8 @@ func (p *modelPicker) selectCurrent() *modelSelection {
 }
 
 // render displays a bounded window around the selected model or reasoning effort.
-func (p modelPicker) render(width, maxRows int) composerRender {
+func (p modelPicker) render(width, maxRows int, hasDarkBackground bool) composerRender {
+	theme := themeFor(hasDarkBackground)
 	maxRows = max(maxRows, 1)
 	contentWidth := max(width-3, 1)
 	title := "Select model"
@@ -148,7 +149,7 @@ func (p modelPicker) render(width, maxRows int) composerRender {
 	lines := make([]string, 0, maxRows)
 	itemRows := maxRows
 	if maxRows > 2 {
-		lines = append(lines, "  "+messageStyle.Bold(true).Render(ansi.Truncate(title, contentWidth, "…")))
+		lines = append(lines, "  "+theme.text.Bold(true).Render(ansi.Truncate(title, contentWidth, "…")))
 		lines = append(lines, "")
 		itemRows -= 2
 	}
@@ -157,10 +158,10 @@ func (p modelPicker) render(width, maxRows int) composerRender {
 	for i := start; i < end; i++ {
 		label := ansi.Truncate(items[i], contentWidth, "…")
 		if i == selected {
-			lines = append(lines, userStyle.Render("› "+label))
+			lines = append(lines, theme.highlight.Render("› "+label))
 			continue
 		}
-		lines = append(lines, "  "+label)
+		lines = append(lines, "  "+theme.text.Render(label))
 	}
 	return composerRender{content: strings.Join(lines, "\n"), height: max(len(lines), 1)}
 }

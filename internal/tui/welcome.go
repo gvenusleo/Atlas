@@ -25,7 +25,8 @@ var welcomeLogo = []string{
 // welcomeView renders the transient new-session identity block.
 func (m Model) welcomeView() string {
 	width := max(m.width, 1)
-	logo := userStyle.Bold(true).Render(strings.Join(welcomeLogo, "\n"))
+	theme := themeFor(m.hasDarkBackground)
+	logo := theme.highlight.Bold(true).Render(strings.Join(welcomeLogo, "\n"))
 
 	if width < 28 {
 		return m.welcomeMetadata(width, false)
@@ -41,8 +42,9 @@ func (m Model) welcomeView() string {
 }
 
 func (m Model) welcomeMetadata(width int, labels bool) string {
-	name := userStyle.Bold(true).Render("Atlas")
-	app := name + "  " + messageStyle.Render("v"+version.Current)
+	theme := themeFor(m.hasDarkBackground)
+	name := theme.highlight.Bold(true).Render("Atlas")
+	app := name + "  " + theme.text.Render("v"+version.Current)
 	cwd := compactWorkingDirectory(m.cwd)
 	model := m.welcomeModelName()
 	skills := m.welcomeSkillsStatus()
@@ -50,23 +52,19 @@ func (m Model) welcomeMetadata(width int, labels bool) string {
 	if !labels {
 		return strings.Join([]string{
 			ansi.Truncate(app, width, ""),
-			messageStyle.Render(fitFromLeft(cwd, width)),
-			messageStyle.Render(fitFromLeft(model, width)),
-			messageStyle.Render(fitFromLeft(skills, width)),
+			theme.text.Render(fitFromLeft(cwd, width)),
+			theme.text.Render(fitFromLeft(model, width)),
+			theme.text.Render(fitFromLeft(skills, width)),
 		}, "\n")
 	}
 
 	const labelWidth = 7
 	valueWidth := max(width-labelWidth, 1)
-	labelStyle := mutedStyle
-	if m.hasDarkBackground {
-		labelStyle = subtleStyle
-	}
 	return strings.Join([]string{
 		ansi.Truncate(app, width, ""),
-		labelStyle.Render("cwd    ") + messageStyle.Render(fitFromLeft(cwd, valueWidth)),
-		labelStyle.Render("model  ") + messageStyle.Render(fitFromLeft(model, valueWidth)),
-		labelStyle.Render("skills ") + messageStyle.Render(fitFromLeft(skills, valueWidth)),
+		theme.muted.Render("cwd    ") + theme.text.Render(fitFromLeft(cwd, valueWidth)),
+		theme.muted.Render("model  ") + theme.text.Render(fitFromLeft(model, valueWidth)),
+		theme.muted.Render("skills ") + theme.text.Render(fitFromLeft(skills, valueWidth)),
 	}, "\n")
 }
 

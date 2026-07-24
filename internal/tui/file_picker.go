@@ -188,7 +188,8 @@ func (p fileMentionPicker) selectedPath() (string, bool) {
 	return p.matches[p.selected], true
 }
 
-func (p *fileMentionPicker) openBrowser() tea.Cmd {
+func (p *fileMentionPicker) openBrowser(hasDarkBackground bool) tea.Cmd {
+	theme := themeFor(hasDarkBackground)
 	root := cleanWorkingDirectory(p.cwd)
 	fp := filepicker.New()
 	fp.CurrentDirectory = root
@@ -199,14 +200,14 @@ func (p *fileMentionPicker) openBrowser() tea.Cmd {
 	fp.ShowHidden = false
 	fp.DirAllowed = false
 	fp.FileAllowed = true
-	fp.Cursor = userStyle.Render("›")
+	fp.Cursor = theme.highlight.Render("›")
 	fp.KeyMap.Back.SetKeys("left", "backspace")
-	fp.Styles.Cursor = messageStyle
-	fp.Styles.Selected = userStyle
-	fp.Styles.Directory = subtleStyle
-	fp.Styles.File = messageStyle
-	fp.Styles.Symlink = subtleStyle
-	fp.Styles.EmptyDirectory = subtleStyle.SetString("  No files")
+	fp.Styles.Cursor = lipgloss.NewStyle()
+	fp.Styles.Selected = theme.highlight
+	fp.Styles.Directory = theme.muted
+	fp.Styles.File = theme.text
+	fp.Styles.Symlink = theme.muted
+	fp.Styles.EmptyDirectory = theme.muted.SetString("  No files")
 	p.browser = fp
 	p.browserRoot = root
 	p.browserEntries = browserDirectoryEntries(root)
@@ -247,17 +248,18 @@ func (p *fileMentionPicker) updateBrowser(msg tea.Msg) (tea.Cmd, string, bool) {
 	return cmd, "", false
 }
 
-func (p fileMentionPicker) render(width, maxRows int, background color.Color) string {
+func (p fileMentionPicker) render(width, maxRows int, background color.Color, hasDarkBackground bool) string {
 	if !p.active() || maxRows <= 0 {
 		return ""
 	}
+	theme := themeFor(hasDarkBackground)
 	if p.browsing() {
-		return p.renderBrowser(width, maxRows, background)
+		return p.renderBrowser(width, maxRows, background, theme)
 	}
 
 	contentWidth := max(width-2, 1)
 	if p.target.query == "" {
-		return userStyle.Render(ansi.Truncate("› Browse files…", width, "…"))
+		return theme.highlight.Render(ansi.Truncate("› Browse files…", width, "…"))
 	}
 	if len(p.matches) == 0 {
 		label := "No matching files"
@@ -266,7 +268,7 @@ func (p fileMentionPicker) render(width, maxRows int, background color.Color) st
 		} else if p.err != "" {
 			label = p.err
 		}
-		return "  " + subtleStyle.Render(ansi.Truncate(label, contentWidth, "…"))
+		return "  " + theme.muted.Render(ansi.Truncate(label, contentWidth, "…"))
 	}
 
 	rows := min(maxRows, len(p.matches))
@@ -276,20 +278,20 @@ func (p fileMentionPicker) render(width, maxRows int, background color.Color) st
 	for i := start; i < end; i++ {
 		path := ansi.Truncate(p.matches[i], contentWidth, "…")
 		if i == p.selected {
-			lines = append(lines, userStyle.Render("› "+path))
+			lines = append(lines, theme.highlight.Render("› "+path))
 		} else {
-			lines = append(lines, "  "+messageStyle.Render(path))
+			lines = append(lines, "  "+theme.text.Render(path))
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-func (p fileMentionPicker) renderBrowser(width, maxRows int, background color.Color) string {
+func (p fileMentionPicker) renderBrowser(width, maxRows int, background color.Color, theme tuiTheme) string {
 	relative, err := filepath.Rel(p.browserRoot, p.browser.CurrentDirectory)
 	if err != nil || relative == "" {
 		relative = "."
 	}
-	headerStyle := fileBrowserStyle(messageStyle.Bold(true), background)
+	headerStyle := fileBrowserStyle(theme.text.Bold(true), background)
 	header := "  " + headerStyle.Render(ansi.Truncate("Browse · "+filepath.ToSlash(relative), max(width-2, 1), "…"))
 	if maxRows == 1 {
 		return header
@@ -634,7 +636,7 @@ func (m *Model) handleFileMentionKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, nil
 	case "tab", "enter":
 		if m.filePicker.target.query == "" {
-			cmd := m.filePicker.openBrowser()
+			cmd := m.filePicker.openBrowser(m.hasDarkBackground)
 			m.input.Blur()
 			m.rebuild()
 			return true, cmd

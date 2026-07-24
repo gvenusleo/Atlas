@@ -96,8 +96,8 @@ func TestFileMentionPickerFiltersAndRendersForegroundSelection(t *testing.T) {
 	if len(picker.matches) != 1 || picker.matches[0] != "internal/tui/messages.go" {
 		t.Fatalf("matches = %#v", picker.matches)
 	}
-	rendered := picker.render(60, maxFilePopupRows, nil)
-	if !strings.Contains(rendered, userStyle.Render("› internal/tui/messages.go")) {
+	rendered := picker.render(60, maxFilePopupRows, nil, false)
+	if !strings.Contains(rendered, lightTheme.highlight.Render("› internal/tui/messages.go")) {
 		t.Fatalf("selected row = %q", rendered)
 	}
 	if strings.Contains(ansi.Strip(rendered), "README.md") {
@@ -177,16 +177,16 @@ func TestFileBrowserRenderUsesPlainBackgroundAndSpacedTitle(t *testing.T) {
 	writePickerTestFile(t, filepath.Join(root, "cmd", "main.go"))
 	writePickerTestFile(t, filepath.Join(root, "dist", "atlas"))
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	initCmd := picker.openBrowser()
+	initCmd := picker.openBrowser(false)
 	_, _, _ = picker.updateBrowser(initCmd())
 
 	background := color.RGBA{R: 244, G: 244, B: 244, A: 255}
-	rendered := picker.renderBrowser(40, maxFilePopupRows, background)
+	rendered := picker.renderBrowser(40, maxFilePopupRows, background, lightTheme)
 	lines := strings.Split(rendered, "\n")
 	if ansi.Strip(lines[0]) != "  Browse · ." || lines[1] != "" {
 		t.Fatalf("browser title = %q", ansi.Strip(rendered))
 	}
-	if lines[0] != "  "+fileBrowserStyle(messageStyle.Bold(true), background).Render("Browse · .") {
+	if lines[0] != "  "+fileBrowserStyle(lightTheme.text.Bold(true), background).Render("Browse · .") {
 		t.Fatalf("browser title style = %q", lines[0])
 	}
 	if !strings.HasPrefix(lines[3], "  ") {
@@ -213,7 +213,7 @@ func TestFileBrowserPopupStaysInsideComposerBackground(t *testing.T) {
 	m.input.MoveToEnd()
 	target, _ := currentFileMentionTarget(m.input)
 	m.filePicker = fileMentionPicker{mode: filePickerSearch, cwd: root, target: target}
-	initCmd := m.filePicker.openBrowser()
+	initCmd := m.filePicker.openBrowser(false)
 	_, _, _ = m.filePicker.updateBrowser(initCmd())
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 14})
 	m = updated.(Model)
@@ -233,7 +233,7 @@ func TestFileBrowserKeepsThreeCandidatesVisibleWhileScrolling(t *testing.T) {
 		writePickerTestFile(t, filepath.Join(root, directory, "file"))
 	}
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	initCmd := picker.openBrowser()
+	initCmd := picker.openBrowser(false)
 	_, _, _ = picker.updateBrowser(initCmd())
 
 	for move, wantRow := range []int{0, 1, 1, 1, 1, 1, 1, 2} {
@@ -241,7 +241,7 @@ func TestFileBrowserKeepsThreeCandidatesVisibleWhileScrolling(t *testing.T) {
 			_, _, _ = picker.updateBrowser(tea.KeyPressMsg{Code: tea.KeyDown})
 		}
 		selected := filepath.Base(picker.browser.HighlightedPath())
-		lines := strings.Split(ansi.Strip(picker.renderBrowser(40, maxFilePopupRows, color.White)), "\n")
+		lines := strings.Split(ansi.Strip(picker.renderBrowser(40, maxFilePopupRows, color.White, lightTheme)), "\n")
 		if len(lines) != maxFilePopupRows {
 			t.Fatalf("move %d rendered rows = %d, want %d: %q", move, len(lines), maxFilePopupRows, lines)
 		}
@@ -266,7 +266,7 @@ func TestFileBrowserKeepsThreeCandidatesVisibleWhileScrolling(t *testing.T) {
 func TestFileBrowserCannotLeaveWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	_ = picker.openBrowser()
+	_ = picker.openBrowser(false)
 
 	_, _, _ = picker.updateBrowser(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if !samePath(picker.browser.CurrentDirectory, root) {
@@ -282,7 +282,7 @@ func TestFileBrowserCannotFollowDirectorySymlinkOutsideWorkingDirectory(t *testi
 		t.Skipf("Symlink() error = %v", err)
 	}
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	initCmd := picker.openBrowser()
+	initCmd := picker.openBrowser(false)
 	_, _, _ = picker.updateBrowser(initCmd())
 
 	_, _, _ = picker.updateBrowser(tea.KeyPressMsg{Code: tea.KeyEnter})

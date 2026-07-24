@@ -261,27 +261,28 @@ type sessionPickerRender struct {
 }
 
 // render draws the list, loading, or cross-directory confirmation stage.
-func (p sessionPicker) render(width, height int) sessionPickerRender {
+func (p sessionPicker) render(width, height int, hasDarkBackground bool) sessionPickerRender {
+	theme := themeFor(hasDarkBackground)
 	width = max(width, 1)
 	contentWidth := max(width-2, 1)
-	title := "  " + messageStyle.Bold(true).Render(ansi.Truncate("Resume a previous session", contentWidth, "…"))
-	cancelHint := "  " + subtleStyle.Render("Esc to cancel")
+	title := "  " + theme.text.Bold(true).Render(ansi.Truncate("Resume a previous session", contentWidth, "…"))
+	cancelHint := "  " + theme.muted.Render("Esc to cancel")
 
 	switch p.stage {
 	case sessionPickerLoading:
 		label := "Loading session…"
-		return sessionPickerRender{content: strings.Join([]string{title, "", "  " + subtleStyle.Render(label), "", cancelHint}, "\n")}
+		return sessionPickerRender{content: strings.Join([]string{title, "", "  " + theme.muted.Render(label), "", cancelHint}, "\n")}
 	case sessionPickerConfirm:
-		return p.renderConfirmation(title, cancelHint, width)
+		return p.renderConfirmation(title, cancelHint, width, theme)
 	}
 
 	searchPrefix := "  Search: "
 	searchValue := p.query
 	if searchValue == "" {
-		searchValue = subtleStyle.Render("Type to search")
+		searchValue = theme.muted.Render("Type to search")
 	}
-	search := searchPrefix + searchValue
-	filter := p.renderScope()
+	search := theme.text.Render(searchPrefix) + searchValue
+	filter := p.renderScope(theme)
 	gap := max(width-ansi.StringWidth(search)-ansi.StringWidth(filter)-2, 1)
 	toolbar := ansi.Truncate(search+strings.Repeat(" ", gap)+filter, width, "…")
 	lines := []string{title, "", toolbar, ""}
@@ -300,14 +301,14 @@ func (p sessionPicker) render(width, height int) sessionPickerRender {
 			label = candidate.ID
 		}
 		prefix := "  "
-		style := messageStyle
+		style := theme.text
 		if index == p.selected {
 			prefix = "› "
-			style = userStyle
+			style = theme.highlight
 		}
 		lines = append(lines, style.Render(prefix+ansi.Truncate(singleLineDisplayText(label), max(width-2, 1), "…")))
 		metadata := sessionPickerMetadata(candidate, p.scope == sessionPickerAll, contentWidth, p.referenceTime)
-		lines = append(lines, "  "+subtleStyle.Render(metadata))
+		lines = append(lines, "  "+theme.muted.Render(metadata))
 		if index+1 < end {
 			lines = append(lines, "")
 		}
@@ -321,12 +322,12 @@ func (p sessionPicker) render(width, height int) sessionPickerRender {
 		if p.query != "" {
 			empty = "No matching sessions."
 		}
-		lines = append(lines, "  "+subtleStyle.Render(empty))
+		lines = append(lines, "  "+theme.muted.Render(empty))
 	}
 	if p.err != "" {
-		lines = append(lines, "  "+errorStyle.Render(ansi.Truncate(p.err, contentWidth, "…")))
+		lines = append(lines, "  "+theme.error.Render(ansi.Truncate(p.err, contentWidth, "…")))
 	} else if p.pageLoading {
-		lines = append(lines, "  "+subtleStyle.Render("Loading sessions…"))
+		lines = append(lines, "  "+theme.muted.Render("Loading sessions…"))
 	}
 	lines = append(lines, "", cancelHint)
 
@@ -338,20 +339,20 @@ func (p sessionPicker) render(width, height int) sessionPickerRender {
 	}
 }
 
-func (p sessionPicker) renderScope() string {
-	cwd := subtleStyle.Render(" Cwd ")
-	all := subtleStyle.Render(" All ")
+func (p sessionPicker) renderScope(theme tuiTheme) string {
+	cwd := theme.muted.Render(" Cwd ")
+	all := theme.muted.Render(" All ")
 	if p.scope == sessionPickerCWD {
-		cwd = userStyle.Render("[Cwd]")
+		cwd = theme.highlight.Render("[Cwd]")
 	} else {
-		all = userStyle.Render("[All]")
+		all = theme.highlight.Render("[All]")
 	}
-	return subtleStyle.Render("Filter: ") + cwd + " " + all
+	return theme.muted.Render("Filter: ") + cwd + " " + all
 }
 
-func (p sessionPicker) renderConfirmation(title, cancelHint string, width int) sessionPickerRender {
+func (p sessionPicker) renderConfirmation(title, cancelHint string, width int, theme tuiTheme) sessionPickerRender {
 	if p.pending == nil {
-		return sessionPickerRender{content: strings.Join([]string{title, "", "  " + errorStyle.Render("Session is unavailable."), "", cancelHint}, "\n")}
+		return sessionPickerRender{content: strings.Join([]string{title, "", "  " + theme.error.Render("Session is unavailable."), "", cancelHint}, "\n")}
 	}
 	contentWidth := max(width-2, 1)
 	label := p.pending.info.Title
@@ -361,19 +362,19 @@ func (p sessionPicker) renderConfirmation(title, cancelHint string, width int) s
 	lines := []string{
 		title,
 		"",
-		"  " + messageStyle.Bold(true).Render(ansi.Truncate(singleLineDisplayText(label), contentWidth, "…")),
-		"  " + subtleStyle.Render(ansi.Truncate(p.pending.info.ID, contentWidth, "…")),
+		"  " + theme.text.Bold(true).Render(ansi.Truncate(singleLineDisplayText(label), contentWidth, "…")),
+		"  " + theme.muted.Render(ansi.Truncate(p.pending.info.ID, contentWidth, "…")),
 		"",
-		"  " + subtleStyle.Render("Working directory"),
-		"  " + ansi.Truncate(p.cwd, contentWidth, "…"),
-		"  " + subtleStyle.Render("→ ") + ansi.Truncate(p.pending.info.CWD, max(contentWidth-2, 1), "…"),
+		"  " + theme.muted.Render("Working directory"),
+		"  " + theme.text.Render(ansi.Truncate(p.cwd, contentWidth, "…")),
+		"  " + theme.muted.Render("→ ") + theme.text.Render(ansi.Truncate(p.pending.info.CWD, max(contentWidth-2, 1), "…")),
 		"",
-		userStyle.Render("› Resume and switch directory"),
+		theme.highlight.Render("› Resume and switch directory"),
 		"",
 		cancelHint,
 	}
 	if p.err != "" {
-		lines = append(lines, "", "  "+errorStyle.Render(ansi.Truncate(p.err, contentWidth, "…")))
+		lines = append(lines, "", "  "+theme.error.Render(ansi.Truncate(p.err, contentWidth, "…")))
 	}
 	return sessionPickerRender{content: strings.Join(lines, "\n")}
 }

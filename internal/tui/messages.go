@@ -166,9 +166,10 @@ func (m *chatMessage) findToolCall(id string) *toolCallView {
 
 // render produces the styled string for this message block.
 func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackground color.Color) string {
+	theme := themeFor(hasDarkBackground)
 	switch m.role {
 	case "user":
-		content := renderIndented(m.content.String(), max(width-2, 1), "› ", messageStyle)
+		content := renderIndented(m.content.String(), max(width-2, 1), "› ", theme.text)
 		return userMessageStyle(hasDarkBackground, terminalBackground).
 			Width(width).
 			Render(content)
@@ -178,18 +179,18 @@ func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackgrou
 			parts = append(parts, m.renderMarkdown(width, hasDarkBackground))
 		}
 		for _, tc := range m.toolCalls {
-			parts = append(parts, renderToolCall(tc, width))
+			parts = append(parts, renderToolCall(tc, width, hasDarkBackground))
 		}
 		if m.cancelled {
-			parts = append(parts, renderIndented("Cancelled", width, "• ", mutedStyle))
+			parts = append(parts, renderIndented("Cancelled", width, "• ", theme.muted))
 		} else if m.err != nil {
-			parts = append(parts, renderIndented(ansi.Strip(m.err.Error()), width, "• ", errorStyle))
+			parts = append(parts, renderIndented(ansi.Strip(m.err.Error()), width, "• ", theme.error))
 		}
 		return strings.Join(parts, "\n\n")
 	case "notice":
-		style := mutedStyle
+		style := theme.muted
 		if m.noticeError {
-			style = errorStyle
+			style = theme.error
 		}
 		return renderIndented(m.content.String(), width, "• ", style)
 	}
@@ -220,7 +221,7 @@ func (m *chatMessage) renderMarkdown(width int, hasDarkBackground bool) string {
 // renderAssistantMarkdown renders one assistant body and applies the message gutter.
 func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) string {
 	if width <= 2 {
-		return renderIndented(content, width, "• ", messageStyle)
+		return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
 	}
 
 	wrapWidth := width - 2
@@ -233,7 +234,7 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 			glamour.WithTableWrap(true),
 		)
 		if err != nil {
-			return renderIndented(content, width, "• ", messageStyle)
+			return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
 		}
 		entryValue, _ = markdownRenderers.LoadOrStore(key, &markdownRendererEntry{renderer: renderer})
 	}
@@ -243,7 +244,7 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 	rendered, err := entry.renderer.Render(content)
 	entry.mu.Unlock()
 	if err != nil {
-		return renderIndented(content, width, "• ", messageStyle)
+		return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
 	}
 
 	rendered = reflowMarkdownBlockquotes(rendered, wrapWidth)
@@ -364,18 +365,17 @@ func isCJK(r rune) bool {
 }
 
 // renderToolCall renders a compact semantic summary and a bounded result preview.
-func renderToolCall(tc toolCallView, width int) string {
+func renderToolCall(tc toolCallView, width int, hasDarkBackground bool) string {
 	if width <= 0 {
 		return ""
 	}
-	statusStyle := toolStyle
+	theme := themeFor(hasDarkBackground)
+	statusStyle := theme.highlight
 	if tc.err {
-		statusStyle = errorStyle
-	} else if tc.done {
-		statusStyle = assistantStyle
+		statusStyle = theme.error
 	}
 	action, input := toolCallSummary(tc)
-	lines := renderToolHeader(action, input, width, statusStyle.Bold(true))
+	lines := renderToolHeader(action, input, width, statusStyle.Bold(true), theme)
 
 	if tc.done && shouldRenderToolResult(tc) {
 		result := strings.Trim(ansi.Strip(tc.result), "\r\n")
@@ -391,7 +391,7 @@ func renderToolCall(tc toolCallView, width int) string {
 			if tc.metadata.DirectShell {
 				limit = directShellOutputRows
 			}
-			lines = append(lines, renderToolOutput(result, width, limit)...)
+			lines = append(lines, renderToolOutput(result, width, limit, theme)...)
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -454,20 +454,20 @@ func shouldRenderToolResult(tc toolCallView) bool {
 }
 
 // renderToolHeader wraps the input before limiting it to two continuation rows.
-func renderToolHeader(action, input string, width int, statusStyle lipgloss.Style) []string {
+func renderToolHeader(action, input string, width int, statusStyle lipgloss.Style, theme tuiTheme) []string {
 	if width <= 4 {
 		return []string{statusStyle.Render(ansi.Truncate("• "+action, width, ""))}
 	}
 
 	content := statusStyle.Render(action)
 	if input != "" {
-		content += " " + messageStyle.Render(ansi.Strip(input))
+		content += " " + theme.text.Render(ansi.Strip(input))
 	}
 	wrapped := strings.Split(ansi.Hardwrap(content, width-4, true), "\n")
 	visible := min(len(wrapped), 1+toolInputContinuationRows)
 	lines := make([]string, 0, visible+1)
 	for i := range visible {
-		prefix := mutedStyle.Render("  │ ")
+		prefix := theme.muted.Render("  │ ")
 		if i == 0 {
 			prefix = statusStyle.Render("• ")
 		}
@@ -475,13 +475,13 @@ func renderToolHeader(action, input string, width int, statusStyle lipgloss.Styl
 	}
 	if omitted := len(wrapped) - visible; omitted > 0 {
 		hint := ansi.Truncate(fmt.Sprintf("… +%d lines", omitted), width-4, "")
-		lines = append(lines, mutedStyle.Render("  │ "+hint))
+		lines = append(lines, theme.muted.Render("  │ "+hint))
 	}
 	return lines
 }
 
 // renderToolOutput keeps the beginning and end within the visible row budget.
-func renderToolOutput(result string, width, limit int) []string {
+func renderToolOutput(result string, width, limit int, theme tuiTheme) []string {
 	if width <= 4 || limit <= 0 {
 		return nil
 	}
@@ -506,7 +506,7 @@ func renderToolOutput(result string, width, limit int) []string {
 		if i == 0 {
 			prefix = "  └ "
 		}
-		lines[i] = mutedStyle.Render(prefix + line)
+		lines[i] = theme.muted.Render(prefix + line)
 	}
 	return lines
 }

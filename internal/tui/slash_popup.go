@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 	"unicode"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/runtime"
 )
@@ -183,10 +185,14 @@ func (p *slashPopup) dismiss(value string) {
 }
 
 // render displays a bounded command list with descriptions truncated to the terminal width.
-func (p slashPopup) render(width, maxRows int) string {
+func (p slashPopup) render(width, maxRows int, background color.Color, hasDarkBackground bool) string {
 	if !p.active() || maxRows <= 0 {
 		return ""
 	}
+	theme := themeFor(hasDarkBackground)
+	highlightStyle := slashPopupStyle(theme.highlight, background)
+	textStyle := slashPopupStyle(theme.text, background)
+	mutedStyle := slashPopupStyle(theme.muted, background)
 	maxRows = min(maxRows, len(p.matches))
 	start := pickerWindowStart(len(p.matches), p.selected, maxRows)
 	end := min(start+maxRows, len(p.matches))
@@ -216,17 +222,24 @@ func (p slashPopup) render(width, maxRows int) string {
 			if description != "" {
 				line += "  " + description
 			}
-			lines = append(lines, userStyle.Render(line))
+			lines = append(lines, highlightStyle.Render(line))
 			continue
 		}
 
-		line := "  " + messageStyle.Render(name)
+		line := textStyle.Render("  " + name)
 		if description != "" {
-			line += "  " + subtleStyle.Render(description)
+			line += mutedStyle.Render("  " + description)
 		}
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func slashPopupStyle(style lipgloss.Style, background color.Color) lipgloss.Style {
+	if background == nil {
+		return style
+	}
+	return style.Background(background)
 }
 
 // currentSlashCompletionTarget locates the whitespace-delimited slash token at the cursor.

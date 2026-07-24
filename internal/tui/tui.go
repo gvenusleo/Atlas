@@ -873,7 +873,7 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	if m.resumePicker.active() {
-		rendered := m.resumePicker.render(m.width, m.height)
+		rendered := m.resumePicker.render(m.width, m.height, m.hasDarkBackground)
 		v := tea.NewView(rendered.content)
 		if rendered.showCursor {
 			v.Cursor = tea.NewCursor(rendered.cursorX, rendered.cursorY)
@@ -884,7 +884,7 @@ func (m Model) View() tea.View {
 		return v
 	}
 
-	vpView := m.selection.render(m.viewport.View(), selectionStyle)
+	vpView := m.selection.render(m.viewport.View(), themeFor(m.hasDarkBackground).selection)
 	composerState := m.renderInputArea()
 	layout := calculateLayout(m.height, composerState.height, m.turnStatus.active())
 	parts := make([]string, 0, 6)
@@ -898,7 +898,7 @@ func (m Model) View() tea.View {
 		cursorY++
 	}
 	if layout.showTurnStatus {
-		parts = append(parts, m.turnStatus.viewAt(m.width, time.Now()))
+		parts = append(parts, m.turnStatus.viewAt(m.width, time.Now(), m.hasDarkBackground))
 		cursorY++
 	}
 	composer := composerStyle(m.hasDarkBackground, m.terminalBackground).
@@ -1001,17 +1001,19 @@ type composerRender struct {
 
 func (m Model) renderInputArea() composerRender {
 	if m.modelPicker.active() {
-		return m.modelPicker.render(m.width, m.input.MaxHeight)
+		return m.modelPicker.render(m.width, m.input.MaxHeight, m.hasDarkBackground)
 	}
 	composer := m.renderComposer()
 	popupRows := min(maxSlashPopupRows, max(m.height-composer.height-3, 0))
+	background := userMessageBackground(m.hasDarkBackground, m.terminalBackground)
 	popup := m.filePicker.render(
 		max(m.width-1, 1),
 		popupRows,
-		userMessageBackground(m.hasDarkBackground, m.terminalBackground),
+		background,
+		m.hasDarkBackground,
 	)
 	if popup == "" {
-		popup = m.slashPopup.render(max(m.width-1, 1), popupRows)
+		popup = m.slashPopup.render(max(m.width-1, 1), popupRows, background, m.hasDarkBackground)
 	}
 	if popup == "" {
 		return composer
@@ -1117,20 +1119,21 @@ func wrapComposerLine(line string, width, cursorColumn int) ([]string, int, int)
 }
 
 func (m Model) statusView() string {
+	theme := themeFor(m.hasDarkBackground)
 	if m.modelStatusErr != nil {
-		return ansi.Truncate(statusIndent+errorStyle.Render("Model unavailable"), max(m.width, 0), "…")
+		return ansi.Truncate(statusIndent+theme.error.Render("Model unavailable"), max(m.width, 0), "…")
 	}
 	if m.modelName == "" {
-		return ansi.Truncate(statusIndent+mutedStyle.Render("Loading model…"), max(m.width, 0), "…")
+		return ansi.Truncate(statusIndent+theme.muted.Render("Loading model…"), max(m.width, 0), "…")
 	}
 
 	modelStatus := m.modelName
 	if m.reasoningEffort != "" {
 		modelStatus += " " + m.reasoningEffort
 	}
-	line := statusIndent + userStyle.Render(modelStatus)
-	line += mutedStyle.Render(" · ")
-	line += assistantStyle.Render(fmt.Sprintf("Context %d%% used", contextUsagePercent(m.contextTokens, m.contextWindow)))
+	line := statusIndent + theme.highlight.Render(modelStatus)
+	line += theme.muted.Render(" · ")
+	line += theme.muted.Render(fmt.Sprintf("Context %d%% used", contextUsagePercent(m.contextTokens, m.contextWindow)))
 	return ansi.Truncate(line, max(m.width, 0), "…")
 }
 

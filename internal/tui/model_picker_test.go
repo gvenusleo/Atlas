@@ -69,7 +69,7 @@ func TestModelPickerRenderIsBoundedAndKeepsSelectionVisible(t *testing.T) {
 	var picker modelPicker
 	picker.open(models, models[15].Value, "")
 
-	rendered := picker.render(24, 5)
+	rendered := picker.render(24, 5, false)
 	lines := strings.Split(rendered.content, "\n")
 	if len(lines) != 5 || !strings.Contains(ansi.Strip(rendered.content), "›") {
 		t.Fatalf("picker render = %q", ansi.Strip(rendered.content))
@@ -86,16 +86,16 @@ func TestModelPickerRenderSeparatesTitleAndUsesForegroundSelection(t *testing.T)
 	var picker modelPicker
 	picker.open(models, models[0].Value, "")
 
-	rendered := picker.render(60, 5)
+	rendered := picker.render(60, 5, false)
 	rawLines := strings.Split(rendered.content, "\n")
 	if len(rawLines) != 5 || ansi.Strip(rawLines[0]) != "  Select model" || rawLines[1] != "" {
 		t.Fatalf("picker title spacing = %q", ansi.Strip(rendered.content))
 	}
 	selected := ansi.Strip(rawLines[2])
-	if rawLines[2] != userStyle.Render(selected) {
+	if rawLines[2] != lightTheme.highlight.Render(selected) {
 		t.Fatalf("selected model does not use one foreground style: %q", rawLines[2])
 	}
-	if !reflect.DeepEqual(userStyle.GetBackground(), messageStyle.GetBackground()) {
+	if !reflect.DeepEqual(lightTheme.highlight.GetBackground(), lightTheme.text.GetBackground()) {
 		t.Fatal("selected model style has a background color")
 	}
 }

@@ -135,18 +135,61 @@ func TestWelcomeUpdatesWhenSkillSummariesLoad(t *testing.T) {
 	}
 }
 
-func TestWelcomeLabelsAdaptToDarkBackground(t *testing.T) {
+func TestWelcomeLabelsUseThemeMutedColor(t *testing.T) {
 	m := New(Options{CWD: "/work"})
 	m.modelName = "Model A"
 	light := m.welcomeMetadata(80, true)
-	if !strings.Contains(light, mutedStyle.Render("cwd    ")) {
+	if !strings.Contains(light, lightTheme.muted.Render("cwd    ")) {
 		t.Fatalf("light welcome labels do not use muted style: %q", light)
 	}
 
 	m.hasDarkBackground = true
 	dark := m.welcomeMetadata(80, true)
-	if !strings.Contains(dark, subtleStyle.Render("cwd    ")) {
+	if !strings.Contains(dark, darkTheme.muted.Render("cwd    ")) {
 		t.Fatalf("dark welcome labels do not use readable grey: %q", dark)
+	}
+}
+
+func TestThemesDefineOneReusableTextColorPerSemanticRole(t *testing.T) {
+	tests := []struct {
+		name    string
+		theme   tuiTheme
+		palette colorPalette
+	}{
+		{name: "light", theme: lightTheme, palette: colorPalette{highlight: "#005CC5", text: "#242424", muted: "#737373", error: "#B42318"}},
+		{name: "dark", theme: darkTheme, palette: colorPalette{highlight: "#82AAFF", text: "#E6E6E6", muted: "#A3A3A3", error: "#FF7B72"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.theme.palette != test.palette {
+				t.Fatalf("palette = %#v, want %#v", test.theme.palette, test.palette)
+			}
+			if reflect.DeepEqual(test.theme.highlight.GetForeground(), test.theme.text.GetForeground()) ||
+				reflect.DeepEqual(test.theme.text.GetForeground(), test.theme.muted.GetForeground()) ||
+				reflect.DeepEqual(test.theme.highlight.GetForeground(), test.theme.muted.GetForeground()) {
+				t.Fatal("highlight, text, and muted roles must use distinct colors")
+			}
+			markdown := markdownStyle(test.name == "dark")
+			for role, got := range map[string]*string{
+				"text":            markdown.Text.Color,
+				"heading":         markdown.Heading.Color,
+				"horizontal rule": markdown.HorizontalRule.Color,
+				"link":            markdown.Link.Color,
+				"inline code":     markdown.Code.Color,
+				"code block":      markdown.CodeBlock.Color,
+			} {
+				want := test.palette.text
+				switch role {
+				case "heading", "link", "inline code":
+					want = test.palette.highlight
+				case "horizontal rule":
+					want = test.palette.muted
+				}
+				if got == nil || *got != want {
+					t.Fatalf("markdown %s color = %v, want %q", role, got, want)
+				}
+			}
+		})
 	}
 }
 
@@ -156,20 +199,20 @@ func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
 	status.start(startedAt)
 	status.setPhase(turnPhaseThinking)
 
-	raw := status.viewAt(80, startedAt.Add(64*time.Second))
+	raw := status.viewAt(80, startedAt.Add(64*time.Second), false)
 	rendered := ansi.Strip(raw)
 	if !strings.Contains(rendered, "Thinking (1m 04s • esc to interrupt)") {
 		t.Fatalf("turn status = %q", rendered)
 	}
-	meta := subtleStyle.Render("(1m 04s • esc to interrupt)")
+	meta := lightTheme.muted.Render("(1m 04s • esc to interrupt)")
 	if !strings.Contains(raw, meta) {
 		t.Fatal("turn status metadata does not use the light gray style")
 	}
-	if narrow := status.viewAt(20, startedAt.Add(64*time.Second)); ansi.StringWidth(narrow) > 20 {
+	if narrow := status.viewAt(20, startedAt.Add(64*time.Second), false); ansi.StringWidth(narrow) > 20 {
 		t.Fatalf("narrow turn status width = %d, want at most 20", ansi.StringWidth(narrow))
 	}
 	status.stop()
-	if rendered := status.viewAt(80, startedAt.Add(65*time.Second)); rendered != "" {
+	if rendered := status.viewAt(80, startedAt.Add(65*time.Second), false); rendered != "" {
 		t.Fatalf("stopped turn status = %q", rendered)
 	}
 }
@@ -1235,13 +1278,13 @@ func TestAssistantMarkdownCacheInvalidatesForThemeAndContent(t *testing.T) {
 	}
 }
 
-func TestAssistantContentUsesDefaultTerminalColor(t *testing.T) {
+func TestAssistantContentUsesPrimaryThemeColor(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("plain response")
 
 	rendered := message.render(40, false, nil)
-	if rendered != ansi.Strip(rendered) {
-		t.Fatalf("assistant response contains foreground styling: %q", rendered)
+	if !strings.Contains(rendered, lightTheme.text.Render("plain")) {
+		t.Fatalf("assistant response does not use the light primary color: %q", rendered)
 	}
 }
 
@@ -1296,10 +1339,10 @@ func TestTurnResultUpdatesContextUsage(t *testing.T) {
 	if got := ansi.Strip(m.statusView()); got != "  gpt-5.6-sol high · Context 79% used" {
 		t.Fatalf("statusView() = %q", got)
 	}
-	if !strings.Contains(m.statusView(), userStyle.Render("gpt-5.6-sol high")) {
+	if !strings.Contains(m.statusView(), lightTheme.highlight.Render("gpt-5.6-sol high")) {
 		t.Fatal("model name and reasoning effort do not share the model status style")
 	}
-	if !strings.Contains(m.statusView(), assistantStyle.Render("Context 79% used")) {
+	if !strings.Contains(m.statusView(), lightTheme.muted.Render("Context 79% used")) {
 		t.Fatal("context status does not use one shared style")
 	}
 }
@@ -1385,7 +1428,7 @@ func TestToolResultTruncationPreservesUTF8(t *testing.T) {
 		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"read output"}`},
 		result: result,
 		done:   true,
-	}, 80)
+	}, 80, false)
 
 	if !utf8.ValidString(rendered) {
 		t.Fatal("rendered tool result contains invalid UTF-8")
@@ -1400,7 +1443,7 @@ func TestToolResultTruncationPreservesUTF8(t *testing.T) {
 func TestToolInputLimitsWrappedContinuationRows(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
-	}, 20))
+	}, 20, false))
 	lines := strings.Split(rendered, "\n")
 
 	if len(lines) != 4 {
@@ -1421,7 +1464,7 @@ func TestToolInputOmissionMarkerFitsNarrowWidths(t *testing.T) {
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
 	}
 	for width := 5; width <= 10; width++ {
-		rendered := renderToolCall(tc, width)
+		rendered := renderToolCall(tc, width, false)
 		for line := range strings.SplitSeq(rendered, "\n") {
 			if got := ansi.StringWidth(line); got > width {
 				t.Fatalf("width %d rendered line width = %d: %q", width, got, ansi.Strip(line))
@@ -1440,7 +1483,7 @@ func TestToolOutputKeepsHeadAndTailWithinScreenRowLimit(t *testing.T) {
 		result: strings.Join(resultLines, "\n"),
 		done:   true,
 	}
-	rendered := ansi.Strip(renderToolCall(tc, 40))
+	rendered := ansi.Strip(renderToolCall(tc, 40, false))
 	lines := strings.Split(rendered, "\n")
 
 	if got := len(lines) - 1; got != toolOutputRows {
@@ -1461,7 +1504,7 @@ func TestToolOutputLimitCountsWrappedScreenRows(t *testing.T) {
 		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
 		result: strings.Repeat("abcdefghij", 30),
 		done:   true,
-	}, 20))
+	}, 20, false))
 	lines := strings.Split(rendered, "\n")
 
 	if got := len(lines) - 1; got != toolOutputRows {
@@ -1484,7 +1527,7 @@ func TestDirectShellOutputUsesExpandedRowLimit(t *testing.T) {
 		result:   result,
 		metadata: model.ToolMetadata{DirectShell: true},
 		done:     true,
-	}, 40))
+	}, 40, false))
 
 	if strings.Contains(rendered, "… +") {
 		t.Fatalf("direct shell output was limited as a model tool call: %q", rendered)
@@ -1500,7 +1543,7 @@ func TestFailedToolAlwaysShowsResult(t *testing.T) {
 		result: "network unavailable",
 		err:    true,
 		done:   true,
-	}, 80))
+	}, 80, false))
 
 	if !strings.Contains(rendered, "Failed to search the web for atlas") || !strings.Contains(rendered, "network unavailable") {
 		t.Fatalf("failed tool did not show its action and result: %q", rendered)
@@ -1512,7 +1555,7 @@ func TestSuccessfulSemanticToolHidesRawResult(t *testing.T) {
 		call:   model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas"}`},
 		result: "large raw result",
 		done:   true,
-	}, 80))
+	}, 80, false))
 
 	if rendered != "• Searched the web for atlas" {
 		t.Fatalf("rendered web search = %q", rendered)
@@ -1609,7 +1652,7 @@ func TestTurnRendersModelAndToolsChronologically(t *testing.T) {
 	for _, message := range m.messages {
 		blocks = append(blocks, message.render(80, false, nil))
 	}
-	rendered := strings.Join(blocks, "\n")
+	rendered := ansi.Strip(strings.Join(blocks, "\n"))
 	before := strings.Index(rendered, "before tool")
 	toolResult := strings.Index(rendered, "/tmp/work")
 	after := strings.Index(rendered, "after tool")
@@ -1644,7 +1687,7 @@ func TestMessagesFromTranscriptRestoresToolResults(t *testing.T) {
 	for _, message := range messages {
 		blocks = append(blocks, message.render(80, false, nil))
 	}
-	rendered := strings.Join(blocks, "\n")
+	rendered := ansi.Strip(strings.Join(blocks, "\n"))
 	toolResult := strings.Index(rendered, "/tmp/work")
 	finalAnswer := strings.Index(rendered, "You are in /tmp/work.")
 	if toolResult < 0 || finalAnswer < 0 || toolResult >= finalAnswer {

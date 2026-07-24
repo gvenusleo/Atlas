@@ -8,27 +8,61 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Color palette for the borderless TUI.
-var (
-	userColor      = lipgloss.Color("4") // terminal-defined blue
-	assistantColor = lipgloss.Color("2") // terminal-defined green
-	toolColor      = lipgloss.Color("3") // terminal-defined yellow
-	mutedColor     = lipgloss.Color("8") // terminal-defined grey
-	subtleColor    = lipgloss.Color("245")
-	errorColor     = lipgloss.Color("1") // terminal-defined red
+// colorPalette defines the text hierarchy for one terminal background mode.
+// Error is reserved for failures and does not participate in normal hierarchy.
+type colorPalette struct {
+	highlight string
+	text      string
+	muted     string
+	error     string
+}
 
-	userStyle      = lipgloss.NewStyle().Foreground(userColor)
-	messageStyle   = lipgloss.NewStyle()
-	assistantStyle = lipgloss.NewStyle().Foreground(assistantColor)
-	toolStyle      = lipgloss.NewStyle().Foreground(toolColor)
-	mutedStyle     = lipgloss.NewStyle().Foreground(mutedColor)
-	subtleStyle    = lipgloss.NewStyle().Foreground(subtleColor)
-	errorStyle     = lipgloss.NewStyle().Foreground(errorColor)
-	selectionStyle = lipgloss.NewStyle().Reverse(true)
+type tuiTheme struct {
+	palette   colorPalette
+	highlight lipgloss.Style
+	text      lipgloss.Style
+	muted     lipgloss.Style
+	error     lipgloss.Style
+	selection lipgloss.Style
+}
+
+var (
+	lightTheme = newTUITheme(colorPalette{
+		highlight: "#005CC5",
+		text:      "#242424",
+		muted:     "#737373",
+		error:     "#B42318",
+	})
+	darkTheme = newTUITheme(colorPalette{
+		highlight: "#82AAFF",
+		text:      "#E6E6E6",
+		muted:     "#A3A3A3",
+		error:     "#FF7B72",
+	})
 )
 
+func newTUITheme(palette colorPalette) tuiTheme {
+	return tuiTheme{
+		palette:   palette,
+		highlight: lipgloss.NewStyle().Foreground(lipgloss.Color(palette.highlight)),
+		text:      lipgloss.NewStyle().Foreground(lipgloss.Color(palette.text)),
+		muted:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.muted)),
+		error:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.error)),
+		selection: lipgloss.NewStyle().Reverse(true),
+	}
+}
+
+func themeFor(hasDarkBackground bool) tuiTheme {
+	if hasDarkBackground {
+		return darkTheme
+	}
+	return lightTheme
+}
+
 func userMessageStyle(hasDarkBackground bool, terminalBackground color.Color) lipgloss.Style {
+	theme := themeFor(hasDarkBackground)
 	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.palette.text)).
 		Background(userMessageBackground(hasDarkBackground, terminalBackground)).
 		Padding(1, 1)
 }
@@ -62,23 +96,36 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	if hasDarkBackground {
 		style = glamourstyles.DarkStyleConfig
 	}
+	theme := themeFor(hasDarkBackground)
+	text := theme.palette.text
+	highlight := theme.palette.highlight
+	muted := theme.palette.muted
 
 	style.Document = glamouransi.StyleBlock{}
+	style.Text.Color = &text
 	style.Paragraph.BlockPrefix = markdownParagraphStart
 	style.Paragraph.BlockSuffix = markdownParagraphEnd
 	style.BlockQuote.BlockPrefix = markdownBlockquoteStart
 	style.BlockQuote.BlockSuffix = markdownBlockquoteEnd
 	style.BlockQuote.Indent = nil
 	style.BlockQuote.IndentToken = nil
+	style.Heading.Color = &highlight
 	style.H1 = glamouransi.StyleBlock{}
 	style.H2 = glamouransi.StyleBlock{}
 	style.H3 = glamouransi.StyleBlock{}
 	style.H4 = glamouransi.StyleBlock{}
 	style.H5 = glamouransi.StyleBlock{}
 	style.H6 = glamouransi.StyleBlock{}
+	style.HorizontalRule.Color = &muted
+	style.Link.Color = &highlight
+	style.LinkText.Color = &highlight
+	style.Image.Color = &highlight
+	style.ImageText.Color = &muted
+	style.Code.Color = &highlight
 	style.Code.BackgroundColor = nil
 	style.Code.Prefix = ""
 	style.Code.Suffix = ""
+	style.CodeBlock.Color = &text
 	style.CodeBlock.Margin = nil
 	style.CodeBlock.Theme = ""
 	style.CodeBlock.Chroma = nil

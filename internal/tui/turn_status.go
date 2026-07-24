@@ -27,7 +27,6 @@ func newTurnStatus() turnStatus {
 	return turnStatus{
 		spinner: spinner.New(
 			spinner.WithSpinner(spinner.MiniDot),
-			spinner.WithStyle(mutedStyle),
 		),
 	}
 }
@@ -63,17 +62,20 @@ func (s *turnStatus) update(msg spinner.TickMsg) tea.Cmd {
 }
 
 // viewAt renders the transient status row using wall-clock turn duration.
-func (s turnStatus) viewAt(width int, now time.Time) string {
+func (s turnStatus) viewAt(width int, now time.Time, hasDarkBackground bool) string {
 	if !s.active() {
 		return ""
 	}
+	theme := themeFor(hasDarkBackground)
 	label := "Working"
 	if s.phase == turnPhaseThinking {
 		label = "Thinking"
 	}
 	elapsed := max(now.Sub(s.startedAt), 0)
-	line := s.spinner.View() + " " + messageStyle.Bold(true).Render(label)
-	line += " " + subtleStyle.Render(fmt.Sprintf("(%s • esc to interrupt)", formatTurnElapsed(elapsed)))
+	spinner := s.spinner
+	spinner.Style = theme.muted
+	line := spinner.View() + " " + theme.text.Bold(true).Render(label)
+	line += " " + theme.muted.Render(fmt.Sprintf("(%s • esc to interrupt)", formatTurnElapsed(elapsed)))
 	return ansi.Truncate(line, max(width, 0), "…")
 }
 
