@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -44,12 +45,14 @@ func (m Model) welcomeMetadata(width int, labels bool) string {
 	app := name + "  " + messageStyle.Render("v"+version.Current)
 	cwd := compactWorkingDirectory(m.cwd)
 	model := m.welcomeModelName()
+	skills := m.welcomeSkillsStatus()
 
 	if !labels {
 		return strings.Join([]string{
 			ansi.Truncate(app, width, ""),
 			messageStyle.Render(fitFromLeft(cwd, width)),
 			messageStyle.Render(fitFromLeft(model, width)),
+			messageStyle.Render(fitFromLeft(skills, width)),
 		}, "\n")
 	}
 
@@ -63,6 +66,7 @@ func (m Model) welcomeMetadata(width int, labels bool) string {
 		ansi.Truncate(app, width, ""),
 		labelStyle.Render("cwd    ") + messageStyle.Render(fitFromLeft(cwd, valueWidth)),
 		labelStyle.Render("model  ") + messageStyle.Render(fitFromLeft(model, valueWidth)),
+		labelStyle.Render("skills ") + messageStyle.Render(fitFromLeft(skills, valueWidth)),
 	}, "\n")
 }
 
@@ -77,6 +81,16 @@ func (m Model) welcomeModelName() string {
 		return m.modelName
 	}
 	return m.modelName + " " + m.reasoningEffort
+}
+
+func (m Model) welcomeSkillsStatus() string {
+	if !m.skillsLoaded {
+		return "loading..."
+	}
+	if m.skillStatusErr != nil {
+		return "unavailable"
+	}
+	return strconv.Itoa(m.skillCount) + " enabled"
 }
 
 func compactWorkingDirectory(cwd string) string {

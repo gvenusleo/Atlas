@@ -83,6 +83,9 @@ func TestResumeExactSessionReplacesConversationAtomically(t *testing.T) {
 	if m.showWelcome {
 		t.Fatal("resumed session still shows the new-session welcome")
 	}
+	if m.skillsLoaded || m.skillCount != 0 || m.skillStatusErr != nil {
+		t.Fatalf("resumed skill state: loaded=%t count=%d err=%v", m.skillsLoaded, m.skillCount, m.skillStatusErr)
+	}
 	if len(m.messages) != 2 || m.messages[0].content.String() != "Target prompt" || m.messages[1].content.String() != "Target answer" {
 		t.Fatalf("resumed messages = %#v", m.messages)
 	}

@@ -69,6 +69,9 @@ type Model struct {
 	resumePicker    sessionPicker
 	slashPopup      slashPopup
 	filePicker      fileMentionPicker
+	skillCount      int
+	skillsLoaded    bool
+	skillStatusErr  error
 
 	// Turn state.
 	turnActive  bool
@@ -475,7 +478,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.cwd != m.cwd {
 			return m, nil
 		}
+		m.skillsLoaded = true
+		m.skillStatusErr = msg.err
 		if msg.err == nil {
+			m.skillCount = len(msg.summaries)
 			m.slashPopup.setSkills(msg.summaries)
 			m.slashPopup.sync(m.input)
 		}
@@ -633,6 +639,9 @@ func (m *Model) applyResumedSession(resumed resumedSession) tea.Cmd {
 	m.input.Focus()
 	m.resumePicker.close()
 	m.slashPopup.setSkills(nil)
+	m.skillCount = 0
+	m.skillsLoaded = false
+	m.skillStatusErr = nil
 	m.filePicker.reset()
 	m.rebuild()
 	m.viewport.GotoBottom()

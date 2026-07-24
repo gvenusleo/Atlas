@@ -114,6 +114,27 @@ func TestWelcomeUpdatesWhenModelStatusLoads(t *testing.T) {
 	}
 }
 
+func TestWelcomeUpdatesWhenSkillSummariesLoad(t *testing.T) {
+	m := New(Options{CWD: "/work"})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	m = updated.(Model)
+	if rendered := ansi.Strip(m.viewport.View()); !strings.Contains(rendered, "skills loading...") {
+		t.Fatalf("loading welcome = %q", rendered)
+	}
+
+	updated, _ = m.Update(skillSummariesLoadedMsg{
+		cwd: "/work",
+		summaries: []runtime.SkillSummary{
+			{Name: "check"},
+			{Name: "think"},
+		},
+	})
+	m = updated.(Model)
+	if rendered := ansi.Strip(m.viewport.View()); !strings.Contains(rendered, "skills 2 enabled") {
+		t.Fatalf("loaded welcome = %q", rendered)
+	}
+}
+
 func TestWelcomeLabelsAdaptToDarkBackground(t *testing.T) {
 	m := New(Options{CWD: "/work"})
 	m.modelName = "Model A"
