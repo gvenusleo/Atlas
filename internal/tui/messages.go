@@ -5,8 +5,6 @@ import (
 	"image/color"
 	"strings"
 	"sync"
-	"unicode"
-	"unicode/utf8"
 
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
@@ -90,13 +88,6 @@ type markdownRendererEntry struct {
 }
 
 var markdownRenderers sync.Map
-
-const (
-	markdownParagraphStart  = "\u2060\u2061"
-	markdownParagraphEnd    = "\u2061\u2060"
-	markdownBlockquoteStart = "\u2062\u2063"
-	markdownBlockquoteEnd   = "\u2063\u2062"
-)
 
 // toolCallView holds the display state of a single tool call.
 type toolCallView struct {
@@ -232,6 +223,7 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 			glamour.WithStyles(markdownStyle(hasDarkBackground)),
 			glamour.WithWordWrap(wrapWidth),
 			glamour.WithTableWrap(true),
+			glamour.WithChromaFormatter("terminal16m"),
 		)
 		if err != nil {
 			return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
@@ -247,121 +239,34 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 		return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
 	}
 
-	rendered = reflowMarkdownBlockquotes(rendered, wrapWidth)
-	rendered = reflowMarkdownParagraphs(rendered, wrapWidth)
+	// Glamour pads to its wrap width and terminates the document with a newline.
+	// Remove only that framing before adding the conversation gutter.
+	rendered = strings.TrimSuffix(rendered, "\n")
 	lines := strings.Split(rendered, "\n")
-	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[0])) == "" {
-		lines = lines[1:]
-	}
-	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
-		lines = lines[:len(lines)-1]
-	}
-	if len(lines) == 0 {
+	if rendered == "" {
 		return ""
 	}
-	for i := range lines {
+	firstContentLine := -1
+	for i, line := range lines {
+		if strings.TrimSpace(ansi.Strip(line)) != "" {
+			firstContentLine = i
+			break
+		}
+	}
+	lineCount := len(lines)
+	if strings.HasSuffix(rendered, "\n") {
+		lineCount--
+	}
+	for i := range lineCount {
 		plain := strings.TrimRight(ansi.Strip(lines[i]), " \t")
 		lines[i] = ansi.Truncate(lines[i], ansi.StringWidth(plain), "")
 		prefix := "  "
-		if i == 0 {
+		if i == firstContentLine {
 			prefix = "• "
 		}
 		lines[i] = prefix + lines[i]
 	}
 	return strings.Join(lines, "\n")
-}
-
-// reflowMarkdownBlockquotes reflows marked quote blocks before restoring their gutter.
-func reflowMarkdownBlockquotes(rendered string, width int) string {
-	var result strings.Builder
-	for {
-		before, rest, found := strings.Cut(rendered, markdownBlockquoteStart)
-		result.WriteString(before)
-		if !found {
-			return result.String()
-		}
-
-		blockquote, after, found := strings.Cut(rest, markdownBlockquoteEnd)
-		if !found {
-			result.WriteString(rest)
-			return result.String()
-		}
-		blockquote = reflowMarkdownParagraphs(blockquote, max(width-2, 1))
-		lines := strings.Split(strings.Trim(blockquote, "\n"), "\n")
-		for i := range lines {
-			lines[i] = "│ " + lines[i]
-		}
-		result.WriteString(strings.Join(lines, "\n"))
-		if strings.HasSuffix(blockquote, "\n") {
-			result.WriteByte('\n')
-		}
-		rendered = after
-	}
-}
-
-// reflowMarkdownParagraphs replaces Glamour's word wrapping only inside
-// paragraph markers, leaving tables and code blocks on their native layout path.
-func reflowMarkdownParagraphs(rendered string, width int) string {
-	var result strings.Builder
-	for {
-		before, rest, found := strings.Cut(rendered, markdownParagraphStart)
-		result.WriteString(before)
-		if !found {
-			return result.String()
-		}
-
-		paragraph, after, found := strings.Cut(rest, markdownParagraphEnd)
-		if !found {
-			result.WriteString(rest)
-			return result.String()
-		}
-		result.WriteString(reflowMarkdownParagraph(paragraph, width))
-		rendered = after
-	}
-}
-
-// reflowMarkdownParagraph reconstructs one paragraph before hard wrapping it by cell width.
-func reflowMarkdownParagraph(paragraph string, width int) string {
-	hasTrailingNewline := strings.HasSuffix(paragraph, "\n")
-	rawLines := strings.Split(strings.Trim(paragraph, "\n"), "\n")
-	lines := make([]string, 0, len(rawLines))
-	for _, line := range rawLines {
-		plain := strings.TrimRight(ansi.Strip(line), " \t")
-		lines = append(lines, ansi.Truncate(line, ansi.StringWidth(plain), ""))
-	}
-
-	var joined strings.Builder
-	for i, line := range lines {
-		if i > 0 {
-			joined.WriteString(markdownLineJoiner(lines[i-1], line))
-		}
-		joined.WriteString(line)
-	}
-	wrapped := ansi.Hardwrap(joined.String(), width, true)
-	if hasTrailingNewline {
-		wrapped += "\n"
-	}
-	return wrapped
-}
-
-// markdownLineJoiner restores whitespace removed by Glamour's word wrapper.
-func markdownLineJoiner(previous, next string) string {
-	previous = strings.TrimSpace(ansi.Strip(previous))
-	next = strings.TrimSpace(ansi.Strip(next))
-	if previous == "" || next == "" {
-		return ""
-	}
-	last, _ := utf8.DecodeLastRuneInString(previous)
-	first, _ := utf8.DecodeRuneInString(next)
-	if (isCJK(last) && isCJK(first)) || last == '-' || unicode.IsPunct(first) {
-		return ""
-	}
-	return " "
-}
-
-// isCJK reports whether a rune belongs to a wide East Asian script.
-func isCJK(r rune) bool {
-	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
 }
 
 // renderToolCall renders a compact semantic summary and a bounded result preview.

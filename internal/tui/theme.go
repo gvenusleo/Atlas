@@ -15,6 +15,8 @@ type colorPalette struct {
 	muted     string
 	surface   string
 	selected  string
+	link      string
+	code      string
 	brand     string
 	reasoning string
 	context   string
@@ -48,6 +50,8 @@ func newTUITheme(flavor catppuccin.Flavor, surface catppuccin.Color) tuiTheme {
 		muted:     flavor.Subtext0().Hex,
 		surface:   surface.Hex,
 		selected:  flavor.Blue().Hex,
+		link:      flavor.Sky().Hex,
+		code:      flavor.Teal().Hex,
 		brand:     flavor.Lavender().Hex,
 		reasoning: flavor.Mauve().Hex,
 		context:   flavor.Teal().Hex,
@@ -94,7 +98,7 @@ func userMessageBackground(hasDarkBackground bool, _ color.Color) color.Color {
 	return lipgloss.Color(themeFor(hasDarkBackground).palette.surface)
 }
 
-// markdownStyle adapts Glamour's built-in palette to Atlas's borderless layout.
+// markdownStyle applies Atlas's Catppuccin colors to Glamour's built-in styles.
 func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	style := glamourstyles.LightStyleConfig
 	if hasDarkBackground {
@@ -104,34 +108,30 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	text := theme.palette.text
 	selected := theme.palette.selected
 	muted := theme.palette.muted
+	link := theme.palette.link
+	code := theme.palette.code
+	syntaxTheme := "catppuccin-latte"
+	if hasDarkBackground {
+		syntaxTheme = "catppuccin-mocha"
+	}
 
-	style.Document = glamouransi.StyleBlock{}
-	style.Text.Color = &text
-	style.Paragraph.BlockPrefix = markdownParagraphStart
-	style.Paragraph.BlockSuffix = markdownParagraphEnd
-	style.BlockQuote.BlockPrefix = markdownBlockquoteStart
-	style.BlockQuote.BlockSuffix = markdownBlockquoteEnd
-	style.BlockQuote.Indent = nil
-	style.BlockQuote.IndentToken = nil
+	style.Document.Color = &text
+	style.Document.BlockPrefix = ""
+	style.Document.Margin = nil
 	style.Heading.Color = &selected
-	style.H1 = glamouransi.StyleBlock{}
-	style.H2 = glamouransi.StyleBlock{}
-	style.H3 = glamouransi.StyleBlock{}
-	style.H4 = glamouransi.StyleBlock{}
-	style.H5 = glamouransi.StyleBlock{}
-	style.H6 = glamouransi.StyleBlock{}
+	style.H1.Color = &selected
+	style.H1.BackgroundColor = nil
+	style.H1.Prefix = ""
+	style.H6.Color = &selected
 	style.HorizontalRule.Color = &muted
-	style.Link.Color = &selected
-	style.LinkText.Color = &selected
-	style.Image.Color = &selected
+	style.Link.Color = &link
+	style.LinkText.Color = &link
+	style.Image.Color = &link
 	style.ImageText.Color = &muted
-	style.Code.Color = &selected
+	style.Code.Color = &code
 	style.Code.BackgroundColor = nil
-	style.Code.Prefix = ""
-	style.Code.Suffix = ""
 	style.CodeBlock.Color = &text
-	style.CodeBlock.Margin = nil
-	style.CodeBlock.Theme = ""
+	style.CodeBlock.Theme = syntaxTheme
 	style.CodeBlock.Chroma = nil
 	return style
 }

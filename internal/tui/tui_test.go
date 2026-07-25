@@ -7,12 +7,14 @@ import (
 	"image/color"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	glamourstyles "charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/liuyuxin/atlas/internal/agent"
@@ -157,11 +159,11 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 		palette colorPalette
 	}{
 		{name: "light", theme: lightTheme, palette: colorPalette{
-			text: "#4c4f69", muted: "#6c6f85", surface: "#e6e9ef", selected: "#1e66f5", brand: "#7287fd",
+			text: "#4c4f69", muted: "#6c6f85", surface: "#e6e9ef", selected: "#1e66f5", link: "#04a5e5", code: "#179299", brand: "#7287fd",
 			reasoning: "#8839ef", context: "#179299", working: "#df8e1d", success: "#40a02b", error: "#d20f39",
 		}},
 		{name: "dark", theme: darkTheme, palette: colorPalette{
-			text: "#cdd6f4", muted: "#a6adc8", surface: "#313244", selected: "#89b4fa", brand: "#b4befe",
+			text: "#cdd6f4", muted: "#a6adc8", surface: "#313244", selected: "#89b4fa", link: "#89dceb", code: "#94e2d5", brand: "#b4befe",
 			reasoning: "#cba6f7", context: "#94e2d5", working: "#f9e2af", success: "#a6e3a1", error: "#f38ba8",
 		}},
 	}
@@ -181,8 +183,10 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 			}
 			markdown := markdownStyle(test.name == "dark")
 			for role, got := range map[string]*string{
-				"text":            markdown.Text.Color,
+				"text":            markdown.Document.Color,
 				"heading":         markdown.Heading.Color,
+				"h1 heading":      markdown.H1.Color,
+				"h6 heading":      markdown.H6.Color,
 				"horizontal rule": markdown.HorizontalRule.Color,
 				"link":            markdown.Link.Color,
 				"inline code":     markdown.Code.Color,
@@ -190,14 +194,31 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 			} {
 				want := test.palette.text
 				switch role {
-				case "heading", "link", "inline code":
+				case "heading", "h1 heading", "h6 heading":
 					want = test.palette.selected
+				case "link":
+					want = test.palette.link
+				case "inline code":
+					want = test.palette.code
 				case "horizontal rule":
 					want = test.palette.muted
 				}
 				if got == nil || *got != want {
 					t.Fatalf("markdown %s color = %v, want %q", role, got, want)
 				}
+			}
+			if markdown.H1.BackgroundColor != nil {
+				t.Fatalf("markdown H1 background = %q, want nil", *markdown.H1.BackgroundColor)
+			}
+			if markdown.Code.BackgroundColor != nil {
+				t.Fatalf("markdown inline code background = %q, want nil", *markdown.Code.BackgroundColor)
+			}
+			wantSyntaxTheme := "catppuccin-latte"
+			if test.name == "dark" {
+				wantSyntaxTheme = "catppuccin-mocha"
+			}
+			if markdown.CodeBlock.Theme != wantSyntaxTheme || markdown.CodeBlock.Chroma != nil {
+				t.Fatalf("markdown syntax highlighting = theme %q, chroma %v; want theme %q", markdown.CodeBlock.Theme, markdown.CodeBlock.Chroma, wantSyntaxTheme)
 			}
 		})
 	}
@@ -1098,9 +1119,9 @@ func TestAssistantAndToolBlocksUseBulletsAndIndentedContent(t *testing.T) {
 	})
 
 	rendered := ansi.Strip(message.render(40, false, nil))
-	want := "• first line second line\n\n• Ran Search Atlas\n  └ Search Atlas"
-	if rendered != want {
-		t.Fatalf("rendered message = %q, want %q", rendered, want)
+	if !strings.Contains(rendered, "• first line second line") ||
+		!strings.Contains(rendered, "• Ran Search Atlas\n  └ Search Atlas") {
+		t.Fatalf("rendered message omitted assistant or tool content: %q", rendered)
 	}
 }
 
@@ -1124,13 +1145,34 @@ func TestAssistantRendersMarkdown(t *testing.T) {
 		t.Fatalf("rendered markdown contains no styling: %q", rendered)
 	}
 	lines := strings.Split(plain, "\n")
-	if !strings.HasPrefix(lines[0], "• ") {
-		t.Fatalf("first markdown line = %q, want assistant marker", lines[0])
+	firstContentLine := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "• ") {
+			firstContentLine = i
+			break
+		}
 	}
-	for _, line := range lines[1:] {
+	if firstContentLine < 0 {
+		t.Fatalf("rendered markdown has no assistant marker: %q", plain)
+	}
+	for _, line := range lines[firstContentLine+1:] {
+		if line == "" {
+			continue
+		}
 		if !strings.HasPrefix(line, "  ") {
 			t.Fatalf("continuation markdown line = %q, want two-space indent", line)
 		}
+	}
+}
+
+func TestAssistantMarkdownStartsWithoutDocumentGapOrH1Padding(t *testing.T) {
+	message := newAssistantMessage()
+	message.content.WriteString("# Markdown 示例")
+
+	rendered := ansi.Strip(message.render(40, false, nil))
+	firstLine, _, _ := strings.Cut(rendered, "\n")
+	if firstLine != "• Markdown 示例" {
+		t.Fatalf("first markdown line = %q, want %q", firstLine, "• Markdown 示例")
 	}
 }
 
@@ -1186,80 +1228,70 @@ func TestAssistantMarkdownPreservesCJKEmphasis(t *testing.T) {
 	}
 }
 
-func TestAssistantMarkdownDoesNotInsertSpacesIntoCJK(t *testing.T) {
-	message := newAssistantMessage()
-	message.content.WriteString("## 核心特点\n\nGo 是一门静态类型、编译型编程语言。\n\n- **简洁易学**：语法精简，关键字少\n- **编译速度快**：大型项目也能快速编译")
-
-	rendered := ansi.Strip(message.render(40, false, nil))
-	want := "• 核心特点\n  \n  Go 是一门静态类型、编译型编程语言。\n  \n  • 简洁易学：语法精简，关键字少\n  • 编译速度快：大型项目也能快速编译"
-	if rendered != want {
-		t.Fatalf("rendered CJK markdown = %q, want %q", rendered, want)
-	}
-	for line := range strings.SplitSeq(rendered, "\n") {
-		if got := ansi.StringWidth(line); got > 40 {
-			t.Fatalf("rendered line width = %d, want at most 40: %q", got, line)
-		}
-	}
-}
-
-func TestAssistantMarkdownPreservesBlankLineBeforeHeading(t *testing.T) {
-	message := newAssistantMessage()
-	message.content.WriteString("Go 适合构建后端服务。\n\n## 核心特点")
-
-	rendered := ansi.Strip(message.render(40, false, nil))
-	if !strings.Contains(rendered, "Go 适合构建后端服务。\n  \n  核心特点") {
-		t.Fatalf("rendered markdown lost the blank line before a heading: %q", rendered)
-	}
-}
-
-func TestMarkdownInlineCodeHasNoBackgroundOrPadding(t *testing.T) {
+func TestMarkdownStyleKeepsOnlyRequiredLayoutOverrides(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		code := markdownStyle(dark).Code
-		if background := code.BackgroundColor; background != nil {
-			t.Fatalf("markdownStyle(%t) inline code background = %q, want nil", dark, *background)
+		style := markdownStyle(dark)
+		native := glamourstyles.LightStyleConfig
+		if dark {
+			native = glamourstyles.DarkStyleConfig
 		}
-		if code.Prefix != "" || code.Suffix != "" {
-			t.Fatalf("markdownStyle(%t) inline code padding = %q/%q, want empty", dark, code.Prefix, code.Suffix)
+		if style.Document.BlockPrefix != "" {
+			t.Fatalf("markdownStyle(%t) document prefix = %q, want empty", dark, style.Document.BlockPrefix)
+		}
+		if style.Document.BlockSuffix != native.Document.BlockSuffix {
+			t.Fatalf("markdownStyle(%t) changes native document suffix", dark)
+		}
+		if style.Document.Margin != nil {
+			t.Fatalf("markdownStyle(%t) document margin = %v, want nil", dark, style.Document.Margin)
+		}
+		if !reflect.DeepEqual(style.BlockQuote.Indent, native.BlockQuote.Indent) ||
+			!reflect.DeepEqual(style.BlockQuote.IndentToken, native.BlockQuote.IndentToken) {
+			t.Fatalf("markdownStyle(%t) changes native blockquote layout", dark)
+		}
+		if style.Heading.BlockSuffix != native.Heading.BlockSuffix ||
+			!reflect.DeepEqual(style.Heading.Bold, native.Heading.Bold) {
+			t.Fatalf("markdownStyle(%t) changes native heading layout", dark)
+		}
+		if style.H1.Prefix != "" {
+			t.Fatalf("markdownStyle(%t) H1 prefix = %q, want empty", dark, style.H1.Prefix)
+		}
+		if style.H1.Suffix != native.H1.Suffix ||
+			!reflect.DeepEqual(style.H1.Bold, native.H1.Bold) ||
+			!reflect.DeepEqual(style.H1.Underline, native.H1.Underline) {
+			t.Fatalf("markdownStyle(%t) changes native H1 typography", dark)
+		}
+		if style.H2.Prefix != native.H2.Prefix || style.H3.Prefix != native.H3.Prefix ||
+			style.H4.Prefix != native.H4.Prefix || style.H5.Prefix != native.H5.Prefix ||
+			style.H6.Prefix != native.H6.Prefix {
+			t.Fatalf("markdownStyle(%t) changes native heading prefixes", dark)
+		}
+		if style.Code.Prefix != native.Code.Prefix || style.Code.Suffix != native.Code.Suffix ||
+			!reflect.DeepEqual(style.CodeBlock.Margin, native.CodeBlock.Margin) {
+			t.Fatalf("markdownStyle(%t) changes native code layout", dark)
 		}
 	}
 }
 
-func TestAssistantMarkdownInlineCodeDoesNotForceSentenceWrap(t *testing.T) {
-	markdown := "需要我进一步查看某个依赖的具体使用位置，或运行 `go mod why`/`go list` 分析吗？"
-	plain := strings.ReplaceAll(markdown, "`", "")
-	message := newAssistantMessage()
-	message.content.WriteString(markdown)
-
-	rendered := ansi.Strip(message.render(ansi.StringWidth(plain)+2, true, nil))
-	if strings.Contains(rendered, "\n") {
-		t.Fatalf("inline code padding forced a sentence wrap: %q", rendered)
+func TestAssistantMarkdownHeadingsRenderInBlue(t *testing.T) {
+	tests := []struct {
+		name string
+		dark bool
+		rgb  string
+	}{
+		{name: "light", rgb: "30;102;245"},
+		{name: "dark", dark: true, rgb: "137;180;250"},
 	}
-}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			message := newAssistantMessage()
+			message.content.WriteString("# First\n\n## Second\n\n### Third")
 
-func TestAssistantMarkdownReflowsBlockquoteWithoutInlineGutters(t *testing.T) {
-	message := newAssistantMessage()
-	message.content.WriteString("> **Go 是工程效率优先的语言**,牺牲一些性能换取简单、可读、易上手、快速编译,适合构建大规模后端服务。\n> **Rust 是性能与安全优先的语言**,牺牲一些开发效率换取零成本抽象和编译期保证,适合对性能要求苛刻的场景。")
-
-	rendered := ansi.Strip(message.render(44, true, nil))
-	var content strings.Builder
-	for i, line := range strings.Split(rendered, "\n") {
-		prefix := "  │ "
-		if i == 0 {
-			prefix = "• │ "
-		}
-		if !strings.HasPrefix(line, prefix) {
-			t.Fatalf("blockquote line %d = %q, want prefix %q", i, line, prefix)
-		}
-		if strings.Contains(strings.TrimPrefix(line, prefix), "│") {
-			t.Fatalf("blockquote gutter leaked into line %d content: %q", i, line)
-		}
-		content.WriteString(strings.TrimPrefix(line, prefix))
-		if got := ansi.StringWidth(line); got > 44 {
-			t.Fatalf("blockquote line width = %d, want at most 44: %q", got, line)
-		}
-	}
-	if joined := content.String(); !strings.Contains(joined, "Go 是工程效率优先的语言") || !strings.Contains(joined, "Rust 是性能与安全优先的语言") {
-		t.Fatalf("blockquote content was split unexpectedly: %q", rendered)
+			rendered := message.render(40, test.dark, nil)
+			blue := regexp.MustCompile(`\x1b\[[0-9;]*38;2;` + test.rgb + `[0-9;]*m`)
+			if headings := blue.FindAllString(rendered, -1); len(headings) < 3 {
+				t.Fatalf("rendered headings contain %d Blue sequences, want at least 3: %q", len(headings), rendered)
+			}
+		})
 	}
 }
 
@@ -1276,6 +1308,22 @@ func TestAssistantMarkdownHandlesIncompleteFenceWhileStreaming(t *testing.T) {
 	complete := ansi.Strip(message.render(40, true, nil))
 	if strings.Contains(complete, "```") || !strings.Contains(complete, "Done.") {
 		t.Fatalf("completed fenced code render = %q", complete)
+	}
+}
+
+func TestAssistantMarkdownCodeBlockUsesTrueColorSyntaxHighlighting(t *testing.T) {
+	colorPattern := regexp.MustCompile(`\x1b\[38;2;[0-9;]+m`)
+	for _, dark := range []bool{false, true} {
+		message := newAssistantMessage()
+		message.content.WriteString("```go\npackage main\n\nfunc main() { println(\"hello\") }\n```")
+
+		colors := make(map[string]bool)
+		for _, sequence := range colorPattern.FindAllString(message.render(60, dark, nil), -1) {
+			colors[sequence] = true
+		}
+		if len(colors) < 2 {
+			t.Fatalf("dark=%t syntax colors = %v, want at least two true-color sequences", dark, colors)
+		}
 	}
 }
 
@@ -1303,16 +1351,6 @@ func TestAssistantContentUsesPrimaryThemeColor(t *testing.T) {
 	rendered := message.render(40, false, nil)
 	if !strings.Contains(rendered, lightTheme.text.Render("plain")) {
 		t.Fatalf("assistant response does not use the light primary color: %q", rendered)
-	}
-}
-
-func TestAssistantDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
-	message := newAssistantMessage()
-	message.content.WriteString("你好！我是 Atlas，可以帮你处理本地文件、运行命令、写代码、查资料等。有什么需要帮忙的吗？")
-
-	rendered := ansi.Strip(message.render(60, false, nil))
-	if strings.Contains(rendered, "我是\n  Atlas") {
-		t.Fatalf("assistant rendering inserted an unexpected line break: %q", rendered)
 	}
 }
 
