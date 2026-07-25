@@ -190,7 +190,7 @@ func (p slashPopup) render(width, maxRows int, background color.Color, hasDarkBa
 		return ""
 	}
 	theme := themeFor(hasDarkBackground)
-	highlightStyle := slashPopupStyle(theme.highlight, background)
+	selectedStyle := slashPopupStyle(theme.selected, background)
 	textStyle := slashPopupStyle(theme.text, background)
 	mutedStyle := slashPopupStyle(theme.muted, background)
 	maxRows = min(maxRows, len(p.matches))
@@ -222,7 +222,7 @@ func (p slashPopup) render(width, maxRows int, background color.Color, hasDarkBa
 			if description != "" {
 				line += "  " + description
 			}
-			lines = append(lines, highlightStyle.Render(line))
+			lines = append(lines, selectedStyle.Render(line))
 			continue
 		}
 

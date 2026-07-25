@@ -304,7 +304,7 @@ func (p sessionPicker) render(width, height int, hasDarkBackground bool) session
 		style := theme.text
 		if index == p.selected {
 			prefix = "› "
-			style = theme.highlight
+			style = theme.selected
 		}
 		lines = append(lines, style.Render(prefix+ansi.Truncate(singleLineDisplayText(label), max(width-2, 1), "…")))
 		metadata := sessionPickerMetadata(candidate, p.scope == sessionPickerAll, contentWidth, p.referenceTime)
@@ -343,9 +343,9 @@ func (p sessionPicker) renderScope(theme tuiTheme) string {
 	cwd := theme.muted.Render(" Cwd ")
 	all := theme.muted.Render(" All ")
 	if p.scope == sessionPickerCWD {
-		cwd = theme.highlight.Render("[Cwd]")
+		cwd = theme.selected.Render("[Cwd]")
 	} else {
-		all = theme.highlight.Render("[All]")
+		all = theme.selected.Render("[All]")
 	}
 	return theme.muted.Render("Filter: ") + cwd + " " + all
 }
@@ -369,7 +369,7 @@ func (p sessionPicker) renderConfirmation(title, cancelHint string, width int, t
 		"  " + theme.text.Render(ansi.Truncate(p.cwd, contentWidth, "…")),
 		"  " + theme.muted.Render("→ ") + theme.text.Render(ansi.Truncate(p.pending.info.CWD, max(contentWidth-2, 1), "…")),
 		"",
-		theme.highlight.Render("› Resume and switch directory"),
+		theme.selected.Render("› Resume and switch directory"),
 		"",
 		cancelHint,
 	}

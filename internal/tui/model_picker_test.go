@@ -92,10 +92,10 @@ func TestModelPickerRenderSeparatesTitleAndUsesForegroundSelection(t *testing.T)
 		t.Fatalf("picker title spacing = %q", ansi.Strip(rendered.content))
 	}
 	selected := ansi.Strip(rawLines[2])
-	if rawLines[2] != lightTheme.highlight.Render(selected) {
+	if rawLines[2] != lightTheme.selected.Render(selected) {
 		t.Fatalf("selected model does not use one foreground style: %q", rawLines[2])
 	}
-	if !reflect.DeepEqual(lightTheme.highlight.GetBackground(), lightTheme.text.GetBackground()) {
+	if !reflect.DeepEqual(lightTheme.selected.GetBackground(), lightTheme.text.GetBackground()) {
 		t.Fatal("selected model style has a background color")
 	}
 }

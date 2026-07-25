@@ -158,7 +158,7 @@ func (p modelPicker) render(width, maxRows int, hasDarkBackground bool) composer
 	for i := start; i < end; i++ {
 		label := ansi.Truncate(items[i], contentWidth, "…")
 		if i == selected {
-			lines = append(lines, theme.highlight.Render("› "+label))
+			lines = append(lines, theme.selected.Render("› "+label))
 			continue
 		}
 		lines = append(lines, "  "+theme.text.Render(label))

@@ -168,7 +168,7 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 			t.Fatalf("description columns = %d and %d: %q", descriptionColumn, column, lines)
 		}
 	}
-	if rawLines[5] != lightTheme.highlight.Render(lines[5]) {
+	if rawLines[5] != lightTheme.selected.Render(lines[5]) {
 		t.Fatalf("selected row does not use one foreground style: %q", rawLines[5])
 	}
 	if !strings.Contains(rawLines[4], lightTheme.muted.Render("  [Skill] Short description")) {
@@ -179,7 +179,7 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 			t.Fatalf("built-in command is labeled as a skill: %q", lines[:4])
 		}
 	}
-	if !reflect.DeepEqual(lightTheme.highlight.GetBackground(), lightTheme.text.GetBackground()) {
+	if !reflect.DeepEqual(lightTheme.selected.GetBackground(), lightTheme.text.GetBackground()) {
 		t.Fatal("selected slash style has a background color")
 	}
 }
@@ -192,9 +192,9 @@ func TestSlashPopupStylesInheritComposerBackground(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		theme := themeFor(dark)
 		for name, style := range map[string]lipgloss.Style{
-			"highlight": slashPopupStyle(theme.highlight, background),
-			"text":      slashPopupStyle(theme.text, background),
-			"muted":     slashPopupStyle(theme.muted, background),
+			"selected": slashPopupStyle(theme.selected, background),
+			"text":     slashPopupStyle(theme.text, background),
+			"muted":    slashPopupStyle(theme.muted, background),
 		} {
 			if !reflect.DeepEqual(style.GetBackground(), background) {
 				t.Fatalf("dark=%t %s background = %#v, want %#v", dark, name, style.GetBackground(), background)
@@ -202,7 +202,7 @@ func TestSlashPopupStylesInheritComposerBackground(t *testing.T) {
 		}
 
 		rendered := popup.render(80, maxSlashPopupRows, background, dark)
-		if !strings.Contains(rendered, slashPopupStyle(theme.highlight, background).Render("› /model    Choose a model and reasoning effort")) {
+		if !strings.Contains(rendered, slashPopupStyle(theme.selected, background).Render("› /model    Choose a model and reasoning effort")) {
 			t.Fatalf("dark=%t selected row does not inherit composer background: %q", dark, rendered)
 		}
 		if !strings.Contains(rendered, slashPopupStyle(theme.muted, background).Render("  Resume a saved session")) {

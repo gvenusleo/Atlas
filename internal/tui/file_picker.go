@@ -200,10 +200,10 @@ func (p *fileMentionPicker) openBrowser(hasDarkBackground bool) tea.Cmd {
 	fp.ShowHidden = false
 	fp.DirAllowed = false
 	fp.FileAllowed = true
-	fp.Cursor = theme.highlight.Render("›")
+	fp.Cursor = theme.selected.Render("›")
 	fp.KeyMap.Back.SetKeys("left", "backspace")
 	fp.Styles.Cursor = lipgloss.NewStyle()
-	fp.Styles.Selected = theme.highlight
+	fp.Styles.Selected = theme.selected
 	fp.Styles.Directory = theme.muted
 	fp.Styles.File = theme.text
 	fp.Styles.Symlink = theme.muted
@@ -259,7 +259,7 @@ func (p fileMentionPicker) render(width, maxRows int, background color.Color, ha
 
 	contentWidth := max(width-2, 1)
 	if p.target.query == "" {
-		return theme.highlight.Render(ansi.Truncate("› Browse files…", width, "…"))
+		return theme.selected.Render(ansi.Truncate("› Browse files…", width, "…"))
 	}
 	if len(p.matches) == 0 {
 		label := "No matching files"
@@ -278,7 +278,7 @@ func (p fileMentionPicker) render(width, maxRows int, background color.Color, ha
 	for i := start; i < end; i++ {
 		path := ansi.Truncate(p.matches[i], contentWidth, "…")
 		if i == p.selected {
-			lines = append(lines, theme.highlight.Render("› "+path))
+			lines = append(lines, theme.selected.Render("› "+path))
 		} else {
 			lines = append(lines, "  "+theme.text.Render(path))
 		}

@@ -97,7 +97,7 @@ func TestFileMentionPickerFiltersAndRendersForegroundSelection(t *testing.T) {
 		t.Fatalf("matches = %#v", picker.matches)
 	}
 	rendered := picker.render(60, maxFilePopupRows, nil, false)
-	if !strings.Contains(rendered, lightTheme.highlight.Render("› internal/tui/messages.go")) {
+	if !strings.Contains(rendered, lightTheme.selected.Render("› internal/tui/messages.go")) {
 		t.Fatalf("selected row = %q", rendered)
 	}
 	if strings.Contains(ansi.Strip(rendered), "README.md") {

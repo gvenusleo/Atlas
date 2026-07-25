@@ -58,10 +58,10 @@ func TestSessionPickerRenderUsesForegroundSelectionAndAllScopeMetadata(t *testin
 	if !strings.Contains(plain, "Esc to cancel") {
 		t.Fatalf("picker cancel hint = %q", plain)
 	}
-	if !strings.Contains(rendered.content, lightTheme.highlight.Render("› Continue Atlas TUI")) {
+	if !strings.Contains(rendered.content, lightTheme.selected.Render("› Continue Atlas TUI")) {
 		t.Fatalf("selected row is not foreground highlighted: %q", rendered.content)
 	}
-	if !reflect.DeepEqual(lightTheme.highlight.GetBackground(), lightTheme.text.GetBackground()) {
+	if !reflect.DeepEqual(lightTheme.selected.GetBackground(), lightTheme.text.GetBackground()) {
 		t.Fatal("session selection style has a background color")
 	}
 }

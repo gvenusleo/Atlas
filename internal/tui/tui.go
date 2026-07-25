@@ -1127,13 +1127,12 @@ func (m Model) statusView() string {
 		return ansi.Truncate(statusIndent+theme.muted.Render("Loading model…"), max(m.width, 0), "…")
 	}
 
-	modelStatus := m.modelName
+	line := statusIndent + theme.brand.Render(m.modelName)
 	if m.reasoningEffort != "" {
-		modelStatus += " " + m.reasoningEffort
+		line += " " + theme.reasoning.Render(m.reasoningEffort)
 	}
-	line := statusIndent + theme.highlight.Render(modelStatus)
 	line += theme.muted.Render(" · ")
-	line += theme.muted.Render(fmt.Sprintf("Context %d%% used", contextUsagePercent(m.contextTokens, m.contextWindow)))
+	line += theme.context.Render(fmt.Sprintf("Context %d%% used", contextUsagePercent(m.contextTokens, m.contextWindow)))
 	return ansi.Truncate(line, max(m.width, 0), "…")
 }
 

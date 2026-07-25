@@ -370,9 +370,11 @@ func renderToolCall(tc toolCallView, width int, hasDarkBackground bool) string {
 		return ""
 	}
 	theme := themeFor(hasDarkBackground)
-	statusStyle := theme.highlight
+	statusStyle := theme.working
 	if tc.err {
 		statusStyle = theme.error
+	} else if tc.done {
+		statusStyle = theme.success
 	}
 	action, input := toolCallSummary(tc)
 	lines := renderToolHeader(action, input, width, statusStyle.Bold(true), theme)

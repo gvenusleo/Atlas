@@ -68,13 +68,15 @@ func (s turnStatus) viewAt(width int, now time.Time, hasDarkBackground bool) str
 	}
 	theme := themeFor(hasDarkBackground)
 	label := "Working"
+	statusStyle := theme.working
 	if s.phase == turnPhaseThinking {
 		label = "Thinking"
+		statusStyle = theme.reasoning
 	}
 	elapsed := max(now.Sub(s.startedAt), 0)
 	spinner := s.spinner
-	spinner.Style = theme.muted
-	line := spinner.View() + " " + theme.text.Bold(true).Render(label)
+	spinner.Style = statusStyle
+	line := spinner.View() + " " + statusStyle.Bold(true).Render(label)
 	line += " " + theme.muted.Render(fmt.Sprintf("(%s • esc to interrupt)", formatTurnElapsed(elapsed)))
 	return ansi.Truncate(line, max(width, 0), "…")
 }

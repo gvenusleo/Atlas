@@ -6,47 +6,65 @@ import (
 	glamouransi "charm.land/glamour/v2/ansi"
 	glamourstyles "charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
+	catppuccin "github.com/catppuccin/go"
 )
 
-// colorPalette defines the text hierarchy for one terminal background mode.
-// Error is reserved for failures and does not participate in normal hierarchy.
+// colorPalette defines stable semantic colors for one terminal background mode.
 type colorPalette struct {
-	highlight string
 	text      string
 	muted     string
+	surface   string
+	selected  string
+	brand     string
+	reasoning string
+	context   string
+	working   string
+	success   string
 	error     string
 }
 
 type tuiTheme struct {
 	palette   colorPalette
-	highlight lipgloss.Style
 	text      lipgloss.Style
 	muted     lipgloss.Style
+	selected  lipgloss.Style
+	brand     lipgloss.Style
+	reasoning lipgloss.Style
+	context   lipgloss.Style
+	working   lipgloss.Style
+	success   lipgloss.Style
 	error     lipgloss.Style
 	selection lipgloss.Style
 }
 
 var (
-	lightTheme = newTUITheme(colorPalette{
-		highlight: "#005CC5",
-		text:      "#242424",
-		muted:     "#737373",
-		error:     "#B42318",
-	})
-	darkTheme = newTUITheme(colorPalette{
-		highlight: "#82AAFF",
-		text:      "#E6E6E6",
-		muted:     "#A3A3A3",
-		error:     "#FF7B72",
-	})
+	lightTheme = newTUITheme(catppuccin.Latte, catppuccin.Latte.Mantle())
+	darkTheme  = newTUITheme(catppuccin.Mocha, catppuccin.Mocha.Surface0())
 )
 
-func newTUITheme(palette colorPalette) tuiTheme {
+func newTUITheme(flavor catppuccin.Flavor, surface catppuccin.Color) tuiTheme {
+	palette := colorPalette{
+		text:      flavor.Text().Hex,
+		muted:     flavor.Subtext0().Hex,
+		surface:   surface.Hex,
+		selected:  flavor.Blue().Hex,
+		brand:     flavor.Lavender().Hex,
+		reasoning: flavor.Mauve().Hex,
+		context:   flavor.Teal().Hex,
+		working:   flavor.Yellow().Hex,
+		success:   flavor.Green().Hex,
+		error:     flavor.Red().Hex,
+	}
 	return tuiTheme{
 		palette:   palette,
-		highlight: lipgloss.NewStyle().Foreground(lipgloss.Color(palette.highlight)),
 		text:      lipgloss.NewStyle().Foreground(lipgloss.Color(palette.text)),
 		muted:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.muted)),
+		selected:  lipgloss.NewStyle().Foreground(lipgloss.Color(palette.selected)),
+		brand:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.brand)),
+		reasoning: lipgloss.NewStyle().Foreground(lipgloss.Color(palette.reasoning)),
+		context:   lipgloss.NewStyle().Foreground(lipgloss.Color(palette.context)),
+		working:   lipgloss.NewStyle().Foreground(lipgloss.Color(palette.working)),
+		success:   lipgloss.NewStyle().Foreground(lipgloss.Color(palette.success)),
 		error:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.error)),
 		selection: lipgloss.NewStyle().Reverse(true),
 	}
@@ -71,23 +89,9 @@ func composerStyle(hasDarkBackground bool, terminalBackground color.Color) lipgl
 	return userMessageStyle(hasDarkBackground, terminalBackground).PaddingLeft(0)
 }
 
-// userMessageBackground matches Codex CLI's terminal-aware composer tint.
-func userMessageBackground(hasDarkBackground bool, terminalBackground color.Color) color.Color {
-	if terminalBackground == nil {
-		return lipgloss.LightDark(hasDarkBackground)(lipgloss.Color("255"), lipgloss.Color("239"))
-	}
-
-	r, g, b, _ := terminalBackground.RGBA()
-	r8, g8, b8 := uint8(r>>8), uint8(g>>8), uint8(b>>8)
-	isLight := 0.299*float32(r8)+0.587*float32(g8)+0.114*float32(b8) > 128
-	top, alpha := float32(255), float32(0.12)
-	if isLight {
-		top, alpha = 0, 0.04
-	}
-	blend := func(channel uint8) uint8 {
-		return uint8(top*alpha + float32(channel)*(1-alpha))
-	}
-	return color.RGBA{R: blend(r8), G: blend(g8), B: blend(b8), A: 255}
+// userMessageBackground returns the Catppuccin surface shared by user messages and the composer.
+func userMessageBackground(hasDarkBackground bool, _ color.Color) color.Color {
+	return lipgloss.Color(themeFor(hasDarkBackground).palette.surface)
 }
 
 // markdownStyle adapts Glamour's built-in palette to Atlas's borderless layout.
@@ -98,7 +102,7 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	}
 	theme := themeFor(hasDarkBackground)
 	text := theme.palette.text
-	highlight := theme.palette.highlight
+	selected := theme.palette.selected
 	muted := theme.palette.muted
 
 	style.Document = glamouransi.StyleBlock{}
@@ -109,7 +113,7 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	style.BlockQuote.BlockSuffix = markdownBlockquoteEnd
 	style.BlockQuote.Indent = nil
 	style.BlockQuote.IndentToken = nil
-	style.Heading.Color = &highlight
+	style.Heading.Color = &selected
 	style.H1 = glamouransi.StyleBlock{}
 	style.H2 = glamouransi.StyleBlock{}
 	style.H3 = glamouransi.StyleBlock{}
@@ -117,11 +121,11 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	style.H5 = glamouransi.StyleBlock{}
 	style.H6 = glamouransi.StyleBlock{}
 	style.HorizontalRule.Color = &muted
-	style.Link.Color = &highlight
-	style.LinkText.Color = &highlight
-	style.Image.Color = &highlight
+	style.Link.Color = &selected
+	style.LinkText.Color = &selected
+	style.Image.Color = &selected
 	style.ImageText.Color = &muted
-	style.Code.Color = &highlight
+	style.Code.Color = &selected
 	style.Code.BackgroundColor = nil
 	style.Code.Prefix = ""
 	style.Code.Suffix = ""

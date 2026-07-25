@@ -150,24 +150,34 @@ func TestWelcomeLabelsUseThemeMutedColor(t *testing.T) {
 	}
 }
 
-func TestThemesDefineOneReusableTextColorPerSemanticRole(t *testing.T) {
+func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 	tests := []struct {
 		name    string
 		theme   tuiTheme
 		palette colorPalette
 	}{
-		{name: "light", theme: lightTheme, palette: colorPalette{highlight: "#005CC5", text: "#242424", muted: "#737373", error: "#B42318"}},
-		{name: "dark", theme: darkTheme, palette: colorPalette{highlight: "#82AAFF", text: "#E6E6E6", muted: "#A3A3A3", error: "#FF7B72"}},
+		{name: "light", theme: lightTheme, palette: colorPalette{
+			text: "#4c4f69", muted: "#6c6f85", surface: "#e6e9ef", selected: "#1e66f5", brand: "#7287fd",
+			reasoning: "#8839ef", context: "#179299", working: "#df8e1d", success: "#40a02b", error: "#d20f39",
+		}},
+		{name: "dark", theme: darkTheme, palette: colorPalette{
+			text: "#cdd6f4", muted: "#a6adc8", surface: "#313244", selected: "#89b4fa", brand: "#b4befe",
+			reasoning: "#cba6f7", context: "#94e2d5", working: "#f9e2af", success: "#a6e3a1", error: "#f38ba8",
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if test.theme.palette != test.palette {
 				t.Fatalf("palette = %#v, want %#v", test.theme.palette, test.palette)
 			}
-			if reflect.DeepEqual(test.theme.highlight.GetForeground(), test.theme.text.GetForeground()) ||
-				reflect.DeepEqual(test.theme.text.GetForeground(), test.theme.muted.GetForeground()) ||
-				reflect.DeepEqual(test.theme.highlight.GetForeground(), test.theme.muted.GetForeground()) {
-				t.Fatal("highlight, text, and muted roles must use distinct colors")
+			for role, style := range map[string]lipgloss.Style{
+				"text": test.theme.text, "muted": test.theme.muted, "selected": test.theme.selected,
+				"brand": test.theme.brand, "reasoning": test.theme.reasoning, "context": test.theme.context,
+				"working": test.theme.working, "success": test.theme.success, "error": test.theme.error,
+			} {
+				if reflect.DeepEqual(style.GetForeground(), lipgloss.NoColor{}) {
+					t.Fatalf("%s style has no foreground color", role)
+				}
 			}
 			markdown := markdownStyle(test.name == "dark")
 			for role, got := range map[string]*string{
@@ -181,7 +191,7 @@ func TestThemesDefineOneReusableTextColorPerSemanticRole(t *testing.T) {
 				want := test.palette.text
 				switch role {
 				case "heading", "link", "inline code":
-					want = test.palette.highlight
+					want = test.palette.selected
 				case "horizontal rule":
 					want = test.palette.muted
 				}
@@ -207,6 +217,13 @@ func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
 	meta := lightTheme.muted.Render("(1m 04s • esc to interrupt)")
 	if !strings.Contains(raw, meta) {
 		t.Fatal("turn status metadata does not use the light gray style")
+	}
+	if !strings.Contains(raw, lightTheme.reasoning.Bold(true).Render("Thinking")) {
+		t.Fatal("thinking status does not use the reasoning style")
+	}
+	status.setPhase(turnPhaseWorking)
+	if working := status.viewAt(80, startedAt.Add(65*time.Second), false); !strings.Contains(working, lightTheme.working.Bold(true).Render("Working")) {
+		t.Fatal("working status does not use the working style")
 	}
 	if narrow := status.viewAt(20, startedAt.Add(64*time.Second), false); ansi.StringWidth(narrow) > 20 {
 		t.Fatalf("narrow turn status width = %d, want at most 20", ansi.StringWidth(narrow))
@@ -421,16 +438,17 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	}
 }
 
-func TestComposerBackgroundMatchesCodexBlend(t *testing.T) {
+func TestComposerBackgroundUsesCatppuccinSurface(t *testing.T) {
 	tests := []struct {
 		name       string
 		background color.Color
 		dark       bool
 		want       color.RGBA
 	}{
-		{name: "black", background: color.Black, dark: true, want: color.RGBA{R: 30, G: 30, B: 30, A: 255}},
-		{name: "dark gray", background: color.RGBA{R: 40, G: 44, B: 52, A: 255}, dark: true, want: color.RGBA{R: 65, G: 69, B: 76, A: 255}},
-		{name: "white", background: color.White, want: color.RGBA{R: 244, G: 244, B: 244, A: 255}},
+		{name: "latte without terminal color", want: color.RGBA{R: 230, G: 233, B: 239, A: 255}},
+		{name: "latte ignores terminal color", background: color.White, want: color.RGBA{R: 230, G: 233, B: 239, A: 255}},
+		{name: "mocha without terminal color", dark: true, want: color.RGBA{R: 49, G: 50, B: 68, A: 255}},
+		{name: "mocha ignores terminal color", background: color.Black, dark: true, want: color.RGBA{R: 49, G: 50, B: 68, A: 255}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1339,11 +1357,35 @@ func TestTurnResultUpdatesContextUsage(t *testing.T) {
 	if got := ansi.Strip(m.statusView()); got != "  gpt-5.6-sol high · Context 79% used" {
 		t.Fatalf("statusView() = %q", got)
 	}
-	if !strings.Contains(m.statusView(), lightTheme.highlight.Render("gpt-5.6-sol high")) {
-		t.Fatal("model name and reasoning effort do not share the model status style")
+	if !strings.Contains(m.statusView(), lightTheme.brand.Render("gpt-5.6-sol")) {
+		t.Fatal("model name does not use the model status style")
 	}
-	if !strings.Contains(m.statusView(), lightTheme.muted.Render("Context 79% used")) {
-		t.Fatal("context status does not use one shared style")
+	if !strings.Contains(m.statusView(), lightTheme.reasoning.Render("high")) {
+		t.Fatal("reasoning effort does not use the reasoning status style")
+	}
+	if !strings.Contains(m.statusView(), lightTheme.context.Render("Context 79% used")) {
+		t.Fatal("context status does not use the context style")
+	}
+}
+
+func TestToolCallUsesLifecycleStatusColors(t *testing.T) {
+	tests := []struct {
+		name  string
+		call  toolCallView
+		style lipgloss.Style
+	}{
+		{name: "running", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`}}, style: lightTheme.working},
+		{name: "completed", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`}, done: true}, style: lightTheme.success},
+		{name: "failed", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`}, done: true, err: true}, style: lightTheme.error},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			action, _ := toolCallSummary(test.call)
+			rendered := renderToolCall(test.call, 80, false)
+			if !strings.Contains(rendered, test.style.Bold(true).Render(action)) {
+				t.Fatalf("tool status does not use %s style: %q", test.name, rendered)
+			}
+		})
 	}
 }
 

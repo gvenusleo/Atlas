@@ -26,7 +26,7 @@ var welcomeLogo = []string{
 func (m Model) welcomeView() string {
 	width := max(m.width, 1)
 	theme := themeFor(m.hasDarkBackground)
-	logo := theme.highlight.Bold(true).Render(strings.Join(welcomeLogo, "\n"))
+	logo := theme.brand.Bold(true).Render(strings.Join(welcomeLogo, "\n"))
 
 	if width < 28 {
 		return m.welcomeMetadata(width, false)
@@ -43,7 +43,7 @@ func (m Model) welcomeView() string {
 
 func (m Model) welcomeMetadata(width int, labels bool) string {
 	theme := themeFor(m.hasDarkBackground)
-	name := theme.highlight.Bold(true).Render("Atlas")
+	name := theme.brand.Bold(true).Render("Atlas")
 	app := name + "  " + theme.text.Render("v"+version.Current)
 	cwd := compactWorkingDirectory(m.cwd)
 	model := m.welcomeModelName()
