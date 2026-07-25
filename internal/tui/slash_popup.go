@@ -15,6 +15,7 @@ import (
 
 const (
 	modelCommandName   = "model"
+	newCommandName     = "new"
 	resumeCommandName  = "resume"
 	compactCommandName = "compact"
 	quitCommandName    = "quit"
@@ -53,6 +54,10 @@ func newSlashPopup() slashPopup {
 			description: "Choose a model and reasoning effort",
 		},
 		{
+			name:        newCommandName,
+			description: "Start a new session",
+		},
+		{
 			name:        resumeCommandName,
 			description: "Resume a saved session",
 		},
@@ -70,7 +75,7 @@ func newSlashPopup() slashPopup {
 // setSkills rebuilds the suggestion catalog while reserving built-in commands.
 func (p *slashPopup) setSkills(summaries []runtime.SkillSummary) {
 	commands := newSlashPopup().commands
-	seen := map[string]bool{modelCommandName: true, resumeCommandName: true, compactCommandName: true, quitCommandName: true}
+	seen := map[string]bool{modelCommandName: true, newCommandName: true, resumeCommandName: true, compactCommandName: true, quitCommandName: true}
 	for _, summary := range summaries {
 		if !validSlashCommandName(summary.Name) || seen[summary.Name] {
 			continue
@@ -324,7 +329,7 @@ func selectedSkillNames(text string) []string {
 	seen := make(map[string]bool)
 	for field := range strings.FieldsSeq(text) {
 		name, ok := slashCommandName(field)
-		if !ok || name == modelCommandName || name == resumeCommandName || name == compactCommandName || name == quitCommandName || seen[name] {
+		if !ok || name == modelCommandName || name == newCommandName || name == resumeCommandName || name == compactCommandName || name == quitCommandName || seen[name] {
 			continue
 		}
 		names = append(names, name)

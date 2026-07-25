@@ -250,6 +250,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text == "/quit" {
 				return m, tea.Quit
 			}
+			if text == "/new" {
+				m.startNewSession()
+				return m, nil
+			}
 			if sessionID, ok := resumeCommandSessionID(text); ok {
 				m.input.Reset()
 				m.slashPopup.sync(m.input)
@@ -617,6 +621,22 @@ func (m *Model) loadNextResumePage() tea.Cmd {
 		m.resumePicker.nextCursor,
 		m.resumePicker.generation,
 	)
+}
+
+// startNewSession returns the TUI to its initial conversation state without changing process-level settings.
+func (m *Model) startNewSession() {
+	m.sessionID = ""
+	m.messages = nil
+	m.current = nil
+	m.showWelcome = true
+	m.contextTokens = 0
+	m.selection = textSelection{}
+	m.input.Reset()
+	m.input.Focus()
+	m.slashPopup.sync(m.input)
+	m.filePicker.reset()
+	m.rebuild()
+	m.viewport.GotoBottom()
 }
 
 // applyResumedSession replaces conversation state only after loading and directory validation.

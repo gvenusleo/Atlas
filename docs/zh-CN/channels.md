@@ -20,6 +20,7 @@ atlas --session <id>
 - 在输入开头键入 `/` 可查看支持的命令和当前可用的 skills；在已有输入中，可在空白边界键入 `/` 查看仅包含 skills 的候选项。使用方向键选择候选项，再按 `Tab` 或 `Enter` 补全；按 `Esc` 可关闭候选项而不修改当前输入。
 - 在 token 边界输入 `@` 可浏览当前工作目录下的文件，继续输入则会模糊搜索文件路径。使用方向键选择候选项，再按 `Tab` 或 `Enter` 插入相对路径；按 `Esc` 关闭选择器。
 - 输入 `/model` 选择已配置的模型及其思考深度；使用方向键和 `Enter` 选择；按 `Esc` 可关闭选择器而不修改当前模型。
+- 输入 `/new` 离开当前 session，并在当前工作目录开始新 session。旧 session 仍可通过 `/resume` 恢复；新 session 会在发送第一条消息后持久化。
 - 输入 `/resume` 选择已保存的 session。直接输入文本可按标题、ID 或工作目录搜索；使用左右方向键切换当前目录与全部 session，再按 `Enter` 恢复。`/resume <session-id>` 可按精确 ID 直接恢复。
 - 输入 `/compact [instruction]` 总结早期上下文并保留最近消息；可选指令用于指定压缩时需要重点保留的内容。
 - 输入 `/quit` 退出 TUI。
@@ -30,7 +31,7 @@ atlas --session <id>
 
 Resume 选择器默认列出保存在当前工作目录下的 session，也可切换到全部 session。恢复其他目录下的 session 时需要确认；确认后，后续 instructions、skills 和工具会使用该 session 保存的工作目录。由于 session 不持久化模型设置，当前 TUI 选择的模型和思考深度会保持不变。
 
-TUI 启动时使用 `default_model` 和 `reasoning_efforts` 中的第一项。通过 `/model` 做出的选择会应用于当前 TUI 进程中的后续 turn，但不会改写配置文件，也不会跨重启保存。手动压缩会保留完整 transcript，只改写后续 turn 使用的已保存上下文摘要；压缩命令和结果提示不会作为对话消息持久化。输入 `/think plan this change` 之类的可用 skill 命令时，TUI 会只为当前 turn 注入对应 skill，并在 transcript 中保留原始输入。TUI 暂不支持图片输入。
+TUI 启动时使用 `default_model` 和 `reasoning_efforts` 中的第一项。通过 `/model` 做出的选择会应用于当前 TUI 进程中的后续 turn，但不会改写配置文件，也不会跨重启保存。开始新 session 时会保留当前工作目录、模型、思考深度和可用 skills，同时重置对话历史及上下文占用。手动压缩会保留完整 transcript，只改写后续 turn 使用的已保存上下文摘要；压缩命令和结果提示不会作为对话消息持久化。输入 `/think plan this change` 之类的可用 skill 命令时，TUI 会只为当前 turn 注入对应 skill，并在 transcript 中保留原始输入。TUI 暂不支持图片输入。
 
 ## ACP
 

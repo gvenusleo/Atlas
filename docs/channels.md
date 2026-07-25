@@ -20,6 +20,7 @@ Controls:
 - Type `/` at the start of the input to see supported commands and available skills. Within an existing draft, type `/` at a whitespace boundary to see skill-only suggestions. Use the arrow keys to choose a suggestion, then `Tab` or `Enter` to complete it; `Esc` dismisses the suggestions without changing the draft.
 - Type `@` at a token boundary to browse files under the current working directory, or continue typing to fuzzy-search file paths. Use the arrow keys to choose a match, then press `Tab` or `Enter` to insert its relative path; `Esc` dismisses the picker.
 - Enter `/model` to choose a configured model and its reasoning effort. Use the arrow keys and `Enter` to select; `Esc` closes the picker without changing the current model.
+- Enter `/new` to leave the current session and start a new one in the current working directory. The previous session remains available through `/resume`; the new session is persisted after its first message.
 - Enter `/resume` to choose a saved session. Type to search by title, ID, or working directory; use the left and right arrows to switch between the current directory and all sessions, then press `Enter` to resume. `/resume <session-id>` resumes an exact ID directly.
 - Enter `/compact [instruction]` to summarize earlier context while keeping recent messages. The optional instruction tells the compactor what to preserve.
 - Enter `/quit` to exit the TUI.
@@ -30,7 +31,7 @@ Controls:
 
 The resume picker initially lists sessions saved under the current working directory and can switch to an all-session view. Resuming a session from another directory requires confirmation; after confirmation, subsequent instructions, skills, and tools use that session's saved working directory. The current TUI model and reasoning effort remain selected because sessions do not persist those settings.
 
-The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Manual compaction preserves the full transcript while rewriting the saved context summary used by subsequent turns; its command and result notice are not persisted as conversation messages. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
+The TUI starts with `default_model` and the first configured `reasoning_efforts` option. `/model` selections apply to subsequent turns for the lifetime of the current TUI process; they do not rewrite the configuration file or persist across restarts. Starting a new session keeps the current working directory, model, reasoning effort, and available skills while resetting conversation history and context usage. Manual compaction preserves the full transcript while rewriting the saved context summary used by subsequent turns; its command and result notice are not persisted as conversation messages. Entering an available skill command, such as `/think plan this change`, injects that skill for the current turn while preserving the original prompt in the transcript. Image input is not available in the TUI yet.
 
 ## ACP
 

@@ -93,6 +93,7 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	popup := newSlashPopup()
 	popup.setSkills([]runtime.SkillSummary{
 		{Name: modelCommandName, Description: "shadow built-in"},
+		{Name: newCommandName, Description: "shadow built-in"},
 		{Name: resumeCommandName, Description: "shadow built-in"},
 		{Name: "compact", Description: "shadow built-in"},
 		{Name: "quit", Description: "shadow built-in"},
@@ -101,14 +102,14 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	})
 	syncSlashPopupValue(&popup, "/")
 
-	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows, nil, false))
-	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/resume") != 1 || strings.Count(rendered, "/compact") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
+	rendered := ansi.Strip(popup.render(80, len(popup.matches), nil, false))
+	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/new") != 1 || strings.Count(rendered, "/resume") != 1 || strings.Count(rendered, "/compact") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
 		t.Fatalf("popup catalog = %q", rendered)
 	}
 }
 
 func TestSelectedSkillNamesMatchesSlashTokens(t *testing.T) {
-	got := selectedSkillNames("/think review this with /hunt /think /resume /compact /quit and /invalid:name")
+	got := selectedSkillNames("/think review this with /hunt /think /new /resume /compact /quit and /invalid:name")
 	want := []string{"think", "hunt"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("selectedSkillNames() = %v, want %v", got, want)
@@ -148,17 +149,17 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 		{Name: "long-command", Description: "Long description"},
 	})
 	syncSlashPopupValue(&popup, "/")
-	popup.move(5)
+	popup.move(6)
 
-	rawLines := strings.Split(popup.render(80, 6, nil, false), "\n")
+	rawLines := strings.Split(popup.render(80, 7, nil, false), "\n")
 	lines := make([]string, len(rawLines))
 	for index, line := range rawLines {
 		lines[index] = ansi.Strip(line)
 	}
-	if len(lines) != 6 {
+	if len(lines) != 7 {
 		t.Fatalf("popup lines = %q", lines)
 	}
-	descriptions := []string{"Choose a model", "Resume a saved session", "Compact earlier context", "Quit Atlas", "[Skill] Short description", "[Skill] Long description"}
+	descriptions := []string{"Choose a model", "Start a new session", "Resume a saved session", "Compact earlier context", "Quit Atlas", "[Skill] Short description", "[Skill] Long description"}
 	descriptionColumn := -1
 	for index, description := range descriptions {
 		column := ansi.StringWidth(lines[index][:strings.Index(lines[index], description)])
@@ -168,15 +169,15 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 			t.Fatalf("description columns = %d and %d: %q", descriptionColumn, column, lines)
 		}
 	}
-	if rawLines[5] != lightTheme.selected.Render(lines[5]) {
-		t.Fatalf("selected row does not use one foreground style: %q", rawLines[5])
+	if rawLines[6] != lightTheme.selected.Render(lines[6]) {
+		t.Fatalf("selected row does not use one foreground style: %q", rawLines[6])
 	}
-	if !strings.Contains(rawLines[4], lightTheme.muted.Render("  [Skill] Short description")) {
-		t.Fatalf("unselected description does not use subtle style: %q", rawLines[4])
+	if !strings.Contains(rawLines[5], lightTheme.muted.Render("  [Skill] Short description")) {
+		t.Fatalf("unselected description does not use subtle style: %q", rawLines[5])
 	}
-	for _, line := range lines[:4] {
+	for _, line := range lines[:5] {
 		if strings.Contains(line, "[Skill]") {
-			t.Fatalf("built-in command is labeled as a skill: %q", lines[:4])
+			t.Fatalf("built-in command is labeled as a skill: %q", lines[:5])
 		}
 	}
 	if !reflect.DeepEqual(lightTheme.selected.GetBackground(), lightTheme.text.GetBackground()) {
