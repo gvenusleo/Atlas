@@ -41,6 +41,7 @@ type RunShell struct {
 
 // ShellArgs describes the JSON parameters received by run_shell.
 type ShellArgs struct {
+	Purpose          string `json:"purpose"`
 	Command          string `json:"command"`
 	Stdin            string `json:"stdin"`
 	CWD              string `json:"cwd"`
@@ -56,6 +57,10 @@ func (RunShell) Definition() model.ToolDefinition {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"purpose": map[string]any{
+					"type":        "string",
+					"description": "Short user-facing description of why the command is being run.",
+				},
 				"command": map[string]any{
 					"type":        "string",
 					"description": "Command to execute with the platform default shell.",
@@ -81,7 +86,7 @@ func (RunShell) Definition() model.ToolDefinition {
 					},
 				},
 			},
-			"required": []string{"command"},
+			"required": []string{"purpose", "command"},
 		},
 	}
 }
@@ -105,6 +110,9 @@ func ParseShellArgs(arguments string) (ShellArgs, error) {
 	var args ShellArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return ShellArgs{}, fmt.Errorf("invalid run_shell arguments: %w", err)
+	}
+	if strings.TrimSpace(args.Purpose) == "" {
+		return ShellArgs{}, fmt.Errorf("run_shell purpose is required")
 	}
 	if args.Command == "" {
 		return ShellArgs{}, fmt.Errorf("run_shell command is required")

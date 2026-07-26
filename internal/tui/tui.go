@@ -962,21 +962,51 @@ func (m *Model) rebuild() {
 	}
 
 	followBottom := m.viewport.AtBottom() && !m.selection.active
-	var parts []string
-	if m.showWelcome {
-		parts = append(parts, m.welcomeView())
+	var content strings.Builder
+	appendRendered := func(rendered string, compact bool) {
+		if rendered == "" {
+			return
+		}
+		if content.Len() > 0 {
+			if compact {
+				content.WriteByte('\n')
+			} else {
+				content.WriteString("\n\n")
+			}
+		}
+		content.WriteString(rendered)
 	}
+	if m.showWelcome {
+		appendRendered(m.welcomeView(), false)
+	}
+	visible := make([]*chatMessage, 0, len(m.messages))
 	for _, msg := range m.messages {
-		rendered := msg.render(m.width, m.hasDarkBackground, m.terminalBackground)
-		if rendered != "" {
-			parts = append(parts, rendered)
+		if msg.visible() {
+			visible = append(visible, msg)
 		}
 	}
-	if len(parts) == 0 {
-		m.viewport.SetContent("")
-	} else {
-		m.viewport.SetContent(strings.Join(parts, "\n\n"))
+	for i, msg := range visible {
+		var previous, next *chatMessage
+		if i > 0 {
+			previous = visible[i-1]
+		}
+		if i+1 < len(visible) {
+			next = visible[i+1]
+		}
+		continuesPreviousTools := previous != nil && previous.endsWithTools() && msg.startsWithTools()
+		continuesNextTools := next != nil && msg.endsWithTools() && next.startsWithTools()
+		precededByUser := previous != nil && previous.role == "user"
+		rendered := msg.renderConversation(
+			m.width,
+			m.hasDarkBackground,
+			m.terminalBackground,
+			precededByUser,
+			continuesPreviousTools,
+			continuesNextTools,
+		)
+		appendRendered(rendered, continuesPreviousTools)
 	}
+	m.viewport.SetContent(content.String())
 
 	layout := calculateLayout(m.height, m.renderInputArea().height, m.turnStatus.active())
 	m.viewport.SetHeight(layout.viewportHeight)

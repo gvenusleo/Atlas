@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestRunShellRun(t *testing.T) {
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellEchoCommand("hello"))+`}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"purpose":"Print a greeting","command":`+quoteJSON(shellEchoCommand("hello"))+`}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -25,7 +26,7 @@ func TestRunShellRun(t *testing.T) {
 
 func TestRunShellRunPassesStdin(t *testing.T) {
 	input := "first line\nsecond line with $ and `\n"
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellStdinCommand())+`,"stdin":`+quoteJSON(input)+`}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"purpose":"Read standard input","command":`+quoteJSON(shellStdinCommand())+`,"stdin":`+quoteJSON(input)+`}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -35,7 +36,7 @@ func TestRunShellRunPassesStdin(t *testing.T) {
 }
 
 func TestRunShellRunFailure(t *testing.T) {
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellFailCommand("fail", 7))+`}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"purpose":"Exercise a failure","command":`+quoteJSON(shellFailCommand("fail", 7))+`}`)
 	if err == nil {
 		t.Fatal("Run() error = nil, want command failure")
 	}
@@ -45,7 +46,7 @@ func TestRunShellRunFailure(t *testing.T) {
 }
 
 func TestRunShellRunAcceptsConfiguredExitCode(t *testing.T) {
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellFailCommand("no-matches", 1))+`,"success_exit_codes":[0,1]}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"purpose":"Accept no matches","command":`+quoteJSON(shellFailCommand("no-matches", 1))+`,"success_exit_codes":[0,1]}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -60,7 +61,7 @@ func TestRunShellRunCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellWorkdirCommand())+`,"cwd":`+quoteJSON(dir)+`}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"purpose":"Print the working directory","command":`+quoteJSON(shellWorkdirCommand())+`,"cwd":`+quoteJSON(dir)+`}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -75,7 +76,7 @@ func TestRunShellRunUsesDefaultCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := (RunShell{CWD: dir}).Run(context.Background(), `{"command":`+quoteJSON(shellWorkdirCommand())+`}`)
+	got, err := (RunShell{CWD: dir}).Run(context.Background(), `{"purpose":"Print the working directory","command":`+quoteJSON(shellWorkdirCommand())+`}`)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -97,7 +98,7 @@ func TestRunShellRunMissingCommand(t *testing.T) {
 }
 
 func TestParseShellArgsNormalizesSuccessExitCodes(t *testing.T) {
-	args, err := ParseShellArgs(`{"command":"check","stdin":"input","success_exit_codes":[0,1,1]}`)
+	args, err := ParseShellArgs(`{"purpose":"Check the project","command":"check","stdin":"input","success_exit_codes":[0,1,1]}`)
 	if err != nil {
 		t.Fatalf("ParseShellArgs() error = %v", err)
 	}
@@ -107,8 +108,11 @@ func TestParseShellArgsNormalizesSuccessExitCodes(t *testing.T) {
 	if args.Stdin != "input" {
 		t.Fatalf("Stdin = %q, want input", args.Stdin)
 	}
+	if args.Purpose != "Check the project" {
+		t.Fatalf("Purpose = %q, want %q", args.Purpose, "Check the project")
+	}
 
-	args, err = ParseShellArgs(`{"command":"check","success_exit_codes":[]}`)
+	args, err = ParseShellArgs(`{"purpose":"Check the project","command":"check","success_exit_codes":[]}`)
 	if err != nil {
 		t.Fatalf("ParseShellArgs() error = %v", err)
 	}
@@ -116,13 +120,16 @@ func TestParseShellArgsNormalizesSuccessExitCodes(t *testing.T) {
 		t.Fatalf("default SuccessExitCodes = %s, want [0]", got)
 	}
 
-	if _, err := ParseShellArgs(`{"command":"check","success_exit_codes":[-1]}`); err == nil {
+	if _, err := ParseShellArgs(`{"purpose":"Check the project","command":"check","success_exit_codes":[-1]}`); err == nil {
 		t.Fatal("ParseShellArgs() error = nil, want negative exit code error")
+	}
+	if _, err := ParseShellArgs(`{"command":"check"}`); err == nil || !strings.Contains(err.Error(), "purpose is required") {
+		t.Fatalf("ParseShellArgs() missing purpose error = %v", err)
 	}
 }
 
 func TestRunShellRunTimeout(t *testing.T) {
-	got, err := (RunShell{}).Run(context.Background(), `{"command":`+quoteJSON(shellTimeoutCommand())+`,"timeout_seconds":1}`)
+	got, err := (RunShell{}).Run(context.Background(), `{"purpose":"Exercise the timeout","command":`+quoteJSON(shellTimeoutCommand())+`,"timeout_seconds":1}`)
 	if err == nil {
 		t.Fatal("Run() error = nil, want timeout error")
 	}
@@ -246,6 +253,14 @@ func TestRunShellDefinition(t *testing.T) {
 	properties, ok := def.Parameters["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("Definition().Parameters[properties] = %#v", def.Parameters["properties"])
+	}
+	purpose, ok := properties["purpose"].(map[string]any)
+	if !ok || !strings.Contains(fmt.Sprint(purpose["description"]), "user-facing") {
+		t.Fatalf("purpose definition = %#v", purpose)
+	}
+	required, ok := def.Parameters["required"].([]string)
+	if !ok || !slices.Contains(required, "purpose") || !slices.Contains(required, "command") {
+		t.Fatalf("required definition = %#v", def.Parameters["required"])
 	}
 	cwd, ok := properties["cwd"].(map[string]any)
 	if !ok || !strings.Contains(fmt.Sprint(cwd["description"]), "Omit to use the session working directory") {

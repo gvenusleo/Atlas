@@ -159,11 +159,11 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 		palette colorPalette
 	}{
 		{name: "light", theme: lightTheme, palette: colorPalette{
-			text: "#4c4f69", muted: "#6c6f85", surface: "#e6e9ef", selected: "#1e66f5", link: "#04a5e5", code: "#179299", brand: "#7287fd",
+			text: "#4c4f69", muted: "#6c6f85", divider: "#acb0be", surface: "#e6e9ef", selected: "#1e66f5", link: "#04a5e5", code: "#179299", brand: "#7287fd",
 			reasoning: "#8839ef", context: "#179299", working: "#df8e1d", success: "#40a02b", error: "#d20f39",
 		}},
 		{name: "dark", theme: darkTheme, palette: colorPalette{
-			text: "#cdd6f4", muted: "#a6adc8", surface: "#313244", selected: "#89b4fa", link: "#89dceb", code: "#94e2d5", brand: "#b4befe",
+			text: "#cdd6f4", muted: "#a6adc8", divider: "#585b70", surface: "#313244", selected: "#89b4fa", link: "#89dceb", code: "#94e2d5", brand: "#b4befe",
 			reasoning: "#cba6f7", context: "#94e2d5", working: "#f9e2af", success: "#a6e3a1", error: "#f38ba8",
 		}},
 	}
@@ -173,7 +173,7 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 				t.Fatalf("palette = %#v, want %#v", test.theme.palette, test.palette)
 			}
 			for role, style := range map[string]lipgloss.Style{
-				"text": test.theme.text, "muted": test.theme.muted, "selected": test.theme.selected,
+				"text": test.theme.text, "muted": test.theme.muted, "divider": test.theme.divider, "selected": test.theme.selected,
 				"brand": test.theme.brand, "reasoning": test.theme.reasoning, "context": test.theme.context,
 				"working": test.theme.working, "success": test.theme.success, "error": test.theme.error,
 			} {
@@ -1109,19 +1109,21 @@ func TestUserMessageDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
 	assertWordsShareVisualLine(t, ansi.Strip(message.render(60, false, nil)), "我是", "Atlas")
 }
 
-func TestAssistantAndToolBlocksUseBulletsAndIndentedContent(t *testing.T) {
+func TestAssistantAndToolBlocksUseCompactToolSummary(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("first line\nsecond line")
 	message.toolCalls = append(message.toolCalls, toolCallView{
-		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"Search Atlas"}`},
+		call:   model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Search Atlas","command":"rg Atlas"}`},
 		result: "Search Atlas",
 		done:   true,
 	})
 
 	rendered := ansi.Strip(message.render(40, false, nil))
-	if !strings.Contains(rendered, "• first line second line") ||
-		!strings.Contains(rendered, "• Ran Search Atlas\n  └ Search Atlas") {
+	if !strings.Contains(rendered, "first line second line\n\n• RunShell: Search Atlas") {
 		t.Fatalf("rendered message omitted assistant or tool content: %q", rendered)
+	}
+	if strings.Contains(rendered, "rg Atlas") || strings.Contains(rendered, "┌") {
+		t.Fatalf("rendered message exposed tool details or panel chrome: %q", rendered)
 	}
 }
 
@@ -1144,24 +1146,8 @@ func TestAssistantRendersMarkdown(t *testing.T) {
 	if rendered == plain {
 		t.Fatalf("rendered markdown contains no styling: %q", rendered)
 	}
-	lines := strings.Split(plain, "\n")
-	firstContentLine := -1
-	for i, line := range lines {
-		if strings.HasPrefix(line, "• ") {
-			firstContentLine = i
-			break
-		}
-	}
-	if firstContentLine < 0 {
-		t.Fatalf("rendered markdown has no assistant marker: %q", plain)
-	}
-	for _, line := range lines[firstContentLine+1:] {
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, "  ") {
-			t.Fatalf("continuation markdown line = %q, want two-space indent", line)
-		}
+	if strings.HasPrefix(plain, "• ") || strings.HasPrefix(plain, "  ") {
+		t.Fatalf("rendered markdown retained the conversation gutter: %q", plain)
 	}
 }
 
@@ -1171,8 +1157,8 @@ func TestAssistantMarkdownStartsWithoutDocumentGapOrH1Padding(t *testing.T) {
 
 	rendered := ansi.Strip(message.render(40, false, nil))
 	firstLine, _, _ := strings.Cut(rendered, "\n")
-	if firstLine != "• Markdown 示例" {
-		t.Fatalf("first markdown line = %q, want %q", firstLine, "• Markdown 示例")
+	if firstLine != "Markdown 示例" {
+		t.Fatalf("first markdown line = %q, want %q", firstLine, "Markdown 示例")
 	}
 }
 
@@ -1412,18 +1398,37 @@ func TestToolCallUsesLifecycleStatusColors(t *testing.T) {
 		call  toolCallView
 		style lipgloss.Style
 	}{
-		{name: "running", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`}}, style: lightTheme.working},
-		{name: "completed", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`}, done: true}, style: lightTheme.success},
-		{name: "failed", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`}, done: true, err: true}, style: lightTheme.error},
+		{name: "running", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run tests","command":"test"}`}}, style: lightTheme.working},
+		{name: "completed", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run tests","command":"test"}`}, done: true}, style: lightTheme.success},
+		{name: "failed", call: toolCallView{call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run tests","command":"test"}`}, result: "test failed", done: true, err: true}, style: lightTheme.error},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			action, _ := toolCallSummary(test.call)
 			rendered := renderToolCall(test.call, 80, false)
-			if !strings.Contains(rendered, test.style.Bold(true).Render(action)) {
+			if !strings.Contains(rendered, test.style.Render("• RunShell:")) ||
+				!strings.Contains(rendered, lightTheme.text.Render(" Run tests")) {
 				t.Fatalf("tool status does not use %s style: %q", test.name, rendered)
 			}
 		})
+	}
+}
+
+func TestToolCallUsesThemeStatusColors(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		theme := themeFor(dark)
+		for _, test := range []struct {
+			call  toolCallView
+			style lipgloss.Style
+		}{
+			{call: toolCallView{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}}, style: theme.working},
+			{call: toolCallView{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, done: true}, style: theme.success},
+			{call: toolCallView{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, result: "failed", done: true, err: true}, style: theme.error},
+		} {
+			if rendered := renderToolCall(test.call, 40, dark); !strings.Contains(rendered, test.style.Render("• LoadSkill:")) ||
+				!strings.Contains(rendered, theme.text.Render(" check")) {
+				t.Fatalf("dark=%t tool summary uses wrong status color: %q", dark, rendered)
+			}
+		}
 	}
 }
 
@@ -1502,143 +1507,282 @@ func (p *tuiRecordingProvider) Stream(_ context.Context, request model.ChatReque
 	return p.response, nil
 }
 
-func TestToolResultTruncationPreservesUTF8(t *testing.T) {
-	result := strings.Repeat("中", 27)
+func TestToolSummaryTruncationPreservesUTF8(t *testing.T) {
 	rendered := renderToolCall(toolCallView{
-		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"read output"}`},
-		result: result,
-		done:   true,
-	}, 80, false)
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"检查一段很长的中文输出","command":"read output"}`},
+	}, 18, false)
 
 	if !utf8.ValidString(rendered) {
-		t.Fatal("rendered tool result contains invalid UTF-8")
+		t.Fatal("rendered tool summary contains invalid UTF-8")
 	}
-	for line := range strings.SplitSeq(rendered, "\n") {
-		if got := ansi.StringWidth(line); got > 80 {
-			t.Fatalf("rendered line width = %d, want at most 80", got)
+	if strings.Contains(rendered, "\n") {
+		t.Fatalf("tool summary wrapped: %q", ansi.Strip(rendered))
+	}
+	if got := ansi.StringWidth(rendered); got > 18 {
+		t.Fatalf("rendered line width = %d, want at most 18", got)
+	}
+}
+
+func TestToolSummaryCollapsesWhitespaceAndFitsWidth(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		rendered := renderToolCall(toolCallView{
+			call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"检查中文\n\t输出","command":"printf 你好"}`},
+		}, 24, dark)
+		plain := ansi.Strip(rendered)
+		if strings.Contains(plain, "\n") || strings.Contains(plain, "\t") {
+			t.Fatalf("dark=%t tool summary retained whitespace: %q", dark, plain)
+		}
+		if got := ansi.StringWidth(rendered); got > 24 {
+			t.Fatalf("dark=%t rendered line width = %d, want at most 24: %q", dark, got, plain)
 		}
 	}
 }
 
-func TestToolInputLimitsWrappedContinuationRows(t *testing.T) {
+func TestCompletedShellSummaryHidesEmptyOutput(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
-		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
-	}, 20, false))
-	lines := strings.Split(rendered, "\n")
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run command","command":"true"}`},
+		done: true,
+	}, 40, false))
 
-	if len(lines) != 4 {
-		t.Fatalf("rendered input rows = %d, want header, two continuations, and ellipsis: %q", len(lines), rendered)
+	if rendered != "• RunShell: Run command" {
+		t.Fatalf("empty shell output summary = %q", rendered)
 	}
-	if !strings.Contains(lines[3], "… +") {
-		t.Fatalf("last input row = %q, want omission marker", lines[3])
+}
+
+func TestToolSummaryUsesPrimaryArguments(t *testing.T) {
+	tests := []struct {
+		call model.ToolCall
+		want string
+	}{
+		{call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`}, want: "RunShell: Inspect files"},
+		{call: model.ToolCall{Name: "web_search", Arguments: `{"query":"AI news"}`}, want: "WebSearch: AI news"},
+		{call: model.ToolCall{Name: "web_fetch", Arguments: `{"url":"https://example.com"}`}, want: "WebFetch: https://example.com"},
+		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"git-commit"}`}, want: "LoadSkill: git-commit"},
+		{call: model.ToolCall{Name: "todo_write", Arguments: `{"todos":[{},{}]}`}, want: "TodoWrite: 2 items"},
+		{call: model.ToolCall{Name: "custom_tool", Arguments: `{"secret":"hidden"}`}, want: "custom_tool"},
+		{call: model.ToolCall{}, want: "Tool"},
 	}
-	for _, line := range lines {
-		if got := ansi.StringWidth(line); got > 20 {
-			t.Fatalf("rendered line width = %d, want at most 20: %q", got, line)
+	for _, test := range tests {
+		if got := toolCallSummary(toolCallView{call: test.call}); got != test.want {
+			t.Errorf("toolCallSummary(%q) = %q, want %q", test.call.Name, got, test.want)
 		}
 	}
 }
 
-func TestToolInputOmissionMarkerFitsNarrowWidths(t *testing.T) {
+func TestToolSummaryFitsNarrowWidths(t *testing.T) {
 	tc := toolCallView{
-		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run command","command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
 	}
-	for width := 5; width <= 10; width++ {
+	for width := 1; width <= 10; width++ {
 		rendered := renderToolCall(tc, width, false)
-		for line := range strings.SplitSeq(rendered, "\n") {
-			if got := ansi.StringWidth(line); got > width {
-				t.Fatalf("width %d rendered line width = %d: %q", width, got, ansi.Strip(line))
-			}
+		if strings.Contains(rendered, "\n") {
+			t.Fatalf("width %d tool summary wrapped: %q", width, ansi.Strip(rendered))
+		}
+		if got := ansi.StringWidth(rendered); got > width {
+			t.Fatalf("width %d rendered line width = %d: %q", width, got, ansi.Strip(rendered))
 		}
 	}
 }
 
-func TestToolOutputKeepsHeadAndTailWithinScreenRowLimit(t *testing.T) {
-	resultLines := make([]string, 12)
-	for i := range resultLines {
-		resultLines[i] = fmt.Sprintf("line %02d", i+1)
-	}
+func TestSuccessfulToolHidesArgumentsAndResult(t *testing.T) {
 	tc := toolCallView{
-		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
-		result: strings.Join(resultLines, "\n"),
+		call:   model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run tests","command":"secret command"}`},
+		result: "private output\nsecond line",
 		done:   true,
 	}
 	rendered := ansi.Strip(renderToolCall(tc, 40, false))
-	lines := strings.Split(rendered, "\n")
-
-	if got := len(lines) - 1; got != toolOutputRows {
-		t.Fatalf("rendered output rows = %d, want %d: %q", got, toolOutputRows, rendered)
+	if rendered != "• RunShell: Run tests" || strings.Contains(rendered, "secret command") || strings.Contains(rendered, "private output") {
+		t.Fatalf("successful tool exposed arguments or result: %q", rendered)
 	}
-	for _, want := range []string{"line 01", "line 12", "… +8 lines"} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("rendered output missing %q: %q", want, rendered)
-		}
-	}
-	if tc.result != strings.Join(resultLines, "\n") {
+	if tc.result != "private output\nsecond line" {
 		t.Fatal("rendering mutated the stored tool result")
 	}
 }
 
-func TestToolOutputLimitCountsWrappedScreenRows(t *testing.T) {
-	rendered := ansi.Strip(renderToolCall(toolCallView{
-		call:   model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
-		result: strings.Repeat("abcdefghij", 30),
-		done:   true,
-	}, 20, false))
-	lines := strings.Split(rendered, "\n")
-
-	if got := len(lines) - 1; got != toolOutputRows {
-		t.Fatalf("wrapped output rows = %d, want %d: %q", got, toolOutputRows, rendered)
+func TestConsecutiveToolSummariesUseAdjacentLines(t *testing.T) {
+	const width = 40
+	message := newAssistantMessage()
+	message.content.WriteString("Before tools")
+	message.toolCalls = []toolCallView{
+		{call: model.ToolCall{Name: "web_search", Arguments: `{"query":"AI news"}`}},
+		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, done: true},
 	}
-	if !strings.Contains(rendered, "… +") {
-		t.Fatalf("wrapped output missing omission marker: %q", rendered)
+	divider := strings.Repeat("─", width)
+	raw := message.renderConversation(width, false, nil, true, false, false)
+	if !strings.Contains(raw, lightTheme.divider.Render(divider)) {
+		t.Fatalf("tool divider does not use low-contrast theme color: %q", raw)
 	}
-	for _, line := range lines {
-		if got := ansi.StringWidth(line); got > 20 {
-			t.Fatalf("rendered line width = %d, want at most 20: %q", got, line)
-		}
+	rendered := ansi.Strip(raw)
+	want := "Before tools\n\n" + divider + "\n• WebSearch: AI news\n• LoadSkill: check\n" + divider
+	if rendered != want {
+		t.Fatalf("tool summary grouping = %q, want %q", rendered, want)
 	}
 }
 
-func TestDirectShellOutputUsesExpandedRowLimit(t *testing.T) {
-	result := strings.Repeat("0123456789\n", 12)
+func TestToolGroupLeadingDividerDependsOnPreviousMessage(t *testing.T) {
+	const width = 30
+	message := newAssistantMessage()
+	message.toolCalls = []toolCallView{{
+		call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`},
+	}}
+	divider := strings.Repeat("─", width)
+	for _, test := range []struct {
+		name           string
+		precededByUser bool
+		want           string
+	}{
+		{name: "user", precededByUser: true, want: "• LoadSkill: check\n" + divider},
+		{name: "assistant", want: divider + "\n• LoadSkill: check\n" + divider},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rendered := ansi.Strip(message.renderConversation(width, false, nil, test.precededByUser, false, false))
+			if rendered != test.want {
+				t.Fatalf("tool divider rendering = %q, want %q", rendered, test.want)
+			}
+		})
+	}
+}
+
+func TestRebuildOmitsLeadingToolDividerAfterUserMessage(t *testing.T) {
+	const width = 30
+	m := New(Options{})
+	m.showWelcome = false
+	toolMessage := newAssistantMessage()
+	toolMessage.toolCalls = []toolCallView{{
+		call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`},
+	}}
+	m.messages = []*chatMessage{newUserMessage("hello"), toolMessage}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
+	m = updated.(Model)
+	plain := ansi.Strip(m.viewport.View())
+	divider := strings.Repeat("─", width)
+	if count := strings.Count(plain, divider); count != 1 {
+		t.Fatalf("tool divider count = %d, want only trailing divider: %q", count, plain)
+	}
+	toolIndex := strings.Index(plain, "• LoadSkill: check")
+	dividerIndex := strings.Index(plain, divider)
+	if toolIndex < 0 || dividerIndex <= toolIndex {
+		t.Fatalf("tool group does not precede its only divider: %q", plain)
+	}
+}
+
+func TestRebuildMergesConsecutiveToolMessageBlocks(t *testing.T) {
+	const width = 40
+	m := New(Options{})
+	m.showWelcome = false
+	first := newAssistantMessage()
+	first.toolCalls = []toolCallView{{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`},
+	}}
+	second := newAssistantMessage()
+	second.toolCalls = []toolCallView{{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Find directories","command":"find ."}`},
+	}}
+	m.messages = []*chatMessage{newUserMessage("inspect"), first, second}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+	m = updated.(Model)
+	plain := ansi.Strip(m.viewport.View())
+	lines := strings.Split(plain, "\n")
+	firstLine, secondLine := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "• RunShell: Inspect files") {
+			firstLine = i
+		}
+		if strings.Contains(line, "• RunShell: Find directories") {
+			secondLine = i
+		}
+	}
+	if firstLine < 0 || secondLine != firstLine+1 {
+		t.Fatalf("consecutive tools are not adjacent: %q", plain)
+	}
+	if count := strings.Count(plain, strings.Repeat("─", width)); count != 1 {
+		t.Fatalf("tool divider count = %d, want one trailing divider: %q", count, plain)
+	}
+}
+
+func TestDirectShellSummaryUsesCommand(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
-		call:     model.ToolCall{Name: "run_shell", Arguments: `{"command":"test"}`},
-		result:   result,
+		call:     model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run shell command","command":"test"}`},
+		result:   "hidden output",
 		metadata: model.ToolMetadata{DirectShell: true},
 		done:     true,
 	}, 40, false))
 
-	if strings.Contains(rendered, "… +") {
-		t.Fatalf("direct shell output was limited as a model tool call: %q", rendered)
-	}
-	if got := len(strings.Split(rendered, "\n")) - 1; got <= toolOutputRows || got > directShellOutputRows {
-		t.Fatalf("direct shell output rows = %d, want > %d and <= %d", got, toolOutputRows, directShellOutputRows)
+	if rendered != "• RunShell: test" {
+		t.Fatalf("direct shell summary = %q", rendered)
 	}
 }
 
-func TestFailedToolAlwaysShowsResult(t *testing.T) {
+func TestFailedToolShowsOnlyFinalErrorLine(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
 		call:   model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas"}`},
-		result: "network unavailable",
+		result: "partial output\nnetwork unavailable",
 		err:    true,
 		done:   true,
 	}, 80, false))
 
-	if !strings.Contains(rendered, "Failed to search the web for atlas") || !strings.Contains(rendered, "network unavailable") {
-		t.Fatalf("failed tool did not show its action and result: %q", rendered)
+	want := "• WebSearch: atlas\n  Failed: network unavailable"
+	if rendered != want || strings.Contains(rendered, "partial output") {
+		t.Fatalf("failed tool summary = %q, want %q", rendered, want)
 	}
 }
 
-func TestSuccessfulSemanticToolHidesRawResult(t *testing.T) {
+func TestFailedToolPrefersLiveError(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
-		call:   model.ToolCall{Name: "web_search", Arguments: `{"query":"atlas"}`},
-		result: "large raw result",
-		done:   true,
+		call:      model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run tests","command":"test"}`},
+		result:    "partial output",
+		errorText: "exit status 1",
+		metadata:  model.ToolMetadata{DirectShell: true},
+		err:       true,
+		done:      true,
 	}, 80, false))
 
-	if rendered != "• Searched the web for atlas" {
-		t.Fatalf("rendered web search = %q", rendered)
+	if !strings.Contains(rendered, "  Failed: exit status 1") || strings.Contains(rendered, "partial output") {
+		t.Fatalf("live tool error summary = %q", rendered)
+	}
+}
+
+func TestRestoredDirectShellFailureUsesGenericDetail(t *testing.T) {
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call:     model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run shell command","command":"test"}`},
+		result:   "partial output",
+		metadata: model.ToolMetadata{DirectShell: true},
+		err:      true,
+		done:     true,
+	}, 60, false))
+
+	if !strings.Contains(rendered, "  Failed: Tool failed") || strings.Contains(rendered, "partial output") {
+		t.Fatalf("restored direct shell failure = %q", rendered)
+	}
+}
+
+func TestFailedToolDetailFitsSingleLine(t *testing.T) {
+	rendered := renderToolCall(toolCallView{
+		call:      model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"检查失败输出","command":"test"}`},
+		errorText: "第一行\n第二行很长的错误信息",
+		err:       true,
+		done:      true,
+	}, 20, false)
+	lines := strings.Split(rendered, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("failed tool rows = %d, want 2: %q", len(lines), ansi.Strip(rendered))
+	}
+	for _, line := range lines {
+		if got := ansi.StringWidth(line); got > 20 {
+			t.Fatalf("failed tool line width = %d, want at most 20: %q", got, ansi.Strip(line))
+		}
+	}
+}
+
+func TestLegacyShellCallUsesPurposeFallback(t *testing.T) {
+	rendered := ansi.Strip(renderToolCall(toolCallView{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"pwd"}`},
+	}, 40, false))
+
+	if rendered != "• RunShell: pwd" {
+		t.Fatalf("legacy shell summary = %q", rendered)
 	}
 }
 
@@ -1648,9 +1792,10 @@ func TestToolCompletionsMatchCallsByID(t *testing.T) {
 	second := model.ToolCall{ID: "call-2", Name: "run_shell", Arguments: `{"command":"second"}`}
 	message.handleEvent(agent.Event{Type: agent.EventToolStarted, ToolCall: first})
 	message.handleEvent(agent.Event{Type: agent.EventToolStarted, ToolCall: second})
-	message.handleEvent(agent.Event{Type: agent.EventToolFinished, ToolCall: first, ToolResult: "one"})
+	message.handleEvent(agent.Event{Type: agent.EventToolFinished, ToolCall: first, ToolResult: "one", ToolError: true, Err: errors.New("exit status 1")})
 
-	if !message.toolCalls[0].done || message.toolCalls[0].result != "one" || message.toolCalls[1].done {
+	if !message.toolCalls[0].done || message.toolCalls[0].result != "one" || !message.toolCalls[0].err ||
+		message.toolCalls[0].errorText != "exit status 1" || message.toolCalls[1].done {
 		t.Fatalf("tool calls were not matched by ID: %#v", message.toolCalls)
 	}
 }
@@ -1734,13 +1879,13 @@ func TestTurnRendersModelAndToolsChronologically(t *testing.T) {
 	}
 	rendered := ansi.Strip(strings.Join(blocks, "\n"))
 	before := strings.Index(rendered, "before tool")
-	toolResult := strings.Index(rendered, "/tmp/work")
+	toolSummary := strings.Index(rendered, "• RunShell: pwd")
 	after := strings.Index(rendered, "after tool")
-	if before < 0 || toolResult < 0 || after < 0 {
+	if before < 0 || toolSummary < 0 || after < 0 {
 		t.Fatalf("rendered output = %q", rendered)
 	}
-	if !(before < toolResult && toolResult < after) {
-		t.Fatalf("render order = %q, want model text then tool result then later model text", rendered)
+	if !(before < toolSummary && toolSummary < after) {
+		t.Fatalf("render order = %q, want model text then tool summary then later model text", rendered)
 	}
 }
 
@@ -1768,10 +1913,10 @@ func TestMessagesFromTranscriptRestoresToolResults(t *testing.T) {
 		blocks = append(blocks, message.render(80, false, nil))
 	}
 	rendered := ansi.Strip(strings.Join(blocks, "\n"))
-	toolResult := strings.Index(rendered, "/tmp/work")
+	toolSummary := strings.Index(rendered, "• RunShell: pwd")
 	finalAnswer := strings.Index(rendered, "You are in /tmp/work.")
-	if toolResult < 0 || finalAnswer < 0 || toolResult >= finalAnswer {
-		t.Fatalf("restored render order = %q, want tool result before final answer", rendered)
+	if toolSummary < 0 || finalAnswer < 0 || toolSummary >= finalAnswer {
+		t.Fatalf("restored render order = %q, want tool summary before final answer", rendered)
 	}
 }
 

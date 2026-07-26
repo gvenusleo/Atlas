@@ -13,6 +13,7 @@ import (
 type colorPalette struct {
 	text      string
 	muted     string
+	divider   string
 	surface   string
 	selected  string
 	link      string
@@ -29,6 +30,7 @@ type tuiTheme struct {
 	palette   colorPalette
 	text      lipgloss.Style
 	muted     lipgloss.Style
+	divider   lipgloss.Style
 	selected  lipgloss.Style
 	brand     lipgloss.Style
 	reasoning lipgloss.Style
@@ -48,6 +50,7 @@ func newTUITheme(flavor catppuccin.Flavor, surface catppuccin.Color) tuiTheme {
 	palette := colorPalette{
 		text:      flavor.Text().Hex,
 		muted:     flavor.Subtext0().Hex,
+		divider:   flavor.Surface2().Hex,
 		surface:   surface.Hex,
 		selected:  flavor.Blue().Hex,
 		link:      flavor.Sky().Hex,
@@ -63,6 +66,7 @@ func newTUITheme(flavor catppuccin.Flavor, surface catppuccin.Color) tuiTheme {
 		palette:   palette,
 		text:      lipgloss.NewStyle().Foreground(lipgloss.Color(palette.text)),
 		muted:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.muted)),
+		divider:   lipgloss.NewStyle().Foreground(lipgloss.Color(palette.divider)),
 		selected:  lipgloss.NewStyle().Foreground(lipgloss.Color(palette.selected)),
 		brand:     lipgloss.NewStyle().Foreground(lipgloss.Color(palette.brand)),
 		reasoning: lipgloss.NewStyle().Foreground(lipgloss.Color(palette.reasoning)),

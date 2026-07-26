@@ -349,6 +349,7 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 func TestRunTurnRunShellUsesSessionCWDAndStdin(t *testing.T) {
 	cwd := t.TempDir()
 	arguments, err := json.Marshal(tool.ShellArgs{
+		Purpose: "Create a note",
 		Command: shellWriteStdinCommand(),
 		Stdin:   "from cwd\n",
 	})
@@ -524,7 +525,8 @@ func TestRunTurnDirectShellRunsCommandWithoutProvider(t *testing.T) {
 	if !strings.Contains(result.Content, "direct-output") {
 		t.Fatalf("content = %q", result.Content)
 	}
-	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" || shellCWD(t, events[1].ToolCall.Arguments) != workdir {
+	if len(events) != 4 || events[1].Type != agent.EventToolStarted || events[1].ToolCall.Name != "run_shell" ||
+		shellCWD(t, events[1].ToolCall.Arguments) != workdir || shellPurpose(t, events[1].ToolCall.Arguments) != "Run shell command" {
 		t.Fatalf("events = %#v", events)
 	}
 	if events[2].Type != agent.EventToolFinished || events[2].ToolError || !strings.Contains(events[2].ToolResult, "direct-output") {
@@ -1207,6 +1209,15 @@ func shellCWD(t *testing.T, arguments string) string {
 		t.Fatalf("ParseShellArgs() error = %v", err)
 	}
 	return args.CWD
+}
+
+func shellPurpose(t *testing.T, arguments string) string {
+	t.Helper()
+	args, err := tool.ParseShellArgs(arguments)
+	if err != nil {
+		t.Fatalf("ParseShellArgs() error = %v", err)
+	}
+	return args.Purpose
 }
 
 func shellFailCommand(text string, code int) string {

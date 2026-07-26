@@ -6,7 +6,7 @@
 
 | Tool | Description |
 |---|---|
-| `run_shell` | Discover, search, inspect, edit, and verify with PowerShell on Windows or `/bin/sh` elsewhere; accepts optional standard input and accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
+| `run_shell` | Discover, search, inspect, edit, and verify with PowerShell on Windows or `/bin/sh` elsewhere; requires a short user-facing purpose and command, accepts optional standard input and accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
 | `load_skill` | Load a local skill's instructions by name |
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
 | `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |

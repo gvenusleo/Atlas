@@ -239,7 +239,7 @@ func TestPromptRunsRuntimeAndStreamsUpdates(t *testing.T) {
 			ToolCall: model.ToolCall{
 				ID:        "call_1",
 				Name:      "run_shell",
-				Arguments: `{"command":"just check"}`,
+				Arguments: `{"purpose":"Check the project","command":"just check"}`,
 			},
 		})
 		opts.Observer(agentpkg.Event{
@@ -390,7 +390,7 @@ func TestPromptDirectShellStreamsToolUpdates(t *testing.T) {
 			ToolCall: model.ToolCall{
 				ID:        "direct_shell_1",
 				Name:      "run_shell",
-				Arguments: `{"command":"pwd"}`,
+				Arguments: `{"purpose":"Print the working directory","command":"pwd"}`,
 			},
 		})
 		opts.Observer(agentpkg.Event{
@@ -442,7 +442,7 @@ func TestPromptUsesClientTerminalForRunShellWhenSupported(t *testing.T) {
 		call := model.ToolCall{
 			ID:        "call_1",
 			Name:      "run_shell",
-			Arguments: `{"command":"pwd"}`,
+			Arguments: `{"purpose":"Print the working directory","command":"pwd"}`,
 		}
 		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
 		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
@@ -508,7 +508,7 @@ func TestPromptUsesClientTerminalForDirectShellWhenSupported(t *testing.T) {
 		call := model.ToolCall{
 			ID:        "direct_shell_1",
 			Name:      "run_shell",
-			Arguments: `{"command":"pwd"}`,
+			Arguments: `{"purpose":"Print the working directory","command":"pwd"}`,
 		}
 		opts.Observer(agentpkg.Event{Type: agentpkg.EventToolStarted, Step: 1, ToolCall: call})
 		result, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
@@ -556,7 +556,7 @@ func TestToolRunnerUsesLocalShellWhenStdinIsPresent(t *testing.T) {
 	call := model.ToolCall{
 		ID:        "call_1",
 		Name:      "run_shell",
-		Arguments: `{"command":"git apply --recount -","stdin":"patch content"}`,
+		Arguments: `{"purpose":"Apply a patch","command":"git apply --recount -","stdin":"patch content"}`,
 	}
 	var fallbackCall model.ToolCall
 
@@ -581,7 +581,7 @@ func TestPromptFallsBackWhenClientTerminalUnsupported(t *testing.T) {
 		if opts.ToolRunner == nil {
 			t.Fatal("ToolRunner is nil")
 		}
-		call := model.ToolCall{ID: "call_1", Name: "run_shell", Arguments: `{"command":"pwd"}`}
+		call := model.ToolCall{ID: "call_1", Name: "run_shell", Arguments: `{"purpose":"Print the working directory","command":"pwd"}`}
 		got, err := opts.ToolRunner(ctx, call, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 			return tool.RunResult{Content: "fallback-output"}, nil
 		})
@@ -613,7 +613,7 @@ func TestToolRunnerReturnsClientTerminalExitErrorWithoutFallback(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "run_shell",
-		Arguments: `{"command":"false"}`,
+		Arguments: `{"purpose":"Exercise a failure","command":"false"}`,
 	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
 		return tool.RunResult{Content: "fallback"}, nil
@@ -640,7 +640,7 @@ func TestToolRunnerAcceptsConfiguredClientTerminalExitCode(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "run_shell",
-		Arguments: `{"command":"rg missing","success_exit_codes":[0,1]}`,
+		Arguments: `{"purpose":"Search for missing text","command":"rg missing","success_exit_codes":[0,1]}`,
 	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		return tool.RunResult{}, fmt.Errorf("fallback should not run")
 	})
@@ -663,7 +663,7 @@ func TestToolRunnerFallsBackWhenClientTerminalCreateFails(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "run_shell",
-		Arguments: `{"command":"pwd"}`,
+		Arguments: `{"purpose":"Print the working directory","command":"pwd"}`,
 	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		fallbackCalled = true
 		return tool.RunResult{Content: "fallback"}, nil
@@ -689,7 +689,7 @@ func TestToolRunnerKillsClientTerminalOnCancel(t *testing.T) {
 	got, err := runner(ctx, model.ToolCall{
 		ID:        "call_1",
 		Name:      "run_shell",
-		Arguments: `{"command":"sleep 10"}`,
+		Arguments: `{"purpose":"Wait for cancellation","command":"sleep 10"}`,
 	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		return tool.RunResult{}, fmt.Errorf("fallback should not run")
 	})
@@ -721,7 +721,7 @@ func TestToolRunnerKillsClientTerminalWhenTerminalUpdateFails(t *testing.T) {
 	got, err := runner(context.Background(), model.ToolCall{
 		ID:        "call_1",
 		Name:      "run_shell",
-		Arguments: `{"command":"pwd"}`,
+		Arguments: `{"purpose":"Print the working directory","command":"pwd"}`,
 	}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
 		return tool.RunResult{}, fmt.Errorf("fallback should not run")
 	})
@@ -1167,7 +1167,7 @@ func TestLoadSessionReplaysTranscript(t *testing.T) {
 		ToolCalls: []model.ToolCall{{
 			ID:        "call_1",
 			Name:      "run_shell",
-			Arguments: `{"command":"just check"}`,
+			Arguments: `{"purpose":"Check the project","command":"just check"}`,
 		}},
 	})
 	trans.Append(model.Message{

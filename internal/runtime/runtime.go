@@ -665,6 +665,7 @@ func stripImageParts(messages []model.Message) []model.Message {
 // directShellToolCall constructs a run_shell call for observer and history replay.
 func directShellToolCall(id, command, cwd string) (model.ToolCall, error) {
 	args := map[string]string{
+		"purpose": "Run shell command",
 		"command": command,
 	}
 	if cwd != "" {

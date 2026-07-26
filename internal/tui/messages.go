@@ -1,8 +1,9 @@
 package tui
 
 import (
-	"fmt"
+	"encoding/json"
 	"image/color"
+	"slices"
 	"strings"
 	"sync"
 
@@ -91,18 +92,13 @@ var markdownRenderers sync.Map
 
 // toolCallView holds the display state of a single tool call.
 type toolCallView struct {
-	call     model.ToolCall
-	result   string
-	metadata model.ToolMetadata
-	err      bool
-	done     bool
+	call      model.ToolCall
+	result    string
+	errorText string
+	metadata  model.ToolMetadata
+	err       bool
+	done      bool
 }
-
-const (
-	toolInputContinuationRows = 2
-	toolOutputRows            = 5
-	directShellOutputRows     = 50
-)
 
 // newUserMessage creates a chatMessage for a user prompt.
 func newUserMessage(text string) *chatMessage {
@@ -134,6 +130,9 @@ func (m *chatMessage) handleEvent(e agent.Event) {
 	case agent.EventToolFinished:
 		if tc := m.findToolCall(e.ToolCall.ID); tc != nil {
 			tc.result = ansi.Strip(e.ToolResult)
+			if e.Err != nil {
+				tc.errorText = ansi.Strip(e.Err.Error())
+			}
 			tc.metadata = e.ToolMetadata
 			tc.err = e.ToolError || e.ToolMetadata.Error
 			tc.done = true
@@ -157,6 +156,15 @@ func (m *chatMessage) findToolCall(id string) *toolCallView {
 
 // render produces the styled string for this message block.
 func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackground color.Color) string {
+	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, false, false, false, false)
+}
+
+// renderConversation renders a message within its surrounding conversation boundaries.
+func (m *chatMessage) renderConversation(width int, hasDarkBackground bool, terminalBackground color.Color, precededByUser, continuesPreviousTools, continuesNextTools bool) string {
+	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, true, precededByUser, continuesPreviousTools, continuesNextTools)
+}
+
+func (m *chatMessage) renderWithToolDividers(width int, hasDarkBackground bool, terminalBackground color.Color, showToolDividers, precededByUser, continuesPreviousTools, continuesNextTools bool) string {
 	theme := themeFor(hasDarkBackground)
 	switch m.role {
 	case "user":
@@ -169,8 +177,24 @@ func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackgrou
 		if m.content.Len() > 0 {
 			parts = append(parts, m.renderMarkdown(width, hasDarkBackground))
 		}
+		var tools []string
 		for _, tc := range m.toolCalls {
-			parts = append(parts, renderToolCall(tc, width, hasDarkBackground))
+			if rendered := renderToolCall(tc, width, hasDarkBackground); rendered != "" {
+				tools = append(tools, rendered)
+			}
+		}
+		if len(tools) > 0 {
+			toolBlock := strings.Join(tools, "\n")
+			if showToolDividers {
+				divider := theme.divider.Render(strings.Repeat("─", width))
+				if m.content.Len() > 0 || (!precededByUser && !continuesPreviousTools) {
+					toolBlock = divider + "\n" + toolBlock
+				}
+				if !continuesNextTools {
+					toolBlock += "\n" + divider
+				}
+			}
+			parts = append(parts, toolBlock)
 		}
 		if m.cancelled {
 			parts = append(parts, renderIndented("Cancelled", width, "• ", theme.muted))
@@ -186,6 +210,25 @@ func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackgrou
 		return renderIndented(m.content.String(), width, "• ", style)
 	}
 	return m.content.String()
+}
+
+func (m *chatMessage) visible() bool {
+	switch m.role {
+	case "assistant":
+		return m.content.Len() > 0 || len(m.toolCalls) > 0 || m.cancelled || m.err != nil
+	case "user", "notice":
+		return m.content.Len() > 0
+	default:
+		return m.content.Len() > 0
+	}
+}
+
+func (m *chatMessage) startsWithTools() bool {
+	return m.role == "assistant" && m.content.Len() == 0 && len(m.toolCalls) > 0
+}
+
+func (m *chatMessage) endsWithTools() bool {
+	return m.role == "assistant" && len(m.toolCalls) > 0 && !m.cancelled && m.err == nil
 }
 
 // renderMarkdown returns the cached assistant body when its render inputs are unchanged.
@@ -209,13 +252,13 @@ func (m *chatMessage) renderMarkdown(width int, hasDarkBackground bool) string {
 	return rendered
 }
 
-// renderAssistantMarkdown renders one assistant body and applies the message gutter.
+// renderAssistantMarkdown renders one assistant body at the full message width.
 func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) string {
-	if width <= 2 {
-		return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
+	if width <= 0 {
+		return ""
 	}
 
-	wrapWidth := width - 2
+	wrapWidth := width
 	key := markdownRendererKey{width: wrapWidth, darkBackground: hasDarkBackground}
 	entryValue, ok := markdownRenderers.Load(key)
 	if !ok {
@@ -226,7 +269,7 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 			glamour.WithChromaFormatter("terminal16m"),
 		)
 		if err != nil {
-			return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
+			return renderWrapped(content, width, themeFor(hasDarkBackground).text)
 		}
 		entryValue, _ = markdownRenderers.LoadOrStore(key, &markdownRendererEntry{renderer: renderer})
 	}
@@ -236,40 +279,23 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 	rendered, err := entry.renderer.Render(content)
 	entry.mu.Unlock()
 	if err != nil {
-		return renderIndented(content, width, "• ", themeFor(hasDarkBackground).text)
+		return renderWrapped(content, width, themeFor(hasDarkBackground).text)
 	}
 
-	// Glamour pads to its wrap width and terminates the document with a newline.
-	// Remove only that framing before adding the conversation gutter.
-	rendered = strings.TrimSuffix(rendered, "\n")
+	// Glamour terminates the document with newlines that the conversation supplies itself.
+	rendered = strings.TrimRight(rendered, "\n")
 	lines := strings.Split(rendered, "\n")
 	if rendered == "" {
 		return ""
 	}
-	firstContentLine := -1
-	for i, line := range lines {
-		if strings.TrimSpace(ansi.Strip(line)) != "" {
-			firstContentLine = i
-			break
-		}
-	}
-	lineCount := len(lines)
-	if strings.HasSuffix(rendered, "\n") {
-		lineCount--
-	}
-	for i := range lineCount {
+	for i := range lines {
 		plain := strings.TrimRight(ansi.Strip(lines[i]), " \t")
 		lines[i] = ansi.Truncate(lines[i], ansi.StringWidth(plain), "")
-		prefix := "  "
-		if i == firstContentLine {
-			prefix = "• "
-		}
-		lines[i] = prefix + lines[i]
 	}
 	return strings.Join(lines, "\n")
 }
 
-// renderToolCall renders a compact semantic summary and a bounded result preview.
+// renderToolCall renders a compact status summary and an optional failure detail.
 func renderToolCall(tc toolCallView, width int, hasDarkBackground bool) string {
 	if width <= 0 {
 		return ""
@@ -281,141 +307,112 @@ func renderToolCall(tc toolCallView, width int, hasDarkBackground bool) string {
 	} else if tc.done {
 		statusStyle = theme.success
 	}
-	action, input := toolCallSummary(tc)
-	lines := renderToolHeader(action, input, width, statusStyle.Bold(true), theme)
 
-	if tc.done && shouldRenderToolResult(tc) {
-		result := strings.Trim(ansi.Strip(tc.result), "\r\n")
-		if result == "" {
-			if tc.err {
-				result = "Tool failed"
-			} else if tc.call.Name == "run_shell" {
-				result = "(no output)"
-			}
-		}
-		if result != "" {
-			limit := toolOutputRows
-			if tc.metadata.DirectShell {
-				limit = directShellOutputRows
-			}
-			lines = append(lines, renderToolOutput(result, width, limit, theme)...)
-		}
+	line := renderToolSummary(tc, width, statusStyle, theme.text)
+	if !tc.err {
+		return line
 	}
-	return strings.Join(lines, "\n")
+	errorLine := "  Failed: " + toolCallErrorDetail(tc)
+	return line + "\n" + theme.error.Render(ansi.Truncate(errorLine, width, "…"))
 }
 
-// toolCallSummary returns the lifecycle verb and the most useful input preview.
-func toolCallSummary(tc toolCallView) (string, string) {
-	detail := tool.DisplayDetail(tc.call)
+func renderToolSummary(tc toolCallView, width int, statusStyle, textStyle lipgloss.Style) string {
+	name, detail := toolCallPresentation(tc)
+	prefix := "• " + name
 	if detail == "" {
-		detail = strings.TrimSpace(tc.call.Arguments)
+		return statusStyle.Render(ansi.Truncate(prefix, width, "…"))
 	}
+	prefix += ":"
+	prefixWidth := ansi.StringWidth(prefix)
+	if prefixWidth >= width {
+		return statusStyle.Render(ansi.Truncate(prefix, width, "…"))
+	}
+	remaining := width - prefixWidth
+	if remaining == 1 {
+		return statusStyle.Render(prefix) + textStyle.Render("…")
+	}
+	return statusStyle.Render(prefix) + textStyle.Render(" "+ansi.Truncate(detail, remaining-1, "…"))
+}
 
-	switch tc.call.Name {
+// toolCallSummary returns the stable name and primary user-facing argument.
+func toolCallSummary(tc toolCallView) string {
+	name, detail := toolCallPresentation(tc)
+	if detail == "" {
+		return name
+	}
+	return name + ": " + detail
+}
+
+func toolCallPresentation(tc toolCallView) (string, string) {
+	name := toolDisplayName(tc.call.Name)
+	detail := tool.DisplayDetail(tc.call)
+	if tc.call.Name == "run_shell" {
+		purpose := runShellPurpose(tc.call)
+		if purpose != "" && purpose != "Run shell command" {
+			detail = purpose
+		}
+	}
+	detail = singleLine(detail)
+	return name, detail
+}
+
+func toolDisplayName(name string) string {
+	switch name {
 	case "run_shell":
-		return toolLifecycleVerb(tc, "Running", "Ran", "Failed"), detail
+		return "RunShell"
 	case "web_search":
-		action := toolLifecycleVerb(tc, "Searching the web", "Searched the web", "Failed to search the web")
-		if detail != "" {
-			action += " for"
-		}
-		return action, detail
+		return "WebSearch"
 	case "web_fetch":
-		return toolLifecycleVerb(tc, "Fetching", "Fetched", "Failed to fetch"), detail
+		return "WebFetch"
 	case "load_skill":
-		return toolLifecycleVerb(tc, "Loading skill", "Loaded skill", "Failed to load skill"), detail
+		return "LoadSkill"
 	case "todo_write":
-		return toolLifecycleVerb(tc, "Updating", "Updated", "Failed to update"), detail
-	default:
-		name := tc.call.Name
-		if name == "" {
-			name = "tool"
-		}
-		if detail != "" {
-			name += " " + detail
-		}
-		return toolLifecycleVerb(tc, "Calling", "Called", "Failed"), name
+		return "TodoWrite"
 	}
+	if name == "" {
+		return "Tool"
+	}
+	if name = singleLine(name); name != "" {
+		return name
+	}
+	return "Tool"
 }
 
-func toolLifecycleVerb(tc toolCallView, running, completed, failed string) string {
-	if tc.err {
-		return failed
+func runShellPurpose(call model.ToolCall) string {
+	var args struct {
+		Purpose string `json:"purpose"`
 	}
-	if tc.done {
-		return completed
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		return ""
 	}
-	return running
+	return strings.TrimSpace(ansi.Strip(args.Purpose))
 }
 
-func shouldRenderToolResult(tc toolCallView) bool {
-	if tc.err {
-		return true
+func toolCallErrorDetail(tc toolCallView) string {
+	if detail := singleLine(tc.errorText); detail != "" {
+		return detail
 	}
-	switch tc.call.Name {
-	case "web_search", "web_fetch", "load_skill", "todo_write":
-		return false
-	default:
-		return true
+	if tc.metadata.DirectShell {
+		return "Tool failed"
 	}
-}
-
-// renderToolHeader wraps the input before limiting it to two continuation rows.
-func renderToolHeader(action, input string, width int, statusStyle lipgloss.Style, theme tuiTheme) []string {
-	if width <= 4 {
-		return []string{statusStyle.Render(ansi.Truncate("• "+action, width, ""))}
-	}
-
-	content := statusStyle.Render(action)
-	if input != "" {
-		content += " " + theme.text.Render(ansi.Strip(input))
-	}
-	wrapped := strings.Split(ansi.Hardwrap(content, width-4, true), "\n")
-	visible := min(len(wrapped), 1+toolInputContinuationRows)
-	lines := make([]string, 0, visible+1)
-	for i := range visible {
-		prefix := theme.muted.Render("  │ ")
-		if i == 0 {
-			prefix = statusStyle.Render("• ")
+	lines := strings.Split(strings.ReplaceAll(ansi.Strip(tc.result), "\r\n", "\n"), "\n")
+	for _, line := range slices.Backward(lines) {
+		if detail := singleLine(line); detail != "" {
+			return detail
 		}
-		lines = append(lines, prefix+wrapped[i])
 	}
-	if omitted := len(wrapped) - visible; omitted > 0 {
-		hint := ansi.Truncate(fmt.Sprintf("… +%d lines", omitted), width-4, "")
-		lines = append(lines, theme.muted.Render("  │ "+hint))
-	}
-	return lines
+	return "Tool failed"
 }
 
-// renderToolOutput keeps the beginning and end within the visible row budget.
-func renderToolOutput(result string, width, limit int, theme tuiTheme) []string {
-	if width <= 4 || limit <= 0 {
-		return nil
-	}
-	contentWidth := width - 4
-	wrapped := strings.Split(ansi.Hardwrap(result, contentWidth, true), "\n")
-	if len(wrapped) > limit {
-		available := limit - 1
-		head := available / 2
-		tail := available - head
-		omitted := len(wrapped) - head - tail
-		hint := ansi.Truncate(fmt.Sprintf("… +%d lines", omitted), contentWidth, "")
-		trimmed := make([]string, 0, limit)
-		trimmed = append(trimmed, wrapped[:head]...)
-		trimmed = append(trimmed, hint)
-		trimmed = append(trimmed, wrapped[len(wrapped)-tail:]...)
-		wrapped = trimmed
-	}
+func singleLine(value string) string {
+	return strings.Join(strings.Fields(ansi.Strip(value)), " ")
+}
 
-	lines := make([]string, len(wrapped))
-	for i, line := range wrapped {
-		prefix := "    "
-		if i == 0 {
-			prefix = "  └ "
-		}
-		lines[i] = theme.muted.Render(prefix + line)
+func renderWrapped(content string, width int, style lipgloss.Style) string {
+	if width <= 0 {
+		return ""
 	}
-	return lines
+	return style.Render(ansi.Hardwrap(ansi.Strip(content), width, true))
 }
 
 func renderIndented(content string, width int, firstPrefix string, style lipgloss.Style) string {
