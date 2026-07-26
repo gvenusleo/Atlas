@@ -993,16 +993,22 @@ func (m *Model) rebuild() {
 		if i+1 < len(visible) {
 			next = visible[i+1]
 		}
-		continuesPreviousTools := previous != nil && previous.endsWithTools() && msg.startsWithTools()
-		continuesNextTools := next != nil && msg.endsWithTools() && next.startsWithTools()
-		precededByUser := previous != nil && previous.role == "user"
+		previousKind := conversationBlockNone
+		if previous != nil {
+			previousKind = previous.endKind()
+		}
+		currentKind := msg.startKind()
+		continuesPreviousTools := previousKind == conversationBlockTool && currentKind == conversationBlockTool
+		endKind := msg.endKind()
+		followedByModelContent := next != nil &&
+			(endKind == conversationBlockTool || endKind == conversationBlockPlan) &&
+			next.role == "assistant" && next.content.Len() > 0
 		rendered := msg.renderConversation(
 			m.width,
 			m.hasDarkBackground,
 			m.terminalBackground,
-			precededByUser,
-			continuesPreviousTools,
-			continuesNextTools,
+			previousKind,
+			followedByModelContent,
 		)
 		appendRendered(rendered, continuesPreviousTools)
 	}

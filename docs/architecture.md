@@ -89,6 +89,6 @@ Key constraints:
 - Observer events preserve occurrence order so streaming clients can render model output, tool calls, and completion without regrouping them.
 - The loop ends when there are no tool calls, an error occurs, or `max_steps` (default 20) is reached.
 
-## Context Compaction and Todos
+## Context Compaction and Task Plans
 
-Runtime triggers context compaction automatically at the configured threshold. Entry adapters and CLI commands can also request it manually through `CompactSession`. Both paths summarize earlier messages, keep recent messages active, and preserve the full transcript. If the model has been using `todo_write` to track tasks, the last todo list is extracted from the transcript and incomplete items are injected into the summary prompt. This keeps pending work available after compaction without persisting todo state to the database.
+Runtime triggers context compaction automatically at the configured threshold. Entry adapters and CLI commands can also request it manually through `CompactSession`. Both paths summarize earlier messages, keep recent messages active, and preserve the full transcript. If the latest `update_plan` task plan contains unfinished steps, that complete plan is injected into the summary prompt. This keeps both progress and pending work available after compaction.

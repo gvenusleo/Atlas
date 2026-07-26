@@ -1558,7 +1558,7 @@ func TestToolSummaryUsesPrimaryArguments(t *testing.T) {
 		{call: model.ToolCall{Name: "web_search", Arguments: `{"query":"AI news"}`}, want: "WebSearch: AI news"},
 		{call: model.ToolCall{Name: "web_fetch", Arguments: `{"url":"https://example.com"}`}, want: "WebFetch: https://example.com"},
 		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"git-commit"}`}, want: "LoadSkill: git-commit"},
-		{call: model.ToolCall{Name: "todo_write", Arguments: `{"todos":[{},{}]}`}, want: "TodoWrite: 2 items"},
+		{call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"A","status":"pending"},{"step":"B","status":"completed"}]}`}, want: "UpdatePlan: 2 steps"},
 		{call: model.ToolCall{Name: "custom_tool", Arguments: `{"secret":"hidden"}`}, want: "custom_tool"},
 		{call: model.ToolCall{}, want: "Tool"},
 	}
@@ -1608,12 +1608,12 @@ func TestConsecutiveToolSummariesUseAdjacentLines(t *testing.T) {
 		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, done: true},
 	}
 	divider := strings.Repeat("─", width)
-	raw := message.renderConversation(width, false, nil, true, false, false)
+	raw := message.renderConversation(width, false, nil, conversationBlockUser, false)
 	if !strings.Contains(raw, lightTheme.divider.Render(divider)) {
 		t.Fatalf("tool divider does not use low-contrast theme color: %q", raw)
 	}
 	rendered := ansi.Strip(raw)
-	want := "Before tools\n\n" + divider + "\n• WebSearch: AI news\n• LoadSkill: check\n" + divider
+	want := "Before tools\n\n" + divider + "\n• WebSearch: AI news\n• LoadSkill: check"
 	if rendered != want {
 		t.Fatalf("tool summary grouping = %q, want %q", rendered, want)
 	}
@@ -1627,19 +1627,185 @@ func TestToolGroupLeadingDividerDependsOnPreviousMessage(t *testing.T) {
 	}}
 	divider := strings.Repeat("─", width)
 	for _, test := range []struct {
-		name           string
-		precededByUser bool
-		want           string
+		name         string
+		previousKind conversationBlockKind
+		want         string
 	}{
-		{name: "user", precededByUser: true, want: "• LoadSkill: check\n" + divider},
-		{name: "assistant", want: divider + "\n• LoadSkill: check\n" + divider},
+		{name: "user", previousKind: conversationBlockUser, want: "• LoadSkill: check"},
+		{name: "assistant", previousKind: conversationBlockModel, want: divider + "\n• LoadSkill: check"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			rendered := ansi.Strip(message.renderConversation(width, false, nil, test.precededByUser, false, false))
+			rendered := ansi.Strip(message.renderConversation(width, false, nil, test.previousKind, false))
 			if rendered != test.want {
 				t.Fatalf("tool divider rendering = %q, want %q", rendered, test.want)
 			}
 		})
+	}
+}
+
+func TestPlanUpdateRendersStructuredStatusList(t *testing.T) {
+	call := toolCallView{
+		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Inspect current implementation","status":"completed"},{"step":"Implement structured rendering","status":"in_progress"},{"step":"Run tests and update docs","status":"pending"}]}`},
+		metadata: model.ToolMetadata{Plan: []model.PlanEntry{
+			{Step: "Inspect current implementation", Status: model.PlanStatusCompleted},
+			{Step: "Implement structured rendering", Status: model.PlanStatusInProgress},
+			{Step: "Run tests and update docs", Status: model.PlanStatusPending},
+		}},
+		done: true,
+	}
+	raw := renderPlanUpdate(call, 50, false)
+	plain := ansi.Strip(raw)
+	want := "• Updated Plan\n" +
+		"  ✔ Inspect current implementation\n" +
+		"  □ Implement structured rendering\n" +
+		"  □ Run tests and update docs"
+	if plain != want {
+		t.Fatalf("plan rendering = %q, want %q", plain, want)
+	}
+	if !strings.Contains(raw, lightTheme.success.Render("✔")) {
+		t.Fatalf("completed plan marker does not use success color: %q", raw)
+	}
+	if !strings.Contains(raw, lightTheme.selected.Render("□")) {
+		t.Fatalf("active plan marker does not use selected color: %q", raw)
+	}
+	if !strings.Contains(raw, lightTheme.selected.Bold(true).Render("Updated Plan")) {
+		t.Fatalf("updated plan title does not use selected color: %q", raw)
+	}
+	if !strings.Contains(raw, lightTheme.selected.Render("• ")) {
+		t.Fatalf("unfinished plan bullet does not use selected color: %q", raw)
+	}
+	completed := lightTheme.muted.Strikethrough(true).Render("Inspect current implementation")
+	if !strings.Contains(raw, completed) {
+		t.Fatalf("completed plan text is not struck through: %q", raw)
+	}
+}
+
+func TestCompletedPlanUsesSuccessColor(t *testing.T) {
+	call := toolCallView{
+		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Inspect files","status":"completed"},{"step":"Run tests","status":"completed"}]}`},
+		done: true,
+	}
+	raw := renderPlanUpdate(call, 40, true)
+	if !strings.Contains(raw, darkTheme.success.Render("• ")) {
+		t.Fatalf("completed plan bullet does not use success color: %q", raw)
+	}
+	if !strings.Contains(raw, darkTheme.success.Bold(true).Render("Updated Plan")) {
+		t.Fatalf("completed plan title does not use success color: %q", raw)
+	}
+}
+
+func TestPlanUpdateWrapsStepsAtContentIndent(t *testing.T) {
+	call := toolCallView{
+		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Implement structured rendering safely","status":"in_progress"}]}`},
+		done: true,
+	}
+	plain := ansi.Strip(renderPlanUpdate(call, 24, false))
+	for line := range strings.SplitSeq(plain, "\n") {
+		if ansi.StringWidth(line) > 24 {
+			t.Fatalf("plan line exceeds width: %q", line)
+		}
+	}
+	if !strings.Contains(plain, "\n    ") {
+		t.Fatalf("wrapped plan continuation is not aligned: %q", plain)
+	}
+	if !strings.Contains(plain, "  □ Implement structured\n") || !strings.Contains(plain, "    rendering safely") {
+		t.Fatalf("plan step did not wrap on word boundaries: %q", plain)
+	}
+
+	call.call.Arguments = `{"plan":[{"step":"检查当前实现并同步更新相关文档","status":"in_progress"}]}`
+	plain = ansi.Strip(renderPlanUpdate(call, 20, false))
+	for line := range strings.SplitSeq(plain, "\n") {
+		if ansi.StringWidth(line) > 20 {
+			t.Fatalf("localized plan line exceeds width: %q", line)
+		}
+	}
+}
+
+func TestPlanAndToolBulletsAlign(t *testing.T) {
+	plan := ansi.Strip(renderPlanUpdate(toolCallView{
+		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Inspect files","status":"pending"}]}`},
+		done: true,
+	}, 40, false))
+	regular := ansi.Strip(renderToolCall(toolCallView{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`},
+		done: true,
+	}, 40, false))
+	if strings.Index(plan, "•") != strings.Index(regular, "•") {
+		t.Fatalf("plan and tool bullets are not aligned:\nplan: %q\ntool: %q", plan, regular)
+	}
+}
+
+func TestPlanUpdateIsSeparatedFromRegularTools(t *testing.T) {
+	const width = 40
+	message := newAssistantMessage()
+	message.toolCalls = []toolCallView{
+		{call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`}},
+		{call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Edit files","status":"in_progress"}]}`}, done: true},
+		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}},
+	}
+	plain := ansi.Strip(message.renderConversation(width, false, nil, conversationBlockUser, false))
+	divider := strings.Repeat("─", width)
+	if count := strings.Count(plain, divider); count != 2 {
+		t.Fatalf("plan boundary divider count = %d, want 2: %q", count, plain)
+	}
+	firstTool := strings.Index(plain, "• RunShell: Inspect files")
+	plan := strings.Index(plain, "• Updated Plan")
+	lastTool := strings.Index(plain, "• LoadSkill: check")
+	if firstTool < 0 || plan <= firstTool || lastTool <= plan {
+		t.Fatalf("tool and plan order is incorrect: %q", plain)
+	}
+}
+
+func TestPlanUpdateShowsActiveAndEmptyStates(t *testing.T) {
+	call := toolCallView{
+		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[]}`},
+	}
+	active := ansi.Strip(renderPlanUpdate(call, 40, true))
+	if active != "• Updating Plan\n  (no steps provided)" {
+		t.Fatalf("active empty plan = %q", active)
+	}
+	activeRaw := renderPlanUpdate(call, 40, true)
+	if !strings.Contains(activeRaw, darkTheme.selected.Bold(true).Render("Updating Plan")) {
+		t.Fatalf("empty plan title does not use selected color: %q", activeRaw)
+	}
+	call.done = true
+	completed := ansi.Strip(renderPlanUpdate(call, 40, true))
+	if completed != "• Updated Plan\n  (no steps provided)" {
+		t.Fatalf("completed empty plan = %q", completed)
+	}
+}
+
+func TestRebuildAddsPlanDividerOnlyWhenModelOutputFollows(t *testing.T) {
+	const width = 40
+	m := New(Options{})
+	m.showWelcome = false
+	planMessage := newAssistantMessage()
+	planMessage.toolCalls = []toolCallView{{
+		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Inspect files","status":"in_progress"}]}`},
+		done: true,
+	}}
+	m.messages = []*chatMessage{newUserMessage("inspect"), planMessage}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+	m = updated.(Model)
+	divider := strings.Repeat("─", width)
+	if plain := ansi.Strip(m.viewport.View()); strings.Contains(plain, divider) {
+		t.Fatalf("plan divider appeared before model output: %q", plain)
+	}
+
+	answer := newAssistantMessage()
+	answer.content.WriteString("Inspection complete.")
+	m.messages = append(m.messages, answer)
+	m.rebuild()
+	plain := ansi.Strip(m.viewport.View())
+	planIndex := strings.Index(plain, "• Updated Plan")
+	dividerIndex := strings.Index(plain, divider)
+	answerIndex := strings.Index(plain, "Inspection complete.")
+	if planIndex < 0 || dividerIndex <= planIndex || answerIndex <= dividerIndex {
+		t.Fatalf("plan divider is not between plan and model output: %q", plain)
+	}
+	if count := strings.Count(plain, divider); count != 1 {
+		t.Fatalf("plan divider count = %d, want one before model output: %q", count, plain)
 	}
 }
 
@@ -1657,13 +1823,8 @@ func TestRebuildOmitsLeadingToolDividerAfterUserMessage(t *testing.T) {
 	m = updated.(Model)
 	plain := ansi.Strip(m.viewport.View())
 	divider := strings.Repeat("─", width)
-	if count := strings.Count(plain, divider); count != 1 {
-		t.Fatalf("tool divider count = %d, want only trailing divider: %q", count, plain)
-	}
-	toolIndex := strings.Index(plain, "• LoadSkill: check")
-	dividerIndex := strings.Index(plain, divider)
-	if toolIndex < 0 || dividerIndex <= toolIndex {
-		t.Fatalf("tool group does not precede its only divider: %q", plain)
+	if count := strings.Count(plain, divider); count != 0 {
+		t.Fatalf("tool divider count = %d, want none before model output: %q", count, plain)
 	}
 }
 
@@ -1697,8 +1858,41 @@ func TestRebuildMergesConsecutiveToolMessageBlocks(t *testing.T) {
 	if firstLine < 0 || secondLine != firstLine+1 {
 		t.Fatalf("consecutive tools are not adjacent: %q", plain)
 	}
-	if count := strings.Count(plain, strings.Repeat("─", width)); count != 1 {
-		t.Fatalf("tool divider count = %d, want one trailing divider: %q", count, plain)
+	if count := strings.Count(plain, strings.Repeat("─", width)); count != 0 {
+		t.Fatalf("tool divider count = %d, want none before model output: %q", count, plain)
+	}
+}
+
+func TestRebuildAddsToolDividerWhenModelOutputFollows(t *testing.T) {
+	const width = 40
+	m := New(Options{})
+	m.showWelcome = false
+	toolMessage := newAssistantMessage()
+	toolMessage.toolCalls = []toolCallView{{
+		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`},
+	}}
+	m.messages = []*chatMessage{newUserMessage("inspect"), toolMessage}
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+	m = updated.(Model)
+	divider := strings.Repeat("─", width)
+	if plain := ansi.Strip(m.viewport.View()); strings.Contains(plain, divider) {
+		t.Fatalf("tool divider appeared before model output: %q", plain)
+	}
+
+	answer := newAssistantMessage()
+	answer.content.WriteString("Files inspected.")
+	m.messages = append(m.messages, answer)
+	m.rebuild()
+	plain := ansi.Strip(m.viewport.View())
+	toolIndex := strings.Index(plain, "• RunShell: Inspect files")
+	dividerIndex := strings.Index(plain, divider)
+	answerIndex := strings.Index(plain, "Files inspected.")
+	if toolIndex < 0 || dividerIndex <= toolIndex || answerIndex <= dividerIndex {
+		t.Fatalf("tool divider is not between tool and model output: %q", plain)
+	}
+	if count := strings.Count(plain, divider); count != 1 {
+		t.Fatalf("tool divider count = %d, want one before model output: %q", count, plain)
 	}
 }
 
@@ -1917,6 +2111,30 @@ func TestMessagesFromTranscriptRestoresToolResults(t *testing.T) {
 	finalAnswer := strings.Index(rendered, "You are in /tmp/work.")
 	if toolSummary < 0 || finalAnswer < 0 || toolSummary >= finalAnswer {
 		t.Fatalf("restored render order = %q, want tool summary before final answer", rendered)
+	}
+}
+
+func TestMessagesFromTranscriptRestoresPlanUpdate(t *testing.T) {
+	call := model.ToolCall{ID: "plan-1", Name: "update_plan", Arguments: `{"plan":[{"step":"Run tests","status":"in_progress"}]}`}
+	messages := messagesFromTranscript([]model.Message{
+		model.TextMessage(model.RoleUser, "continue"),
+		{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{call}},
+		{
+			Role:       model.RoleTool,
+			ToolCallID: call.ID,
+			Content:    "Plan updated",
+			ToolMetadata: model.ToolMetadata{Plan: []model.PlanEntry{{
+				Step: "Run tests", Status: model.PlanStatusInProgress,
+			}}},
+		},
+	})
+
+	if len(messages) != 2 || len(messages[1].toolCalls) != 1 {
+		t.Fatalf("restored plan messages = %#v", messages)
+	}
+	rendered := ansi.Strip(messages[1].render(50, false, nil))
+	if !strings.Contains(rendered, "• Updated Plan") || !strings.Contains(rendered, "□ Run tests") {
+		t.Fatalf("restored plan rendering = %q", rendered)
 	}
 }
 

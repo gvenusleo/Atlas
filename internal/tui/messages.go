@@ -100,6 +100,16 @@ type toolCallView struct {
 	done      bool
 }
 
+type conversationBlockKind uint8
+
+const (
+	conversationBlockNone conversationBlockKind = iota
+	conversationBlockUser
+	conversationBlockModel
+	conversationBlockTool
+	conversationBlockPlan
+)
+
 // newUserMessage creates a chatMessage for a user prompt.
 func newUserMessage(text string) *chatMessage {
 	m := &chatMessage{role: "user"}
@@ -156,15 +166,15 @@ func (m *chatMessage) findToolCall(id string) *toolCallView {
 
 // render produces the styled string for this message block.
 func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackground color.Color) string {
-	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, false, false, false, false)
+	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, false, conversationBlockNone, false)
 }
 
 // renderConversation renders a message within its surrounding conversation boundaries.
-func (m *chatMessage) renderConversation(width int, hasDarkBackground bool, terminalBackground color.Color, precededByUser, continuesPreviousTools, continuesNextTools bool) string {
-	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, true, precededByUser, continuesPreviousTools, continuesNextTools)
+func (m *chatMessage) renderConversation(width int, hasDarkBackground bool, terminalBackground color.Color, previousKind conversationBlockKind, followedByModelContent bool) string {
+	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, true, previousKind, followedByModelContent)
 }
 
-func (m *chatMessage) renderWithToolDividers(width int, hasDarkBackground bool, terminalBackground color.Color, showToolDividers, precededByUser, continuesPreviousTools, continuesNextTools bool) string {
+func (m *chatMessage) renderWithToolDividers(width int, hasDarkBackground bool, terminalBackground color.Color, showToolDividers bool, previousKind conversationBlockKind, followedByModelContent bool) string {
 	theme := themeFor(hasDarkBackground)
 	switch m.role {
 	case "user":
@@ -177,23 +187,7 @@ func (m *chatMessage) renderWithToolDividers(width int, hasDarkBackground bool, 
 		if m.content.Len() > 0 {
 			parts = append(parts, m.renderMarkdown(width, hasDarkBackground))
 		}
-		var tools []string
-		for _, tc := range m.toolCalls {
-			if rendered := renderToolCall(tc, width, hasDarkBackground); rendered != "" {
-				tools = append(tools, rendered)
-			}
-		}
-		if len(tools) > 0 {
-			toolBlock := strings.Join(tools, "\n")
-			if showToolDividers {
-				divider := theme.divider.Render(strings.Repeat("─", width))
-				if m.content.Len() > 0 || (!precededByUser && !continuesPreviousTools) {
-					toolBlock = divider + "\n" + toolBlock
-				}
-				if !continuesNextTools {
-					toolBlock += "\n" + divider
-				}
-			}
+		if toolBlock := m.renderToolCalls(width, hasDarkBackground, showToolDividers, previousKind, followedByModelContent); toolBlock != "" {
 			parts = append(parts, toolBlock)
 		}
 		if m.cancelled {
@@ -223,12 +217,26 @@ func (m *chatMessage) visible() bool {
 	}
 }
 
-func (m *chatMessage) startsWithTools() bool {
-	return m.role == "assistant" && m.content.Len() == 0 && len(m.toolCalls) > 0
+func (m *chatMessage) startKind() conversationBlockKind {
+	switch m.role {
+	case "user":
+		return conversationBlockUser
+	case "assistant":
+		if m.content.Len() > 0 {
+			return conversationBlockModel
+		}
+		if len(m.toolCalls) > 0 {
+			return toolCallBlockKind(m.toolCalls[0])
+		}
+	}
+	return conversationBlockModel
 }
 
-func (m *chatMessage) endsWithTools() bool {
-	return m.role == "assistant" && len(m.toolCalls) > 0 && !m.cancelled && m.err == nil
+func (m *chatMessage) endKind() conversationBlockKind {
+	if m.role == "assistant" && len(m.toolCalls) > 0 && !m.cancelled && m.err == nil {
+		return toolCallBlockKind(m.toolCalls[len(m.toolCalls)-1])
+	}
+	return m.startKind()
 }
 
 // renderMarkdown returns the cached assistant body when its render inputs are unchanged.
@@ -293,6 +301,132 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 		lines[i] = ansi.Truncate(lines[i], ansi.StringWidth(plain), "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m *chatMessage) renderToolCalls(width int, hasDarkBackground, showDividers bool, previousKind conversationBlockKind, followedByModelContent bool) string {
+	if len(m.toolCalls) == 0 || width <= 0 {
+		return ""
+	}
+	if m.content.Len() > 0 {
+		previousKind = conversationBlockModel
+	}
+
+	theme := themeFor(hasDarkBackground)
+	divider := theme.divider.Render(strings.Repeat("─", width))
+	var rendered strings.Builder
+	for _, call := range m.toolCalls {
+		kind := toolCallBlockKind(call)
+		body := renderToolCall(call, width, hasDarkBackground)
+		if kind == conversationBlockPlan && !call.err {
+			body = renderPlanUpdate(call, width, hasDarkBackground)
+		}
+		if body == "" {
+			continue
+		}
+
+		if rendered.Len() == 0 {
+			if showDividers && needsToolDivider(previousKind, kind) {
+				rendered.WriteString(divider)
+				rendered.WriteByte('\n')
+			}
+		} else if showDividers && needsToolDivider(previousKind, kind) {
+			rendered.WriteByte('\n')
+			rendered.WriteString(divider)
+			rendered.WriteByte('\n')
+		} else if kind == conversationBlockPlan {
+			rendered.WriteString("\n\n")
+		} else {
+			rendered.WriteByte('\n')
+		}
+		rendered.WriteString(body)
+		previousKind = kind
+	}
+	if rendered.Len() > 0 && showDividers && followedByModelContent {
+		rendered.WriteByte('\n')
+		rendered.WriteString(divider)
+	}
+	return rendered.String()
+}
+
+func needsToolDivider(previous, current conversationBlockKind) bool {
+	return previous != conversationBlockNone &&
+		previous != conversationBlockUser &&
+		previous != current
+}
+
+func toolCallBlockKind(call toolCallView) conversationBlockKind {
+	if call.call.Name == "update_plan" {
+		return conversationBlockPlan
+	}
+	return conversationBlockTool
+}
+
+func renderPlanUpdate(call toolCallView, width int, hasDarkBackground bool) string {
+	entries := call.metadata.Plan
+	if len(entries) == 0 {
+		parsed, err := tool.ParsePlan(call.call.Arguments)
+		if err != nil {
+			return renderToolCall(call, width, hasDarkBackground)
+		}
+		entries = parsed
+	}
+
+	theme := themeFor(hasDarkBackground)
+	title := "Updated Plan"
+	if !call.done {
+		title = "Updating Plan"
+	}
+	statusStyle := theme.selected
+	allCompleted := len(entries) > 0
+	for _, entry := range entries {
+		if entry.Status != model.PlanStatusCompleted {
+			allCompleted = false
+			break
+		}
+	}
+	if allCompleted {
+		statusStyle = theme.success
+	}
+	lines := []string{ansi.Truncate(statusStyle.Render("• ")+statusStyle.Bold(true).Render(title), width, "…")}
+	if len(entries) == 0 {
+		empty := theme.muted.Italic(true).Render("(no steps provided)")
+		return strings.Join(append(lines, ansi.Truncate("  "+empty, width, "…")), "\n")
+	}
+	for _, entry := range entries {
+		lines = append(lines, renderPlanEntry(entry, width, theme)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderPlanEntry(entry model.PlanEntry, width int, theme tuiTheme) []string {
+	symbol := "□"
+	symbolStyle := theme.muted
+	textStyle := theme.muted
+	switch entry.Status {
+	case model.PlanStatusCompleted:
+		symbol = "✔"
+		symbolStyle = theme.success
+		textStyle = theme.muted.Strikethrough(true)
+	case model.PlanStatusInProgress:
+		symbolStyle = theme.selected
+		textStyle = theme.selected.Bold(true)
+	}
+
+	step := strings.TrimSpace(ansi.Strip(entry.Step))
+	const prefixWidth = 4
+	if width <= prefixWidth {
+		line := "  " + symbolStyle.Render(symbol) + " " + textStyle.Render(step)
+		return []string{ansi.Truncate(line, width, "…")}
+	}
+	wrapped := strings.Split(ansi.Wrap(step, width-prefixWidth, ""), "\n")
+	for i, line := range wrapped {
+		prefix := "    "
+		if i == 0 {
+			prefix = "  " + symbolStyle.Render(symbol) + " "
+		}
+		wrapped[i] = prefix + textStyle.Render(line)
+	}
+	return wrapped
 }
 
 // renderToolCall renders a compact status summary and an optional failure detail.
@@ -366,8 +500,8 @@ func toolDisplayName(name string) string {
 		return "WebFetch"
 	case "load_skill":
 		return "LoadSkill"
-	case "todo_write":
-		return "TodoWrite"
+	case "update_plan":
+		return "UpdatePlan"
 	}
 	if name == "" {
 		return "Tool"

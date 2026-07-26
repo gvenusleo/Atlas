@@ -60,7 +60,7 @@ ACP 支持的功能：
 - 图片输入
 - `/compact [instruction]` 斜杠命令；可选指令用于指定压缩时需要重点保留的内容
 - skill slash command，例如 `/think ...`
-- 计划更新：`todo_write` 工具调用映射为 `plan_update` session update，在编辑器中渲染为结构化计划面板
+- 计划更新：`update_plan` 工具调用映射为 `plan_update` session update，在编辑器中渲染为结构化计划面板
 
 通过 ACP 连接时，`run_shell` 优先请求客户端 terminal 执行并嵌入输出。ACP terminal 不支持标准输入，因此带有非空 `stdin` 的调用通过 Atlas 本地 shell 执行；terminal 不可用时也会回退到本地 shell。
 

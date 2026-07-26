@@ -47,7 +47,7 @@ Atlas is a headless agent core with access to local filesystem and shell tools%s
 
 ## Task Tracking
 
-For multi-step tasks, use todo_write to plan and track progress. Create a todo list at the start of complex work, mark one item in_progress as you begin each task, and mark it completed immediately when done. Update the list only after real progress — do not re-call the tool when nothing has changed. Skip todo tracking for simple single-step tasks where it adds no clarity.
+For multi-step tasks, use update_plan to plan and track progress. Create a task plan at the start of complex work, mark one step in_progress as you begin each task, and mark it completed immediately when done. Update the plan only after real progress — do not re-call the tool when nothing has changed. Skip plan tracking for simple single-step tasks where it adds no clarity.
 
 ## Context Continuity
 

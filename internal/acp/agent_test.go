@@ -68,6 +68,102 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 	}
 }
 
+func TestObserverSendsCompletePlanUpdates(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		plan []model.PlanEntry
+	}{
+		{name: "steps", plan: []model.PlanEntry{{Step: "Run tests", Status: model.PlanStatusInProgress}}},
+		{name: "empty plan"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			a := NewAgent(&fakeRuntime{})
+			var updates []acpsdk.SessionNotification
+			a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+				updates = append(updates, update)
+				return nil
+			}
+			a.observe(context.Background(), "sess")(agentpkg.Event{
+				Type:         agentpkg.EventToolFinished,
+				ToolCall:     model.ToolCall{ID: "plan-1", Name: "update_plan"},
+				ToolResult:   "Plan updated",
+				ToolMetadata: model.ToolMetadata{Plan: test.plan},
+			})
+
+			if len(updates) != 2 || updates[0].Update.ToolCallUpdate == nil || updates[1].Update.Plan == nil {
+				t.Fatalf("plan updates = %#v", updates)
+			}
+			if got := len(updates[1].Update.Plan.Entries); got != len(test.plan) {
+				t.Fatalf("plan entry count = %d, want %d", got, len(test.plan))
+			}
+		})
+	}
+}
+
+func TestReplayTranscriptRestoresPlanAndToolFailure(t *testing.T) {
+	trans := transcript.New()
+	trans.Append(model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{
+		ID:        "plan-1",
+		Name:      "update_plan",
+		Arguments: `{"plan":[{"step":"Run tests","status":"in_progress"}]}`,
+	}}})
+	trans.Append(model.Message{
+		Role:       model.RoleTool,
+		Content:    "Plan updated",
+		ToolCallID: "plan-1",
+		ToolMetadata: model.ToolMetadata{Plan: []model.PlanEntry{{
+			Step: "Run tests", Status: model.PlanStatusInProgress,
+		}},
+		},
+	})
+	trans.Append(model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{
+		ID: "tool-2", Name: "load_skill", Arguments: `{"name":"missing"}`,
+	}}})
+	trans.Append(model.Message{
+		Role:         model.RoleTool,
+		Content:      "skill not found",
+		ToolCallID:   "tool-2",
+		ToolMetadata: model.ToolMetadata{Error: true},
+	})
+
+	a := NewAgent(&fakeRuntime{})
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+	if err := a.replayTranscript(context.Background(), "sess", trans); err != nil {
+		t.Fatalf("replayTranscript() error = %v", err)
+	}
+
+	if len(updates) != 5 || updates[2].Update.Plan == nil {
+		t.Fatalf("replay updates = %#v", updates)
+	}
+	failed := updates[4].Update.ToolCallUpdate
+	if failed == nil || failed.Status == nil || *failed.Status != acpsdk.ToolCallStatusFailed {
+		t.Fatalf("replayed failed tool = %#v", updates[4].Update)
+	}
+}
+
+func TestObserverDoesNotClearPlanAfterFailedUpdate(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+	a.observe(context.Background(), "sess")(agentpkg.Event{
+		Type:       agentpkg.EventToolFinished,
+		ToolCall:   model.ToolCall{ID: "plan-1", Name: "update_plan"},
+		ToolResult: "invalid status",
+		ToolError:  true,
+	})
+
+	if len(updates) != 1 || updates[0].Update.ToolCallUpdate == nil {
+		t.Fatalf("failed plan updates = %#v", updates)
+	}
+}
+
 func TestNewSessionRequiresAbsoluteCWD(t *testing.T) {
 	a := NewAgent(&fakeRuntime{})
 	cwd := testCWD(t)

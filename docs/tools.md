@@ -10,18 +10,18 @@
 | `load_skill` | Load a local skill's instructions by name |
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
 | `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |
-| `todo_write` | Manage a structured task list for multi-step work; each call replaces the entire list |
+| `update_plan` | Manage a structured task plan for multi-step work; each call replaces the entire plan |
 
-## Task Tracking
+## Plan Tracking
 
-The `todo_write` tool lets the model track multi-step tasks with `pending` / `in_progress` / `completed` statuses. Each call fully replaces the previous list. The model is instructed to use it for tasks that span several tool calls, and to avoid churn by only updating after real progress.
+The `update_plan` tool lets the model track multi-step work with `pending` / `in_progress` / `completed` statuses. Each call fully replaces the previous plan. A plan can contain up to 50 steps, with at most 500 characters per step and one `in_progress` step. The model is instructed to use it for tasks that span several tool calls, and to avoid churn by only updating after real progress.
 
-Todo state is not persisted to the database. Instead, when context compaction occurs, the last `todo_write` call is extracted from the transcript and incomplete items are injected into the summary prompt, so task state survives compaction.
+Plan updates are preserved in transcript tool calls and structured metadata. When context compaction occurs, the latest `update_plan` plan is injected into the summary prompt if it contains unfinished steps, so both completed progress and pending work survive compaction.
 
 Channel-specific rendering:
 
-- **ACP**: todo updates are sent as `plan_update` session updates, mapping each entry to a `PlanEntry`. Editors like Zed render them as a structured plan panel.
-- **CLI**: todos appear as a tool call in the transcript with a `Todo: N items` title.
+- **ACP**: plan updates are sent as `plan_update` session updates, mapping each step to a `PlanEntry`. Editors like Zed render them as a structured plan panel.
+- **TUI**: each update appears as a structured plan snapshot with completed, in-progress, and pending step styles.
 
 ## Instructions and Skills
 

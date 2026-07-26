@@ -439,6 +439,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 			return
 		}
 		var update acpsdk.SessionUpdate
+		var followUp *acpsdk.SessionUpdate
 		switch event.Type {
 		case agent.EventModelDelta:
 			if event.Content == "" {
@@ -469,23 +470,18 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 				toolCallID(event),
 				opts...,
 			)
-			// Send plan update after todo_write tool execution.
-			if len(event.ToolMetadata.Todos) > 0 {
-				entries := make([]acpsdk.PlanEntry, len(event.ToolMetadata.Todos))
-				for i, todo := range event.ToolMetadata.Todos {
-					entries[i] = acpsdk.PlanEntry{
-						Content:  todo.Content,
-						Priority: acpsdk.PlanEntryPriorityMedium,
-						Status:   acpsdk.PlanEntryStatus(todo.Status),
-					}
-				}
-				planUpdate := acpsdk.UpdatePlan(entries...)
-				_ = a.sendSessionUpdate(ctx, sessionID, planUpdate)
+			// Send the structured plan after update_plan completes successfully.
+			if event.ToolCall.Name == "update_plan" && !event.ToolError {
+				planUpdate := planSessionUpdate(event.ToolMetadata.Plan)
+				followUp = &planUpdate
 			}
 		default:
 			return
 		}
 		_ = a.sendSessionUpdate(ctx, sessionID, update)
+		if followUp != nil {
+			_ = a.sendSessionUpdate(ctx, sessionID, *followUp)
+		}
 	}
 }
 
@@ -661,6 +657,7 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 		return nil
 	}
 	var pendingToolIDs []acpsdk.ToolCallId
+	pendingToolNames := make(map[acpsdk.ToolCallId]string)
 	for messageIndex, msg := range trans.Messages() {
 		switch msg.Role {
 		case model.RoleUser:
@@ -687,6 +684,7 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 			for toolIndex, call := range msg.ToolCalls {
 				toolID := replayToolCallID(messageIndex, toolIndex, call.ID)
 				pendingToolIDs = append(pendingToolIDs, toolID)
+				pendingToolNames[toolID] = call.Name
 				if err := a.sendSessionUpdate(ctx, sessionID, replayToolStart(toolID, call)); err != nil {
 					return err
 				}
@@ -702,8 +700,15 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 			if toolID == "" {
 				continue
 			}
+			toolName := pendingToolNames[toolID]
+			delete(pendingToolNames, toolID)
 			if err := a.sendSessionUpdate(ctx, sessionID, replayToolResult(toolID, msg)); err != nil {
 				return err
+			}
+			if toolName == "update_plan" && !msg.ToolMetadata.Error {
+				if err := a.sendSessionUpdate(ctx, sessionID, planSessionUpdate(msg.ToolMetadata.Plan)); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1240,10 +1245,26 @@ func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall) acpsdk.Sessi
 }
 
 func replayToolResult(toolID acpsdk.ToolCallId, msg model.Message) acpsdk.SessionUpdate {
+	status := acpsdk.ToolCallStatusCompleted
+	if msg.ToolMetadata.Error {
+		status = acpsdk.ToolCallStatusFailed
+	}
 	return acpsdk.UpdateToolCall(
 		toolID,
-		toolCallUpdateOptions(acpsdk.ToolCallStatusCompleted, msg.Content, true)...,
+		toolCallUpdateOptions(status, msg.Content, true)...,
 	)
+}
+
+func planSessionUpdate(plan []model.PlanEntry) acpsdk.SessionUpdate {
+	entries := make([]acpsdk.PlanEntry, len(plan))
+	for i, entry := range plan {
+		entries[i] = acpsdk.PlanEntry{
+			Content:  entry.Step,
+			Priority: acpsdk.PlanEntryPriorityMedium,
+			Status:   acpsdk.PlanEntryStatus(entry.Status),
+		}
+	}
+	return acpsdk.UpdatePlan(entries...)
 }
 
 // toolCallUpdateOptions maps Atlas tool results to ACP tool_call_update.

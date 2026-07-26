@@ -60,7 +60,7 @@ ACP supported features:
 - Image input
 - `/compact [instruction]` slash command; the optional instruction tells the compactor what to preserve
 - Skill slash commands, e.g. `/think ...`
-- Plan updates: `todo_write` tool calls are mapped to `plan_update` session updates, rendered as a structured plan panel in editors
+- Plan updates: `update_plan` tool calls are mapped to `plan_update` session updates, rendered as a structured plan panel in editors
 
 When connected via ACP, `run_shell` requests the client terminal when available and embeds its output. ACP terminals do not accept standard input, so calls with non-empty `stdin` execute through Atlas's local shell. If terminal creation is unavailable, Atlas also falls back to its local shell.
 

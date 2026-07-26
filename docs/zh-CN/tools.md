@@ -10,18 +10,18 @@
 | `load_skill` | 按名称加载本地 skill 指令 |
 | `web_search` | 使用 Tavily 搜索公网网页，需配置 `services.tavily.api_key` |
 | `web_fetch` | 使用 Tavily 提取公网网页内容，需配置 `services.tavily.api_key` |
-| `todo_write` | 管理多步骤任务的结构化任务列表，每次调用全量替换 |
+| `update_plan` | 管理多步骤工作的结构化任务计划，每次调用全量替换 |
 
-## 任务追踪
+## 计划追踪
 
-`todo_write` 工具让模型用 `pending` / `in_progress` / `completed` 三种状态追踪多步骤任务。每次调用全量替换上一次的列表。系统提示词指示模型仅在跨多次工具调用的任务中使用，并避免频繁无意义的更新。
+`update_plan` 工具让模型用 `pending` / `in_progress` / `completed` 三种状态追踪多步骤工作。每次调用全量替换上一次的计划。每份计划最多包含 50 个步骤，每个步骤最多 500 个字符，且最多只能有一个 `in_progress` 步骤。系统提示词指示模型仅在跨多次工具调用的任务中使用，并避免频繁无意义的更新。
 
-Todo 状态不持久化到数据库。上下文压缩时，会从 transcript 中提取最后一次 `todo_write` 调用，将未完成的条目注入摘要提示词，使任务状态在压缩后得以保留。
+计划更新保存在 transcript 工具调用及其结构化 metadata 中。上下文压缩时，如果最后一次 `update_plan` 计划仍有未完成步骤，该完整计划会被注入摘要提示词，使已完成进度和待处理工作都能在压缩后保留。
 
 各通道的展示方式：
 
-- **ACP**：todo 更新作为 `plan_update` session update 发送，每个条目映射为 `PlanEntry`。Zed 等编辑器会渲染为结构化计划面板。
-- **CLI**：todo 以工具调用形式出现在 transcript 中，标题为 `Todo: N items`。
+- **ACP**：计划更新作为 `plan_update` session update 发送，每个步骤映射为 `PlanEntry`。Zed 等编辑器会渲染为结构化计划面板。
+- **TUI**：每次更新都显示为结构化计划快照，并区分已完成、进行中和待处理步骤。
 
 ## 指令与 Skill
 

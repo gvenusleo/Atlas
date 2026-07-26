@@ -27,27 +27,27 @@ type ToolCall struct {
 	Arguments string
 }
 
-// TodoStatus represents the execution status of a single todo item.
-type TodoStatus string
+// PlanStatus represents the execution status of a task plan entry.
+type PlanStatus string
 
 const (
-	// TodoStatusPending means the task has not started.
-	TodoStatusPending TodoStatus = "pending"
-	// TodoStatusInProgress means the task is currently executing.
-	TodoStatusInProgress TodoStatus = "in_progress"
-	// TodoStatusCompleted means the task is finished.
-	TodoStatusCompleted TodoStatus = "completed"
+	// PlanStatusPending means the step has not started.
+	PlanStatusPending PlanStatus = "pending"
+	// PlanStatusInProgress means the step is currently executing.
+	PlanStatusInProgress PlanStatus = "in_progress"
+	// PlanStatusCompleted means the step is finished.
+	PlanStatusCompleted PlanStatus = "completed"
 )
 
-// TodoEntry describes a single task entry in a todo list.
-type TodoEntry struct {
-	Content string     `json:"content"`
-	Status  TodoStatus `json:"status"`
+// PlanEntry describes a single task plan entry.
+type PlanEntry struct {
+	Step   string     `json:"step"`
+	Status PlanStatus `json:"status"`
 }
 
 // ToolMetadata holds UI-facing presentation data for a tool call.
 type ToolMetadata struct {
-	Todos       []TodoEntry `json:"todos,omitempty"`
+	Plan        []PlanEntry `json:"plan,omitempty"`
 	Error       bool        `json:"error,omitempty"`
 	DirectShell bool        `json:"direct_shell,omitempty"`
 }

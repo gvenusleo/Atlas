@@ -1089,7 +1089,7 @@ func completeDependencies(deps Dependencies) Dependencies {
 func buildToolRegistry(cwd string, skills *skill.Catalog, services config.ServicesConfig) (*tool.Registry, error) {
 	tools := []tool.Tool{
 		tool.RunShell{CWD: cwd},
-		tool.TodoWrite{},
+		tool.UpdatePlan{},
 		tool.LoadSkill{Skills: skills},
 	}
 	if services.Tavily.APIKey != "" {

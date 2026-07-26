@@ -2,12 +2,12 @@
 package compact
 
 import (
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/liuyuxin/atlas/internal/model"
+	"github.com/liuyuxin/atlas/internal/tool"
 )
 
 const (
@@ -189,10 +189,10 @@ func BuildSummaryMessages(previousSummary string, messages []model.Message, inst
 		b.WriteString(strings.TrimSpace(previousSummary))
 		b.WriteString("\n")
 	}
-	if todos := extractLastTodos(messages); len(todos) > 0 {
-		b.WriteString("\nCurrent todo list (include incomplete tasks in the Progress section):\n")
-		for _, t := range todos {
-			fmt.Fprintf(&b, "- [%s] %s\n", t.Status, t.Content)
+	if plan := extractLastPlan(messages); len(plan) > 0 {
+		b.WriteString("\nCurrent task plan (include incomplete steps in the Progress section):\n")
+		for _, entry := range plan {
+			fmt.Fprintf(&b, "- [%s] %s\n", entry.Status, entry.Step)
 		}
 	}
 	b.WriteString("\nConversation to summarize:\n")
@@ -200,38 +200,35 @@ func BuildSummaryMessages(previousSummary string, messages []model.Message, inst
 	return []model.Message{model.TextMessage(model.RoleUser, b.String())}
 }
 
-// extractLastTodos scans messages for the last todo_write call and returns its todo list.
-// Only returns a list containing incomplete items; returns nil when all are completed.
-func extractLastTodos(messages []model.Message) []model.TodoEntry {
+// extractLastPlan returns the latest task plan when it contains unfinished steps.
+func extractLastPlan(messages []model.Message) []model.PlanEntry {
+	toolSucceeded := make(map[string]bool)
+	for _, msg := range messages {
+		if msg.Role == model.RoleTool && msg.ToolCallID != "" {
+			toolSucceeded[msg.ToolCallID] = !msg.ToolMetadata.Error
+		}
+	}
 	for _, msg := range slices.Backward(messages) {
 		if msg.Role != model.RoleAssistant {
 			continue
 		}
-		for _, call := range msg.ToolCalls {
-			if call.Name != "todo_write" {
+		for _, call := range slices.Backward(msg.ToolCalls) {
+			if call.Name != "update_plan" {
 				continue
 			}
-			var params struct {
-				Todos []struct {
-					Content string `json:"content"`
-					Status  string `json:"status"`
-				} `json:"todos"`
-			}
-			if err := json.Unmarshal([]byte(call.Arguments), &params); err != nil {
-				return nil
-			}
-			var entries []model.TodoEntry
-			hasIncomplete := false
-			for _, item := range params.Todos {
-				entry := model.TodoEntry{
-					Content: strings.TrimSpace(item.Content),
-					Status:  model.TodoStatus(item.Status),
-				}
-				if entry.Content == "" {
+			if call.ID != "" {
+				succeeded, found := toolSucceeded[call.ID]
+				if !found || !succeeded {
 					continue
 				}
-				entries = append(entries, entry)
-				if entry.Status != model.TodoStatusCompleted {
+			}
+			entries, err := tool.ParsePlan(call.Arguments)
+			if err != nil {
+				continue
+			}
+			hasIncomplete := false
+			for _, entry := range entries {
+				if entry.Status != model.PlanStatusCompleted {
 					hasIncomplete = true
 				}
 			}

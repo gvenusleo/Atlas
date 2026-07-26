@@ -605,7 +605,7 @@ func decodeToolCalls(content string) ([]model.ToolCall, error) {
 }
 
 func encodeToolMetadata(metadata model.ToolMetadata) (string, error) {
-	if len(metadata.Todos) == 0 && !metadata.Error && !metadata.DirectShell {
+	if len(metadata.Plan) == 0 && !metadata.Error && !metadata.DirectShell {
 		return "", nil
 	}
 	content, err := json.Marshal(metadata)

@@ -44,7 +44,7 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 			Content:    "content",
 			ToolCallID: "call-1",
 			ToolMetadata: model.ToolMetadata{
-				Todos:       []model.TodoEntry{{Content: "check output", Status: model.TodoStatusCompleted}},
+				Plan:        []model.PlanEntry{{Step: "check output", Status: model.PlanStatusCompleted}},
 				Error:       true,
 				DirectShell: true,
 			},
@@ -80,8 +80,8 @@ func TestStoreSaveAndLoadTranscript(t *testing.T) {
 	if got[2].ToolCallID != "call-1" {
 		t.Fatalf("tool call id = %q", got[2].ToolCallID)
 	}
-	if len(got[2].ToolMetadata.Todos) != 1 || got[2].ToolMetadata.Todos[0].Content != "check output" || got[2].ToolMetadata.Todos[0].Status != model.TodoStatusCompleted {
-		t.Fatalf("tool todos = %#v", got[2].ToolMetadata.Todos)
+	if len(got[2].ToolMetadata.Plan) != 1 || got[2].ToolMetadata.Plan[0].Step != "check output" || got[2].ToolMetadata.Plan[0].Status != model.PlanStatusCompleted {
+		t.Fatalf("tool plan = %#v", got[2].ToolMetadata.Plan)
 	}
 	if !got[2].ToolMetadata.Error || !got[2].ToolMetadata.DirectShell {
 		t.Fatalf("tool presentation metadata = %#v", got[2].ToolMetadata)

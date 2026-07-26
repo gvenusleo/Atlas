@@ -12,11 +12,11 @@ import (
 func DisplayTitle(call model.ToolCall) string {
 	if detail := DisplayDetail(call); detail != "" {
 		prefix := map[string]string{
-			"web_search": "WebSearch: ",
-			"web_fetch":  "WebFetch: ",
-			"load_skill": "LoadSkill: ",
-			"todo_write": "Todo: ",
-			"run_shell":  "Run: ",
+			"web_search":  "WebSearch: ",
+			"web_fetch":   "WebFetch: ",
+			"load_skill":  "LoadSkill: ",
+			"update_plan": "Plan: ",
+			"run_shell":   "Run: ",
 		}[call.Name]
 		return prefix + detail
 	}
@@ -36,8 +36,8 @@ func DisplayDetail(call model.ToolCall) string {
 		key = "url"
 	case "load_skill":
 		key = "name"
-	case "todo_write":
-		key = "todos"
+	case "update_plan":
+		key = "plan"
 	case "run_shell":
 		key = "command"
 	default:
@@ -48,12 +48,12 @@ func DisplayDetail(call model.ToolCall) string {
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return ""
 	}
-	if call.Name == "todo_write" {
-		items, ok := args["todos"].([]any)
+	if call.Name == "update_plan" {
+		items, ok := args["plan"].([]any)
 		if !ok || len(items) == 0 {
 			return ""
 		}
-		return fmt.Sprintf("%d items", len(items))
+		return fmt.Sprintf("%d steps", len(items))
 	}
 	value, ok := args[key].(string)
 	if !ok || strings.TrimSpace(value) == "" {

@@ -158,84 +158,110 @@ func TestBuildSummaryMessagesTruncatesToolResultWithoutBreakingUTF8(t *testing.T
 	}
 }
 
-func TestBuildSummaryMessagesInjectsIncompleteTodos(t *testing.T) {
+func TestBuildSummaryMessagesInjectsIncompletePlan(t *testing.T) {
 	messages := []model.Message{
 		{Role: model.RoleUser, Content: "do stuff"},
 		{
 			Role: model.RoleAssistant,
 			ToolCalls: []model.ToolCall{{
-				Name:      "todo_write",
-				Arguments: `{"todos":[{"content":"Task A","status":"completed"},{"content":"Task B","status":"in_progress"},{"content":"Task C","status":"pending"}]}`,
+				Name:      "update_plan",
+				Arguments: `{"plan":[{"step":"Task A","status":"completed"},{"step":"Task B","status":"in_progress"},{"step":"Task C","status":"pending"}]}`,
 			}},
 		},
-		{Role: model.RoleTool, Content: "Todo list updated"},
+		{Role: model.RoleTool, Content: "Plan updated"},
 	}
 	got := BuildSummaryMessages("", messages, "")
 	content := got[0].Content
-	if !strings.Contains(content, "Current todo list") {
-		t.Fatalf("summary prompt missing todo list")
+	if !strings.Contains(content, "Current task plan") {
+		t.Fatalf("summary prompt missing task plan")
 	}
 	if !strings.Contains(content, "[completed] Task A") {
-		t.Fatalf("summary prompt missing completed todo")
+		t.Fatalf("summary prompt missing completed step")
 	}
 	if !strings.Contains(content, "[in_progress] Task B") {
-		t.Fatalf("summary prompt missing in_progress todo")
+		t.Fatalf("summary prompt missing in_progress step")
 	}
 	if !strings.Contains(content, "[pending] Task C") {
-		t.Fatalf("summary prompt missing pending todo")
+		t.Fatalf("summary prompt missing pending step")
 	}
 }
 
-func TestBuildSummaryMessagesSkipsTodosWhenAllCompleted(t *testing.T) {
+func TestBuildSummaryMessagesSkipsPlanWhenAllCompleted(t *testing.T) {
 	messages := []model.Message{
 		{Role: model.RoleUser, Content: "do stuff"},
 		{
 			Role: model.RoleAssistant,
 			ToolCalls: []model.ToolCall{{
-				Name:      "todo_write",
-				Arguments: `{"todos":[{"content":"Task A","status":"completed"},{"content":"Task B","status":"completed"}]}`,
+				Name:      "update_plan",
+				Arguments: `{"plan":[{"step":"Task A","status":"completed"},{"step":"Task B","status":"completed"}]}`,
 			}},
 		},
-		{Role: model.RoleTool, Content: "Todo list updated"},
+		{Role: model.RoleTool, Content: "Plan updated"},
 	}
 	got := BuildSummaryMessages("", messages, "")
-	if strings.Contains(got[0].Content, "Current todo list") {
-		t.Fatalf("summary prompt should not contain todo list when all completed")
+	if strings.Contains(got[0].Content, "Current task plan") {
+		t.Fatalf("summary prompt should not contain task plan when all completed")
 	}
 }
 
-func TestBuildSummaryMessagesUsesLastTodoWriteCall(t *testing.T) {
+func TestBuildSummaryMessagesUsesLastPlanUpdate(t *testing.T) {
 	messages := []model.Message{
 		{
 			Role: model.RoleAssistant,
-			ToolCalls: []model.ToolCall{{
-				Name:      "todo_write",
-				Arguments: `{"todos":[{"content":"Old task","status":"completed"}]}`,
-			}},
-		},
-		{Role: model.RoleTool, Content: "updated"},
-		{
-			Role: model.RoleAssistant,
-			ToolCalls: []model.ToolCall{{
-				Name:      "todo_write",
-				Arguments: `{"todos":[{"content":"New task","status":"in_progress"}]}`,
-			}},
+			ToolCalls: []model.ToolCall{
+				{Name: "update_plan", Arguments: `{"plan":[{"step":"Old task","status":"completed"}]}`},
+				{Name: "update_plan", Arguments: `{"plan":[{"step":"New task","status":"in_progress"}]}`},
+			},
 		},
 		{Role: model.RoleTool, Content: "updated"},
 	}
 	got := BuildSummaryMessages("", messages, "")
 	content := got[0].Content
-	// Extract just the todo list section (between "Current todo list" and "Conversation to summarize")
-	startIdx := strings.Index(content, "Current todo list")
+	// Extract just the task plan section.
+	startIdx := strings.Index(content, "Current task plan")
 	endIdx := strings.Index(content, "Conversation to summarize")
 	if startIdx < 0 || endIdx < 0 || endIdx <= startIdx {
-		t.Fatalf("could not find todo list section in prompt")
+		t.Fatalf("could not find task plan section in prompt")
 	}
-	todoSection := content[startIdx:endIdx]
-	if !strings.Contains(todoSection, "New task") {
-		t.Fatalf("todo list section should use last todo_write call")
+	planSection := content[startIdx:endIdx]
+	if !strings.Contains(planSection, "New task") {
+		t.Fatalf("task plan section should use last update_plan call")
 	}
-	if strings.Contains(todoSection, "Old task") {
-		t.Fatalf("todo list section should not contain old todo")
+	if strings.Contains(planSection, "Old task") {
+		t.Fatalf("task plan section should not contain old step")
+	}
+}
+
+func TestBuildSummaryMessagesIgnoresFailedPlanUpdate(t *testing.T) {
+	messages := []model.Message{
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{{
+				ID:        "plan-1",
+				Name:      "update_plan",
+				Arguments: `{"plan":[{"step":"Keep this task","status":"in_progress"}]}`,
+			}},
+		},
+		{Role: model.RoleTool, ToolCallID: "plan-1", Content: "Plan updated"},
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{{
+				ID:        "plan-2",
+				Name:      "update_plan",
+				Arguments: `{"plan":[{"step":"Rejected task","status":"pending"}]}`,
+			}},
+		},
+		{Role: model.RoleTool, ToolCallID: "plan-2", Content: "tool failed", ToolMetadata: model.ToolMetadata{Error: true}},
+	}
+
+	content := BuildSummaryMessages("", messages, "")[0].Content
+	start := strings.Index(content, "Current task plan")
+	end := strings.Index(content, "Conversation to summarize")
+	if start < 0 || end <= start {
+		t.Fatalf("summary prompt missing task plan section: %q", content)
+	}
+	planSection := content[start:end]
+	if !strings.Contains(planSection, "Keep this task") || strings.Contains(planSection, "Rejected task") {
+		t.Fatalf("summary prompt used failed plan update: %q", planSection)
 	}
 }
