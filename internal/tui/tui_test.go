@@ -1251,9 +1251,20 @@ func TestMarkdownStyleKeepsOnlyRequiredLayoutOverrides(t *testing.T) {
 			style.H6.Prefix != native.H6.Prefix {
 			t.Fatalf("markdownStyle(%t) changes native heading prefixes", dark)
 		}
-		if style.Code.Prefix != native.Code.Prefix || style.Code.Suffix != native.Code.Suffix ||
-			!reflect.DeepEqual(style.CodeBlock.Margin, native.CodeBlock.Margin) {
-			t.Fatalf("markdownStyle(%t) changes native code layout", dark)
+		if style.Code.Prefix != "" || style.Code.Suffix != "" {
+			t.Fatalf("markdownStyle(%t) inline code spacing = %q/%q, want empty", dark, style.Code.Prefix, style.Code.Suffix)
+		}
+		if !reflect.DeepEqual(style.CodeBlock.Margin, native.CodeBlock.Margin) {
+			t.Fatalf("markdownStyle(%t) changes native code block margin", dark)
+		}
+	}
+}
+
+func TestAssistantMarkdownDoesNotPadInlineCode(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		plain := ansi.Strip(renderAssistantMarkdown("在此使用`sha256`继续", 40, dark))
+		if plain != "在此使用sha256继续" {
+			t.Fatalf("inline code rendering = %q, want no added spacing", plain)
 		}
 	}
 }

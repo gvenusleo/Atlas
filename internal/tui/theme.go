@@ -134,6 +134,8 @@ func markdownStyle(hasDarkBackground bool) glamouransi.StyleConfig {
 	style.ImageText.Color = &muted
 	style.Code.Color = &code
 	style.Code.BackgroundColor = nil
+	style.Code.Prefix = ""
+	style.Code.Suffix = ""
 	style.CodeBlock.Color = &text
 	style.CodeBlock.Theme = syntaxTheme
 	style.CodeBlock.Chroma = nil
