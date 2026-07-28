@@ -88,7 +88,7 @@ func TestWelcomeAdaptsToNarrowTerminal(t *testing.T) {
 	m = updated.(Model)
 
 	rendered := ansi.Strip(m.viewport.View())
-	if strings.Contains(rendered, "▟█████▙") {
+	if strings.Contains(rendered, `/______/____\`) {
 		t.Fatalf("narrow welcome still contains the large mark: %q", rendered)
 	}
 	if !strings.Contains(rendered, "Atlas  v") || !strings.Contains(rendered, "gpt-5.6-sol high") {
@@ -98,6 +98,43 @@ func TestWelcomeAdaptsToNarrowTerminal(t *testing.T) {
 		if width := lipgloss.Width(line); width > 24 {
 			t.Fatalf("narrow welcome line width = %d, line = %q", width, line)
 		}
+	}
+}
+
+func TestWelcomeLogoUsesConnectedASCII(t *testing.T) {
+	cells := make(map[[2]int]struct{})
+	for row, line := range strings.Split(welcomeLogoArt, "\n") {
+		for column, char := range []rune(line) {
+			switch char {
+			case '/', '\\', '_':
+				cells[[2]int{row, column}] = struct{}{}
+			case ' ':
+			default:
+				t.Fatalf("logo contains non-ASCII-art character %q", char)
+			}
+		}
+	}
+
+	visited := make(map[[2]int]struct{}, len(cells))
+	queue := [][2]int{{0, 10}}
+	for len(queue) > 0 {
+		cell := queue[0]
+		queue = queue[1:]
+		if _, ok := cells[cell]; !ok {
+			continue
+		}
+		if _, ok := visited[cell]; ok {
+			continue
+		}
+		visited[cell] = struct{}{}
+		for rowOffset := -1; rowOffset <= 1; rowOffset++ {
+			for columnOffset := -1; columnOffset <= 1; columnOffset++ {
+				queue = append(queue, [2]int{cell[0] + rowOffset, cell[1] + columnOffset})
+			}
+		}
+	}
+	if len(visited) != len(cells) {
+		t.Fatalf("logo has disconnected cells: connected=%d total=%d", len(visited), len(cells))
 	}
 }
 

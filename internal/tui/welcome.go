@@ -13,20 +13,18 @@ import (
 
 const welcomeWideMinWidth = 52
 
-var welcomeLogo = []string{
-	"     ✦",
-	"    ▟█▙",
-	"   ▟███▙",
-	"  ▟█████▙",
-	" ▟██▙ ▟██▙",
-	"▟█▛     ▜█▙",
-}
+const welcomeLogoArt = `          /
+         /
+        /
+       /      /\
+      /      /  \
+     /______/____\`
 
 // welcomeView renders the transient new-session identity block.
 func (m Model) welcomeView() string {
 	width := max(m.width, 1)
 	theme := themeFor(m.hasDarkBackground)
-	logo := theme.brand.Bold(true).Render(strings.Join(welcomeLogo, "\n"))
+	logo := welcomeLogo(theme)
 
 	if width < 28 {
 		return m.welcomeMetadata(width, false)
@@ -36,9 +34,14 @@ func (m Model) welcomeView() string {
 	}
 
 	const gap = 4
-	metadataWidth := max(width-lipgloss.Width(welcomeLogo[len(welcomeLogo)-1])-gap, 1)
+	metadataWidth := max(width-lipgloss.Width(logo)-gap, 1)
 	metadata := "\n" + m.welcomeMetadata(metadataWidth, true)
 	return lipgloss.JoinHorizontal(lipgloss.Top, logo, strings.Repeat(" ", gap), metadata)
+}
+
+// welcomeLogo renders the terminal-specific line-art mark.
+func welcomeLogo(theme tuiTheme) string {
+	return theme.brand.Render(welcomeLogoArt)
 }
 
 func (m Model) welcomeMetadata(width int, labels bool) string {
