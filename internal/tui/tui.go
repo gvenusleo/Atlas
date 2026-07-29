@@ -850,7 +850,7 @@ func (m *Model) handleTurnDone(msg turnDoneMsg) {
 	m.eventCh = nil
 	m.current = nil
 
-	if msg.err == nil && msg.result.SessionID != "" {
+	if msg.result.SessionID != "" {
 		m.sessionID = msg.result.SessionID
 	}
 	if msg.err == nil && msg.result.ContextWindow > 0 {

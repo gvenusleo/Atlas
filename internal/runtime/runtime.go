@@ -518,7 +518,7 @@ func (r *Runtime) RunTurn(ctx context.Context, opts TurnOptions) (TurnResult, er
 		}
 	}
 	if err != nil {
-		return TurnResult{}, err
+		return TurnResult{SessionID: sessionID}, err
 	}
 	return TurnResult{
 		SessionID:     sessionID,

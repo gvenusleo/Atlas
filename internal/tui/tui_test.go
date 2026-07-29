@@ -1411,6 +1411,22 @@ func TestTurnErrorRestoresInputFocus(t *testing.T) {
 	}
 }
 
+func TestCancelledTurnKeepsGeneratedSessionID(t *testing.T) {
+	m := New(Options{})
+	m.turnActive = true
+	m.current = newAssistantMessage()
+	m.input.Blur()
+
+	m.handleTurnDone(turnDoneMsg{
+		result: runtime.TurnResult{SessionID: "session-1"},
+		err:    context.Canceled,
+	})
+
+	if m.sessionID != "session-1" {
+		t.Fatalf("session ID = %q", m.sessionID)
+	}
+}
+
 func TestTurnResultUpdatesContextUsage(t *testing.T) {
 	m := New(Options{})
 	m.width = 80

@@ -125,6 +125,30 @@ func TestRunTurnSavesInterruptedUserMessageAfterCancel(t *testing.T) {
 	}
 }
 
+func TestRunTurnReturnsGeneratedSessionIDAfterCancel(t *testing.T) {
+	provider := &cancelingProvider{}
+	r := newTestRuntime(t, provider)
+	ctx, cancel := context.WithCancel(context.Background())
+	provider.cancel = cancel
+
+	result, err := r.RunTurn(ctx, TurnOptions{Prompt: "first"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunTurn() error = %v, want %v", err, context.Canceled)
+	}
+	if result.SessionID != "20260608-120000-test" {
+		t.Fatalf("RunTurn() session ID = %q", result.SessionID)
+	}
+
+	_, trans, err := r.ShowSession(context.Background(), result.SessionID)
+	if err != nil {
+		t.Fatalf("ShowSession() error = %v", err)
+	}
+	messages := trans.Messages()
+	if len(messages) != 1 || messages[0].Content != "first" {
+		t.Fatalf("messages = %#v", messages)
+	}
+}
+
 func TestRunTurnPersistsProviderUsage(t *testing.T) {
 	provider := &recordingProvider{
 		events: []model.StreamEvent{{Type: model.StreamTextDelta, Delta: "ok"}},
