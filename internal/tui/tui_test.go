@@ -116,7 +116,7 @@ func TestWelcomeLogoUsesConnectedASCII(t *testing.T) {
 	}
 
 	visited := make(map[[2]int]struct{}, len(cells))
-	queue := [][2]int{{0, 10}}
+	queue := [][2]int{{0, 7}}
 	for len(queue) > 0 {
 		cell := queue[0]
 		queue = queue[1:]
@@ -135,6 +135,15 @@ func TestWelcomeLogoUsesConnectedASCII(t *testing.T) {
 	}
 	if len(visited) != len(cells) {
 		t.Fatalf("logo has disconnected cells: connected=%d total=%d", len(visited), len(cells))
+	}
+}
+
+func TestWelcomeStartsWithBlankLine(t *testing.T) {
+	m := New(Options{CWD: "/work/atlas"})
+	m.width = 80
+
+	if rendered := ansi.Strip(m.welcomeView()); !strings.HasPrefix(rendered, "\n") {
+		t.Fatalf("welcome does not start with a blank line: %q", rendered)
 	}
 }
 
