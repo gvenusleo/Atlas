@@ -261,8 +261,7 @@ type sessionPickerRender struct {
 }
 
 // render draws the list, loading, or cross-directory confirmation stage.
-func (p sessionPicker) render(width, height int, hasDarkBackground bool) sessionPickerRender {
-	theme := themeFor(hasDarkBackground)
+func (p sessionPicker) render(width, height int, theme tuiTheme) sessionPickerRender {
 	width = max(width, 1)
 	contentWidth := max(width-2, 1)
 	title := "  " + theme.text.Bold(true).Render(ansi.Truncate("Resume a previous session", contentWidth, "…"))

@@ -23,7 +23,7 @@ const welcomeLogoArt = `       /
 // welcomeView renders the transient new-session identity block.
 func (m Model) welcomeView() string {
 	width := max(m.width, 1)
-	theme := themeFor(m.hasDarkBackground)
+	theme := m.theme
 	logo := welcomeLogo(theme)
 
 	if width < 28 {
@@ -45,7 +45,7 @@ func welcomeLogo(theme tuiTheme) string {
 }
 
 func (m Model) welcomeMetadata(width int, labels bool) string {
-	theme := themeFor(m.hasDarkBackground)
+	theme := m.theme
 	name := theme.brand.Bold(true).Render("Atlas")
 	app := name + "  " + theme.text.Render("v"+version.Current)
 	cwd := compactWorkingDirectory(m.cwd)

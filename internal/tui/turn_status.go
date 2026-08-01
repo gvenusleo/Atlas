@@ -62,11 +62,10 @@ func (s *turnStatus) update(msg spinner.TickMsg) tea.Cmd {
 }
 
 // viewAt renders the transient status row using wall-clock turn duration.
-func (s turnStatus) viewAt(width int, now time.Time, hasDarkBackground bool) string {
+func (s turnStatus) viewAt(width int, now time.Time, theme tuiTheme) string {
 	if !s.active() {
 		return ""
 	}
-	theme := themeFor(hasDarkBackground)
 	label := "Working"
 	statusStyle := theme.working
 	if s.phase == turnPhaseThinking {

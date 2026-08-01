@@ -43,7 +43,9 @@ type Model struct {
 	height             int
 	ready              bool
 	hasDarkBackground  bool
+	terminalForeground color.Color
 	terminalBackground color.Color
+	theme              tuiTheme
 
 	// viewport renders the accumulated message log.
 	viewport viewport.Model
@@ -120,6 +122,7 @@ func New(opts Options) Model {
 	model := Model{
 		viewport:    vp,
 		input:       ta,
+		theme:       lightTheme,
 		rt:          opts.Runtime,
 		cwd:         opts.CWD,
 		sessionID:   opts.SessionID,
@@ -146,6 +149,7 @@ func Run(ctx context.Context, opts Options) error {
 // Init starts the cursor blink cycle and loads TUI metadata.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
+		tea.RequestForegroundColor,
 		tea.RequestBackgroundColor,
 		textarea.Blink,
 		loadModelStatus(m.ctx, m.rt),
@@ -173,6 +177,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BackgroundColorMsg:
 		m.hasDarkBackground = msg.IsDark()
 		m.terminalBackground = msg.Color
+		m.theme = resolveTheme(m.hasDarkBackground, m.terminalForeground, m.terminalBackground)
+		m.rebuild()
+		return m, nil
+
+	case tea.ForegroundColorMsg:
+		m.terminalForeground = msg.Color
+		m.theme = resolveTheme(m.hasDarkBackground, m.terminalForeground, m.terminalBackground)
 		m.rebuild()
 		return m, nil
 
@@ -893,7 +904,7 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	if m.resumePicker.active() {
-		rendered := m.resumePicker.render(m.width, m.height, m.hasDarkBackground)
+		rendered := m.resumePicker.render(m.width, m.height, m.theme)
 		v := tea.NewView(rendered.content)
 		if rendered.showCursor {
 			v.Cursor = tea.NewCursor(rendered.cursorX, rendered.cursorY)
@@ -904,7 +915,7 @@ func (m Model) View() tea.View {
 		return v
 	}
 
-	vpView := m.selection.render(m.viewport.View(), themeFor(m.hasDarkBackground).selection)
+	vpView := m.selection.render(m.viewport.View(), m.theme.selection)
 	composerState := m.renderInputArea()
 	layout := calculateLayout(m.height, composerState.height, m.turnStatus.active())
 	parts := make([]string, 0, 6)
@@ -918,10 +929,10 @@ func (m Model) View() tea.View {
 		cursorY++
 	}
 	if layout.showTurnStatus {
-		parts = append(parts, m.turnStatus.viewAt(m.width, time.Now(), m.hasDarkBackground))
+		parts = append(parts, m.turnStatus.viewAt(m.width, time.Now(), m.theme))
 		cursorY++
 	}
-	composer := composerStyle(m.hasDarkBackground, m.terminalBackground).
+	composer := composerStyle(m.theme).
 		Width(m.width).
 		Render(composerState.content)
 	parts = append(parts, composer)
@@ -1005,8 +1016,7 @@ func (m *Model) rebuild() {
 			next.role == "assistant" && next.content.Len() > 0
 		rendered := msg.renderConversation(
 			m.width,
-			m.hasDarkBackground,
-			m.terminalBackground,
+			m.theme,
 			previousKind,
 			followedByModelContent,
 		)
@@ -1057,19 +1067,19 @@ type composerRender struct {
 
 func (m Model) renderInputArea() composerRender {
 	if m.modelPicker.active() {
-		return m.modelPicker.render(m.width, m.input.MaxHeight, m.hasDarkBackground)
+		return m.modelPicker.render(m.width, m.input.MaxHeight, m.theme)
 	}
 	composer := m.renderComposer()
 	popupRows := min(maxSlashPopupRows, max(m.height-composer.height-3, 0))
-	background := userMessageBackground(m.hasDarkBackground, m.terminalBackground)
+	background := userMessageBackground(m.theme)
 	popup := m.filePicker.render(
 		max(m.width-1, 1),
 		popupRows,
 		background,
-		m.hasDarkBackground,
+		m.theme,
 	)
 	if popup == "" {
-		popup = m.slashPopup.render(max(m.width-1, 1), popupRows, background, m.hasDarkBackground)
+		popup = m.slashPopup.render(max(m.width-1, 1), popupRows, background, m.theme)
 	}
 	if popup == "" {
 		return composer
@@ -1175,7 +1185,7 @@ func wrapComposerLine(line string, width, cursorColumn int) ([]string, int, int)
 }
 
 func (m Model) statusView() string {
-	theme := themeFor(m.hasDarkBackground)
+	theme := m.theme
 	if m.modelStatusErr != nil {
 		return ansi.Truncate(statusIndent+theme.error.Render("Model unavailable"), max(m.width, 0), "…")
 	}

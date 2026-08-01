@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"image/color"
 	"slices"
 	"strings"
 	"sync"
@@ -71,16 +70,18 @@ type chatMessage struct {
 
 // markdownRenderCache avoids rendering unchanged historical messages on every delta.
 type markdownRenderCache struct {
-	contentLength  int
-	width          int
-	darkBackground bool
-	rendered       string
-	valid          bool
+	contentLength int
+	width         int
+	dark          bool
+	palette       colorPalette
+	rendered      string
+	valid         bool
 }
 
 type markdownRendererKey struct {
-	width          int
-	darkBackground bool
+	width   int
+	dark    bool
+	palette colorPalette
 }
 
 type markdownRendererEntry struct {
@@ -165,29 +166,28 @@ func (m *chatMessage) findToolCall(id string) *toolCallView {
 }
 
 // render produces the styled string for this message block.
-func (m *chatMessage) render(width int, hasDarkBackground bool, terminalBackground color.Color) string {
-	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, false, conversationBlockNone, false)
+func (m *chatMessage) render(width int, theme tuiTheme) string {
+	return m.renderWithToolDividers(width, theme, false, conversationBlockNone, false)
 }
 
 // renderConversation renders a message within its surrounding conversation boundaries.
-func (m *chatMessage) renderConversation(width int, hasDarkBackground bool, terminalBackground color.Color, previousKind conversationBlockKind, followedByModelContent bool) string {
-	return m.renderWithToolDividers(width, hasDarkBackground, terminalBackground, true, previousKind, followedByModelContent)
+func (m *chatMessage) renderConversation(width int, theme tuiTheme, previousKind conversationBlockKind, followedByModelContent bool) string {
+	return m.renderWithToolDividers(width, theme, true, previousKind, followedByModelContent)
 }
 
-func (m *chatMessage) renderWithToolDividers(width int, hasDarkBackground bool, terminalBackground color.Color, showToolDividers bool, previousKind conversationBlockKind, followedByModelContent bool) string {
-	theme := themeFor(hasDarkBackground)
+func (m *chatMessage) renderWithToolDividers(width int, theme tuiTheme, showToolDividers bool, previousKind conversationBlockKind, followedByModelContent bool) string {
 	switch m.role {
 	case "user":
 		content := renderIndented(m.content.String(), max(width-2, 1), "› ", theme.text)
-		return userMessageStyle(hasDarkBackground, terminalBackground).
+		return userMessageStyle(theme).
 			Width(width).
 			Render(content)
 	case "assistant":
 		var parts []string
 		if m.content.Len() > 0 {
-			parts = append(parts, m.renderMarkdown(width, hasDarkBackground))
+			parts = append(parts, m.renderMarkdown(width, theme))
 		}
-		if toolBlock := m.renderToolCalls(width, hasDarkBackground, showToolDividers, previousKind, followedByModelContent); toolBlock != "" {
+		if toolBlock := m.renderToolCalls(width, theme, showToolDividers, previousKind, followedByModelContent); toolBlock != "" {
 			parts = append(parts, toolBlock)
 		}
 		if m.cancelled {
@@ -240,44 +240,46 @@ func (m *chatMessage) endKind() conversationBlockKind {
 }
 
 // renderMarkdown returns the cached assistant body when its render inputs are unchanged.
-func (m *chatMessage) renderMarkdown(width int, hasDarkBackground bool) string {
+func (m *chatMessage) renderMarkdown(width int, theme tuiTheme) string {
 	cache := &m.markdownCache
 	if cache.valid &&
 		cache.contentLength == m.content.Len() &&
 		cache.width == width &&
-		cache.darkBackground == hasDarkBackground {
+		cache.dark == theme.dark &&
+		cache.palette == theme.palette {
 		return cache.rendered
 	}
 
-	rendered := renderAssistantMarkdown(m.content.String(), width, hasDarkBackground)
+	rendered := renderAssistantMarkdown(m.content.String(), width, theme)
 	*cache = markdownRenderCache{
-		contentLength:  m.content.Len(),
-		width:          width,
-		darkBackground: hasDarkBackground,
-		rendered:       rendered,
-		valid:          true,
+		contentLength: m.content.Len(),
+		width:         width,
+		dark:          theme.dark,
+		palette:       theme.palette,
+		rendered:      rendered,
+		valid:         true,
 	}
 	return rendered
 }
 
 // renderAssistantMarkdown renders one assistant body at the full message width.
-func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) string {
+func renderAssistantMarkdown(content string, width int, theme tuiTheme) string {
 	if width <= 0 {
 		return ""
 	}
 
 	wrapWidth := width
-	key := markdownRendererKey{width: wrapWidth, darkBackground: hasDarkBackground}
+	key := markdownRendererKey{width: wrapWidth, dark: theme.dark, palette: theme.palette}
 	entryValue, ok := markdownRenderers.Load(key)
 	if !ok {
 		renderer, err := glamour.NewTermRenderer(
-			glamour.WithStyles(markdownStyle(hasDarkBackground)),
+			glamour.WithStyles(markdownStyle(theme)),
 			glamour.WithWordWrap(wrapWidth),
 			glamour.WithTableWrap(true),
 			glamour.WithChromaFormatter("terminal16m"),
 		)
 		if err != nil {
-			return renderWrapped(content, width, themeFor(hasDarkBackground).text)
+			return renderWrapped(content, width, theme.text)
 		}
 		entryValue, _ = markdownRenderers.LoadOrStore(key, &markdownRendererEntry{renderer: renderer})
 	}
@@ -287,7 +289,7 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 	rendered, err := entry.renderer.Render(content)
 	entry.mu.Unlock()
 	if err != nil {
-		return renderWrapped(content, width, themeFor(hasDarkBackground).text)
+		return renderWrapped(content, width, theme.text)
 	}
 
 	// Glamour terminates the document with newlines that the conversation supplies itself.
@@ -303,7 +305,7 @@ func renderAssistantMarkdown(content string, width int, hasDarkBackground bool) 
 	return strings.Join(lines, "\n")
 }
 
-func (m *chatMessage) renderToolCalls(width int, hasDarkBackground, showDividers bool, previousKind conversationBlockKind, followedByModelContent bool) string {
+func (m *chatMessage) renderToolCalls(width int, theme tuiTheme, showDividers bool, previousKind conversationBlockKind, followedByModelContent bool) string {
 	if len(m.toolCalls) == 0 || width <= 0 {
 		return ""
 	}
@@ -311,14 +313,13 @@ func (m *chatMessage) renderToolCalls(width int, hasDarkBackground, showDividers
 		previousKind = conversationBlockModel
 	}
 
-	theme := themeFor(hasDarkBackground)
 	divider := theme.divider.Render(strings.Repeat("─", width))
 	var rendered strings.Builder
 	for _, call := range m.toolCalls {
 		kind := toolCallBlockKind(call)
-		body := renderToolCall(call, width, hasDarkBackground)
+		body := renderToolCall(call, width, theme)
 		if kind == conversationBlockPlan && !call.err {
-			body = renderPlanUpdate(call, width, hasDarkBackground)
+			body = renderPlanUpdate(call, width, theme)
 		}
 		if body == "" {
 			continue
@@ -361,17 +362,16 @@ func toolCallBlockKind(call toolCallView) conversationBlockKind {
 	return conversationBlockTool
 }
 
-func renderPlanUpdate(call toolCallView, width int, hasDarkBackground bool) string {
+func renderPlanUpdate(call toolCallView, width int, theme tuiTheme) string {
 	entries := call.metadata.Plan
 	if len(entries) == 0 {
 		parsed, err := tool.ParsePlan(call.call.Arguments)
 		if err != nil {
-			return renderToolCall(call, width, hasDarkBackground)
+			return renderToolCall(call, width, theme)
 		}
 		entries = parsed
 	}
 
-	theme := themeFor(hasDarkBackground)
 	title := "Updated Plan"
 	if !call.done {
 		title = "Updating Plan"
@@ -430,11 +430,10 @@ func renderPlanEntry(entry model.PlanEntry, width int, theme tuiTheme) []string 
 }
 
 // renderToolCall renders a compact status summary and an optional failure detail.
-func renderToolCall(tc toolCallView, width int, hasDarkBackground bool) string {
+func renderToolCall(tc toolCallView, width int, theme tuiTheme) string {
 	if width <= 0 {
 		return ""
 	}
-	theme := themeFor(hasDarkBackground)
 	statusStyle := theme.working
 	if tc.err {
 		statusStyle = theme.error

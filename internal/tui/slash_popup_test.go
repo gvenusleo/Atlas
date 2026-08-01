@@ -24,7 +24,7 @@ func TestSlashPopupFiltersSkillsByPrefix(t *testing.T) {
 	if !ok || command.name != "think" {
 		t.Fatalf("selected command = %+v, %t", command, ok)
 	}
-	rendered := ansi.Strip(popup.render(40, maxSlashPopupRows, nil, false))
+	rendered := ansi.Strip(popup.render(40, maxSlashPopupRows, nil, lightTheme))
 	if !strings.Contains(rendered, "/think") || strings.Contains(rendered, "/hunt") || strings.Contains(rendered, "/model") {
 		t.Fatalf("filtered popup = %q", rendered)
 	}
@@ -102,7 +102,7 @@ func TestSlashPopupFiltersInvalidAndReservedSkills(t *testing.T) {
 	})
 	syncSlashPopupValue(&popup, "/")
 
-	rendered := ansi.Strip(popup.render(80, len(popup.matches), nil, false))
+	rendered := ansi.Strip(popup.render(80, len(popup.matches), nil, lightTheme))
 	if strings.Count(rendered, "/model") != 1 || strings.Count(rendered, "/new") != 1 || strings.Count(rendered, "/resume") != 1 || strings.Count(rendered, "/compact") != 1 || strings.Count(rendered, "/quit") != 1 || strings.Contains(rendered, "browser:control") || !strings.Contains(rendered, "/valid-skill") {
 		t.Fatalf("popup catalog = %q", rendered)
 	}
@@ -136,7 +136,7 @@ func TestSlashPopupDescriptionStaysOnOneLine(t *testing.T) {
 	}})
 	syncSlashPopupValue(&popup, "/think")
 
-	rendered := ansi.Strip(popup.render(40, maxSlashPopupRows, nil, false))
+	rendered := ansi.Strip(popup.render(40, maxSlashPopupRows, nil, lightTheme))
 	if strings.Contains(rendered, "\n") || !strings.Contains(rendered, "Plan work") {
 		t.Fatalf("popup description = %q", rendered)
 	}
@@ -151,7 +151,7 @@ func TestSlashPopupAlignsDescriptionsAndHighlightsSelection(t *testing.T) {
 	syncSlashPopupValue(&popup, "/")
 	popup.move(6)
 
-	rawLines := strings.Split(popup.render(80, 7, nil, false), "\n")
+	rawLines := strings.Split(popup.render(80, 7, nil, lightTheme), "\n")
 	lines := make([]string, len(rawLines))
 	for index, line := range rawLines {
 		lines[index] = ansi.Strip(line)
@@ -202,7 +202,7 @@ func TestSlashPopupStylesInheritComposerBackground(t *testing.T) {
 			}
 		}
 
-		rendered := popup.render(80, maxSlashPopupRows, background, dark)
+		rendered := popup.render(80, maxSlashPopupRows, background, theme)
 		if !strings.Contains(rendered, slashPopupStyle(theme.selected, background).Render("› /model    Choose a model and reasoning effort")) {
 			t.Fatalf("dark=%t selected row does not inherit composer background: %q", dark, rendered)
 		}
@@ -224,7 +224,7 @@ func TestInlineSlashPopupShowsOnlySkills(t *testing.T) {
 	input.SetCursorColumn(len("review with /th"))
 	popup.sync(input)
 
-	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows, nil, false))
+	rendered := ansi.Strip(popup.render(80, maxSlashPopupRows, nil, lightTheme))
 	if !strings.Contains(rendered, "/think") || strings.Contains(rendered, "/model") || strings.Contains(rendered, "/resume") || strings.Contains(rendered, "/compact") || strings.Contains(rendered, "/quit") {
 		t.Fatalf("inline popup = %q", rendered)
 	}

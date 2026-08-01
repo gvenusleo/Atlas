@@ -190,11 +190,10 @@ func (p *slashPopup) dismiss(value string) {
 }
 
 // render displays a bounded command list with descriptions truncated to the terminal width.
-func (p slashPopup) render(width, maxRows int, background color.Color, hasDarkBackground bool) string {
+func (p slashPopup) render(width, maxRows int, background color.Color, theme tuiTheme) string {
 	if !p.active() || maxRows <= 0 {
 		return ""
 	}
-	theme := themeFor(hasDarkBackground)
 	selectedStyle := slashPopupStyle(theme.selected, background)
 	textStyle := slashPopupStyle(theme.text, background)
 	mutedStyle := slashPopupStyle(theme.muted, background)

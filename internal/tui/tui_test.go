@@ -25,14 +25,17 @@ import (
 	"github.com/liuyuxin/atlas/internal/tool"
 )
 
-func TestInitRequestsTerminalBackgroundColor(t *testing.T) {
+func TestInitRequestsTerminalColors(t *testing.T) {
 	m := New(Options{})
 	batch, ok := m.Init()().(tea.BatchMsg)
-	if !ok || len(batch) < 1 {
+	if !ok || len(batch) < 2 {
 		t.Fatalf("Init() message = %T, want non-empty tea.BatchMsg", m.Init()())
 	}
-	if got := reflect.TypeOf(batch[0]()).Name(); got != "backgroundColorMsg" {
-		t.Fatalf("first Init command returns %q, want backgroundColorMsg", got)
+	if got := reflect.TypeOf(batch[0]()).Name(); got != "foregroundColorMsg" {
+		t.Fatalf("first Init command returns %q, want foregroundColorMsg", got)
+	}
+	if got := reflect.TypeOf(batch[1]()).Name(); got != "backgroundColorMsg" {
+		t.Fatalf("second Init command returns %q, want backgroundColorMsg", got)
 	}
 }
 
@@ -192,25 +195,26 @@ func TestWelcomeLabelsUseThemeMutedColor(t *testing.T) {
 	}
 
 	m.hasDarkBackground = true
+	m.theme = darkTheme
 	dark := m.welcomeMetadata(80, true)
 	if !strings.Contains(dark, darkTheme.muted.Render("cwd    ")) {
 		t.Fatalf("dark welcome labels do not use readable grey: %q", dark)
 	}
 }
 
-func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
+func TestThemesUseAtlasFallbackColors(t *testing.T) {
 	tests := []struct {
 		name    string
 		theme   tuiTheme
 		palette colorPalette
 	}{
 		{name: "light", theme: lightTheme, palette: colorPalette{
-			text: "#4c4f69", muted: "#6c6f85", divider: "#acb0be", surface: "#e6e9ef", selected: "#1e66f5", link: "#04a5e5", code: "#179299", brand: "#7287fd",
-			reasoning: "#8839ef", context: "#179299", working: "#df8e1d", success: "#40a02b", error: "#d20f39",
+			text: "#202433", muted: "#666B78", divider: "#C6CAD2", surface: "#F0F2F6", selected: "#3159C7", link: "#087EA4", code: "#0F766E", brand: "#5267D9",
+			reasoning: "#7C3AED", context: "#0F766E", working: "#B26A00", success: "#238636", error: "#C93C49",
 		}},
 		{name: "dark", theme: darkTheme, palette: colorPalette{
-			text: "#cdd6f4", muted: "#a6adc8", divider: "#585b70", surface: "#313244", selected: "#89b4fa", link: "#89dceb", code: "#94e2d5", brand: "#b4befe",
-			reasoning: "#cba6f7", context: "#94e2d5", working: "#f9e2af", success: "#a6e3a1", error: "#f38ba8",
+			text: "#E6E9EF", muted: "#9AA2B1", divider: "#4A515D", surface: "#2C3038", selected: "#82A7FF", link: "#65C4E8", code: "#69D6C4", brand: "#A7B8FF",
+			reasoning: "#C5A3FF", context: "#69D6C4", working: "#F2C66D", success: "#7AD98B", error: "#FF8792",
 		}},
 	}
 	for _, test := range tests {
@@ -227,7 +231,7 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 					t.Fatalf("%s style has no foreground color", role)
 				}
 			}
-			markdown := markdownStyle(test.name == "dark")
+			markdown := markdownStyle(test.theme)
 			for role, got := range map[string]*string{
 				"text":            markdown.Document.Color,
 				"heading":         markdown.Heading.Color,
@@ -259,14 +263,68 @@ func TestThemesUseCatppuccinSemanticColors(t *testing.T) {
 			if markdown.Code.BackgroundColor != nil {
 				t.Fatalf("markdown inline code background = %q, want nil", *markdown.Code.BackgroundColor)
 			}
-			wantSyntaxTheme := "catppuccin-latte"
+			wantSyntaxTheme := "github"
 			if test.name == "dark" {
-				wantSyntaxTheme = "catppuccin-mocha"
+				wantSyntaxTheme = "github-dark"
 			}
 			if markdown.CodeBlock.Theme != wantSyntaxTheme || markdown.CodeBlock.Chroma != nil {
 				t.Fatalf("markdown syntax highlighting = theme %q, chroma %v; want theme %q", markdown.CodeBlock.Theme, markdown.CodeBlock.Chroma, wantSyntaxTheme)
 			}
 		})
+	}
+}
+
+func TestResolveThemeUsesTerminalNeutrals(t *testing.T) {
+	tests := []struct {
+		name    string
+		dark    bool
+		fg      color.Color
+		bg      color.Color
+		text    string
+		muted   string
+		divider string
+		surface string
+	}{
+		{name: "light", fg: color.Black, bg: color.White, text: "#000000", muted: "#616161", divider: "#C7C7C7", surface: "#F5F5F5"},
+		{name: "dark", dark: true, fg: color.White, bg: color.Black, text: "#FFFFFF", muted: "#9E9E9E", divider: "#383838", surface: "#1F1F1F"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			palette := resolveTheme(test.dark, test.fg, test.bg).palette
+			if palette.text != test.text || palette.muted != test.muted || palette.divider != test.divider || palette.surface != test.surface {
+				t.Fatalf("adaptive neutrals = text:%s muted:%s divider:%s surface:%s", palette.text, palette.muted, palette.divider, palette.surface)
+			}
+		})
+	}
+}
+
+func TestResolveThemeFallsBackForMissingTerminalColors(t *testing.T) {
+	light := resolveTheme(false, color.Black, nil).palette
+	if light.text != "#000000" || light.surface != lightTheme.palette.surface {
+		t.Fatalf("light partial terminal colors = text:%s surface:%s", light.text, light.surface)
+	}
+
+	dark := resolveTheme(true, nil, color.Black).palette
+	if dark.text != darkTheme.palette.text || dark.surface != "#1F1F1F" {
+		t.Fatalf("dark partial terminal colors = text:%s surface:%s", dark.text, dark.surface)
+	}
+}
+
+func TestTerminalColorEventOrderProducesSameTheme(t *testing.T) {
+	foregroundFirst := New(Options{})
+	updated, _ := foregroundFirst.Update(tea.ForegroundColorMsg{Color: color.White})
+	foregroundFirst = updated.(Model)
+	updated, _ = foregroundFirst.Update(tea.BackgroundColorMsg{Color: color.Black})
+	foregroundFirst = updated.(Model)
+
+	backgroundFirst := New(Options{})
+	updated, _ = backgroundFirst.Update(tea.BackgroundColorMsg{Color: color.Black})
+	backgroundFirst = updated.(Model)
+	updated, _ = backgroundFirst.Update(tea.ForegroundColorMsg{Color: color.White})
+	backgroundFirst = updated.(Model)
+
+	if foregroundFirst.theme.palette != backgroundFirst.theme.palette {
+		t.Fatalf("terminal color event order changed theme: %#v != %#v", foregroundFirst.theme.palette, backgroundFirst.theme.palette)
 	}
 }
 
@@ -276,7 +334,7 @@ func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
 	status.start(startedAt)
 	status.setPhase(turnPhaseThinking)
 
-	raw := status.viewAt(80, startedAt.Add(64*time.Second), false)
+	raw := status.viewAt(80, startedAt.Add(64*time.Second), lightTheme)
 	rendered := ansi.Strip(raw)
 	if !strings.Contains(rendered, "Thinking (1m 04s • esc to interrupt)") {
 		t.Fatalf("turn status = %q", rendered)
@@ -289,14 +347,14 @@ func TestTurnStatusViewUsesPhaseAndWallClockElapsed(t *testing.T) {
 		t.Fatal("thinking status does not use the reasoning style")
 	}
 	status.setPhase(turnPhaseWorking)
-	if working := status.viewAt(80, startedAt.Add(65*time.Second), false); !strings.Contains(working, lightTheme.working.Bold(true).Render("Working")) {
+	if working := status.viewAt(80, startedAt.Add(65*time.Second), lightTheme); !strings.Contains(working, lightTheme.working.Bold(true).Render("Working")) {
 		t.Fatal("working status does not use the working style")
 	}
-	if narrow := status.viewAt(20, startedAt.Add(64*time.Second), false); ansi.StringWidth(narrow) > 20 {
+	if narrow := status.viewAt(20, startedAt.Add(64*time.Second), lightTheme); ansi.StringWidth(narrow) > 20 {
 		t.Fatalf("narrow turn status width = %d, want at most 20", ansi.StringWidth(narrow))
 	}
 	status.stop()
-	if rendered := status.viewAt(80, startedAt.Add(65*time.Second), false); rendered != "" {
+	if rendered := status.viewAt(80, startedAt.Add(65*time.Second), lightTheme); rendered != "" {
 		t.Fatalf("stopped turn status = %q", rendered)
 	}
 }
@@ -476,7 +534,7 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	m = updated.(Model)
 
 	composerState := m.renderComposer()
-	composer := composerStyle(m.hasDarkBackground, nil).Width(m.width).Render(composerState.content)
+	composer := composerStyle(m.theme).Width(m.width).Render(composerState.content)
 	if got := lipgloss.Width(composer); got != 20 {
 		t.Fatalf("composer width = %d, want 20", got)
 	}
@@ -505,21 +563,22 @@ func TestComposerUsesMessageBackgroundWithoutDividers(t *testing.T) {
 	}
 }
 
-func TestComposerBackgroundUsesCatppuccinSurface(t *testing.T) {
+func TestComposerBackgroundUsesAdaptiveSurface(t *testing.T) {
 	tests := []struct {
 		name       string
 		background color.Color
 		dark       bool
 		want       color.RGBA
 	}{
-		{name: "latte without terminal color", want: color.RGBA{R: 230, G: 233, B: 239, A: 255}},
-		{name: "latte ignores terminal color", background: color.White, want: color.RGBA{R: 230, G: 233, B: 239, A: 255}},
-		{name: "mocha without terminal color", dark: true, want: color.RGBA{R: 49, G: 50, B: 68, A: 255}},
-		{name: "mocha ignores terminal color", background: color.Black, dark: true, want: color.RGBA{R: 49, G: 50, B: 68, A: 255}},
+		{name: "light fallback", want: color.RGBA{R: 240, G: 242, B: 246, A: 255}},
+		{name: "light terminal", background: color.White, want: color.RGBA{R: 245, G: 245, B: 245, A: 255}},
+		{name: "dark fallback", dark: true, want: color.RGBA{R: 44, G: 48, B: 56, A: 255}},
+		{name: "dark terminal", background: color.Black, dark: true, want: color.RGBA{R: 31, G: 31, B: 31, A: 255}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := color.RGBAModel.Convert(composerStyle(tt.dark, tt.background).GetBackground()).(color.RGBA)
+			theme := resolveTheme(tt.dark, nil, tt.background)
+			got := color.RGBAModel.Convert(composerStyle(theme).GetBackground()).(color.RGBA)
 			if got != tt.want {
 				t.Fatalf("composer background = %v, want %v", got, tt.want)
 			}
@@ -609,7 +668,7 @@ func TestSlashPopupCompletesSelectedSkill(t *testing.T) {
 	if inputArea.height != 3 || inputArea.cursorRow != 2 {
 		t.Fatalf("input area layout = height:%d cursorRow:%d", inputArea.height, inputArea.cursorRow)
 	}
-	expected := composerStyle(m.hasDarkBackground, m.terminalBackground).
+	expected := composerStyle(m.theme).
 		Width(m.width).
 		Render(inputArea.content)
 	if !strings.Contains(m.View().Content, expected) {
@@ -751,7 +810,7 @@ func TestCompactCommandWithoutSessionShowsNotice(t *testing.T) {
 	if cmd != nil || m.compactActive || m.input.Value() != "" || !m.input.Focused() {
 		t.Fatalf("compact state: cmd=%v active=%t value=%q focused=%t", cmd, m.compactActive, m.input.Value(), m.input.Focused())
 	}
-	if len(m.messages) != 1 || !strings.Contains(ansi.Strip(m.messages[0].render(80, false, nil)), "No session to compact") {
+	if len(m.messages) != 1 || !strings.Contains(ansi.Strip(m.messages[0].render(80, lightTheme)), "No session to compact") {
 		t.Fatalf("compact notice = %#v", m.messages)
 	}
 }
@@ -782,7 +841,7 @@ func TestCompactCompletionShowsNoSafeBoundaryAndErrors(t *testing.T) {
 			if len(m.messages) != 1 || m.messages[0].noticeError != tt.wantFailed {
 				t.Fatalf("notice state = %#v", m.messages)
 			}
-			if rendered := ansi.Strip(m.messages[0].render(80, false, nil)); !strings.Contains(rendered, tt.want) {
+			if rendered := ansi.Strip(m.messages[0].render(80, lightTheme)); !strings.Contains(rendered, tt.want) {
 				t.Fatalf("notice = %q, want %q", rendered, tt.want)
 			}
 		})
@@ -1020,7 +1079,7 @@ func TestCompactCommandUsesRuntimeWithoutPersistingCommand(t *testing.T) {
 	if status := ansi.Strip(m.statusView()); !strings.Contains(status, wantContext) {
 		t.Fatalf("status = %q, want %q", status, wantContext)
 	}
-	if len(m.messages) != 1 || !strings.Contains(ansi.Strip(m.messages[0].render(80, false, nil)), "Context compacted. Kept 2 recent messages.") {
+	if len(m.messages) != 1 || !strings.Contains(ansi.Strip(m.messages[0].render(80, lightTheme)), "Context compacted. Kept 2 recent messages.") {
 		t.Fatalf("compact notice = %#v", m.messages)
 	}
 	info, transcript, err := rt.ShowSession(t.Context(), "work")
@@ -1132,7 +1191,7 @@ func TestComposerUpMovesToPreviousVisualLine(t *testing.T) {
 }
 
 func TestUserMessageUsesFullWidthBackgroundWithVerticalPadding(t *testing.T) {
-	rendered := newUserMessage("hello").render(20, false, nil)
+	rendered := newUserMessage("hello").render(20, lightTheme)
 
 	if got := lipgloss.Width(rendered); got != 20 {
 		t.Fatalf("rendered width = %d, want 20", got)
@@ -1152,7 +1211,7 @@ func TestUserMessageUsesFullWidthBackgroundWithVerticalPadding(t *testing.T) {
 func TestUserMessageDoesNotInsertLineBreakBeforeASCIIWord(t *testing.T) {
 	message := newUserMessage("你好！我是 Atlas，可以帮你处理本地文件、运行命令、写代码、查资料等。有什么需要帮忙的吗？")
 
-	assertWordsShareVisualLine(t, ansi.Strip(message.render(60, false, nil)), "我是", "Atlas")
+	assertWordsShareVisualLine(t, ansi.Strip(message.render(60, lightTheme)), "我是", "Atlas")
 }
 
 func TestAssistantAndToolBlocksUseCompactToolSummary(t *testing.T) {
@@ -1164,7 +1223,7 @@ func TestAssistantAndToolBlocksUseCompactToolSummary(t *testing.T) {
 		done:   true,
 	})
 
-	rendered := ansi.Strip(message.render(40, false, nil))
+	rendered := ansi.Strip(message.render(40, lightTheme))
 	if !strings.Contains(rendered, "first line second line\n\n• RunShell: Search Atlas") {
 		t.Fatalf("rendered message omitted assistant or tool content: %q", rendered)
 	}
@@ -1177,7 +1236,7 @@ func TestAssistantRendersMarkdown(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("# Heading\n\n**bold** and `code`\n\n- one\n- two")
 
-	rendered := message.render(40, true, nil)
+	rendered := message.render(40, darkTheme)
 	plain := ansi.Strip(rendered)
 	for _, rawMarker := range []string{"# Heading", "**bold**", "`code`"} {
 		if strings.Contains(plain, rawMarker) {
@@ -1201,7 +1260,7 @@ func TestAssistantMarkdownStartsWithoutDocumentGapOrH1Padding(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("# Markdown 示例")
 
-	rendered := ansi.Strip(message.render(40, false, nil))
+	rendered := ansi.Strip(message.render(40, lightTheme))
 	firstLine, _, _ := strings.Cut(rendered, "\n")
 	if firstLine != "Markdown 示例" {
 		t.Fatalf("first markdown line = %q, want %q", firstLine, "Markdown 示例")
@@ -1212,7 +1271,7 @@ func TestAssistantRendersGFMTable(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("| Name | Status |\n| --- | --- |\n| Atlas | Ready for long responses |")
 
-	rendered := ansi.Strip(message.render(24, true, nil))
+	rendered := ansi.Strip(message.render(24, darkTheme))
 	for _, content := range []string{"Name", "Status", "Atlas", "Ready"} {
 		if !strings.Contains(rendered, content) {
 			t.Fatalf("rendered table omitted %q: %q", content, rendered)
@@ -1235,7 +1294,7 @@ func TestAssistantMarkdownWrapsWithinMessageWidth(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("Markdown wrapping keeps 中文、English words, and emoji ✅ inside the viewport.")
 
-	rendered := message.render(24, false, nil)
+	rendered := message.render(24, lightTheme)
 	for line := range strings.SplitSeq(rendered, "\n") {
 		if got := ansi.StringWidth(line); got > 24 {
 			t.Fatalf("rendered line width = %d, want at most 24: %q", got, line)
@@ -1247,7 +1306,7 @@ func TestAssistantMarkdownPreservesCJKEmphasis(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("这是 **中文强调** 文本")
 
-	rendered := message.render(40, false, nil)
+	rendered := message.render(40, lightTheme)
 	plain := ansi.Strip(rendered)
 	if strings.Contains(plain, "**") || !strings.Contains(plain, "中文强调") {
 		t.Fatalf("rendered CJK emphasis = %q", plain)
@@ -1262,7 +1321,7 @@ func TestAssistantMarkdownPreservesCJKEmphasis(t *testing.T) {
 
 func TestMarkdownStyleKeepsOnlyRequiredLayoutOverrides(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		style := markdownStyle(dark)
+		style := markdownStyle(themeFor(dark))
 		native := glamourstyles.LightStyleConfig
 		if dark {
 			native = glamourstyles.DarkStyleConfig
@@ -1308,7 +1367,7 @@ func TestMarkdownStyleKeepsOnlyRequiredLayoutOverrides(t *testing.T) {
 
 func TestAssistantMarkdownDoesNotPadInlineCode(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		plain := ansi.Strip(renderAssistantMarkdown("在此使用`sha256`继续", 40, dark))
+		plain := ansi.Strip(renderAssistantMarkdown("在此使用`sha256`继续", 40, themeFor(dark)))
 		if plain != "在此使用sha256继续" {
 			t.Fatalf("inline code rendering = %q, want no added spacing", plain)
 		}
@@ -1321,15 +1380,15 @@ func TestAssistantMarkdownHeadingsRenderInBlue(t *testing.T) {
 		dark bool
 		rgb  string
 	}{
-		{name: "light", rgb: "30;102;245"},
-		{name: "dark", dark: true, rgb: "137;180;250"},
+		{name: "light", rgb: "49;89;199"},
+		{name: "dark", dark: true, rgb: "130;167;255"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			message := newAssistantMessage()
 			message.content.WriteString("# First\n\n## Second\n\n### Third")
 
-			rendered := message.render(40, test.dark, nil)
+			rendered := message.render(40, themeFor(test.dark))
 			blue := regexp.MustCompile(`\x1b\[[0-9;]*38;2;` + test.rgb + `[0-9;]*m`)
 			if headings := blue.FindAllString(rendered, -1); len(headings) < 3 {
 				t.Fatalf("rendered headings contain %d Blue sequences, want at least 3: %q", len(headings), rendered)
@@ -1342,13 +1401,13 @@ func TestAssistantMarkdownHandlesIncompleteFenceWhileStreaming(t *testing.T) {
 	message := newAssistantMessage()
 	message.handleEvent(agent.Event{Type: agent.EventModelDelta, Content: "```go\nfmt.Println(\"hi\")"})
 
-	partial := ansi.Strip(message.render(40, true, nil))
+	partial := ansi.Strip(message.render(40, darkTheme))
 	if strings.Contains(partial, "```") || !strings.Contains(partial, "fmt.Println") {
 		t.Fatalf("partial fenced code render = %q", partial)
 	}
 
 	message.handleEvent(agent.Event{Type: agent.EventModelDelta, Content: "\n```\n\nDone."})
-	complete := ansi.Strip(message.render(40, true, nil))
+	complete := ansi.Strip(message.render(40, darkTheme))
 	if strings.Contains(complete, "```") || !strings.Contains(complete, "Done.") {
 		t.Fatalf("completed fenced code render = %q", complete)
 	}
@@ -1361,7 +1420,7 @@ func TestAssistantMarkdownCodeBlockUsesTrueColorSyntaxHighlighting(t *testing.T)
 		message.content.WriteString("```go\npackage main\n\nfunc main() { println(\"hello\") }\n```")
 
 		colors := make(map[string]bool)
-		for _, sequence := range colorPattern.FindAllString(message.render(60, dark, nil), -1) {
+		for _, sequence := range colorPattern.FindAllString(message.render(60, themeFor(dark)), -1) {
 			colors[sequence] = true
 		}
 		if len(colors) < 2 {
@@ -1374,14 +1433,14 @@ func TestAssistantMarkdownCacheInvalidatesForThemeAndContent(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("## Heading")
 
-	dark := message.render(40, true, nil)
-	light := message.render(40, false, nil)
+	dark := message.render(40, darkTheme)
+	light := message.render(40, lightTheme)
 	if dark == light {
 		t.Fatal("light and dark markdown code styles are identical")
 	}
 
 	message.content.WriteString("\n\nand more")
-	updated := ansi.Strip(message.render(40, false, nil))
+	updated := ansi.Strip(message.render(40, lightTheme))
 	if !strings.Contains(updated, "and more") {
 		t.Fatalf("cached markdown omitted appended content: %q", updated)
 	}
@@ -1391,7 +1450,7 @@ func TestAssistantContentUsesPrimaryThemeColor(t *testing.T) {
 	message := newAssistantMessage()
 	message.content.WriteString("plain response")
 
-	rendered := message.render(40, false, nil)
+	rendered := message.render(40, lightTheme)
 	if !strings.Contains(rendered, lightTheme.text.Render("plain")) {
 		t.Fatalf("assistant response does not use the light primary color: %q", rendered)
 	}
@@ -1477,7 +1536,7 @@ func TestToolCallUsesLifecycleStatusColors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			rendered := renderToolCall(test.call, 80, false)
+			rendered := renderToolCall(test.call, 80, lightTheme)
 			if !strings.Contains(rendered, test.style.Render("• RunShell:")) ||
 				!strings.Contains(rendered, lightTheme.text.Render(" Run tests")) {
 				t.Fatalf("tool status does not use %s style: %q", test.name, rendered)
@@ -1497,7 +1556,7 @@ func TestToolCallUsesThemeStatusColors(t *testing.T) {
 			{call: toolCallView{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, done: true}, style: theme.success},
 			{call: toolCallView{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, result: "failed", done: true, err: true}, style: theme.error},
 		} {
-			if rendered := renderToolCall(test.call, 40, dark); !strings.Contains(rendered, test.style.Render("• LoadSkill:")) ||
+			if rendered := renderToolCall(test.call, 40, theme); !strings.Contains(rendered, test.style.Render("• LoadSkill:")) ||
 				!strings.Contains(rendered, theme.text.Render(" check")) {
 				t.Fatalf("dark=%t tool summary uses wrong status color: %q", dark, rendered)
 			}
@@ -1583,7 +1642,7 @@ func (p *tuiRecordingProvider) Stream(_ context.Context, request model.ChatReque
 func TestToolSummaryTruncationPreservesUTF8(t *testing.T) {
 	rendered := renderToolCall(toolCallView{
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"检查一段很长的中文输出","command":"read output"}`},
-	}, 18, false)
+	}, 18, lightTheme)
 
 	if !utf8.ValidString(rendered) {
 		t.Fatal("rendered tool summary contains invalid UTF-8")
@@ -1600,7 +1659,7 @@ func TestToolSummaryCollapsesWhitespaceAndFitsWidth(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		rendered := renderToolCall(toolCallView{
 			call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"检查中文\n\t输出","command":"printf 你好"}`},
-		}, 24, dark)
+		}, 24, themeFor(dark))
 		plain := ansi.Strip(rendered)
 		if strings.Contains(plain, "\n") || strings.Contains(plain, "\t") {
 			t.Fatalf("dark=%t tool summary retained whitespace: %q", dark, plain)
@@ -1615,7 +1674,7 @@ func TestCompletedShellSummaryHidesEmptyOutput(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run command","command":"true"}`},
 		done: true,
-	}, 40, false))
+	}, 40, lightTheme))
 
 	if rendered != "• RunShell: Run command" {
 		t.Fatalf("empty shell output summary = %q", rendered)
@@ -1647,7 +1706,7 @@ func TestToolSummaryFitsNarrowWidths(t *testing.T) {
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Run command","command":"` + strings.Repeat("abcdefghij", 20) + `"}`},
 	}
 	for width := 1; width <= 10; width++ {
-		rendered := renderToolCall(tc, width, false)
+		rendered := renderToolCall(tc, width, lightTheme)
 		if strings.Contains(rendered, "\n") {
 			t.Fatalf("width %d tool summary wrapped: %q", width, ansi.Strip(rendered))
 		}
@@ -1663,7 +1722,7 @@ func TestSuccessfulToolHidesArgumentsAndResult(t *testing.T) {
 		result: "private output\nsecond line",
 		done:   true,
 	}
-	rendered := ansi.Strip(renderToolCall(tc, 40, false))
+	rendered := ansi.Strip(renderToolCall(tc, 40, lightTheme))
 	if rendered != "• RunShell: Run tests" || strings.Contains(rendered, "secret command") || strings.Contains(rendered, "private output") {
 		t.Fatalf("successful tool exposed arguments or result: %q", rendered)
 	}
@@ -1681,7 +1740,7 @@ func TestConsecutiveToolSummariesUseAdjacentLines(t *testing.T) {
 		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}, done: true},
 	}
 	divider := strings.Repeat("─", width)
-	raw := message.renderConversation(width, false, nil, conversationBlockUser, false)
+	raw := message.renderConversation(width, lightTheme, conversationBlockUser, false)
 	if !strings.Contains(raw, lightTheme.divider.Render(divider)) {
 		t.Fatalf("tool divider does not use low-contrast theme color: %q", raw)
 	}
@@ -1708,7 +1767,7 @@ func TestToolGroupLeadingDividerDependsOnPreviousMessage(t *testing.T) {
 		{name: "assistant", previousKind: conversationBlockModel, want: divider + "\n• LoadSkill: check"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			rendered := ansi.Strip(message.renderConversation(width, false, nil, test.previousKind, false))
+			rendered := ansi.Strip(message.renderConversation(width, lightTheme, test.previousKind, false))
 			if rendered != test.want {
 				t.Fatalf("tool divider rendering = %q, want %q", rendered, test.want)
 			}
@@ -1726,7 +1785,7 @@ func TestPlanUpdateRendersStructuredStatusList(t *testing.T) {
 		}},
 		done: true,
 	}
-	raw := renderPlanUpdate(call, 50, false)
+	raw := renderPlanUpdate(call, 50, lightTheme)
 	plain := ansi.Strip(raw)
 	want := "• Updated Plan\n" +
 		"  ✔ Inspect current implementation\n" +
@@ -1758,7 +1817,7 @@ func TestCompletedPlanUsesSuccessColor(t *testing.T) {
 		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Inspect files","status":"completed"},{"step":"Run tests","status":"completed"}]}`},
 		done: true,
 	}
-	raw := renderPlanUpdate(call, 40, true)
+	raw := renderPlanUpdate(call, 40, darkTheme)
 	if !strings.Contains(raw, darkTheme.success.Render("• ")) {
 		t.Fatalf("completed plan bullet does not use success color: %q", raw)
 	}
@@ -1772,7 +1831,7 @@ func TestPlanUpdateWrapsStepsAtContentIndent(t *testing.T) {
 		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Implement structured rendering safely","status":"in_progress"}]}`},
 		done: true,
 	}
-	plain := ansi.Strip(renderPlanUpdate(call, 24, false))
+	plain := ansi.Strip(renderPlanUpdate(call, 24, lightTheme))
 	for line := range strings.SplitSeq(plain, "\n") {
 		if ansi.StringWidth(line) > 24 {
 			t.Fatalf("plan line exceeds width: %q", line)
@@ -1786,7 +1845,7 @@ func TestPlanUpdateWrapsStepsAtContentIndent(t *testing.T) {
 	}
 
 	call.call.Arguments = `{"plan":[{"step":"检查当前实现并同步更新相关文档","status":"in_progress"}]}`
-	plain = ansi.Strip(renderPlanUpdate(call, 20, false))
+	plain = ansi.Strip(renderPlanUpdate(call, 20, lightTheme))
 	for line := range strings.SplitSeq(plain, "\n") {
 		if ansi.StringWidth(line) > 20 {
 			t.Fatalf("localized plan line exceeds width: %q", line)
@@ -1798,11 +1857,11 @@ func TestPlanAndToolBulletsAlign(t *testing.T) {
 	plan := ansi.Strip(renderPlanUpdate(toolCallView{
 		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Inspect files","status":"pending"}]}`},
 		done: true,
-	}, 40, false))
+	}, 40, lightTheme))
 	regular := ansi.Strip(renderToolCall(toolCallView{
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`},
 		done: true,
-	}, 40, false))
+	}, 40, lightTheme))
 	if strings.Index(plan, "•") != strings.Index(regular, "•") {
 		t.Fatalf("plan and tool bullets are not aligned:\nplan: %q\ntool: %q", plan, regular)
 	}
@@ -1816,7 +1875,7 @@ func TestPlanUpdateIsSeparatedFromRegularTools(t *testing.T) {
 		{call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Edit files","status":"in_progress"}]}`}, done: true},
 		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"check"}`}},
 	}
-	plain := ansi.Strip(message.renderConversation(width, false, nil, conversationBlockUser, false))
+	plain := ansi.Strip(message.renderConversation(width, lightTheme, conversationBlockUser, false))
 	divider := strings.Repeat("─", width)
 	if count := strings.Count(plain, divider); count != 2 {
 		t.Fatalf("plan boundary divider count = %d, want 2: %q", count, plain)
@@ -1833,16 +1892,16 @@ func TestPlanUpdateShowsActiveAndEmptyStates(t *testing.T) {
 	call := toolCallView{
 		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[]}`},
 	}
-	active := ansi.Strip(renderPlanUpdate(call, 40, true))
+	active := ansi.Strip(renderPlanUpdate(call, 40, darkTheme))
 	if active != "• Updating Plan\n  (no steps provided)" {
 		t.Fatalf("active empty plan = %q", active)
 	}
-	activeRaw := renderPlanUpdate(call, 40, true)
+	activeRaw := renderPlanUpdate(call, 40, darkTheme)
 	if !strings.Contains(activeRaw, darkTheme.selected.Bold(true).Render("Updating Plan")) {
 		t.Fatalf("empty plan title does not use selected color: %q", activeRaw)
 	}
 	call.done = true
-	completed := ansi.Strip(renderPlanUpdate(call, 40, true))
+	completed := ansi.Strip(renderPlanUpdate(call, 40, darkTheme))
 	if completed != "• Updated Plan\n  (no steps provided)" {
 		t.Fatalf("completed empty plan = %q", completed)
 	}
@@ -1975,7 +2034,7 @@ func TestDirectShellSummaryUsesCommand(t *testing.T) {
 		result:   "hidden output",
 		metadata: model.ToolMetadata{DirectShell: true},
 		done:     true,
-	}, 40, false))
+	}, 40, lightTheme))
 
 	if rendered != "• RunShell: test" {
 		t.Fatalf("direct shell summary = %q", rendered)
@@ -1988,7 +2047,7 @@ func TestFailedToolShowsOnlyFinalErrorLine(t *testing.T) {
 		result: "partial output\nnetwork unavailable",
 		err:    true,
 		done:   true,
-	}, 80, false))
+	}, 80, lightTheme))
 
 	want := "• WebSearch: atlas\n  Failed: network unavailable"
 	if rendered != want || strings.Contains(rendered, "partial output") {
@@ -2004,7 +2063,7 @@ func TestFailedToolPrefersLiveError(t *testing.T) {
 		metadata:  model.ToolMetadata{DirectShell: true},
 		err:       true,
 		done:      true,
-	}, 80, false))
+	}, 80, lightTheme))
 
 	if !strings.Contains(rendered, "  Failed: exit status 1") || strings.Contains(rendered, "partial output") {
 		t.Fatalf("live tool error summary = %q", rendered)
@@ -2018,7 +2077,7 @@ func TestRestoredDirectShellFailureUsesGenericDetail(t *testing.T) {
 		metadata: model.ToolMetadata{DirectShell: true},
 		err:      true,
 		done:     true,
-	}, 60, false))
+	}, 60, lightTheme))
 
 	if !strings.Contains(rendered, "  Failed: Tool failed") || strings.Contains(rendered, "partial output") {
 		t.Fatalf("restored direct shell failure = %q", rendered)
@@ -2031,7 +2090,7 @@ func TestFailedToolDetailFitsSingleLine(t *testing.T) {
 		errorText: "第一行\n第二行很长的错误信息",
 		err:       true,
 		done:      true,
-	}, 20, false)
+	}, 20, lightTheme)
 	lines := strings.Split(rendered, "\n")
 	if len(lines) != 2 {
 		t.Fatalf("failed tool rows = %d, want 2: %q", len(lines), ansi.Strip(rendered))
@@ -2046,7 +2105,7 @@ func TestFailedToolDetailFitsSingleLine(t *testing.T) {
 func TestLegacyShellCallUsesPurposeFallback(t *testing.T) {
 	rendered := ansi.Strip(renderToolCall(toolCallView{
 		call: model.ToolCall{Name: "run_shell", Arguments: `{"command":"pwd"}`},
-	}, 40, false))
+	}, 40, lightTheme))
 
 	if rendered != "• RunShell: pwd" {
 		t.Fatalf("legacy shell summary = %q", rendered)
@@ -2082,7 +2141,7 @@ func TestMessageRenderingStripsTerminalControlSequences(t *testing.T) {
 	message.handleEvent(agent.Event{Type: agent.EventToolFinished, ToolResult: "output " + osc})
 	message.err = errors.New("failed " + osc)
 
-	rendered := message.render(80, false, nil)
+	rendered := message.render(80, lightTheme)
 	if strings.Contains(rendered, "]52;") {
 		t.Fatalf("rendered output retained an OSC sequence: %q", rendered)
 	}
@@ -2142,7 +2201,7 @@ func TestTurnRendersModelAndToolsChronologically(t *testing.T) {
 
 	var blocks []string
 	for _, message := range m.messages {
-		blocks = append(blocks, message.render(80, false, nil))
+		blocks = append(blocks, message.render(80, lightTheme))
 	}
 	rendered := ansi.Strip(strings.Join(blocks, "\n"))
 	before := strings.Index(rendered, "before tool")
@@ -2177,7 +2236,7 @@ func TestMessagesFromTranscriptRestoresToolResults(t *testing.T) {
 	}
 	var blocks []string
 	for _, message := range messages {
-		blocks = append(blocks, message.render(80, false, nil))
+		blocks = append(blocks, message.render(80, lightTheme))
 	}
 	rendered := ansi.Strip(strings.Join(blocks, "\n"))
 	toolSummary := strings.Index(rendered, "• RunShell: pwd")
@@ -2205,7 +2264,7 @@ func TestMessagesFromTranscriptRestoresPlanUpdate(t *testing.T) {
 	if len(messages) != 2 || len(messages[1].toolCalls) != 1 {
 		t.Fatalf("restored plan messages = %#v", messages)
 	}
-	rendered := ansi.Strip(messages[1].render(50, false, nil))
+	rendered := ansi.Strip(messages[1].render(50, lightTheme))
 	if !strings.Contains(rendered, "• Updated Plan") || !strings.Contains(rendered, "□ Run tests") {
 		t.Fatalf("restored plan rendering = %q", rendered)
 	}

@@ -125,8 +125,7 @@ func (p *modelPicker) selectCurrent() *modelSelection {
 }
 
 // render displays a bounded window around the selected model or reasoning effort.
-func (p modelPicker) render(width, maxRows int, hasDarkBackground bool) composerRender {
-	theme := themeFor(hasDarkBackground)
+func (p modelPicker) render(width, maxRows int, theme tuiTheme) composerRender {
 	maxRows = max(maxRows, 1)
 	contentWidth := max(width-3, 1)
 	title := "Select model"

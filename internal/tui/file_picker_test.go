@@ -96,7 +96,7 @@ func TestFileMentionPickerFiltersAndRendersForegroundSelection(t *testing.T) {
 	if len(picker.matches) != 1 || picker.matches[0] != "internal/tui/messages.go" {
 		t.Fatalf("matches = %#v", picker.matches)
 	}
-	rendered := picker.render(60, maxFilePopupRows, nil, false)
+	rendered := picker.render(60, maxFilePopupRows, nil, lightTheme)
 	if !strings.Contains(rendered, lightTheme.selected.Render("› internal/tui/messages.go")) {
 		t.Fatalf("selected row = %q", rendered)
 	}
@@ -177,7 +177,7 @@ func TestFileBrowserRenderUsesPlainBackgroundAndSpacedTitle(t *testing.T) {
 	writePickerTestFile(t, filepath.Join(root, "cmd", "main.go"))
 	writePickerTestFile(t, filepath.Join(root, "dist", "atlas"))
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	initCmd := picker.openBrowser(false)
+	initCmd := picker.openBrowser(lightTheme)
 	_, _, _ = picker.updateBrowser(initCmd())
 
 	background := color.RGBA{R: 244, G: 244, B: 244, A: 255}
@@ -213,13 +213,13 @@ func TestFileBrowserPopupStaysInsideComposerBackground(t *testing.T) {
 	m.input.MoveToEnd()
 	target, _ := currentFileMentionTarget(m.input)
 	m.filePicker = fileMentionPicker{mode: filePickerSearch, cwd: root, target: target}
-	initCmd := m.filePicker.openBrowser(false)
+	initCmd := m.filePicker.openBrowser(m.theme)
 	_, _, _ = m.filePicker.updateBrowser(initCmd())
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 14})
 	m = updated.(Model)
 
 	inputArea := m.renderInputArea()
-	expected := composerStyle(m.hasDarkBackground, m.terminalBackground).
+	expected := composerStyle(m.theme).
 		Width(m.width).
 		Render(inputArea.content)
 	if !strings.Contains(m.View().Content, expected) {
@@ -233,7 +233,7 @@ func TestFileBrowserKeepsThreeCandidatesVisibleWhileScrolling(t *testing.T) {
 		writePickerTestFile(t, filepath.Join(root, directory, "file"))
 	}
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	initCmd := picker.openBrowser(false)
+	initCmd := picker.openBrowser(lightTheme)
 	_, _, _ = picker.updateBrowser(initCmd())
 
 	for move, wantRow := range []int{0, 1, 1, 1, 1, 1, 1, 2} {
@@ -266,7 +266,7 @@ func TestFileBrowserKeepsThreeCandidatesVisibleWhileScrolling(t *testing.T) {
 func TestFileBrowserCannotLeaveWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	_ = picker.openBrowser(false)
+	_ = picker.openBrowser(lightTheme)
 
 	_, _, _ = picker.updateBrowser(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if !samePath(picker.browser.CurrentDirectory, root) {
@@ -282,7 +282,7 @@ func TestFileBrowserCannotFollowDirectorySymlinkOutsideWorkingDirectory(t *testi
 		t.Skipf("Symlink() error = %v", err)
 	}
 	picker := fileMentionPicker{mode: filePickerSearch, cwd: root}
-	initCmd := picker.openBrowser(false)
+	initCmd := picker.openBrowser(lightTheme)
 	_, _, _ = picker.updateBrowser(initCmd())
 
 	_, _, _ = picker.updateBrowser(tea.KeyPressMsg{Code: tea.KeyEnter})

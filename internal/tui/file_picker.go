@@ -188,8 +188,7 @@ func (p fileMentionPicker) selectedPath() (string, bool) {
 	return p.matches[p.selected], true
 }
 
-func (p *fileMentionPicker) openBrowser(hasDarkBackground bool) tea.Cmd {
-	theme := themeFor(hasDarkBackground)
+func (p *fileMentionPicker) openBrowser(theme tuiTheme) tea.Cmd {
 	root := cleanWorkingDirectory(p.cwd)
 	fp := filepicker.New()
 	fp.CurrentDirectory = root
@@ -248,11 +247,10 @@ func (p *fileMentionPicker) updateBrowser(msg tea.Msg) (tea.Cmd, string, bool) {
 	return cmd, "", false
 }
 
-func (p fileMentionPicker) render(width, maxRows int, background color.Color, hasDarkBackground bool) string {
+func (p fileMentionPicker) render(width, maxRows int, background color.Color, theme tuiTheme) string {
 	if !p.active() || maxRows <= 0 {
 		return ""
 	}
-	theme := themeFor(hasDarkBackground)
 	if p.browsing() {
 		return p.renderBrowser(width, maxRows, background, theme)
 	}
@@ -636,7 +634,7 @@ func (m *Model) handleFileMentionKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, nil
 	case "tab", "enter":
 		if m.filePicker.target.query == "" {
-			cmd := m.filePicker.openBrowser(m.hasDarkBackground)
+			cmd := m.filePicker.openBrowser(m.theme)
 			m.input.Blur()
 			m.rebuild()
 			return true, cmd

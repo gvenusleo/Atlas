@@ -69,7 +69,7 @@ func TestModelPickerRenderIsBoundedAndKeepsSelectionVisible(t *testing.T) {
 	var picker modelPicker
 	picker.open(models, models[15].Value, "")
 
-	rendered := picker.render(24, 5, false)
+	rendered := picker.render(24, 5, lightTheme)
 	lines := strings.Split(rendered.content, "\n")
 	if len(lines) != 5 || !strings.Contains(ansi.Strip(rendered.content), "›") {
 		t.Fatalf("picker render = %q", ansi.Strip(rendered.content))
@@ -86,7 +86,7 @@ func TestModelPickerRenderSeparatesTitleAndUsesForegroundSelection(t *testing.T)
 	var picker modelPicker
 	picker.open(models, models[0].Value, "")
 
-	rendered := picker.render(60, 5, false)
+	rendered := picker.render(60, 5, lightTheme)
 	rawLines := strings.Split(rendered.content, "\n")
 	if len(rawLines) != 5 || ansi.Strip(rawLines[0]) != "  Select model" || rawLines[1] != "" {
 		t.Fatalf("picker title spacing = %q", ansi.Strip(rendered.content))
