@@ -65,9 +65,9 @@ func (m Model) welcomeMetadata(width int, labels bool) string {
 	valueWidth := max(width-labelWidth, 1)
 	return strings.Join([]string{
 		ansi.Truncate(app, width, ""),
-		theme.muted.Render("cwd    ") + theme.text.Render(fitFromLeft(cwd, valueWidth)),
-		theme.muted.Render("model  ") + theme.text.Render(fitFromLeft(model, valueWidth)),
-		theme.muted.Render("skills ") + theme.text.Render(fitFromLeft(skills, valueWidth)),
+		theme.text.Bold(true).Render("cwd    ") + theme.muted.Render(fitFromLeft(cwd, valueWidth)),
+		theme.text.Bold(true).Render("model  ") + theme.muted.Render(fitFromLeft(model, valueWidth)),
+		theme.text.Bold(true).Render("skills ") + theme.muted.Render(fitFromLeft(skills, valueWidth)),
 	}, "\n")
 }
 

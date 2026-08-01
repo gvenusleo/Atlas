@@ -190,15 +190,15 @@ func TestWelcomeLabelsUseThemeMutedColor(t *testing.T) {
 	m := New(Options{CWD: "/work"})
 	m.modelName = "Model A"
 	light := m.welcomeMetadata(80, true)
-	if !strings.Contains(light, lightTheme.muted.Render("cwd    ")) {
-		t.Fatalf("light welcome labels do not use muted style: %q", light)
+	if !strings.Contains(light, lightTheme.text.Bold(true).Render("cwd    ")) {
+		t.Fatalf("light welcome labels do not use text style: %q", light)
 	}
 
 	m.hasDarkBackground = true
 	m.theme = darkTheme
 	dark := m.welcomeMetadata(80, true)
-	if !strings.Contains(dark, darkTheme.muted.Render("cwd    ")) {
-		t.Fatalf("dark welcome labels do not use readable grey: %q", dark)
+	if !strings.Contains(dark, darkTheme.text.Bold(true).Render("cwd    ")) {
+		t.Fatalf("dark welcome labels do not use text color: %q", dark)
 	}
 }
 
