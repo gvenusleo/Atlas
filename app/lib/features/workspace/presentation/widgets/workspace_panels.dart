@@ -10,12 +10,10 @@ class SessionsPanel extends StatelessWidget {
   const SessionsPanel({
     super.key,
     this.onClose,
-    this.onToggle,
     this.titlebarInset = false,
   });
 
   final VoidCallback? onClose;
-  final VoidCallback? onToggle;
   final bool titlebarInset;
 
   @override
@@ -31,15 +29,7 @@ class SessionsPanel extends StatelessWidget {
               size: 44,
               onPressed: onClose!,
             )
-          : onToggle != null
-          ? WorkspaceToolbarButton(
-              key: const ValueKey('atlas-left-toggle'),
-              icon: CupertinoIcons.sidebar_left,
-              tooltip: 'Hide sessions',
-              active: true,
-              onPressed: onToggle!,
-            )
-          : null,
+          : const SizedBox(width: 40),
       child: const _EmptyPanelState(
         icon: CupertinoIcons.bubble_left_bubble_right,
         message: 'No sessions yet',
@@ -50,10 +40,9 @@ class SessionsPanel extends StatelessWidget {
 
 /// Details sidebar used by both desktop and compact workspace layouts.
 class DetailsPanel extends StatelessWidget {
-  const DetailsPanel({super.key, this.onClose, this.onToggle});
+  const DetailsPanel({super.key, this.onClose});
 
   final VoidCallback? onClose;
-  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -67,15 +56,7 @@ class DetailsPanel extends StatelessWidget {
               size: 44,
               onPressed: onClose!,
             )
-          : onToggle != null
-          ? WorkspaceToolbarButton(
-              key: const ValueKey('atlas-right-toggle'),
-              icon: CupertinoIcons.sidebar_right,
-              tooltip: 'Hide details',
-              active: true,
-              onPressed: onToggle!,
-            )
-          : null,
+          : const SizedBox(width: 40),
       child: const _EmptyPanelState(
         icon: CupertinoIcons.info_circle,
         message: 'No active session',
@@ -149,14 +130,12 @@ class WorkspacePanel extends StatelessWidget {
     super.key,
     required this.compact,
     required this.leftActive,
-    required this.rightActive,
     required this.onLeftPressed,
     required this.onRightPressed,
   });
 
   final bool compact;
   final bool leftActive;
-  final bool rightActive;
   final VoidCallback onLeftPressed;
   final VoidCallback onRightPressed;
 
@@ -167,6 +146,9 @@ class WorkspacePanel extends StatelessWidget {
         WorkspaceMetrics.usesIntegratedTitlebar && (compact || !leftActive)
         ? WorkspaceMetrics.macOSTrafficLightInset
         : 6.0;
+    final animationDuration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : WorkspaceMetrics.sidebarAnimationDuration;
 
     return ColoredBox(
       key: const ValueKey('atlas-center-panel'),
@@ -179,27 +161,35 @@ class WorkspacePanel extends StatelessWidget {
               height: compact
                   ? WorkspaceMetrics.compactToolbarHeight
                   : WorkspaceMetrics.desktopToolbarHeight,
-              child: Padding(
+              child: AnimatedPadding(
+                duration: animationDuration,
+                curve: Curves.easeOutCubic,
                 padding: EdgeInsets.only(left: leftToolbarInset, right: 6),
                 child: Row(
                   children: [
-                    if (compact || !leftActive)
+                    if (compact)
                       WorkspaceToolbarButton(
                         key: const ValueKey('atlas-left-toggle'),
                         icon: CupertinoIcons.sidebar_left,
-                        tooltip: compact ? 'Open sessions' : 'Show sessions',
-                        size: compact ? 44 : 40,
+                        tooltip: 'Open sessions',
+                        size: 44,
                         onPressed: onLeftPressed,
+                      ),
+                    if (!compact)
+                      AnimatedContainer(
+                        duration: animationDuration,
+                        curve: Curves.easeOutCubic,
+                        width: leftActive ? 0 : 40,
                       ),
                     const SizedBox(width: 4),
                     const WorkspaceTab(label: 'New session'),
                     const Spacer(),
-                    if (compact || !rightActive)
+                    if (compact)
                       WorkspaceToolbarButton(
                         key: const ValueKey('atlas-right-toggle'),
                         icon: CupertinoIcons.sidebar_right,
-                        tooltip: compact ? 'Open details' : 'Show details',
-                        size: compact ? 44 : 40,
+                        tooltip: 'Open details',
+                        size: 44,
                         onPressed: onRightPressed,
                       ),
                   ],

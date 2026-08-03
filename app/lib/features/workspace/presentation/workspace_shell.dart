@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/atlas_theme.dart';
@@ -15,15 +17,40 @@ class WorkspaceShell extends StatefulWidget {
   State<WorkspaceShell> createState() => _WorkspaceShellState();
 }
 
-class _WorkspaceShellState extends State<WorkspaceShell> {
+class _WorkspaceShellState extends State<WorkspaceShell>
+    with TickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  late final AnimationController _leftSidebarAnimation;
+  late final AnimationController _rightSidebarAnimation;
   bool _leftVisible = true;
   bool _rightVisible = true;
   double _leftWidth = WorkspaceMetrics.leftDefaultWidth;
   double _rightWidth = WorkspaceMetrics.rightDefaultWidth;
   double _leftClosingWidth = WorkspaceMetrics.leftDefaultWidth;
   double _rightClosingWidth = WorkspaceMetrics.rightDefaultWidth;
+
+  @override
+  void initState() {
+    super.initState();
+    _leftSidebarAnimation = AnimationController(
+      value: 1,
+      duration: WorkspaceMetrics.sidebarAnimationDuration,
+      vsync: this,
+    );
+    _rightSidebarAnimation = AnimationController(
+      value: 1,
+      duration: WorkspaceMetrics.sidebarAnimationDuration,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _leftSidebarAnimation.dispose();
+    _rightSidebarAnimation.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,71 +67,108 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
 
   Widget _buildDesktop(double availableWidth) {
     final widths = _resolvePanelWidths(availableWidth);
+    final leftPanelWidth = _leftVisible ? widths.left : _leftClosingWidth;
+    final rightPanelWidth = _rightVisible ? widths.right : _rightClosingWidth;
+    final closedLeftButtonX = WorkspaceMetrics.usesIntegratedTitlebar
+        ? WorkspaceMetrics.macOSTrafficLightInset
+        : 6.0;
+    final openLeftButtonX = leftPanelWidth - 46;
 
     return Scaffold(
       body: SafeArea(
-        child: Row(
+        child: Stack(
           children: [
-            _AnimatedSideRegion(
-              visible: _leftVisible,
-              alignment: Alignment.centerLeft,
+            Positioned.fill(
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    key: const ValueKey('atlas-left-panel'),
-                    width: _leftVisible ? widths.left : _leftClosingWidth,
-                    child: SessionsPanel(
-                      titlebarInset: WorkspaceMetrics.usesIntegratedTitlebar,
-                      onToggle: () {
-                        setState(() {
-                          _leftClosingWidth = widths.left;
-                          _leftVisible = false;
-                        });
-                      },
+                  _AnimatedSideRegion(
+                    animation: _leftSidebarAnimation,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          key: const ValueKey('atlas-left-panel'),
+                          width: leftPanelWidth,
+                          child: SessionsPanel(
+                            titlebarInset:
+                                WorkspaceMetrics.usesIntegratedTitlebar,
+                          ),
+                        ),
+                        WorkspaceResizeHandle(
+                          key: const ValueKey('atlas-left-resize-handle'),
+                          panelOnLeft: true,
+                          onDrag: (delta) =>
+                              _resizeLeft(delta, availableWidth),
+                        ),
+                      ],
                     ),
                   ),
-                  WorkspaceResizeHandle(
-                    key: const ValueKey('atlas-left-resize-handle'),
-                    panelOnLeft: true,
-                    onDrag: (delta) => _resizeLeft(delta, availableWidth),
+                  Expanded(
+                    child: WorkspacePanel(
+                      compact: false,
+                      leftActive: _leftVisible,
+                      onLeftPressed: () => _setLeftVisible(true, widths.left),
+                      onRightPressed: () =>
+                          _setRightVisible(true, widths.right),
+                    ),
+                  ),
+                  _AnimatedSideRegion(
+                    animation: _rightSidebarAnimation,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        WorkspaceResizeHandle(
+                          key: const ValueKey('atlas-right-resize-handle'),
+                          panelOnLeft: false,
+                          onDrag: (delta) =>
+                              _resizeRight(delta, availableWidth),
+                        ),
+                        SizedBox(
+                          key: const ValueKey('atlas-right-panel'),
+                          width: rightPanelWidth,
+                          child: const DetailsPanel(),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: WorkspacePanel(
-                compact: false,
-                leftActive: _leftVisible,
-                rightActive: _rightVisible,
-                onLeftPressed: () => setState(() => _leftVisible = true),
-                onRightPressed: () => setState(() => _rightVisible = true),
+            Positioned(
+              top: 2,
+              left: closedLeftButtonX,
+              child: AnimatedBuilder(
+                animation: _leftSidebarAnimation,
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(
+                    (openLeftButtonX - closedLeftButtonX) *
+                        _leftSidebarAnimation.value,
+                    0,
+                  ),
+                  child: child,
+                ),
+                child: WorkspaceToolbarButton(
+                  key: const ValueKey('atlas-left-toggle'),
+                  icon: CupertinoIcons.sidebar_left,
+                  tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
+                  active: _leftVisible,
+                  onPressed: () =>
+                      _setLeftVisible(!_leftVisible, leftPanelWidth),
+                ),
               ),
             ),
-            _AnimatedSideRegion(
-              visible: _rightVisible,
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  WorkspaceResizeHandle(
-                    key: const ValueKey('atlas-right-resize-handle'),
-                    panelOnLeft: false,
-                    onDrag: (delta) => _resizeRight(delta, availableWidth),
-                  ),
-                  SizedBox(
-                    key: const ValueKey('atlas-right-panel'),
-                    width: _rightVisible ? widths.right : _rightClosingWidth,
-                    child: DetailsPanel(
-                      onToggle: () {
-                        setState(() {
-                          _rightClosingWidth = widths.right;
-                          _rightVisible = false;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+            Positioned(
+              top: 2,
+              right: 6,
+              child: WorkspaceToolbarButton(
+                key: const ValueKey('atlas-right-toggle'),
+                icon: CupertinoIcons.sidebar_right,
+                tooltip: _rightVisible ? 'Hide details' : 'Show details',
+                active: _rightVisible,
+                onPressed: () =>
+                    _setRightVisible(!_rightVisible, rightPanelWidth),
               ),
             ),
           ],
@@ -138,7 +202,6 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
         child: WorkspacePanel(
           compact: true,
           leftActive: false,
-          rightActive: false,
           onLeftPressed: () => _scaffoldKey.currentState?.openDrawer(),
           onRightPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
         ),
@@ -238,32 +301,61 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
       );
     });
   }
+
+  void _setLeftVisible(bool visible, double panelWidth) {
+    if (_leftVisible == visible) {
+      return;
+    }
+    setState(() {
+      if (!visible) {
+        _leftClosingWidth = panelWidth;
+      }
+      _leftVisible = visible;
+    });
+    _animateSidebar(_leftSidebarAnimation, visible);
+  }
+
+  void _setRightVisible(bool visible, double panelWidth) {
+    if (_rightVisible == visible) {
+      return;
+    }
+    setState(() {
+      if (!visible) {
+        _rightClosingWidth = panelWidth;
+      }
+      _rightVisible = visible;
+    });
+    _animateSidebar(_rightSidebarAnimation, visible);
+  }
+
+  void _animateSidebar(AnimationController controller, bool visible) {
+    final target = visible ? 1.0 : 0.0;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      controller.value = target;
+      return;
+    }
+    unawaited(controller.animateTo(target, curve: Curves.easeOutCubic));
+  }
 }
 
 /// Clips a desktop sidebar toward its anchored window edge while it animates.
 class _AnimatedSideRegion extends StatelessWidget {
   const _AnimatedSideRegion({
-    required this.visible,
+    required this.animation,
     required this.alignment,
     required this.child,
   });
 
-  final bool visible;
+  final Animation<double> animation;
   final Alignment alignment;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final target = visible ? 1.0 : 0.0;
-
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: target, end: target),
-      duration: reduceMotion
-          ? Duration.zero
-          : WorkspaceMetrics.sidebarAnimationDuration,
-      curve: Curves.easeOutCubic,
-      builder: (context, factor, child) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final factor = animation.value;
         if (factor == 0) {
           return const SizedBox.shrink();
         }

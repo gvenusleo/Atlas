@@ -186,6 +186,73 @@ void main() {
     expect(tester.getSize(center).width, closeTo(initialWidth + 268, 0.01));
   });
 
+  testShell('desktop keeps one toggle mounted during sidebar animations', const Size(1200, 760), (
+    tester,
+  ) async {
+    final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
+    final rightToggle = find.byKey(const ValueKey('atlas-right-toggle'));
+    final leftState = tester.state(leftToggle);
+    final rightState = tester.state(rightToggle);
+    final openLeftX = tester.getTopLeft(leftToggle).dx;
+    final rightX = tester.getTopLeft(rightToggle).dx;
+
+    await tester.tap(leftToggle);
+    await tester.pump();
+    expect(leftToggle, findsOneWidget);
+    expect(rightToggle, findsOneWidget);
+    expect(tester.state(leftToggle), same(leftState));
+
+    await tester.pump(const Duration(milliseconds: 90));
+    final closingLeftX = tester.getTopLeft(leftToggle).dx;
+    expect(closingLeftX, lessThan(openLeftX));
+    expect(tester.getTopLeft(rightToggle).dx, rightX);
+    expect(leftToggle, findsOneWidget);
+    expect(rightToggle, findsOneWidget);
+
+    await tester.pumpAndSettle();
+    final closedLeftX = tester.getTopLeft(leftToggle).dx;
+    expect(closedLeftX, lessThan(closingLeftX));
+    expect(tester.state(leftToggle), same(leftState));
+
+    await tester.tap(leftToggle);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    final reopeningLeftX = tester.getTopLeft(leftToggle).dx;
+    expect(reopeningLeftX, greaterThan(closedLeftX));
+
+    await tester.tap(leftToggle);
+    await tester.pump();
+    expect(tester.getTopLeft(leftToggle).dx, closeTo(reopeningLeftX, 0.01));
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.getTopLeft(leftToggle).dx, lessThan(reopeningLeftX));
+    expect(leftToggle, findsOneWidget);
+    await tester.pumpAndSettle();
+
+    await tester.tap(rightToggle);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(tester.getTopLeft(rightToggle).dx, rightX);
+    expect(tester.state(rightToggle), same(rightState));
+    expect(leftToggle, findsOneWidget);
+    expect(rightToggle, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(rightToggle).dx, rightX);
+  });
+
+  testShell('desktop sidebar toggles respect reduced motion', const Size(1200, 760), (
+    tester,
+  ) async {
+    final center = find.byKey(const ValueKey('atlas-center-panel'));
+    final initialCenterWidth = tester.getSize(center).width;
+
+    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+    expect(tester.getSize(center).width, closeTo(initialCenterWidth + 232, 0.01));
+    expect(find.byKey(const ValueKey('atlas-left-toggle')), findsOneWidget);
+  }, disableAnimations: true);
+
   testShell('macOS titlebar keeps controls clear of the traffic lights', const Size(1200, 760), (
     tester,
   ) async {
@@ -364,11 +431,16 @@ void testShell(
   Size size,
   Future<void> Function(WidgetTester tester) body, {
   TargetPlatform platform = TargetPlatform.macOS,
+  bool disableAnimations = false,
 }) {
   // Widget tests default to Android; desktop scenarios pin a desktop platform.
   testWidgets(description, (tester) async {
     debugDefaultTargetPlatformOverride = platform;
     try {
+      if (disableAnimations) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(disableAnimations: true);
+      }
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = size;
       addTearDown(tester.view.reset);
@@ -376,6 +448,7 @@ void testShell(
       await tester.pumpAndSettle();
       await body(tester);
     } finally {
+      tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
       debugDefaultTargetPlatformOverride = null;
     }
   });
