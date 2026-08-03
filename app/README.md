@@ -1,17 +1,18 @@
-# atlas_app
+# Atlas App
 
-A new Flutter project.
+Flutter client for Atlas. The current implementation provides the responsive
+desktop and mobile workspace shell with system light and dark themes; runtime
+features are not connected yet.
 
-## Getting Started
+## Run
 
-This project is a starting point for a Flutter application.
+```sh
+fvm flutter run -d macos
+```
 
-A few resources to get you started if this is your first Flutter project:
+## Verify
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+fvm flutter analyze
+fvm flutter test
+```
