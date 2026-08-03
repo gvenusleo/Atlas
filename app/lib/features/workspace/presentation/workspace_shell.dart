@@ -98,8 +98,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                         WorkspaceResizeHandle(
                           key: const ValueKey('atlas-left-resize-handle'),
                           panelOnLeft: true,
-                          onDrag: (delta) =>
-                              _resizeLeft(delta, availableWidth),
+                          onDrag: (delta) => _resizeLeft(delta, availableWidth),
                         ),
                       ],
                     ),

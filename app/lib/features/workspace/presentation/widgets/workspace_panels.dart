@@ -7,11 +7,7 @@ import 'workspace_controls.dart';
 
 /// Sessions sidebar used by both desktop and compact workspace layouts.
 class SessionsPanel extends StatelessWidget {
-  const SessionsPanel({
-    super.key,
-    this.onClose,
-    this.titlebarInset = false,
-  });
+  const SessionsPanel({super.key, this.onClose, this.titlebarInset = false});
 
   final VoidCallback? onClose;
   final bool titlebarInset;

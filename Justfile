@@ -35,13 +35,63 @@ _gopls_check_unix:
 test:
     go test ./...
 
-# ci runs the full local verification pipeline without modifying files.
-ci: fmt-check gopls-check
+# go-ci runs the complete Go verification pipeline without modifying files.
+go-ci: fmt-check gopls-check
     go mod tidy -diff
     go build ./...
     go vet ./...
     go test -race ./...
     @just --justfile {{ quote(justfile()) }} _cross_build_{{ os_family() }}
+
+[working-directory: 'app']
+app-deps:
+    fvm flutter pub get --enforce-lockfile
+
+[working-directory: 'app']
+app-fmt:
+    fvm dart format lib test
+
+[working-directory: 'app']
+app-fmt-check:
+    fvm dart format --output=none --set-exit-if-changed lib test
+
+[working-directory: 'app']
+app-analyze: app-deps
+    fvm flutter analyze --no-pub
+
+[working-directory: 'app']
+app-test: app-deps
+    fvm flutter test --no-pub
+
+# app-ci runs the Flutter checks shared by local development and CI.
+app-ci: app-deps app-fmt-check app-analyze app-test
+
+# ci is the repository-wide verification entry point.
+ci: go-ci app-ci
+
+[working-directory: 'app']
+app-run device='macos': app-deps
+    fvm flutter run --no-pub -d {{ quote(device) }}
+
+[working-directory: 'app']
+app-build-linux: app-deps
+    fvm flutter build linux --debug --no-pub
+
+[working-directory: 'app']
+app-build-macos: app-deps
+    fvm flutter build macos --debug --no-pub
+
+[working-directory: 'app']
+app-build-windows: app-deps
+    fvm flutter build windows --debug --no-pub
+
+[working-directory: 'app']
+app-build-android: app-deps
+    fvm flutter build apk --debug --no-pub
+
+[working-directory: 'app']
+app-build-ios: app-deps
+    fvm flutter build ios --debug --no-codesign --no-pub
 
 _cross_build_windows:
     $env:CGO_ENABLED = "0"; $env:GOOS = "linux"; $env:GOARCH = "amd64"; go build ./...

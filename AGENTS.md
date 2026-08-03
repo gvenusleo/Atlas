@@ -34,7 +34,8 @@
 ## Verification
 
 - Run focused tests for the changed behavior first.
-- For changes under `app/`, run `fvm flutter analyze` and `fvm flutter test` from `app/`. Also run `fvm flutter build macos --debug` when desktop window integration or macOS-specific behavior changes.
+- For changes under `app/`, run `just app-ci` from the repository root. It enforces the lockfile and runs formatting checks, analysis, and tests with the pinned Flutter SDK.
+- Also run `just app-build-macos` when desktop window integration or macOS-specific behavior changes. Use the matching `app-build-*` recipe when changing another platform runner.
 - Before delivery, run:
 
 ```sh

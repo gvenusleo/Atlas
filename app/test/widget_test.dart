@@ -34,100 +34,104 @@ void main() {
     expect(dark.scaffoldBackgroundColor, AtlasColors.dark.canvas);
   });
 
-  testShell('application follows the system brightness', const Size(1200, 760), (
-    tester,
-  ) async {
-    const channel = MethodChannel('window_manager');
-    final calls = <MethodCall>[];
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      return null;
-    });
-    tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+  testShell(
+    'application follows the system brightness',
+    const Size(1200, 760),
+    (tester) async {
+      const channel = MethodChannel('window_manager');
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
 
-    try {
-      await tester.pumpAndSettle();
-      var center = tester.widget<ColoredBox>(
-        find.byKey(const ValueKey('atlas-center-panel')),
-      );
-      expect(center.color, AtlasColors.light.canvas);
-      final leftPanel = tester.widget<ColoredBox>(
-        find
-            .descendant(
-              of: find.byKey(const ValueKey('atlas-left-panel')),
-              matching: find.byType(ColoredBox),
-            )
-            .first,
-      );
-      expect(leftPanel.color, AtlasColors.light.panel);
-      expect(
-        AtlasColors.of(tester.element(find.text('New session'))),
-        same(AtlasColors.light),
-      );
-      expect(_overlayStyleOf(tester), SystemUiOverlayStyle.dark);
+      try {
+        await tester.pumpAndSettle();
+        var center = tester.widget<ColoredBox>(
+          find.byKey(const ValueKey('atlas-center-panel')),
+        );
+        expect(center.color, AtlasColors.light.canvas);
+        final leftPanel = tester.widget<ColoredBox>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('atlas-left-panel')),
+                matching: find.byType(ColoredBox),
+              )
+              .first,
+        );
+        expect(leftPanel.color, AtlasColors.light.panel);
+        expect(
+          AtlasColors.of(tester.element(find.text('New session'))),
+          same(AtlasColors.light),
+        );
+        expect(_overlayStyleOf(tester), SystemUiOverlayStyle.dark);
 
-      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
-      await tester.pumpAndSettle();
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        await tester.pumpAndSettle();
 
-      center = tester.widget<ColoredBox>(
-        find.byKey(const ValueKey('atlas-center-panel')),
-      );
-      expect(center.color, AtlasColors.dark.canvas);
-      expect(
-        AtlasColors.of(tester.element(find.text('New session'))),
-        same(AtlasColors.dark),
-      );
-      expect(_overlayStyleOf(tester), SystemUiOverlayStyle.light);
-      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-        expect(calls.last.method, 'setBackgroundColor');
-        expect(calls.last.arguments, {
-          'backgroundColorA': 255,
-          'backgroundColorR': 32,
-          'backgroundColorG': 35,
-          'backgroundColorB': 42,
-        });
+        center = tester.widget<ColoredBox>(
+          find.byKey(const ValueKey('atlas-center-panel')),
+        );
+        expect(center.color, AtlasColors.dark.canvas);
+        expect(
+          AtlasColors.of(tester.element(find.text('New session'))),
+          same(AtlasColors.dark),
+        );
+        expect(_overlayStyleOf(tester), SystemUiOverlayStyle.light);
+        if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+          expect(calls.last.method, 'setBackgroundColor');
+          expect(calls.last.arguments, {
+            'backgroundColorA': 255,
+            'backgroundColorR': 32,
+            'backgroundColorG': 35,
+            'backgroundColorB': 42,
+          });
+        }
+      } finally {
+        tester.platformDispatcher.clearPlatformBrightnessTestValue();
+        await tester.pump();
+        messenger.setMockMethodCallHandler(channel, null);
       }
-    } finally {
-      tester.platformDispatcher.clearPlatformBrightnessTestValue();
-      await tester.pump();
-      messenger.setMockMethodCallHandler(channel, null);
-    }
-  });
+    },
+  );
 
-  testShell('desktop starts with three correctly sized panels', const Size(1200, 760), (
-    tester,
-  ) async {
-    final left = find.byKey(const ValueKey('atlas-left-panel'));
-    final center = find.byKey(const ValueKey('atlas-center-panel'));
-    final right = find.byKey(const ValueKey('atlas-right-panel'));
-    expect(left, findsOneWidget);
-    expect(center, findsOneWidget);
-    expect(right, findsOneWidget);
-    expect(tester.getSize(left).width, 224);
-    expect(tester.getSize(right).width, 260);
-    expect(tester.getSize(center).width, greaterThan(680));
-    expect(find.text('New session'), findsOneWidget);
-    expect(find.byType(WorkspacePage), findsOneWidget);
-    expect(find.byType(WorkspaceShell), findsOneWidget);
+  testShell(
+    'desktop starts with three correctly sized panels',
+    const Size(1200, 760),
+    (tester) async {
+      final left = find.byKey(const ValueKey('atlas-left-panel'));
+      final center = find.byKey(const ValueKey('atlas-center-panel'));
+      final right = find.byKey(const ValueKey('atlas-right-panel'));
+      expect(left, findsOneWidget);
+      expect(center, findsOneWidget);
+      expect(right, findsOneWidget);
+      expect(tester.getSize(left).width, 224);
+      expect(tester.getSize(right).width, 260);
+      expect(tester.getSize(center).width, greaterThan(680));
+      expect(find.text('New session'), findsOneWidget);
+      expect(find.byType(WorkspacePage), findsOneWidget);
+      expect(find.byType(WorkspaceShell), findsOneWidget);
 
-    for (final key in const ['atlas-left-toggle', 'atlas-right-toggle']) {
-      final button = find.descendant(
-        of: find.byKey(ValueKey(key)),
-        matching: find.byType(AnimatedContainer),
+      for (final key in const ['atlas-left-toggle', 'atlas-right-toggle']) {
+        final button = find.descendant(
+          of: find.byKey(ValueKey(key)),
+          matching: find.byType(AnimatedContainer),
+        );
+        expect(tester.getSize(button), const Size.square(40));
+      }
+      expect(
+        tester.getCenter(find.byKey(const ValueKey('atlas-left-toggle'))).dx,
+        lessThan(tester.getTopRight(left).dx),
       );
-      expect(tester.getSize(button), const Size.square(40));
-    }
-    expect(
-      tester.getCenter(find.byKey(const ValueKey('atlas-left-toggle'))).dx,
-      lessThan(tester.getTopRight(left).dx),
-    );
-    expect(
-      tester.getCenter(find.byKey(const ValueKey('atlas-right-toggle'))).dx,
-      greaterThan(tester.getTopLeft(right).dx),
-    );
-  });
+      expect(
+        tester.getCenter(find.byKey(const ValueKey('atlas-right-toggle'))).dx,
+        greaterThan(tester.getTopLeft(right).dx),
+      );
+    },
+  );
 
   testShell('desktop side panels toggle independently', const Size(1200, 760), (
     tester,
@@ -155,234 +159,254 @@ void main() {
     expect(find.byKey(const ValueKey('atlas-right-panel')), findsOneWidget);
   });
 
-  testShell('desktop side panels animate their occupied width', const Size(1200, 760), (
-    tester,
-  ) async {
-    final center = find.byKey(const ValueKey('atlas-center-panel'));
-    final initialWidth = tester.getSize(center).width;
+  testShell(
+    'desktop side panels animate their occupied width',
+    const Size(1200, 760),
+    (tester) async {
+      final center = find.byKey(const ValueKey('atlas-center-panel'));
+      final initialWidth = tester.getSize(center).width;
 
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90));
-    expect(tester.getSize(center).width, greaterThan(initialWidth));
-    expect(tester.getSize(center).width, lessThan(initialWidth + 232));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(center).width, closeTo(initialWidth + 232, 0.01));
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(tester.getSize(center).width, greaterThan(initialWidth));
+      expect(tester.getSize(center).width, lessThan(initialWidth + 232));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(center).width, closeTo(initialWidth + 232, 0.01));
 
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90));
-    expect(tester.getSize(center).width, greaterThan(initialWidth));
-    expect(tester.getSize(center).width, lessThan(initialWidth + 232));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(center).width, closeTo(initialWidth, 0.01));
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(tester.getSize(center).width, greaterThan(initialWidth));
+      expect(tester.getSize(center).width, lessThan(initialWidth + 232));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(center).width, closeTo(initialWidth, 0.01));
 
-    await tester.tap(find.byKey(const ValueKey('atlas-right-toggle')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90));
-    expect(tester.getSize(center).width, greaterThan(initialWidth));
-    expect(tester.getSize(center).width, lessThan(initialWidth + 268));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(center).width, closeTo(initialWidth + 268, 0.01));
-  });
+      await tester.tap(find.byKey(const ValueKey('atlas-right-toggle')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(tester.getSize(center).width, greaterThan(initialWidth));
+      expect(tester.getSize(center).width, lessThan(initialWidth + 268));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(center).width, closeTo(initialWidth + 268, 0.01));
+    },
+  );
 
-  testShell('desktop keeps one toggle mounted during sidebar animations', const Size(1200, 760), (
-    tester,
-  ) async {
-    final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
-    final rightToggle = find.byKey(const ValueKey('atlas-right-toggle'));
-    final leftState = tester.state(leftToggle);
-    final rightState = tester.state(rightToggle);
-    final openLeftX = tester.getTopLeft(leftToggle).dx;
-    final rightX = tester.getTopLeft(rightToggle).dx;
+  testShell(
+    'desktop keeps one toggle mounted during sidebar animations',
+    const Size(1200, 760),
+    (tester) async {
+      final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
+      final rightToggle = find.byKey(const ValueKey('atlas-right-toggle'));
+      final leftState = tester.state(leftToggle);
+      final rightState = tester.state(rightToggle);
+      final openLeftX = tester.getTopLeft(leftToggle).dx;
+      final rightX = tester.getTopLeft(rightToggle).dx;
 
-    await tester.tap(leftToggle);
-    await tester.pump();
-    expect(leftToggle, findsOneWidget);
-    expect(rightToggle, findsOneWidget);
-    expect(tester.state(leftToggle), same(leftState));
+      await tester.tap(leftToggle);
+      await tester.pump();
+      expect(leftToggle, findsOneWidget);
+      expect(rightToggle, findsOneWidget);
+      expect(tester.state(leftToggle), same(leftState));
 
-    await tester.pump(const Duration(milliseconds: 90));
-    final closingLeftX = tester.getTopLeft(leftToggle).dx;
-    expect(closingLeftX, lessThan(openLeftX));
-    expect(tester.getTopLeft(rightToggle).dx, rightX);
-    expect(leftToggle, findsOneWidget);
-    expect(rightToggle, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 90));
+      final closingLeftX = tester.getTopLeft(leftToggle).dx;
+      expect(closingLeftX, lessThan(openLeftX));
+      expect(tester.getTopLeft(rightToggle).dx, rightX);
+      expect(leftToggle, findsOneWidget);
+      expect(rightToggle, findsOneWidget);
 
-    await tester.pumpAndSettle();
-    final closedLeftX = tester.getTopLeft(leftToggle).dx;
-    expect(closedLeftX, lessThan(closingLeftX));
-    expect(tester.state(leftToggle), same(leftState));
+      await tester.pumpAndSettle();
+      final closedLeftX = tester.getTopLeft(leftToggle).dx;
+      expect(closedLeftX, lessThan(closingLeftX));
+      expect(tester.state(leftToggle), same(leftState));
 
-    await tester.tap(leftToggle);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    final reopeningLeftX = tester.getTopLeft(leftToggle).dx;
-    expect(reopeningLeftX, greaterThan(closedLeftX));
+      await tester.tap(leftToggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      final reopeningLeftX = tester.getTopLeft(leftToggle).dx;
+      expect(reopeningLeftX, greaterThan(closedLeftX));
 
-    await tester.tap(leftToggle);
-    await tester.pump();
-    expect(tester.getTopLeft(leftToggle).dx, closeTo(reopeningLeftX, 0.01));
-    await tester.pump(const Duration(milliseconds: 60));
-    expect(tester.getTopLeft(leftToggle).dx, lessThan(reopeningLeftX));
-    expect(leftToggle, findsOneWidget);
-    await tester.pumpAndSettle();
+      await tester.tap(leftToggle);
+      await tester.pump();
+      expect(tester.getTopLeft(leftToggle).dx, closeTo(reopeningLeftX, 0.01));
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(tester.getTopLeft(leftToggle).dx, lessThan(reopeningLeftX));
+      expect(leftToggle, findsOneWidget);
+      await tester.pumpAndSettle();
 
-    await tester.tap(rightToggle);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90));
-    expect(tester.getTopLeft(rightToggle).dx, rightX);
-    expect(tester.state(rightToggle), same(rightState));
-    expect(leftToggle, findsOneWidget);
-    expect(rightToggle, findsOneWidget);
-    await tester.pumpAndSettle();
-    expect(tester.getTopLeft(rightToggle).dx, rightX);
-  });
+      await tester.tap(rightToggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(tester.getTopLeft(rightToggle).dx, rightX);
+      expect(tester.state(rightToggle), same(rightState));
+      expect(leftToggle, findsOneWidget);
+      expect(rightToggle, findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(rightToggle).dx, rightX);
+    },
+  );
 
-  testShell('desktop sidebar toggles respect reduced motion', const Size(1200, 760), (
-    tester,
-  ) async {
-    final center = find.byKey(const ValueKey('atlas-center-panel'));
-    final initialCenterWidth = tester.getSize(center).width;
+  testShell(
+    'desktop sidebar toggles respect reduced motion',
+    const Size(1200, 760),
+    (tester) async {
+      final center = find.byKey(const ValueKey('atlas-center-panel'));
+      final initialCenterWidth = tester.getSize(center).width;
 
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pump();
 
-    expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
-    expect(tester.getSize(center).width, closeTo(initialCenterWidth + 232, 0.01));
-    expect(find.byKey(const ValueKey('atlas-left-toggle')), findsOneWidget);
-  }, disableAnimations: true);
-
-  testShell('macOS titlebar keeps controls clear of the traffic lights', const Size(1200, 760), (
-    tester,
-  ) async {
-    expect(find.byType(DragToMoveArea), findsNWidgets(3));
-    expect(
-      tester.getTopLeft(find.text('Sessions')).dx,
-      greaterThanOrEqualTo(88),
-    );
-
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
-    final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
-    expect(tester.getTopLeft(leftToggle).dx, greaterThanOrEqualTo(76));
-  });
-
-  testShell('desktop resize handles adjust and clamp panel widths', const Size(1280, 760), (
-    tester,
-  ) async {
-    final left = find.byKey(const ValueKey('atlas-left-panel'));
-    final right = find.byKey(const ValueKey('atlas-right-panel'));
-
-    await tester.drag(
-      find.byKey(const ValueKey('atlas-left-resize-handle')),
-      const Offset(80, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(tester.getSize(left).width, closeTo(304, 0.01));
-
-    await tester.drag(
-      find.byKey(const ValueKey('atlas-right-resize-handle')),
-      const Offset(-70, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(tester.getSize(right).width, closeTo(330, 0.01));
-
-    await tester.drag(
-      find.byKey(const ValueKey('atlas-left-resize-handle')),
-      const Offset(-1000, 0),
-    );
-    await tester.drag(
-      find.byKey(const ValueKey('atlas-right-resize-handle')),
-      const Offset(1000, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(tester.getSize(left).width, closeTo(184, 0.01));
-    expect(tester.getSize(right).width, closeTo(220, 0.01));
-  });
-
-  testShell('desktop resize handle backgrounds fill the hit area', const Size(1200, 760), (
-    tester,
-  ) async {
-    for (final key in const [
-      'atlas-left-resize-handle',
-      'atlas-right-resize-handle',
-    ]) {
-      final handle = find.byKey(ValueKey(key));
-      final backgrounds = find.descendant(
-        of: handle,
-        matching: find.byType(ColoredBox),
+      expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+      expect(
+        tester.getSize(center).width,
+        closeTo(initialCenterWidth + 232, 0.01),
       );
-      final handleSize = tester.getSize(handle);
+      expect(find.byKey(const ValueKey('atlas-left-toggle')), findsOneWidget);
+    },
+    disableAnimations: true,
+  );
 
-      expect(backgrounds, findsNWidgets(2));
-      for (final background in backgrounds.evaluate()) {
-        expect(
-          tester.getSize(find.byWidget(background.widget)).height,
-          handleSize.height,
+  testShell(
+    'macOS titlebar keeps controls clear of the traffic lights',
+    const Size(1200, 760),
+    (tester) async {
+      expect(find.byType(DragToMoveArea), findsNWidgets(3));
+      expect(
+        tester.getTopLeft(find.text('Sessions')).dx,
+        greaterThanOrEqualTo(88),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+      final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
+      expect(tester.getTopLeft(leftToggle).dx, greaterThanOrEqualTo(76));
+    },
+  );
+
+  testShell(
+    'desktop resize handles adjust and clamp panel widths',
+    const Size(1280, 760),
+    (tester) async {
+      final left = find.byKey(const ValueKey('atlas-left-panel'));
+      final right = find.byKey(const ValueKey('atlas-right-panel'));
+
+      await tester.drag(
+        find.byKey(const ValueKey('atlas-left-resize-handle')),
+        const Offset(80, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(left).width, closeTo(304, 0.01));
+
+      await tester.drag(
+        find.byKey(const ValueKey('atlas-right-resize-handle')),
+        const Offset(-70, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(right).width, closeTo(330, 0.01));
+
+      await tester.drag(
+        find.byKey(const ValueKey('atlas-left-resize-handle')),
+        const Offset(-1000, 0),
+      );
+      await tester.drag(
+        find.byKey(const ValueKey('atlas-right-resize-handle')),
+        const Offset(1000, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(left).width, closeTo(184, 0.01));
+      expect(tester.getSize(right).width, closeTo(220, 0.01));
+    },
+  );
+
+  testShell(
+    'desktop resize handle backgrounds fill the hit area',
+    const Size(1200, 760),
+    (tester) async {
+      for (final key in const [
+        'atlas-left-resize-handle',
+        'atlas-right-resize-handle',
+      ]) {
+        final handle = find.byKey(ValueKey(key));
+        final backgrounds = find.descendant(
+          of: handle,
+          matching: find.byType(ColoredBox),
         );
+        final handleSize = tester.getSize(handle);
+
+        expect(backgrounds, findsNWidgets(2));
+        for (final background in backgrounds.evaluate()) {
+          expect(
+            tester.getSize(find.byWidget(background.widget)).height,
+            handleSize.height,
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
-  testShell('desktop header divider crosses both resize handles', const Size(1200, 760), (
-    tester,
-  ) async {
-    final centerDivider = find
-        .descendant(
-          of: find.byKey(const ValueKey('atlas-center-panel')),
-          matching: find.byType(Divider),
-        )
-        .first;
-    final expectedTop = tester.getTopLeft(centerDivider).dy;
+  testShell(
+    'desktop header divider crosses both resize handles',
+    const Size(1200, 760),
+    (tester) async {
+      final centerDivider = find
+          .descendant(
+            of: find.byKey(const ValueKey('atlas-center-panel')),
+            matching: find.byType(Divider),
+          )
+          .first;
+      final expectedTop = tester.getTopLeft(centerDivider).dy;
 
-    for (final key in const [
-      'atlas-left-resize-handle',
-      'atlas-right-resize-handle',
-    ]) {
-      final handle = find.byKey(ValueKey(key));
-      final divider = find.descendant(
-        of: handle,
-        matching: find.byKey(const ValueKey('atlas-resize-header-divider')),
-      );
+      for (final key in const [
+        'atlas-left-resize-handle',
+        'atlas-right-resize-handle',
+      ]) {
+        final handle = find.byKey(ValueKey(key));
+        final divider = find.descendant(
+          of: handle,
+          matching: find.byKey(const ValueKey('atlas-resize-header-divider')),
+        );
 
-      expect(divider, findsOneWidget);
-      expect(tester.getSize(divider), const Size(8, 1));
-      expect(tester.getTopLeft(divider).dy, expectedTop);
-    }
-  });
+        expect(divider, findsOneWidget);
+        expect(tester.getSize(divider), const Size(8, 1));
+        expect(tester.getTopLeft(divider).dy, expectedTop);
+      }
+    },
+  );
 
-  testShell('compact layout opens sessions and details as drawers', const Size(390, 844), (
-    tester,
-  ) async {
-    expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
-    expect(find.byKey(const ValueKey('atlas-right-panel')), findsNothing);
-    expect(find.byTooltip('Open sessions'), findsOneWidget);
-    expect(find.byTooltip('Open details'), findsOneWidget);
+  testShell(
+    'compact layout opens sessions and details as drawers',
+    const Size(390, 844),
+    (tester) async {
+      expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+      expect(find.byKey(const ValueKey('atlas-right-panel')), findsNothing);
+      expect(find.byTooltip('Open sessions'), findsOneWidget);
+      expect(find.byTooltip('Open details'), findsOneWidget);
 
-    for (final key in const ['atlas-left-toggle', 'atlas-right-toggle']) {
-      final button = find.descendant(
-        of: find.byKey(ValueKey(key)),
-        matching: find.byType(AnimatedContainer),
-      );
-      expect(tester.getSize(button), const Size.square(44));
-    }
+      for (final key in const ['atlas-left-toggle', 'atlas-right-toggle']) {
+        final button = find.descendant(
+          of: find.byKey(ValueKey(key)),
+          matching: find.byType(AnimatedContainer),
+        );
+        expect(tester.getSize(button), const Size.square(44));
+      }
 
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pumpAndSettle();
-    expect(find.text('Sessions'), findsOneWidget);
-    expect(find.text('No sessions yet'), findsOneWidget);
-    expect(find.byTooltip('Close sessions'), findsOneWidget);
-    await tester.tap(find.byTooltip('Close sessions'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.text('Sessions'), findsOneWidget);
+      expect(find.text('No sessions yet'), findsOneWidget);
+      expect(find.byTooltip('Close sessions'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close sessions'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('atlas-right-toggle')));
-    await tester.pumpAndSettle();
-    expect(find.text('Details'), findsOneWidget);
-    expect(find.text('No active session'), findsOneWidget);
-    expect(find.byTooltip('Close details'), findsOneWidget);
-  });
+      await tester.tap(find.byKey(const ValueKey('atlas-right-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.text('Details'), findsOneWidget);
+      expect(find.text('No active session'), findsOneWidget);
+      expect(find.byTooltip('Close details'), findsOneWidget);
+    },
+  );
 
   testShell(
     'mobile platforms always use the compact layout',
@@ -401,27 +425,29 @@ void main() {
     },
   );
 
-  testShell('desktop visibility survives compact layout transitions', const Size(1200, 760), (
-    tester,
-  ) async {
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+  testShell(
+    'desktop visibility survives compact layout transitions',
+    const Size(1200, 760),
+    (tester) async {
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
 
-    tester.view.physicalSize = const Size(390, 844);
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('Open sessions'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
-    await tester.pumpAndSettle();
-    expect(find.text('Sessions'), findsOneWidget);
-    Navigator.of(tester.element(find.text('Sessions'))).pop();
-    await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Open sessions'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.text('Sessions'), findsOneWidget);
+      Navigator.of(tester.element(find.text('Sessions'))).pop();
+      await tester.pumpAndSettle();
 
-    tester.view.physicalSize = const Size(1200, 760);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
-    expect(find.byTooltip('Show sessions'), findsOneWidget);
-  });
+      tester.view.physicalSize = const Size(1200, 760);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+      expect(find.byTooltip('Show sessions'), findsOneWidget);
+    },
+  );
 }
 
 /// Pumps the workspace shell at [size] on [platform] and restores the

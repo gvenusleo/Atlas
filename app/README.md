@@ -25,14 +25,24 @@ channel instead of duplicating agent behavior in Dart.
 
 ## Run
 
+From the repository root:
+
 ```sh
-fvm flutter run -d macos
+just app-run macos
 ```
 
 ## Verify
 
 ```sh
-fvm flutter analyze
-fvm flutter test
-fvm flutter build macos --debug
+just app-ci
+```
+
+Platform debug builds are available as separate recipes:
+
+```sh
+just app-build-linux
+just app-build-macos
+just app-build-windows
+just app-build-android
+just app-build-ios
 ```
