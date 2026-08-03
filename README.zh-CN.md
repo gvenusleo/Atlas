@@ -127,6 +127,10 @@ TUI 或 `atlas run` 中的输入以 `!` 开头时，Atlas 会跳过模型，直�
 atlas run '!pwd'
 ```
 
+## Flutter App
+
+仓库的 [`app/`](app/) 目录包含正在开发中的 Flutter 桌面端与移动端客户端。当前只实现了应用外壳，尚未接入 Atlas runtime 功能。开发状态和相关命令见 [App README](app/README.md)。
+
 ## 权限与安全
 
 Atlas 以当前进程的本地权限运行。内置工具可以读写文件、搜索文本并执行 shell 命令；**Atlas 不提供沙箱、权限提示或 approval gate**。请只在可信工作区中运行。

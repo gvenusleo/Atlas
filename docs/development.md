@@ -23,6 +23,10 @@ internal/transcript    in-memory message sequence
 internal/tui           interactive terminal UI
 internal/version       version info
 internal/ws            WebSocket channel
+app                    Flutter desktop and mobile client
+  ├── lib/app          application root, routing, and platform integration
+  ├── lib/features     feature-first pages, layouts, and widgets
+  └── lib/shared       application-wide theme and shared UI
 ```
 
 ## Build and Test
@@ -34,6 +38,20 @@ go test ./internal/agent/...   # run a single package's tests
 go test ./internal/tui         # run terminal UI tests
 just ci                        # full non-modifying CI check (requires just)
 ```
+
+### Flutter App
+
+The Flutter client uses the SDK pinned by FVM. From `app/`:
+
+```sh
+fvm flutter run -d macos          # run the macOS client
+fvm flutter analyze               # static analysis
+fvm flutter test                  # widget and unit tests
+fvm flutter build macos --debug   # build the macOS debug app
+```
+
+The current client implements the responsive application shell only. It is not
+connected to the Atlas runtime yet.
 
 ## Run from Source
 
@@ -49,3 +67,4 @@ go run ./cmd/atlas doctor                       # verify configuration
 - **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
 - **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
 - **Single core**: TUI, CLI commands, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Entry layers only adapt their interface or protocol.
+- **Thin Flutter client**: Flutter owns client presentation and interaction state. Agent orchestration, tools, providers, and session persistence stay in the Go runtime and will be consumed through the WebSocket channel.

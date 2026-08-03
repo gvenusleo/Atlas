@@ -50,6 +50,23 @@ graph TD
 
 The TUI is an entry-layer adapter like ACP and WebSocket. It converts keyboard and mouse input into runtime turns and manual compaction requests, consumes ordered observer events for streaming output and tool activity, and leaves orchestration and persistence in `runtime.Runtime`.
 
+## Flutter Client
+
+The Flutter client under `app/` currently implements the responsive desktop
+and mobile application shell only. Because it does not yet connect to the Go
+runtime, it is not shown as an active entry point in the diagram above.
+
+When runtime integration is added, the app will act as a client of the existing
+WebSocket channel. Agent orchestration, model providers, tools, compaction, and
+session persistence remain in `runtime.Runtime`; the Flutter client owns
+presentation, navigation, and client-side interaction state only.
+
+Within the client, `lib/app` contains bootstrap, routing, and platform
+integration; product UI is organized by feature under `lib/features`; and
+application-wide theme and shared UI live under `lib/shared`. Riverpod manages
+application-wide, asynchronous, and cross-page state, while go_router owns
+page-level navigation.
+
 ## Core Loop
 
 A turn starts with user input: appended to the transcript, then the model is called in a loop. When the model returns text deltas, they are streamed out; when it returns tool calls, they are executed in order and results are written back to the transcript. The loop ends when there are no tool calls, an error occurs, or the step limit is reached.

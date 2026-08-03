@@ -68,7 +68,7 @@ When connected via ACP, `run_shell` requests the client terminal when available 
 
 ## WebSocket
 
-`atlas serve` starts a WebSocket server for clients such as a mobile app. The server listens on `127.0.0.1:8765` by default, configurable via `services.ws.host` and `services.ws.port` in `~/.atlas/config.json`.
+`atlas serve` starts a WebSocket server for external clients. The Flutter client under `app/` will use this channel when runtime integration is added; its current application shell is not connected yet. The server listens on `127.0.0.1:8765` by default, configurable via `services.ws.host` and `services.ws.port` in `~/.atlas/config.json`.
 
 Loopback connections do not require authentication. Binding to a non-loopback address, such as `0.0.0.0`, requires `services.ws.token`; clients must send it as `Authorization: Bearer <token>`. WebSocket handshakes also enforce same-origin checks. The channel exposes the same agent capabilities as other channels:
 

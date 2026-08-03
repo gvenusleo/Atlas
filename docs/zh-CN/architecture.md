@@ -50,6 +50,14 @@ graph TD
 
 TUI 与 ACP、WebSocket 一样属于入口层适配。它把键盘和鼠标输入转换为运行时 turn 和手动压缩请求，按顺序消费 observer 事件以展示流式输出和工具活动；编排和持久化仍由 `runtime.Runtime` 负责。
 
+## Flutter 客户端
+
+`app/` 下的 Flutter 客户端目前只实现了响应式桌面端与移动端应用外壳。由于尚未连接 Go runtime，因此上面的架构图没有把它画成已启用的入口。
+
+接入 runtime 后，App 将作为现有 WebSocket 通道的客户端。agent 编排、模型 Provider、工具、上下文压缩和 session 持久化仍由 `runtime.Runtime` 负责；Flutter 客户端只负责展示、导航和客户端交互状态。
+
+客户端内部由 `lib/app` 承担启动、路由和平台集成，产品 UI 按功能组织在 `lib/features` 下，应用级主题和共享 UI 位于 `lib/shared`。Riverpod 管理应用级、异步和跨页面状态，go_router 负责页面级导航。
+
 ## 核心循环
 
 一次 turn 从用户输入开始：追加到 transcript，然后循环调用模型。模型返回文本增量时流式输出；返回工具调用时按顺序执行并把结果写回 transcript；没有工具调用或遇到错误时结束。

@@ -68,7 +68,7 @@ ACP 支持的功能：
 
 ## WebSocket
 
-`atlas serve` 启动 WebSocket 服务，供手机 App 等客户端连接。默认监听 `127.0.0.1:8765`，可通过 `~/.atlas/config.json` 中的 `services.ws.host` 和 `services.ws.port` 配置。
+`atlas serve` 启动 WebSocket 服务，供外部客户端连接。`app/` 下的 Flutter 客户端后续接入 runtime 时将使用该通道；当前应用外壳尚未连接。服务默认监听 `127.0.0.1:8765`，可通过 `~/.atlas/config.json` 中的 `services.ws.host` 和 `services.ws.port` 配置。
 
 loopback 连接无需认证。绑定 `0.0.0.0` 等非 loopback 地址时必须配置 `services.ws.token`，客户端通过 `Authorization: Bearer <token>` 请求头发送；WebSocket 握手同时执行同源校验。该通道暴露与其他通道相同的 Agent 能力：
 

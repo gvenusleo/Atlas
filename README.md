@@ -127,6 +127,13 @@ When input in the TUI or `atlas run` starts with `!`, Atlas skips the model and 
 atlas run '!pwd'
 ```
 
+## Flutter App
+
+An in-development Flutter desktop and mobile client is available under
+[`app/`](app/). It currently provides the application shell and is not yet
+connected to Atlas runtime features. See the [App README](app/README.md) for
+development status and commands.
+
 ## Permissions and Security
 
 Atlas runs with the local permissions of the current process. Built-in tools can read and write files, search text, and execute shell commands. **Atlas does not provide a sandbox, permission prompts, or an approval gate.** Only run in trusted workspaces.
