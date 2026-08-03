@@ -40,6 +40,15 @@ void main() {
         find.byKey(const ValueKey('atlas-center-panel')),
       );
       expect(center.color, AtlasColors.light.canvas);
+      final leftPanel = tester.widget<ColoredBox>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('atlas-left-panel')),
+              matching: find.byType(ColoredBox),
+            )
+            .first,
+      );
+      expect(leftPanel.color, AtlasColors.light.panel);
       expect(
         AtlasColors.of(tester.element(find.text('New session'))),
         same(AtlasColors.light),
