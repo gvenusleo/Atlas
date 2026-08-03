@@ -1,14 +1,27 @@
 import 'dart:io';
 
-import 'package:atlas_app/main.dart';
-import 'package:atlas_app/ui/atlas_theme.dart';
+import 'package:atlas_app/app/app_router.dart';
+import 'package:atlas_app/app/atlas_app.dart';
+import 'package:atlas_app/features/workspace/presentation/workspace_page.dart';
+import 'package:atlas_app/features/workspace/presentation/workspace_shell.dart';
+import 'package:atlas_app/shared/theme/atlas_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:window_manager/window_manager.dart';
 
 void main() {
+  test('router starts at the workspace route', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final router = container.read(appRouterProvider);
+
+    expect(router.routeInformationProvider.value.uri.path, '/');
+  });
+
   test('light and dark themes expose their semantic palettes', () {
     final light = buildAtlasTheme(Brightness.light);
     final dark = buildAtlasTheme(Brightness.dark);
@@ -96,6 +109,8 @@ void main() {
     expect(tester.getSize(right).width, 260);
     expect(tester.getSize(center).width, greaterThan(680));
     expect(find.text('New session'), findsOneWidget);
+    expect(find.byType(WorkspacePage), findsOneWidget);
+    expect(find.byType(WorkspaceShell), findsOneWidget);
 
     for (final key in const ['atlas-left-toggle', 'atlas-right-toggle']) {
       final button = find.descendant(
@@ -357,7 +372,7 @@ void testShell(
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = size;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(const AtlasApp());
+      await tester.pumpWidget(const ProviderScope(child: AtlasApp()));
       await tester.pumpAndSettle();
       await body(tester);
     } finally {
