@@ -7,17 +7,15 @@ import 'workspace_controls.dart';
 
 /// Sessions sidebar used by both desktop and compact workspace layouts.
 class SessionsPanel extends StatelessWidget {
-  const SessionsPanel({super.key, this.onClose, this.titlebarInset = false});
+  const SessionsPanel({super.key, this.onClose});
 
   final VoidCallback? onClose;
-  final bool titlebarInset;
 
   @override
   Widget build(BuildContext context) {
     return _SidePanel(
-      title: 'Sessions',
+      semanticLabel: 'Sessions',
       compact: onClose != null,
-      leadingInset: titlebarInset ? WorkspaceMetrics.macOSTrafficLightInset : 0,
       action: onClose != null
           ? WorkspaceToolbarButton(
               icon: CupertinoIcons.xmark,
@@ -43,7 +41,7 @@ class DetailsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SidePanel(
-      title: 'Details',
+      semanticLabel: 'Details',
       compact: onClose != null,
       action: onClose != null
           ? WorkspaceToolbarButton(
@@ -63,58 +61,47 @@ class DetailsPanel extends StatelessWidget {
 
 class _SidePanel extends StatelessWidget {
   const _SidePanel({
-    required this.title,
+    required this.semanticLabel,
     required this.child,
     this.compact = false,
     this.action,
-    this.leadingInset = 0,
   });
 
-  final String title;
+  final String semanticLabel;
   final Widget child;
   final bool compact;
   final Widget? action;
-  final double leadingInset;
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
 
-    return ColoredBox(
-      color: colors.panel,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          WorkspaceTitlebarDragArea(
-            child: SizedBox(
-              height: compact
-                  ? WorkspaceMetrics.compactToolbarHeight
-                  : WorkspaceMetrics.desktopToolbarHeight,
-              child: Padding(
-                padding: EdgeInsets.only(left: 12 + leadingInset, right: 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    ?action,
-                  ],
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      child: ColoredBox(
+        color: colors.panel,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            WorkspaceTitlebarDragArea(
+              child: SizedBox(
+                height: compact
+                    ? WorkspaceMetrics.compactToolbarHeight
+                    : WorkspaceMetrics.desktopToolbarHeight,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: action,
+                  ),
                 ),
               ),
             ),
-          ),
-          const Divider(),
-          Expanded(child: child),
-        ],
+            const Divider(),
+            Expanded(child: child),
+          ],
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:atlas_app/app/app_router.dart';
 import 'package:atlas_app/app/atlas_app.dart';
 import 'package:atlas_app/features/workspace/presentation/workspace_page.dart';
+import 'package:atlas_app/features/workspace/presentation/workspace_metrics.dart';
 import 'package:atlas_app/features/workspace/presentation/workspace_shell.dart';
 import 'package:atlas_app/shared/theme/atlas_theme.dart';
 import 'package:flutter/foundation.dart';
@@ -112,6 +113,8 @@ void main() {
       expect(tester.getSize(right).width, 260);
       expect(tester.getSize(center).width, greaterThan(680));
       expect(find.text('New session'), findsOneWidget);
+      expect(find.text('Sessions'), findsNothing);
+      expect(find.text('Details'), findsNothing);
       expect(find.byType(WorkspacePage), findsOneWidget);
       expect(find.byType(WorkspaceShell), findsOneWidget);
 
@@ -193,14 +196,14 @@ void main() {
   );
 
   testShell(
-    'desktop keeps one toggle mounted during sidebar animations',
+    'desktop keeps sidebar toggles fixed during animations',
     const Size(1200, 760),
     (tester) async {
       final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
       final rightToggle = find.byKey(const ValueKey('atlas-right-toggle'));
       final leftState = tester.state(leftToggle);
       final rightState = tester.state(rightToggle);
-      final openLeftX = tester.getTopLeft(leftToggle).dx;
+      final leftX = tester.getTopLeft(leftToggle).dx;
       final rightX = tester.getTopLeft(rightToggle).dx;
 
       await tester.tap(leftToggle);
@@ -210,28 +213,25 @@ void main() {
       expect(tester.state(leftToggle), same(leftState));
 
       await tester.pump(const Duration(milliseconds: 90));
-      final closingLeftX = tester.getTopLeft(leftToggle).dx;
-      expect(closingLeftX, lessThan(openLeftX));
+      expect(tester.getTopLeft(leftToggle).dx, leftX);
       expect(tester.getTopLeft(rightToggle).dx, rightX);
       expect(leftToggle, findsOneWidget);
       expect(rightToggle, findsOneWidget);
 
       await tester.pumpAndSettle();
-      final closedLeftX = tester.getTopLeft(leftToggle).dx;
-      expect(closedLeftX, lessThan(closingLeftX));
+      expect(tester.getTopLeft(leftToggle).dx, leftX);
       expect(tester.state(leftToggle), same(leftState));
 
       await tester.tap(leftToggle);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
-      final reopeningLeftX = tester.getTopLeft(leftToggle).dx;
-      expect(reopeningLeftX, greaterThan(closedLeftX));
+      expect(tester.getTopLeft(leftToggle).dx, leftX);
 
       await tester.tap(leftToggle);
       await tester.pump();
-      expect(tester.getTopLeft(leftToggle).dx, closeTo(reopeningLeftX, 0.01));
+      expect(tester.getTopLeft(leftToggle).dx, leftX);
       await tester.pump(const Duration(milliseconds: 60));
-      expect(tester.getTopLeft(leftToggle).dx, lessThan(reopeningLeftX));
+      expect(tester.getTopLeft(leftToggle).dx, leftX);
       expect(leftToggle, findsOneWidget);
       await tester.pumpAndSettle();
 
@@ -273,15 +273,18 @@ void main() {
     (tester) async {
       expect(find.byType(DragToMoveArea), findsNWidgets(3));
       expect(
-        tester.getTopLeft(find.text('Sessions')).dx,
-        greaterThanOrEqualTo(88),
+        tester.getTopLeft(find.byKey(const ValueKey('atlas-left-toggle'))).dx,
+        WorkspaceMetrics.macOSTrafficLightInset,
       );
 
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
       final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
-      expect(tester.getTopLeft(leftToggle).dx, greaterThanOrEqualTo(76));
+      expect(
+        tester.getTopLeft(leftToggle).dx,
+        WorkspaceMetrics.macOSTrafficLightInset,
+      );
     },
   );
 
@@ -394,7 +397,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Sessions'), findsOneWidget);
+      expect(find.text('Sessions'), findsNothing);
       expect(find.text('No sessions yet'), findsOneWidget);
       expect(find.byTooltip('Close sessions'), findsOneWidget);
       await tester.tap(find.byTooltip('Close sessions'));
@@ -402,7 +405,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('atlas-right-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Details'), findsOneWidget);
+      expect(find.text('Details'), findsNothing);
       expect(find.text('No active session'), findsOneWidget);
       expect(find.byTooltip('Close details'), findsOneWidget);
     },
@@ -420,7 +423,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Sessions'), findsOneWidget);
+      expect(find.text('Sessions'), findsNothing);
       expect(find.byTooltip('Close sessions'), findsOneWidget);
     },
   );
@@ -438,8 +441,8 @@ void main() {
       expect(find.byTooltip('Open sessions'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Sessions'), findsOneWidget);
-      Navigator.of(tester.element(find.text('Sessions'))).pop();
+      expect(find.text('Sessions'), findsNothing);
+      await tester.tap(find.byTooltip('Close sessions'));
       await tester.pumpAndSettle();
 
       tester.view.physicalSize = const Size(1200, 760);

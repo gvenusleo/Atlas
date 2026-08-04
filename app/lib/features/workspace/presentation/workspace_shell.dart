@@ -72,7 +72,6 @@ class _WorkspaceShellState extends State<WorkspaceShell>
     final closedLeftButtonX = WorkspaceMetrics.usesIntegratedTitlebar
         ? WorkspaceMetrics.macOSTrafficLightInset
         : 6.0;
-    final openLeftButtonX = leftPanelWidth - 46;
 
     return Scaffold(
       body: SafeArea(
@@ -90,10 +89,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                         SizedBox(
                           key: const ValueKey('atlas-left-panel'),
                           width: leftPanelWidth,
-                          child: SessionsPanel(
-                            titlebarInset:
-                                WorkspaceMetrics.usesIntegratedTitlebar,
-                          ),
+                          child: const SessionsPanel(),
                         ),
                         WorkspaceResizeHandle(
                           key: const ValueKey('atlas-left-resize-handle'),
@@ -138,24 +134,12 @@ class _WorkspaceShellState extends State<WorkspaceShell>
             Positioned(
               top: 2,
               left: closedLeftButtonX,
-              child: AnimatedBuilder(
-                animation: _leftSidebarAnimation,
-                builder: (context, child) => Transform.translate(
-                  offset: Offset(
-                    (openLeftButtonX - closedLeftButtonX) *
-                        _leftSidebarAnimation.value,
-                    0,
-                  ),
-                  child: child,
-                ),
-                child: WorkspaceToolbarButton(
-                  key: const ValueKey('atlas-left-toggle'),
-                  icon: CupertinoIcons.sidebar_left,
-                  tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
-                  active: _leftVisible,
-                  onPressed: () =>
-                      _setLeftVisible(!_leftVisible, leftPanelWidth),
-                ),
+              child: WorkspaceToolbarButton(
+                key: const ValueKey('atlas-left-toggle'),
+                icon: CupertinoIcons.sidebar_left,
+                tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
+                active: _leftVisible,
+                onPressed: () => _setLeftVisible(!_leftVisible, leftPanelWidth),
               ),
             ),
             Positioned(
