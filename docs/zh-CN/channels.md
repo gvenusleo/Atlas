@@ -11,7 +11,7 @@ atlas
 atlas --session <id>
 ```
 
-可选的 `--session` 参数会加载已有对话记录；如果 session 不存在，则在第一轮创建。界面会流式显示模型输出并在终端中渲染 Markdown，按发生顺序展示工具调用和结果，支持粘贴多行输入，并在恢复 session 时加载已保存的历史。turn 或手动压缩执行期间，输入框上方会临时显示状态与耗时：收到流式 reasoning 时显示 `Thinking`，模型回复、执行工具或压缩上下文时显示 `Working`。底栏显示当前模型、思考深度，以及最近一次上下文用量占 `context_window` 的百分比。
+可选的 `--session` 参数会加载已有对话记录；如果 session 不存在，则在第一轮创建。界面会流式显示模型输出并在终端中渲染 Markdown，按发生顺序展示工具调用和结果，并把 `read`、`edit`、`write` 显示为带目标路径的紧凑单行摘要。界面支持粘贴多行输入，并在恢复 session 时加载已保存的历史。turn 或手动压缩执行期间，输入框上方会临时显示状态与耗时：收到流式 reasoning 时显示 `Thinking`，模型回复、执行工具或压缩上下文时显示 `Working`。底栏显示当前模型、思考深度，以及最近一次上下文用量占 `context_window` 的百分比。
 
 按键：
 
@@ -62,7 +62,7 @@ ACP 支持的功能：
 - skill slash command，例如 `/think ...`
 - 计划更新：`update_plan` 工具调用映射为 `plan_update` session update，在编辑器中渲染为结构化计划面板
 
-通过 ACP 连接时，`run_shell` 优先请求客户端 terminal 执行并嵌入输出。ACP terminal 不支持标准输入，因此带有非空 `stdin` 的调用通过 Atlas 本地 shell 执行；terminal 不可用时也会回退到本地 shell。
+通过 ACP 连接时，`run_shell` 优先请求客户端 terminal 执行并嵌入输出。ACP terminal 不支持标准输入，因此带有非空 `stdin` 的调用通过 Atlas 本地 shell 执行；terminal 不可用时也会回退到本地 shell。`read`、`edit` 和 `write` 始终在 Atlas 进程的文件系统中执行；ACP 会将其标记为 read/edit 工具调用并附带绝对文件位置，便于兼容客户端跟随当前文件。
 
 `additionalDirectories` 会作为 session 元数据保存和返回，但相对路径仍以 `cwd` 为基准。当前不支持 ACP auth、权限请求、MCP 连接，也不支持音频和非图片二进制资源输入。
 

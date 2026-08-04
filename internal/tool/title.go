@@ -17,6 +17,9 @@ func DisplayTitle(call model.ToolCall) string {
 			"load_skill":  "LoadSkill: ",
 			"update_plan": "Plan: ",
 			"run_shell":   "Run: ",
+			"read":        "Read: ",
+			"edit":        "Edit: ",
+			"write":       "Write: ",
 		}[call.Name]
 		return prefix + detail
 	}
@@ -40,6 +43,8 @@ func DisplayDetail(call model.ToolCall) string {
 		key = "plan"
 	case "run_shell":
 		key = "command"
+	case "read", "edit", "write":
+		key = "path"
 	default:
 		return ""
 	}

@@ -6,11 +6,16 @@
 
 | Tool | Description |
 |---|---|
-| `run_shell` | Discover, search, inspect, edit, and verify with PowerShell on Windows or `/bin/sh` elsewhere; requires a short user-facing purpose and command, accepts optional standard input and accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
+| `read` | Read UTF-8 text by path with optional 1-indexed `offset` and `limit`; returns at most 2,000 complete lines or 50 KiB of file content and reports the next offset when more content remains |
+| `run_shell` | Discover paths, search text, list directories, run commands, and verify with PowerShell on Windows or `/bin/sh` elsewhere; requires a short user-facing purpose and command, accepts optional standard input and accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
+| `edit` | Apply one or more exact replacements to an existing UTF-8 file; every `old_text` must occur exactly once in the original content, edits must not overlap, and validation failure leaves the file unchanged |
+| `write` | Create a file or replace its complete contents, creating parent directories as needed and preserving permissions when overwriting an existing file |
 | `load_skill` | Load a local skill's instructions by name |
 | `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
 | `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |
 | `update_plan` | Manage a structured task plan for multi-step work; each call replaces the entire plan |
+
+Relative paths for `read`, `edit`, and `write` are resolved from the session working directory. `read` rejects directories and non-UTF-8 content. `edit` preserves a UTF-8 BOM and the file's primary LF or CRLF line ending; it intentionally does not use fuzzy whitespace or Unicode matching. `write` is a full-file operation and does not append. Use `run_shell` for directory discovery, `rg`/`find` searches, binary or byte-oriented inspection, generators, formatters, and other commands.
 
 ## Plan Tracking
 

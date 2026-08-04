@@ -59,12 +59,76 @@ func TestToolKindClassifiesBuiltInTools(t *testing.T) {
 		"web_search": acpsdk.ToolKindSearch,
 		"web_fetch":  acpsdk.ToolKindFetch,
 		"run_shell":  acpsdk.ToolKindExecute,
+		"read":       acpsdk.ToolKindRead,
+		"edit":       acpsdk.ToolKindEdit,
+		"write":      acpsdk.ToolKindEdit,
 		"custom":     acpsdk.ToolKindOther,
 	}
 	for name, want := range tests {
 		if got := toolKind(name); got != want {
 			t.Fatalf("toolKind(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestObserverAddsFileToolKindAndLocation(t *testing.T) {
+	cwd := testCWD(t)
+	a := NewAgent(&fakeRuntime{})
+	var updates []acpsdk.SessionNotification
+	a.sendUpdate = func(_ context.Context, update acpsdk.SessionNotification) error {
+		updates = append(updates, update)
+		return nil
+	}
+
+	a.observe(context.Background(), "sess", cwd)(agentpkg.Event{
+		Type: agentpkg.EventToolStarted,
+		ToolCall: model.ToolCall{
+			ID:        "read-1",
+			Name:      "read",
+			Arguments: `{"path":"internal/runtime.go","offset":12}`,
+		},
+	})
+
+	if len(updates) != 1 || updates[0].Update.ToolCall == nil {
+		t.Fatalf("updates = %#v", updates)
+	}
+	start := updates[0].Update.ToolCall
+	if start.Kind != acpsdk.ToolKindRead || start.Title != "Read: internal/runtime.go" {
+		t.Fatalf("tool start = %#v", start)
+	}
+	if len(start.Locations) != 1 || start.Locations[0].Path != filepath.Join(cwd, "internal", "runtime.go") || start.Locations[0].Line == nil || *start.Locations[0].Line != 12 {
+		t.Fatalf("locations = %#v", start.Locations)
+	}
+}
+
+func TestReplayFileToolUsesEditKindAndAbsoluteLocation(t *testing.T) {
+	cwd := testCWD(t)
+	update := replayToolStart("edit-1", model.ToolCall{
+		Name:      "edit",
+		Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`,
+	}, cwd)
+
+	start := update.ToolCall
+	if start == nil || start.Kind != acpsdk.ToolKindEdit || start.Title != "Edit: README.md" {
+		t.Fatalf("tool start = %#v", update)
+	}
+	if len(start.Locations) != 1 || start.Locations[0].Path != filepath.Join(cwd, "README.md") || start.Locations[0].Line != nil {
+		t.Fatalf("locations = %#v", start.Locations)
+	}
+}
+
+func TestFileToolsAlwaysUseLocalFallback(t *testing.T) {
+	a := NewAgent(&fakeRuntime{})
+	a.clientCapabilities.Terminal = true
+	a.terminalClient = &fakeTerminalClient{}
+	called := false
+	runner := a.toolRunner("sess", testCWD(t))
+	result, err := runner(context.Background(), model.ToolCall{Name: "write", Arguments: `{"path":"note.txt","content":"text"}`}, func(context.Context, model.ToolCall) (tool.RunResult, error) {
+		called = true
+		return tool.RunResult{Content: "local"}, nil
+	})
+	if err != nil || !called || result.Content != "local" {
+		t.Fatalf("runner = %#v, %v, fallback called=%t", result, err, called)
 	}
 }
 
@@ -83,7 +147,7 @@ func TestObserverSendsCompletePlanUpdates(t *testing.T) {
 				updates = append(updates, update)
 				return nil
 			}
-			a.observe(context.Background(), "sess")(agentpkg.Event{
+			a.observe(context.Background(), "sess", "/tmp/work")(agentpkg.Event{
 				Type:         agentpkg.EventToolFinished,
 				ToolCall:     model.ToolCall{ID: "plan-1", Name: "update_plan"},
 				ToolResult:   "Plan updated",
@@ -132,7 +196,7 @@ func TestReplayTranscriptRestoresPlanAndToolFailure(t *testing.T) {
 		updates = append(updates, update)
 		return nil
 	}
-	if err := a.replayTranscript(context.Background(), "sess", trans); err != nil {
+	if err := a.replayTranscript(context.Background(), "sess", "/tmp/work", trans); err != nil {
 		t.Fatalf("replayTranscript() error = %v", err)
 	}
 
@@ -152,7 +216,7 @@ func TestObserverDoesNotClearPlanAfterFailedUpdate(t *testing.T) {
 		updates = append(updates, update)
 		return nil
 	}
-	a.observe(context.Background(), "sess")(agentpkg.Event{
+	a.observe(context.Background(), "sess", "/tmp/work")(agentpkg.Event{
 		Type:       agentpkg.EventToolFinished,
 		ToolCall:   model.ToolCall{ID: "plan-1", Name: "update_plan"},
 		ToolResult: "invalid status",

@@ -493,6 +493,12 @@ func toolDisplayName(name string) string {
 	switch name {
 	case "run_shell":
 		return "RunShell"
+	case "read":
+		return "Read"
+	case "edit":
+		return "Edit"
+	case "write":
+		return "Write"
 	case "web_search":
 		return "WebSearch"
 	case "web_fetch":

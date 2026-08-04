@@ -360,13 +360,55 @@ func TestRunTurnBuildsSystemPromptAndTools(t *testing.T) {
 	if provider.request.MaxTokens != 384000 {
 		t.Fatalf("max tokens = %d", provider.request.MaxTokens)
 	}
-	assertToolNames(t, provider.request.Tools, "run_shell", "load_skill")
-	assertMissingToolNames(t, provider.request.Tools, "read_file", "write_file", "edit_file")
+	assertToolNames(t, provider.request.Tools, "read", "run_shell", "edit", "write", "load_skill")
+	assertToolOrder(t, provider.request.Tools, "read", "run_shell", "edit", "write", "update_plan", "load_skill")
 	if provider.request.System == "" {
 		t.Fatal("system prompt is empty")
 	}
 	if provider.providerModel != "test-model" {
 		t.Fatalf("provider model = %q", provider.providerModel)
+	}
+}
+
+func TestRunTurnFileToolsUseSessionCWD(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	provider := &sequenceProvider{
+		responses: []model.ChatResponse{
+			{ToolCalls: []model.ToolCall{
+				{ID: "read_1", Name: "read", Arguments: `{"path":"note.txt"}`},
+				{ID: "edit_1", Name: "edit", Arguments: `{"path":"note.txt","edits":[{"old_text":"first","new_text":"second"}]}`},
+				{ID: "write_1", Name: "write", Arguments: `{"path":"nested/new.txt","content":"created\n"}`},
+			}},
+			{Content: "done"},
+		},
+	}
+	r := newTestRuntime(t, provider)
+
+	result, err := r.RunTurn(context.Background(), TurnOptions{Prompt: "update files", CWD: cwd})
+	if err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if result.Content != "done" {
+		t.Fatalf("content = %q", result.Content)
+	}
+	if got, err := os.ReadFile(filepath.Join(cwd, "note.txt")); err != nil || string(got) != "second\n" {
+		t.Fatalf("edited file = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(cwd, "nested", "new.txt")); err != nil || string(got) != "created\n" {
+		t.Fatalf("written file = %q, %v", got, err)
+	}
+	messages := provider.requests[1].Messages
+	if got := messages[len(messages)-3].Content; got != "first\n" {
+		t.Fatalf("read result = %q", got)
+	}
+	if got := messages[len(messages)-2].Content; !strings.Contains(got, "Applied 1 edit") {
+		t.Fatalf("edit result = %q", got)
+	}
+	if got := messages[len(messages)-1].Content; !strings.Contains(got, "Wrote 8 bytes") {
+		t.Fatalf("write result = %q", got)
 	}
 }
 
@@ -1186,13 +1228,14 @@ func assertToolNames(t *testing.T, tools []model.ToolDefinition, names ...string
 	}
 }
 
-func assertMissingToolNames(t *testing.T, tools []model.ToolDefinition, names ...string) {
+func assertToolOrder(t *testing.T, tools []model.ToolDefinition, names ...string) {
 	t.Helper()
-	for _, definition := range tools {
-		for _, name := range names {
-			if definition.Name == name {
-				t.Fatalf("unexpected tool %q in %#v", name, tools)
-			}
+	if len(tools) < len(names) {
+		t.Fatalf("tool count = %d, want at least %d", len(tools), len(names))
+	}
+	for i, name := range names {
+		if tools[i].Name != name {
+			t.Fatalf("tool %d = %q, want %q", i, tools[i].Name, name)
 		}
 	}
 }

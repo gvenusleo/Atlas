@@ -11,7 +11,7 @@ atlas
 atlas --session <id>
 ```
 
-The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, supports multiline pasted input, and restores persisted history when resuming a session. While a turn or manual compaction is active, a transient row above the composer shows elapsed time. It uses `Thinking` for streamed reasoning and `Working` for model output, tool execution, or compaction. The footer shows the active model, reasoning effort, and the most recent context usage as a percentage of `context_window`.
+The optional `--session` flag loads an existing transcript or creates that session on the first turn. The interface streams model output with terminal-rendered Markdown, keeps tool calls and results in occurrence order, and renders `read`, `edit`, and `write` as compact one-line summaries with their target paths. It supports multiline pasted input and restores persisted history when resuming a session. While a turn or manual compaction is active, a transient row above the composer shows elapsed time. It uses `Thinking` for streamed reasoning and `Working` for model output, tool execution, or compaction. The footer shows the active model, reasoning effort, and the most recent context usage as a percentage of `context_window`.
 
 Controls:
 
@@ -62,7 +62,7 @@ ACP supported features:
 - Skill slash commands, e.g. `/think ...`
 - Plan updates: `update_plan` tool calls are mapped to `plan_update` session updates, rendered as a structured plan panel in editors
 
-When connected via ACP, `run_shell` requests the client terminal when available and embeds its output. ACP terminals do not accept standard input, so calls with non-empty `stdin` execute through Atlas's local shell. If terminal creation is unavailable, Atlas also falls back to its local shell.
+When connected via ACP, `run_shell` requests the client terminal when available and embeds its output. ACP terminals do not accept standard input, so calls with non-empty `stdin` execute through Atlas's local shell. If terminal creation is unavailable, Atlas also falls back to its local shell. The `read`, `edit`, and `write` tools always execute in the Atlas process filesystem; ACP exposes them as read/edit tool calls with absolute file locations so compatible clients can follow the active file.
 
 `additionalDirectories` are saved and returned as session metadata, but relative paths are still resolved from `cwd`. ACP auth, permission requests, MCP connections, audio, and non-image binary resource input are not currently supported.
 

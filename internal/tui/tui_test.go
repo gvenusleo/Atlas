@@ -1687,6 +1687,9 @@ func TestToolSummaryUsesPrimaryArguments(t *testing.T) {
 		want string
 	}{
 		{call: model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`}, want: "RunShell: Inspect files"},
+		{call: model.ToolCall{Name: "read", Arguments: `{"path":"internal/runtime/runtime.go","offset":10}`}, want: "Read: internal/runtime/runtime.go"},
+		{call: model.ToolCall{Name: "edit", Arguments: `{"path":"README.md","edits":[{"old_text":"old","new_text":"new"}]}`}, want: "Edit: README.md"},
+		{call: model.ToolCall{Name: "write", Arguments: `{"path":"notes/new.md","content":"new"}`}, want: "Write: notes/new.md"},
 		{call: model.ToolCall{Name: "web_search", Arguments: `{"query":"AI news"}`}, want: "WebSearch: AI news"},
 		{call: model.ToolCall{Name: "web_fetch", Arguments: `{"url":"https://example.com"}`}, want: "WebFetch: https://example.com"},
 		{call: model.ToolCall{Name: "load_skill", Arguments: `{"name":"git-commit"}`}, want: "LoadSkill: git-commit"},

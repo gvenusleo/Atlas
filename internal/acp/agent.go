@@ -237,7 +237,7 @@ func (a *Agent) Prompt(ctx context.Context, params acpsdk.PromptRequest) (acpsdk
 		AdditionalDirectories:    state.additionalDirectories,
 		AdditionalDirectoriesSet: true,
 		CWD:                      state.cwd,
-		Observer:                 a.observe(turnCtx, params.SessionId),
+		Observer:                 a.observe(turnCtx, params.SessionId, state.cwd),
 		ToolRunner:               a.toolRunner(params.SessionId, state.cwd),
 	})
 	if err != nil {
@@ -284,7 +284,7 @@ func (a *Agent) LoadSession(ctx context.Context, params acpsdk.LoadSessionReques
 	}
 	defaultReasoning := modelInitialReasoningEffort(models, models.Default)
 	a.setSession(string(params.SessionId), params.Cwd, models.Default, defaultReasoning, params.AdditionalDirectories)
-	if err := a.replayTranscript(ctx, params.SessionId, trans); err != nil {
+	if err := a.replayTranscript(ctx, params.SessionId, params.Cwd, trans); err != nil {
 		a.deleteSessionState(string(params.SessionId))
 		return acpsdk.LoadSessionResponse{}, err
 	}
@@ -433,7 +433,7 @@ func (a *Agent) SetSessionMode(context.Context, acpsdk.SetSessionModeRequest) (a
 	return acpsdk.SetSessionModeResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionSetMode)
 }
 
-func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.Observer {
+func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId, cwd string) agent.Observer {
 	return func(event agent.Event) {
 		if a.sendUpdate == nil {
 			return
@@ -452,13 +452,7 @@ func (a *Agent) observe(ctx context.Context, sessionID acpsdk.SessionId) agent.O
 			}
 			update = acpsdk.UpdateAgentThoughtText(event.Content)
 		case agent.EventToolStarted:
-			update = acpsdk.StartToolCall(
-				toolCallID(event),
-				tool.DisplayTitle(event.ToolCall),
-				acpsdk.WithStartKind(toolKind(event.ToolCall.Name)),
-				acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
-				acpsdk.WithStartRawInput(rawToolInput(event.ToolCall.Arguments)),
-			)
+			update = startToolCall(toolCallID(event), event.ToolCall, cwd)
 		case agent.EventToolFinished:
 			status := acpsdk.ToolCallStatusCompleted
 			if event.ToolError {
@@ -652,7 +646,7 @@ func terminalToolCallKey(sessionID acpsdk.SessionId, toolCallID acpsdk.ToolCallI
 	return string(sessionID) + "\x00" + string(toolCallID)
 }
 
-func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId, trans *transcript.Transcript) error {
+func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId, cwd string, trans *transcript.Transcript) error {
 	if a.sendUpdate == nil || trans == nil {
 		return nil
 	}
@@ -685,7 +679,7 @@ func (a *Agent) replayTranscript(ctx context.Context, sessionID acpsdk.SessionId
 				toolID := replayToolCallID(messageIndex, toolIndex, call.ID)
 				pendingToolIDs = append(pendingToolIDs, toolID)
 				pendingToolNames[toolID] = call.Name
-				if err := a.sendSessionUpdate(ctx, sessionID, replayToolStart(toolID, call)); err != nil {
+				if err := a.sendSessionUpdate(ctx, sessionID, replayToolStart(toolID, call, cwd)); err != nil {
 					return err
 				}
 			}
@@ -1234,14 +1228,20 @@ func toolCallID(event agent.Event) acpsdk.ToolCallId {
 	return acpsdk.ToolCallId(fmt.Sprintf("tool_%d", event.Step))
 }
 
-func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall) acpsdk.SessionUpdate {
-	return acpsdk.StartToolCall(
-		toolID,
-		tool.DisplayTitle(call),
+func replayToolStart(toolID acpsdk.ToolCallId, call model.ToolCall, cwd string) acpsdk.SessionUpdate {
+	return startToolCall(toolID, call, cwd)
+}
+
+func startToolCall(toolID acpsdk.ToolCallId, call model.ToolCall, cwd string) acpsdk.SessionUpdate {
+	opts := []acpsdk.ToolCallStartOpt{
 		acpsdk.WithStartKind(toolKind(call.Name)),
 		acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
 		acpsdk.WithStartRawInput(rawToolInput(call.Arguments)),
-	)
+	}
+	if locations := toolLocations(call, cwd); len(locations) > 0 {
+		opts = append(opts, acpsdk.WithStartLocations(locations))
+	}
+	return acpsdk.StartToolCall(toolID, tool.DisplayTitle(call), opts...)
 }
 
 func replayToolResult(toolID acpsdk.ToolCallId, msg model.Message) acpsdk.SessionUpdate {
@@ -1296,9 +1296,35 @@ func toolKind(name string) acpsdk.ToolKind {
 		return acpsdk.ToolKindFetch
 	case "run_shell":
 		return acpsdk.ToolKindExecute
+	case "read":
+		return acpsdk.ToolKindRead
+	case "edit", "write":
+		return acpsdk.ToolKindEdit
 	default:
 		return acpsdk.ToolKindOther
 	}
+}
+
+func toolLocations(call model.ToolCall, cwd string) []acpsdk.ToolCallLocation {
+	if call.Name != "read" && call.Name != "edit" && call.Name != "write" {
+		return nil
+	}
+	var args struct {
+		Path   string `json:"path"`
+		Offset int    `json:"offset"`
+	}
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil || strings.TrimSpace(args.Path) == "" {
+		return nil
+	}
+	path := args.Path
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(cwd, path)
+	}
+	location := acpsdk.ToolCallLocation{Path: filepath.Clean(path)}
+	if call.Name == "read" && args.Offset > 0 {
+		location.Line = new(args.Offset)
+	}
+	return []acpsdk.ToolCallLocation{location}
 }
 
 func rawToolInput(arguments string) any {

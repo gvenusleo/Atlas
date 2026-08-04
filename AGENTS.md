@@ -8,7 +8,7 @@
 - `app/` is the Flutter desktop and mobile client. It currently provides the application shell only and is not connected to the Atlas runtime.
 - When runtime integration is added, the Flutter client must use the existing WebSocket channel rather than reimplementing the agent loop, tools, provider calls, or session persistence in Dart.
 - `model.Provider` is the only interface to model backends. Provider adapters own connection settings, authentication, provider-specific request formats, and response conversion. Provider connection fields must not enter `model.ChatRequest`.
-- ACP `run_shell` may execute through a client terminal, but calls with non-empty `stdin` execute through the Atlas process because ACP terminals do not accept standard input. Remote ACP workspaces where those filesystems differ are not supported.
+- ACP `run_shell` may execute through a client terminal, but calls with non-empty `stdin` execute through the Atlas process because ACP terminals do not accept standard input. The `read`, `edit`, and `write` tools always use the Atlas process filesystem. Remote ACP workspaces where those filesystems differ are not supported.
 
 ## Change Constraints
 
