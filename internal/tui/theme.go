@@ -46,12 +46,12 @@ type tuiTheme struct {
 var (
 	lightTheme = newTUITheme(false, colorPalette{
 		text: "#202433", muted: "#666B78", divider: "#C6CAD2", surface: "#F0F2F6",
-		selected: "#3159C7", link: "#087EA4", code: "#0F766E", brand: "#5267D9",
+		selected: "#1E66F5", link: "#087EA4", code: "#0F766E", brand: "#2F76F6",
 		reasoning: "#7C3AED", context: "#0F766E", working: "#B26A00", success: "#238636", error: "#C93C49",
 	})
 	darkTheme = newTUITheme(true, colorPalette{
 		text: "#E6E9EF", muted: "#9AA2B1", divider: "#4A515D", surface: "#2C3038",
-		selected: "#82A7FF", link: "#65C4E8", code: "#69D6C4", brand: "#A7B8FF",
+		selected: "#89B4FA", link: "#65C4E8", code: "#69D6C4", brand: "#A8C4FF",
 		reasoning: "#C5A3FF", context: "#69D6C4", working: "#F2C66D", success: "#7AD98B", error: "#FF8792",
 	})
 )

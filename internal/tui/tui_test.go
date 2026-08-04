@@ -209,11 +209,11 @@ func TestThemesUseAtlasFallbackColors(t *testing.T) {
 		palette colorPalette
 	}{
 		{name: "light", theme: lightTheme, palette: colorPalette{
-			text: "#202433", muted: "#666B78", divider: "#C6CAD2", surface: "#F0F2F6", selected: "#3159C7", link: "#087EA4", code: "#0F766E", brand: "#5267D9",
+			text: "#202433", muted: "#666B78", divider: "#C6CAD2", surface: "#F0F2F6", selected: "#1E66F5", link: "#087EA4", code: "#0F766E", brand: "#2F76F6",
 			reasoning: "#7C3AED", context: "#0F766E", working: "#B26A00", success: "#238636", error: "#C93C49",
 		}},
 		{name: "dark", theme: darkTheme, palette: colorPalette{
-			text: "#E6E9EF", muted: "#9AA2B1", divider: "#4A515D", surface: "#2C3038", selected: "#82A7FF", link: "#65C4E8", code: "#69D6C4", brand: "#A7B8FF",
+			text: "#E6E9EF", muted: "#9AA2B1", divider: "#4A515D", surface: "#2C3038", selected: "#89B4FA", link: "#65C4E8", code: "#69D6C4", brand: "#A8C4FF",
 			reasoning: "#C5A3FF", context: "#69D6C4", working: "#F2C66D", success: "#7AD98B", error: "#FF8792",
 		}},
 	}
@@ -1380,8 +1380,8 @@ func TestAssistantMarkdownHeadingsRenderInBlue(t *testing.T) {
 		dark bool
 		rgb  string
 	}{
-		{name: "light", rgb: "49;89;199"},
-		{name: "dark", dark: true, rgb: "130;167;255"},
+		{name: "light", rgb: "30;102;245"},
+		{name: "dark", dark: true, rgb: "137;180;250"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
