@@ -5,6 +5,7 @@ import 'package:atlas_app/app/atlas_app.dart';
 import 'package:atlas_app/features/workspace/presentation/workspace_page.dart';
 import 'package:atlas_app/features/workspace/presentation/workspace_metrics.dart';
 import 'package:atlas_app/features/workspace/presentation/workspace_shell.dart';
+import 'package:atlas_app/features/workspace/presentation/widgets/workspace_controls.dart';
 import 'package:atlas_app/shared/theme/atlas_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -123,8 +124,15 @@ void main() {
           of: find.byKey(ValueKey(key)),
           matching: find.byType(AnimatedContainer),
         );
-        expect(tester.getSize(button), const Size.square(40));
+        expect(
+          tester.getSize(button),
+          const Size.square(WorkspaceMetrics.desktopToolbarButtonSize),
+        );
       }
+      expect(
+        tester.getSize(find.byType(WorkspaceTab)),
+        const Size(168, WorkspaceMetrics.desktopTabHeight),
+      );
       expect(
         tester.getCenter(find.byKey(const ValueKey('atlas-left-toggle'))).dx,
         lessThan(tester.getTopRight(left).dx),

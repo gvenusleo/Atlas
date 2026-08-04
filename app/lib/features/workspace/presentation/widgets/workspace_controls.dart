@@ -16,9 +16,9 @@ class WorkspaceTab extends StatelessWidget {
     final colors = AtlasColors.of(context);
 
     return Container(
-      height: 32,
-      constraints: const BoxConstraints(minWidth: 112, maxWidth: 180),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: WorkspaceMetrics.desktopTabHeight,
+      constraints: const BoxConstraints(minWidth: 104, maxWidth: 168),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
         color: colors.raised,
@@ -148,7 +148,7 @@ class WorkspaceToolbarButton extends StatefulWidget {
     required this.tooltip,
     required this.onPressed,
     this.active = false,
-    this.size = 40,
+    this.size = WorkspaceMetrics.desktopToolbarButtonSize,
   });
 
   final IconData icon;

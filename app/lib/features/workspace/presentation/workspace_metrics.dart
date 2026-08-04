@@ -30,7 +30,13 @@ abstract final class WorkspaceMetrics {
   static const resizeHandleWidth = 8.0;
 
   /// Toolbar height used by desktop panels.
-  static const desktopToolbarHeight = 44.0;
+  static const desktopToolbarHeight = 38.0;
+
+  /// Square side length of desktop toolbar buttons.
+  static const desktopToolbarButtonSize = 34.0;
+
+  /// Height of tabs shown in the desktop toolbar.
+  static const desktopTabHeight = 28.0;
 
   /// Toolbar height used by compact layouts.
   static const compactToolbarHeight = 48.0;

@@ -162,7 +162,9 @@ class WorkspacePanel extends StatelessWidget {
                       AnimatedContainer(
                         duration: animationDuration,
                         curve: Curves.easeOutCubic,
-                        width: leftActive ? 0 : 40,
+                        width: leftActive
+                            ? 0
+                            : WorkspaceMetrics.desktopToolbarButtonSize,
                       ),
                     const SizedBox(width: 4),
                     const WorkspaceTab(label: 'New session'),
