@@ -33,6 +33,10 @@ type turnUpdateMsg struct {
 	done  *turnDoneMsg
 }
 
+type conversationRenderMsg struct {
+	generation uint64
+}
+
 // sessionLoadedMsg contains the persisted messages requested at startup.
 type sessionLoadedMsg struct {
 	messages      []model.Message

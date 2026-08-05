@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	maxComposerHeight = 10
-	statusIndent      = "  "
+	maxComposerHeight          = 10
+	statusIndent               = "  "
+	conversationRenderInterval = time.Second / 30
 )
 
 // Options configures the TUI at startup.
@@ -92,12 +93,16 @@ type Model struct {
 	// current points to the assistant message being streamed (or nil).
 	current     *chatMessage
 	showWelcome bool
+
+	conversationRenderPending    bool
+	conversationRenderGeneration uint64
 }
 
 // New creates the initial TUI model.
 func New(opts Options) Model {
 	vp := viewport.New()
-	vp.SoftWrap = true
+	// Conversation blocks own wrapping so viewport navigation stays constant-time.
+	vp.SoftWrap = false
 
 	ta := textarea.New()
 	ta.SetVirtualCursor(false)
@@ -205,10 +210,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.modelPicker.active() {
 				m.modelPicker.close()
 				m.input.Focus()
-				m.rebuild()
+				m.relayout()
 			} else if m.slashPopup.active() {
 				m.slashPopup.dismiss(m.input.Value())
-				m.rebuild()
+				m.relayout()
 			} else if m.turnActive && m.turnCancel != nil {
 				m.turnCancel()
 			} else if m.compactActive && m.compactCancel != nil {
@@ -223,24 +228,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if !m.modelPicker.active() {
 				m.input.Focus()
 			}
-			m.rebuild()
+			m.relayout()
 			return m, nil
 		}
 		if m.slashPopup.active() {
 			switch key {
 			case "up":
 				m.slashPopup.move(-1)
-				m.rebuild()
+				m.relayout()
 				return m, nil
 			case "down":
 				m.slashPopup.move(1)
-				m.rebuild()
+				m.relayout()
 				return m, nil
 			case "tab", "enter":
 				if command, ok := m.slashPopup.selectedCommand(); ok {
 					if replaceSlashCompletion(&m.input, m.slashPopup.target, command.name) {
 						m.slashPopup.dismiss(m.input.Value())
-						m.rebuild()
+						m.relayout()
 					}
 				}
 				return m, nil
@@ -318,7 +323,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input, cmd = m.input.Update(msg)
 		m.slashPopup.sync(m.input)
 		fileCmd := m.syncFileMention()
-		m.rebuild()
+		m.relayout()
 		return m, tea.Batch(cmd, fileCmd)
 
 	case tea.MouseClickMsg:
@@ -396,7 +401,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input, cmd = m.input.Update(msg)
 		m.slashPopup.sync(m.input)
 		fileCmd := m.syncFileMention()
-		m.rebuild()
+		m.relayout()
 		return m, tea.Batch(cmd, fileCmd)
 
 	case copySelectionMsg:
@@ -410,11 +415,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.done != nil {
 			m.handleTurnDone(*msg.done)
 		}
-		m.rebuild()
+		var renderCmd tea.Cmd
+		switch {
+		case msg.done != nil:
+			m.rebuild()
+		case msg.event == nil:
+		case msg.event.Type == agent.EventModelDelta:
+			renderCmd = m.scheduleConversationRender()
+		case eventChangesConversation(msg.event.Type):
+			m.rebuild()
+		}
 		if msg.done != nil {
 			return m, nil
 		}
-		return m, pollTurnUpdates(m.eventCh)
+		return m, tea.Batch(pollTurnUpdates(m.eventCh), renderCmd)
+
+	case conversationRenderMsg:
+		if m.conversationRenderPending && msg.generation == m.conversationRenderGeneration {
+			m.rebuild()
+		}
+		return m, nil
 
 	case compactDoneMsg:
 		m.handleCompactDone(msg)
@@ -475,7 +495,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fileCatalogLoadedMsg:
 		if m.filePicker.acceptCatalog(msg) {
-			m.rebuild()
+			m.relayout()
 		}
 		return m, nil
 
@@ -787,6 +807,28 @@ func pollTurnUpdates(ch <-chan turnUpdateMsg) tea.Cmd {
 	}
 }
 
+func eventChangesConversation(eventType agent.EventType) bool {
+	switch eventType {
+	case agent.EventToolStarted, agent.EventToolFinished, agent.EventTurnFinished:
+		return true
+	default:
+		return false
+	}
+}
+
+// scheduleConversationRender bounds Markdown work without delaying event handling.
+func (m *Model) scheduleConversationRender() tea.Cmd {
+	if m.conversationRenderPending {
+		return nil
+	}
+	m.conversationRenderPending = true
+	m.conversationRenderGeneration++
+	generation := m.conversationRenderGeneration
+	return tea.Tick(conversationRenderInterval, func(time.Time) tea.Msg {
+		return conversationRenderMsg{generation: generation}
+	})
+}
+
 // handleAgentEvent updates conversation state from an agent event.
 func (m *Model) handleAgentEvent(e agent.Event) {
 	switch e.Type {
@@ -827,7 +869,7 @@ func (m *Model) openModelPicker() {
 	m.modelPicker.open(m.models, m.modelValue, m.reasoningEffort)
 	if m.modelPicker.active() {
 		m.input.Blur()
-		m.rebuild()
+		m.relayout()
 	}
 }
 
@@ -968,6 +1010,8 @@ func (m *Model) clearSelection(resumeFollow bool) {
 
 // rebuild refreshes viewport content and recalculates the layout split.
 func (m *Model) rebuild() {
+	m.conversationRenderPending = false
+	m.conversationRenderGeneration++
 	if !m.ready || m.height == 0 {
 		return
 	}
@@ -1023,7 +1067,19 @@ func (m *Model) rebuild() {
 		appendRendered(rendered, continuesPreviousTools)
 	}
 	m.viewport.SetContent(content.String())
+	m.updateViewportLayout(followBottom)
+}
 
+// relayout updates viewport geometry without rebuilding unchanged history.
+func (m *Model) relayout() {
+	if !m.ready || m.height == 0 {
+		return
+	}
+	followBottom := m.viewport.AtBottom() && !m.selection.active
+	m.updateViewportLayout(followBottom)
+}
+
+func (m *Model) updateViewportLayout(followBottom bool) {
 	layout := calculateLayout(m.height, m.renderInputArea().height, m.turnStatus.active())
 	m.viewport.SetHeight(layout.viewportHeight)
 	if followBottom {

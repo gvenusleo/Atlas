@@ -622,26 +622,26 @@ func (m *Model) handleFileMentionKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	switch msg.String() {
 	case "up":
 		m.filePicker.move(-1)
-		m.rebuild()
+		m.relayout()
 		return true, nil
 	case "down":
 		m.filePicker.move(1)
-		m.rebuild()
+		m.relayout()
 		return true, nil
 	case "esc":
 		m.filePicker.dismiss(m.input.Value())
-		m.rebuild()
+		m.relayout()
 		return true, nil
 	case "tab", "enter":
 		if m.filePicker.target.query == "" {
 			cmd := m.filePicker.openBrowser(m.theme)
 			m.input.Blur()
-			m.rebuild()
+			m.relayout()
 			return true, cmd
 		}
 		if path, ok := m.filePicker.selectedPath(); ok {
 			m.insertSelectedFile(path)
-			m.rebuild()
+			m.relayout()
 			return true, nil
 		}
 		if msg.String() == "tab" {
@@ -661,7 +661,7 @@ func (m Model) handleFileBrowserKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.filePicker.returnToSearch()
 		m.input.Focus()
-		m.rebuild()
+		m.relayout()
 		return m, nil
 	}
 	cmd, path, selected := m.filePicker.updateBrowser(msg)
@@ -669,7 +669,7 @@ func (m Model) handleFileBrowserKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.Focus()
 		m.insertSelectedFile(path)
 	}
-	m.rebuild()
+	m.relayout()
 	return m, cmd
 }
 

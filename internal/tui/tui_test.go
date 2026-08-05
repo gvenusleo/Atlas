@@ -518,6 +518,68 @@ func TestMouseWheelScrollsConversationHistory(t *testing.T) {
 	}
 }
 
+func TestViewportDoesNotRewrapRenderedConversation(t *testing.T) {
+	m := New(Options{})
+
+	if m.viewport.SoftWrap {
+		t.Fatal("viewport soft wrapping must stay disabled after message rendering")
+	}
+}
+
+func TestConversationBlocksFitViewportWidth(t *testing.T) {
+	const width = 24
+	assistant := newAssistantMessage()
+	assistant.content.WriteByte('`')
+	assistant.content.WriteString(strings.Repeat("x", 80))
+	assistant.content.WriteByte('`')
+	plan := toolCallView{
+		call: model.ToolCall{
+			Name:      "update_plan",
+			Arguments: `{"plan":[{"step":"A deliberately long plan step without manual wrapping","status":"pending"}]}`,
+		},
+	}
+	toolCall := toolCallView{
+		call: model.ToolCall{
+			Name:      "run_shell",
+			Arguments: `{"purpose":"A deliberately long tool purpose without manual wrapping","command":"pwd"}`,
+		},
+	}
+
+	blocks := map[string]string{
+		"assistant": assistant.render(width, lightTheme),
+		"user":      newUserMessage(strings.Repeat("x", 80)).render(width, lightTheme),
+		"notice":    newNoticeMessage(strings.Repeat("x", 80), false).render(width, lightTheme),
+		"tool":      renderToolCall(toolCall, width, lightTheme),
+		"plan":      renderPlanUpdate(plan, width, lightTheme),
+	}
+	for name, block := range blocks {
+		for line := range strings.SplitSeq(block, "\n") {
+			if got := ansi.StringWidth(line); got > width {
+				t.Errorf("%s line width = %d, want at most %d: %q", name, got, width, line)
+			}
+		}
+	}
+}
+
+func TestTypingDoesNotRebuildConversationHistory(t *testing.T) {
+	m := New(Options{})
+	m.showWelcome = false
+	message := newAssistantMessage()
+	message.content.WriteString("stable history")
+	m.messages = append(m.messages, message)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	m = updated.(Model)
+	want := m.viewport.GetContent()
+
+	message.markdownCache.rendered = "unexpected rebuild"
+	updated, _ = m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	m = updated.(Model)
+
+	if got := m.viewport.GetContent(); got != want {
+		t.Fatalf("typing rebuilt conversation history: got %q, want %q", got, want)
+	}
+}
+
 func TestPasteUpdatesPrompt(t *testing.T) {
 	m := New(Options{})
 	updated, _ := m.Update(tea.PasteMsg{Content: "first line\nsecond line"})
@@ -2172,7 +2234,7 @@ func TestTurnUpdatesPreserveEventOrder(t *testing.T) {
 		t.Fatal("event update did not schedule the next channel read")
 	}
 
-	second := next()
+	second := pollTurnUpdates(updates)()
 	updated, _ = m.Update(second)
 	m = updated.(Model)
 	if got := m.messages[0].content.String(); got != "final delta" {
@@ -2183,6 +2245,69 @@ func TestTurnUpdatesPreserveEventOrder(t *testing.T) {
 	}
 	if !m.input.Focused() {
 		t.Fatal("input remained blurred after ordered completion")
+	}
+}
+
+func TestModelDeltasCoalesceConversationRendering(t *testing.T) {
+	m := New(Options{})
+	m.showWelcome = false
+	m.turnActive = true
+	m.current = newAssistantMessage()
+	m.messages = append(m.messages, m.current)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	m = updated.(Model)
+
+	for _, content := range []string{"first ", "second"} {
+		event := agent.Event{Type: agent.EventModelDelta, Content: content}
+		updated, _ = m.Update(turnUpdateMsg{event: &event})
+		m = updated.(Model)
+	}
+	if !m.conversationRenderPending {
+		t.Fatal("model deltas did not schedule a conversation render")
+	}
+	if strings.Contains(ansi.Strip(m.viewport.GetContent()), "first second") {
+		t.Fatal("model deltas rebuilt the conversation before the render tick")
+	}
+
+	updated, _ = m.Update(conversationRenderMsg{generation: m.conversationRenderGeneration})
+	m = updated.(Model)
+	if !strings.Contains(ansi.Strip(m.viewport.GetContent()), "first second") {
+		t.Fatalf("render tick omitted model deltas: %q", ansi.Strip(m.viewport.GetContent()))
+	}
+	if m.conversationRenderPending {
+		t.Fatal("render remained pending after the scheduled refresh")
+	}
+}
+
+func TestToolBoundaryFlushesPendingModelDeltas(t *testing.T) {
+	m := New(Options{})
+	m.showWelcome = false
+	m.turnActive = true
+	m.current = newAssistantMessage()
+	m.messages = append(m.messages, m.current)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	m = updated.(Model)
+
+	delta := agent.Event{Type: agent.EventModelDelta, Content: "before tool"}
+	updated, _ = m.Update(turnUpdateMsg{event: &delta})
+	m = updated.(Model)
+	toolStarted := agent.Event{
+		Type: agent.EventToolStarted,
+		ToolCall: model.ToolCall{
+			ID:        "call-1",
+			Name:      "run_shell",
+			Arguments: `{"purpose":"Inspect files","command":"ls"}`,
+		},
+	}
+	updated, _ = m.Update(turnUpdateMsg{event: &toolStarted})
+	m = updated.(Model)
+
+	rendered := ansi.Strip(m.viewport.GetContent())
+	if !strings.Contains(rendered, "before tool") || !strings.Contains(rendered, "• RunShell: Inspect files") {
+		t.Fatalf("tool boundary did not flush pending content: %q", rendered)
+	}
+	if m.conversationRenderPending {
+		t.Fatal("tool boundary left a stale render pending")
 	}
 }
 
