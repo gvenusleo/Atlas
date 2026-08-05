@@ -1053,7 +1053,10 @@ func (m *Model) rebuild() {
 			previousKind = previous.endKind()
 		}
 		currentKind := msg.startKind()
-		continuesPreviousTools := previousKind == conversationBlockTool && currentKind == conversationBlockTool
+		// Tool and plan transitions render their own boundary, so keep adjacent blocks together.
+		continuesToolSection := (previousKind == conversationBlockTool &&
+			(currentKind == conversationBlockTool || currentKind == conversationBlockPlan)) ||
+			(previousKind == conversationBlockPlan && currentKind == conversationBlockTool)
 		endKind := msg.endKind()
 		followedByModelContent := next != nil &&
 			(endKind == conversationBlockTool || endKind == conversationBlockPlan) &&
@@ -1064,7 +1067,7 @@ func (m *Model) rebuild() {
 			previousKind,
 			followedByModelContent,
 		)
-		appendRendered(rendered, continuesPreviousTools)
+		appendRendered(rendered, continuesToolSection)
 	}
 	m.viewport.SetContent(content.String())
 	m.updateViewportLayout(followBottom)

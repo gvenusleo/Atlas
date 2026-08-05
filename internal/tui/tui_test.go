@@ -1953,6 +1953,45 @@ func TestPlanUpdateIsSeparatedFromRegularTools(t *testing.T) {
 	}
 }
 
+func TestRebuildKeepsCrossMessagePlanBoundariesAdjacent(t *testing.T) {
+	const width = 40
+	toolCall := model.ToolCall{Name: "run_shell", Arguments: `{"purpose":"Inspect files","command":"ls"}`}
+	planCall := model.ToolCall{Name: "update_plan", Arguments: `{"plan":[{"step":"Edit files","status":"in_progress"}]}`}
+	tests := []struct {
+		name       string
+		calls      []model.ToolCall
+		wantBefore string
+		wantAfter  string
+	}{
+		{name: "tool to plan", calls: []model.ToolCall{toolCall, planCall}, wantBefore: "• RunShell: Inspect files", wantAfter: "• Updated Plan"},
+		{name: "plan to tool", calls: []model.ToolCall{planCall, toolCall}, wantBefore: "  □ Edit files", wantAfter: "• RunShell: Inspect files"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			messages := []*chatMessage{newUserMessage("inspect")}
+			for _, call := range test.calls {
+				message := newAssistantMessage()
+				message.toolCalls = []toolCallView{{call: call, done: true}}
+				messages = append(messages, message)
+			}
+
+			m := New(Options{})
+			m.showWelcome = false
+			m.messages = messages
+			updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 20})
+			m = updated.(Model)
+
+			plain := ansi.Strip(m.viewport.GetContent())
+			divider := strings.Repeat("─", width)
+			want := test.wantBefore + "\n" + divider + "\n" + test.wantAfter
+			if !strings.Contains(plain, want) {
+				t.Fatalf("cross-message plan boundary = %q, want adjacent block %q", plain, want)
+			}
+		})
+	}
+}
+
 func TestPlanUpdateShowsActiveAndEmptyStates(t *testing.T) {
 	call := toolCallView{
 		call: model.ToolCall{Name: "update_plan", Arguments: `{"plan":[]}`},
