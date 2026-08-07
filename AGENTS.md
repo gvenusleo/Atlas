@@ -4,10 +4,11 @@
 
 - Atlas is a local general-purpose agent. Its tools have the same filesystem and shell permissions as the Atlas process.
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
-- The repository is being rebuilt as a Dart and Flutter workspace. The Flutter application shell exists; the agent runtime, daemon, CLI, ACP, MCP, and Nocterm clients are not implemented yet.
+- The repository is being rebuilt as a Dart and Flutter workspace. The Flutter application shell exists; the agent runtime, CLI, WebSocket transport, ACP, MCP, and Nocterm behavior are not implemented yet.
 - All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
-- Flutter and Nocterm are clients of the versioned `atlas_protocol`. They must not call model providers, tools, or storage directly.
-- Provider-specific authentication, endpoints, request fields, and response conversion belong in `packages/atlas_provider` and must not enter `atlas_core` domain requests.
+- Local Flutter and Nocterm entry points receive the runtime directly. Remote clients use `atlas_protocol` through `atlas_ws`.
+- Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.
+- Provider-specific authentication, endpoints, request fields, and response conversion belong in `packages/atlas_provider` and must not enter `atlas_runtime` domain requests.
 
 ## Change Constraints
 
@@ -20,14 +21,14 @@
 
 ## Workspace Boundaries
 
-- `atlas_core` contains stable domain models, events, and ports. It must not depend on Flutter, persistence, providers, tools, or protocol transports.
-- `atlas_runtime` owns orchestration, cancellation, compaction, skills, and the model/tool loop.
-- `atlas_storage`, `atlas_provider`, and `atlas_tools` implement ports without owning orchestration.
-- `atlas_rpc` contains generic JSON-RPC behavior; ACP- and MCP-specific lifecycle rules remain in their protocol packages.
-- `atlas_protocol` contains client wire DTOs and must not expose persistence or provider-specific models.
+- `atlas_runtime` owns domain models, events, ports, orchestration, cancellation, compaction, skills, and the model/tool loop. It must not depend on persistence, provider, tool, UI, or protocol implementations.
+- `atlas_storage`, `atlas_provider`, and `atlas_tools` depend on and implement runtime ports without owning orchestration.
+- `atlas_protocol` owns independent client wire DTOs. It must not depend on runtime, persistence, or provider models.
+- `atlas_ws` owns WebSocket client and server transport behavior around `atlas_protocol`. It accepts an injected request handler and must not compose runtime services.
+- `atlas_acp` and `atlas_mcp` use `json_rpc_2` directly and own their different lifecycle and transport rules. Extract shared RPC code only after stable duplication exists.
 - `atlas_acp` and `atlas_mcp` adapt protocols to the shared runtime.
-- `atlas_tui` and `atlas_flutter` are presentation clients of `atlas_protocol`.
-- `atlasd` is the composition root for runtime services. `atlas_cli` is the command-line and terminal entry point.
+- `atlas_tui` renders and interacts with an injected runtime interface; it does not depend on remote client protocols.
+- `atlas_cli` and `atlas_flutter` are application composition roots. Running `atlas` will enter the TUI by default; `atlas server` will expose the composed runtime through `atlas_ws`.
 
 ## Flutter App
 
@@ -36,7 +37,7 @@
 - Use Riverpod for application-wide, asynchronous, or cross-page state. Keep transient presentation state in the owning widget.
 - Use go_router for page-level navigation. Direct `Navigator` calls are acceptable for dialogs, sheets, drawers, and other local UI surfaces.
 - Preserve dependency direction: `app` may depend on features and shared code; features may depend on shared code; shared code must not import a feature.
-- Do not place agent orchestration, provider logic, tool execution, or session persistence in Flutter.
+- Flutter bootstrap may compose runtime adapters, but Flutter feature and presentation code must not own agent orchestration, provider logic, tool execution, or session persistence.
 
 ## Documentation
 

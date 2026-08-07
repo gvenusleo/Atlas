@@ -2,4 +2,9 @@
 
 The command-line and Nocterm entry point for Atlas.
 
-This application will start or connect to the local runtime host. No executable is implemented yet.
+The planned `atlas` executable starts the TUI by default. The `atlas server`
+subcommand will compose the runtime and expose it through `atlas_ws`. Other
+non-interactive commands will share the same runtime instead of duplicating the
+agent loop.
+
+No executable is implemented yet.

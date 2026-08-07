@@ -9,5 +9,5 @@ environment:
 resolution: workspace
 
 dependencies:
-  atlas_protocol: ^0.1.0
+  atlas_runtime: ^0.1.0
   nocterm: ^0.8.0

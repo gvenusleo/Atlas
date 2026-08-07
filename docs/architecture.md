@@ -6,52 +6,67 @@
 
 ## System Shape
 
-Atlas uses one Dart runtime with multiple protocol and presentation adapters. No client or channel owns a separate agent loop.
+Atlas uses one Dart runtime implementation with local application composition
+roots and optional remote transports. No presentation or protocol adapter owns
+a separate agent loop.
 
 ```mermaid
 graph TD
-    FL[Flutter client] --> AP[atlas_protocol]
-    TUI[Nocterm client] --> AP
-    AP --> D[atlasd]
+    CLI[atlas_cli] --> TUI[atlas_tui]
+    CLI --> RT[atlas_runtime]
+    CLI --> WS[atlas_ws]
+    CLI --> PROVIDER[atlas_provider]
+    CLI --> TOOLS[atlas_tools]
+    CLI --> STORAGE[atlas_storage]
+    FL[atlas_flutter] --> RT
+    FL --> PROVIDER
+    FL --> TOOLS
+    FL --> STORAGE
+    TUI --> RT
+    REMOTE[Remote client] --> WS
+    WS --> AP[atlas_protocol]
     ACP[atlas_acp] --> RT[atlas_runtime]
-    D --> RT
-    RT --> CORE[atlas_core]
-    RT --> PROVIDER[atlas_provider]
-    RT --> TOOLS[atlas_tools]
-    RT --> STORAGE[atlas_storage]
-    TOOLS --> MCP[atlas_mcp]
-    ACP --> RPC[atlas_rpc]
-    MCP --> RPC
+    MCP --> RT
+    PROVIDER --> RT
+    TOOLS --> RT
+    STORAGE --> RT
+    ACP --> JRPC[json_rpc_2]
+    MCP --> JRPC
 ```
 
-`atlasd` is the local composition root and exposes the versioned client protocol. Flutter and Nocterm are clients of that protocol. ACP is an inbound adapter to the same runtime; MCP primarily connects external tools to the tool layer.
+`atlas_cli` and `atlas_flutter` each compose one runtime for their own process.
+Running `atlas` will enter the Nocterm TUI by default. Running `atlas server`
+will inject the composed runtime handler into `atlas_ws` for remote clients.
+Local Flutter and Nocterm interactions do not serialize through the remote
+protocol. ACP is an inbound adapter to the same runtime; MCP primarily connects
+external tools to the tool layer.
 
 ## Package Responsibilities
 
 | Package | Responsibility |
 |---|---|
-| `atlas_core` | Stable domain models, run events, and ports |
-| `atlas_runtime` | The single agent engine, orchestration, cancellation, compaction, and skills |
-| `atlas_storage` | SQLite persistence and schema migrations |
+| `atlas_runtime` | Domain models, run events, ports, the single agent engine, orchestration, cancellation, compaction, and skills |
+| `atlas_storage` | Drift persistence, queries, and schema migrations |
 | `atlas_provider` | Provider authentication and provider-specific wire conversion |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
-| `atlas_rpc` | Generic JSON-RPC transport and request lifecycle |
-| `atlas_protocol` | Versioned DTOs shared by Atlas clients and `atlasd` |
+| `atlas_protocol` | Transport-independent DTOs and codecs for remote Atlas clients |
+| `atlas_ws` | WebSocket client and server transport around `atlas_protocol` |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
 | `atlas_mcp` | MCP client first, with server support deferred until needed |
-| `atlas_tui` | Nocterm rendering and terminal interaction |
-| `atlasd` | Runtime composition and local WebSocket host |
-| `atlas_cli` | Command-line and terminal application entry point |
-| `atlas_flutter` | Desktop and mobile presentation client |
+| `atlas_tui` | Nocterm rendering and terminal interaction over an injected runtime interface |
+| `atlas_cli` | Composition root for the default TUI, `server`, and other CLI commands |
+| `atlas_flutter` | Composition root and presentation client for desktop and mobile |
 
 ## Dependency Rules
 
-- `atlas_core` has no dependency on Flutter, storage, providers, tools, or transports.
-- Runtime effects enter through core ports; adapters do not own orchestration.
+- `atlas_runtime` owns domain models and ports but has no dependency on Flutter, storage, providers, tools, or transports.
+- Storage, provider, and tool packages depend on and implement runtime ports; adapters do not own orchestration.
 - Provider-specific request fields remain in `atlas_provider`.
-- Protocol DTOs are not persistence entities and do not expose provider payloads.
-- Flutter and Nocterm depend on `atlas_protocol`, never on runtime implementation packages.
-- ACP and MCP own protocol lifecycle rules; generic JSON-RPC behavior belongs in `atlas_rpc`.
+- `atlas_protocol` is independent from the runtime. Its DTOs are not runtime or persistence entities and do not expose provider payloads.
+- `atlas_ws` depends on `atlas_protocol`, accepts an injected request handler, and does not compose runtime services.
+- Local Flutter and Nocterm presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters.
+- `atlas_cli` and `atlas_flutter` are separate process-level composition roots; they share runtime code, not runtime instances.
+- ACP and MCP own their protocol lifecycle rules and use `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.
 
 ## Runtime Contracts
 

@@ -1,5 +1,8 @@
 # atlas_storage
 
-SQLite persistence for Atlas threads, runs, timeline items, and compaction checkpoints.
+Drift persistence for Atlas threads, runs, timeline items, and compaction
+checkpoints. Native databases execute on a background isolate.
 
-This package implements storage ports from `atlas_core` and must not contain runtime orchestration or UI state.
+This package owns tables, queries, migrations, and conversion between generated
+Drift rows and runtime domain objects. It implements storage ports from
+`atlas_runtime` and must not contain runtime orchestration or UI state.

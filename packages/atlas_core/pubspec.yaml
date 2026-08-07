@@ -1,9 +1,0 @@
-name: atlas_core
-description: Stable domain models and ports for Atlas.
-version: 0.1.0
-publish_to: none
-
-environment:
-  sdk: ^3.12.2
-
-resolution: workspace

@@ -1,5 +1,5 @@
 name: atlas_storage
-description: SQLite persistence for Atlas threads and runs.
+description: Drift persistence for Atlas threads and runs.
 version: 0.1.0
 publish_to: none
 
@@ -9,7 +9,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  atlas_core: ^0.1.0
+  atlas_runtime: ^0.1.0
+  drift: ^2.34.3
   logging: ^1.3.0
   path: ^1.9.1
-  sqlite_async: ^0.14.4

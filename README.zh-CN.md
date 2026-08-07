@@ -12,7 +12,7 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
 - 初步完成的 Flutter 桌面端和移动端应用外壳；
 - Dart 实现需要遵守的架构与开发规范。
 
-Dart Agent runtime、CLI、daemon、Nocterm TUI、ACP 与 MCP 集成尚未实现。当前分支暂不提供可用的 Atlas 命令行发行版。
+Dart Agent runtime、CLI、WebSocket transport、Nocterm TUI、ACP 与 MCP 集成尚未实现。当前分支暂不提供可用的 Atlas 命令行发行版。
 
 ## 开发
 

@@ -6,52 +6,65 @@
 
 ## 系统形态
 
-Atlas 使用唯一的 Dart runtime，并通过多个协议与展示适配器提供能力。任何客户端或通道都不能维护第二套 Agent loop。
+Atlas 使用唯一的 Dart runtime 实现，并通过本地应用组合根与可选远程
+transport 提供能力。展示层或协议适配器不得维护第二套 Agent loop。
 
 ```mermaid
 graph TD
-    FL[Flutter 客户端] --> AP[atlas_protocol]
-    TUI[Nocterm 客户端] --> AP
-    AP --> D[atlasd]
+    CLI[atlas_cli] --> TUI[atlas_tui]
+    CLI --> RT[atlas_runtime]
+    CLI --> WS[atlas_ws]
+    CLI --> PROVIDER[atlas_provider]
+    CLI --> TOOLS[atlas_tools]
+    CLI --> STORAGE[atlas_storage]
+    FL[atlas_flutter] --> RT
+    FL --> PROVIDER
+    FL --> TOOLS
+    FL --> STORAGE
+    TUI --> RT
+    REMOTE[远程客户端] --> WS
+    WS --> AP[atlas_protocol]
     ACP[atlas_acp] --> RT[atlas_runtime]
-    D --> RT
-    RT --> CORE[atlas_core]
-    RT --> PROVIDER[atlas_provider]
-    RT --> TOOLS[atlas_tools]
-    RT --> STORAGE[atlas_storage]
-    TOOLS --> MCP[atlas_mcp]
-    ACP --> RPC[atlas_rpc]
-    MCP --> RPC
+    MCP --> RT
+    PROVIDER --> RT
+    TOOLS --> RT
+    STORAGE --> RT
+    ACP --> JRPC[json_rpc_2]
+    MCP --> JRPC
 ```
 
-`atlasd` 是本地组合根，并提供版本化客户端协议。Flutter 与 Nocterm 都是该协议的客户端。ACP 作为入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
+`atlas_cli` 与 `atlas_flutter` 分别为各自进程组装一个 runtime。运行
+`atlas` 默认进入 Nocterm TUI；运行 `atlas server` 时，CLI 将已组装的
+runtime handler 注入 `atlas_ws`，供远程客户端连接。本地 Flutter 与
+Nocterm 调用无需经过远程协议序列化。ACP 作为入口适配到同一 runtime；
+MCP 主要用于把外部工具接入工具层。
 
 ## Package 职责
 
 | Package | 职责 |
 |---|---|
-| `atlas_core` | 稳定领域模型、run 事件与 ports |
-| `atlas_runtime` | 唯一 Agent engine、编排、取消、compact 与 skill |
-| `atlas_storage` | SQLite 持久化与 schema migration |
+| `atlas_runtime` | 领域模型、run 事件、ports、唯一 Agent engine、编排、取消、compact 与 skill |
+| `atlas_storage` | Drift 持久化、查询与 schema migration |
 | `atlas_provider` | Provider 认证与特定 wire format 转换 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
-| `atlas_rpc` | 通用 JSON-RPC transport 与请求生命周期 |
-| `atlas_protocol` | Atlas 客户端与 `atlasd` 共享的版本化 DTO |
+| `atlas_protocol` | 面向远程 Atlas 客户端且与 transport 无关的 DTO 与 codec |
+| `atlas_ws` | 基于 `atlas_protocol` 的 WebSocket client 与 server transport |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
 | `atlas_mcp` | 优先实现 MCP client，server 按真实需求再增加 |
-| `atlas_tui` | Nocterm 渲染与终端交互 |
-| `atlasd` | 组合 runtime 并提供本地 WebSocket 服务 |
-| `atlas_cli` | 命令行与终端应用入口 |
-| `atlas_flutter` | 桌面端与移动端展示客户端 |
+| `atlas_tui` | 基于注入的 runtime 接口进行 Nocterm 渲染与终端交互 |
+| `atlas_cli` | 默认 TUI、`server` 与其他 CLI 命令的组合根 |
+| `atlas_flutter` | 桌面端与移动端的组合根和展示客户端 |
 
 ## 依赖规则
 
-- `atlas_core` 不依赖 Flutter、存储、Provider、工具或 transport。
-- Runtime effect 通过 core ports 进入；适配器不能拥有编排逻辑。
+- `atlas_runtime` 拥有领域模型与 ports，但不依赖 Flutter、存储、Provider、工具或 transport。
+- 存储、Provider 与工具 package 依赖并实现 runtime ports；适配器不能拥有编排逻辑。
 - Provider 特定请求字段只存在于 `atlas_provider`。
-- 协议 DTO 不是持久化实体，也不暴露 Provider payload。
-- Flutter 与 Nocterm 只依赖 `atlas_protocol`，不依赖 runtime 实现 package。
-- ACP 和 MCP 负责各自协议生命周期；通用 JSON-RPC 行为放在 `atlas_rpc`。
+- `atlas_protocol` 独立于 runtime；其 DTO 不是 runtime 或持久化实体，也不暴露 Provider payload。
+- `atlas_ws` 依赖 `atlas_protocol`，接收注入的 request handler，且不负责组装 runtime 服务。
+- 本地 Flutter 与 Nocterm 展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器。
+- `atlas_cli` 与 `atlas_flutter` 是独立的进程级组合根；它们共享 runtime 代码，而不共享 runtime 实例。
+- ACP 和 MCP 负责各自协议生命周期并直接使用 `json_rpc_2`；只有出现稳定重复代码后才提取共享 wrapper。
 
 ## Runtime 行为契约
 

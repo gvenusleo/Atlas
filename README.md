@@ -12,7 +12,7 @@ The repository currently contains:
 - an initial Flutter desktop and mobile application shell;
 - architecture and development contracts for the Dart implementation.
 
-The Dart agent runtime, CLI, daemon, Nocterm TUI, ACP, and MCP integrations are not implemented yet. There is currently no supported Atlas command-line release from this branch.
+The Dart agent runtime, CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are not implemented yet. There is currently no supported Atlas command-line release from this branch.
 
 ## Development
 

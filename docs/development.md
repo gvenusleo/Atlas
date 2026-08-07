@@ -4,24 +4,22 @@
 
 ## Current State
 
-The repository is a Dart and Flutter workspace scaffold. The existing Flutter shell is executable; runtime, daemon, CLI, TUI, ACP, and MCP behavior remain planned.
+The repository is a Dart and Flutter workspace scaffold. The existing Flutter shell is executable; runtime, CLI, WebSocket transport, TUI, ACP, and MCP behavior remain planned.
 
 ## Workspace Layout
 
 ```text
-packages/atlas_core       domain models and ports
-packages/atlas_runtime    shared agent engine
-packages/atlas_storage    SQLite persistence
+packages/atlas_runtime    domain models, ports, and shared agent engine
+packages/atlas_storage    Drift persistence
 packages/atlas_provider   model provider adapters
 packages/atlas_tools      built-in tools
-packages/atlas_rpc        generic JSON-RPC support
 packages/atlas_protocol   client wire protocol
+packages/atlas_ws         WebSocket transport
 packages/atlas_acp        ACP adapter
 packages/atlas_mcp        MCP adapter
-packages/atlas_tui        Nocterm client
-apps/atlasd               local runtime host
-apps/atlas_cli            CLI and terminal entry point
-apps/atlas_flutter        Flutter desktop and mobile client
+packages/atlas_tui        Nocterm presentation package
+apps/atlas_cli            atlas CLI, TUI, server, and other commands
+apps/atlas_flutter        Flutter desktop and mobile application
 ```
 
 The root Pub workspace owns the only `pubspec.lock`. Workspace members use `resolution: workspace` and must not add member lockfiles.
@@ -51,11 +49,13 @@ Run the current Flutter shell with `just app-run macos`. Platform debug builds u
 
 ## Package Rules
 
-- Put code in the package that owns the behavior; do not collect unrelated helpers in `atlas_core`.
+- Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.
 - Add public abstractions only when a real adapter or test requires them.
 - Public Dart APIs require concise documentation comments.
 - Runtime and protocol packages must not import Flutter.
-- Client packages must not import provider, tool, or storage implementations.
+- Presentation packages must not import provider, tool, or storage implementations.
+- Application bootstrap code in `atlas_cli` and `atlas_flutter` composes those adapters and injects the runtime.
+- `atlas_ws` owns WebSocket transport only and accepts an injected request handler.
 - Generated serialization files stay beside their source and are committed only when the selected generator requires it.
 - Add focused tests with behavior. Empty scaffold packages do not need placeholder tests.
 

@@ -9,6 +9,4 @@ environment:
 resolution: workspace
 
 dependencies:
-  atlas_core: ^0.1.0
   json_annotation: ^4.12.0
-  web_socket_channel: ^3.0.3

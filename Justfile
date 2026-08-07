@@ -12,16 +12,16 @@ deps-update:
     mise exec -- flutter pub get
 
 fmt:
-    mise exec -- dart format packages apps/atlas_cli apps/atlasd apps/atlas_flutter/lib apps/atlas_flutter/test
+    mise exec -- dart format packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test
 
 fmt-check:
-    mise exec -- dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlasd apps/atlas_flutter/lib apps/atlas_flutter/test
+    mise exec -- dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test
 
 analyze: deps
     mise exec -- dart analyze
 
 dart-test: deps
-    @for package in packages/* apps/atlas_cli apps/atlasd; do \
+    @for package in packages/* apps/atlas_cli; do \
         if [ -d "$package/test" ] && find "$package/test" -name '*_test.dart' -print -quit | grep -q .; then \
             (cd "$package" && mise exec -- dart test --no-pub); \
         fi; \

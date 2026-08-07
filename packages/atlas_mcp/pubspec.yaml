@@ -9,7 +9,8 @@ environment:
 resolution: workspace
 
 dependencies:
-  atlas_core: ^0.1.0
-  atlas_rpc: ^0.1.0
+  atlas_runtime: ^0.1.0
   http: ^1.6.0
+  json_rpc_2: ^4.1.0
+  stream_channel: ^2.1.4
   web_socket_channel: ^3.0.3

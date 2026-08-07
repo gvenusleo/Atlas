@@ -10,6 +10,12 @@ resolution: workspace
 
 dependencies:
   args: ^2.7.0
-  atlas_daemon: ^0.1.0
-  atlas_protocol: ^0.1.0
+  atlas_acp: ^0.1.0
+  atlas_mcp: ^0.1.0
+  atlas_provider: ^0.1.0
+  atlas_runtime: ^0.1.0
+  atlas_storage: ^0.1.0
+  atlas_tools: ^0.1.0
   atlas_tui: ^0.1.0
+  atlas_ws: ^0.1.0
+  logging: ^1.3.0
