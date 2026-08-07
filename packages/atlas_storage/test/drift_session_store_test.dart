@@ -57,6 +57,17 @@ void main() {
         checkpoint: checkpoint,
       ),
     );
+    await store.finishTurn(
+      session.id,
+      runtime.Turn(
+        id: turn.id,
+        sessionId: session.id,
+        status: runtime.TurnStatus.completed,
+        startedAt: turn.startedAt,
+        completedAt: DateTime.utc(2026, 1, 2, 0, 0, 2),
+        model: _model,
+      ),
+    );
     await store.saveCompaction(
       session.id,
       runtime.CompactionCheckpoint(
@@ -233,6 +244,87 @@ void main() {
     expect(
       (await store.loadSession(first.id)).turns.single.status,
       runtime.TurnStatus.running,
+    );
+  });
+
+  test('rejects compaction inside a running or partial turn', () async {
+    final session = _session(
+      'session-compact-boundary',
+      updatedAt: DateTime.utc(2026),
+    );
+    final turn = _turn(session.id, 'turn-compact-boundary');
+    await store.beginTurn(
+      runtime.BeginTurn(
+        session: session,
+        turn: turn,
+        userMessage: _user(session, turn, 'request'),
+      ),
+    );
+    final checkpoint = runtime.CompactionCheckpoint(
+      sessionId: session.id,
+      compactedThroughSequence: 0,
+      summary: 'summary',
+      inputTokensBefore: 10,
+      inputTokensAfter: 2,
+      createdAt: session.updatedAt,
+    );
+    await expectLater(
+      store.saveCompaction(session.id, checkpoint),
+      throwsFormatException,
+    );
+
+    final assistant = runtime.AssistantMessageItem(
+      id: const runtime.TimelineItemId('compact-assistant'),
+      sessionId: session.id,
+      turnId: turn.id,
+      sequence: 1,
+      occurredAt: session.updatedAt,
+      content: const [runtime.TextContent('response')],
+      model: _model,
+      stopReason: runtime.StopReason.toolUse,
+    );
+    final call = runtime.ToolCallItem(
+      id: const runtime.TimelineItemId('compact-call'),
+      sessionId: session.id,
+      turnId: turn.id,
+      sequence: 2,
+      occurredAt: session.updatedAt,
+      call: const runtime.ToolCall(
+        id: runtime.ToolCallId('compact-call-id'),
+        name: 'read',
+        arguments: <String, Object?>{},
+      ),
+    );
+    await store.appendModelStep(
+      session.id,
+      runtime.PersistedModelStep(
+        assistantMessage: assistant,
+        toolCalls: [call],
+      ),
+    );
+    await store.finishTurn(
+      session.id,
+      runtime.Turn(
+        id: turn.id,
+        sessionId: session.id,
+        status: runtime.TurnStatus.failed,
+        startedAt: turn.startedAt,
+        completedAt: session.updatedAt,
+      ),
+    );
+    await expectLater(
+      store.saveCompaction(
+        session.id,
+        runtime.CompactionCheckpoint(
+          sessionId: session.id,
+          compactedThroughSequence: 1,
+          summary: 'partial summary',
+          inputTokensBefore: 10,
+          inputTokensAfter: 2,
+          createdAt: session.updatedAt,
+        ),
+      ),
+      throwsFormatException,
     );
   });
 }

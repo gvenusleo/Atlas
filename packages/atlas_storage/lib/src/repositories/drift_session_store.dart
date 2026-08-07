@@ -225,6 +225,7 @@ final class DriftSessionStore implements runtime.SessionStore {
     if (checkpoint.sessionId != sessionId) {
       throw const FormatException('compaction must match the session');
     }
+    await _validateCompactionBoundary(sessionId, checkpoint);
     await database
         .into(database.compactionCheckpoints)
         .insertOnConflictUpdate(mappers.compactionCompanion(checkpoint));
@@ -300,6 +301,48 @@ final class DriftSessionStore implements runtime.SessionStore {
     )..where((table) => table.id.equals(item.turnId.value))).getSingleOrNull();
     if (turn == null || turn.sessionId != sessionId.value) {
       throw const FormatException('timeline item turn must match the session');
+    }
+  }
+
+  Future<void> _validateCompactionBoundary(
+    runtime.SessionId sessionId,
+    runtime.CompactionCheckpoint checkpoint,
+  ) async {
+    final boundary =
+        await (database.select(database.timelineItems)..where(
+              (table) =>
+                  table.sessionId.equals(sessionId.value) &
+                  table.sequence.equals(checkpoint.compactedThroughSequence),
+            ))
+            .getSingleOrNull();
+    if (boundary == null) {
+      throw const FormatException(
+        'compaction boundary must reference a timeline item',
+      );
+    }
+    final turn = await (database.select(
+      database.turns,
+    )..where((table) => table.id.equals(boundary.turnId))).getSingleOrNull();
+    if (turn == null || turn.status == runtime.TurnStatus.running.name) {
+      throw const FormatException(
+        'compaction boundary must belong to a terminal turn',
+      );
+    }
+    final laterItem =
+        await (database.select(database.timelineItems)
+              ..where(
+                (table) =>
+                    table.turnId.equals(boundary.turnId) &
+                    table.sequence.isBiggerThanValue(
+                      checkpoint.compactedThroughSequence,
+                    ),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    if (laterItem != null) {
+      throw const FormatException(
+        'compaction boundary must be the final item of its turn',
+      );
     }
   }
 

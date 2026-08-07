@@ -20,6 +20,7 @@
 - Keep the future agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
 - Persisted timeline items must belong to the same session and turn; storage writes that update multiple records must be atomic.
 - The runtime serializes active turns per session, and persisted provider/tool failures use safe summaries rather than raw exception text.
+- Compaction checkpoints end at the final timeline item of a terminal turn; they must never split an assistant/tool/result group.
 - Public Dart types and functions require concise documentation comments. Other comments should explain only non-obvious behavior.
 - Read relevant files before editing. Current code and command output are the source of truth.
 

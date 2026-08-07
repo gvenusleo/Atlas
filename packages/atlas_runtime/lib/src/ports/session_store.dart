@@ -95,7 +95,7 @@ abstract interface class SessionStore {
   /// Marks a turn as completed, failed, or cancelled.
   Future<void> finishTurn(SessionId sessionId, Turn turn);
 
-  /// Saves the latest compaction checkpoint.
+  /// Saves a checkpoint ending at the final item of a terminal turn.
   Future<void> saveCompaction(
     SessionId sessionId,
     CompactionCheckpoint checkpoint,
