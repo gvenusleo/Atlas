@@ -13,8 +13,7 @@ packages/atlas_runtime    领域模型、ports 与共享 Agent engine
 packages/atlas_storage    Drift 持久化
 packages/atlas_provider   模型 Provider 适配器
 packages/atlas_tools      内置工具
-packages/atlas_protocol   客户端 wire protocol
-packages/atlas_ws         WebSocket transport
+packages/atlas_ws         版本化 WebSocket 协议与 transport
 packages/atlas_acp        ACP 适配器
 packages/atlas_mcp        MCP 适配器
 packages/atlas_tui        Nocterm 展示 package

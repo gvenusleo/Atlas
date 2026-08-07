@@ -23,7 +23,7 @@ graph TD
     FL --> STORAGE
     TUI --> RT
     REMOTE[远程客户端] --> WS
-    WS --> AP[atlas_protocol]
+    WS --> RT
     ACP[atlas_acp] --> RT[atlas_runtime]
     MCP --> RT
     PROVIDER --> RT
@@ -47,8 +47,7 @@ MCP 主要用于把外部工具接入工具层。
 | `atlas_storage` | Drift 持久化、查询与 schema migration |
 | `atlas_provider` | Provider 认证与特定 wire format 转换 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
-| `atlas_protocol` | 面向远程 Atlas 客户端且与 transport 无关的 DTO 与 codec |
-| `atlas_ws` | 基于 `atlas_protocol` 的 WebSocket client 与 server transport |
+| `atlas_ws` | 版本化 WebSocket wire contract、codec、client/server transport 与 runtime 转换 |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
 | `atlas_mcp` | 优先实现 MCP client，server 按真实需求再增加 |
 | `atlas_tui` | 基于注入的 runtime 接口进行 Nocterm 渲染与终端交互 |
@@ -60,8 +59,7 @@ MCP 主要用于把外部工具接入工具层。
 - `atlas_runtime` 拥有领域模型与 ports，但不依赖 Flutter、存储、Provider、工具或 transport。
 - 存储、Provider 与工具 package 依赖并实现 runtime ports；适配器不能拥有编排逻辑。
 - Provider 特定请求字段只存在于 `atlas_provider`。
-- `atlas_protocol` 独立于 runtime；其 DTO 不是 runtime 或持久化实体，也不暴露 Provider payload。
-- `atlas_ws` 依赖 `atlas_protocol`，接收注入的 request handler，且不负责组装 runtime 服务。
+- `atlas_ws` 可以依赖 runtime 类型，但必须维护显式的版本化 wire schema，不能直接序列化 runtime 对象。它接收注入的 request handler，且不负责组装 runtime 服务。
 - 本地 Flutter 与 Nocterm 展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器。
 - `atlas_cli` 与 `atlas_flutter` 是独立的进程级组合根；它们共享 runtime 代码，而不共享 runtime 实例。
 - ACP 和 MCP 负责各自协议生命周期并直接使用 `json_rpc_2`；只有出现稳定重复代码后才提取共享 wrapper。

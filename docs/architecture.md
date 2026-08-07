@@ -24,7 +24,7 @@ graph TD
     FL --> STORAGE
     TUI --> RT
     REMOTE[Remote client] --> WS
-    WS --> AP[atlas_protocol]
+    WS --> RT
     ACP[atlas_acp] --> RT[atlas_runtime]
     MCP --> RT
     PROVIDER --> RT
@@ -49,8 +49,7 @@ external tools to the tool layer.
 | `atlas_storage` | Drift persistence, queries, and schema migrations |
 | `atlas_provider` | Provider authentication and provider-specific wire conversion |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
-| `atlas_protocol` | Transport-independent DTOs and codecs for remote Atlas clients |
-| `atlas_ws` | WebSocket client and server transport around `atlas_protocol` |
+| `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
 | `atlas_mcp` | MCP client first, with server support deferred until needed |
 | `atlas_tui` | Nocterm rendering and terminal interaction over an injected runtime interface |
@@ -62,8 +61,7 @@ external tools to the tool layer.
 - `atlas_runtime` owns domain models and ports but has no dependency on Flutter, storage, providers, tools, or transports.
 - Storage, provider, and tool packages depend on and implement runtime ports; adapters do not own orchestration.
 - Provider-specific request fields remain in `atlas_provider`.
-- `atlas_protocol` is independent from the runtime. Its DTOs are not runtime or persistence entities and do not expose provider payloads.
-- `atlas_ws` depends on `atlas_protocol`, accepts an injected request handler, and does not compose runtime services.
+- `atlas_ws` may depend on runtime types but owns an explicit versioned wire schema rather than serializing runtime objects directly. It accepts an injected request handler and does not compose runtime services.
 - Local Flutter and Nocterm presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters.
 - `atlas_cli` and `atlas_flutter` are separate process-level composition roots; they share runtime code, not runtime instances.
 - ACP and MCP own their protocol lifecycle rules and use `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.

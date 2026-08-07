@@ -10,7 +10,6 @@ workspace:
   - packages/atlas_storage
   - packages/atlas_provider
   - packages/atlas_tools
-  - packages/atlas_protocol
   - packages/atlas_ws
   - packages/atlas_acp
   - packages/atlas_mcp

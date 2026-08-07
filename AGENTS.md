@@ -6,7 +6,7 @@
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
 - The repository is being rebuilt as a Dart and Flutter workspace. The Flutter application shell exists; the agent runtime, CLI, WebSocket transport, ACP, MCP, and Nocterm behavior are not implemented yet.
 - All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
-- Local Flutter and Nocterm entry points receive the runtime directly. Remote clients use `atlas_protocol` through `atlas_ws`.
+- Local Flutter and Nocterm entry points receive the runtime directly. Remote clients use the versioned WebSocket contract in `atlas_ws`.
 - Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.
 - Provider-specific authentication, endpoints, request fields, and response conversion belong in `packages/atlas_provider` and must not enter `atlas_runtime` domain requests.
 
@@ -25,8 +25,7 @@
 
 - `atlas_runtime` owns domain models, events, ports, orchestration, cancellation, compaction, skills, and the model/tool loop. It must not depend on persistence, provider, tool, UI, or protocol implementations.
 - `atlas_storage`, `atlas_provider`, and `atlas_tools` depend on and implement runtime ports without owning orchestration.
-- `atlas_protocol` owns independent client wire DTOs. It must not depend on runtime, persistence, or provider models.
-- `atlas_ws` owns WebSocket client and server transport behavior around `atlas_protocol`. It accepts an injected request handler and must not compose runtime services.
+- `atlas_ws` owns versioned WebSocket wire DTOs, codecs, client and server transport behavior, and explicit conversion to runtime types. It may depend on `atlas_runtime` but must not compose runtime services.
 - `atlas_acp` and `atlas_mcp` use `json_rpc_2` directly and own their different lifecycle and transport rules. Extract shared RPC code only after stable duplication exists.
 - `atlas_acp` and `atlas_mcp` adapt protocols to the shared runtime.
 - `atlas_tui` renders and interacts with an injected runtime interface; it does not depend on remote client protocols.

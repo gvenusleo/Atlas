@@ -1,9 +1,0 @@
-name: atlas_protocol
-description: Versioned client protocol shared by Atlas frontends.
-version: 0.1.0
-publish_to: none
-
-environment:
-  sdk: ^3.12.2
-
-resolution: workspace

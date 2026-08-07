@@ -13,8 +13,7 @@ packages/atlas_runtime    domain models, ports, and shared agent engine
 packages/atlas_storage    Drift persistence
 packages/atlas_provider   model provider adapters
 packages/atlas_tools      built-in tools
-packages/atlas_protocol   client wire protocol
-packages/atlas_ws         WebSocket transport
+packages/atlas_ws         versioned WebSocket protocol and transport
 packages/atlas_acp        ACP adapter
 packages/atlas_mcp        MCP adapter
 packages/atlas_tui        Nocterm presentation package
