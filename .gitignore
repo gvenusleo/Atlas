@@ -6,6 +6,13 @@
 *.sqlite-*
 .atlas/debug/
 /atlas
-bin/
-dist/
+/.dart_tool/
+/.packages
+/bin/
+/build/
+/dist/
+/coverage/
+**/.dart_tool/
+**/pubspec.lock
+!/pubspec.lock
 .DS_Store

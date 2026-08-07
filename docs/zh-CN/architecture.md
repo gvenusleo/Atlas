@@ -2,101 +2,69 @@
 
 [English](../architecture.md)
 
-## 分层架构
+> **状态：** 规划中。当前只有 Flutter 应用外壳包含具体实现。
 
-Atlas 分为入口层、编排层、核心循环、能力层和持久化层。所有入口共享同一个 `runtime.Runtime`。核心 agent loop 保持 headless、依赖注入且可独立测试；配置、持久化和编排由 runtime 负责。
+## 系统形态
+
+Atlas 使用唯一的 Dart runtime，并通过多个协议与展示适配器提供能力。任何客户端或通道都不能维护第二套 Agent loop。
 
 ```mermaid
 graph TD
-    subgraph 入口层
-        TUI[终端界面]
-        CLI[CLI 命令]
-        ACP[ACP 适配层]
-        WS[WebSocket 通道]
-    end
-
-    subgraph 编排层
-        RT[runtime.Runtime]
-    end
-
-    subgraph 核心循环
-        AG[agent loop]
-        PR[Provider 接口]
-    end
-
-    subgraph 能力层
-        TOOLS[工具注册表]
-        PRMPT[系统提示词]
-        CMP[上下文压缩]
-    end
-
-    subgraph 持久化层
-        TR[transcript]
-        SS[session SQLite]
-    end
-
-    TUI --> RT
-    CLI --> RT
-    ACP --> RT
-    WS --> RT
-    RT --> AG
-    AG --> PR
-    AG --> TOOLS
-    RT --> PRMPT
-    RT --> CMP
-    AG --> TR
-    RT --> SS
+    FL[Flutter 客户端] --> AP[atlas_protocol]
+    TUI[Nocterm 客户端] --> AP
+    AP --> D[atlasd]
+    ACP[atlas_acp] --> RT[atlas_runtime]
+    D --> RT
+    RT --> CORE[atlas_core]
+    RT --> PROVIDER[atlas_provider]
+    RT --> TOOLS[atlas_tools]
+    RT --> STORAGE[atlas_storage]
+    TOOLS --> MCP[atlas_mcp]
+    ACP --> RPC[atlas_rpc]
+    MCP --> RPC
 ```
 
-TUI 与 ACP、WebSocket 一样属于入口层适配。它把键盘和鼠标输入转换为运行时 turn 和手动压缩请求，按顺序消费 observer 事件以展示流式输出和工具活动；编排和持久化仍由 `runtime.Runtime` 负责。
+`atlasd` 是本地组合根，并提供版本化客户端协议。Flutter 与 Nocterm 都是该协议的客户端。ACP 作为入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 
-## Flutter 客户端
+## Package 职责
 
-`app/` 下的 Flutter 客户端目前只实现了响应式桌面端与移动端应用外壳。由于尚未连接 Go runtime，因此上面的架构图没有把它画成已启用的入口。
+| Package | 职责 |
+|---|---|
+| `atlas_core` | 稳定领域模型、run 事件与 ports |
+| `atlas_runtime` | 唯一 Agent engine、编排、取消、compact 与 skill |
+| `atlas_storage` | SQLite 持久化与 schema migration |
+| `atlas_provider` | Provider 认证与特定 wire format 转换 |
+| `atlas_tools` | 返回结构化调用和结果的内置工具 |
+| `atlas_rpc` | 通用 JSON-RPC transport 与请求生命周期 |
+| `atlas_protocol` | Atlas 客户端与 `atlasd` 共享的版本化 DTO |
+| `atlas_acp` | 把 ACP server 适配到共享 runtime |
+| `atlas_mcp` | 优先实现 MCP client，server 按真实需求再增加 |
+| `atlas_tui` | Nocterm 渲染与终端交互 |
+| `atlasd` | 组合 runtime 并提供本地 WebSocket 服务 |
+| `atlas_cli` | 命令行与终端应用入口 |
+| `atlas_flutter` | 桌面端与移动端展示客户端 |
 
-接入 runtime 后，App 将作为现有 WebSocket 通道的客户端。agent 编排、模型 Provider、工具、上下文压缩和 session 持久化仍由 `runtime.Runtime` 负责；Flutter 客户端只负责展示、导航和客户端交互状态。
+## 依赖规则
 
-客户端内部由 `lib/app` 承担启动、路由和平台集成，产品 UI 按功能组织在 `lib/features` 下，应用级主题和共享 UI 位于 `lib/shared`。Riverpod 管理应用级、异步和跨页面状态，go_router 负责页面级导航。
+- `atlas_core` 不依赖 Flutter、存储、Provider、工具或 transport。
+- Runtime effect 通过 core ports 进入；适配器不能拥有编排逻辑。
+- Provider 特定请求字段只存在于 `atlas_provider`。
+- 协议 DTO 不是持久化实体，也不暴露 Provider payload。
+- Flutter 与 Nocterm 只依赖 `atlas_protocol`，不依赖 runtime 实现 package。
+- ACP 和 MCP 负责各自协议生命周期；通用 JSON-RPC 行为放在 `atlas_rpc`。
 
-## 核心循环
+## Runtime 行为契约
 
-一次 turn 从用户输入开始：追加到 transcript，然后循环调用模型。模型返回文本增量时流式输出；返回工具调用时按顺序执行并把结果写回 transcript；没有工具调用或遇到错误时结束。
+未来 runtime 必须保留以下产品级行为：
 
-```mermaid
-sequenceDiagram
-    participant RT as runtime.RunTurn
-    participant AG as agent loop
-    participant PR as provider.Stream
-    participant TR as transcript
-    participant TOOLS as tool.Registry
+- 每个模型工具调用都按原顺序得到一个模型可见结果，失败也不例外。
+- Run event 按发生顺序发送，客户端不能在 turn 结束后重新分组输出。
+- Run 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界。
+- 选择 skill 时，历史记录保留原始用户文本；完整 skill 指令是仅当前 turn 可见的模型上下文，不写入 transcript。
+- Compact 保留持久 timeline，只替换 active context checkpoint；可选 compact 指令只影响摘要，不修改用户历史。
 
-    RT->>AG: 用户输入
-    AG->>TR: 追加 user 消息
-    loop step < maxSteps
-        AG->>PR: Stream(ChatRequest)
-        PR-->>AG: 流式 delta
-        PR-->>AG: ChatResponse
-        AG->>TR: 追加 assistant 消息
-        alt 无工具调用
-            AG-->>RT: 返回最终回复
-        else 有工具调用
-            loop 每个工具调用按顺序
-                AG->>TOOLS: Run(call)
-                TOOLS-->>AG: 结果或错误
-                AG->>TR: 追加 tool 消息
-            end
-        end
-    end
-    AG-->>RT: 超出步数上限
-```
+这些是产品行为约束，不表示需要兼容已删除 Go 实现的内部结构或数据库 schema。
 
-关键约束：
+## 本地安全边界
 
-- 每个 tool call 都有配对的 tool result，顺序与模型返回一致。
-- 工具错误作为模型可见的 tool result 写回，让模型可以据此调整。
-- observer 事件保持发生顺序，流式客户端可以依次展示模型输出、工具调用和 turn 完成事件，无需重新分组。
-- 没有 tool call、遇到错误或达到 `max_steps`（默认 20）时结束。
-
-## 上下文压缩与任务计划
-
-上下文达到配置阈值时，运行时会自动压缩；入口适配层和 CLI 命令也可通过 `CompactSession` 手动触发。两种路径都会摘要早期消息、保留最近消息，并保持完整 transcript 不变。如果最后一次 `update_plan` 任务计划仍有未完成步骤，该完整计划会被注入摘要提示词，使模型在压缩后仍能感知已完成进度和待处理工作。
+Atlas 工具使用本地 Atlas 进程的权限执行。产品不提供沙箱、权限提示或 approval gate；协议适配器不能宣称 runtime 实际不存在的安全边界。

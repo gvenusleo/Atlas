@@ -1,0 +1,24 @@
+name: atlas_workspace
+description: The Atlas Dart and Flutter monorepo.
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+workspace:
+  - packages/atlas_core
+  - packages/atlas_runtime
+  - packages/atlas_storage
+  - packages/atlas_provider
+  - packages/atlas_tools
+  - packages/atlas_rpc
+  - packages/atlas_protocol
+  - packages/atlas_acp
+  - packages/atlas_mcp
+  - packages/atlas_tui
+  - apps/atlasd
+  - apps/atlas_cli
+  - apps/atlas_flutter
+
+dev_dependencies:
+  lints: ^6.1.0

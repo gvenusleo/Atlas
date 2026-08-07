@@ -1,0 +1,14 @@
+name: atlas_acp
+description: Agent Client Protocol adapter for Atlas.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+
+dependencies:
+  atlas_core: ^0.1.0
+  atlas_rpc: ^0.1.0
+  atlas_runtime: ^0.1.0

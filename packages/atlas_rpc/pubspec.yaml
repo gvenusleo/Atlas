@@ -1,0 +1,14 @@
+name: atlas_rpc
+description: Shared JSON-RPC transport utilities for Atlas protocols.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+
+dependencies:
+  json_rpc_2: ^4.1.0
+  logging: ^1.3.0
+  stream_channel: ^2.1.4

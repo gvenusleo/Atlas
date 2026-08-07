@@ -2,69 +2,67 @@
 
 [中文](zh-CN/development.md)
 
-## Project Structure
+## Current State
+
+The repository is a Dart and Flutter workspace scaffold. The existing Flutter shell is executable; runtime, daemon, CLI, TUI, ACP, and MCP behavior remain planned.
+
+## Workspace Layout
 
 ```text
-cmd/atlas              CLI entry point
-internal/acp           ACP protocol adapter and client capability bridge
-internal/agent         headless agent loop (core loop)
-internal/compact       context compaction planning and summarization
-internal/config        config loading and validation
-internal/model         generic chat protocol and Provider interface
-internal/prompt        system prompt construction
-internal/provider      provider adapters by API format
-  ├── chatcompletions  Chat Completions API
-  └── responses        OpenAI Responses API
-internal/runtime       orchestration layer, connecting agent, tools, and session
-internal/session       SQLite session persistence
-internal/skill         skill scanning and loading
-internal/tool          tool registry and built-in tools
-internal/transcript    in-memory message sequence
-internal/tui           interactive terminal UI
-internal/version       version info
-internal/ws            WebSocket channel
-app                    Flutter desktop and mobile client
-  ├── lib/app          application root, routing, and platform integration
-  ├── lib/features     feature-first pages, layouts, and widgets
-  └── lib/shared       application-wide theme and shared UI
+packages/atlas_core       domain models and ports
+packages/atlas_runtime    shared agent engine
+packages/atlas_storage    SQLite persistence
+packages/atlas_provider   model provider adapters
+packages/atlas_tools      built-in tools
+packages/atlas_rpc        generic JSON-RPC support
+packages/atlas_protocol   client wire protocol
+packages/atlas_acp        ACP adapter
+packages/atlas_mcp        MCP adapter
+packages/atlas_tui        Nocterm client
+apps/atlasd               local runtime host
+apps/atlas_cli            CLI and terminal entry point
+apps/atlas_flutter        Flutter desktop and mobile client
 ```
 
-## Build and Test
+The root Pub workspace owns the only `pubspec.lock`. Workspace members use `resolution: workspace` and must not add member lockfiles.
+
+## Toolchain
+
+The root `mise.toml` pins Flutter 3.44.9, which provides Dart 3.12.2.
 
 ```sh
-go build ./cmd/atlas           # build
-go test ./...                  # run all tests
-go test ./internal/agent/...   # run a single package's tests
-go test ./internal/tui         # run terminal UI tests
-just ci                        # full non-modifying CI check (requires just)
+mise install
+just deps
 ```
 
-### Flutter App
+Use `just deps-update` only when intentionally changing dependency constraints or the lockfile.
 
-The Flutter client uses the SDK pinned by FVM. From `app/`:
+## Verification
 
 ```sh
-fvm flutter run -d macos          # run the macOS client
-fvm flutter analyze               # static analysis
-fvm flutter test                  # widget and unit tests
-fvm flutter build macos --debug   # build the macOS debug app
+just fmt          # format Dart sources
+just fmt-check    # check formatting without rewriting
+just analyze      # analyze the workspace
+just test         # run available Dart and Flutter tests
+just ci           # complete repository verification
 ```
 
-The current client implements the responsive application shell only. It is not
-connected to the Atlas runtime yet.
+Run the current Flutter shell with `just app-run macos`. Platform debug builds use the matching `just app-build-*` recipe.
 
-## Run from Source
+## Package Rules
 
-```sh
-go run ./cmd/atlas                              # start the terminal UI
-go run ./cmd/atlas run "Read README and summarize"  # run a one-shot task
-go run ./cmd/atlas doctor                       # verify configuration
-```
+- Put code in the package that owns the behavior; do not collect unrelated helpers in `atlas_core`.
+- Add public abstractions only when a real adapter or test requires them.
+- Public Dart APIs require concise documentation comments.
+- Runtime and protocol packages must not import Flutter.
+- Client packages must not import provider, tool, or storage implementations.
+- Generated serialization files stay beside their source and are committed only when the selected generator requires it.
+- Add focused tests with behavior. Empty scaffold packages do not need placeholder tests.
 
-## Design Principles
+## Documentation Rules
 
-- **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, and compaction.
-- **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
-- **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
-- **Single core**: TUI, CLI commands, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Entry layers only adapt their interface or protocol.
-- **Thin Flutter client**: Flutter owns client presentation and interaction state. Agent orchestration, tools, providers, and session persistence stay in the Go runtime and will be consumed through the WebSocket channel.
+- Root README files contain product status and supported commands, not internal architecture.
+- Architecture and dependency boundaries belong in `docs/architecture.md`.
+- Mark unavailable behavior as `Planned`; remove stale examples when behavior is removed.
+- Keep English and Chinese counterparts synchronized.
+- Record high-impact, difficult-to-reverse decisions under `docs/decisions`.

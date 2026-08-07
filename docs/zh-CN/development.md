@@ -2,68 +2,67 @@
 
 [English](../development.md)
 
-## 项目结构
+## 当前状态
+
+仓库目前是 Dart 与 Flutter workspace 骨架。现有 Flutter 应用外壳可以运行；runtime、daemon、CLI、TUI、ACP 与 MCP 行为仍处于规划阶段。
+
+## Workspace 结构
 
 ```text
-cmd/atlas              CLI 入口
-internal/acp           ACP 协议适配与客户端能力桥接
-internal/agent         headless agent loop（核心循环）
-internal/compact       上下文压缩规划与摘要
-internal/config        配置加载与校验
-internal/model         通用聊天协议与 Provider 接口
-internal/prompt        系统提示词构造
-internal/provider      按 API 格式实现的 Provider 适配器
-  ├── chatcompletions  Chat Completions API
-  └── responses        OpenAI Responses API
-internal/runtime       编排层，串联 agent、工具和 session
-internal/session       SQLite 会话持久化
-internal/skill         skill 扫描与加载
-internal/tool          工具注册表与内置工具
-internal/transcript    内存消息序列
-internal/tui           交互式终端界面
-internal/version       版本信息
-internal/ws            WebSocket 通道
-app                    Flutter 桌面端与移动端客户端
-  ├── lib/app          应用根节点、路由和平台集成
-  ├── lib/features     按功能组织的页面、布局和组件
-  └── lib/shared       应用级主题和共享 UI
+packages/atlas_core       领域模型与 ports
+packages/atlas_runtime    共享 Agent engine
+packages/atlas_storage    SQLite 持久化
+packages/atlas_provider   模型 Provider 适配器
+packages/atlas_tools      内置工具
+packages/atlas_rpc        通用 JSON-RPC 支持
+packages/atlas_protocol   客户端 wire protocol
+packages/atlas_acp        ACP 适配器
+packages/atlas_mcp        MCP 适配器
+packages/atlas_tui        Nocterm 客户端
+apps/atlasd               本地 runtime host
+apps/atlas_cli            CLI 与终端入口
+apps/atlas_flutter        Flutter 桌面端与移动端客户端
 ```
 
-## 构建与测试
+根 Pub workspace 维护唯一的 `pubspec.lock`。所有成员使用 `resolution: workspace`，不得增加成员级 lockfile。
+
+## 工具链
+
+根 `mise.toml` 固定 Flutter 3.44.9，其中包含 Dart 3.12.2。
 
 ```sh
-go build ./cmd/atlas           # 构建
-go test ./...                  # 运行全部测试
-go test ./internal/agent/...   # 运行单个包的测试
-go test ./internal/tui         # 运行终端界面测试
-just ci                        # 完整且不修改文件的 CI 检查（需安装 just）
+mise install
+just deps
 ```
 
-### Flutter App
+只有在有意调整依赖约束或 lockfile 时才使用 `just deps-update`。
 
-Flutter 客户端使用 FVM 固定的 SDK。在 `app/` 目录运行：
+## 验证
 
 ```sh
-fvm flutter run -d macos          # 运行 macOS 客户端
-fvm flutter analyze               # 静态分析
-fvm flutter test                  # Widget 与单元测试
-fvm flutter build macos --debug   # 构建 macOS Debug App
+just fmt          # 格式化 Dart 源码
+just fmt-check    # 不改文件，仅检查格式
+just analyze      # 分析整个 workspace
+just test         # 运行已有 Dart 与 Flutter 测试
+just ci           # 完整仓库验证
 ```
 
-当前客户端只实现了响应式应用外壳，尚未接入 Atlas runtime。
+使用 `just app-run macos` 运行当前 Flutter 外壳。各平台 debug 构建使用对应的 `just app-build-*` recipe。
 
-## 从源码运行
+## Package 规则
 
-```sh
-go run ./cmd/atlas                              # 启动终端界面
-go run ./cmd/atlas run "读取 README 并总结"          # 执行单次任务
-go run ./cmd/atlas doctor                       # 验证配置
-```
+- 代码放在真正拥有该行为的 package 中，不要把无关 helper 堆进 `atlas_core`。
+- 只有真实适配器或测试需要时才增加公共抽象。
+- 公共 Dart API 必须有简明文档注释。
+- Runtime 与协议 package 不得导入 Flutter。
+- 客户端 package 不得导入 Provider、工具或存储实现。
+- 生成的序列化文件与源文件放在一起，仅在所选生成器要求时提交。
+- 行为实现必须添加聚焦测试；空骨架 package 不需要占位测试。
 
-## 设计原则
+## 文档规则
 
-- **小而可验证**：agent loop 保持 headless 和依赖注入，Provider 与工具副作用通过窄接口进入；配置、持久化和压缩由 runtime 负责。
-- **不提前抽象**：两个真实调用点出现前不抽象，不为"可能以后"保留两套接口。
-- **本地权限边界**：不引入权限抽象，工具拥有本机进程的全部权限。
-- **单一核心**：TUI、CLI 命令、ACP 和 WebSocket 共享同一个 `runtime.Runtime` 和 agent loop，入口层只适配界面或协议。
-- **轻量 Flutter 客户端**：Flutter 只负责客户端展示和交互状态；agent 编排、工具、Provider 和 session 持久化仍由 Go runtime 负责，后续通过 WebSocket 通道使用。
+- 根 README 只描述产品状态和可用命令，不写内部架构。
+- 架构和依赖边界写入 `docs/architecture.md`。
+- 不可用行为必须标记为 `Planned`；功能移除时同步删除失效示例。
+- 英文与中文对应文档必须同步更新。
+- 高影响且难以回退的决策记录在 `docs/decisions`。

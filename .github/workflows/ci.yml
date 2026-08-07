@@ -1,4 +1,5 @@
 name: ci
+
 on:
   push:
     branches: [main]
@@ -12,22 +13,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
-          go-version-file: go.mod
-      - run: go fmt ./...
-      - run: go mod tidy
-      - run: git diff --exit-code
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test -race ./...
-      - name: Cross-build release targets
+          cache: true
+      - run: mise exec -- flutter pub get --enforce-lockfile
+      - run: mise exec -- dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlasd apps/atlas_flutter/lib apps/atlas_flutter/test
+      - run: mise exec -- dart analyze
+      - name: Run Dart package tests
         run: |
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build ./...
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...
+          for package in packages/* apps/atlas_cli apps/atlasd; do
+            if [ -d "$package/test" ] && find "$package/test" -name '*_test.dart' -print -quit | grep -q .; then
+              (cd "$package" && mise exec -- dart test --no-pub)
+            fi
+          done
+      - name: Run Flutter tests
+        working-directory: apps/atlas_flutter
+        run: mise exec -- flutter test --no-pub
