@@ -51,6 +51,8 @@ Run the current Flutter shell with `just app-run macos`. Platform debug builds u
 
 - Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.
 - Add public abstractions only when a real adapter or test requires them.
+- Do not predeclare dependencies for planned code. Run `dart pub add` from the owning Dart package, or `flutter pub add` from `atlas_flutter`, when implementation code first needs a package.
+- Use Dio for every HTTP request. Do not add `package:http` or a second HTTP client. Add a WebSocket dependency only with the first real `atlas_ws` implementation.
 - Public Dart APIs require concise documentation comments.
 - Runtime and protocol packages must not import Flutter.
 - Presentation packages must not import provider, tool, or storage implementations.

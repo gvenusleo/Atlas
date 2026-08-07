@@ -7,7 +7,3 @@ environment:
   sdk: ^3.12.2
 
 resolution: workspace
-
-dependencies:
-  atlas_runtime: ^0.1.0
-  nocterm: ^0.8.0

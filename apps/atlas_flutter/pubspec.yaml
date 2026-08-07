@@ -39,10 +39,6 @@ dependencies:
   flutter_riverpod: ^3.4.2
   go_router: ^17.4.0
   window_manager: ^0.5.2
-  atlas_provider: ^0.1.0
-  atlas_runtime: ^0.1.0
-  atlas_storage: ^0.1.0
-  atlas_tools: ^0.1.0
 
 dev_dependencies:
   flutter_test:

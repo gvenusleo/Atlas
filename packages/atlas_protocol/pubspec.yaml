@@ -7,6 +7,3 @@ environment:
   sdk: ^3.12.2
 
 resolution: workspace
-
-dependencies:
-  json_annotation: ^4.12.0

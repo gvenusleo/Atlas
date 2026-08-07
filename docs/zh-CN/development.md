@@ -51,6 +51,8 @@ just ci           # 完整仓库验证
 
 - 领域概念与 runtime ports 放在 `atlas_runtime`；Provider、存储、工具、UI 和协议实现分别放在其所属 package。
 - 只有真实适配器或测试需要时才增加公共抽象。
+- 不要为规划中的代码预先声明依赖。实现代码首次需要某个 package 时，在所属 Dart package 中运行 `dart pub add`；`atlas_flutter` 使用 `flutter pub add`。
+- 所有 HTTP 请求统一使用 Dio，不得添加 `package:http` 或第二套 HTTP client。只有 `atlas_ws` 出现真实实现时才添加 WebSocket 依赖。
 - 公共 Dart API 必须有简明文档注释。
 - Runtime 与协议 package 不得导入 Flutter。
 - 展示 package 不得导入 Provider、工具或存储实现。

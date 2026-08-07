@@ -15,6 +15,8 @@
 - State assumptions when requirements are ambiguous. Ask before proceeding when different interpretations would materially change the result.
 - Make the smallest change that fully solves the request. Do not perform unrelated refactors, formatting, cleanup, or speculative improvements.
 - Preserve package boundaries. Add an abstraction only when real call sites require it.
+- Do not predeclare package dependencies. Add a dependency from the owning package with `dart pub add` only when implementation code first imports it; use `flutter pub add` for the Flutter application.
+- Use Dio for all HTTP requests. Do not add `package:http` or another HTTP client. Add a dedicated WebSocket dependency only when `atlas_ws` contains an implementation that requires it.
 - Keep the future agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
 - Public Dart types and functions require concise documentation comments. Other comments should explain only non-obvious behavior.
 - Read relevant files before editing. Current code and command output are the source of truth.
