@@ -4,13 +4,13 @@
 
 ## Current State
 
-The repository is a Dart and Flutter workspace scaffold. The existing Flutter shell is executable; runtime, CLI, WebSocket transport, TUI, ACP, and MCP behavior remain planned.
+The repository is a Dart and Flutter workspace. `atlas_runtime` and `atlas_storage` are executable packages with focused tests; provider, CLI, WebSocket transport, TUI, ACP, and MCP behavior remain planned.
 
 ## Workspace Layout
 
 ```text
-packages/atlas_runtime    domain models, ports, and shared agent engine
-packages/atlas_storage    Drift persistence
+packages/atlas_runtime    Session/Turn domain, timeline, ports, and agent engine
+packages/atlas_storage    Drift persistence and runtime row mapping
 packages/atlas_provider   model provider adapters
 packages/atlas_tools      built-in tools
 packages/atlas_ws         versioned WebSocket protocol and transport

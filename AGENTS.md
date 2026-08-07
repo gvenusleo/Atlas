@@ -18,6 +18,8 @@
 - Do not predeclare package dependencies. Add a dependency from the owning package with `dart pub add` only when implementation code first imports it; use `flutter pub add` for the Flutter application.
 - Use Dio for all HTTP requests. Do not add `package:http` or another HTTP client. Add a dedicated WebSocket dependency only when `atlas_ws` contains an implementation that requires it.
 - Keep the future agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
+- Persisted timeline items must belong to the same session and turn; storage writes that update multiple records must be atomic.
+- The runtime serializes active turns per session, and persisted provider/tool failures use safe summaries rather than raw exception text.
 - Public Dart types and functions require concise documentation comments. Other comments should explain only non-obvious behavior.
 - Read relevant files before editing. Current code and command output are the source of truth.
 

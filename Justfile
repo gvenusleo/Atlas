@@ -23,7 +23,7 @@ analyze: deps
 dart-test: deps
     @for package in packages/* apps/atlas_cli; do \
         if [ -d "$package/test" ] && find "$package/test" -name '*_test.dart' -print -quit | grep -q .; then \
-            (cd "$package" && mise exec -- dart test --no-pub); \
+            (cd "$package" && mise exec -- dart test); \
         fi; \
     done
 

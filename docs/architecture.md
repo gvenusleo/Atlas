@@ -2,7 +2,7 @@
 
 [中文](zh-CN/architecture.md)
 
-> **Status:** Planned. Only the Flutter application shell currently contains implementation code.
+> **Status:** In progress. `atlas_runtime` and `atlas_storage` contain the first executable domain, orchestration, and persistence implementation; provider, tool, protocol, TUI, and CLI adapters remain planned.
 
 ## System Shape
 
@@ -45,8 +45,8 @@ external tools to the tool layer.
 
 | Package | Responsibility |
 |---|---|
-| `atlas_runtime` | Domain models, run events, ports, the single agent engine, orchestration, cancellation, compaction, and skills |
-| `atlas_storage` | Drift persistence, queries, and schema migrations |
+| `atlas_runtime` | Session/turn domain models, ordered timeline items, model/tool ports, the single agent engine, cancellation, compaction, and skills |
+| `atlas_storage` | Drift persistence for sessions, turns, typed timeline items, model continuations, compaction checkpoints, queries, and schema migrations |
 | `atlas_provider` | Provider authentication and provider-specific wire conversion |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
 | `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
@@ -68,12 +68,15 @@ external tools to the tool layer.
 
 ## Runtime Contracts
 
-The future runtime must preserve these product-level contracts:
+The runtime implementation and remaining adapters must preserve these
+product-level contracts:
 
 - Each model tool call receives one model-visible result in the original order, including failures.
-- Run events are emitted in occurrence order so clients do not regroup output after a turn.
-- Cancellation before a run starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted run boundary.
-- Selecting a skill preserves the original user text in history. Full skill instructions are turn-scoped model context rather than transcript content.
+- `AgentEvent` values are emitted in occurrence order so clients do not regroup output after a turn.
+- A `Session` contains ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request.
+- Every assistant item may have a provider-owned `ModelContinuation`, persisted as a `ModelCheckpoint` and restored onto the corresponding provider-neutral message.
+- Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary.
+- Planned skill injection will preserve the original user text in history. Full skill instructions will be turn-scoped model context rather than transcript content.
 - Compaction preserves the durable timeline while replacing only the active context checkpoint. An optional compact instruction changes the generated summary, not user history.
 
 These contracts define expected behavior, not compatibility with the removed Go implementation or its database schema.

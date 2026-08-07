@@ -7,3 +7,5 @@ environment:
   sdk: ^3.12.2
 
 resolution: workspace
+dev_dependencies:
+  test: ^1.31.0

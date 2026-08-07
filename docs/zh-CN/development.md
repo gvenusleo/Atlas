@@ -4,13 +4,13 @@
 
 ## 当前状态
 
-仓库目前是 Dart 与 Flutter workspace 骨架。现有 Flutter 应用外壳可以运行；runtime、CLI、WebSocket transport、TUI、ACP 与 MCP 行为仍处于规划阶段。
+仓库目前是 Dart 与 Flutter workspace。`atlas_runtime` 与 `atlas_storage` 已是带聚焦测试的可执行 package；Provider、CLI、WebSocket transport、TUI、ACP 与 MCP 行为仍处于规划阶段。
 
 ## Workspace 结构
 
 ```text
-packages/atlas_runtime    领域模型、ports 与共享 Agent engine
-packages/atlas_storage    Drift 持久化
+packages/atlas_runtime    Session/Turn 领域、timeline、ports 与 Agent engine
+packages/atlas_storage    Drift 持久化与 runtime 行映射
 packages/atlas_provider   模型 Provider 适配器
 packages/atlas_tools      内置工具
 packages/atlas_ws         版本化 WebSocket 协议与 transport

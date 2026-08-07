@@ -8,11 +8,14 @@ Atlas is a local general-purpose AI agent being rebuilt as a unified Dart and Fl
 
 The repository currently contains:
 
-- a Pub workspace that defines the future runtime, protocol, client, and adapter boundaries;
+- a Pub workspace that defines runtime, protocol, client, and adapter boundaries;
 - an initial Flutter desktop and mobile application shell;
+- an executable `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
 - architecture and development contracts for the Dart implementation.
 
-The Dart agent runtime, CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are not implemented yet. There is currently no supported Atlas command-line release from this branch.
+Provider, CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are
+not implemented yet. There is currently no supported Atlas command-line release
+from this branch.
 
 ## Development
 
@@ -30,11 +33,14 @@ Run the existing Flutter shell on macOS:
 just app-run macos
 ```
 
-See [Development](docs/development.md) for workspace commands and [Architecture](docs/architecture.md) for the planned runtime boundaries.
+See [Development](docs/development.md) for workspace commands and [Architecture](docs/architecture.md) for runtime boundaries.
 
 ## Security Model
 
-Atlas is designed to run tools with the permissions of its local process. It does not provide a sandbox, permission prompts, or an approval gate. Runtime capabilities described in the design documents are planned and are not available in the current scaffold.
+Atlas is designed to run tools with the permissions of its local process. It
+does not provide a sandbox, permission prompts, or an approval gate. The current
+runtime and storage implementation follows this boundary; provider, tool, and
+client integrations remain in development.
 
 ## License
 
