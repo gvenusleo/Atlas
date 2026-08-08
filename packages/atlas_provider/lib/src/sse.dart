@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 /// One Server-Sent Events record.
@@ -13,7 +14,10 @@ final class SseEvent {
 }
 
 /// Decodes an SSE byte stream while preserving UTF-8 and CRLF boundaries.
-Stream<SseEvent> decodeSse(Stream<List<int>> bytes) async* {
+///
+/// A listen-forwarding controller makes subscription cancellation immediate.
+Stream<SseEvent> decodeSse(Stream<List<int>> bytes) {
+  final controller = StreamController<SseEvent>();
   String? name;
   final data = <String>[];
 
@@ -42,18 +46,31 @@ Stream<SseEvent> decodeSse(Stream<List<int>> bytes) async* {
     }
   }
 
-  await for (final line
-      in utf8.decoder.bind(bytes).transform(const LineSplitter())) {
-    if (line.isEmpty) {
-      if (data.isNotEmpty) {
-        yield SseEvent(name, data.join('\n'));
-      }
-      reset();
-    } else {
-      addLine(line);
-    }
-  }
-  if (data.isNotEmpty) {
-    yield SseEvent(name, data.join('\n'));
-  }
+  late final StreamSubscription<String> subscription;
+  subscription = utf8.decoder
+      .bind(bytes)
+      .transform(const LineSplitter())
+      .listen(
+        (line) {
+          if (line.isEmpty) {
+            if (data.isNotEmpty) {
+              controller.add(SseEvent(name, data.join('\n')));
+            }
+            reset();
+          } else {
+            addLine(line);
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          controller.addError(error, stackTrace);
+        },
+        onDone: () {
+          if (data.isNotEmpty) {
+            controller.add(SseEvent(name, data.join('\n')));
+          }
+          controller.close();
+        },
+      );
+  controller.onCancel = () => subscription.cancel();
+  return controller.stream;
 }

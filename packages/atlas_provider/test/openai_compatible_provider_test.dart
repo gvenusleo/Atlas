@@ -183,6 +183,59 @@ void main() {
     expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 500)));
   });
 
+  test('does not duplicate Responses text when only items are sent', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"response.output_item.done","item":{"type":"message","content":[{"type":"output_text","text":"Only item text"}]}}',
+        '{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"Only item text"}]}]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final provider = _provider(server, OpenAIProtocol.responses);
+    final events = await provider.stream(_request()).toList();
+    final response = (events.last as ModelCompletedEvent).response;
+    expect((response.content.single as TextContent).text, 'Only item text');
+  });
+
+  test('cancelling the subscription closes the underlying request', () async {
+    final connectionClosed = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    unawaited(
+      server.forEach((request) async {
+        request.response.headers.contentType = ContentType(
+          'text',
+          'event-stream',
+        );
+        request.response.write(
+          'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+        );
+        await request.response.flush();
+        try {
+          final socket = await request.response.detachSocket().timeout(
+            const Duration(seconds: 2),
+          );
+          unawaited(socket.done.then((_) => connectionClosed.complete()));
+        } catch (_) {
+          connectionClosed.complete();
+        }
+      }),
+    );
+
+    final subscription = _provider(
+      server,
+      OpenAIProtocol.chatCompletions,
+    ).stream(_request()).listen((_) {});
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await subscription.cancel();
+
+    await connectionClosed.future.timeout(
+      const Duration(seconds: 3),
+      onTimeout: () => fail('subscription cancel did not close the connection'),
+    );
+  });
+
   test('retries a rate limit before the stream starts', () async {
     var attempts = 0;
     final server = await _startServer((request) async {

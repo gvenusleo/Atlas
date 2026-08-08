@@ -115,49 +115,94 @@ final class OpenAICompatibleProvider implements ModelProvider {
 
   /// Streams one configured model step and emits exactly one terminal event.
   @override
-  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+  Stream<ModelStreamEvent> stream(ModelRequest request) {
     final entry = _entries[request.model];
     if (entry == null) {
-      yield ModelFailedEvent(
-        ArgumentError.value(request.model, 'model', 'is not configured'),
-        StackTrace.current,
+      return Stream<ModelStreamEvent>.value(
+        ModelFailedEvent(
+          ArgumentError.value(request.model, 'model', 'is not configured'),
+          StackTrace.current,
+        ),
       );
-      return;
     }
-    _ActiveResponse? active;
-    try {
-      request.cancellation?.throwIfCancelled();
-      _validateRequest(request, entry);
-      active = await _openStream(request, entry);
-      final parser = entry.provider.protocol == OpenAIProtocol.responses
-          ? _ResponsesParser(
-              entry.provider.id,
-              entry.configuration.descriptor.ref.modelId.value,
-              request.maxOutputTokens > 0,
-            )
-          : _ChatParser(entry.provider.id);
-      await for (final event in decodeSse(active.response.data!.stream)) {
-        request.cancellation?.throwIfCancelled();
-        final updates = parser.accept(event);
-        for (final update in updates) {
-          yield update;
+    return Stream<ModelStreamEvent>.multi((controller) async {
+      _ActiveResponse? active;
+      StreamSubscription<SseEvent>? sseSubscription;
+      var disposed = false;
+
+      controller.onCancel = () async {
+        // Interrupt the request so the connection is not held until the timeout.
+        disposed = true;
+        await sseSubscription?.cancel();
+        active?.close();
+      };
+
+      void emitFailure(Object error, StackTrace stackTrace) {
+        if (disposed) {
+          return;
         }
+        disposed = true;
+        final failure = error is DioException
+            ? request.cancellation?.isCancelled == true
+                  ? const TurnCancelledException()
+                  : OpenAIProviderException(
+                      providerId: entry.provider.id,
+                      message: 'stream failed after the response started',
+                    )
+            : error;
+        controller.add(ModelFailedEvent(failure, stackTrace));
+        controller.close();
       }
-      request.cancellation?.throwIfCancelled();
-      yield ModelCompletedEvent(parser.finish());
-    } catch (error, stackTrace) {
-      final failure = error is DioException
-          ? request.cancellation?.isCancelled == true
-                ? const TurnCancelledException()
-                : OpenAIProviderException(
-                    providerId: entry.provider.id,
-                    message: 'stream failed after the response started',
-                  )
-          : error;
-      yield ModelFailedEvent(failure, stackTrace);
-    } finally {
-      active?.close();
-    }
+
+      try {
+        request.cancellation?.throwIfCancelled();
+        _validateRequest(request, entry);
+        active = await _openStream(request, entry);
+        final parser = entry.provider.protocol == OpenAIProtocol.responses
+            ? _ResponsesParser(
+                entry.provider.id,
+                entry.configuration.descriptor.ref.modelId.value,
+                request.maxOutputTokens > 0,
+              )
+            : _ChatParser(entry.provider.id);
+        sseSubscription = decodeSse(active.response.data!.stream).listen(
+          (event) {
+            if (disposed) {
+              return;
+            }
+            try {
+              request.cancellation?.throwIfCancelled();
+              final updates = parser.accept(event);
+              for (final update in updates) {
+                controller.add(update);
+              }
+            } catch (error, stackTrace) {
+              emitFailure(error, stackTrace);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            emitFailure(error, stackTrace);
+          },
+          onDone: () {
+            if (disposed) {
+              return;
+            }
+            try {
+              request.cancellation?.throwIfCancelled();
+              controller.add(ModelCompletedEvent(parser.finish()));
+              disposed = true;
+              controller.close();
+            } catch (error, stackTrace) {
+              emitFailure(error, stackTrace);
+            } finally {
+              active?.close();
+            }
+          },
+        );
+      } catch (error, stackTrace) {
+        emitFailure(error, stackTrace);
+      }
+    });
   }
 
   void _validateRequest(ModelRequest request, _ModelEntry entry) {
@@ -238,6 +283,7 @@ final class OpenAICompatibleProvider implements ModelProvider {
             response: response,
             finished: requestFinished,
             cancellationListener: cancelSubscription,
+            cancelToken: cancelToken,
           );
         }
         final retryable = status == 429 || status >= 500;
@@ -294,17 +340,21 @@ final class _ActiveResponse {
     required this.response,
     required this.finished,
     required this.cancellationListener,
+    required this.cancelToken,
   });
 
   final Response<ResponseBody> response;
   final Completer<void> finished;
   final Future<void>? cancellationListener;
+  final CancelToken cancelToken;
 
   void close() {
     if (!finished.isCompleted) {
       finished.complete();
     }
     unawaited(cancellationListener);
+    // No-op for an established response; the subscription cancel closes it.
+    cancelToken.cancel();
   }
 }
 
@@ -783,7 +833,7 @@ final class _ResponsesParser implements _Parser {
     if (!_items.any((existing) => jsonEncode(existing) == jsonEncode(frozen))) {
       _items.add(frozen);
     }
-    if (item['type'] == 'message') {
+    if (item['type'] == 'message' && _fallbackContent.isEmpty) {
       final content = item['content'];
       if (content is List) {
         for (final part in content) {
