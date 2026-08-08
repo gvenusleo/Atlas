@@ -11,10 +11,12 @@ The repository currently contains:
 - a Pub workspace that defines runtime, protocol, client, and adapter boundaries;
 - an initial Flutter desktop and mobile application shell;
 - an executable `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
+- an `atlas_provider` adapter for OpenAI-compatible Chat Completions and
+  Responses streaming APIs;
 - architecture and development contracts for the Dart implementation.
 
-Provider, CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are
-not implemented yet. There is currently no supported Atlas command-line release
+CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are not
+implemented yet. There is currently no supported Atlas command-line release
 from this branch.
 
 ## Development

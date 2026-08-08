@@ -1,12 +1,24 @@
+import 'dart:async';
+
 /// A cooperative cancellation signal shared by a model turn and its tools.
 final class CancellationToken {
   bool _cancelled = false;
+  final Completer<void> _cancelledCompleter = Completer<void>();
 
   /// Whether cancellation has been requested.
   bool get isCancelled => _cancelled;
 
+  /// Completes when cancellation has been requested.
+  Future<void> get whenCancelled => _cancelledCompleter.future;
+
   /// Requests cancellation for the current operation.
-  void cancel() => _cancelled = true;
+  void cancel() {
+    if (_cancelled) {
+      return;
+    }
+    _cancelled = true;
+    _cancelledCompleter.complete();
+  }
 
   /// Throws when cancellation has been requested.
   void throwIfCancelled() {
