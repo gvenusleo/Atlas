@@ -23,7 +23,7 @@ jobs:
         with:
           cache: true
       - run: mise exec -- flutter pub get --enforce-lockfile
-      - run: mise exec -- dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlasd apps/atlas_flutter/lib apps/atlas_flutter/test
+      - run: mise exec -- dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test
       - run: mise exec -- dart analyze
       - name: Run Dart package tests
         run: |

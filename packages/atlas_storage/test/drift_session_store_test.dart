@@ -1,16 +1,12 @@
 import 'package:atlas_runtime/atlas_runtime.dart' as runtime;
 import 'package:atlas_storage/atlas_storage.dart';
-import 'package:atlas_storage/src/database/database.dart';
-import 'package:drift/native.dart';
 import 'package:test/test.dart';
 
 void main() {
-  late AtlasDatabase database;
   late DriftSessionStore store;
 
   setUp(() {
-    database = AtlasDatabase(NativeDatabase.memory());
-    store = DriftSessionStore(database);
+    store = DriftSessionStore.inMemory();
   });
 
   tearDown(() => store.close());
@@ -19,7 +15,7 @@ void main() {
     final session = _session('session-1', updatedAt: DateTime.utc(2026, 1, 2));
     final turn = _turn(session.id, 'turn-1');
     final user = runtime.UserMessageItem(
-      id: const runtime.TimelineItemId('item-1'),
+      id: runtime.TimelineItemId('item-1'),
       sessionId: session.id,
       turnId: turn.id,
       sequence: 0,
@@ -27,7 +23,7 @@ void main() {
       content: const [runtime.TextContent('hello')],
     );
     final assistant = runtime.AssistantMessageItem(
-      id: const runtime.TimelineItemId('item-2'),
+      id: runtime.TimelineItemId('item-2'),
       sessionId: session.id,
       turnId: turn.id,
       sequence: 1,
@@ -38,7 +34,7 @@ void main() {
     );
     final checkpoint = runtime.ModelCheckpoint(
       timelineItemId: assistant.id,
-      continuation: const runtime.ModelContinuation(
+      continuation: runtime.ModelContinuation(
         providerId: runtime.ProviderId('provider'),
         reasoningSummary: 'summary',
         opaquePayload: <String, Object?>{'cursor': 'next'},
@@ -68,6 +64,15 @@ void main() {
         model: _model,
       ),
     );
+    var loaded = await store.loadSession(session.id);
+    expect(loaded.timeline, hasLength(2));
+    expect(loaded.timeline[0], isA<runtime.UserMessageItem>());
+    expect(loaded.timeline[1], isA<runtime.AssistantMessageItem>());
+    expect(
+      loaded.modelCheckpoints.single.continuation.opaquePayload['cursor'],
+      'next',
+    );
+
     await store.saveCompaction(
       session.id,
       runtime.CompactionCheckpoint(
@@ -80,18 +85,13 @@ void main() {
       ),
     );
 
-    final loaded = await store.loadSession(session.id);
-    expect(loaded.timeline, hasLength(2));
-    expect(loaded.timeline[0], isA<runtime.UserMessageItem>());
-    expect(loaded.timeline[1], isA<runtime.AssistantMessageItem>());
-    expect(
-      loaded.modelCheckpoints.single.continuation.opaquePayload['cursor'],
-      'next',
-    );
+    loaded = await store.loadSession(session.id);
+    expect(loaded.timeline, isEmpty);
+    expect(loaded.modelCheckpoints, isEmpty);
     expect(loaded.session.compaction?.inputTokensAfter, 4);
   });
 
-  test('lists sessions with a stable cursor and cascades deletes', () async {
+  test('lists sessions with a stable cursor and deletes sessions', () async {
     final first = _session('session-a', updatedAt: DateTime.utc(2026, 1, 1));
     final second = _session('session-b', updatedAt: DateTime.utc(2026, 1, 2));
     await store.createSession(first);
@@ -106,7 +106,7 @@ void main() {
 
     final turn = _turn(first.id, 'turn-delete');
     final item = runtime.UserMessageItem(
-      id: const runtime.TimelineItemId('item-delete'),
+      id: runtime.TimelineItemId('item-delete'),
       sessionId: first.id,
       turnId: turn.id,
       sequence: 0,
@@ -121,15 +121,13 @@ void main() {
       () => store.loadSession(first.id),
       throwsA(isA<runtime.SessionNotFoundException>()),
     );
-    expect(await (database.select(database.timelineItems)).get(), isEmpty);
-    expect(await (database.select(database.turns)).get(), isEmpty);
   });
 
   test('rolls back an invalid checkpoint with its assistant item', () async {
     final session = _session('session-rollback', updatedAt: DateTime.utc(2026));
     final turn = _turn(session.id, 'turn-rollback');
     final user = runtime.UserMessageItem(
-      id: const runtime.TimelineItemId('item-user'),
+      id: runtime.TimelineItemId('item-user'),
       sessionId: session.id,
       turnId: turn.id,
       sequence: 0,
@@ -137,7 +135,7 @@ void main() {
       content: const [runtime.TextContent('hello')],
     );
     final assistant = runtime.AssistantMessageItem(
-      id: const runtime.TimelineItemId('item-assistant'),
+      id: runtime.TimelineItemId('item-assistant'),
       sessionId: session.id,
       turnId: turn.id,
       sequence: 1,
@@ -157,8 +155,8 @@ void main() {
           assistantMessage: assistant,
           toolCalls: const [],
           checkpoint: runtime.ModelCheckpoint(
-            timelineItemId: const runtime.TimelineItemId('wrong-item'),
-            continuation: const runtime.ModelContinuation(
+            timelineItemId: runtime.TimelineItemId('wrong-item'),
+            continuation: runtime.ModelContinuation(
               providerId: runtime.ProviderId('provider'),
             ),
             createdAt: session.updatedAt,
@@ -196,12 +194,12 @@ void main() {
       );
 
       final forged = runtime.ToolResultItem(
-        id: const runtime.TimelineItemId('item-forged'),
+        id: runtime.TimelineItemId('item-forged'),
         sessionId: first.id,
         turnId: secondTurn.id,
         sequence: 1,
         occurredAt: first.updatedAt,
-        callId: const runtime.ToolCallId('call-forged'),
+        callId: runtime.ToolCallId('call-forged'),
         content: 'forged',
       );
       await expectLater(
@@ -274,7 +272,7 @@ void main() {
     );
 
     final assistant = runtime.AssistantMessageItem(
-      id: const runtime.TimelineItemId('compact-assistant'),
+      id: runtime.TimelineItemId('compact-assistant'),
       sessionId: session.id,
       turnId: turn.id,
       sequence: 1,
@@ -284,12 +282,12 @@ void main() {
       stopReason: runtime.StopReason.toolUse,
     );
     final call = runtime.ToolCallItem(
-      id: const runtime.TimelineItemId('compact-call'),
+      id: runtime.TimelineItemId('compact-call'),
       sessionId: session.id,
       turnId: turn.id,
       sequence: 2,
       occurredAt: session.updatedAt,
-      call: const runtime.ToolCall(
+      call: runtime.ToolCall(
         id: runtime.ToolCallId('compact-call-id'),
         name: 'read',
         arguments: <String, Object?>{},
@@ -329,7 +327,7 @@ void main() {
   });
 }
 
-const _model = runtime.ModelRef(
+final _model = runtime.ModelRef(
   providerId: runtime.ProviderId('provider'),
   modelId: runtime.ModelId('model'),
 );

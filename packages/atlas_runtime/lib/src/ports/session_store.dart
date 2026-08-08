@@ -74,7 +74,7 @@ abstract interface class SessionStore {
   /// Creates a new session.
   Future<void> createSession(Session session);
 
-  /// Loads a session with all durable turns and timeline items.
+  /// Loads session state and timeline items after its compaction boundary.
   Future<SessionSnapshot> loadSession(SessionId sessionId);
 
   /// Lists session summaries in descending update order.

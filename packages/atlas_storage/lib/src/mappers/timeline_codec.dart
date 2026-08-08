@@ -65,17 +65,6 @@ final class TimelineCodec {
           'is_error': isError,
           'metadata': metadata,
         };
-      case PlanUpdatedItem(:final entries):
-        kind = 'plan_updated';
-        payload = {
-          'entries': [
-            for (final entry in entries)
-              {'step': entry.step, 'status': entry.status.name},
-          ],
-        };
-      case CompactionItem(:final compactedThroughSequence):
-        kind = 'compaction';
-        payload = {'compacted_through_sequence': compactedThroughSequence};
     }
     return EncodedTimelineItem(
       kind: kind,
@@ -156,24 +145,6 @@ final class TimelineCodec {
           isError: _bool(decoded, 'is_error'),
           metadata: _jsonObject(decoded['metadata'], 'metadata'),
         );
-      case 'plan_updated':
-        return PlanUpdatedItem(
-          id: id,
-          sessionId: sessionId,
-          turnId: turnId,
-          sequence: sequence,
-          occurredAt: occurredAt.toUtc(),
-          entries: _decodePlanEntries(decoded['entries']),
-        );
-      case 'compaction':
-        return CompactionItem(
-          id: id,
-          sessionId: sessionId,
-          turnId: turnId,
-          sequence: sequence,
-          occurredAt: occurredAt.toUtc(),
-          compactedThroughSequence: _int(decoded, 'compacted_through_sequence'),
-        );
       default:
         throw FormatException('Unsupported timeline item kind: $kind');
     }
@@ -237,25 +208,6 @@ final class TimelineCodec {
       totalTokens: _int(object, 'total_tokens'),
       cacheReadInputTokens: _int(object, 'cache_read_input_tokens'),
       cacheWriteInputTokens: _int(object, 'cache_write_input_tokens'),
-    );
-  }
-
-  static List<PlanEntry> _decodePlanEntries(Object? value) {
-    if (value is! List<Object?>) {
-      throw const FormatException('entries must be a JSON array');
-    }
-    return List<PlanEntry>.unmodifiable(
-      value.map((item) {
-        final object = _jsonObject(item, 'plan entry');
-        return PlanEntry(
-          step: _string(object, 'step'),
-          status: _enumByName(
-            PlanStatus.values,
-            _string(object, 'status'),
-            'status',
-          ),
-        );
-      }),
     );
   }
 

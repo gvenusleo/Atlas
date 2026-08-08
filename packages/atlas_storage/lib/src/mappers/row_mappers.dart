@@ -8,12 +8,7 @@ import 'timeline_codec.dart';
 
 /// Converts Drift rows and companions at the storage boundary.
 final class RowMappers {
-  /// Creates row mappers with an optional timeline codec.
-  RowMappers({TimelineCodec? timelineCodec})
-    : timelineCodec = timelineCodec ?? TimelineCodec();
-
-  /// The versioned timeline payload codec.
-  final TimelineCodec timelineCodec;
+  final TimelineCodec _timelineCodec = TimelineCodec();
 
   /// Converts a session row into a runtime session.
   runtime.Session session(
@@ -110,7 +105,7 @@ final class RowMappers {
 
   /// Converts a timeline row into a runtime variant.
   runtime.TimelineItem timelineItem(TimelineItemRow row) =>
-      timelineCodec.decode(
+      _timelineCodec.decode(
         id: runtime.TimelineItemId(row.id),
         sessionId: runtime.SessionId(row.sessionId),
         turnId: runtime.TurnId(row.turnId),
@@ -123,7 +118,7 @@ final class RowMappers {
 
   /// Converts a runtime timeline item into a Drift companion.
   TimelineItemsCompanion timelineCompanion(runtime.TimelineItem value) {
-    final encoded = timelineCodec.encode(value);
+    final encoded = _timelineCodec.encode(value);
     return TimelineItemsCompanion.insert(
       id: value.id.value,
       sessionId: value.sessionId.value,

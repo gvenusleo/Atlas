@@ -91,7 +91,10 @@ final class AgentRuntime {
       model: model,
       reasoningEffort: request.reasoningEffort,
     );
-    final sequence = _nextSequence(loaded.timeline);
+    final sequence = _nextSequence(
+      loaded.timeline,
+      compaction: session.compaction,
+    );
     final userMessage = UserMessageItem(
       id: ids.timelineItemId(),
       sessionId: session.id,
@@ -224,7 +227,6 @@ final class AgentRuntime {
           turnId: turnId,
           sequence: eventSequence++,
           occurredAt: _now().toUtc(),
-          response: completedResponse,
           assistantMessage: assistant,
           toolCalls: List<ToolCallItem>.unmodifiable(calls),
         );
@@ -338,10 +340,14 @@ final class AgentRuntime {
     }
   }
 
-  Future<_LoadedSession> _loadOrCreateSession(
-    TurnRequest request,
-    DateTime now,
-  ) async {
+  Future<
+    ({
+      Session session,
+      List<TimelineItem> timeline,
+      List<ModelCheckpoint> modelCheckpoints,
+    })
+  >
+  _loadOrCreateSession(TurnRequest request, DateTime now) async {
     if (request.sessionId != null) {
       final snapshot = await store.loadSession(request.sessionId!);
       final current = snapshot.session;
@@ -357,7 +363,11 @@ final class AgentRuntime {
         compaction: current.compaction,
         lastUsage: current.lastUsage,
       );
-      return _LoadedSession.fromSnapshot(snapshot, session);
+      return (
+        session: session,
+        timeline: snapshot.timeline,
+        modelCheckpoints: snapshot.modelCheckpoints,
+      );
     }
     final workingDirectory = request.workingDirectory;
     if (workingDirectory == null || workingDirectory.trim().isEmpty) {
@@ -372,7 +382,11 @@ final class AgentRuntime {
       createdAt: now,
       updatedAt: now,
     );
-    return _LoadedSession.newSession(session);
+    return (
+      session: session,
+      timeline: const <TimelineItem>[],
+      modelCheckpoints: const <ModelCheckpoint>[],
+    );
   }
 
   String _systemPrompt(Session session, TurnRequest request) {
@@ -472,9 +486,6 @@ final class AgentRuntime {
               toolOutput: content,
             ),
           );
-        case PlanUpdatedItem():
-        case CompactionItem():
-          break;
       }
     }
     return List<ModelMessage>.unmodifiable(result);
@@ -512,8 +523,12 @@ final class AgentRuntime {
     outcome: outcome,
   );
 
-  static int _nextSequence(List<TimelineItem> items) =>
-      items.isEmpty ? 0 : items.last.sequence + 1;
+  static int _nextSequence(
+    List<TimelineItem> items, {
+    CompactionCheckpoint? compaction,
+  }) => items.isNotEmpty
+      ? items.last.sequence + 1
+      : (compaction?.compactedThroughSequence ?? -1) + 1;
 
   static String _emptySystemPrompt(SessionId sessionId, TurnRequest request) =>
       '';
@@ -536,20 +551,4 @@ final class AgentRuntime {
       }
     };
   }
-}
-
-final class _LoadedSession {
-  _LoadedSession.fromSnapshot(SessionSnapshot snapshot, this.session)
-    : snapshot = snapshot,
-      assert(session.id == snapshot.session.id);
-
-  _LoadedSession.newSession(this.session) : snapshot = null;
-
-  final SessionSnapshot? snapshot;
-  final Session session;
-
-  List<TimelineItem> get timeline => snapshot?.timeline ?? const [];
-
-  List<ModelCheckpoint> get modelCheckpoints =>
-      snapshot?.modelCheckpoints ?? const [];
 }

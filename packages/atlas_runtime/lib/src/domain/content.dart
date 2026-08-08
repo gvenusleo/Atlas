@@ -50,7 +50,3 @@ String textFromContent(List<ContentPart> parts) => parts
     .map((part) => part.text)
     .where((text) => text.isNotEmpty)
     .join('\n\n');
-
-/// Returns whether any part contains an image.
-bool hasImageContent(List<ContentPart> parts) =>
-    parts.any((part) => part is ImageContent);

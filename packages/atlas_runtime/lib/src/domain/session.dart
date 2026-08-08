@@ -70,7 +70,7 @@ final class SessionSummary {
   final TokenUsage lastUsage;
 }
 
-/// A fully loaded session and its ordered execution history.
+/// Session state required to continue agent execution.
 final class SessionSnapshot {
   /// Creates a session snapshot.
   const SessionSnapshot({
@@ -86,10 +86,10 @@ final class SessionSnapshot {
   /// Turns ordered by start time.
   final List<Turn> turns;
 
-  /// Timeline items ordered by sequence.
+  /// Active timeline items after the current compaction boundary.
   final List<TimelineItem> timeline;
 
-  /// Provider continuations linked to assistant timeline items.
+  /// Provider continuations linked to active assistant timeline items.
   final List<ModelCheckpoint> modelCheckpoints;
 }
 

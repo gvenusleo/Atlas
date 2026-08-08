@@ -10,34 +10,26 @@ import '../mappers/row_mappers.dart';
 
 /// Drift-backed implementation of the runtime session persistence port.
 final class DriftSessionStore implements runtime.SessionStore {
-  /// Creates a store over an open Atlas database.
-  DriftSessionStore(this.database, {RowMappers? mappers})
-    : mappers = mappers ?? RowMappers();
+  DriftSessionStore._(this._database) : _mappers = RowMappers();
 
   /// Opens a persistent store backed by [file].
-  factory DriftSessionStore.openFile(File file, {RowMappers? mappers}) =>
-      DriftSessionStore(AtlasDatabase.openFile(file), mappers: mappers);
+  factory DriftSessionStore.openFile(File file) =>
+      DriftSessionStore._(AtlasDatabase.openFile(file));
 
   /// Creates an in-memory store for tests and local ephemeral sessions.
-  factory DriftSessionStore.inMemory({RowMappers? mappers}) =>
-      DriftSessionStore(
-        AtlasDatabase(NativeDatabase.memory()),
-        mappers: mappers,
-      );
+  factory DriftSessionStore.inMemory() =>
+      DriftSessionStore._(AtlasDatabase(NativeDatabase.memory()));
 
-  /// The owned database connection.
-  final AtlasDatabase database;
-
-  /// The row/domain mappers.
-  final RowMappers mappers;
+  final AtlasDatabase _database;
+  final RowMappers _mappers;
 
   /// Closes the underlying database connection.
-  Future<void> close() => database.close();
+  Future<void> close() => _database.close();
 
   @override
-  Future<void> createSession(runtime.Session session) => database
-      .into(database.sessions)
-      .insert(mappers.sessionCompanion(session));
+  Future<void> createSession(runtime.Session session) => _database
+      .into(_database.sessions)
+      .insert(_mappers.sessionCompanion(session));
 
   @override
   Future<runtime.SessionSnapshot> loadSession(
@@ -45,22 +37,31 @@ final class DriftSessionStore implements runtime.SessionStore {
   ) async {
     final sessionRow = await _sessionRow(sessionId);
     final compactionRow =
-        await (database.select(database.compactionCheckpoints)
+        await (_database.select(_database.compactionCheckpoints)
               ..where((table) => table.sessionId.equals(sessionId.value)))
             .getSingleOrNull();
+    final compaction = compactionRow == null
+        ? null
+        : _mappers.compaction(compactionRow);
     final turnRows =
-        await (database.select(database.turns)
+        await (_database.select(_database.turns)
               ..where((table) => table.sessionId.equals(sessionId.value))
               ..orderBy([(table) => OrderingTerm.asc(table.startedAt)]))
             .get();
-    final timelineRows =
-        await (database.select(database.timelineItems)
-              ..where((table) => table.sessionId.equals(sessionId.value))
-              ..orderBy([(table) => OrderingTerm.asc(table.sequence)]))
-            .get();
+    final timelineQuery = _database.select(_database.timelineItems)
+      ..where((table) => table.sessionId.equals(sessionId.value));
+    if (compaction != null && compaction.summary.trim().isNotEmpty) {
+      timelineQuery.where(
+        (table) => table.sequence.isBiggerThanValue(
+          compaction.compactedThroughSequence,
+        ),
+      );
+    }
+    timelineQuery.orderBy([(table) => OrderingTerm.asc(table.sequence)]);
+    final timelineRows = await timelineQuery.get();
     final checkpointRows = timelineRows.isEmpty
         ? const <ModelCheckpointRow>[]
-        : await (database.select(database.modelCheckpoints)..where(
+        : await (_database.select(_database.modelCheckpoints)..where(
                 (table) => table.timelineItemId.isIn(
                   timelineRows.map((row) => row.id),
                 ),
@@ -70,21 +71,16 @@ final class DriftSessionStore implements runtime.SessionStore {
       for (final row in checkpointRows) row.timelineItemId: row,
     };
     return runtime.SessionSnapshot(
-      session: mappers.session(
-        sessionRow,
-        compaction: compactionRow == null
-            ? null
-            : mappers.compaction(compactionRow),
-      ),
-      turns: List<runtime.Turn>.unmodifiable(turnRows.map(mappers.turn)),
+      session: _mappers.session(sessionRow, compaction: compaction),
+      turns: List<runtime.Turn>.unmodifiable(turnRows.map(_mappers.turn)),
       timeline: List<runtime.TimelineItem>.unmodifiable(
-        timelineRows.map(mappers.timelineItem),
+        timelineRows.map(_mappers.timelineItem),
       ),
       modelCheckpoints: List<runtime.ModelCheckpoint>.unmodifiable(
         timelineRows
             .map((row) => checkpointsByItem[row.id])
             .nonNulls
-            .map(mappers.modelCheckpoint),
+            .map(_mappers.modelCheckpoint),
       ),
     );
   }
@@ -93,7 +89,7 @@ final class DriftSessionStore implements runtime.SessionStore {
   Future<runtime.SessionPage> listSessions(runtime.SessionQuery query) async {
     final limit = query.limit <= 0 ? 20 : query.limit.clamp(1, 100);
     final cursor = query.cursor == null ? null : _decodeCursor(query.cursor!);
-    final select = database.select(database.sessions);
+    final select = _database.select(_database.sessions);
     if (query.workingDirectory != null) {
       select.where(
         (table) => table.workingDirectory.equals(query.workingDirectory!),
@@ -117,7 +113,7 @@ final class DriftSessionStore implements runtime.SessionStore {
     final hasMore = rows.length > limit;
     final pageRows = hasMore ? rows.take(limit).toList() : rows;
     final items = List<runtime.SessionSummary>.unmodifiable(
-      pageRows.map(mappers.sessionSummary),
+      pageRows.map(_mappers.sessionSummary),
     );
     return runtime.SessionPage(
       items: items,
@@ -128,21 +124,21 @@ final class DriftSessionStore implements runtime.SessionStore {
   }
 
   @override
-  Future<void> beginTurn(runtime.BeginTurn operation) => database.transaction(
+  Future<void> beginTurn(runtime.BeginTurn operation) => _database.transaction(
     () async {
       _validateBeginTurn(operation);
-      await database
-          .into(database.sessions)
-          .insertOnConflictUpdate(mappers.sessionCompanion(operation.session));
-      await database
-          .into(database.turns)
-          .insert(mappers.turnCompanion(operation.turn));
+      await _database
+          .into(_database.sessions)
+          .insertOnConflictUpdate(_mappers.sessionCompanion(operation.session));
+      await _database
+          .into(_database.turns)
+          .insert(_mappers.turnCompanion(operation.turn));
       await _insertTimeline(operation.userMessage);
       final title = operation.session.title.isEmpty
           ? _title(operation.userMessage)
           : operation.session.title;
-      await (database.update(
-        database.sessions,
+      await (_database.update(
+        _database.sessions,
       )..where((table) => table.id.equals(operation.session.id.value))).write(
         SessionsCompanion(
           title: Value(title),
@@ -156,7 +152,7 @@ final class DriftSessionStore implements runtime.SessionStore {
   Future<void> appendModelStep(
     runtime.SessionId sessionId,
     runtime.PersistedModelStep operation,
-  ) => database.transaction(() async {
+  ) => _database.transaction(() async {
     await _requireTimelineOwnership(operation.assistantMessage, sessionId);
     await _insertTimeline(operation.assistantMessage);
     for (final call in operation.toolCalls) {
@@ -170,9 +166,9 @@ final class DriftSessionStore implements runtime.SessionStore {
           'model checkpoint must reference its assistant item',
         );
       }
-      await database
-          .into(database.modelCheckpoints)
-          .insert(mappers.modelCheckpointCompanion(checkpoint));
+      await _database
+          .into(_database.modelCheckpoints)
+          .insert(_mappers.modelCheckpointCompanion(checkpoint));
     }
     await _touchSession(
       sessionId,
@@ -185,7 +181,7 @@ final class DriftSessionStore implements runtime.SessionStore {
   Future<void> appendToolResult(
     runtime.SessionId sessionId,
     runtime.ToolResultItem item,
-  ) => database.transaction(() async {
+  ) => _database.transaction(() async {
     await _requireTimelineOwnership(item, sessionId);
     await _insertTimeline(item);
     await _touchSession(sessionId, item.occurredAt);
@@ -193,7 +189,7 @@ final class DriftSessionStore implements runtime.SessionStore {
 
   @override
   Future<void> finishTurn(runtime.SessionId sessionId, runtime.Turn turn) =>
-      database.transaction(() async {
+      _database.transaction(() async {
         if (turn.sessionId != sessionId ||
             turn.status == runtime.TurnStatus.running) {
           throw const FormatException(
@@ -201,12 +197,12 @@ final class DriftSessionStore implements runtime.SessionStore {
           );
         }
         final count =
-            await (database.update(database.turns)..where(
+            await (_database.update(_database.turns)..where(
                   (table) =>
                       table.id.equals(turn.id.value) &
                       table.sessionId.equals(sessionId.value),
                 ))
-                .write(mappers.turnCompanion(turn));
+                .write(_mappers.turnCompanion(turn));
         if (count == 0) {
           throw runtime.SessionNotFoundException(sessionId);
         }
@@ -221,21 +217,21 @@ final class DriftSessionStore implements runtime.SessionStore {
   Future<void> saveCompaction(
     runtime.SessionId sessionId,
     runtime.CompactionCheckpoint checkpoint,
-  ) => database.transaction(() async {
+  ) => _database.transaction(() async {
     if (checkpoint.sessionId != sessionId) {
       throw const FormatException('compaction must match the session');
     }
     await _validateCompactionBoundary(sessionId, checkpoint);
-    await database
-        .into(database.compactionCheckpoints)
-        .insertOnConflictUpdate(mappers.compactionCompanion(checkpoint));
+    await _database
+        .into(_database.compactionCheckpoints)
+        .insertOnConflictUpdate(_mappers.compactionCompanion(checkpoint));
     await _touchSession(sessionId, checkpoint.createdAt);
   });
 
   @override
   Future<void> deleteSession(runtime.SessionId sessionId) async {
-    final count = await (database.delete(
-      database.sessions,
+    final count = await (_database.delete(
+      _database.sessions,
     )..where((table) => table.id.equals(sessionId.value))).go();
     if (count == 0) {
       throw runtime.SessionNotFoundException(sessionId);
@@ -243,8 +239,8 @@ final class DriftSessionStore implements runtime.SessionStore {
   }
 
   Future<SessionRow> _sessionRow(runtime.SessionId sessionId) async {
-    final row = await (database.select(
-      database.sessions,
+    final row = await (_database.select(
+      _database.sessions,
     )..where((table) => table.id.equals(sessionId.value))).getSingleOrNull();
     if (row == null) {
       throw runtime.SessionNotFoundException(sessionId);
@@ -252,9 +248,9 @@ final class DriftSessionStore implements runtime.SessionStore {
     return row;
   }
 
-  Future<void> _insertTimeline(runtime.TimelineItem item) => database
-      .into(database.timelineItems)
-      .insert(mappers.timelineCompanion(item));
+  Future<void> _insertTimeline(runtime.TimelineItem item) => _database
+      .into(_database.timelineItems)
+      .insert(_mappers.timelineCompanion(item));
 
   Future<void> _touchSession(
     runtime.SessionId sessionId,
@@ -271,8 +267,8 @@ final class DriftSessionStore implements runtime.SessionStore {
             lastCacheReadTokens: Value(usage.cacheReadInputTokens),
             lastCacheWriteTokens: Value(usage.cacheWriteInputTokens),
           );
-    final count = await (database.update(
-      database.sessions,
+    final count = await (_database.update(
+      _database.sessions,
     )..where((table) => table.id.equals(sessionId.value))).write(companion);
     if (count == 0) {
       throw runtime.SessionNotFoundException(sessionId);
@@ -296,8 +292,8 @@ final class DriftSessionStore implements runtime.SessionStore {
     if (item.sessionId != sessionId) {
       throw const FormatException('timeline item must match the session');
     }
-    final turn = await (database.select(
-      database.turns,
+    final turn = await (_database.select(
+      _database.turns,
     )..where((table) => table.id.equals(item.turnId.value))).getSingleOrNull();
     if (turn == null || turn.sessionId != sessionId.value) {
       throw const FormatException('timeline item turn must match the session');
@@ -309,7 +305,7 @@ final class DriftSessionStore implements runtime.SessionStore {
     runtime.CompactionCheckpoint checkpoint,
   ) async {
     final boundary =
-        await (database.select(database.timelineItems)..where(
+        await (_database.select(_database.timelineItems)..where(
               (table) =>
                   table.sessionId.equals(sessionId.value) &
                   table.sequence.equals(checkpoint.compactedThroughSequence),
@@ -320,8 +316,8 @@ final class DriftSessionStore implements runtime.SessionStore {
         'compaction boundary must reference a timeline item',
       );
     }
-    final turn = await (database.select(
-      database.turns,
+    final turn = await (_database.select(
+      _database.turns,
     )..where((table) => table.id.equals(boundary.turnId))).getSingleOrNull();
     if (turn == null || turn.status == runtime.TurnStatus.running.name) {
       throw const FormatException(
@@ -329,7 +325,7 @@ final class DriftSessionStore implements runtime.SessionStore {
       );
     }
     final laterItem =
-        await (database.select(database.timelineItems)
+        await (_database.select(_database.timelineItems)
               ..where(
                 (table) =>
                     table.turnId.equals(boundary.turnId) &
@@ -361,7 +357,7 @@ final class DriftSessionStore implements runtime.SessionStore {
         utf8.encode('${updatedAt.toUtc().microsecondsSinceEpoch}\u0000$id'),
       );
 
-  static _SessionCursor _decodeCursor(String value) {
+  static ({DateTime updatedAt, String id}) _decodeCursor(String value) {
     try {
       final decoded = utf8.decode(base64Url.decode(value));
       final separator = decoded.indexOf('\u0000');
@@ -369,9 +365,9 @@ final class DriftSessionStore implements runtime.SessionStore {
         throw const FormatException('invalid cursor');
       }
       final micros = int.parse(decoded.substring(0, separator));
-      return _SessionCursor(
-        DateTime.fromMicrosecondsSinceEpoch(micros, isUtc: true),
-        decoded.substring(separator + 1),
+      return (
+        updatedAt: DateTime.fromMicrosecondsSinceEpoch(micros, isUtc: true),
+        id: decoded.substring(separator + 1),
       );
     } on FormatException {
       rethrow;
@@ -379,11 +375,4 @@ final class DriftSessionStore implements runtime.SessionStore {
       throw FormatException('invalid cursor: $error');
     }
   }
-}
-
-final class _SessionCursor {
-  const _SessionCursor(this.updatedAt, this.id);
-
-  final DateTime updatedAt;
-  final String id;
 }

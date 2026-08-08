@@ -15,8 +15,8 @@ can use names and invariants that fit the Dart runtime directly.
 - A `Session` owns an ordered timeline and contains durable working-directory
   settings and latest usage metadata.
 - A `Turn` records one submitted user request and its terminal lifecycle state.
-- Every durable message, tool call/result, plan update, and compaction marker is
-  a typed `TimelineItem` with a session-local sequence.
+- Every durable message and tool call/result is a typed `TimelineItem` with a
+  session-local sequence.
 - Provider-specific continuation state is modeled as `ModelContinuation` and
   persisted as a `ModelCheckpoint` linked to its assistant timeline item.
 - `SessionStore` is the runtime persistence port. `atlas_storage` maps these

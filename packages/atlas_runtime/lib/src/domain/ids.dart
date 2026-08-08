@@ -4,13 +4,10 @@ typedef JsonValue = Object?;
 /// A JSON object value.
 typedef JsonObject = Map<String, Object?>;
 
-/// A JSON array value.
-typedef JsonArray = List<Object?>;
-
 /// Identifies a durable Atlas session.
 final class SessionId {
   /// Creates a session identifier from a non-empty value.
-  const SessionId(this.value) : assert(value != '');
+  SessionId(String value) : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -28,7 +25,7 @@ final class SessionId {
 /// Identifies one user turn within a session.
 final class TurnId {
   /// Creates a turn identifier from a non-empty value.
-  const TurnId(this.value) : assert(value != '');
+  TurnId(String value) : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -46,7 +43,7 @@ final class TurnId {
 /// Identifies one persisted timeline item.
 final class TimelineItemId {
   /// Creates a timeline item identifier from a non-empty value.
-  const TimelineItemId(this.value) : assert(value != '');
+  TimelineItemId(String value) : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -65,7 +62,7 @@ final class TimelineItemId {
 /// Identifies a model-requested tool call.
 final class ToolCallId {
   /// Creates a tool call identifier from a non-empty value.
-  const ToolCallId(this.value) : assert(value != '');
+  ToolCallId(String value) : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -83,7 +80,7 @@ final class ToolCallId {
 /// Identifies a configured model provider.
 final class ProviderId {
   /// Creates a provider identifier from a non-empty value.
-  const ProviderId(this.value) : assert(value != '');
+  ProviderId(String value) : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -101,7 +98,7 @@ final class ProviderId {
 /// Identifies a model within a provider.
 final class ModelId {
   /// Creates a model identifier from a non-empty value.
-  const ModelId(this.value) : assert(value != '');
+  ModelId(String value) : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -156,3 +153,10 @@ JsonValue freezeJson(JsonValue value) {
 /// Returns an immutable copy of a JSON object.
 JsonObject immutableJsonObject(JsonObject value) =>
     freezeJson(value) as JsonObject;
+
+String _requireId(String value) {
+  if (value.isEmpty) {
+    throw ArgumentError.value(value, 'value', 'must not be empty');
+  }
+  return value;
+}

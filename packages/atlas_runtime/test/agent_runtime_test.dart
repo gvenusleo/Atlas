@@ -4,12 +4,16 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('rejects an empty identifier', () {
+    expect(() => SessionId(''), throwsArgumentError);
+  });
+
   test('persists and emits a tool loop in occurrence order', () async {
     final store = _MemorySessionStore();
     final provider = _ScriptedProvider([
       ModelResponse(
         content: const [TextContent('I will inspect the files.')],
-        toolCalls: const [
+        toolCalls: [
           ToolCall(
             id: ToolCallId('call-1'),
             name: 'inspect',
@@ -36,10 +40,7 @@ void main() {
       provider: provider,
       tools: toolRegistry,
       ids: _Ids(),
-      defaultModel: const ModelRef(
-        providerId: ProviderId('test'),
-        modelId: ModelId('model'),
-      ),
+      defaultModel: _model,
     );
 
     final events = await runtime
@@ -78,7 +79,7 @@ void main() {
     final runtime = AgentRuntime(
       store: store,
       provider: _ScriptedProvider([
-        const ModelResponse(
+        ModelResponse(
           toolCalls: [
             ToolCall(
               id: ToolCallId('call-1'),
@@ -91,10 +92,7 @@ void main() {
       ]),
       tools: _ThrowingTools(),
       ids: _Ids(),
-      defaultModel: const ModelRef(
-        providerId: ProviderId('test'),
-        modelId: ModelId('model'),
-      ),
+      defaultModel: _model,
       maxSteps: 1,
     );
 
@@ -205,12 +203,12 @@ void main() {
       final store = _MemorySessionStore();
       final sessionTime = DateTime.utc(2026, 1, 1);
       final session = Session(
-        id: const SessionId('compacted-session'),
+        id: SessionId('compacted-session'),
         workingDirectory: '/tmp',
         createdAt: sessionTime,
         updatedAt: sessionTime,
         compaction: CompactionCheckpoint(
-          sessionId: const SessionId('compacted-session'),
+          sessionId: SessionId('compacted-session'),
           compactedThroughSequence: 1,
           summary: 'The earlier task decided to use Drift.',
           inputTokensBefore: 100,
@@ -219,35 +217,6 @@ void main() {
         ),
       );
       store.session = session;
-      final previousTurn = Turn(
-        id: const TurnId('previous-turn'),
-        sessionId: session.id,
-        status: TurnStatus.completed,
-        startedAt: sessionTime,
-        completedAt: sessionTime,
-        model: _model,
-      );
-      store.turns.add(previousTurn);
-      store.timeline.addAll([
-        UserMessageItem(
-          id: const TimelineItemId('old-user'),
-          sessionId: session.id,
-          turnId: previousTurn.id,
-          sequence: 0,
-          occurredAt: sessionTime,
-          content: const [TextContent('old request')],
-        ),
-        AssistantMessageItem(
-          id: const TimelineItemId('old-assistant'),
-          sessionId: session.id,
-          turnId: previousTurn.id,
-          sequence: 1,
-          occurredAt: sessionTime,
-          content: const [TextContent('old response')],
-          model: _model,
-          stopReason: StopReason.endTurn,
-        ),
-      ]);
       final provider = _ScriptedProvider([
         const ModelResponse(
           content: [TextContent('new response')],
@@ -265,7 +234,7 @@ void main() {
 
       await runtime
           .run(
-            const TurnRequest(
+            TurnRequest(
               sessionId: SessionId('compacted-session'),
               content: [TextContent('new request')],
             ),
@@ -278,6 +247,7 @@ void main() {
         textFromContent(provider.requests.single.messages.single.content),
         'new request',
       );
+      expect(store.timeline.first.sequence, 2);
     },
   );
 
@@ -285,7 +255,7 @@ void main() {
     final store = _MemorySessionStore();
     final sessionTime = DateTime.utc(2026, 1, 1);
     store.session = Session(
-      id: const SessionId('shared-session'),
+      id: SessionId('shared-session'),
       workingDirectory: '/tmp',
       createdAt: sessionTime,
       updatedAt: sessionTime,
@@ -301,7 +271,7 @@ void main() {
 
     final first = runtime
         .run(
-          const TurnRequest(
+          TurnRequest(
             sessionId: SessionId('shared-session'),
             content: [TextContent('first')],
           ),
@@ -310,7 +280,7 @@ void main() {
     await provider.firstRequestStarted.future;
     final second = runtime
         .run(
-          const TurnRequest(
+          TurnRequest(
             sessionId: SessionId('shared-session'),
             content: [TextContent('second')],
           ),
@@ -328,7 +298,7 @@ void main() {
   });
 }
 
-const _model = ModelRef(
+final _model = ModelRef(
   providerId: ProviderId('test'),
   modelId: ModelId('model'),
 );

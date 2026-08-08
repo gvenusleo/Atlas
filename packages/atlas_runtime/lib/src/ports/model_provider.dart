@@ -15,7 +15,6 @@ final class ModelRequest {
     this.reasoningEffort,
     this.maxOutputTokens = 0,
     this.temperature,
-    this.responseFormat,
     this.cancellation,
   });
 
@@ -45,9 +44,6 @@ final class ModelRequest {
 
   /// The sampling temperature.
   final double? temperature;
-
-  /// The requested structured response format.
-  final String? responseFormat;
 
   /// Cooperative cancellation for the provider stream.
   final CancellationToken? cancellation;

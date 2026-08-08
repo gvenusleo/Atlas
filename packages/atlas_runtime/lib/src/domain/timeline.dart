@@ -3,30 +3,6 @@ import 'ids.dart';
 import 'model.dart';
 import 'usage.dart';
 
-/// A task plan entry.
-final class PlanEntry {
-  /// Creates a plan entry.
-  const PlanEntry({required this.step, required this.status});
-
-  /// The actionable step text.
-  final String step;
-
-  /// The current step status.
-  final PlanStatus status;
-}
-
-/// The status of one task plan entry.
-enum PlanStatus {
-  /// The step has not started.
-  pending,
-
-  /// The step is currently executing.
-  inProgress,
-
-  /// The step is finished.
-  completed,
-}
-
 /// A persisted item in a session's ordered timeline.
 sealed class TimelineItem {
   /// Creates a timeline item.
@@ -159,38 +135,6 @@ final class ToolResult {
 
   /// Structured tool result data.
   final JsonObject metadata;
-}
-
-/// A persisted update to the current task plan.
-final class PlanUpdatedItem extends TimelineItem {
-  /// Creates a plan update item.
-  const PlanUpdatedItem({
-    required super.id,
-    required super.sessionId,
-    required super.turnId,
-    required super.sequence,
-    required super.occurredAt,
-    required this.entries,
-  });
-
-  /// The complete replacement plan.
-  final List<PlanEntry> entries;
-}
-
-/// A visible record that context compaction completed.
-final class CompactionItem extends TimelineItem {
-  /// Creates a compaction timeline item.
-  const CompactionItem({
-    required super.id,
-    required super.sessionId,
-    required super.turnId,
-    required super.sequence,
-    required super.occurredAt,
-    required this.compactedThroughSequence,
-  });
-
-  /// The last sequence represented by the generated summary.
-  final int compactedThroughSequence;
 }
 
 /// A durable context compaction checkpoint.

@@ -1,5 +1,4 @@
 import 'ids.dart';
-import 'model.dart';
 import 'timeline.dart';
 import 'turn.dart';
 
@@ -79,13 +78,9 @@ final class ModelResponseReceived extends AgentEvent {
     required super.turnId,
     required super.sequence,
     required super.occurredAt,
-    required this.response,
     required this.assistantMessage,
     required this.toolCalls,
   });
-
-  /// The provider-neutral response.
-  final ModelResponse response;
 
   /// The persisted assistant item.
   final AssistantMessageItem assistantMessage;
