@@ -14,6 +14,12 @@ import 'slash_popup.dart';
 ///
 /// Owns a [ChatController] for the injected runtime and lays out the message
 /// list above the input bar. It never constructs providers, tools, or storage.
+///
+/// The theme follows the terminal: the framework detects light/dark and
+/// applies a preset; this app then queries the real background color (OSC 11)
+/// and layers a [TuiTheme] that keeps the preset accents but uses the
+/// terminal color for the background and surface. In test bindings, where no
+/// terminal is available, the preset theme is kept as-is.
 final class AtlasTuiApp extends StatefulComponent {
   /// Creates the chat application.
   AtlasTuiApp({
@@ -47,6 +53,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
   bool _pickingModel = false;
   bool _pickingEffort = false;
   ModelDescriptor? _pickedModel;
+  Color? _background;
 
   @override
   void initState() {
@@ -58,6 +65,28 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     _textController = TextEditingController();
     _slash = SlashCompleter();
     _controller.addListener(_refresh);
+    _queryBackground();
+  }
+
+  /// Queries the terminal background color (OSC 11) so the theme can follow
+  /// it. Skipped in test bindings, which have no real terminal.
+  Future<void> _queryBackground() async {
+    final binding = NoctermBinding.instance;
+    if (binding is! TerminalBinding) {
+      return;
+    }
+    final Color? background;
+    try {
+      background = await binding.terminal.getBackgroundColor(
+        timeout: const Duration(milliseconds: 50),
+      );
+    } catch (_) {
+      return; // Terminal does not answer OSC 11; keep the preset theme.
+    }
+    if (background == null || !mounted) {
+      return;
+    }
+    setState(() => _background = background);
   }
 
   void _refresh() => setState(() {});
@@ -290,7 +319,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
 
   @override
   Component build(BuildContext context) {
-    return Focusable(
+    final content = Focusable(
       focused: true,
       onKeyEvent: _handleKey,
       child: Column(
@@ -316,6 +345,20 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
             onKeyEvent: _pickingModel || _pickingEffort ? null : _handleKey,
           ),
         ],
+      ),
+    );
+    final background = _background;
+    if (background == null) {
+      return content;
+    }
+    final preset = TuiTheme.of(context);
+    final theme = preset.copyWith(background: background, surface: background);
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: theme.background,
+        foregroundColor: theme.onBackground,
+        obscure: true,
+        child: TuiTheme(data: theme, child: content),
       ),
     );
   }
