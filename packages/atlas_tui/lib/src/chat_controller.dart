@@ -9,6 +9,10 @@ import 'chat_message.dart';
 /// Maximum characters of a tool result rendered in the transcript.
 const maxToolResultChars = 200;
 
+/// Maximum characters kept for a reasoning message; only the tail is shown
+/// on a single line, so anything older than this window is dropped.
+const maxReasoningChars = 1024;
+
 /// Bridges runtime turn events into rendered chat messages.
 ///
 /// Owns the conversation state for one TUI session: it submits user text as
@@ -146,17 +150,28 @@ final class ChatController implements Listenable {
   void _appendDelta(ChatMessageKind kind, String delta) {
     final last = _messages.isEmpty ? null : _messages.last;
     if (!_sealed && last != null && last.kind == kind) {
+      final text = kind == ChatMessageKind.reasoning
+          ? _tailBudget('${last.text}$delta')
+          : '${last.text}$delta';
       _messages[_messages.length - 1] = ChatMessage(
         kind: kind,
-        text: '${last.text}$delta',
+        text: text,
         toolName: last.toolName,
         isError: last.isError,
       );
     } else {
-      _messages.add(ChatMessage(kind: kind, text: delta));
+      final text = kind == ChatMessageKind.reasoning
+          ? _tailBudget(delta)
+          : delta;
+      _messages.add(ChatMessage(kind: kind, text: text));
     }
     _sealed = false;
   }
+
+  /// Keeps only the tail of [text], bounded by [maxReasoningChars].
+  static String _tailBudget(String text) => text.length <= maxReasoningChars
+      ? text
+      : text.substring(text.length - maxReasoningChars);
 
   void _updateLastTool(ToolResultItem result) {
     final index = _messages.lastIndexWhere(

@@ -81,6 +81,20 @@ void main() {
     );
   });
 
+  test('bounds the reasoning message to the tail window', () async {
+    provider.printReasoning = true;
+    provider.reasoningChunk = 'x' * 800;
+    final controller = ChatController(runtime: runtime);
+
+    await controller.send('think long');
+
+    final reasoning = controller.messages.firstWhere(
+      (m) => m.kind == ChatMessageKind.reasoning,
+    );
+    expect(reasoning.text.length, lessThanOrEqualTo(maxReasoningChars));
+    expect(reasoning.text, endsWith('x' * 800));
+  });
+
   test('reuses the session id across turns', () async {
     final controller = ChatController(runtime: runtime);
 
@@ -182,6 +196,7 @@ final class _ScriptedProvider implements ModelProvider {
   bool failTool = false;
   bool failTurn = false;
   bool printReasoning = false;
+  String reasoningChunk = 'thinking hard';
   bool toolFirst = true;
   Completer<void>? gate;
   final sessionIds = <String>[];
@@ -206,7 +221,7 @@ final class _ScriptedProvider implements ModelProvider {
       throw StateError('provider exploded');
     }
     if (printReasoning) {
-      yield const ReasoningDeltaEvent('thinking hard');
+      yield ReasoningDeltaEvent(reasoningChunk);
     }
     if (_requests == 1 && toolFirst) {
       yield ModelCompletedEvent(

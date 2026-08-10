@@ -1,4 +1,8 @@
 import 'package:nocterm/nocterm.dart';
+// UnicodeWidth is not part of the public API; the import below reaches into
+// the package's internals, which is stable within the pinned nocterm 0.8.x.
+// ignore: implementation_imports
+import 'package:nocterm/src/utils/unicode_width.dart';
 
 import 'chat_message.dart';
 import 'prompt_line.dart';
@@ -51,7 +55,7 @@ final class _MessageRow extends StatelessComponent {
         message.text,
         styleSheet: _markdownStyle(theme),
       ),
-      ChatMessageKind.reasoning => Text(
+      ChatMessageKind.reasoning => _ReasoningLine(
         message.text,
         style: TextStyle(color: theme.outline),
       ),
@@ -69,6 +73,68 @@ final class _MessageRow extends StatelessComponent {
       ),
     };
   }
+}
+
+/// Renders reasoning as a single line that always shows the newest tail of
+/// the message: long content is clipped at the head instead of wrapping.
+final class _ReasoningLine extends StatelessComponent {
+  const _ReasoningLine(this.text, {required this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Component build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => Text(
+        tailWindow(text.replaceAll("\n", ""), constraints.maxWidth.floor()),
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: style,
+      ),
+    );
+  }
+}
+
+/// Returns the trailing part of [text] that fits within [maxWidth] columns.
+///
+/// Used to show the newest reasoning content in a single line: characters are
+/// collected from the end until the terminal width is exhausted, so the head
+/// is dropped and the tail stays visible. When the head is dropped, `...`
+/// marks the elision and reserves its three columns.
+String tailWindow(String text, int maxWidth) {
+  if (text.isEmpty || maxWidth <= 0) {
+    return '';
+  }
+  final runes = text.runes.toList();
+  final picked = <int>[];
+  var width = 0;
+  for (var i = runes.length - 1; i >= 0; i--) {
+    final runeWidth = UnicodeWidth.graphemeWidth(String.fromCharCode(runes[i]));
+    if (width + runeWidth > maxWidth) {
+      break;
+    }
+    picked.add(runes[i]);
+    width += runeWidth;
+  }
+  if (picked.length == runes.length) {
+    return text;
+  }
+  // The head was elided: reserve three columns for the marker and collect
+  // the tail again within the remaining space.
+  const elided = '...';
+  final contentMax = maxWidth > elided.length ? maxWidth - elided.length : 0;
+  picked.clear();
+  width = 0;
+  for (var i = runes.length - 1; i >= 0; i--) {
+    final runeWidth = UnicodeWidth.graphemeWidth(String.fromCharCode(runes[i]));
+    if (width + runeWidth > contentMax) {
+      break;
+    }
+    picked.add(runes[i]);
+    width += runeWidth;
+  }
+  return '$elided${String.fromCharCodes(picked.reversed)}';
 }
 
 /// Builds the markdown style sheet for assistant messages from [theme].
