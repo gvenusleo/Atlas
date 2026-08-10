@@ -3,8 +3,10 @@
 [中文](zh-CN/architecture.md)
 
 > **Status:** In progress. `atlas_runtime`, `atlas_storage`, the `atlas_provider`
-> adapters, and `atlas_config` loading are executable; tool, protocol, TUI, and
-> CLI adapters remain planned.
+> adapters, `atlas_config` loading, the built-in `atlas_tools`, and
+> `atlas_prompt` prompt construction are executable. `atlas_cli` provides the
+> process composition root (`composeRuntime`); the Nocterm UI, protocol
+> adapters, and CLI commands remain planned.
 
 ## System Shape
 
@@ -17,10 +19,11 @@ graph TD
     CLI[atlas_cli] --> TUI[atlas_tui]
     CLI --> RT[atlas_runtime]
     CLI --> WS[atlas_ws]
+    CLI --> PROMPT[atlas_prompt]
+    CLI --> CONFIG[atlas_config]
     CLI --> PROVIDER[atlas_provider]
     CLI --> TOOLS[atlas_tools]
     CLI --> STORAGE[atlas_storage]
-    CLI --> CONFIG[atlas_config]
     FL[atlas_flutter] --> RT
     FL --> PROVIDER
     FL --> TOOLS
@@ -38,10 +41,12 @@ graph TD
     MCP --> JRPC
 ```
 
-`atlas_cli` and `atlas_flutter` each compose one runtime for their own process.
-Both load `atlas_config` to construct provider and storage adapters.
+`atlas_cli` composes one runtime for the Nocterm process through
+`composeRuntime`: it loads `atlas_config` to construct provider, storage, and
+tool adapters and injects the `atlas_prompt` system prompt builder.
+`atlas_flutter` will use its own process bootstrap for the desktop client.
 Running `atlas` will enter the Nocterm TUI by default. Running `atlas server`
-will inject the composed runtime handler into `atlas_ws` for remote clients.
+will expose the composed runtime handler through `atlas_ws` for remote clients.
 Local Flutter and Nocterm interactions do not serialize through the remote
 protocol. ACP is an inbound adapter to the same runtime; MCP primarily connects
 external tools to the tool layer.
@@ -55,11 +60,12 @@ external tools to the tool layer.
 | `atlas_provider` | OpenAI-compatible Chat Completions and Responses plus Anthropic Messages adapters: authentication, request mapping, SSE decoding, retries, and response conversion |
 | `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration objects |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
+| `atlas_prompt` | System prompt construction: operating template, tool listing, `~/.atlas/AGENTS.md` and working-directory `AGENTS.md` loading, and platform/shell/date context |
 | `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
 | `atlas_mcp` | MCP client first, with server support deferred until needed |
 | `atlas_tui` | Nocterm rendering and terminal interaction over an injected runtime interface |
-| `atlas_cli` | Composition root for the default TUI, `server`, and other CLI commands |
+| `atlas_cli` | Composition root for the default TUI and other CLI commands: `composeRuntime` wires config, providers, tools, storage, and the system prompt into one runtime |
 | `atlas_flutter` | Composition root and presentation client for desktop and mobile |
 
 ## Dependency Rules
@@ -71,7 +77,8 @@ external tools to the tool layer.
 - OpenAI and Anthropic providers share `HttpStreamClient` for retries, timeouts, and cancellation, and `decodeSse` for SSE framing. `CompositeModelProvider` routes requests by provider identifier so several providers share one runtime instance.
 - Streaming failures are emitted as one terminal runtime event. Retries happen only before the first streamed event; cancellation is bridged to Dio's `CancelToken`.
 - `atlas_ws` may depend on runtime types but owns an explicit versioned wire schema rather than serializing runtime objects directly. It accepts an injected request handler and does not compose runtime services.
-- Local Flutter and Nocterm presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters.
+- Local Flutter and Nocterm presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters; in the Dart workspace this bootstrap lives in `atlas_cli.composeRuntime` (and `atlas_flutter` bootstrap).
+- `atlas_prompt` depends on `atlas_runtime` public types only and is consumed by composition roots through `buildSystemPrompt`.
 - `atlas_cli` and `atlas_flutter` are separate process-level composition roots; they share runtime code, not runtime instances.
 - ACP and MCP own their protocol lifecycle rules and use `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.
 

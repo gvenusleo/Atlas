@@ -14,6 +14,9 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
 - 提供 OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages
   适配器，并通过 composite provider 将多个 provider 路由到同一个 runtime 的
   `atlas_provider` 包；
+- 构建系统提示词并加载 AGENTS.md 指令文件的 `atlas_prompt` 包；
+- 把 config、provider、工具、存储与系统提示词组装进同一个 runtime 的
+  `atlas_cli` 组合根。
 - Dart 实现需要遵守的架构与开发规范。
 
 CLI、WebSocket transport、Nocterm TUI、ACP 与 MCP 集成尚未实现。当前分支暂不提供可用的 Atlas 命令行发行版。

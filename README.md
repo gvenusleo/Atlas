@@ -14,6 +14,10 @@ The repository currently contains:
 - an `atlas_provider` package with OpenAI-compatible Chat Completions and
   Responses adapters plus an Anthropic Messages adapter, and a composite
   provider for routing multiple providers to one runtime;
+- an `atlas_prompt` package that builds the system prompt and loads AGENTS.md
+  instruction files;
+- an `atlas_cli` composition root that wires config, providers, tools, storage,
+  and the system prompt into one runtime.
 - architecture and development contracts for the Dart implementation.
 
 CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are not
