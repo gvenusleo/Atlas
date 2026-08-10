@@ -37,7 +37,7 @@ final class _MessageRow extends StatelessComponent {
       ),
       ChatMessageKind.assistant => MarkdownText(
         message.text,
-        styleSheet: MarkdownStyleSheet(),
+        styleSheet: MarkdownStyleSheet.terminal,
       ),
       ChatMessageKind.reasoning => Text(
         message.text,
