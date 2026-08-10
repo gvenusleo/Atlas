@@ -21,5 +21,5 @@ Future<void> main(List<String> args) async {
   }
 
   final runtime = composeRuntime(config);
-  await runApp(AtlasTuiApp(runtime: runtime));
+  await runApp(NoctermApp(child: AtlasTuiApp(runtime: runtime)));
 }

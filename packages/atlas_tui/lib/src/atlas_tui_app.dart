@@ -63,7 +63,6 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     return Column(
       children: [
         Expanded(child: MessageList(messages: _controller.messages)),
-        const Divider(),
         InputBar(
           controller: _textController,
           busy: _controller.busy,

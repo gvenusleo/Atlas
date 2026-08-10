@@ -1,6 +1,8 @@
 import 'package:nocterm/nocterm.dart';
 
-/// Bottom bar with the message input and turn status.
+import 'prompt_line.dart';
+
+/// Bottom bar with the message input.
 final class InputBar extends StatelessComponent {
   /// Creates the input bar.
   const InputBar({
@@ -21,25 +23,17 @@ final class InputBar extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: controller,
-            focused: true,
-            placeholder: busy ? 'Working…' : 'Message Atlas (Enter to send)',
-            onSubmitted: onSubmitted,
-          ),
-        ),
-        Text(
-          busy ? '● busy' : 'ready',
-          style: TextStyle(
-            color: busy
-                ? Color.fromRGB(240, 180, 40)
-                : Color.fromRGB(60, 160, 90),
-          ),
-        ),
-      ],
+    return PromptLine(
+      child: TextField(
+        controller: controller,
+        enabled: !busy,
+        focused: true,
+        placeholder: busy ? 'Working…' : 'Message Atlas (Enter to send)',
+        onSubmitted: onSubmitted,
+        maxLines: 10,
+        cursorStyle: CursorStyle.underline,
+        cursorColor: TuiTheme.of(context).primary,
+      ),
     );
   }
 }

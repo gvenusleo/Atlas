@@ -6,3 +6,4 @@ export 'src/chat_controller.dart';
 export 'src/chat_message.dart';
 export 'src/input_bar.dart';
 export 'src/message_list.dart';
+export 'src/prompt_line.dart';

@@ -1,6 +1,7 @@
 import 'package:nocterm/nocterm.dart';
 
 import 'chat_message.dart';
+import 'prompt_line.dart';
 
 /// Renders the transcript as a scrollable list.
 final class MessageList extends StatelessComponent {
@@ -28,11 +29,16 @@ final class _MessageRow extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     return switch (message.kind) {
-      ChatMessageKind.user => Text(
-        '❯ ${message.text}',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      ChatMessageKind.user => PromptLine(
+        child: Text(
+          message.text,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
-      ChatMessageKind.assistant => MarkdownText(message.text),
+      ChatMessageKind.assistant => MarkdownText(
+        message.text,
+        styleSheet: MarkdownStyleSheet(),
+      ),
       ChatMessageKind.reasoning => Text(
         message.text,
         style: TextStyle(color: Color.fromRGB(128, 128, 128)),
