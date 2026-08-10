@@ -236,6 +236,23 @@ void main() {
     );
   });
 
+  test('surfaces HTTP errors as provider exceptions', () async {
+    final server = await _startServer((request) async {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write('nope');
+      await request.response.close();
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.chatCompletions,
+    ).stream(_request()).toList();
+    final error = (events.single as ModelFailedEvent).error;
+    expect(error, isA<OpenAIProviderException>());
+    expect((error as OpenAIProviderException).statusCode, 400);
+  });
+
   test('retries a rate limit before the stream starts', () async {
     var attempts = 0;
     final server = await _startServer((request) async {

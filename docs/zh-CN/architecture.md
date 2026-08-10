@@ -46,7 +46,7 @@ MCP 主要用于把外部工具接入工具层。
 |---|---|
 | `atlas_runtime` | Session/turn 领域模型、有序 timeline item、model/tool ports、唯一 Agent engine、取消、compact 与 skill |
 | `atlas_storage` | Session、turn、有类型 timeline item、model continuation、compact checkpoint 的 Drift 持久化、查询与 schema migration |
-| `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 的认证、请求映射、SSE 解码、重试与响应转换 |
+| `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages 适配器：认证、请求映射、SSE 解码、重试与响应转换 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
 | `atlas_ws` | 版本化 WebSocket wire contract、codec、client/server transport 与 runtime 转换 |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
@@ -61,7 +61,8 @@ MCP 主要用于把外部工具接入工具层。
 - 存储、Provider 与工具 package 依赖并实现 runtime ports；适配器不能拥有编排逻辑。
 - Provider 特定请求字段只存在于 `atlas_provider`。
 - `atlas_provider` 通过 `ModelRef` 选择已配置的 endpoint；公开配置使用程序化 API，不负责 CLI 或配置文件解析。
-- OpenAI-compatible 流式失败会转换为一个 runtime 终态事件；只有首个流事件产生前才会重试，取消会桥接到 Dio 的 `CancelToken`。
+- OpenAI 与 Anthropic 共享 `HttpStreamClient`（重试、超时、取消）和 `decodeSse`（SSE 分帧）；`CompositeModelProvider` 按 provider 标识路由请求，使多个 provider 共享一个 runtime 实例。
+- 流式失败会转换为一个 runtime 终态事件；只有首个流事件产生前才会重试，取消会桥接到 Dio 的 `CancelToken`。
 - `atlas_ws` 可以依赖 runtime 类型，但必须维护显式的版本化 wire schema，不能直接序列化 runtime 对象。它接收注入的 request handler，且不负责组装 runtime 服务。
 - 本地 Flutter 与 Nocterm 展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器。
 - `atlas_cli` 与 `atlas_flutter` 是独立的进程级组合根；它们共享 runtime 代码，而不共享 runtime 实例。

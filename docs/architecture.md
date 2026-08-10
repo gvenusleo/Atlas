@@ -49,7 +49,7 @@ external tools to the tool layer.
 |---|---|
 | `atlas_runtime` | Session/turn domain models, ordered timeline items, model/tool ports, the single agent engine, cancellation, compaction, and skills |
 | `atlas_storage` | Drift persistence for sessions, turns, typed timeline items, model continuations, compaction checkpoints, queries, and schema migrations |
-| `atlas_provider` | OpenAI-compatible Chat Completions and Responses authentication, request mapping, SSE decoding, retries, and response conversion |
+| `atlas_provider` | OpenAI-compatible Chat Completions and Responses plus Anthropic Messages adapters: authentication, request mapping, SSE decoding, retries, and response conversion |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
 | `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
@@ -64,7 +64,8 @@ external tools to the tool layer.
 - Storage, provider, and tool packages depend on and implement runtime ports; adapters do not own orchestration.
 - Provider-specific request fields remain in `atlas_provider`.
 - `atlas_provider` selects a configured endpoint by `ModelRef`; its public configuration is programmatic and does not define CLI or configuration-file parsing.
-- OpenAI-compatible streaming failures are emitted as one terminal runtime event. Retries happen only before the first streamed event; cancellation is bridged to Dio's `CancelToken`.
+- OpenAI and Anthropic providers share `HttpStreamClient` for retries, timeouts, and cancellation, and `decodeSse` for SSE framing. `CompositeModelProvider` routes requests by provider identifier so several providers share one runtime instance.
+- Streaming failures are emitted as one terminal runtime event. Retries happen only before the first streamed event; cancellation is bridged to Dio's `CancelToken`.
 - `atlas_ws` may depend on runtime types but owns an explicit versioned wire schema rather than serializing runtime objects directly. It accepts an injected request handler and does not compose runtime services.
 - Local Flutter and Nocterm presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters.
 - `atlas_cli` and `atlas_flutter` are separate process-level composition roots; they share runtime code, not runtime instances.
