@@ -49,6 +49,7 @@ final class InputBar extends StatelessComponent {
         maxLines: 10,
         cursorStyle: CursorStyle.underline,
         cursorColor: TuiTheme.of(context).primary,
+        showCursor: false,
       ),
     );
   }

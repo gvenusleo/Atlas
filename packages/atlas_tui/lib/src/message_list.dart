@@ -24,7 +24,13 @@ final class MessageList extends StatelessComponent {
   Component build(BuildContext context) {
     return ListView.separated(
       itemCount: messages.length,
-      itemBuilder: (context, index) => _MessageRow(message: messages[index]),
+      itemBuilder: (context, index) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (messages[index].kind != ChatMessageKind.user) Text("• "),
+          Expanded(child: _MessageRow(message: messages[index])),
+        ],
+      ),
       separatorBuilder: (_, _) => SizedBox(height: 1),
     );
   }
@@ -50,15 +56,15 @@ final class _MessageRow extends StatelessComponent {
         style: TextStyle(color: theme.outline),
       ),
       ChatMessageKind.tool => Text(
-        '⚙ ${message.toolName ?? 'tool'}: ${message.text}',
+        '${message.toolName ?? 'tool'}: ${message.text}',
         style: TextStyle(color: message.isError ? theme.error : theme.primary),
       ),
       ChatMessageKind.error => Text(
-        '✗ ${message.text}',
+        message.text,
         style: TextStyle(color: theme.error),
       ),
       ChatMessageKind.system => Text(
-        'ℹ ${message.text}',
+        message.text,
         style: TextStyle(color: theme.warning),
       ),
     };
