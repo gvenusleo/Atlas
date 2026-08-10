@@ -56,18 +56,25 @@ final class SlashPopup extends StatelessComponent {
       final highlighted = i == selected;
       final name = _displayName(command);
       final padding = _spaces(nameColumnWidth - UnicodeWidth.stringWidth(name));
-      final text = command.description.isEmpty
-          ? name
-          : '$name$padding  ${command.description}';
-      rows.add(
-        Text(
-          highlighted ? '› $text' : '  $text',
-          style: TextStyle(
-            color: highlighted ? theme.primary : theme.onBackground,
-            fontWeight: highlighted ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
+      final nameStyle = TextStyle(
+        color: highlighted ? theme.primary : theme.onBackground,
+        fontWeight: highlighted ? FontWeight.bold : FontWeight.normal,
       );
+      final spans = <TextSpan>[
+        TextSpan(text: highlighted ? '› ' : '  ', style: nameStyle),
+        TextSpan(text: name, style: nameStyle),
+      ];
+      if (command.description.isNotEmpty) {
+        spans
+          ..add(TextSpan(text: '$padding  ', style: nameStyle))
+          ..add(
+            TextSpan(
+              text: command.description,
+              style: TextStyle(color: theme.outline),
+            ),
+          );
+      }
+      rows.add(RichText(text: TextSpan(children: spans)));
     }
     return Container(
       width: double.maxFinite,
