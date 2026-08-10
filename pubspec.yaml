@@ -10,6 +10,7 @@ workspace:
   - packages/atlas_storage
   - packages/atlas_provider
   - packages/atlas_config
+  - packages/atlas_prompt
   - packages/atlas_tools
   - packages/atlas_ws
   - packages/atlas_acp
