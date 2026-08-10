@@ -4,7 +4,7 @@
 
 ## Current State
 
-The repository is a Dart and Flutter workspace. `atlas_runtime` and `atlas_storage` are executable packages with focused tests; provider, CLI, WebSocket transport, TUI, ACP, and MCP behavior remain planned.
+The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, and the `atlas_tui` Nocterm chat interface are executable packages with focused tests; protocol, server, and remaining CLI behavior remain planned.
 
 ## Workspace Layout
 

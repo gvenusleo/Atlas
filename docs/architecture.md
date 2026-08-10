@@ -3,10 +3,11 @@
 [中文](zh-CN/architecture.md)
 
 > **Status:** In progress. `atlas_runtime`, `atlas_storage`, the `atlas_provider`
-> adapters, `atlas_config` loading, the built-in `atlas_tools`, and
-> `atlas_prompt` prompt construction are executable. `atlas_cli` provides the
-> process composition root (`composeRuntime`); the Nocterm UI, protocol
-> adapters, and CLI commands remain planned.
+> adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
+> prompt construction, and the `atlas_tui` Nocterm chat interface are
+> executable. `atlas_cli` provides the process composition root
+> (`composeRuntime`) and the `atlas` entry point; protocol adapters remain
+> planned.
 
 ## System Shape
 
@@ -64,7 +65,7 @@ external tools to the tool layer.
 | `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
 | `atlas_mcp` | MCP client first, with server support deferred until needed |
-| `atlas_tui` | Nocterm rendering and terminal interaction over an injected runtime interface |
+| `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
 | `atlas_cli` | Composition root for the default TUI and other CLI commands: `composeRuntime` wires config, providers, tools, storage, and the system prompt into one runtime |
 | `atlas_flutter` | Composition root and presentation client for desktop and mobile |
 

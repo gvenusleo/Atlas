@@ -3,9 +3,9 @@
 [English](../architecture.md)
 
 > **状态：** 开发中。`atlas_runtime`、`atlas_storage`、`atlas_provider`
-> 适配器、`atlas_config` 配置加载、内置 `atlas_tools` 与 `atlas_prompt`
-> prompt 构建已经可以执行。`atlas_cli` 提供进程组合根
-> （`composeRuntime`）；Nocterm UI、协议适配器与 CLI 子命令仍在规划中。
+> 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
+> prompt 构建与 `atlas_tui` Nocterm 聊天界面已经可以执行。`atlas_cli`
+> 提供进程组合根（`composeRuntime`）与 `atlas` 入口；协议适配器仍在规划中。
 
 ## 系统形态
 
@@ -60,7 +60,7 @@ Nocterm 调用无需经过远程协议序列化。ACP 作为入口适配到同�
 | `atlas_ws` | 版本化 WebSocket wire contract、codec、client/server transport 与 runtime 转换 |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
 | `atlas_mcp` | 优先实现 MCP client，server 按真实需求再增加 |
-| `atlas_tui` | 基于注入的 runtime 接口进行 Nocterm 渲染与终端交互 |
+| `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
 | `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根：`composeRuntime` 把 config、provider、工具、存储与系统提示词组装进同一个 runtime |
 | `atlas_flutter` | 桌面端与移动端的组合根和展示客户端 |
 

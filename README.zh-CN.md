@@ -16,10 +16,12 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   `atlas_provider` 包；
 - 构建系统提示词并加载 AGENTS.md 指令文件的 `atlas_prompt` 包；
 - 把 config、provider、工具、存储与系统提示词组装进同一个 runtime 的
-  `atlas_cli` 组合根。
+  `atlas_cli` 组合根；
+- `atlas_tui` 中作为默认 `atlas` 终端入口运行的 Nocterm 聊天界面
+  （`dart run apps/atlas_cli/bin/atlas.dart`）。
 - Dart 实现需要遵守的架构与开发规范。
 
-CLI、WebSocket transport、Nocterm TUI、ACP 与 MCP 集成尚未实现。当前分支暂不提供可用的 Atlas 命令行发行版。
+WebSocket transport、ACP 与 MCP 集成尚未实现。当前分支暂不提供可用的 Atlas 命令行发行版。
 
 ## 开发
 

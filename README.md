@@ -17,12 +17,13 @@ The repository currently contains:
 - an `atlas_prompt` package that builds the system prompt and loads AGENTS.md
   instruction files;
 - an `atlas_cli` composition root that wires config, providers, tools, storage,
-  and the system prompt into one runtime.
+  and the system prompt into one runtime;
+- a Nocterm chat interface in `atlas_tui` that runs as the default `atlas`
+  terminal entry point (`dart run apps/atlas_cli/bin/atlas.dart`).
 - architecture and development contracts for the Dart implementation.
 
-CLI, WebSocket transport, Nocterm TUI, ACP, and MCP integrations are not
-implemented yet. There is currently no supported Atlas command-line release
-from this branch.
+WebSocket transport, ACP, and MCP integrations are not implemented yet. There
+is currently no supported Atlas command-line release from this branch.
 
 ## Development
 
