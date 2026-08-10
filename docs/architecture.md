@@ -2,9 +2,9 @@
 
 [中文](zh-CN/architecture.md)
 
-> **Status:** In progress. `atlas_runtime`, `atlas_storage`, and the first
-> `atlas_provider` adapters are executable; tool, protocol, TUI, and CLI
-> adapters remain planned.
+> **Status:** In progress. `atlas_runtime`, `atlas_storage`, the `atlas_provider`
+> adapters, and `atlas_config` loading are executable; tool, protocol, TUI, and
+> CLI adapters remain planned.
 
 ## System Shape
 
@@ -20,10 +20,12 @@ graph TD
     CLI --> PROVIDER[atlas_provider]
     CLI --> TOOLS[atlas_tools]
     CLI --> STORAGE[atlas_storage]
+    CLI --> CONFIG[atlas_config]
     FL[atlas_flutter] --> RT
     FL --> PROVIDER
     FL --> TOOLS
     FL --> STORAGE
+    FL --> CONFIG
     TUI --> RT
     REMOTE[Remote client] --> WS
     WS --> RT
@@ -37,6 +39,7 @@ graph TD
 ```
 
 `atlas_cli` and `atlas_flutter` each compose one runtime for their own process.
+Both load `atlas_config` to construct provider and storage adapters.
 Running `atlas` will enter the Nocterm TUI by default. Running `atlas server`
 will inject the composed runtime handler into `atlas_ws` for remote clients.
 Local Flutter and Nocterm interactions do not serialize through the remote
@@ -50,6 +53,7 @@ external tools to the tool layer.
 | `atlas_runtime` | Session/turn domain models, ordered timeline items, model/tool ports, the single agent engine, cancellation, compaction, and skills |
 | `atlas_storage` | Drift persistence for sessions, turns, typed timeline items, model continuations, compaction checkpoints, queries, and schema migrations |
 | `atlas_provider` | OpenAI-compatible Chat Completions and Responses plus Anthropic Messages adapters: authentication, request mapping, SSE decoding, retries, and response conversion |
+| `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration objects |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
 | `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
 | `atlas_acp` | ACP server adaptation to the shared runtime |

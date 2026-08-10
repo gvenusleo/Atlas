@@ -2,8 +2,9 @@
 
 [English](../architecture.md)
 
-> **状态：** 开发中。`atlas_runtime`、`atlas_storage` 与首批
-> `atlas_provider` 适配器已经可以执行；工具、协议、TUI 与 CLI 适配器仍在规划中。
+> **状态：** 开发中。`atlas_runtime`、`atlas_storage`、`atlas_provider`
+> 适配器与 `atlas_config` 配置加载已经可以执行；工具、协议、TUI 与 CLI
+> 适配器仍在规划中。
 
 ## 系统形态
 
@@ -16,10 +17,12 @@ graph TD
     CLI --> RT[atlas_runtime]
     CLI --> WS[atlas_ws]
     CLI --> PROVIDER[atlas_provider]
+    CLI --> CONFIG[atlas_config]
     CLI --> TOOLS[atlas_tools]
     CLI --> STORAGE[atlas_storage]
     FL[atlas_flutter] --> RT
     FL --> PROVIDER
+    FL --> CONFIG
     FL --> TOOLS
     FL --> STORAGE
     TUI --> RT
@@ -34,11 +37,11 @@ graph TD
     MCP --> JRPC
 ```
 
-`atlas_cli` 与 `atlas_flutter` 分别为各自进程组装一个 runtime。运行
-`atlas` 默认进入 Nocterm TUI；运行 `atlas server` 时，CLI 将已组装的
-runtime handler 注入 `atlas_ws`，供远程客户端连接。本地 Flutter 与
-Nocterm 调用无需经过远程协议序列化。ACP 作为入口适配到同一 runtime；
-MCP 主要用于把外部工具接入工具层。
+`atlas_cli` 与 `atlas_flutter` 分别为各自进程组装一个 runtime，两者都通过
+`atlas_config` 加载配置以构造 provider 与存储适配器。运行 `atlas` 默认进入
+Nocterm TUI；运行 `atlas server` 时，CLI 将已组装的 runtime handler 注入
+`atlas_ws`，供远程客户端连接。本地 Flutter 与 Nocterm 调用无需经过远程协议序列化。
+ACP 作为入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 
 ## Package 职责
 
@@ -47,6 +50,7 @@ MCP 主要用于把外部工具接入工具层。
 | `atlas_runtime` | Session/turn 领域模型、有序 timeline item、model/tool ports、唯一 Agent engine、取消、compact 与 skill |
 | `atlas_storage` | Session、turn、有类型 timeline item、model continuation、compact checkpoint 的 Drift 持久化、查询与 schema migration |
 | `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages 适配器：认证、请求映射、SSE 解码、重试与响应转换 |
+| `atlas_config` | YAML 配置文件 schema、加载与校验，并映射为 provider 配置对象 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
 | `atlas_ws` | 版本化 WebSocket wire contract、codec、client/server transport 与 runtime 转换 |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
