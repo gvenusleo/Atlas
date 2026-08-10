@@ -66,4 +66,3 @@ just ci           # 完整仓库验证
 - 架构和依赖边界写入 `docs/architecture.md`。
 - 不可用行为必须标记为 `Planned`；功能移除时同步删除失效示例。
 - 英文与中文对应文档必须同步更新。
-- 高影响且难以回退的决策记录在 `docs/decisions`。

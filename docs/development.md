@@ -66,4 +66,3 @@ Run the current Flutter shell with `just app-run macos`. Platform debug builds u
 - Architecture and dependency boundaries belong in `docs/architecture.md`.
 - Mark unavailable behavior as `Planned`; remove stale examples when behavior is removed.
 - Keep English and Chinese counterparts synchronized.
-- Record high-impact, difficult-to-reverse decisions under `docs/decisions`.

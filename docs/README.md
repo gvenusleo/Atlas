@@ -7,7 +7,6 @@ Atlas documentation is organized by purpose:
 - `README.md`: product status and currently supported entry points.
 - `architecture.md`: system boundaries and dependency direction.
 - `development.md`: workspace layout, commands, and engineering rules.
-- `decisions/`: accepted high-impact technical decisions and their consequences.
 - package `README.md` files: local responsibility and dependency constraints.
 
 English documents define structure and terminology. Update the corresponding `zh-CN` document in the same change when one exists.

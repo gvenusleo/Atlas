@@ -7,7 +7,6 @@ Atlas 文档按用途组织：
 - 根 `README.md`：产品状态与当前可用入口。
 - `architecture.md`：系统边界与依赖方向。
 - `development.md`：workspace 结构、命令和工程规范。
-- `decisions/`：已接受的高影响技术决策及其后果。
 - 各 package 的 `README.md`：局部职责与依赖约束。
 
 英文文档定义结构与术语；存在 `zh-CN` 对应文档时，必须在同一个变更中同步更新。

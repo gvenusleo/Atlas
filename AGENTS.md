@@ -48,7 +48,6 @@
 - Root README files describe the product, current status, and supported entry points; architecture details belong in `docs/architecture.md`.
 - English documents define structure and terminology. Keep the corresponding `docs/zh-CN` translation synchronized in the same change.
 - Mark unimplemented behavior as `Planned`. Do not document planned commands or configuration as currently available.
-- Record high-impact and difficult-to-reverse decisions under `docs/decisions`.
 - Every workspace package README states its responsibility, allowed dependencies, and prohibited ownership.
 
 ## Verification
