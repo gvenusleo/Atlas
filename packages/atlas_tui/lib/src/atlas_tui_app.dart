@@ -4,6 +4,7 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:nocterm/nocterm.dart';
 
 import 'chat_controller.dart';
+import 'clipboard.dart';
 import 'input_bar.dart';
 import 'message_list.dart';
 import 'slash_commands.dart';
@@ -310,6 +311,11 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     _controller.send(text);
   }
 
+  /// Copies text selected by dragging across the message list.
+  void _copySelection(String text) {
+    copyToClipboard(text);
+  }
+
   @override
   void dispose() {
     _controller.removeListener(_refresh);
@@ -324,7 +330,12 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
       onKeyEvent: _handleKey,
       child: Column(
         children: [
-          Expanded(child: MessageList(messages: _controller.messages)),
+          Expanded(
+            child: SelectionArea(
+              onSelectionCompleted: _copySelection,
+              child: MessageList(messages: _controller.messages),
+            ),
+          ),
           const SizedBox(height: 1),
           if (_slash.active)
             SlashPopup(
