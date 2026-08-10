@@ -325,6 +325,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
       child: Column(
         children: [
           Expanded(child: MessageList(messages: _controller.messages)),
+          const SizedBox(height: 1),
           if (_slash.active)
             SlashPopup(
               matches: _slash.matches,
