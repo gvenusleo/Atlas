@@ -119,6 +119,46 @@ void main() {
 
     expect(controller.messages.last.kind, ChatMessageKind.error);
   });
+
+  test(
+    'setModel stores the override and effort for subsequent turns',
+    () async {
+      final controller = ChatController(runtime: runtime);
+      final ref = ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('reasoner'),
+      );
+
+      controller.setModel(
+        ref,
+        displayName: 'Reasoner',
+        effort: 'high',
+        effortName: 'high',
+      );
+      expect(controller.model, ref);
+      expect(controller.reasoningEffort, 'high');
+      expect(
+        controller.messages.last.text,
+        'Switched to Reasoner (fake), effort high',
+      );
+
+      await controller.send('hello');
+      expect(provider.lastModel, ref);
+      expect(provider.lastReasoningEffort, 'high');
+    },
+  );
+
+  test('reset keeps the model override but clears the transcript', () async {
+    final controller = ChatController(runtime: runtime);
+    controller.setModel(
+      ModelRef(providerId: ProviderId('fake'), modelId: ModelId('x')),
+    );
+
+    controller.reset();
+
+    expect(controller.messages, isEmpty);
+    expect(controller.model, isNotNull);
+  });
 }
 
 /// Echoes a tool result so tool success paths run without real tools.
@@ -145,6 +185,8 @@ final class _ScriptedProvider implements ModelProvider {
   bool toolFirst = true;
   Completer<void>? gate;
   final sessionIds = <String>[];
+  ModelRef? lastModel;
+  String? lastReasoningEffort;
 
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
@@ -153,6 +195,8 @@ final class _ScriptedProvider implements ModelProvider {
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
     sessionIds.add(request.sessionId.value);
+    lastModel = request.model;
+    lastReasoningEffort = request.reasoningEffort;
     if (gate != null) {
       await gate!.future;
       return;

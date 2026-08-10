@@ -14,6 +14,9 @@ enum ChatMessageKind {
 
   /// A turn-level failure.
   error,
+
+  /// A local notice such as slash command help.
+  system,
 }
 
 /// One rendered message in the chat transcript.

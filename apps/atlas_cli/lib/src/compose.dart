@@ -53,3 +53,18 @@ AgentRuntime composeRuntime(
     ),
   );
 }
+
+/// Collects the configured model descriptors in file order.
+///
+/// Used by the TUI to offer model switching through `/model`.
+List<ModelDescriptor> composeModels(AtlasConfig config) => [
+  for (final provider in config.providers)
+    switch (provider) {
+      ConfiguredOpenAI(:final configuration) => configuration.models.map(
+        (model) => model.descriptor,
+      ),
+      ConfiguredAnthropic(:final configuration) => configuration.models.map(
+        (model) => model.descriptor,
+      ),
+    },
+].expand((descriptors) => descriptors).toList();

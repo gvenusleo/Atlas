@@ -14,7 +14,7 @@ final class PromptLine extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     return Container(
-      color: _withGrayOverlay(TuiTheme.of(context).background),
+      color: withGrayOverlay(TuiTheme.of(context).background),
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -28,7 +28,10 @@ final class PromptLine extends StatelessComponent {
 }
 
 /// Blends a light gray overlay over [color] to shade prompt surfaces.
-Color _withGrayOverlay(Color color, [double opacity = 0.1]) {
+///
+/// Shared by the input bar, user messages, and the slash popup so every
+/// prompt surface uses the same background treatment.
+Color withGrayOverlay(Color color, [double opacity = 0.1]) {
   return Color.alphaBlend(
     Color.fromARGB((255 * opacity).round(), 128, 128, 128),
     color,

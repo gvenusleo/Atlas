@@ -27,6 +27,8 @@ final class ChatController implements Listenable {
   final List<ChatMessage> _messages = [];
   final List<void Function()> _listeners = [];
   SessionId? _sessionId;
+  ModelRef? _model;
+  String? _reasoningEffort;
   bool _busy = false;
 
   /// Whether the last appended delta is still open for accumulation.
@@ -37,6 +39,12 @@ final class ChatController implements Listenable {
 
   /// Whether a turn is currently running.
   bool get busy => _busy;
+
+  /// The model override for subsequent turns, or `null` for the default.
+  ModelRef? get model => _model;
+
+  /// The reasoning effort for subsequent turns, or `null` for the default.
+  String? get reasoningEffort => _reasoningEffort;
 
   @override
   void addListener(void Function() listener) => _listeners.add(listener);
@@ -63,6 +71,8 @@ final class ChatController implements Listenable {
           content: [TextContent(trimmed)],
           sessionId: _sessionId,
           workingDirectory: _workingDirectory,
+          model: _model,
+          reasoningEffort: _reasoningEffort,
         ),
       )) {
         _handle(event);
@@ -73,6 +83,37 @@ final class ChatController implements Listenable {
       _busy = false;
       _notify();
     }
+  }
+
+  /// Starts a new session: clears the transcript and forgets the session id.
+  void reset() {
+    _messages.clear();
+    _sessionId = null;
+    _sealed = true;
+    _notify();
+  }
+
+  /// Switches the model used by subsequent turns and confirms with a notice.
+  ///
+  /// [effortName] only labels the notice; the provider-local [effort] value is
+  /// what gets sent with each turn.
+  void setModel(
+    ModelRef model, {
+    String? displayName,
+    String? effort,
+    String? effortName,
+  }) {
+    _model = model;
+    _reasoningEffort = effort;
+    final label = displayName ?? model.modelId.value;
+    final suffix = effortName == null ? '' : ', effort $effortName';
+    addNotice('Switched to $label (${model.providerId.value})$suffix');
+  }
+
+  /// Appends a local notice, such as slash command help, to the transcript.
+  void addNotice(String text) {
+    _messages.add(ChatMessage(kind: ChatMessageKind.system, text: text));
+    _notify();
   }
 
   void _handle(AgentEvent event) {

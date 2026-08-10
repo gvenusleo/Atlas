@@ -21,5 +21,13 @@ Future<void> main(List<String> args) async {
   }
 
   final runtime = composeRuntime(config);
-  await runApp(NoctermApp(child: AtlasTuiApp(runtime: runtime)));
+  await runApp(
+    NoctermApp(
+      child: AtlasTuiApp(
+        runtime: runtime,
+        models: composeModels(config),
+        onQuit: shutdownApp,
+      ),
+    ),
+  );
 }

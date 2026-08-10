@@ -57,6 +57,10 @@ final class _MessageRow extends StatelessComponent {
         '✗ ${message.text}',
         style: TextStyle(color: theme.error),
       ),
+      ChatMessageKind.system => Text(
+        'ℹ ${message.text}',
+        style: TextStyle(color: theme.warning),
+      ),
     };
   }
 }

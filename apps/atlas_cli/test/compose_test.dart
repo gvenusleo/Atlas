@@ -9,6 +9,35 @@ import 'package:atlas_tools/atlas_tools.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('composeModels collects model descriptors in file order', () {
+    final config = parseConfig('''
+default_model: oa/gpt-4o
+providers:
+  - name: oa
+    type: responses
+    base_url: https://example.com
+    api_key: k
+    models:
+      - value: gpt-4o
+        name: GPT-4o
+      - value: gpt-4o-mini
+  - name: an
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: k2
+    models:
+      - value: claude-3-5-sonnet
+''');
+
+    final models = composeModels(config);
+    expect(models.map((m) => m.ref.toString()), [
+      'oa/gpt-4o',
+      'oa/gpt-4o-mini',
+      'an/claude-3-5-sonnet',
+    ]);
+    expect(models.first.name, 'GPT-4o');
+  });
+
   test('composeRuntime wires config into a working runtime', () {
     final config = parseConfig('''
 default_model: oa/gpt-4o
