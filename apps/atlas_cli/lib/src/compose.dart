@@ -22,7 +22,9 @@ AgentRuntime composeRuntime(
   final resolvedStore =
       store ??
       DriftSessionStore.openFile(File(dbPath ?? config.session.dbPath));
-  final resolvedTools = tools ?? LocalToolRegistry(const []);
+  final resolvedTools =
+      tools ??
+      LocalToolRegistry([ReadTool(), WriteTool(), EditTool(), ShellTool()]);
 
   // Index configured providers by their file-order identifier.
   final providers = <ProviderId, ModelProvider>{};

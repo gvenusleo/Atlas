@@ -60,6 +60,27 @@ providers:
     expect(runtime.temperature, config.agent.temperature);
   });
 
+  test('composeRuntime registers the built-in tools by default', () {
+    final config = parseConfig('''
+default_model: oa/gpt-4o
+providers:
+  - name: oa
+    type: responses
+    base_url: https://example.com
+    api_key: k
+    models:
+      - value: gpt-4o
+''');
+    final runtime = composeRuntime(config, store: DriftSessionStore.inMemory());
+
+    expect(runtime.tools.descriptors.map((d) => d.name), [
+      'read',
+      'write',
+      'edit',
+      'shell',
+    ]);
+  });
+
   test('builds real providers and storage from config', () async {
     final config = parseConfig('''
 default_model: oa/gpt-4o
