@@ -35,6 +35,10 @@ test: dart-test app-test
 
 ci: fmt-check analyze test
 
+# Run the TUI with the Dart VM service enabled for debugging.
+tui-debug:
+    mise exec -- dart --enable-vm-service apps/atlas_cli/bin/atlas.dart
+
 [working-directory: 'apps/atlas_flutter']
 app-run device='macos': deps
     mise exec -- flutter run --no-pub -d {{ quote(device) }}
