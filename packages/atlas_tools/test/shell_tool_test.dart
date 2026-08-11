@@ -13,7 +13,6 @@ void main() {
     final dir = await tempDir();
 
     final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
       'command': 'echo hello',
     });
 
@@ -26,7 +25,6 @@ void main() {
     final dir = await tempDir();
 
     final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
       'command': 'cat',
       'stdin': 'from stdin',
     });
@@ -38,10 +36,7 @@ void main() {
   test('reports a non-zero exit code in the result', () async {
     final dir = await tempDir();
 
-    final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
-      'command': 'exit 3',
-    });
+    final result = await tool.execute(toolContext(dir), {'command': 'exit 3'});
 
     expect(result.isError, isFalse);
     expect(result.content, contains('(exit code: 3)'));
@@ -52,7 +47,6 @@ void main() {
     final dir = await tempDir();
 
     final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
       'command': 'kkjh34234-not-a-command',
     });
 
@@ -67,7 +61,6 @@ void main() {
 
     final stopwatch = Stopwatch()..start();
     final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
       'command': 'sleep 5',
       'timeout_seconds': 1,
     });
@@ -83,7 +76,6 @@ void main() {
     final cancellation = CancellationToken();
 
     final run = tool.execute(toolContext(dir, cancellation: cancellation), {
-      'purpose': 'test',
       'command': 'sleep 5',
     });
     unawaited(
@@ -102,7 +94,6 @@ void main() {
     final dir = await tempDir();
 
     final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
       'command': 'seq 1 100000',
     });
 
@@ -116,10 +107,7 @@ void main() {
   test('rejects an empty command', () async {
     final dir = await tempDir();
 
-    final result = await tool.execute(toolContext(dir), {
-      'purpose': 'test',
-      'command': '   ',
-    });
+    final result = await tool.execute(toolContext(dir), {'command': '   '});
 
     expect(result.isError, isTrue);
   });

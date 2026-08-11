@@ -26,6 +26,7 @@ final class ChatMessage {
     required this.kind,
     required this.text,
     this.toolName,
+    this.arguments,
     this.isError = false,
   });
 
@@ -37,6 +38,11 @@ final class ChatMessage {
 
   /// The tool name for [ChatMessageKind.tool] messages.
   final String? toolName;
+
+  /// The tool call arguments for [ChatMessageKind.tool] messages, captured
+  /// when the call starts so the renderer can show path, command, and other
+  /// metadata without further events.
+  final Map<String, Object?>? arguments;
 
   /// Whether this message represents a failure.
   final bool isError;

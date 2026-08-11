@@ -27,12 +27,6 @@ final class ShellTool implements Tool {
     inputSchema: {
       'type': 'object',
       'properties': {
-        'purpose': {
-          'type': 'string',
-          'description':
-              'Short user-facing description of why the command '
-              'is being run.',
-        },
         'command': {
           'type': 'string',
           'description': 'Command to execute with the platform default shell.',
@@ -54,7 +48,7 @@ final class ShellTool implements Tool {
           'description': 'Optional timeout in seconds.',
         },
       },
-      'required': ['purpose', 'command'],
+      'required': ['command'],
     },
   );
 

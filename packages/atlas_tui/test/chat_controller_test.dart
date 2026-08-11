@@ -54,6 +54,7 @@ void main() {
     ]);
     final tool = controller.messages[1];
     expect(tool.toolName, 'echo');
+    expect(tool.arguments, {'fail': false});
     expect(tool.isError, isFalse);
     expect(tool.text, 'ok');
   });
@@ -68,6 +69,17 @@ void main() {
     expect(tool.isError, isTrue);
     expect(tool.text, startsWith('failed: '));
     expect(tool.text.length, lessThanOrEqualTo(maxToolResultChars + 20));
+  });
+
+  test('keeps the tail of long tool results', () async {
+    provider.toolArguments = {'length': 500};
+    final controller = ChatController(runtime: runtime);
+
+    await controller.send('long result');
+
+    final tool = controller.messages[1];
+    expect(tool.text, startsWith('...'));
+    expect(tool.text.length, lessThanOrEqualTo(maxToolResultChars + 3));
   });
 
   test('renders reasoning deltas separately', () async {
@@ -252,11 +264,15 @@ final class _EchoTool implements Tool {
       const ToolDescriptor(name: 'echo', description: '', inputSchema: {});
 
   @override
-  Future<ToolResult> execute(ToolContext context, JsonObject arguments) async =>
-      ToolResult(
-        content: arguments['fail'] == true ? 'nope' : 'ok',
-        isError: arguments['fail'] == true,
-      );
+  Future<ToolResult> execute(ToolContext context, JsonObject arguments) async {
+    final length = arguments['length'];
+    final content = length is int && length > 0
+        ? 'x' * length
+        : arguments['fail'] == true
+        ? 'nope'
+        : 'ok';
+    return ToolResult(content: content, isError: arguments['fail'] == true);
+  }
 }
 
 /// A session context builder that injects [skills] for every directory.
@@ -305,6 +321,9 @@ final class _ScriptedProvider implements ModelProvider {
   String reasoningChunk = 'thinking hard';
   bool toolFirst = true;
   Completer<void>? gate;
+
+  /// Extra arguments merged into the first tool call.
+  Map<String, Object?> toolArguments = const {};
   final sessionIds = <String>[];
   ModelRef? lastModel;
   String? lastReasoningEffort;
@@ -345,7 +364,7 @@ final class _ScriptedProvider implements ModelProvider {
             ToolCall(
               id: ToolCallId('call-1'),
               name: 'echo',
-              arguments: {'fail': failTool},
+              arguments: {'fail': failTool, ...toolArguments},
             ),
           ],
           stopReason: StopReason.toolUse,

@@ -66,10 +66,15 @@ final class _MessageRow extends StatelessComponent {
         message.text,
         style: TextStyle(color: theme.outline),
       ),
-      ChatMessageKind.tool => Text(
-        '${message.toolName ?? 'tool'}: ${message.text}',
-        style: TextStyle(color: message.isError ? theme.error : theme.primary),
-      ),
+      ChatMessageKind.tool => switch (message.toolName) {
+        'shell' || 'read' || 'edit' || 'write' => _ToolLine(message: message),
+        _ => Text(
+          '${message.toolName ?? 'tool'}: ${message.text}',
+          style: TextStyle(
+            color: message.isError ? theme.error : theme.primary,
+          ),
+        ),
+      },
       ChatMessageKind.error => Text(
         message.text,
         style: TextStyle(color: theme.error),
@@ -114,16 +119,7 @@ String tailWindow(String text, int maxWidth) {
     return '';
   }
   final runes = text.runes.toList();
-  final picked = <int>[];
-  var width = 0;
-  for (var i = runes.length - 1; i >= 0; i--) {
-    final runeWidth = UnicodeWidth.graphemeWidth(String.fromCharCode(runes[i]));
-    if (width + runeWidth > maxWidth) {
-      break;
-    }
-    picked.add(runes[i]);
-    width += runeWidth;
-  }
+  final picked = _collectWindow(runes, maxWidth, fromEnd: true);
   if (picked.length == runes.length) {
     return text;
   }
@@ -131,17 +127,212 @@ String tailWindow(String text, int maxWidth) {
   // the tail again within the remaining space.
   const elided = '...';
   final contentMax = maxWidth > elided.length ? maxWidth - elided.length : 0;
-  picked.clear();
-  width = 0;
-  for (var i = runes.length - 1; i >= 0; i--) {
-    final runeWidth = UnicodeWidth.graphemeWidth(String.fromCharCode(runes[i]));
-    if (width + runeWidth > contentMax) {
+  final kept = _collectWindow(runes, contentMax, fromEnd: true);
+  return '$elided${String.fromCharCodes(kept.reversed)}';
+}
+
+/// Renders a known tool call as a two-line heading plus a bounded result
+/// window.
+///
+/// The heading carries the call metadata (path, edited blocks, or written
+/// lines); the result is shown as at most [maxResultLines] lines with the
+/// head elided when it is longer.
+final class _ToolLine extends StatelessComponent {
+  /// Creates a tool line.
+  const _ToolLine({required this.message});
+
+  /// The maximum number of result lines rendered under the heading.
+  static const int maxResultLines = 5;
+
+  final ChatMessage message;
+
+  @override
+  Component build(BuildContext context) {
+    final theme = TuiTheme.of(context);
+    final headingStyle = TextStyle(
+      color: message.isError ? theme.error : theme.primary,
+    );
+    final outlineStyle = TextStyle(
+      color: message.isError ? theme.error : theme.outline,
+    );
+    final innerStyle = TextStyle(
+      color: message.isError ? theme.error : theme.warning,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final heading = _heading(
+          constraints.maxWidth.floor(),
+          headingStyle,
+          outlineStyle,
+          innerStyle,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (heading != null)
+              RichText(text: heading, maxLines: 2, overflow: TextOverflow.clip),
+            // Read results are file contents, which stay out of the
+            // transcript; the heading lines carry the range instead.
+            if (message.toolName != 'read')
+              Text(
+                tailLines(message.text, maxResultLines),
+                maxLines: maxResultLines,
+                overflow: TextOverflow.clip,
+                style: outlineStyle,
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The heading for a known tool call, or null when the tool has no
+  /// structured heading. The tool name uses [labelStyle]; the parentheses
+  /// and second line use [outlineStyle]; the argument inside the
+  /// parentheses uses [innerStyle].
+  TextSpan? _heading(
+    int width,
+    TextStyle labelStyle,
+    TextStyle outlineStyle,
+    TextStyle innerStyle,
+  ) {
+    final args = message.arguments ?? const <String, Object?>{};
+    switch (message.toolName) {
+      case 'shell':
+        final command = '${args['command'] ?? '?'}';
+        // The name and parentheses reserve their columns so the command,
+        // including its trailing ellipsis, always fits on one row.
+        return TextSpan(
+          children: [
+            TextSpan(text: 'Shell', style: labelStyle),
+            TextSpan(text: '(', style: outlineStyle),
+            TextSpan(
+              text: headWindow(command, width - 'Shell('.length - 1),
+              style: innerStyle,
+            ),
+            TextSpan(text: ')', style: outlineStyle),
+          ],
+        );
+      case 'read':
+        final path = '${args['path'] ?? '?'}';
+        final offset = args['offset'] ?? 1;
+        final limit = args['limit'] ?? 2000;
+        return _labeledHeading(
+          'Read',
+          path,
+          '\noffset $offset, limit $limit',
+          labelStyle: labelStyle,
+          outlineStyle: outlineStyle,
+          innerStyle: innerStyle,
+        );
+      case 'edit':
+        final path = '${args['path'] ?? '?'}';
+        final edits = args['edits'];
+        final blocks = edits is List ? edits.length : 0;
+        return _labeledHeading(
+          'Edit',
+          path,
+          '\n$blocks text blocks',
+          labelStyle: labelStyle,
+          outlineStyle: outlineStyle,
+          innerStyle: innerStyle,
+        );
+      case 'write':
+        final path = '${args['path'] ?? '?'}';
+        final content = args['content'];
+        final lines = content is String && content.isNotEmpty
+            ? '\n'.allMatches(content).length + 1
+            : 0;
+        return _labeledHeading(
+          'Write',
+          path,
+          '\n$lines lines',
+          labelStyle: labelStyle,
+          outlineStyle: outlineStyle,
+          innerStyle: innerStyle,
+        );
+      default:
+        return null;
+    }
+  }
+
+  /// Builds a `Label(value)` heading with an outline detail line, used by
+  /// the file tools whose heading carries a path and a summary.
+  TextSpan _labeledHeading(
+    String label,
+    String value,
+    String detail, {
+    required TextStyle labelStyle,
+    required TextStyle outlineStyle,
+    required TextStyle innerStyle,
+  }) => TextSpan(
+    children: [
+      TextSpan(text: label, style: labelStyle),
+      TextSpan(text: '(', style: outlineStyle),
+      TextSpan(text: value, style: innerStyle),
+      TextSpan(text: ')', style: outlineStyle),
+      TextSpan(text: detail, style: outlineStyle),
+    ],
+  );
+}
+
+/// Returns the leading part of [text] that fits within [maxWidth] columns.
+///
+/// Characters are collected from the start until the terminal width is
+/// exhausted, so the tail is dropped and the head stays visible. When the
+/// tail is dropped, `...` marks the elision and reserves its three columns.
+String headWindow(String text, int maxWidth) {
+  if (text.isEmpty || maxWidth <= 0) {
+    return '';
+  }
+  final runes = text.runes.toList();
+  final picked = _collectWindow(runes, maxWidth, fromEnd: false);
+  if (picked.length == runes.length) {
+    return text;
+  }
+  // The tail was elided: reserve three columns for the marker and collect
+  // the head again within the remaining space.
+  const elided = '...';
+  final contentMax = maxWidth > elided.length ? maxWidth - elided.length : 0;
+  final kept = _collectWindow(runes, contentMax, fromEnd: false);
+  return '${String.fromCharCodes(kept)}$elided';
+}
+
+/// Collects whole code points from [runes] while they fit within
+/// [maxWidth] columns, walking from the head or from the tail (in reverse
+/// order).
+List<int> _collectWindow(
+  List<int> runes,
+  int maxWidth, {
+  required bool fromEnd,
+}) {
+  final source = fromEnd ? runes.reversed : runes;
+  final picked = <int>[];
+  var width = 0;
+  for (final rune in source) {
+    final runeWidth = UnicodeWidth.graphemeWidth(String.fromCharCode(rune));
+    if (width + runeWidth > maxWidth) {
       break;
     }
-    picked.add(runes[i]);
+    picked.add(rune);
     width += runeWidth;
   }
-  return '$elided${String.fromCharCodes(picked.reversed)}';
+  return picked;
+}
+
+/// Keeps the trailing [maxLines] lines of [text], replacing the elided head
+/// with an ellipsis marker line so long results stay readable. A trailing
+/// newline is not counted as an extra line.
+String tailLines(String text, int maxLines) {
+  var lines = text.split('\n');
+  if (lines.isNotEmpty && lines.last.isEmpty) {
+    lines = lines.sublist(0, lines.length - 1);
+  }
+  if (lines.length <= maxLines) {
+    return lines.join('\n');
+  }
+  final kept = lines.sublist(lines.length - maxLines + 1);
+  return '...\n${kept.join('\n')}';
 }
 
 /// Builds the markdown style sheet for assistant messages from [theme].

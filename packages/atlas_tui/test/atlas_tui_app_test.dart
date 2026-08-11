@@ -435,6 +435,67 @@ void main() {
     });
   });
 
+  test('renders structured headings for known tools', () async {
+    await testNocterm('tool headings', (tester) async {
+      final provider = _ScriptedProvider()
+        ..toolCalls = [
+          ToolCall(
+            id: ToolCallId('call-1'),
+            name: 'shell',
+            arguments: {'command': 'ls -la'},
+          ),
+          ToolCall(
+            id: ToolCallId('call-2'),
+            name: 'read',
+            arguments: {'path': '/tmp/a.dart', 'offset': 10, 'limit': 50},
+          ),
+          ToolCall(
+            id: ToolCallId('call-3'),
+            name: 'edit',
+            arguments: {
+              'path': '/tmp/b.dart',
+              'edits': [
+                {'old_text': 'x', 'new_text': 'y'},
+                {'old_text': 'p', 'new_text': 'q'},
+              ],
+            },
+          ),
+          ToolCall(
+            id: ToolCallId('call-4'),
+            name: 'write',
+            arguments: {'path': '/tmp/c.dart', 'content': 'l1\nl2\nl3'},
+          ),
+        ];
+      final runtime = _runtime(provider);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      await tester.enterText('go');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      final text = tester.terminalState.getText();
+      expect(text, contains('Shell(ls -la)'));
+      expect(text, isNot(contains('\$ ls -la')));
+      expect(text, contains('Read(/tmp/a.dart)'));
+      expect(text, contains('offset 10, limit 50'));
+      // Read results are file contents and stay out of the transcript.
+      expect(text, isNot(contains('unknown tool: read')));
+      expect(text, contains('Edit(/tmp/b.dart)'));
+      expect(text, contains('2 text blocks'));
+      expect(text, contains('Write(/tmp/c.dart)'));
+      expect(text, contains('3 lines'));
+    });
+  });
+
   test('/quit invokes the quit callback', () async {
     await testNocterm('slash quit', (tester) async {
       final provider = _ScriptedProvider();
@@ -550,6 +611,9 @@ final class _ScriptedProvider implements ModelProvider {
   Completer<void>? gate;
   List<ModelMessage>? lastMessages;
 
+  /// Tool calls yielded by the first request, if any.
+  List<ToolCall> toolCalls = const [];
+
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
       ModelDescriptor(ref: model);
@@ -567,6 +631,12 @@ final class _ScriptedProvider implements ModelProvider {
       if (cancellation?.isCancelled == true) {
         throw const TurnCancelledException();
       }
+    }
+    if (streamCalls == 1 && toolCalls.isNotEmpty) {
+      yield ModelCompletedEvent(
+        ModelResponse(toolCalls: toolCalls, stopReason: StopReason.toolUse),
+      );
+      return;
     }
     yield const TextDeltaEvent('hi');
     yield const ModelCompletedEvent(

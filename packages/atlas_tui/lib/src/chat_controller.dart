@@ -212,6 +212,7 @@ final class ChatController implements Listenable {
           ChatMessage(
             kind: ChatMessageKind.tool,
             toolName: event.call.call.name,
+            arguments: event.call.call.arguments,
             text: 'running…',
           ),
         );
@@ -243,6 +244,7 @@ final class ChatController implements Listenable {
         kind: kind,
         text: text,
         toolName: last.toolName,
+        arguments: last.arguments,
         isError: last.isError,
       );
     } else {
@@ -266,12 +268,15 @@ final class ChatController implements Listenable {
     if (index < 0) {
       return;
     }
+    // Keep the tail of long results so the newest output stays visible; the
+    // renderer elides the head with its own `...` when lines are dropped.
     final summary = result.content.length > maxToolResultChars
-        ? '${result.content.substring(0, maxToolResultChars)}…'
+        ? '...${result.content.substring(result.content.length - maxToolResultChars)}'
         : result.content;
     _messages[index] = ChatMessage(
       kind: ChatMessageKind.tool,
       toolName: _messages[index].toolName,
+      arguments: _messages[index].arguments,
       text: result.isError ? 'failed: $summary' : summary,
       isError: result.isError,
     );
