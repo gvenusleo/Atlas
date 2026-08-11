@@ -229,7 +229,7 @@ void main() {
         tools: _MemoryTools(result: const ToolResult(content: 'unused')),
         ids: _Ids(),
         defaultModel: _model,
-        systemPromptBuilder: (_, _) => 'base prompt',
+        systemPromptBuilder: (_) => 'base prompt',
       );
 
       await runtime
@@ -248,6 +248,193 @@ void main() {
         'new request',
       );
       expect(store.timeline.first.sequence, 2);
+    },
+  );
+
+  test('injects selected skills as leading non-persistent messages', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('Done.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      sessionContextBuilder: _contextBuilder(
+        _MemorySkillCatalog(const [
+          Skill(
+            name: 'alpha',
+            description: 'Alpha skill.',
+            dir: '/skills/alpha',
+            path: '/skills/alpha/SKILL.md',
+            content: '# Alpha\n\nFollow these steps.',
+          ),
+        ]),
+      ),
+    );
+
+    await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('Use alpha')],
+            workingDirectory: '/tmp',
+            skills: ['alpha', 'missing', 'alpha'],
+          ),
+        )
+        .toList();
+
+    final messages = provider.requests.single.messages;
+    expect(messages.first.role, ModelMessageRole.user);
+    expect(
+      textFromContent(messages.first.content),
+      contains(
+        '<skill>\n<name>alpha</name>\n<path>/skills/alpha/SKILL.md</path>',
+      ),
+    );
+    expect(textFromContent(messages.first.content), contains('Follow these'));
+    expect(messages.last.role, ModelMessageRole.user);
+    expect(textFromContent(messages.last.content), 'Use alpha');
+    expect(store.timeline, hasLength(2));
+    expect(store.timeline.whereType<UserMessageItem>().single.content, const [
+      TextContent('Use alpha'),
+    ]);
+    expect(
+      store.timeline.whereType<AssistantMessageItem>().single.content,
+      const [TextContent('Done.')],
+    );
+  });
+
+  test('skips unknown and disabled skills when injecting', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('Done.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      sessionContextBuilder: _contextBuilder(
+        _MemorySkillCatalog(const [
+          Skill(
+            name: 'hidden',
+            description: 'Hidden.',
+            dir: '/skills/hidden',
+            path: '/skills/hidden/SKILL.md',
+            content: '# Hidden',
+            disableModelInvocation: true,
+          ),
+        ]),
+      ),
+    );
+
+    await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('Ask')],
+            workingDirectory: '/tmp',
+            skills: ['missing', 'hidden'],
+          ),
+        )
+        .toList();
+
+    expect(provider.requests.single.messages, hasLength(1));
+    expect(
+      textFromContent(provider.requests.single.messages.single.content),
+      'Ask',
+    );
+  });
+
+  test(
+    'fails the turn when selected skill instructions are too large',
+    () async {
+      final store = _MemorySessionStore();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: _ScriptedProvider(const []),
+        tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+        ids: _Ids(),
+        defaultModel: _model,
+        sessionContextBuilder: _contextBuilder(
+          _MemorySkillCatalog([
+            Skill(
+              name: 'huge',
+              description: 'Huge.',
+              dir: '/skills/huge',
+              path: '/skills/huge/SKILL.md',
+              content: 'x' * (AgentRuntime.maxSelectedSkillBytes + 1),
+            ),
+          ]),
+        ),
+      );
+
+      final events = <AgentEvent>[];
+      await expectLater(() async {
+        await for (final event in runtime.run(
+          const TurnRequest(
+            content: [TextContent('Use huge')],
+            workingDirectory: '/tmp',
+            skills: ['huge'],
+          ),
+        )) {
+          events.add(event);
+        }
+      }(), throwsStateError);
+
+      expect(store.turns.single.status, TurnStatus.failed);
+      expect(events.last, isA<TurnFinished>());
+      expect(
+        (events.last as TurnFinished).outcome.failure?.code,
+        'turn_failed',
+      );
+    },
+  );
+
+  test(
+    'resumes an existing session with its original working directory',
+    () async {
+      final store = _MemorySessionStore();
+      final sessionTime = DateTime.utc(2026, 1, 1);
+      store.session = Session(
+        id: SessionId('existing-session'),
+        workingDirectory: '/original',
+        createdAt: sessionTime,
+        updatedAt: sessionTime,
+      );
+      final provider = _ScriptedProvider([
+        const ModelResponse(
+          content: [TextContent('resumed')],
+          stopReason: StopReason.endTurn,
+        ),
+      ]);
+      final runtime = AgentRuntime(
+        store: store,
+        provider: provider,
+        tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+        ids: _Ids(),
+        defaultModel: _model,
+      );
+
+      await runtime
+          .run(
+            TurnRequest(
+              sessionId: SessionId('existing-session'),
+              content: const [TextContent('resume')],
+              workingDirectory: '/override',
+            ),
+          )
+          .toList();
+
+      expect(store.session!.workingDirectory, '/original');
     },
   );
 
@@ -382,6 +569,41 @@ final class _CancellingProvider implements ModelProvider {
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
     request.cancellation!.cancel();
     yield const TextDeltaEvent('ignored');
+  }
+}
+
+/// A session context builder that injects [skills] for every directory.
+SessionContext Function(String) _contextBuilder(SkillCatalog skills) =>
+    (cwd) => SessionContext(
+      workingDirectory: cwd,
+      instructions: const [],
+      skills: skills,
+    );
+
+final class _MemorySkillCatalog implements SkillCatalog {
+  _MemorySkillCatalog(this.skills);
+
+  final List<Skill> skills;
+
+  @override
+  List<SkillSummary> get summaries => [
+    for (final skill in skills)
+      if (!skill.disableModelInvocation)
+        SkillSummary(
+          name: skill.name,
+          path: skill.path,
+          description: skill.description,
+        ),
+  ];
+
+  @override
+  Skill? lookup(String name) {
+    for (final skill in skills) {
+      if (skill.name == name) {
+        return skill.disableModelInvocation ? null : skill;
+      }
+    }
+    return null;
   }
 }
 

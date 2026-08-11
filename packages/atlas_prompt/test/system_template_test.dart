@@ -77,6 +77,68 @@ void main() {
     expect(prompt, contains('dart only'));
   });
 
+  test('injects available skills with name, path, and description', () {
+    final prompt = buildSystemPrompt(
+      workingDirectory: '/work',
+      tools: tools,
+      skills: [
+        const SkillSummary(
+          name: 'check',
+          path: '/home/u/.agents/skills/check/SKILL.md',
+          description: 'Review code diffs.',
+        ),
+        const SkillSummary(
+          name: 'hunt',
+          path: '/work/.agents/skills/hunt/SKILL.md',
+          description: 'Find root causes.',
+        ),
+      ],
+      platform: 'macos',
+      shell: '/bin/sh',
+    );
+
+    expect(prompt, contains('## Available Skills'));
+    expect(prompt, contains('<available_skills>'));
+    expect(prompt, contains('<name>check</name>'));
+    expect(
+      prompt,
+      contains('<path>/home/u/.agents/skills/check/SKILL.md</path>'),
+    );
+    expect(prompt, contains('<description>Review code diffs.</description>'));
+    expect(prompt, contains('read tool'));
+  });
+
+  test('escapes skill metadata inside the available skills block', () {
+    final prompt = buildSystemPrompt(
+      workingDirectory: '/work',
+      tools: tools,
+      skills: [
+        const SkillSummary(
+          name: 'a<b',
+          path: '/x&y/SKILL.md',
+          description: 'One <two> & three',
+        ),
+      ],
+      platform: 'macos',
+      shell: '/bin/sh',
+    );
+
+    expect(prompt, contains('<name>a&lt;b</name>'));
+    expect(prompt, contains('<path>/x&amp;y/SKILL.md</path>'));
+    expect(prompt, contains('One &lt;two&gt; &amp; three'));
+  });
+
+  test('omits the skills section when none are available', () {
+    final prompt = buildSystemPrompt(
+      workingDirectory: '/work',
+      tools: tools,
+      platform: 'macos',
+      shell: '/bin/sh',
+    );
+
+    expect(prompt, isNot(contains('Available Skills')));
+  });
+
   test('omits the instructions section when none are loaded', () {
     final prompt = buildSystemPrompt(
       workingDirectory: '/work',

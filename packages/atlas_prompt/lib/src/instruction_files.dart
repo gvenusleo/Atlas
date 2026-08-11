@@ -1,19 +1,8 @@
 import 'dart:io';
 
-/// One loaded AGENTS.md instruction file.
-final class InstructionFile {
-  /// Creates an instruction file.
-  const InstructionFile({required this.path, required this.content});
+import 'package:atlas_runtime/atlas_runtime.dart';
 
-  /// The absolute file path.
-  final String path;
-
-  /// The file content, bounded to [maxInstructionBytes].
-  final String content;
-}
-
-/// The maximum instruction content loaded into the system prompt.
-const maxInstructionBytes = 64 * 1024;
+export 'package:atlas_runtime/atlas_runtime.dart' show InstructionFile;
 
 /// Loads the global and current-directory AGENTS.md instruction files.
 ///
@@ -44,8 +33,8 @@ List<InstructionFile> loadInstructionFiles({
     result.add(
       InstructionFile(
         path: absolute,
-        content: content.length > maxInstructionBytes
-            ? content.substring(0, maxInstructionBytes)
+        content: content.length > InstructionFile.maxBytes
+            ? content.substring(0, InstructionFile.maxBytes)
             : content,
       ),
     );

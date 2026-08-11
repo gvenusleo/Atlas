@@ -1,5 +1,16 @@
+import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_tui/atlas_tui.dart';
 import 'package:test/test.dart';
+
+final _catalog = _MemorySkillCatalog(const [
+  Skill(
+    name: 'check',
+    description: 'Review code.',
+    dir: '/skills/check',
+    path: '/skills/check/SKILL.md',
+    content: '# Check instructions',
+  ),
+]);
 
 void main() {
   group('parseSlashCommand', () {
@@ -37,4 +48,52 @@ void main() {
       expect(validSlashCommandName('héllo'), isFalse);
     });
   });
+
+  group('parseSkillCommand', () {
+    test('matches a leading skill command', () {
+      expect(parseSkillCommand('/check', _catalog)?.name, 'check');
+      expect(parseSkillCommand('/check review this', _catalog)?.name, 'check');
+    });
+
+    test('allows surrounding whitespace', () {
+      expect(parseSkillCommand('  /check  ', _catalog)?.name, 'check');
+    });
+
+    test('rejects unknown skills and normal messages', () {
+      expect(parseSkillCommand('/unknown', _catalog), isNull);
+      expect(parseSkillCommand('hello', _catalog), isNull);
+      expect(parseSkillCommand('', _catalog), isNull);
+      expect(parseSkillCommand('/', _catalog), isNull);
+    });
+
+    test('returns null without a catalog', () {
+      expect(parseSkillCommand('/check', null), isNull);
+    });
+  });
+}
+
+final class _MemorySkillCatalog implements SkillCatalog {
+  _MemorySkillCatalog(this.skills);
+
+  final List<Skill> skills;
+
+  @override
+  List<SkillSummary> get summaries => [
+    for (final skill in skills)
+      SkillSummary(
+        name: skill.name,
+        path: skill.path,
+        description: skill.description,
+      ),
+  ];
+
+  @override
+  Skill? lookup(String name) {
+    for (final skill in skills) {
+      if (skill.name == name) {
+        return skill;
+      }
+    }
+    return null;
+  }
 }

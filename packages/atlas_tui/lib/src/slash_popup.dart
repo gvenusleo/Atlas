@@ -50,6 +50,12 @@ final class SlashPopup extends StatelessComponent {
       }
     }
 
+    // Descriptions fill the remaining terminal width on one line.
+    final descriptionWidth = (_terminalWidth() - 2 - nameColumnWidth - 2).clamp(
+      20,
+      _terminalWidth(),
+    );
+
     final rows = <Component>[];
     for (var i = start; i < end; i++) {
       final command = matches[i];
@@ -69,7 +75,7 @@ final class SlashPopup extends StatelessComponent {
           ..add(TextSpan(text: '$padding  ', style: nameStyle))
           ..add(
             TextSpan(
-              text: command.description,
+              text: _truncateWidth(command.description, descriptionWidth),
               style: TextStyle(color: theme.outline),
             ),
           );
@@ -93,6 +99,39 @@ final class SlashPopup extends StatelessComponent {
 
   String _displayName(SlashCommand command) =>
       showSlash ? '/${command.name}' : command.name;
+}
+
+/// The terminal width in columns, or 80 when the binding is unknown.
+int _terminalWidth() {
+  final binding = NoctermBinding.instance;
+  if (binding is TerminalBinding) {
+    return binding.terminal.size.width.toInt();
+  }
+  if (binding is NoctermTestBinding) {
+    return binding.size.width.toInt();
+  }
+  return 80;
+}
+
+/// Truncates [text] to at most [maxWidth] display columns.
+///
+/// Adds an ellipsis when truncating and keeps multi-column characters intact.
+String _truncateWidth(String text, int maxWidth) {
+  if (UnicodeWidth.stringWidth(text) <= maxWidth) {
+    return text;
+  }
+  final buffer = StringBuffer();
+  var width = 0;
+  for (final rune in text.runes) {
+    final char = String.fromCharCode(rune);
+    final charWidth = UnicodeWidth.stringWidth(char);
+    if (width + charWidth > maxWidth - 3) {
+      break;
+    }
+    buffer.write(char);
+    width += charWidth;
+  }
+  return '$buffer...';
 }
 
 /// Start row of the visible window so the selection stays on screen.

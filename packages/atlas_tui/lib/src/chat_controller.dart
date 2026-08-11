@@ -95,8 +95,12 @@ final class ChatController implements Listenable {
   ///
   /// The turn is ignored while one is already running and when [text] is
   /// blank. The session id is reused across turns so the conversation stays
-  /// in one persisted session.
-  Future<void> send(String text) async {
+  /// in one persisted session. [selectedSkills] are injected into this turn
+  /// as non-persistent skill context.
+  Future<void> send(
+    String text, {
+    List<String> selectedSkills = const <String>[],
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _busy) {
       return;
@@ -117,6 +121,7 @@ final class ChatController implements Listenable {
           workingDirectory: _workingDirectory,
           model: _model,
           reasoningEffort: _reasoningEffort,
+          skills: selectedSkills,
           cancellation: cancellation,
         ),
       )) {

@@ -21,6 +21,7 @@ void main() {
         providerId: ProviderId('fake'),
         modelId: ModelId('model'),
       ),
+      sessionContextBuilder: _contextBuilder(_Skills(['check'])),
       maxSteps: 5,
     );
   });
@@ -207,6 +208,18 @@ void main() {
     },
   );
 
+  test('passes selected skills to the turn', () async {
+    final controller = ChatController(runtime: runtime);
+
+    await controller.send('/check review', selectedSkills: ['check']);
+
+    expect(provider.lastMessages!.first.role, ModelMessageRole.user);
+    expect(
+      textFromContent(provider.lastMessages!.first.content),
+      contains('<skill>\n<name>check</name>'),
+    );
+  });
+
   test('reset clears the transcript and the context tokens', () async {
     final controller = ChatController(runtime: runtime);
     await controller.send('hello');
@@ -246,6 +259,42 @@ final class _EchoTool implements Tool {
       );
 }
 
+/// A session context builder that injects [skills] for every directory.
+SessionContext Function(String) _contextBuilder(SkillCatalog skills) =>
+    (cwd) => SessionContext(
+      workingDirectory: cwd,
+      instructions: const [],
+      skills: skills,
+    );
+
+/// In-memory catalog exposing skills by name from a fixed set.
+final class _Skills implements SkillCatalog {
+  _Skills(this.names);
+
+  final List<String> names;
+
+  @override
+  List<SkillSummary> get summaries => [
+    for (final name in names)
+      SkillSummary(
+        name: name,
+        path: '/skills/$name/SKILL.md',
+        description: '$name skill.',
+      ),
+  ];
+
+  @override
+  Skill? lookup(String name) => names.contains(name)
+      ? Skill(
+          name: name,
+          description: '$name skill.',
+          dir: '/skills/$name',
+          path: '/skills/$name/SKILL.md',
+          content: '# $name\n\nFollow these steps.',
+        )
+      : null;
+}
+
 /// Scripted provider: first request asks for a tool call, later requests
 /// finish the turn. Records every session id it receives.
 final class _ScriptedProvider implements ModelProvider {
@@ -259,6 +308,7 @@ final class _ScriptedProvider implements ModelProvider {
   final sessionIds = <String>[];
   ModelRef? lastModel;
   String? lastReasoningEffort;
+  List<ModelMessage>? lastMessages;
 
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
@@ -269,6 +319,7 @@ final class _ScriptedProvider implements ModelProvider {
     sessionIds.add(request.sessionId.value);
     lastModel = request.model;
     lastReasoningEffort = request.reasoningEffort;
+    lastMessages = request.messages;
     _requests++;
     if (failTurn) {
       throw StateError('provider exploded');

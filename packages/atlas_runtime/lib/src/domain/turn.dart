@@ -40,6 +40,7 @@ final class TurnRequest {
     this.reasoningEffort,
     this.workingDirectory,
     this.additionalDirectories,
+    this.skills = const <String>[],
     this.cancellation,
   });
 
@@ -55,11 +56,16 @@ final class TurnRequest {
   /// The requested reasoning effort value.
   final String? reasoningEffort;
 
-  /// The working directory override.
+  /// The working directory for a new session; ignored when [sessionId]
+  /// resumes an existing session, which keeps its own directory.
   final String? workingDirectory;
 
   /// Additional tool-accessible roots, or null to preserve session roots.
   final List<String>? additionalDirectories;
+
+  /// Explicitly selected skill names whose full instructions are injected
+  /// into this turn as non-persistent context.
+  final List<String> skills;
 
   /// Cooperative cancellation for the turn.
   final CancellationToken? cancellation;

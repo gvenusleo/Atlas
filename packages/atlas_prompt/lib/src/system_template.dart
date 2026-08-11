@@ -2,8 +2,6 @@ import 'dart:io';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
 
-import 'instruction_files.dart';
-
 /// The system prompt header with static operating principles.
 const _header = '''
 You are Atlas, a local general-purpose agent running on the user's machine.
@@ -59,6 +57,7 @@ String buildSystemPrompt({
   required String workingDirectory,
   required List<ToolDescriptor> tools,
   List<InstructionFile> instructions = const [],
+  List<SkillSummary> skills = const [],
   String? platform,
   String? shell,
   DateTime? now,
@@ -104,8 +103,42 @@ String buildSystemPrompt({
         ..write('\n</instruction_file>\n\n');
     }
   }
+  if (skills.isNotEmpty) {
+    buffer
+      ..write('\n## Available Skills\n\n')
+      ..write(
+        'Skills provide specialized instructions for specific tasks. The '
+        'list below names each skill, its SKILL.md path, and a summary. '
+        'When a request matches a skill, read its SKILL.md with the read '
+        'tool and follow the returned instructions before applying that '
+        'skill.\n\n',
+      )
+      ..write('<available_skills>\n');
+    for (final skill in skills) {
+      buffer
+        ..write('  <skill>\n')
+        ..write('    <name>')
+        ..write(_escapeHtml(skill.name))
+        ..write('</name>\n')
+        ..write('    <path>')
+        ..write(_escapeHtml(skill.path))
+        ..write('</path>\n')
+        ..write('    <description>')
+        ..write(_escapeHtml(skill.description))
+        ..write('</description>\n')
+        ..write('  </skill>\n');
+    }
+    buffer.write('</available_skills>\n');
+  }
   return buffer.toString().trimRight();
 }
+
+/// Escapes XML-significant characters so skill metadata cannot break the
+/// `<available_skills>` block, mirroring the Go reference implementation.
+String _escapeHtml(String value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 
 String _defaultPlatform() => Platform.operatingSystem;
 

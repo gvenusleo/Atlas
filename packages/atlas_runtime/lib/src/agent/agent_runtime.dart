@@ -3,8 +3,10 @@ import 'dart:async';
 import '../domain/content.dart';
 import '../domain/events.dart';
 import '../domain/ids.dart';
+import '../domain/instruction_file.dart';
 import '../domain/model.dart';
 import '../domain/session.dart';
+import '../domain/session_context.dart';
 import '../domain/timeline.dart';
 import '../domain/turn.dart';
 import '../domain/usage.dart';
@@ -13,6 +15,8 @@ import '../ports/id_generator.dart';
 import '../ports/model_provider.dart';
 import '../ports/session_store.dart';
 import '../ports/tool_registry.dart';
+import '../skills/skill.dart';
+import '../skills/skill_catalog.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
 final class AgentRuntime {
@@ -23,6 +27,7 @@ final class AgentRuntime {
     required this.tools,
     required this.ids,
     required this.defaultModel,
+    this.sessionContextBuilder = _emptySessionContext,
     DateTime Function()? now,
     this.systemPromptBuilder = _emptySystemPrompt,
     this.maxSteps = 20,
@@ -39,6 +44,10 @@ final class AgentRuntime {
   /// The registered local tools.
   final ToolRegistry tools;
 
+  /// Builds the filesystem context (instructions and skills) for a session
+  /// working directory; invoked once per directory and cached.
+  final SessionContext Function(String workingDirectory) sessionContextBuilder;
+
   /// The ID generator used for new records.
   final IdGenerator ids;
 
@@ -46,8 +55,7 @@ final class AgentRuntime {
   final ModelRef defaultModel;
 
   /// Builds the system prompt for a session and turn.
-  final String Function(SessionId sessionId, TurnRequest request)
-  systemPromptBuilder;
+  final String Function(SessionContext context) systemPromptBuilder;
 
   /// Maximum model/tool steps for one turn.
   final int maxSteps;
@@ -60,6 +68,7 @@ final class AgentRuntime {
 
   final DateTime Function() _now;
   final Map<SessionId, Future<void>> _sessionTails = {};
+  final Map<String, SessionContext> _sessionContexts = {};
 
   /// Executes one turn and emits events in their exact occurrence order.
   Stream<AgentEvent> run(TurnRequest request) async* {
@@ -122,6 +131,11 @@ final class AgentRuntime {
     var latestUsage = const TokenUsage();
     var finalContent = const <ContentPart>[];
     try {
+      final context = _contextFor(session.workingDirectory);
+      final selectedSkillMessages = _skillMessages(
+        request.skills,
+        context.skills,
+      );
       for (var step = 0; step < maxSteps; step++) {
         cancellation.throwIfCancelled();
         ModelResponse? response;
@@ -129,12 +143,15 @@ final class AgentRuntime {
           sessionId: session.id,
           turnId: turn.id,
           model: model,
-          messages: _projectTimeline(
-            timeline,
-            modelCheckpoints,
-            compaction: session.compaction,
-          ),
-          systemPrompt: _systemPrompt(session, request),
+          messages: [
+            ...selectedSkillMessages,
+            ..._projectTimeline(
+              timeline,
+              modelCheckpoints,
+              compaction: session.compaction,
+            ),
+          ],
+          systemPrompt: _systemPrompt(session, context),
           tools: tools.descriptors,
           reasoningEffort: request.reasoningEffort,
           maxOutputTokens: maxOutputTokens,
@@ -354,7 +371,7 @@ final class AgentRuntime {
       final session = Session(
         id: current.id,
         title: current.title,
-        workingDirectory: request.workingDirectory ?? current.workingDirectory,
+        workingDirectory: current.workingDirectory,
         additionalDirectories: List<String>.unmodifiable(
           request.additionalDirectories ?? current.additionalDirectories,
         ),
@@ -389,8 +406,8 @@ final class AgentRuntime {
     );
   }
 
-  String _systemPrompt(Session session, TurnRequest request) {
-    final prompt = systemPromptBuilder(session.id, request);
+  String _systemPrompt(Session session, SessionContext context) {
+    final prompt = systemPromptBuilder(context);
     final summary = session.compaction?.summary.trim();
     if (summary == null || summary.isEmpty) {
       return prompt;
@@ -431,6 +448,62 @@ final class AgentRuntime {
 
   static String _safeErrorMessage(String prefix, Object error) =>
       '$prefix (${error.runtimeType})';
+
+  /// The maximum total size of skill instructions injected into one turn.
+  static const maxSelectedSkillBytes = 64 * 1024;
+
+  /// The cached session context for a working directory.
+  SessionContext _contextFor(String workingDirectory) =>
+      _sessionContexts.putIfAbsent(
+        workingDirectory,
+        () => sessionContextBuilder(workingDirectory),
+      );
+
+  /// Renders explicitly selected skills as non-persistent user context
+  /// messages for the current turn, in first-selection order.
+  List<ModelMessage> _skillMessages(List<String> names, SkillCatalog skills) {
+    if (names.isEmpty) {
+      return const [];
+    }
+    final result = <ModelMessage>[];
+    final seen = <String>{};
+    var total = 0;
+    for (final name in names) {
+      if (!seen.add(name)) {
+        continue;
+      }
+      final skill = skills.lookup(name);
+      if (skill == null) {
+        continue;
+      }
+      total += skill.content.length;
+      if (total > maxSelectedSkillBytes) {
+        throw StateError('selected skill instructions exceed 64 KiB');
+      }
+      result.add(
+        ModelMessage(
+          role: ModelMessageRole.user,
+          content: [TextContent(_skillContext(skill))],
+        ),
+      );
+    }
+    return result;
+  }
+
+  /// Wraps the full SKILL.md content in XML instruction tags.
+  ///
+  /// Only the metadata is escaped; the body is injected verbatim so the model
+  /// reads the raw markdown, matching the instruction-file injection pattern.
+  static String _skillContext(Skill skill) =>
+      '<skill>\n<name>${_escapeXml(skill.name)}</name>\n'
+      '<path>${_escapeXml(skill.path)}</path>\n'
+      '${skill.content.trimRight()}\n</skill>';
+
+  /// Escapes XML-significant characters in skill metadata.
+  static String _escapeXml(String value) => value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
 
   static List<ModelMessage> _projectTimeline(
     List<TimelineItem> items,
@@ -530,8 +603,16 @@ final class AgentRuntime {
       ? items.last.sequence + 1
       : (compaction?.compactedThroughSequence ?? -1) + 1;
 
-  static String _emptySystemPrompt(SessionId sessionId, TurnRequest request) =>
-      '';
+  static String _emptySystemPrompt(SessionContext context) => '';
+
+  /// A default context builder for runtimes that do not load filesystem
+  /// context; returns an empty context per working directory.
+  static SessionContext _emptySessionContext(String workingDirectory) =>
+      SessionContext(
+        workingDirectory: workingDirectory,
+        instructions: const <InstructionFile>[],
+        skills: _EmptySkillCatalog(),
+      );
 
   Future<void Function()> _acquireSessionLock(SessionId sessionId) async {
     final previous = _sessionTails[sessionId];
@@ -551,4 +632,13 @@ final class AgentRuntime {
       }
     };
   }
+}
+
+/// A skill catalog with no skills, used when no context builder is provided.
+final class _EmptySkillCatalog implements SkillCatalog {
+  @override
+  List<SkillSummary> get summaries => const [];
+
+  @override
+  Skill? lookup(String name) => null;
 }

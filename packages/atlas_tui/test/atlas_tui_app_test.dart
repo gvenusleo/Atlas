@@ -127,6 +127,7 @@ void main() {
         AtlasTuiApp(
           runtime: runtime,
           models: _testModels,
+          skills: _testSkills,
           workingDirectory: '/tmp',
         ),
       );
@@ -136,6 +137,83 @@ void main() {
       expect(tester.terminalState, containsText('/model'));
       expect(tester.terminalState, containsText('/new'));
       expect(tester.terminalState, containsText('/quit'));
+      expect(tester.terminalState, containsText('/check'));
+    });
+  });
+
+  test('hides skills that cannot be triggered from the popup', () async {
+    await testNocterm('slash skill filter', (tester) async {
+      final provider = _ScriptedProvider();
+      final runtime = _runtime(provider);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          skills: _TestSkillCatalog(const [
+            Skill(
+              name: 'check',
+              description: 'Review code.',
+              dir: '/skills/check',
+              path: '/skills/check/SKILL.md',
+              content: '# Check\n\nReview the diff.',
+            ),
+            Skill(
+              name: 'bad name',
+              description: 'Unselectable.',
+              dir: '/skills/bad',
+              path: '/skills/bad/SKILL.md',
+              content: '# Bad',
+            ),
+            Skill(
+              name: 'model',
+              description: 'Builtin clash.',
+              dir: '/skills/model',
+              path: '/skills/model/SKILL.md',
+              content: '# Model',
+            ),
+          ]),
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      await tester.enterText('/');
+      await tester.pump();
+      final text = tester.terminalState.getText();
+      expect(text, contains('/check'));
+      expect(text, isNot(contains('/bad')));
+      expect('/model'.allMatches(text).length, 1);
+    });
+  });
+
+  test('submits a skill command with its instructions injected', () async {
+    await testNocterm('slash skill', (tester) async {
+      final provider = _ScriptedProvider();
+      final runtime = _runtime(provider, skills: _testSkills);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          skills: _testSkills,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      await tester.enterText('/check');
+      await tester.pump();
+      // First Enter fills the popup completion; the second submits the turn.
+      await tester.sendEnter();
+      await tester.pump();
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      expect(provider.lastMessages!.first.role, ModelMessageRole.user);
+      expect(
+        textFromContent(provider.lastMessages!.first.content),
+        contains('<skill>\n<name>check</name>'),
+      );
     });
   });
 
@@ -403,16 +481,37 @@ void main() {
   });
 }
 
-AgentRuntime _runtime(_ScriptedProvider provider) => AgentRuntime(
-  store: DriftSessionStore.inMemory(),
-  provider: provider,
-  tools: LocalToolRegistry(const []),
-  ids: SecureIdGenerator(),
-  defaultModel: ModelRef(
-    providerId: ProviderId('fake'),
-    modelId: ModelId('model'),
+AgentRuntime _runtime(_ScriptedProvider provider, {SkillCatalog? skills}) =>
+    AgentRuntime(
+      store: DriftSessionStore.inMemory(),
+      provider: provider,
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      sessionContextBuilder: _contextBuilder(skills),
+    );
+
+/// A session context builder that injects [skills] for every directory.
+SessionContext Function(String) _contextBuilder(SkillCatalog? skills) =>
+    (cwd) => SessionContext(
+      workingDirectory: cwd,
+      instructions: const [],
+      skills: skills ?? _TestSkillCatalog(const []),
+    );
+
+/// Shared test skills shown in the `/` completion popup.
+final _testSkills = _TestSkillCatalog(const [
+  Skill(
+    name: 'check',
+    description: 'Review code.',
+    dir: '/skills/check',
+    path: '/skills/check/SKILL.md',
+    content: '# Check\n\nReview the diff.',
   ),
-);
+]);
 
 /// Shared test models for `/model` switching.
 final _testModels = [
@@ -449,6 +548,7 @@ final _reasoningModels = [
 final class _ScriptedProvider implements ModelProvider {
   int streamCalls = 0;
   Completer<void>? gate;
+  List<ModelMessage>? lastMessages;
 
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
@@ -457,6 +557,7 @@ final class _ScriptedProvider implements ModelProvider {
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
     streamCalls++;
+    lastMessages = request.messages;
     if (gate != null) {
       final cancellation = request.cancellation;
       await Future.any<void>([
@@ -474,5 +575,32 @@ final class _ScriptedProvider implements ModelProvider {
         stopReason: StopReason.endTurn,
       ),
     );
+  }
+}
+
+/// In-memory skill catalog for the slash completion tests.
+final class _TestSkillCatalog implements SkillCatalog {
+  _TestSkillCatalog(this.skills);
+
+  final List<Skill> skills;
+
+  @override
+  List<SkillSummary> get summaries => [
+    for (final skill in skills)
+      SkillSummary(
+        name: skill.name,
+        path: skill.path,
+        description: skill.description,
+      ),
+  ];
+
+  @override
+  Skill? lookup(String name) {
+    for (final skill in skills) {
+      if (skill.name == name) {
+        return skill;
+      }
+    }
+    return null;
   }
 }

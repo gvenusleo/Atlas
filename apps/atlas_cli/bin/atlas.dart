@@ -26,6 +26,7 @@ Future<void> main(List<String> args) async {
       child: AtlasTuiApp(
         runtime: runtime,
         models: composeModels(config),
+        skills: loadSkillCatalog(),
         onQuit: shutdownApp,
       ),
     ),

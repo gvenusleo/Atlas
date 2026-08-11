@@ -1,3 +1,5 @@
+import 'package:atlas_runtime/atlas_runtime.dart';
+
 /// A built-in slash command recognized by the input bar.
 final class SlashCommand {
   /// Creates a slash command.
@@ -50,4 +52,25 @@ bool validSlashCommandName(String name) {
     }
   }
   return true;
+}
+
+/// Resolves a whole-line or leading `/name` skill command from [text].
+///
+/// Returns the matching skill when [text] starts with `/name` and [catalog]
+/// knows the skill; `null` otherwise so the text can be submitted as a
+/// normal message. Built-in commands take precedence via [parseSlashCommand].
+Skill? parseSkillCommand(String text, SkillCatalog? catalog) {
+  if (catalog == null) {
+    return null;
+  }
+  final trimmed = text.trim();
+  if (!trimmed.startsWith('/')) {
+    return null;
+  }
+  final end = trimmed.indexOf(RegExp(r'[\s]'), 1);
+  final name = end < 0 ? trimmed.substring(1) : trimmed.substring(1, end);
+  if (!validSlashCommandName(name)) {
+    return null;
+  }
+  return catalog.lookup(name);
 }

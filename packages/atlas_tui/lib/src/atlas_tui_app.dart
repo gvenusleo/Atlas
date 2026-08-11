@@ -29,6 +29,7 @@ final class AtlasTuiApp extends StatefulComponent {
     super.key,
     required this.runtime,
     required this.models,
+    this.skills,
     this.workingDirectory,
     this.onQuit,
   });
@@ -38,6 +39,9 @@ final class AtlasTuiApp extends StatefulComponent {
 
   /// The models the user can switch to with `/model`.
   final List<ModelDescriptor> models;
+
+  /// The skills the user can select with `/skillname`.
+  final SkillCatalog? skills;
 
   /// The working directory for tool execution, or the process directory.
   final String? workingDirectory;
@@ -66,7 +70,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
       workingDirectory: component.workingDirectory ?? Directory.current.path,
     );
     _textController = TextEditingController();
-    _slash = SlashCompleter();
+    _slash = SlashCompleter(commands: _slashCommands);
     _controller.addListener(_refresh);
     _queryBackground();
   }
@@ -99,6 +103,16 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     _slash.sync(_textController.text, _textController.selection.baseOffset);
     setState(() {});
   }
+
+  /// The commands shown in the completion popup: built-ins plus the skills
+  /// the user can actually trigger with `/skillname`.
+  List<SlashCommand> get _slashCommands => [
+    ...slashCommands,
+    for (final skill in component.skills?.summaries ?? const <SkillSummary>[])
+      if (validSlashCommandName(skill.name) &&
+          !slashCommands.any((command) => command.name == skill.name))
+        SlashCommand(name: skill.name, description: skill.description),
+  ];
 
   /// The model catalog as slash-style commands for the picker popup.
   ///
@@ -146,7 +160,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     _pickingModel = false;
     _pickingEffort = false;
     _pickedModel = null;
-    _slash = SlashCompleter();
+    _slash = SlashCompleter(commands: _slashCommands);
     setState(() {});
   }
 
@@ -310,6 +324,13 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
         case 'quit':
           component.onQuit?.call();
       }
+      return;
+    }
+    final skill = parseSkillCommand(text, component.skills);
+    if (skill != null) {
+      _textController.clear();
+      _slash.dismiss('');
+      _controller.send(text, selectedSkills: [skill.name]);
       return;
     }
     _textController.clear();

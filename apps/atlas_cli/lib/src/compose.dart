@@ -17,6 +17,7 @@ AgentRuntime composeRuntime(
   SessionStore? store,
   ToolRegistry? tools,
   ModelProvider? provider,
+  SessionContext Function(String workingDirectory)? sessionContextBuilder,
   String? dbPath,
 }) {
   final resolvedStore =
@@ -25,6 +26,7 @@ AgentRuntime composeRuntime(
   final resolvedTools =
       tools ??
       LocalToolRegistry([ReadTool(), WriteTool(), EditTool(), ShellTool()]);
+  final resolvedContextBuilder = sessionContextBuilder ?? buildSessionContext;
 
   // Index configured providers by their file-order identifier.
   final providers = <ProviderId, ModelProvider>{};
@@ -43,14 +45,14 @@ AgentRuntime composeRuntime(
     tools: resolvedTools,
     ids: SecureIdGenerator(),
     defaultModel: config.defaultModel,
+    sessionContextBuilder: resolvedContextBuilder,
     maxSteps: config.agent.maxSteps,
     temperature: config.agent.temperature,
-    systemPromptBuilder: (sessionId, request) => buildSystemPrompt(
-      workingDirectory: request.workingDirectory ?? Directory.current.path,
+    systemPromptBuilder: (context) => buildSystemPrompt(
+      workingDirectory: context.workingDirectory,
       tools: resolvedTools.descriptors,
-      instructions: loadInstructionFiles(
-        workingDirectory: request.workingDirectory,
-      ),
+      instructions: context.instructions,
+      skills: context.skills.summaries,
       now: DateTime.now(),
     ),
   );

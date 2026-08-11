@@ -9,10 +9,14 @@ System prompt construction for Atlas.
   directory, and current date context.
 - Loads `~/.atlas/AGENTS.md` and the working-directory `AGENTS.md` through
   `loadInstructionFiles` and renders them into the prompt.
+- Loads skills from `~/.atlas/skills`, `~/.agents/skills`, and the project
+  `.atlas/skills` / `.agents/skills` directories through `loadSkillCatalog`
+  and exposes them as a `SkillCatalog`.
 
 ## Allowed dependencies
 
-- `atlas_runtime` public types only (`ToolDescriptor`, `InstructionFile`).
+- `atlas_runtime` public types only (`ToolDescriptor`, `InstructionFile`,
+  `SkillSummary`, `SkillCatalog`, `SessionContext`).
 
 ## Prohibited ownership
 
