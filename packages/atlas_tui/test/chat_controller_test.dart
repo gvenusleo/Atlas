@@ -134,6 +134,15 @@ void main() {
     expect(controller.messages.last.kind, ChatMessageKind.error);
   });
 
+  test('tracks the context tokens of the last finished turn', () async {
+    final controller = ChatController(runtime: runtime);
+    expect(controller.contextTokens, 0);
+
+    await controller.send('hello');
+
+    expect(controller.contextTokens, 4321);
+  });
+
   test(
     'setModel stores the override and effort for subsequent turns',
     () async {
@@ -161,6 +170,18 @@ void main() {
       expect(provider.lastReasoningEffort, 'high');
     },
   );
+
+  test('reset clears the transcript and the context tokens', () async {
+    final controller = ChatController(runtime: runtime);
+    await controller.send('hello');
+    expect(controller.contextTokens, 4321);
+
+    controller.reset();
+
+    expect(controller.messages, isEmpty);
+    expect(controller.contextTokens, 0);
+    expect(controller.model, isNull);
+  });
 
   test('reset keeps the model override but clears the transcript', () async {
     final controller = ChatController(runtime: runtime);
@@ -245,6 +266,7 @@ final class _ScriptedProvider implements ModelProvider {
       ModelResponse(
         content: [TextContent('done')],
         stopReason: StopReason.endTurn,
+        usage: TokenUsage(totalTokens: 4321),
       ),
     );
   }

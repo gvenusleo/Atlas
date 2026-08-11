@@ -43,6 +43,10 @@ void main() {
 
       expect(tester.terminalState, containsText('hello there'));
       expect(provider.streamCalls, greaterThan(0));
+      // The status line below the input bar reflects the default model and
+      // the context usage accumulated by the turn.
+      expect(tester.terminalState, containsText('  model'));
+      expect(tester.terminalState, containsText('Context 0% used'));
     });
   });
 

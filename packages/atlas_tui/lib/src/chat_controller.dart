@@ -34,6 +34,7 @@ final class ChatController implements Listenable {
   ModelRef? _model;
   String? _reasoningEffort;
   bool _busy = false;
+  int _contextTokens = 0;
 
   /// Whether the last appended delta is still open for accumulation.
   bool _sealed = true;
@@ -49,6 +50,9 @@ final class ChatController implements Listenable {
 
   /// The reasoning effort for subsequent turns, or `null` for the default.
   String? get reasoningEffort => _reasoningEffort;
+
+  /// The total tokens of the most recently finished turn.
+  int get contextTokens => _contextTokens;
 
   @override
   void addListener(void Function() listener) => _listeners.add(listener);
@@ -93,6 +97,7 @@ final class ChatController implements Listenable {
   void reset() {
     _messages.clear();
     _sessionId = null;
+    _contextTokens = 0;
     _sealed = true;
     _notify();
   }
@@ -139,8 +144,9 @@ final class ChatController implements Listenable {
         );
       case ToolFinished(:final result):
         _updateLastTool(result);
-      case TurnFinished():
+      case TurnFinished(:final outcome):
         _sealed = true;
+        _contextTokens = outcome.usage.totalTokens;
       default:
         break;
     }

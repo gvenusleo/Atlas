@@ -10,6 +10,7 @@ import 'message_list.dart';
 import 'slash_commands.dart';
 import 'slash_completion.dart';
 import 'slash_popup.dart';
+import 'status_line.dart';
 
 /// The root Nocterm application for Atlas.
 ///
@@ -316,6 +317,39 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     copyToClipboard(text);
   }
 
+  /// The descriptor of the active model: the picker selection when set,
+  /// otherwise the runtime default.
+  ModelDescriptor _activeModel() {
+    final ref = _controller.model ?? component.runtime.defaultModel;
+    for (final model in component.models) {
+      if (model.ref == ref) {
+        return model;
+      }
+    }
+    return ModelDescriptor(ref: ref);
+  }
+
+  /// The display name of the active reasoning effort, or null when the model
+  /// has no efforts and none was selected.
+  String? _activeEffortName(ModelDescriptor model) {
+    final effort = _controller.reasoningEffort;
+    if (effort != null) {
+      for (final option in model.reasoningEfforts) {
+        if (option.value == effort) {
+          return option.name.isEmpty ? option.value : option.name;
+        }
+      }
+      return effort;
+    }
+    if (model.reasoningEfforts.isEmpty) {
+      return null;
+    }
+    final defaultEffort = model.reasoningEfforts.first;
+    return defaultEffort.name.isEmpty
+        ? defaultEffort.value
+        : defaultEffort.name;
+  }
+
   @override
   void dispose() {
     _controller.removeListener(_refresh);
@@ -325,10 +359,12 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
 
   @override
   Component build(BuildContext context) {
+    final activeModel = _activeModel();
     final content = Focusable(
       focused: true,
       onKeyEvent: _handleKey,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: SelectionArea(
@@ -355,6 +391,12 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
             onSubmitted: _submit,
             onChanged: (_) => _syncSlash(),
             onKeyEvent: _pickingModel || _pickingEffort ? null : _handleKey,
+          ),
+          StatusLine(
+            modelName: _modelLabel(activeModel),
+            effortName: _activeEffortName(activeModel),
+            contextTokens: _controller.contextTokens,
+            contextWindow: activeModel.contextWindow,
           ),
         ],
       ),
