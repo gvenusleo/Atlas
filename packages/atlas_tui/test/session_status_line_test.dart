@@ -18,11 +18,11 @@ void main() {
     });
   });
 
-  group('StatusLine', () {
+  group('SessionStatusLine', () {
     test('renders model, effort, and context usage', () async {
       await testNocterm('status line', (tester) async {
         await tester.pumpComponent(
-          const StatusLine(
+          const SessionStatusLine(
             modelName: 'DeepSeek V4 Flash',
             effortName: 'High',
             contextTokens: 500,
@@ -39,7 +39,7 @@ void main() {
     test('omits the effort segment when none is active', () async {
       await testNocterm('status line no effort', (tester) async {
         await tester.pumpComponent(
-          const StatusLine(
+          const SessionStatusLine(
             modelName: 'Plain Model',
             contextTokens: 0,
             contextWindow: 0,
@@ -48,14 +48,14 @@ void main() {
 
         expect(tester.terminalState, containsText('  Plain Model'));
         expect(tester.terminalState, containsText('Context 0% used'));
-        expect('${tester.terminalState}', isNot(contains('High')));
+        expect(tester.terminalState.getText(), isNot(contains('High')));
       });
     });
 
     test('stays on one line when the model name is too wide', () async {
       await testNocterm('status line overflow', (tester) async {
         await tester.pumpComponent(
-          StatusLine(
+          SessionStatusLine(
             modelName: 'X' * 90,
             contextTokens: 100,
             contextWindow: 1000,
@@ -64,7 +64,7 @@ void main() {
 
         // The narrow viewport forces clipping; the status line must not wrap
         // into a second row.
-        final lines = '${tester.terminalState}'.split('\n');
+        final lines = tester.terminalState.getText().split('\n');
         expect(lines.where((line) => line.trim().isNotEmpty), hasLength(1));
         expect(tester.terminalState, containsText('  X'));
       });

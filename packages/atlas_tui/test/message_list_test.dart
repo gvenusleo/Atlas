@@ -16,7 +16,7 @@ void main() {
 
         // The newest message is visible; the oldest is scrolled off the top.
         expect(tester.terminalState, containsText('message 29'));
-        expect('${tester.terminalState}', isNot(contains('message 0')));
+        expect(tester.terminalState.getText(), isNot(contains('message 0')));
       });
     });
   });

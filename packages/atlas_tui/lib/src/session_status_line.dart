@@ -1,12 +1,12 @@
 import 'package:nocterm/nocterm.dart';
 
-/// Bottom status line below the input bar.
+/// Session status line below the input bar.
 ///
-/// Mirrors the classic Go TUI footer: the model name, the active reasoning
-/// effort, and the context usage of the last turn.
-final class StatusLine extends StatelessComponent {
+/// Mirrors the classic Go TUI footer: the active model, its reasoning effort,
+/// and the context usage of the current session.
+final class SessionStatusLine extends StatelessComponent {
   /// Creates a status line.
-  const StatusLine({
+  const SessionStatusLine({
     super.key,
     required this.modelName,
     required this.contextTokens,
