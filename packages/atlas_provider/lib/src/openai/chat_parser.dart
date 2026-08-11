@@ -53,8 +53,10 @@ final class ChatParser implements StreamParser {
         final index = call['index'] as int? ?? 0;
         final function = asJsonMap(call['function']);
         final accumulator = _tools.putIfAbsent(index, _ToolAccumulator.new);
-        accumulator.id = (call['id'] as String?) ?? accumulator.id;
-        accumulator.name = (function['name'] as String?) ?? accumulator.name;
+        final id = call['id'];
+        if (id is String && id.isNotEmpty) accumulator.id = id;
+        final name = function['name'];
+        if (name is String && name.isNotEmpty) accumulator.name = name;
         accumulator.arguments.write(function['arguments'] as String? ?? '');
       }
     }

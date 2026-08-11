@@ -17,7 +17,8 @@ void main() {
       await _sendSse(request.response, [
         '{"choices":[{"delta":{"content":"Hello"}}]}',
         '{"choices":[{"delta":{"reasoning_content":"checking"}}]}',
-        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":"{\\"q\\":\\"x\\"}"}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":""}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"","function":{"name":"","arguments":"{\\"q\\":\\"x\\"}"}}]}}]}',
         '{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
         '{"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}',
         '[DONE]',
@@ -146,6 +147,27 @@ void main() {
 
     expect((inputs[1].first as Map<String, Object?>)['role'], 'assistant');
     expect((inputs[1].first as Map<String, Object?>)['type'], isNull);
+  });
+
+  test('rejects an empty Responses tool call id as a provider error', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"","name":"inspect","arguments":"{}"}}',
+        '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"","name":"inspect","arguments":"{}"}]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.responses,
+    ).stream(_request()).toList();
+    final error = (events.single as ModelFailedEvent).error;
+    expect(error, isA<OpenAIProviderException>());
+    expect(
+      (error as OpenAIProviderException).message,
+      'responses stream returned an incomplete tool call',
+    );
   });
 
   test('cancellation interrupts a streaming request', () async {

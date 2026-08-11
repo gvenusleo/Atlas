@@ -141,7 +141,11 @@ final class ResponsesParser implements StreamParser {
     final id = item['call_id'] as String?;
     final name = item['name'] as String?;
     final arguments = item['arguments'] as String?;
-    if (id == null || name == null || arguments == null) {
+    if (id == null ||
+        id.isEmpty ||
+        name == null ||
+        name.isEmpty ||
+        arguments == null) {
       throw OpenAIProviderException(
         providerId: providerId,
         message: 'responses stream returned an incomplete tool call',
