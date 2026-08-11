@@ -86,6 +86,39 @@ void main() {
     });
   });
 
+  test('esc interrupts a running turn and clears the status row', () async {
+    await testNocterm('esc interrupts turn', (tester) async {
+      final provider = _ScriptedProvider()..gate = Completer<void>();
+      final runtime = _runtime(provider);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      await tester.enterText('slow turn');
+      await tester.sendEnter();
+      await tester.pump();
+      expect(provider.streamCalls, 1);
+      expect(tester.terminalState, containsText('Working'));
+
+      await tester.sendEscape();
+      await tester.pump();
+      provider.gate!.complete();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+
+      // The turn ended through cancellation, not failure, and the notice is
+      // shown in the transcript.
+      expect(tester.terminalState.getText(), isNot(contains('Working')));
+      expect(tester.terminalState.getText(), isNot(contains('failed')));
+      expect(tester.terminalState, containsText('Turn cancelled'));
+    });
+  });
+
   test('shows the slash popup while typing a command', () async {
     await testNocterm('slash popup', (tester) async {
       final provider = _ScriptedProvider();
@@ -425,7 +458,14 @@ final class _ScriptedProvider implements ModelProvider {
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
     streamCalls++;
     if (gate != null) {
-      await gate!.future;
+      final cancellation = request.cancellation;
+      await Future.any<void>([
+        gate!.future,
+        cancellation?.whenCancelled ?? Future<void>.value(),
+      ]);
+      if (cancellation?.isCancelled == true) {
+        throw const TurnCancelledException();
+      }
     }
     yield const TextDeltaEvent('hi');
     yield const ModelCompletedEvent(

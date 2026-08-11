@@ -143,6 +143,42 @@ void main() {
     expect(controller.contextTokens, 4321);
   });
 
+  test('flips between working and thinking while a turn runs', () async {
+    provider.printReasoning = true;
+    provider.gate = Completer<void>();
+    final controller = ChatController(runtime: runtime);
+    final running = controller.send('think');
+    await Future<void>.delayed(Duration.zero);
+
+    // The reasoning delta arrives before the gate, so the status shows the
+    // thinking phase while the turn is still open.
+    expect(controller.turnPhase, TurnPhase.thinking);
+    expect(controller.busy, isTrue);
+
+    controller.cancelTurn();
+    provider.gate!.complete();
+    await running;
+    expect(controller.turnPhase, TurnPhase.idle);
+    expect(controller.busy, isFalse);
+  });
+
+  test('cancelTurn interrupts a running turn', () async {
+    provider.gate = Completer<void>();
+    final controller = ChatController(runtime: runtime);
+    final running = controller.send('slow');
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.turnPhase, TurnPhase.working);
+
+    controller.cancelTurn();
+    provider.gate!.complete();
+    await running;
+
+    expect(controller.turnPhase, TurnPhase.idle);
+    expect(controller.messages.last.kind, isNot(ChatMessageKind.error));
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(controller.messages.last.text, 'Turn cancelled');
+  });
+
   test(
     'setModel stores the override and effort for subsequent turns',
     () async {
@@ -233,16 +269,23 @@ final class _ScriptedProvider implements ModelProvider {
     sessionIds.add(request.sessionId.value);
     lastModel = request.model;
     lastReasoningEffort = request.reasoningEffort;
-    if (gate != null) {
-      await gate!.future;
-      return;
-    }
     _requests++;
     if (failTurn) {
       throw StateError('provider exploded');
     }
     if (printReasoning) {
       yield ReasoningDeltaEvent(reasoningChunk);
+    }
+    if (gate != null) {
+      final cancellation = request.cancellation;
+      await Future.any<void>([
+        gate!.future,
+        cancellation?.whenCancelled ?? Future<void>.value(),
+      ]);
+      if (cancellation?.isCancelled == true) {
+        throw const TurnCancelledException();
+      }
+      return;
     }
     if (_requests == 1 && toolFirst) {
       yield ModelCompletedEvent(

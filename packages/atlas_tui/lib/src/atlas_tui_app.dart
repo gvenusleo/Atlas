@@ -10,7 +10,8 @@ import 'message_list.dart';
 import 'slash_commands.dart';
 import 'slash_completion.dart';
 import 'slash_popup.dart';
-import 'status_line.dart';
+import 'session_status_line.dart';
+import 'turn_status_line.dart';
 
 /// The root Nocterm application for Atlas.
 ///
@@ -285,6 +286,10 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     if (_handleSlashKey(event)) {
       return true;
     }
+    if (event.logicalKey == LogicalKey.escape && _controller.busy) {
+      _controller.cancelTurn();
+      return true;
+    }
     return false;
   }
 
@@ -353,6 +358,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
   @override
   void dispose() {
     _controller.removeListener(_refresh);
+    _controller.dispose();
     _textController.dispose();
     super.dispose();
   }
@@ -373,6 +379,11 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
             ),
           ),
           const SizedBox(height: 1),
+          TurnStatusLine(
+            phase: _controller.turnPhase,
+            elapsed: _controller.turnElapsed,
+            frame: _controller.frame,
+          ),
           if (_slash.active)
             SlashPopup(
               matches: _slash.matches,
@@ -392,7 +403,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
             onChanged: (_) => _syncSlash(),
             onKeyEvent: _pickingModel || _pickingEffort ? null : _handleKey,
           ),
-          StatusLine(
+          SessionStatusLine(
             modelName: _modelLabel(activeModel),
             effortName: _activeEffortName(activeModel),
             contextTokens: _controller.contextTokens,

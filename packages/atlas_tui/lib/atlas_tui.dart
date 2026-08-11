@@ -11,4 +11,5 @@ export 'src/prompt_line.dart';
 export 'src/slash_commands.dart';
 export 'src/slash_completion.dart';
 export 'src/slash_popup.dart';
-export 'src/status_line.dart';
+export 'src/session_status_line.dart';
+export 'src/turn_status_line.dart';

@@ -42,7 +42,7 @@ final class InputBar extends StatelessComponent {
         enabled: !busy,
         focused: true,
         readOnly: readOnly,
-        placeholder: busy ? 'Working…' : 'Message Atlas (Enter to send)',
+        placeholder: 'Message Atlas (Enter to send)',
         onSubmitted: onSubmitted,
         onChanged: onChanged,
         onKeyEvent: onKeyEvent,

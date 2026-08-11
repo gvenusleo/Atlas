@@ -13,6 +13,21 @@ const maxToolResultChars = 200;
 /// on a single line, so anything older than this window is dropped.
 const maxReasoningChars = 1024;
 
+/// The activity phase of the running turn, mirroring the Go TUI status row.
+enum TurnPhase {
+  /// No turn is running.
+  idle,
+
+  /// The model is generating or tools are executing.
+  working,
+
+  /// The model is emitting chain-of-thought reasoning.
+  thinking,
+}
+
+/// The interval at which the status row advances its spinner and clock.
+const turnStatusTick = Duration(milliseconds: 250);
+
 /// Bridges runtime turn events into rendered chat messages.
 ///
 /// Owns the conversation state for one TUI session: it submits user text as
@@ -35,6 +50,11 @@ final class ChatController implements Listenable {
   String? _reasoningEffort;
   bool _busy = false;
   int _contextTokens = 0;
+  CancellationToken? _cancellation;
+  TurnPhase _turnPhase = TurnPhase.idle;
+  DateTime? _turnStartedAt;
+  Timer? _turnTimer;
+  int _frame = 0;
 
   /// Whether the last appended delta is still open for accumulation.
   bool _sealed = true;
@@ -54,6 +74,17 @@ final class ChatController implements Listenable {
   /// The total tokens of the most recently finished turn.
   int get contextTokens => _contextTokens;
 
+  /// The activity phase of the running turn.
+  TurnPhase get turnPhase => _turnPhase;
+
+  /// The wall-clock duration since the turn started.
+  Duration get turnElapsed => _turnStartedAt == null
+      ? Duration.zero
+      : DateTime.now().difference(_turnStartedAt!);
+
+  /// The spinner frame counter, advanced while a turn is running.
+  int get frame => _frame;
+
   @override
   void addListener(void Function() listener) => _listeners.add(listener);
 
@@ -71,6 +102,11 @@ final class ChatController implements Listenable {
       return;
     }
     _busy = true;
+    final cancellation = CancellationToken();
+    _cancellation = cancellation;
+    _turnPhase = TurnPhase.working;
+    _turnStartedAt = DateTime.now();
+    _startTurnTimer();
     _messages.add(ChatMessage(kind: ChatMessageKind.user, text: trimmed));
     _notify();
     try {
@@ -81,6 +117,7 @@ final class ChatController implements Listenable {
           workingDirectory: _workingDirectory,
           model: _model,
           reasoningEffort: _reasoningEffort,
+          cancellation: cancellation,
         ),
       )) {
         _handle(event);
@@ -89,8 +126,35 @@ final class ChatController implements Listenable {
       _messages.add(ChatMessage(kind: ChatMessageKind.error, text: '$error'));
     } finally {
       _busy = false;
+      _cancellation = null;
+      _turnPhase = TurnPhase.idle;
+      _turnStartedAt = null;
+      _stopTurnTimer();
       _notify();
     }
+  }
+
+  /// Requests cancellation of the running turn; ignored when idle.
+  void cancelTurn() {
+    _cancellation?.cancel();
+  }
+
+  /// Releases the status timer; call from the owning widget's dispose.
+  void dispose() {
+    _stopTurnTimer();
+  }
+
+  void _startTurnTimer() {
+    _turnTimer?.cancel();
+    _turnTimer = Timer.periodic(turnStatusTick, (_) {
+      _frame++;
+      _notify();
+    });
+  }
+
+  void _stopTurnTimer() {
+    _turnTimer?.cancel();
+    _turnTimer = null;
   }
 
   /// Starts a new session: clears the transcript and forgets the session id.
@@ -127,26 +191,37 @@ final class ChatController implements Listenable {
 
   void _handle(AgentEvent event) {
     switch (event) {
-      case TurnStarted(:final sessionId):
-        _sessionId = sessionId;
-      case ModelTextDelta(:final delta):
-        _appendDelta(ChatMessageKind.assistant, delta);
-      case ModelReasoningDelta(:final delta):
-        _appendDelta(ChatMessageKind.reasoning, delta);
-      case ToolStarted(:final call):
+      case TurnStarted():
+        _sessionId = event.sessionId;
+        _turnPhase = TurnPhase.working;
+      case ModelTextDelta():
+        _turnPhase = TurnPhase.working;
+        _appendDelta(ChatMessageKind.assistant, event.delta);
+      case ModelReasoningDelta():
+        _turnPhase = TurnPhase.thinking;
+        _appendDelta(ChatMessageKind.reasoning, event.delta);
+      case ToolStarted():
+        _turnPhase = TurnPhase.working;
         _sealed = true;
         _messages.add(
           ChatMessage(
             kind: ChatMessageKind.tool,
-            toolName: call.call.name,
+            toolName: event.call.call.name,
             text: 'running…',
           ),
         );
-      case ToolFinished(:final result):
-        _updateLastTool(result);
+      case ToolFinished():
+        _turnPhase = TurnPhase.working;
+        _updateLastTool(event.result);
       case TurnFinished(:final outcome):
+        _turnPhase = TurnPhase.idle;
         _sealed = true;
         _contextTokens = outcome.usage.totalTokens;
+        if (outcome.status == TurnStatus.cancelled) {
+          _messages.add(
+            ChatMessage(kind: ChatMessageKind.system, text: 'Turn cancelled'),
+          );
+        }
       default:
         break;
     }
