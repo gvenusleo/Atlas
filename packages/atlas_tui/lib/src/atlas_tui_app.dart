@@ -111,7 +111,10 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     for (final skill in component.skills?.summaries ?? const <SkillSummary>[])
       if (validSlashCommandName(skill.name) &&
           !slashCommands.any((command) => command.name == skill.name))
-        SlashCommand(name: skill.name, description: skill.description),
+        SlashCommand(
+          name: skill.name,
+          description: '[Skill] ${skill.description}',
+        ),
   ];
 
   /// The model catalog as slash-style commands for the picker popup.

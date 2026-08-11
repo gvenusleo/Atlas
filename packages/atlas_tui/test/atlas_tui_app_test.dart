@@ -137,7 +137,7 @@ void main() {
       expect(tester.terminalState, containsText('/model'));
       expect(tester.terminalState, containsText('/new'));
       expect(tester.terminalState, containsText('/quit'));
-      expect(tester.terminalState, containsText('/check'));
+      expect(tester.terminalState, containsText('[Skill] Review code.'));
     });
   });
 
@@ -179,7 +179,7 @@ void main() {
       await tester.enterText('/');
       await tester.pump();
       final text = tester.terminalState.getText();
-      expect(text, contains('/check'));
+      expect(text, contains('[Skill] Review code.'));
       expect(text, isNot(contains('/bad')));
       expect('/model'.allMatches(text).length, 1);
     });
