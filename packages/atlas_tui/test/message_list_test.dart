@@ -1,7 +1,26 @@
 import 'package:atlas_tui/atlas_tui.dart';
+import 'package:nocterm/nocterm.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('MessageList', () {
+    test('pins the newest message at the bottom of the viewport', () async {
+      await testNocterm('message list pins to bottom', (tester) async {
+        final messages = [
+          for (var i = 0; i < 30; i++)
+            ChatMessage(kind: ChatMessageKind.assistant, text: 'message $i'),
+        ];
+        await tester.pumpComponent(
+          SizedBox(height: 10, child: MessageList(messages: messages)),
+        );
+
+        // The newest message is visible; the oldest is scrolled off the top.
+        expect(tester.terminalState, containsText('message 29'));
+        expect('${tester.terminalState}', isNot(contains('message 0')));
+      });
+    });
+  });
+
   group('tailWindow', () {
     test('keeps the full text when it fits', () {
       expect(tailWindow('short', 10), 'short');

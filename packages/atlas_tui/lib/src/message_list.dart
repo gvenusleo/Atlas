@@ -26,15 +26,22 @@ final class MessageList extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    // The list is reversed so that index 0 (the newest message) renders at
+    // the bottom of the viewport: as messages arrive the transcript stays
+    // pinned to the latest content without any scrolling logic.
     return ListView.separated(
+      reverse: true,
       itemCount: messages.length,
-      itemBuilder: (context, index) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (messages[index].kind != ChatMessageKind.user) Text("• "),
-          Expanded(child: _MessageRow(message: messages[index])),
-        ],
-      ),
+      itemBuilder: (context, index) {
+        final message = messages[messages.length - 1 - index];
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (message.kind != ChatMessageKind.user) Text('• '),
+            Expanded(child: _MessageRow(message: message)),
+          ],
+        );
+      },
       separatorBuilder: (_, _) => SizedBox(height: 1),
     );
   }
