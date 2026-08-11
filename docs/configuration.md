@@ -44,6 +44,8 @@ providers:
 agent:
   max_steps: 100                      # optional, default 100
   temperature: 0.7                    # optional
+  compaction:
+    threshold: 0.8                    # optional, default 0.8
 
 session:
   db_path: ~/.atlas/atlas.db         # optional, ~ expands to home
@@ -62,5 +64,7 @@ session:
   loading with the variable name in the message.
 - `max_tokens`, `context_window`, `max_steps`, and `thinking_budget_tokens`
   must not be negative.
+- `agent.compaction.threshold` must be greater than 0 and at most 1; it is the
+  context window fraction that triggers automatic compaction after a turn.
 - Validation failures raise `ConfigLoadException` with a field path such as
   `providers[0].base_url`.

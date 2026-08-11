@@ -23,8 +23,9 @@ final class EncodedTimelineItem {
 
 /// Encodes and decodes runtime timeline variants.
 final class TimelineCodec {
-  /// Encodes one timeline item with a stable kind and version.
-  EncodedTimelineItem encode(TimelineItem item) {
+  /// Encodes one timeline item with a stable kind and version; the optional
+  /// [checkpoint] is embedded in the assistant payload when present.
+  EncodedTimelineItem encode(TimelineItem item, {ModelCheckpoint? checkpoint}) {
     final JsonObject payload;
     final String kind;
     switch (item) {
@@ -44,6 +45,8 @@ final class TimelineCodec {
           'model_id': model.modelId.value,
           'stop_reason': stopReason.name,
           'usage': _encodeUsage(usage),
+          if (checkpoint != null)
+            'continuation': _encodeContinuation(checkpoint),
         };
       case ToolCallItem(:final call):
         kind = 'tool_call';
@@ -73,8 +76,8 @@ final class TimelineCodec {
     );
   }
 
-  /// Decodes one versioned database payload.
-  TimelineItem decode({
+  /// Decodes one versioned database payload and its embedded continuation.
+  ({TimelineItem item, ModelCheckpoint? checkpoint}) decode({
     required TimelineItemId id,
     required SessionId sessionId,
     required TurnId turnId,
@@ -93,57 +96,69 @@ final class TimelineCodec {
     }
     switch (kind) {
       case 'user_message':
-        return UserMessageItem(
-          id: id,
-          sessionId: sessionId,
-          turnId: turnId,
-          sequence: sequence,
-          occurredAt: occurredAt.toUtc(),
-          content: _decodeContent(decoded['content']),
+        return (
+          item: UserMessageItem(
+            id: id,
+            sessionId: sessionId,
+            turnId: turnId,
+            sequence: sequence,
+            occurredAt: occurredAt.toUtc(),
+            content: _decodeContent(decoded['content']),
+          ),
+          checkpoint: null,
         );
       case 'assistant_message':
-        return AssistantMessageItem(
-          id: id,
-          sessionId: sessionId,
-          turnId: turnId,
-          sequence: sequence,
-          occurredAt: occurredAt.toUtc(),
-          content: _decodeContent(decoded['content']),
-          model: ModelRef(
-            providerId: ProviderId(_string(decoded, 'provider_id')),
-            modelId: ModelId(_string(decoded, 'model_id')),
+        return (
+          item: AssistantMessageItem(
+            id: id,
+            sessionId: sessionId,
+            turnId: turnId,
+            sequence: sequence,
+            occurredAt: occurredAt.toUtc(),
+            content: _decodeContent(decoded['content']),
+            model: ModelRef(
+              providerId: ProviderId(_string(decoded, 'provider_id')),
+              modelId: ModelId(_string(decoded, 'model_id')),
+            ),
+            stopReason: _enumByName(
+              StopReason.values,
+              _string(decoded, 'stop_reason'),
+              'stop_reason',
+            ),
+            usage: _decodeUsage(decoded['usage']),
           ),
-          stopReason: _enumByName(
-            StopReason.values,
-            _string(decoded, 'stop_reason'),
-            'stop_reason',
-          ),
-          usage: _decodeUsage(decoded['usage']),
+          checkpoint: _decodeContinuation(decoded, id, occurredAt),
         );
       case 'tool_call':
-        return ToolCallItem(
-          id: id,
-          sessionId: sessionId,
-          turnId: turnId,
-          sequence: sequence,
-          occurredAt: occurredAt.toUtc(),
-          call: ToolCall(
-            id: ToolCallId(_string(decoded, 'call_id')),
-            name: _string(decoded, 'name'),
-            arguments: _jsonObject(decoded['arguments'], 'arguments'),
+        return (
+          item: ToolCallItem(
+            id: id,
+            sessionId: sessionId,
+            turnId: turnId,
+            sequence: sequence,
+            occurredAt: occurredAt.toUtc(),
+            call: ToolCall(
+              id: ToolCallId(_string(decoded, 'call_id')),
+              name: _string(decoded, 'name'),
+              arguments: _jsonObject(decoded['arguments'], 'arguments'),
+            ),
           ),
+          checkpoint: null,
         );
       case 'tool_result':
-        return ToolResultItem(
-          id: id,
-          sessionId: sessionId,
-          turnId: turnId,
-          sequence: sequence,
-          occurredAt: occurredAt.toUtc(),
-          callId: ToolCallId(_string(decoded, 'call_id')),
-          content: _string(decoded, 'content'),
-          isError: _bool(decoded, 'is_error'),
-          metadata: _jsonObject(decoded['metadata'], 'metadata'),
+        return (
+          item: ToolResultItem(
+            id: id,
+            sessionId: sessionId,
+            turnId: turnId,
+            sequence: sequence,
+            occurredAt: occurredAt.toUtc(),
+            callId: ToolCallId(_string(decoded, 'call_id')),
+            content: _string(decoded, 'content'),
+            isError: _bool(decoded, 'is_error'),
+            metadata: _jsonObject(decoded['metadata'], 'metadata'),
+          ),
+          checkpoint: null,
         );
       default:
         throw FormatException('Unsupported timeline item kind: $kind');
@@ -192,6 +207,33 @@ final class TimelineCodec {
     );
   }
 
+  static JsonObject? _encodeContinuation(ModelCheckpoint checkpoint) => {
+    'provider_id': checkpoint.continuation.providerId.value,
+    'reasoning_summary': checkpoint.continuation.reasoningSummary,
+    'payload': checkpoint.continuation.opaquePayload,
+  };
+
+  static ModelCheckpoint? _decodeContinuation(
+    Map<String, Object?> object,
+    TimelineItemId itemId,
+    DateTime occurredAt,
+  ) {
+    final value = object['continuation'];
+    if (value == null) {
+      return null;
+    }
+    final continuation = _jsonObject(value, 'continuation');
+    return ModelCheckpoint(
+      timelineItemId: itemId,
+      continuation: ModelContinuation(
+        providerId: ProviderId(_string(continuation, 'provider_id')),
+        reasoningSummary: _stringOrDefault(continuation, 'reasoning_summary'),
+        opaquePayload: _jsonObject(continuation['payload'], 'continuation'),
+      ),
+      createdAt: occurredAt.toUtc(),
+    );
+  }
+
   static JsonObject _encodeUsage(TokenUsage usage) => {
     'input_tokens': usage.inputTokens,
     'output_tokens': usage.outputTokens,
@@ -224,6 +266,17 @@ final class TimelineCodec {
       throw FormatException('$field must be a non-empty string');
     }
     return value;
+  }
+
+  static String _stringOrDefault(Map<String, Object?> object, String field) {
+    final value = object[field];
+    if (value == null) {
+      return '';
+    }
+    if (value is String) {
+      return value;
+    }
+    throw FormatException('$field must be a string');
   }
 
   static bool _bool(Map<String, Object?> object, String field) {

@@ -307,9 +307,20 @@ ModelRef _defaultModel(
 
 AgentConfig _agent(Map<String, Object?> root) {
   final map = _asMap(root['agent'] ?? const <String, Object?>{}, 'agent');
+  final compaction = _asMap(
+    map['compaction'] ?? const <String, Object?>{},
+    'agent.compaction',
+  );
   return AgentConfig(
     maxSteps: _nonNegativeInt(map['max_steps'], 'agent.max_steps', 100),
     temperature: _doubleOrNull(map['temperature'], 'agent.temperature'),
+    compaction: CompactionConfig(
+      threshold: _fraction(
+        compaction['threshold'],
+        'agent.compaction.threshold',
+        0.8,
+      ),
+    ),
   );
 }
 
@@ -463,4 +474,12 @@ double? _doubleOrNull(Object? value, String path) {
     return value.toDouble();
   }
   throw ConfigLoadException('$path must be a number');
+}
+
+double _fraction(Object? value, String path, double fallback) {
+  final result = _doubleOrNull(value, path) ?? fallback;
+  if (result <= 0 || result > 1) {
+    throw ConfigLoadException('$path must be greater than 0 and at most 1');
+  }
+  return result;
 }

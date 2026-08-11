@@ -52,7 +52,7 @@ Nocterm 调用无需经过远程协议序列化。ACP 作为入口适配到同�
 | Package | 职责 |
 |---|---|
 | `atlas_runtime` | Session/turn 领域模型、有序 timeline item、model/tool ports、唯一 Agent engine、取消、compact 与 skill |
-| `atlas_storage` | Session、turn、有类型 timeline item、model continuation、compact checkpoint 的 Drift 持久化、查询与 schema migration |
+| `atlas_storage` | Session、turn、有类型 timeline message 的 Drift 持久化；provider continuation 与 compact checkpoint 嵌入所属行，外加查询
 | `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages 适配器：认证、请求映射、SSE 解码、重试与响应转换 |
 | `atlas_config` | YAML 配置文件 schema、加载与校验，并映射为 provider 配置对象 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
@@ -85,10 +85,10 @@ Nocterm 调用无需经过远程协议序列化。ACP 作为入口适配到同�
 - 每个模型工具调用都按原顺序得到一个模型可见结果，失败也不例外。
 - `AgentEvent` 按发生顺序发送，客户端不能在 turn 结束后重新分组输出。
 - `Session` 包含有序的 `TimelineItem` 与持久化的 `Turn`。用户输入会和 running turn 原子写入，然后才发起第一个 Provider 请求。
-- 每个 assistant item 可以携带 Provider 所有的 `ModelContinuation`；它作为 `ModelCheckpoint` 持久化，并恢复到对应的 provider-neutral message。
+- 每个 assistant message 可以携带 Provider 所有的 `ModelContinuation`；它内嵌在 assistant 行中持久化，并恢复到对应的 provider-neutral message。
 - turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界。
 - 计划中的 skill 注入将保留历史中的原始用户文本；完整 skill 指令将只作为当前 turn 可见的模型上下文，不写入 transcript。
-- Compact 保留持久 timeline，只替换 active context checkpoint；可选 compact 指令只影响摘要，不修改用户历史。
+- Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并在 system prompt 中注入 `Context compacted. Kept {n} recent messages.` 与摘要。可选 compact 指令只影响摘要，不修改用户历史。
 
 这些是产品行为约束，不表示需要兼容已删除 Go 实现的内部结构或数据库 schema。
 

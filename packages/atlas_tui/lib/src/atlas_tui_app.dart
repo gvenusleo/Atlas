@@ -324,6 +324,8 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
           _enterModelPick();
         case 'new':
           _controller.reset();
+        case 'compact':
+          _controller.compact();
         case 'quit':
           component.onQuit?.call();
       }

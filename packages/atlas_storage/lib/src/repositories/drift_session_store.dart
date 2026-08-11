@@ -36,51 +36,32 @@ final class DriftSessionStore implements runtime.SessionStore {
     runtime.SessionId sessionId,
   ) async {
     final sessionRow = await _sessionRow(sessionId);
-    final compactionRow =
-        await (_database.select(_database.compactionCheckpoints)
-              ..where((table) => table.sessionId.equals(sessionId.value)))
-            .getSingleOrNull();
-    final compaction = compactionRow == null
-        ? null
-        : _mappers.compaction(compactionRow);
     final turnRows =
         await (_database.select(_database.turns)
               ..where((table) => table.sessionId.equals(sessionId.value))
               ..orderBy([(table) => OrderingTerm.asc(table.startedAt)]))
             .get();
-    final timelineQuery = _database.select(_database.timelineItems)
+    final session = _mappers.session(sessionRow);
+    final compaction = session.compaction;
+    final messagesQuery = _database.select(_database.messages)
       ..where((table) => table.sessionId.equals(sessionId.value));
     if (compaction != null && compaction.summary.trim().isNotEmpty) {
-      timelineQuery.where(
+      messagesQuery.where(
         (table) => table.sequence.isBiggerThanValue(
           compaction.compactedThroughSequence,
         ),
       );
     }
-    timelineQuery.orderBy([(table) => OrderingTerm.asc(table.sequence)]);
-    final timelineRows = await timelineQuery.get();
-    final checkpointRows = timelineRows.isEmpty
-        ? const <ModelCheckpointRow>[]
-        : await (_database.select(_database.modelCheckpoints)..where(
-                (table) => table.timelineItemId.isIn(
-                  timelineRows.map((row) => row.id),
-                ),
-              ))
-              .get();
-    final checkpointsByItem = {
-      for (final row in checkpointRows) row.timelineItemId: row,
-    };
+    messagesQuery.orderBy([(table) => OrderingTerm.asc(table.sequence)]);
+    final decoded = (await messagesQuery.get()).map(_mappers.message);
     return runtime.SessionSnapshot(
-      session: _mappers.session(sessionRow, compaction: compaction),
+      session: session,
       turns: List<runtime.Turn>.unmodifiable(turnRows.map(_mappers.turn)),
       timeline: List<runtime.TimelineItem>.unmodifiable(
-        timelineRows.map(_mappers.timelineItem),
+        decoded.map((value) => value.item),
       ),
       modelCheckpoints: List<runtime.ModelCheckpoint>.unmodifiable(
-        timelineRows
-            .map((row) => checkpointsByItem[row.id])
-            .nonNulls
-            .map(_mappers.modelCheckpoint),
+        decoded.map((value) => value.checkpoint).nonNulls,
       ),
     );
   }
@@ -133,7 +114,7 @@ final class DriftSessionStore implements runtime.SessionStore {
       await _database
           .into(_database.turns)
           .insert(_mappers.turnCompanion(operation.turn));
-      await _insertTimeline(operation.userMessage);
+      await _insertMessage(operation.userMessage);
       final title = operation.session.title.isEmpty
           ? _title(operation.userMessage)
           : operation.session.title;
@@ -154,21 +135,17 @@ final class DriftSessionStore implements runtime.SessionStore {
     runtime.PersistedModelStep operation,
   ) => _database.transaction(() async {
     await _requireTimelineOwnership(operation.assistantMessage, sessionId);
-    await _insertTimeline(operation.assistantMessage);
+    final checkpoint = operation.checkpoint;
+    if (checkpoint != null &&
+        checkpoint.timelineItemId != operation.assistantMessage.id) {
+      throw const FormatException(
+        'model checkpoint must reference its assistant item',
+      );
+    }
+    await _insertMessage(operation.assistantMessage, checkpoint: checkpoint);
     for (final call in operation.toolCalls) {
       await _requireTimelineOwnership(call, sessionId);
-      await _insertTimeline(call);
-    }
-    final checkpoint = operation.checkpoint;
-    if (checkpoint != null) {
-      if (checkpoint.timelineItemId != operation.assistantMessage.id) {
-        throw const FormatException(
-          'model checkpoint must reference its assistant item',
-        );
-      }
-      await _database
-          .into(_database.modelCheckpoints)
-          .insert(_mappers.modelCheckpointCompanion(checkpoint));
+      await _insertMessage(call);
     }
     await _touchSession(
       sessionId,
@@ -183,7 +160,7 @@ final class DriftSessionStore implements runtime.SessionStore {
     runtime.ToolResultItem item,
   ) => _database.transaction(() async {
     await _requireTimelineOwnership(item, sessionId);
-    await _insertTimeline(item);
+    await _insertMessage(item);
     await _touchSession(sessionId, item.occurredAt);
   });
 
@@ -222,10 +199,23 @@ final class DriftSessionStore implements runtime.SessionStore {
       throw const FormatException('compaction must match the session');
     }
     await _validateCompactionBoundary(sessionId, checkpoint);
-    await _database
-        .into(_database.compactionCheckpoints)
-        .insertOnConflictUpdate(_mappers.compactionCompanion(checkpoint));
-    await _touchSession(sessionId, checkpoint.createdAt);
+    final count =
+        await (_database.update(
+          _database.sessions,
+        )..where((table) => table.id.equals(sessionId.value))).write(
+          SessionsCompanion(
+            compactionSequence: Value(checkpoint.compactedThroughSequence),
+            compactionSummary: Value(checkpoint.summary),
+            compactionKeptRecent: Value(checkpoint.keptRecentMessages),
+            compactionTokensBefore: Value(checkpoint.inputTokensBefore),
+            compactionTokensAfter: Value(checkpoint.inputTokensAfter),
+            compactionCreatedAt: Value(checkpoint.createdAt.toUtc()),
+            updatedAt: Value(checkpoint.createdAt.toUtc()),
+          ),
+        );
+    if (count == 0) {
+      throw runtime.SessionNotFoundException(sessionId);
+    }
   });
 
   @override
@@ -248,9 +238,12 @@ final class DriftSessionStore implements runtime.SessionStore {
     return row;
   }
 
-  Future<void> _insertTimeline(runtime.TimelineItem item) => _database
-      .into(_database.timelineItems)
-      .insert(_mappers.timelineCompanion(item));
+  Future<void> _insertMessage(
+    runtime.TimelineItem item, {
+    runtime.ModelCheckpoint? checkpoint,
+  }) => _database
+      .into(_database.messages)
+      .insert(_mappers.messageCompanion(item, checkpoint: checkpoint));
 
   Future<void> _touchSession(
     runtime.SessionId sessionId,
@@ -305,7 +298,7 @@ final class DriftSessionStore implements runtime.SessionStore {
     runtime.CompactionCheckpoint checkpoint,
   ) async {
     final boundary =
-        await (_database.select(_database.timelineItems)..where(
+        await (_database.select(_database.messages)..where(
               (table) =>
                   table.sessionId.equals(sessionId.value) &
                   table.sequence.equals(checkpoint.compactedThroughSequence),
@@ -313,7 +306,7 @@ final class DriftSessionStore implements runtime.SessionStore {
             .getSingleOrNull();
     if (boundary == null) {
       throw const FormatException(
-        'compaction boundary must reference a timeline item',
+        'compaction boundary must reference a message',
       );
     }
     final turn = await (_database.select(
@@ -325,7 +318,7 @@ final class DriftSessionStore implements runtime.SessionStore {
       );
     }
     final laterItem =
-        await (_database.select(_database.timelineItems)
+        await (_database.select(_database.messages)
               ..where(
                 (table) =>
                     table.turnId.equals(boundary.turnId) &

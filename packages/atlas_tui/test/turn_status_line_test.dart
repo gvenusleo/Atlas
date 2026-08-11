@@ -54,6 +54,21 @@ void main() {
       });
     });
 
+    test('renders the compacting status without the interrupt hint', () async {
+      await testNocterm('compacting status', (tester) async {
+        await tester.pumpComponent(
+          const TurnStatusLine(
+            phase: TurnPhase.compacting,
+            elapsed: Duration(seconds: 3),
+            frame: 0,
+          ),
+        );
+
+        expect(tester.terminalState, containsText('Compacting'));
+        expect(tester.terminalState, isNot(containsText('esc to interrupt')));
+      });
+    });
+
     test('renders nothing when idle', () async {
       await testNocterm('idle status', (tester) async {
         await tester.pumpComponent(

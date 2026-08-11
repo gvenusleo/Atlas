@@ -54,13 +54,29 @@ final class ConfiguredAnthropic extends ConfiguredProvider {
 /// Agent loop parameters.
 final class AgentConfig {
   /// Creates agent parameters.
-  const AgentConfig({this.maxSteps = 100, this.temperature});
+  const AgentConfig({
+    this.maxSteps = 100,
+    this.temperature,
+    this.compaction = const CompactionConfig(),
+  });
 
   /// Maximum model/tool steps for one turn.
   final int maxSteps;
 
   /// Optional model sampling temperature.
   final double? temperature;
+
+  /// Automatic context compaction settings.
+  final CompactionConfig compaction;
+}
+
+/// Automatic context compaction settings.
+final class CompactionConfig {
+  /// Creates compaction settings.
+  const CompactionConfig({this.threshold = 0.8});
+
+  /// Context window fraction that triggers compaction after a turn.
+  final double threshold;
 }
 
 /// Local session storage settings.

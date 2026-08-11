@@ -144,6 +144,7 @@ final class CompactionCheckpoint {
     required this.sessionId,
     required this.compactedThroughSequence,
     required this.summary,
+    required this.keptRecentMessages,
     required this.inputTokensBefore,
     required this.inputTokensAfter,
     required this.createdAt,
@@ -157,6 +158,9 @@ final class CompactionCheckpoint {
 
   /// The generated summary used for future model context.
   final String summary;
+
+  /// Timeline messages after the boundary that were kept verbatim.
+  final int keptRecentMessages;
 
   /// Input tokens before compaction.
   final int inputTokensBefore;

@@ -48,6 +48,7 @@ AgentRuntime composeRuntime(
     sessionContextBuilder: resolvedContextBuilder,
     maxSteps: config.agent.maxSteps,
     temperature: config.agent.temperature,
+    compactionThreshold: config.agent.compaction.threshold,
     systemPromptBuilder: (context) => buildSystemPrompt(
       workingDirectory: context.workingDirectory,
       tools: resolvedTools.descriptors,

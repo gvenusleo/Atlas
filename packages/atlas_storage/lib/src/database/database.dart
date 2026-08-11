@@ -8,15 +8,7 @@ import 'tables.dart';
 part 'database.g.dart';
 
 /// The private Drift database used by [DriftSessionStore].
-@DriftDatabase(
-  tables: [
-    Sessions,
-    Turns,
-    TimelineItems,
-    ModelCheckpoints,
-    CompactionCheckpoints,
-  ],
-)
+@DriftDatabase(tables: [Sessions, Turns, Messages])
 final class AtlasDatabase extends _$AtlasDatabase {
   /// Creates a database with an injected Drift executor.
   AtlasDatabase(super.executor);

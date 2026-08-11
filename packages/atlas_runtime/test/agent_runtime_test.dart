@@ -211,6 +211,7 @@ void main() {
           sessionId: SessionId('compacted-session'),
           compactedThroughSequence: 1,
           summary: 'The earlier task decided to use Drift.',
+          keptRecentMessages: 2,
           inputTokensBefore: 100,
           inputTokensAfter: 20,
           createdAt: sessionTime,
@@ -242,6 +243,10 @@ void main() {
           .toList();
 
       expect(provider.requests.single.systemPrompt, contains('Drift'));
+      expect(
+        provider.requests.single.systemPrompt,
+        contains('Context compacted. Kept 2 recent messages.'),
+      );
       expect(provider.requests.single.messages, hasLength(1));
       expect(
         textFromContent(provider.requests.single.messages.single.content),
@@ -483,6 +488,552 @@ void main() {
       [0, 2],
     );
   });
+
+  test('estimates tokens from text length', () {
+    expect(AgentRuntime.estimateTokens(''), 0);
+    expect(AgentRuntime.estimateTokens('abcd'), 1);
+    expect(AgentRuntime.estimateTokens('a' * 100), 25);
+  });
+
+  test('compacts an exhausted context and keeps the newest turn', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 9500, totalTokens: 9500),
+      ),
+      const ModelResponse(
+        content: [TextContent('Summary of the first turn.')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('third reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 100, totalTokens: 100),
+      ),
+    ], contextWindow: 10000);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    final first = await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('first request')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    final sessionId = first.first.sessionId;
+    final second = await runtime
+        .run(
+          TurnRequest(
+            sessionId: sessionId,
+            content: [TextContent('second request')],
+          ),
+        )
+        .toList();
+
+    expect(second.map((event) => event.runtimeType), [
+      TurnStarted,
+      ModelTextDelta,
+      ModelResponseReceived,
+      TurnFinished,
+      CompactionStarted,
+      CompactionFinished,
+    ]);
+    final checkpoint = second.whereType<CompactionFinished>().single.checkpoint;
+    expect(checkpoint.summary, 'Summary of the first turn.');
+    expect(checkpoint.compactedThroughSequence, 1);
+    expect(checkpoint.keptRecentMessages, 2);
+    expect(checkpoint.inputTokensBefore, 9500);
+    expect(checkpoint.inputTokensAfter, greaterThanOrEqualTo(0));
+    expect(store.compaction, same(checkpoint));
+
+    final summaryRequest = provider.requests.last;
+    expect(summaryRequest.messages.single.role, ModelMessageRole.user);
+    final summaryPrompt = textFromContent(
+      summaryRequest.messages.single.content,
+    );
+    expect(summaryPrompt, contains('<transcript>'));
+    expect(summaryPrompt, contains('first reply'));
+    expect(summaryPrompt, isNot(contains('second reply')));
+    expect(summaryRequest.maxOutputTokens, AgentRuntime.maxSummaryTokens);
+
+    await runtime
+        .run(
+          TurnRequest(
+            sessionId: sessionId,
+            content: [TextContent('third request')],
+          ),
+        )
+        .toList();
+    expect(
+      provider.requests.last.systemPrompt,
+      contains('Context compacted. Kept 2 recent messages.'),
+    );
+    expect(
+      provider.requests.last.systemPrompt,
+      contains('Summary of the first turn.'),
+    );
+  });
+
+  test('skips compaction below the context threshold', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 100, totalTokens: 100),
+      ),
+    ], contextWindow: 10000);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    final first = await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('first request')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    final second = await runtime
+        .run(
+          TurnRequest(
+            sessionId: first.first.sessionId,
+            content: [TextContent('second request')],
+          ),
+        )
+        .toList();
+
+    expect(second.whereType<CompactionStarted>(), isEmpty);
+    expect(second.whereType<CompactionFinished>(), isEmpty);
+    expect(second.whereType<CompactionFailed>(), isEmpty);
+    expect(store.compaction, isNull);
+  });
+
+  test('manually compacts without the threshold check', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 100, totalTokens: 100),
+      ),
+      const ModelResponse(
+        content: [TextContent('Manual summary.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ], contextWindow: 10000);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    final first = await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('first request')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    final second = await runtime
+        .run(
+          TurnRequest(
+            sessionId: first.first.sessionId,
+            content: [TextContent('second request')],
+          ),
+        )
+        .toList();
+    expect(second.whereType<CompactionStarted>(), isEmpty);
+
+    final events = await runtime.compact(first.first.sessionId).toList();
+    expect(events.map((event) => event.runtimeType), [
+      CompactionStarted,
+      CompactionFinished,
+    ]);
+    final checkpoint = events.whereType<CompactionFinished>().single.checkpoint;
+    expect(checkpoint.summary, 'Manual summary.');
+    expect(checkpoint.compactedThroughSequence, 1);
+    expect(checkpoint.keptRecentMessages, 2);
+    expect(
+      textFromContent(provider.requests.last.messages.single.content),
+      contains('<transcript>'),
+    );
+  });
+
+  test(
+    'manual compaction skips when nothing is outside the kept window',
+    () async {
+      final store = _MemorySessionStore();
+      final provider = _ScriptedProvider([
+        const ModelResponse(
+          content: [TextContent('first reply')],
+          stopReason: StopReason.endTurn,
+        ),
+      ]);
+      final runtime = AgentRuntime(
+        store: store,
+        provider: provider,
+        tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+        ids: _Ids(),
+        defaultModel: _model,
+        keptRecentTurns: 1,
+      );
+
+      final first = await runtime
+          .run(
+            const TurnRequest(
+              content: [TextContent('first request')],
+              workingDirectory: '/tmp',
+            ),
+          )
+          .toList();
+      final events = await runtime.compact(first.first.sessionId).toList();
+
+      expect(events, isEmpty);
+      expect(provider.requests, hasLength(1));
+      expect(store.compaction, isNull);
+    },
+  );
+
+  test('skips compaction when describe fails', () async {
+    final store = _MemorySessionStore();
+    final provider = _DescribeFailingProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 9500, totalTokens: 9500),
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    final first = await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('first request')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    final second = await runtime
+        .run(
+          TurnRequest(
+            sessionId: first.first.sessionId,
+            content: [TextContent('second request')],
+          ),
+        )
+        .toList();
+
+    expect(second.whereType<CompactionStarted>(), isEmpty);
+    expect(second.whereType<CompactionFinished>(), isEmpty);
+    expect(second.whereType<CompactionFailed>(), isEmpty);
+    expect(store.compaction, isNull);
+  });
+
+  test('chains the previous summary into compaction', () async {
+    final store = _MemorySessionStore();
+    final sessionTime = DateTime.utc(2026, 1, 1);
+    store.session = Session(
+      id: SessionId('chained-session'),
+      workingDirectory: '/tmp',
+      createdAt: sessionTime,
+      updatedAt: sessionTime,
+      compaction: CompactionCheckpoint(
+        sessionId: SessionId('chained-session'),
+        compactedThroughSequence: -1,
+        summary: 'Old summary.',
+        keptRecentMessages: 0,
+        inputTokensBefore: 0,
+        inputTokensAfter: 0,
+        createdAt: sessionTime,
+      ),
+    );
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 9500, totalTokens: 9500),
+      ),
+      const ModelResponse(
+        content: [TextContent('Chained summary.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ], contextWindow: 10000);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    await runtime
+        .run(
+          TurnRequest(
+            sessionId: SessionId('chained-session'),
+            content: [TextContent('first request')],
+          ),
+        )
+        .toList();
+    await runtime
+        .run(
+          TurnRequest(
+            sessionId: SessionId('chained-session'),
+            content: [TextContent('second request')],
+          ),
+        )
+        .toList();
+
+    final summaryPrompt = textFromContent(
+      provider.requests.last.messages.single.content,
+    );
+    expect(summaryPrompt, contains('<previous_summary>'));
+    expect(summaryPrompt, contains('Old summary.'));
+    expect(store.compaction!.summary, 'Chained summary.');
+  });
+
+  test('compacts again with a chained and shrinking transcript', () async {
+    final store = _MemorySessionStore();
+    final sessionTime = DateTime.utc(2026, 1, 1);
+    store.session = Session(
+      id: SessionId('double-session'),
+      workingDirectory: '/tmp',
+      createdAt: sessionTime,
+      updatedAt: sessionTime,
+      compaction: CompactionCheckpoint(
+        sessionId: SessionId('double-session'),
+        compactedThroughSequence: -1,
+        summary: 'Old summary.',
+        keptRecentMessages: 0,
+        inputTokensBefore: 0,
+        inputTokensAfter: 0,
+        createdAt: sessionTime,
+      ),
+    );
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 9500, totalTokens: 9500),
+      ),
+      const ModelResponse(
+        content: [TextContent('First summary.')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('third reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 100, totalTokens: 100),
+      ),
+      const ModelResponse(
+        content: [TextContent('fourth reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 9500, totalTokens: 9500),
+      ),
+      const ModelResponse(
+        content: [TextContent('Second summary.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ], contextWindow: 10000);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    for (final text in ['first request', 'second request', 'third request']) {
+      await runtime
+          .run(
+            TurnRequest(
+              sessionId: SessionId('double-session'),
+              content: [TextContent(text)],
+            ),
+          )
+          .toList();
+    }
+    final firstCheckpoint = store.compaction!;
+    expect(firstCheckpoint.summary, 'First summary.');
+    expect(firstCheckpoint.compactedThroughSequence, 1);
+
+    final fourth = await runtime
+        .run(
+          TurnRequest(
+            sessionId: SessionId('double-session'),
+            content: [TextContent('fourth request')],
+          ),
+        )
+        .toList();
+    expect(fourth.whereType<CompactionFinished>(), hasLength(1));
+
+    final secondCheckpoint = store.compaction!;
+    expect(secondCheckpoint.summary, 'Second summary.');
+    expect(
+      secondCheckpoint.compactedThroughSequence,
+      greaterThan(firstCheckpoint.compactedThroughSequence),
+    );
+    final summaryPrompt = textFromContent(
+      provider.requests.last.messages.single.content,
+    );
+    expect(summaryPrompt, contains('<previous_summary>'));
+    expect(summaryPrompt, contains('First summary.'));
+    expect(summaryPrompt, contains('second reply'));
+    expect(summaryPrompt, contains('third reply'));
+    expect(summaryPrompt, isNot(contains('first reply')));
+  });
+
+  test('emits CompactionFailed without failing the turn', () async {
+    final store = _MemorySessionStore();
+    final provider = _SummaryFailingProvider([
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('second reply')],
+        stopReason: StopReason.endTurn,
+        usage: TokenUsage(inputTokens: 9500, totalTokens: 9500),
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    final first = await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('first request')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    final second = await runtime
+        .run(
+          TurnRequest(
+            sessionId: first.first.sessionId,
+            content: [TextContent('second request')],
+          ),
+        )
+        .toList();
+
+    expect(second.last, isA<CompactionFailed>());
+    expect(
+      second.whereType<TurnFinished>().single.outcome.status,
+      TurnStatus.completed,
+    );
+    expect(store.compaction, isNull);
+  });
+
+  test('attempts compaction after a failed turn', () async {
+    final store = _MemorySessionStore();
+    final provider = _FirstOkThenFailProvider(
+      const ModelResponse(
+        content: [TextContent('first reply')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+      ids: _Ids(),
+      defaultModel: _model,
+      keptRecentTurns: 1,
+    );
+
+    final first = await runtime
+        .run(
+          TurnRequest(
+            content: [TextContent('first request')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    Object? thrown;
+    final events = <AgentEvent>[];
+    try {
+      await for (final event in runtime.run(
+        TurnRequest(
+          sessionId: first.first.sessionId,
+          content: [TextContent('x' * 400)],
+        ),
+      )) {
+        events.add(event);
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, isA<StateError>());
+    expect(events.map((event) => event.runtimeType), [
+      TurnStarted,
+      TurnFinished,
+      CompactionStarted,
+      CompactionFailed,
+    ]);
+    expect(
+      events.whereType<TurnFinished>().single.outcome.status,
+      TurnStatus.failed,
+    );
+  });
 }
 
 final _model = ModelRef(
@@ -506,15 +1057,16 @@ final class _Ids implements IdGenerator {
 }
 
 final class _ScriptedProvider implements ModelProvider {
-  _ScriptedProvider(this.responses);
+  _ScriptedProvider(this.responses, {this.contextWindow = 0});
 
   final List<ModelResponse> responses;
+  final int contextWindow;
   final requests = <ModelRequest>[];
   var _index = 0;
 
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
-      ModelDescriptor(ref: model);
+      ModelDescriptor(ref: model, contextWindow: contextWindow);
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
@@ -531,6 +1083,66 @@ final class _FailingProvider implements ModelProvider {
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    yield ModelFailedEvent(StateError('provider failed'), StackTrace.current);
+  }
+}
+
+/// Succeeds for the scripted responses, then fails further model calls.
+final class _SummaryFailingProvider implements ModelProvider {
+  _SummaryFailingProvider(this.responses);
+
+  final List<ModelResponse> responses;
+  var _index = 0;
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef model) async =>
+      ModelDescriptor(ref: model, contextWindow: 10000);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    if (_index < responses.length) {
+      yield ModelCompletedEvent(responses[_index++]);
+      return;
+    }
+    yield ModelFailedEvent(StateError('summary failed'), StackTrace.current);
+  }
+}
+
+/// Fails every describe call while streaming scripted responses.
+final class _DescribeFailingProvider implements ModelProvider {
+  _DescribeFailingProvider(this.responses);
+
+  final List<ModelResponse> responses;
+  var _index = 0;
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef model) async =>
+      throw StateError('describe failed');
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    yield const TextDeltaEvent('delta');
+    yield ModelCompletedEvent(responses[_index++]);
+  }
+}
+
+/// Succeeds once, then fails every subsequent model call.
+final class _FirstOkThenFailProvider implements ModelProvider {
+  _FirstOkThenFailProvider(this.first);
+
+  final ModelResponse first;
+  var _calls = 0;
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef model) async =>
+      ModelDescriptor(ref: model, contextWindow: 100);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    if (_calls++ == 0) {
+      yield ModelCompletedEvent(first);
+      return;
+    }
     yield ModelFailedEvent(StateError('provider failed'), StackTrace.current);
   }
 }
@@ -652,10 +1264,18 @@ final class _MemorySessionStore implements SessionStore {
     if (value == null || value.id != sessionId) {
       throw SessionNotFoundException(sessionId);
     }
+    final checkpoint = value.compaction;
+    final visible = checkpoint == null || checkpoint.summary.trim().isEmpty
+        ? timeline
+        : timeline
+              .where(
+                (item) => item.sequence > checkpoint.compactedThroughSequence,
+              )
+              .toList();
     return SessionSnapshot(
       session: value,
       turns: List.unmodifiable(turns),
-      timeline: List.unmodifiable(timeline),
+      timeline: List.unmodifiable(visible),
       modelCheckpoints: List.unmodifiable(checkpoints),
     );
   }
@@ -710,7 +1330,22 @@ final class _MemorySessionStore implements SessionStore {
   Future<void> saveCompaction(
     SessionId sessionId,
     CompactionCheckpoint checkpoint,
-  ) async => compaction = checkpoint;
+  ) async {
+    compaction = checkpoint;
+    final value = session;
+    if (value != null) {
+      session = Session(
+        id: value.id,
+        title: value.title,
+        workingDirectory: value.workingDirectory,
+        additionalDirectories: value.additionalDirectories,
+        createdAt: value.createdAt,
+        updatedAt: value.updatedAt,
+        compaction: checkpoint,
+        lastUsage: value.lastUsage,
+      );
+    }
+  }
 
   @override
   Future<void> deleteSession(SessionId sessionId) async => session = null;

@@ -79,6 +79,7 @@ void main() {
         sessionId: session.id,
         compactedThroughSequence: 1,
         summary: 'summary',
+        keptRecentMessages: 2,
         inputTokensBefore: 10,
         inputTokensAfter: 4,
         createdAt: DateTime.utc(2026, 1, 2, 0, 0, 3),
@@ -89,6 +90,8 @@ void main() {
     expect(loaded.timeline, isEmpty);
     expect(loaded.modelCheckpoints, isEmpty);
     expect(loaded.session.compaction?.inputTokensAfter, 4);
+    expect(loaded.session.compaction?.keptRecentMessages, 2);
+    expect(loaded.session.updatedAt, DateTime.utc(2026, 1, 2, 0, 0, 3));
   });
 
   test('lists sessions with a stable cursor and deletes sessions', () async {
@@ -262,6 +265,7 @@ void main() {
       sessionId: session.id,
       compactedThroughSequence: 0,
       summary: 'summary',
+      keptRecentMessages: 1,
       inputTokensBefore: 10,
       inputTokensAfter: 2,
       createdAt: session.updatedAt,
@@ -317,6 +321,7 @@ void main() {
           sessionId: session.id,
           compactedThroughSequence: 1,
           summary: 'partial summary',
+          keptRecentMessages: 1,
           inputTokensBefore: 10,
           inputTokensAfter: 2,
           createdAt: session.updatedAt,

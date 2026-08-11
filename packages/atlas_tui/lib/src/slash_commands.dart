@@ -16,6 +16,7 @@ final class SlashCommand {
 const slashCommands = [
   SlashCommand(name: 'model', description: 'Choose a model'),
   SlashCommand(name: 'new', description: 'Start a new session'),
+  SlashCommand(name: 'compact', description: 'Compact the conversation'),
   SlashCommand(name: 'quit', description: 'Quit Atlas'),
 ];
 

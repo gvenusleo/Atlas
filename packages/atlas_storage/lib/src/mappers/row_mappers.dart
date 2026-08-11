@@ -11,17 +11,14 @@ final class RowMappers {
   final TimelineCodec _timelineCodec = TimelineCodec();
 
   /// Converts a session row into a runtime session.
-  runtime.Session session(
-    SessionRow row, {
-    runtime.CompactionCheckpoint? compaction,
-  }) => runtime.Session(
+  runtime.Session session(SessionRow row) => runtime.Session(
     id: runtime.SessionId(row.id),
     title: row.title,
     workingDirectory: row.workingDirectory,
     additionalDirectories: _decodeDirectories(row.additionalDirectoriesJson),
     createdAt: row.createdAt.toUtc(),
     updatedAt: row.updatedAt.toUtc(),
-    compaction: compaction,
+    compaction: _sessionCompaction(row),
     lastUsage: _sessionUsage(row),
   );
 
@@ -103,23 +100,27 @@ final class RowMappers {
     cancelReason: Value(value.cancelReason),
   );
 
-  /// Converts a timeline row into a runtime variant.
-  runtime.TimelineItem timelineItem(TimelineItemRow row) =>
-      _timelineCodec.decode(
-        id: runtime.TimelineItemId(row.id),
-        sessionId: runtime.SessionId(row.sessionId),
-        turnId: runtime.TurnId(row.turnId),
-        sequence: row.sequence,
-        occurredAt: row.occurredAt.toUtc(),
-        kind: row.kind,
-        version: row.payloadVersion,
-        payload: row.payloadJson,
-      );
+  /// Converts a message row into a runtime variant and its continuation.
+  ({runtime.TimelineItem item, runtime.ModelCheckpoint? checkpoint}) message(
+    MessageRow row,
+  ) => _timelineCodec.decode(
+    id: runtime.TimelineItemId(row.id),
+    sessionId: runtime.SessionId(row.sessionId),
+    turnId: runtime.TurnId(row.turnId),
+    sequence: row.sequence,
+    occurredAt: row.occurredAt.toUtc(),
+    kind: row.kind,
+    version: row.payloadVersion,
+    payload: row.payloadJson,
+  );
 
   /// Converts a runtime timeline item into a Drift companion.
-  TimelineItemsCompanion timelineCompanion(runtime.TimelineItem value) {
-    final encoded = _timelineCodec.encode(value);
-    return TimelineItemsCompanion.insert(
+  MessagesCompanion messageCompanion(
+    runtime.TimelineItem value, {
+    runtime.ModelCheckpoint? checkpoint,
+  }) {
+    final encoded = _timelineCodec.encode(value, checkpoint: checkpoint);
+    return MessagesCompanion.insert(
       id: value.id.value,
       sessionId: value.sessionId.value,
       turnId: value.turnId.value,
@@ -131,51 +132,21 @@ final class RowMappers {
     );
   }
 
-  /// Converts a model checkpoint row into a runtime checkpoint.
-  runtime.ModelCheckpoint modelCheckpoint(ModelCheckpointRow row) =>
-      runtime.ModelCheckpoint(
-        timelineItemId: runtime.TimelineItemId(row.timelineItemId),
-        continuation: runtime.ModelContinuation(
-          providerId: runtime.ProviderId(row.providerId),
-          reasoningSummary: row.reasoningSummary,
-          opaquePayload: _decodeObject(row.payloadJson, 'model checkpoint'),
-        ),
-        createdAt: row.createdAt.toUtc(),
-      );
-
-  /// Converts a runtime model checkpoint into a Drift companion.
-  ModelCheckpointsCompanion modelCheckpointCompanion(
-    runtime.ModelCheckpoint value,
-  ) => ModelCheckpointsCompanion.insert(
-    timelineItemId: value.timelineItemId.value,
-    providerId: value.continuation.providerId.value,
-    reasoningSummary: Value(value.continuation.reasoningSummary),
-    payloadJson: Value(jsonEncode(value.continuation.opaquePayload)),
-    createdAt: value.createdAt.toUtc(),
-  );
-
-  /// Converts a compaction row into a runtime checkpoint.
-  runtime.CompactionCheckpoint compaction(CompactionCheckpointRow row) =>
-      runtime.CompactionCheckpoint(
-        sessionId: runtime.SessionId(row.sessionId),
-        compactedThroughSequence: row.compactedThroughSequence,
-        summary: row.summary,
-        inputTokensBefore: row.inputTokensBefore,
-        inputTokensAfter: row.inputTokensAfter,
-        createdAt: row.createdAt.toUtc(),
-      );
-
-  /// Converts a runtime compaction checkpoint into a Drift companion.
-  CompactionCheckpointsCompanion compactionCompanion(
-    runtime.CompactionCheckpoint value,
-  ) => CompactionCheckpointsCompanion.insert(
-    sessionId: value.sessionId.value,
-    compactedThroughSequence: value.compactedThroughSequence,
-    summary: value.summary,
-    inputTokensBefore: value.inputTokensBefore,
-    inputTokensAfter: value.inputTokensAfter,
-    createdAt: value.createdAt.toUtc(),
-  );
+  static runtime.CompactionCheckpoint? _sessionCompaction(SessionRow row) {
+    final createdAt = row.compactionCreatedAt;
+    if (createdAt == null) {
+      return null;
+    }
+    return runtime.CompactionCheckpoint(
+      sessionId: runtime.SessionId(row.id),
+      compactedThroughSequence: row.compactionSequence ?? 0,
+      summary: row.compactionSummary,
+      keptRecentMessages: row.compactionKeptRecent,
+      inputTokensBefore: row.compactionTokensBefore,
+      inputTokensAfter: row.compactionTokensAfter,
+      createdAt: createdAt.toUtc(),
+    );
+  }
 
   static runtime.TokenUsage _sessionUsage(SessionRow row) => runtime.TokenUsage(
     inputTokens: row.lastInputTokens,
@@ -193,14 +164,6 @@ final class RowMappers {
       );
     }
     return List<String>.unmodifiable(decoded.cast<String>());
-  }
-
-  static runtime.JsonObject _decodeObject(String value, String label) {
-    final decoded = jsonDecode(value);
-    if (decoded is! Map<String, Object?>) {
-      throw FormatException('$label must be a JSON object');
-    }
-    return runtime.immutableJsonObject(decoded);
   }
 
   static T _enumByName<T extends Enum>(

@@ -109,6 +109,73 @@ class $SessionsTable extends Sessions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _compactionSequenceMeta =
+      const VerificationMeta('compactionSequence');
+  @override
+  late final GeneratedColumn<int> compactionSequence = GeneratedColumn<int>(
+    'compaction_sequence',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _compactionSummaryMeta = const VerificationMeta(
+    'compactionSummary',
+  );
+  @override
+  late final GeneratedColumn<String> compactionSummary =
+      GeneratedColumn<String>(
+        'compaction_summary',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _compactionKeptRecentMeta =
+      const VerificationMeta('compactionKeptRecent');
+  @override
+  late final GeneratedColumn<int> compactionKeptRecent = GeneratedColumn<int>(
+    'compaction_kept_recent',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _compactionTokensBeforeMeta =
+      const VerificationMeta('compactionTokensBefore');
+  @override
+  late final GeneratedColumn<int> compactionTokensBefore = GeneratedColumn<int>(
+    'compaction_tokens_before',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _compactionTokensAfterMeta =
+      const VerificationMeta('compactionTokensAfter');
+  @override
+  late final GeneratedColumn<int> compactionTokensAfter = GeneratedColumn<int>(
+    'compaction_tokens_after',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _compactionCreatedAtMeta =
+      const VerificationMeta('compactionCreatedAt');
+  @override
+  late final GeneratedColumn<DateTime> compactionCreatedAt =
+      GeneratedColumn<DateTime>(
+        'compaction_created_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -142,6 +209,12 @@ class $SessionsTable extends Sessions
     lastTotalTokens,
     lastCacheReadTokens,
     lastCacheWriteTokens,
+    compactionSequence,
+    compactionSummary,
+    compactionKeptRecent,
+    compactionTokensBefore,
+    compactionTokensAfter,
+    compactionCreatedAt,
     createdAt,
     updatedAt,
   ];
@@ -233,6 +306,60 @@ class $SessionsTable extends Sessions
         ),
       );
     }
+    if (data.containsKey('compaction_sequence')) {
+      context.handle(
+        _compactionSequenceMeta,
+        compactionSequence.isAcceptableOrUnknown(
+          data['compaction_sequence']!,
+          _compactionSequenceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('compaction_summary')) {
+      context.handle(
+        _compactionSummaryMeta,
+        compactionSummary.isAcceptableOrUnknown(
+          data['compaction_summary']!,
+          _compactionSummaryMeta,
+        ),
+      );
+    }
+    if (data.containsKey('compaction_kept_recent')) {
+      context.handle(
+        _compactionKeptRecentMeta,
+        compactionKeptRecent.isAcceptableOrUnknown(
+          data['compaction_kept_recent']!,
+          _compactionKeptRecentMeta,
+        ),
+      );
+    }
+    if (data.containsKey('compaction_tokens_before')) {
+      context.handle(
+        _compactionTokensBeforeMeta,
+        compactionTokensBefore.isAcceptableOrUnknown(
+          data['compaction_tokens_before']!,
+          _compactionTokensBeforeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('compaction_tokens_after')) {
+      context.handle(
+        _compactionTokensAfterMeta,
+        compactionTokensAfter.isAcceptableOrUnknown(
+          data['compaction_tokens_after']!,
+          _compactionTokensAfterMeta,
+        ),
+      );
+    }
+    if (data.containsKey('compaction_created_at')) {
+      context.handle(
+        _compactionCreatedAtMeta,
+        compactionCreatedAt.isAcceptableOrUnknown(
+          data['compaction_created_at']!,
+          _compactionCreatedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -294,6 +421,30 @@ class $SessionsTable extends Sessions
         DriftSqlType.int,
         data['${effectivePrefix}last_cache_write_tokens'],
       )!,
+      compactionSequence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}compaction_sequence'],
+      ),
+      compactionSummary: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}compaction_summary'],
+      )!,
+      compactionKeptRecent: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}compaction_kept_recent'],
+      )!,
+      compactionTokensBefore: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}compaction_tokens_before'],
+      )!,
+      compactionTokensAfter: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}compaction_tokens_after'],
+      )!,
+      compactionCreatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}compaction_created_at'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -339,6 +490,24 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   /// Cached input tokens written by the latest model response.
   final int lastCacheWriteTokens;
 
+  /// Last timeline sequence represented by the compaction summary.
+  final int? compactionSequence;
+
+  /// Compact model context summary.
+  final String compactionSummary;
+
+  /// Timeline messages after the boundary kept verbatim.
+  final int compactionKeptRecent;
+
+  /// Input token count before compaction.
+  final int compactionTokensBefore;
+
+  /// Input token count after compaction.
+  final int compactionTokensAfter;
+
+  /// UTC checkpoint creation time; null when no checkpoint exists.
+  final DateTime? compactionCreatedAt;
+
   /// UTC creation time.
   final DateTime createdAt;
 
@@ -354,6 +523,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     required this.lastTotalTokens,
     required this.lastCacheReadTokens,
     required this.lastCacheWriteTokens,
+    this.compactionSequence,
+    required this.compactionSummary,
+    required this.compactionKeptRecent,
+    required this.compactionTokensBefore,
+    required this.compactionTokensAfter,
+    this.compactionCreatedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -371,6 +546,16 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     map['last_total_tokens'] = Variable<int>(lastTotalTokens);
     map['last_cache_read_tokens'] = Variable<int>(lastCacheReadTokens);
     map['last_cache_write_tokens'] = Variable<int>(lastCacheWriteTokens);
+    if (!nullToAbsent || compactionSequence != null) {
+      map['compaction_sequence'] = Variable<int>(compactionSequence);
+    }
+    map['compaction_summary'] = Variable<String>(compactionSummary);
+    map['compaction_kept_recent'] = Variable<int>(compactionKeptRecent);
+    map['compaction_tokens_before'] = Variable<int>(compactionTokensBefore);
+    map['compaction_tokens_after'] = Variable<int>(compactionTokensAfter);
+    if (!nullToAbsent || compactionCreatedAt != null) {
+      map['compaction_created_at'] = Variable<DateTime>(compactionCreatedAt);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -387,6 +572,16 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       lastTotalTokens: Value(lastTotalTokens),
       lastCacheReadTokens: Value(lastCacheReadTokens),
       lastCacheWriteTokens: Value(lastCacheWriteTokens),
+      compactionSequence: compactionSequence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(compactionSequence),
+      compactionSummary: Value(compactionSummary),
+      compactionKeptRecent: Value(compactionKeptRecent),
+      compactionTokensBefore: Value(compactionTokensBefore),
+      compactionTokensAfter: Value(compactionTokensAfter),
+      compactionCreatedAt: compactionCreatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(compactionCreatedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -413,6 +608,20 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       lastCacheWriteTokens: serializer.fromJson<int>(
         json['lastCacheWriteTokens'],
       ),
+      compactionSequence: serializer.fromJson<int?>(json['compactionSequence']),
+      compactionSummary: serializer.fromJson<String>(json['compactionSummary']),
+      compactionKeptRecent: serializer.fromJson<int>(
+        json['compactionKeptRecent'],
+      ),
+      compactionTokensBefore: serializer.fromJson<int>(
+        json['compactionTokensBefore'],
+      ),
+      compactionTokensAfter: serializer.fromJson<int>(
+        json['compactionTokensAfter'],
+      ),
+      compactionCreatedAt: serializer.fromJson<DateTime?>(
+        json['compactionCreatedAt'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -432,6 +641,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       'lastTotalTokens': serializer.toJson<int>(lastTotalTokens),
       'lastCacheReadTokens': serializer.toJson<int>(lastCacheReadTokens),
       'lastCacheWriteTokens': serializer.toJson<int>(lastCacheWriteTokens),
+      'compactionSequence': serializer.toJson<int?>(compactionSequence),
+      'compactionSummary': serializer.toJson<String>(compactionSummary),
+      'compactionKeptRecent': serializer.toJson<int>(compactionKeptRecent),
+      'compactionTokensBefore': serializer.toJson<int>(compactionTokensBefore),
+      'compactionTokensAfter': serializer.toJson<int>(compactionTokensAfter),
+      'compactionCreatedAt': serializer.toJson<DateTime?>(compactionCreatedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -447,6 +662,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     int? lastTotalTokens,
     int? lastCacheReadTokens,
     int? lastCacheWriteTokens,
+    Value<int?> compactionSequence = const Value.absent(),
+    String? compactionSummary,
+    int? compactionKeptRecent,
+    int? compactionTokensBefore,
+    int? compactionTokensAfter,
+    Value<DateTime?> compactionCreatedAt = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => SessionRow(
@@ -460,6 +681,17 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     lastTotalTokens: lastTotalTokens ?? this.lastTotalTokens,
     lastCacheReadTokens: lastCacheReadTokens ?? this.lastCacheReadTokens,
     lastCacheWriteTokens: lastCacheWriteTokens ?? this.lastCacheWriteTokens,
+    compactionSequence: compactionSequence.present
+        ? compactionSequence.value
+        : this.compactionSequence,
+    compactionSummary: compactionSummary ?? this.compactionSummary,
+    compactionKeptRecent: compactionKeptRecent ?? this.compactionKeptRecent,
+    compactionTokensBefore:
+        compactionTokensBefore ?? this.compactionTokensBefore,
+    compactionTokensAfter: compactionTokensAfter ?? this.compactionTokensAfter,
+    compactionCreatedAt: compactionCreatedAt.present
+        ? compactionCreatedAt.value
+        : this.compactionCreatedAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -488,6 +720,24 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       lastCacheWriteTokens: data.lastCacheWriteTokens.present
           ? data.lastCacheWriteTokens.value
           : this.lastCacheWriteTokens,
+      compactionSequence: data.compactionSequence.present
+          ? data.compactionSequence.value
+          : this.compactionSequence,
+      compactionSummary: data.compactionSummary.present
+          ? data.compactionSummary.value
+          : this.compactionSummary,
+      compactionKeptRecent: data.compactionKeptRecent.present
+          ? data.compactionKeptRecent.value
+          : this.compactionKeptRecent,
+      compactionTokensBefore: data.compactionTokensBefore.present
+          ? data.compactionTokensBefore.value
+          : this.compactionTokensBefore,
+      compactionTokensAfter: data.compactionTokensAfter.present
+          ? data.compactionTokensAfter.value
+          : this.compactionTokensAfter,
+      compactionCreatedAt: data.compactionCreatedAt.present
+          ? data.compactionCreatedAt.value
+          : this.compactionCreatedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -505,6 +755,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           ..write('lastTotalTokens: $lastTotalTokens, ')
           ..write('lastCacheReadTokens: $lastCacheReadTokens, ')
           ..write('lastCacheWriteTokens: $lastCacheWriteTokens, ')
+          ..write('compactionSequence: $compactionSequence, ')
+          ..write('compactionSummary: $compactionSummary, ')
+          ..write('compactionKeptRecent: $compactionKeptRecent, ')
+          ..write('compactionTokensBefore: $compactionTokensBefore, ')
+          ..write('compactionTokensAfter: $compactionTokensAfter, ')
+          ..write('compactionCreatedAt: $compactionCreatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -522,6 +778,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     lastTotalTokens,
     lastCacheReadTokens,
     lastCacheWriteTokens,
+    compactionSequence,
+    compactionSummary,
+    compactionKeptRecent,
+    compactionTokensBefore,
+    compactionTokensAfter,
+    compactionCreatedAt,
     createdAt,
     updatedAt,
   );
@@ -538,6 +800,12 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           other.lastTotalTokens == this.lastTotalTokens &&
           other.lastCacheReadTokens == this.lastCacheReadTokens &&
           other.lastCacheWriteTokens == this.lastCacheWriteTokens &&
+          other.compactionSequence == this.compactionSequence &&
+          other.compactionSummary == this.compactionSummary &&
+          other.compactionKeptRecent == this.compactionKeptRecent &&
+          other.compactionTokensBefore == this.compactionTokensBefore &&
+          other.compactionTokensAfter == this.compactionTokensAfter &&
+          other.compactionCreatedAt == this.compactionCreatedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -552,6 +820,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<int> lastTotalTokens;
   final Value<int> lastCacheReadTokens;
   final Value<int> lastCacheWriteTokens;
+  final Value<int?> compactionSequence;
+  final Value<String> compactionSummary;
+  final Value<int> compactionKeptRecent;
+  final Value<int> compactionTokensBefore;
+  final Value<int> compactionTokensAfter;
+  final Value<DateTime?> compactionCreatedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -565,6 +839,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     this.lastTotalTokens = const Value.absent(),
     this.lastCacheReadTokens = const Value.absent(),
     this.lastCacheWriteTokens = const Value.absent(),
+    this.compactionSequence = const Value.absent(),
+    this.compactionSummary = const Value.absent(),
+    this.compactionKeptRecent = const Value.absent(),
+    this.compactionTokensBefore = const Value.absent(),
+    this.compactionTokensAfter = const Value.absent(),
+    this.compactionCreatedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -579,6 +859,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     this.lastTotalTokens = const Value.absent(),
     this.lastCacheReadTokens = const Value.absent(),
     this.lastCacheWriteTokens = const Value.absent(),
+    this.compactionSequence = const Value.absent(),
+    this.compactionSummary = const Value.absent(),
+    this.compactionKeptRecent = const Value.absent(),
+    this.compactionTokensBefore = const Value.absent(),
+    this.compactionTokensAfter = const Value.absent(),
+    this.compactionCreatedAt = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -596,6 +882,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Expression<int>? lastTotalTokens,
     Expression<int>? lastCacheReadTokens,
     Expression<int>? lastCacheWriteTokens,
+    Expression<int>? compactionSequence,
+    Expression<String>? compactionSummary,
+    Expression<int>? compactionKeptRecent,
+    Expression<int>? compactionTokensBefore,
+    Expression<int>? compactionTokensAfter,
+    Expression<DateTime>? compactionCreatedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -613,6 +905,16 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
         'last_cache_read_tokens': lastCacheReadTokens,
       if (lastCacheWriteTokens != null)
         'last_cache_write_tokens': lastCacheWriteTokens,
+      if (compactionSequence != null) 'compaction_sequence': compactionSequence,
+      if (compactionSummary != null) 'compaction_summary': compactionSummary,
+      if (compactionKeptRecent != null)
+        'compaction_kept_recent': compactionKeptRecent,
+      if (compactionTokensBefore != null)
+        'compaction_tokens_before': compactionTokensBefore,
+      if (compactionTokensAfter != null)
+        'compaction_tokens_after': compactionTokensAfter,
+      if (compactionCreatedAt != null)
+        'compaction_created_at': compactionCreatedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -629,6 +931,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Value<int>? lastTotalTokens,
     Value<int>? lastCacheReadTokens,
     Value<int>? lastCacheWriteTokens,
+    Value<int?>? compactionSequence,
+    Value<String>? compactionSummary,
+    Value<int>? compactionKeptRecent,
+    Value<int>? compactionTokensBefore,
+    Value<int>? compactionTokensAfter,
+    Value<DateTime?>? compactionCreatedAt,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -644,6 +952,14 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       lastTotalTokens: lastTotalTokens ?? this.lastTotalTokens,
       lastCacheReadTokens: lastCacheReadTokens ?? this.lastCacheReadTokens,
       lastCacheWriteTokens: lastCacheWriteTokens ?? this.lastCacheWriteTokens,
+      compactionSequence: compactionSequence ?? this.compactionSequence,
+      compactionSummary: compactionSummary ?? this.compactionSummary,
+      compactionKeptRecent: compactionKeptRecent ?? this.compactionKeptRecent,
+      compactionTokensBefore:
+          compactionTokensBefore ?? this.compactionTokensBefore,
+      compactionTokensAfter:
+          compactionTokensAfter ?? this.compactionTokensAfter,
+      compactionCreatedAt: compactionCreatedAt ?? this.compactionCreatedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -684,6 +1000,30 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
         lastCacheWriteTokens.value,
       );
     }
+    if (compactionSequence.present) {
+      map['compaction_sequence'] = Variable<int>(compactionSequence.value);
+    }
+    if (compactionSummary.present) {
+      map['compaction_summary'] = Variable<String>(compactionSummary.value);
+    }
+    if (compactionKeptRecent.present) {
+      map['compaction_kept_recent'] = Variable<int>(compactionKeptRecent.value);
+    }
+    if (compactionTokensBefore.present) {
+      map['compaction_tokens_before'] = Variable<int>(
+        compactionTokensBefore.value,
+      );
+    }
+    if (compactionTokensAfter.present) {
+      map['compaction_tokens_after'] = Variable<int>(
+        compactionTokensAfter.value,
+      );
+    }
+    if (compactionCreatedAt.present) {
+      map['compaction_created_at'] = Variable<DateTime>(
+        compactionCreatedAt.value,
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -708,6 +1048,12 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           ..write('lastTotalTokens: $lastTotalTokens, ')
           ..write('lastCacheReadTokens: $lastCacheReadTokens, ')
           ..write('lastCacheWriteTokens: $lastCacheWriteTokens, ')
+          ..write('compactionSequence: $compactionSequence, ')
+          ..write('compactionSummary: $compactionSummary, ')
+          ..write('compactionKeptRecent: $compactionKeptRecent, ')
+          ..write('compactionTokensBefore: $compactionTokensBefore, ')
+          ..write('compactionTokensAfter: $compactionTokensAfter, ')
+          ..write('compactionCreatedAt: $compactionCreatedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -1696,12 +2042,12 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
   }
 }
 
-class $TimelineItemsTable extends TimelineItems
-    with TableInfo<$TimelineItemsTable, TimelineItemRow> {
+class $MessagesTable extends Messages
+    with TableInfo<$MessagesTable, MessageRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $TimelineItemsTable(this.attachedDatabase, [this._alias]);
+  $MessagesTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
@@ -1806,10 +2152,10 @@ class $TimelineItemsTable extends TimelineItems
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'timeline_items';
+  static const String $name = 'messages';
   @override
   VerificationContext validateIntegrity(
-    Insertable<TimelineItemRow> instance, {
+    Insertable<MessageRow> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -1889,9 +2235,9 @@ class $TimelineItemsTable extends TimelineItems
     {sessionId, sequence},
   ];
   @override
-  TimelineItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  MessageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return TimelineItemRow(
+    return MessageRow(
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
@@ -1928,13 +2274,13 @@ class $TimelineItemsTable extends TimelineItems
   }
 
   @override
-  $TimelineItemsTable createAlias(String alias) {
-    return $TimelineItemsTable(attachedDatabase, alias);
+  $MessagesTable createAlias(String alias) {
+    return $MessagesTable(attachedDatabase, alias);
   }
 }
 
-class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
-  /// Serialized timeline item identifier.
+class MessageRow extends DataClass implements Insertable<MessageRow> {
+  /// Serialized message identifier.
   final String id;
 
   /// Owning session identifier.
@@ -1946,18 +2292,19 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
   /// Strict session-local order.
   final int sequence;
 
-  /// Stable timeline item discriminant.
+  /// Stable message discriminant.
   final String kind;
 
   /// Version of the JSON payload schema.
   final int payloadVersion;
 
-  /// Versioned JSON payload.
+  /// Versioned JSON payload; assistant payloads include the provider
+  /// continuation when one was returned.
   final String payloadJson;
 
   /// UTC append time.
   final DateTime occurredAt;
-  const TimelineItemRow({
+  const MessageRow({
     required this.id,
     required this.sessionId,
     required this.turnId,
@@ -1981,8 +2328,8 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
     return map;
   }
 
-  TimelineItemsCompanion toCompanion(bool nullToAbsent) {
-    return TimelineItemsCompanion(
+  MessagesCompanion toCompanion(bool nullToAbsent) {
+    return MessagesCompanion(
       id: Value(id),
       sessionId: Value(sessionId),
       turnId: Value(turnId),
@@ -1994,12 +2341,12 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
     );
   }
 
-  factory TimelineItemRow.fromJson(
+  factory MessageRow.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return TimelineItemRow(
+    return MessageRow(
       id: serializer.fromJson<String>(json['id']),
       sessionId: serializer.fromJson<String>(json['sessionId']),
       turnId: serializer.fromJson<String>(json['turnId']),
@@ -2025,7 +2372,7 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
     };
   }
 
-  TimelineItemRow copyWith({
+  MessageRow copyWith({
     String? id,
     String? sessionId,
     String? turnId,
@@ -2034,7 +2381,7 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
     int? payloadVersion,
     String? payloadJson,
     DateTime? occurredAt,
-  }) => TimelineItemRow(
+  }) => MessageRow(
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
     turnId: turnId ?? this.turnId,
@@ -2044,8 +2391,8 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
     payloadJson: payloadJson ?? this.payloadJson,
     occurredAt: occurredAt ?? this.occurredAt,
   );
-  TimelineItemRow copyWithCompanion(TimelineItemsCompanion data) {
-    return TimelineItemRow(
+  MessageRow copyWithCompanion(MessagesCompanion data) {
+    return MessageRow(
       id: data.id.present ? data.id.value : this.id,
       sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
       turnId: data.turnId.present ? data.turnId.value : this.turnId,
@@ -2065,7 +2412,7 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
 
   @override
   String toString() {
-    return (StringBuffer('TimelineItemRow(')
+    return (StringBuffer('MessageRow(')
           ..write('id: $id, ')
           ..write('sessionId: $sessionId, ')
           ..write('turnId: $turnId, ')
@@ -2092,7 +2439,7 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is TimelineItemRow &&
+      (other is MessageRow &&
           other.id == this.id &&
           other.sessionId == this.sessionId &&
           other.turnId == this.turnId &&
@@ -2103,7 +2450,7 @@ class TimelineItemRow extends DataClass implements Insertable<TimelineItemRow> {
           other.occurredAt == this.occurredAt);
 }
 
-class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
+class MessagesCompanion extends UpdateCompanion<MessageRow> {
   final Value<String> id;
   final Value<String> sessionId;
   final Value<String> turnId;
@@ -2113,7 +2460,7 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
   final Value<String> payloadJson;
   final Value<DateTime> occurredAt;
   final Value<int> rowid;
-  const TimelineItemsCompanion({
+  const MessagesCompanion({
     this.id = const Value.absent(),
     this.sessionId = const Value.absent(),
     this.turnId = const Value.absent(),
@@ -2124,7 +2471,7 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
     this.occurredAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  TimelineItemsCompanion.insert({
+  MessagesCompanion.insert({
     required String id,
     required String sessionId,
     required String turnId,
@@ -2141,7 +2488,7 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
        kind = Value(kind),
        payloadJson = Value(payloadJson),
        occurredAt = Value(occurredAt);
-  static Insertable<TimelineItemRow> custom({
+  static Insertable<MessageRow> custom({
     Expression<String>? id,
     Expression<String>? sessionId,
     Expression<String>? turnId,
@@ -2165,7 +2512,7 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
     });
   }
 
-  TimelineItemsCompanion copyWith({
+  MessagesCompanion copyWith({
     Value<String>? id,
     Value<String>? sessionId,
     Value<String>? turnId,
@@ -2176,7 +2523,7 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
     Value<DateTime>? occurredAt,
     Value<int>? rowid,
   }) {
-    return TimelineItemsCompanion(
+    return MessagesCompanion(
       id: id ?? this.id,
       sessionId: sessionId ?? this.sessionId,
       turnId: turnId ?? this.turnId,
@@ -2224,7 +2571,7 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
 
   @override
   String toString() {
-    return (StringBuffer('TimelineItemsCompanion(')
+    return (StringBuffer('MessagesCompanion(')
           ..write('id: $id, ')
           ..write('sessionId: $sessionId, ')
           ..write('turnId: $turnId, ')
@@ -2239,882 +2586,12 @@ class TimelineItemsCompanion extends UpdateCompanion<TimelineItemRow> {
   }
 }
 
-class $ModelCheckpointsTable extends ModelCheckpoints
-    with TableInfo<$ModelCheckpointsTable, ModelCheckpointRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $ModelCheckpointsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _timelineItemIdMeta = const VerificationMeta(
-    'timelineItemId',
-  );
-  @override
-  late final GeneratedColumn<String> timelineItemId = GeneratedColumn<String>(
-    'timeline_item_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES timeline_items (id) ON DELETE CASCADE',
-    ),
-  );
-  static const VerificationMeta _providerIdMeta = const VerificationMeta(
-    'providerId',
-  );
-  @override
-  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
-    'provider_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _reasoningSummaryMeta = const VerificationMeta(
-    'reasoningSummary',
-  );
-  @override
-  late final GeneratedColumn<String> reasoningSummary = GeneratedColumn<String>(
-    'reasoning_summary',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(''),
-  );
-  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
-    'payloadJson',
-  );
-  @override
-  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
-    'payload_json',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant('{}'),
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    timelineItemId,
-    providerId,
-    reasoningSummary,
-    payloadJson,
-    createdAt,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'model_checkpoints';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<ModelCheckpointRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('timeline_item_id')) {
-      context.handle(
-        _timelineItemIdMeta,
-        timelineItemId.isAcceptableOrUnknown(
-          data['timeline_item_id']!,
-          _timelineItemIdMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_timelineItemIdMeta);
-    }
-    if (data.containsKey('provider_id')) {
-      context.handle(
-        _providerIdMeta,
-        providerId.isAcceptableOrUnknown(data['provider_id']!, _providerIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_providerIdMeta);
-    }
-    if (data.containsKey('reasoning_summary')) {
-      context.handle(
-        _reasoningSummaryMeta,
-        reasoningSummary.isAcceptableOrUnknown(
-          data['reasoning_summary']!,
-          _reasoningSummaryMeta,
-        ),
-      );
-    }
-    if (data.containsKey('payload_json')) {
-      context.handle(
-        _payloadJsonMeta,
-        payloadJson.isAcceptableOrUnknown(
-          data['payload_json']!,
-          _payloadJsonMeta,
-        ),
-      );
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_createdAtMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {timelineItemId};
-  @override
-  ModelCheckpointRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return ModelCheckpointRow(
-      timelineItemId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}timeline_item_id'],
-      )!,
-      providerId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}provider_id'],
-      )!,
-      reasoningSummary: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}reasoning_summary'],
-      )!,
-      payloadJson: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}payload_json'],
-      )!,
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
-      )!,
-    );
-  }
-
-  @override
-  $ModelCheckpointsTable createAlias(String alias) {
-    return $ModelCheckpointsTable(attachedDatabase, alias);
-  }
-}
-
-class ModelCheckpointRow extends DataClass
-    implements Insertable<ModelCheckpointRow> {
-  /// Assistant timeline item that owns this continuation.
-  final String timelineItemId;
-
-  /// Provider that can interpret the payload.
-  final String providerId;
-
-  /// Provider-produced reasoning summary.
-  final String reasoningSummary;
-
-  /// Provider-owned continuation payload.
-  final String payloadJson;
-
-  /// UTC checkpoint creation time.
-  final DateTime createdAt;
-  const ModelCheckpointRow({
-    required this.timelineItemId,
-    required this.providerId,
-    required this.reasoningSummary,
-    required this.payloadJson,
-    required this.createdAt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['timeline_item_id'] = Variable<String>(timelineItemId);
-    map['provider_id'] = Variable<String>(providerId);
-    map['reasoning_summary'] = Variable<String>(reasoningSummary);
-    map['payload_json'] = Variable<String>(payloadJson);
-    map['created_at'] = Variable<DateTime>(createdAt);
-    return map;
-  }
-
-  ModelCheckpointsCompanion toCompanion(bool nullToAbsent) {
-    return ModelCheckpointsCompanion(
-      timelineItemId: Value(timelineItemId),
-      providerId: Value(providerId),
-      reasoningSummary: Value(reasoningSummary),
-      payloadJson: Value(payloadJson),
-      createdAt: Value(createdAt),
-    );
-  }
-
-  factory ModelCheckpointRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return ModelCheckpointRow(
-      timelineItemId: serializer.fromJson<String>(json['timelineItemId']),
-      providerId: serializer.fromJson<String>(json['providerId']),
-      reasoningSummary: serializer.fromJson<String>(json['reasoningSummary']),
-      payloadJson: serializer.fromJson<String>(json['payloadJson']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'timelineItemId': serializer.toJson<String>(timelineItemId),
-      'providerId': serializer.toJson<String>(providerId),
-      'reasoningSummary': serializer.toJson<String>(reasoningSummary),
-      'payloadJson': serializer.toJson<String>(payloadJson),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-    };
-  }
-
-  ModelCheckpointRow copyWith({
-    String? timelineItemId,
-    String? providerId,
-    String? reasoningSummary,
-    String? payloadJson,
-    DateTime? createdAt,
-  }) => ModelCheckpointRow(
-    timelineItemId: timelineItemId ?? this.timelineItemId,
-    providerId: providerId ?? this.providerId,
-    reasoningSummary: reasoningSummary ?? this.reasoningSummary,
-    payloadJson: payloadJson ?? this.payloadJson,
-    createdAt: createdAt ?? this.createdAt,
-  );
-  ModelCheckpointRow copyWithCompanion(ModelCheckpointsCompanion data) {
-    return ModelCheckpointRow(
-      timelineItemId: data.timelineItemId.present
-          ? data.timelineItemId.value
-          : this.timelineItemId,
-      providerId: data.providerId.present
-          ? data.providerId.value
-          : this.providerId,
-      reasoningSummary: data.reasoningSummary.present
-          ? data.reasoningSummary.value
-          : this.reasoningSummary,
-      payloadJson: data.payloadJson.present
-          ? data.payloadJson.value
-          : this.payloadJson,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('ModelCheckpointRow(')
-          ..write('timelineItemId: $timelineItemId, ')
-          ..write('providerId: $providerId, ')
-          ..write('reasoningSummary: $reasoningSummary, ')
-          ..write('payloadJson: $payloadJson, ')
-          ..write('createdAt: $createdAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    timelineItemId,
-    providerId,
-    reasoningSummary,
-    payloadJson,
-    createdAt,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is ModelCheckpointRow &&
-          other.timelineItemId == this.timelineItemId &&
-          other.providerId == this.providerId &&
-          other.reasoningSummary == this.reasoningSummary &&
-          other.payloadJson == this.payloadJson &&
-          other.createdAt == this.createdAt);
-}
-
-class ModelCheckpointsCompanion extends UpdateCompanion<ModelCheckpointRow> {
-  final Value<String> timelineItemId;
-  final Value<String> providerId;
-  final Value<String> reasoningSummary;
-  final Value<String> payloadJson;
-  final Value<DateTime> createdAt;
-  final Value<int> rowid;
-  const ModelCheckpointsCompanion({
-    this.timelineItemId = const Value.absent(),
-    this.providerId = const Value.absent(),
-    this.reasoningSummary = const Value.absent(),
-    this.payloadJson = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  ModelCheckpointsCompanion.insert({
-    required String timelineItemId,
-    required String providerId,
-    this.reasoningSummary = const Value.absent(),
-    this.payloadJson = const Value.absent(),
-    required DateTime createdAt,
-    this.rowid = const Value.absent(),
-  }) : timelineItemId = Value(timelineItemId),
-       providerId = Value(providerId),
-       createdAt = Value(createdAt);
-  static Insertable<ModelCheckpointRow> custom({
-    Expression<String>? timelineItemId,
-    Expression<String>? providerId,
-    Expression<String>? reasoningSummary,
-    Expression<String>? payloadJson,
-    Expression<DateTime>? createdAt,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (timelineItemId != null) 'timeline_item_id': timelineItemId,
-      if (providerId != null) 'provider_id': providerId,
-      if (reasoningSummary != null) 'reasoning_summary': reasoningSummary,
-      if (payloadJson != null) 'payload_json': payloadJson,
-      if (createdAt != null) 'created_at': createdAt,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  ModelCheckpointsCompanion copyWith({
-    Value<String>? timelineItemId,
-    Value<String>? providerId,
-    Value<String>? reasoningSummary,
-    Value<String>? payloadJson,
-    Value<DateTime>? createdAt,
-    Value<int>? rowid,
-  }) {
-    return ModelCheckpointsCompanion(
-      timelineItemId: timelineItemId ?? this.timelineItemId,
-      providerId: providerId ?? this.providerId,
-      reasoningSummary: reasoningSummary ?? this.reasoningSummary,
-      payloadJson: payloadJson ?? this.payloadJson,
-      createdAt: createdAt ?? this.createdAt,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (timelineItemId.present) {
-      map['timeline_item_id'] = Variable<String>(timelineItemId.value);
-    }
-    if (providerId.present) {
-      map['provider_id'] = Variable<String>(providerId.value);
-    }
-    if (reasoningSummary.present) {
-      map['reasoning_summary'] = Variable<String>(reasoningSummary.value);
-    }
-    if (payloadJson.present) {
-      map['payload_json'] = Variable<String>(payloadJson.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('ModelCheckpointsCompanion(')
-          ..write('timelineItemId: $timelineItemId, ')
-          ..write('providerId: $providerId, ')
-          ..write('reasoningSummary: $reasoningSummary, ')
-          ..write('payloadJson: $payloadJson, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $CompactionCheckpointsTable extends CompactionCheckpoints
-    with TableInfo<$CompactionCheckpointsTable, CompactionCheckpointRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $CompactionCheckpointsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
-    'sessionId',
-  );
-  @override
-  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
-    'session_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES sessions (id) ON DELETE CASCADE',
-    ),
-  );
-  static const VerificationMeta _compactedThroughSequenceMeta =
-      const VerificationMeta('compactedThroughSequence');
-  @override
-  late final GeneratedColumn<int> compactedThroughSequence =
-      GeneratedColumn<int>(
-        'compacted_through_sequence',
-        aliasedName,
-        false,
-        type: DriftSqlType.int,
-        requiredDuringInsert: true,
-      );
-  static const VerificationMeta _summaryMeta = const VerificationMeta(
-    'summary',
-  );
-  @override
-  late final GeneratedColumn<String> summary = GeneratedColumn<String>(
-    'summary',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _inputTokensBeforeMeta = const VerificationMeta(
-    'inputTokensBefore',
-  );
-  @override
-  late final GeneratedColumn<int> inputTokensBefore = GeneratedColumn<int>(
-    'input_tokens_before',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _inputTokensAfterMeta = const VerificationMeta(
-    'inputTokensAfter',
-  );
-  @override
-  late final GeneratedColumn<int> inputTokensAfter = GeneratedColumn<int>(
-    'input_tokens_after',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    sessionId,
-    compactedThroughSequence,
-    summary,
-    inputTokensBefore,
-    inputTokensAfter,
-    createdAt,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'compaction_checkpoints';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<CompactionCheckpointRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('session_id')) {
-      context.handle(
-        _sessionIdMeta,
-        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_sessionIdMeta);
-    }
-    if (data.containsKey('compacted_through_sequence')) {
-      context.handle(
-        _compactedThroughSequenceMeta,
-        compactedThroughSequence.isAcceptableOrUnknown(
-          data['compacted_through_sequence']!,
-          _compactedThroughSequenceMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_compactedThroughSequenceMeta);
-    }
-    if (data.containsKey('summary')) {
-      context.handle(
-        _summaryMeta,
-        summary.isAcceptableOrUnknown(data['summary']!, _summaryMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_summaryMeta);
-    }
-    if (data.containsKey('input_tokens_before')) {
-      context.handle(
-        _inputTokensBeforeMeta,
-        inputTokensBefore.isAcceptableOrUnknown(
-          data['input_tokens_before']!,
-          _inputTokensBeforeMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_inputTokensBeforeMeta);
-    }
-    if (data.containsKey('input_tokens_after')) {
-      context.handle(
-        _inputTokensAfterMeta,
-        inputTokensAfter.isAcceptableOrUnknown(
-          data['input_tokens_after']!,
-          _inputTokensAfterMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_inputTokensAfterMeta);
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_createdAtMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {sessionId};
-  @override
-  CompactionCheckpointRow map(
-    Map<String, dynamic> data, {
-    String? tablePrefix,
-  }) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return CompactionCheckpointRow(
-      sessionId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}session_id'],
-      )!,
-      compactedThroughSequence: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}compacted_through_sequence'],
-      )!,
-      summary: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}summary'],
-      )!,
-      inputTokensBefore: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}input_tokens_before'],
-      )!,
-      inputTokensAfter: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}input_tokens_after'],
-      )!,
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
-      )!,
-    );
-  }
-
-  @override
-  $CompactionCheckpointsTable createAlias(String alias) {
-    return $CompactionCheckpointsTable(attachedDatabase, alias);
-  }
-}
-
-class CompactionCheckpointRow extends DataClass
-    implements Insertable<CompactionCheckpointRow> {
-  /// Owning session identifier.
-  final String sessionId;
-
-  /// Last timeline sequence represented by the summary.
-  final int compactedThroughSequence;
-
-  /// Compact model context summary.
-  final String summary;
-
-  /// Input token count before compaction.
-  final int inputTokensBefore;
-
-  /// Input token count after compaction.
-  final int inputTokensAfter;
-
-  /// UTC checkpoint creation time.
-  final DateTime createdAt;
-  const CompactionCheckpointRow({
-    required this.sessionId,
-    required this.compactedThroughSequence,
-    required this.summary,
-    required this.inputTokensBefore,
-    required this.inputTokensAfter,
-    required this.createdAt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['session_id'] = Variable<String>(sessionId);
-    map['compacted_through_sequence'] = Variable<int>(compactedThroughSequence);
-    map['summary'] = Variable<String>(summary);
-    map['input_tokens_before'] = Variable<int>(inputTokensBefore);
-    map['input_tokens_after'] = Variable<int>(inputTokensAfter);
-    map['created_at'] = Variable<DateTime>(createdAt);
-    return map;
-  }
-
-  CompactionCheckpointsCompanion toCompanion(bool nullToAbsent) {
-    return CompactionCheckpointsCompanion(
-      sessionId: Value(sessionId),
-      compactedThroughSequence: Value(compactedThroughSequence),
-      summary: Value(summary),
-      inputTokensBefore: Value(inputTokensBefore),
-      inputTokensAfter: Value(inputTokensAfter),
-      createdAt: Value(createdAt),
-    );
-  }
-
-  factory CompactionCheckpointRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return CompactionCheckpointRow(
-      sessionId: serializer.fromJson<String>(json['sessionId']),
-      compactedThroughSequence: serializer.fromJson<int>(
-        json['compactedThroughSequence'],
-      ),
-      summary: serializer.fromJson<String>(json['summary']),
-      inputTokensBefore: serializer.fromJson<int>(json['inputTokensBefore']),
-      inputTokensAfter: serializer.fromJson<int>(json['inputTokensAfter']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'sessionId': serializer.toJson<String>(sessionId),
-      'compactedThroughSequence': serializer.toJson<int>(
-        compactedThroughSequence,
-      ),
-      'summary': serializer.toJson<String>(summary),
-      'inputTokensBefore': serializer.toJson<int>(inputTokensBefore),
-      'inputTokensAfter': serializer.toJson<int>(inputTokensAfter),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-    };
-  }
-
-  CompactionCheckpointRow copyWith({
-    String? sessionId,
-    int? compactedThroughSequence,
-    String? summary,
-    int? inputTokensBefore,
-    int? inputTokensAfter,
-    DateTime? createdAt,
-  }) => CompactionCheckpointRow(
-    sessionId: sessionId ?? this.sessionId,
-    compactedThroughSequence:
-        compactedThroughSequence ?? this.compactedThroughSequence,
-    summary: summary ?? this.summary,
-    inputTokensBefore: inputTokensBefore ?? this.inputTokensBefore,
-    inputTokensAfter: inputTokensAfter ?? this.inputTokensAfter,
-    createdAt: createdAt ?? this.createdAt,
-  );
-  CompactionCheckpointRow copyWithCompanion(
-    CompactionCheckpointsCompanion data,
-  ) {
-    return CompactionCheckpointRow(
-      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
-      compactedThroughSequence: data.compactedThroughSequence.present
-          ? data.compactedThroughSequence.value
-          : this.compactedThroughSequence,
-      summary: data.summary.present ? data.summary.value : this.summary,
-      inputTokensBefore: data.inputTokensBefore.present
-          ? data.inputTokensBefore.value
-          : this.inputTokensBefore,
-      inputTokensAfter: data.inputTokensAfter.present
-          ? data.inputTokensAfter.value
-          : this.inputTokensAfter,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('CompactionCheckpointRow(')
-          ..write('sessionId: $sessionId, ')
-          ..write('compactedThroughSequence: $compactedThroughSequence, ')
-          ..write('summary: $summary, ')
-          ..write('inputTokensBefore: $inputTokensBefore, ')
-          ..write('inputTokensAfter: $inputTokensAfter, ')
-          ..write('createdAt: $createdAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    sessionId,
-    compactedThroughSequence,
-    summary,
-    inputTokensBefore,
-    inputTokensAfter,
-    createdAt,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is CompactionCheckpointRow &&
-          other.sessionId == this.sessionId &&
-          other.compactedThroughSequence == this.compactedThroughSequence &&
-          other.summary == this.summary &&
-          other.inputTokensBefore == this.inputTokensBefore &&
-          other.inputTokensAfter == this.inputTokensAfter &&
-          other.createdAt == this.createdAt);
-}
-
-class CompactionCheckpointsCompanion
-    extends UpdateCompanion<CompactionCheckpointRow> {
-  final Value<String> sessionId;
-  final Value<int> compactedThroughSequence;
-  final Value<String> summary;
-  final Value<int> inputTokensBefore;
-  final Value<int> inputTokensAfter;
-  final Value<DateTime> createdAt;
-  final Value<int> rowid;
-  const CompactionCheckpointsCompanion({
-    this.sessionId = const Value.absent(),
-    this.compactedThroughSequence = const Value.absent(),
-    this.summary = const Value.absent(),
-    this.inputTokensBefore = const Value.absent(),
-    this.inputTokensAfter = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  CompactionCheckpointsCompanion.insert({
-    required String sessionId,
-    required int compactedThroughSequence,
-    required String summary,
-    required int inputTokensBefore,
-    required int inputTokensAfter,
-    required DateTime createdAt,
-    this.rowid = const Value.absent(),
-  }) : sessionId = Value(sessionId),
-       compactedThroughSequence = Value(compactedThroughSequence),
-       summary = Value(summary),
-       inputTokensBefore = Value(inputTokensBefore),
-       inputTokensAfter = Value(inputTokensAfter),
-       createdAt = Value(createdAt);
-  static Insertable<CompactionCheckpointRow> custom({
-    Expression<String>? sessionId,
-    Expression<int>? compactedThroughSequence,
-    Expression<String>? summary,
-    Expression<int>? inputTokensBefore,
-    Expression<int>? inputTokensAfter,
-    Expression<DateTime>? createdAt,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (sessionId != null) 'session_id': sessionId,
-      if (compactedThroughSequence != null)
-        'compacted_through_sequence': compactedThroughSequence,
-      if (summary != null) 'summary': summary,
-      if (inputTokensBefore != null) 'input_tokens_before': inputTokensBefore,
-      if (inputTokensAfter != null) 'input_tokens_after': inputTokensAfter,
-      if (createdAt != null) 'created_at': createdAt,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  CompactionCheckpointsCompanion copyWith({
-    Value<String>? sessionId,
-    Value<int>? compactedThroughSequence,
-    Value<String>? summary,
-    Value<int>? inputTokensBefore,
-    Value<int>? inputTokensAfter,
-    Value<DateTime>? createdAt,
-    Value<int>? rowid,
-  }) {
-    return CompactionCheckpointsCompanion(
-      sessionId: sessionId ?? this.sessionId,
-      compactedThroughSequence:
-          compactedThroughSequence ?? this.compactedThroughSequence,
-      summary: summary ?? this.summary,
-      inputTokensBefore: inputTokensBefore ?? this.inputTokensBefore,
-      inputTokensAfter: inputTokensAfter ?? this.inputTokensAfter,
-      createdAt: createdAt ?? this.createdAt,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (sessionId.present) {
-      map['session_id'] = Variable<String>(sessionId.value);
-    }
-    if (compactedThroughSequence.present) {
-      map['compacted_through_sequence'] = Variable<int>(
-        compactedThroughSequence.value,
-      );
-    }
-    if (summary.present) {
-      map['summary'] = Variable<String>(summary.value);
-    }
-    if (inputTokensBefore.present) {
-      map['input_tokens_before'] = Variable<int>(inputTokensBefore.value);
-    }
-    if (inputTokensAfter.present) {
-      map['input_tokens_after'] = Variable<int>(inputTokensAfter.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('CompactionCheckpointsCompanion(')
-          ..write('sessionId: $sessionId, ')
-          ..write('compactedThroughSequence: $compactedThroughSequence, ')
-          ..write('summary: $summary, ')
-          ..write('inputTokensBefore: $inputTokensBefore, ')
-          ..write('inputTokensAfter: $inputTokensAfter, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
 abstract class _$AtlasDatabase extends GeneratedDatabase {
   _$AtlasDatabase(QueryExecutor e) : super(e);
   $AtlasDatabaseManager get managers => $AtlasDatabaseManager(this);
   late final $SessionsTable sessions = $SessionsTable(this);
   late final $TurnsTable turns = $TurnsTable(this);
-  late final $TimelineItemsTable timelineItems = $TimelineItemsTable(this);
-  late final $ModelCheckpointsTable modelCheckpoints = $ModelCheckpointsTable(
-    this,
-  );
-  late final $CompactionCheckpointsTable compactionCheckpoints =
-      $CompactionCheckpointsTable(this);
+  late final $MessagesTable messages = $MessagesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3122,9 +2599,7 @@ abstract class _$AtlasDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     sessions,
     turns,
-    timelineItems,
-    modelCheckpoints,
-    compactionCheckpoints,
+    messages,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3140,28 +2615,14 @@ abstract class _$AtlasDatabase extends GeneratedDatabase {
         'sessions',
         limitUpdateKind: UpdateKind.delete,
       ),
-      result: [TableUpdate('timeline_items', kind: UpdateKind.delete)],
+      result: [TableUpdate('messages', kind: UpdateKind.delete)],
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
         'turns',
         limitUpdateKind: UpdateKind.delete,
       ),
-      result: [TableUpdate('timeline_items', kind: UpdateKind.delete)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
-        'timeline_items',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('model_checkpoints', kind: UpdateKind.delete)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
-        'sessions',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('compaction_checkpoints', kind: UpdateKind.delete)],
+      result: [TableUpdate('messages', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -3177,6 +2638,12 @@ typedef $$SessionsTableCreateCompanionBuilder =
       Value<int> lastTotalTokens,
       Value<int> lastCacheReadTokens,
       Value<int> lastCacheWriteTokens,
+      Value<int?> compactionSequence,
+      Value<String> compactionSummary,
+      Value<int> compactionKeptRecent,
+      Value<int> compactionTokensBefore,
+      Value<int> compactionTokensAfter,
+      Value<DateTime?> compactionCreatedAt,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -3192,6 +2659,12 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<int> lastTotalTokens,
       Value<int> lastCacheReadTokens,
       Value<int> lastCacheWriteTokens,
+      Value<int?> compactionSequence,
+      Value<String> compactionSummary,
+      Value<int> compactionKeptRecent,
+      Value<int> compactionTokensBefore,
+      Value<int> compactionTokensAfter,
+      Value<DateTime?> compactionCreatedAt,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -3220,44 +2693,19 @@ final class $$SessionsTableReferences
     );
   }
 
-  static MultiTypedResultKey<$TimelineItemsTable, List<TimelineItemRow>>
-  _timelineItemsRefsTable(_$AtlasDatabase db) => MultiTypedResultKey.fromTable(
-    db.timelineItems,
-    aliasName: 'sessions__id__timeline_items__session_id',
+  static MultiTypedResultKey<$MessagesTable, List<MessageRow>>
+  _messagesRefsTable(_$AtlasDatabase db) => MultiTypedResultKey.fromTable(
+    db.messages,
+    aliasName: 'sessions__id__messages__session_id',
   );
 
-  $$TimelineItemsTableProcessedTableManager get timelineItemsRefs {
-    final manager = $$TimelineItemsTableTableManager(
+  $$MessagesTableProcessedTableManager get messagesRefs {
+    final manager = $$MessagesTableTableManager(
       $_db,
-      $_db.timelineItems,
+      $_db.messages,
     ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<String>('id')!));
 
-    final cache = $_typedResult.readTableOrNull(_timelineItemsRefsTable($_db));
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
-
-  static MultiTypedResultKey<
-    $CompactionCheckpointsTable,
-    List<CompactionCheckpointRow>
-  >
-  _compactionCheckpointsRefsTable(_$AtlasDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.compactionCheckpoints,
-        aliasName: 'sessions__id__compaction_checkpoints__session_id',
-      );
-
-  $$CompactionCheckpointsTableProcessedTableManager
-  get compactionCheckpointsRefs {
-    final manager = $$CompactionCheckpointsTableTableManager(
-      $_db,
-      $_db.compactionCheckpoints,
-    ).filter((f) => f.sessionId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _compactionCheckpointsRefsTable($_db),
-    );
+    final cache = $_typedResult.readTableOrNull(_messagesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3318,6 +2766,36 @@ class $$SessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get compactionSequence => $composableBuilder(
+    column: $table.compactionSequence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get compactionSummary => $composableBuilder(
+    column: $table.compactionSummary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get compactionKeptRecent => $composableBuilder(
+    column: $table.compactionKeptRecent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get compactionTokensBefore => $composableBuilder(
+    column: $table.compactionTokensBefore,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get compactionTokensAfter => $composableBuilder(
+    column: $table.compactionTokensAfter,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get compactionCreatedAt => $composableBuilder(
+    column: $table.compactionCreatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -3353,54 +2831,28 @@ class $$SessionsTableFilterComposer
     return f(composer);
   }
 
-  Expression<bool> timelineItemsRefs(
-    Expression<bool> Function($$TimelineItemsTableFilterComposer f) f,
+  Expression<bool> messagesRefs(
+    Expression<bool> Function($$MessagesTableFilterComposer f) f,
   ) {
-    final $$TimelineItemsTableFilterComposer composer = $composerBuilder(
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.timelineItems,
+      referencedTable: $db.messages,
       getReferencedColumn: (t) => t.sessionId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableFilterComposer(
+          }) => $$MessagesTableFilterComposer(
             $db: $db,
-            $table: $db.timelineItems,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
                 $removeJoinBuilderFromRootComposer,
           ),
     );
-    return f(composer);
-  }
-
-  Expression<bool> compactionCheckpointsRefs(
-    Expression<bool> Function($$CompactionCheckpointsTableFilterComposer f) f,
-  ) {
-    final $$CompactionCheckpointsTableFilterComposer composer =
-        $composerBuilder(
-          composer: this,
-          getCurrentColumn: (t) => t.id,
-          referencedTable: $db.compactionCheckpoints,
-          getReferencedColumn: (t) => t.sessionId,
-          builder:
-              (
-                joinBuilder, {
-                $addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer,
-              }) => $$CompactionCheckpointsTableFilterComposer(
-                $db: $db,
-                $table: $db.compactionCheckpoints,
-                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                joinBuilder: joinBuilder,
-                $removeJoinBuilderFromRootComposer:
-                    $removeJoinBuilderFromRootComposer,
-              ),
-        );
     return f(composer);
   }
 }
@@ -3456,6 +2908,36 @@ class $$SessionsTableOrderingComposer
 
   ColumnOrderings<int> get lastCacheWriteTokens => $composableBuilder(
     column: $table.lastCacheWriteTokens,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get compactionSequence => $composableBuilder(
+    column: $table.compactionSequence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get compactionSummary => $composableBuilder(
+    column: $table.compactionSummary,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get compactionKeptRecent => $composableBuilder(
+    column: $table.compactionKeptRecent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get compactionTokensBefore => $composableBuilder(
+    column: $table.compactionTokensBefore,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get compactionTokensAfter => $composableBuilder(
+    column: $table.compactionTokensAfter,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get compactionCreatedAt => $composableBuilder(
+    column: $table.compactionCreatedAt,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3520,6 +3002,36 @@ class $$SessionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get compactionSequence => $composableBuilder(
+    column: $table.compactionSequence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get compactionSummary => $composableBuilder(
+    column: $table.compactionSummary,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get compactionKeptRecent => $composableBuilder(
+    column: $table.compactionKeptRecent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get compactionTokensBefore => $composableBuilder(
+    column: $table.compactionTokensBefore,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get compactionTokensAfter => $composableBuilder(
+    column: $table.compactionTokensAfter,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get compactionCreatedAt => $composableBuilder(
+    column: $table.compactionCreatedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -3551,54 +3063,28 @@ class $$SessionsTableAnnotationComposer
     return f(composer);
   }
 
-  Expression<T> timelineItemsRefs<T extends Object>(
-    Expression<T> Function($$TimelineItemsTableAnnotationComposer a) f,
+  Expression<T> messagesRefs<T extends Object>(
+    Expression<T> Function($$MessagesTableAnnotationComposer a) f,
   ) {
-    final $$TimelineItemsTableAnnotationComposer composer = $composerBuilder(
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.timelineItems,
+      referencedTable: $db.messages,
       getReferencedColumn: (t) => t.sessionId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableAnnotationComposer(
+          }) => $$MessagesTableAnnotationComposer(
             $db: $db,
-            $table: $db.timelineItems,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
                 $removeJoinBuilderFromRootComposer,
           ),
     );
-    return f(composer);
-  }
-
-  Expression<T> compactionCheckpointsRefs<T extends Object>(
-    Expression<T> Function($$CompactionCheckpointsTableAnnotationComposer a) f,
-  ) {
-    final $$CompactionCheckpointsTableAnnotationComposer composer =
-        $composerBuilder(
-          composer: this,
-          getCurrentColumn: (t) => t.id,
-          referencedTable: $db.compactionCheckpoints,
-          getReferencedColumn: (t) => t.sessionId,
-          builder:
-              (
-                joinBuilder, {
-                $addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer,
-              }) => $$CompactionCheckpointsTableAnnotationComposer(
-                $db: $db,
-                $table: $db.compactionCheckpoints,
-                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-                joinBuilder: joinBuilder,
-                $removeJoinBuilderFromRootComposer:
-                    $removeJoinBuilderFromRootComposer,
-              ),
-        );
     return f(composer);
   }
 }
@@ -3616,11 +3102,7 @@ class $$SessionsTableTableManager
           $$SessionsTableUpdateCompanionBuilder,
           (SessionRow, $$SessionsTableReferences),
           SessionRow,
-          PrefetchHooks Function({
-            bool turnsRefs,
-            bool timelineItemsRefs,
-            bool compactionCheckpointsRefs,
-          })
+          PrefetchHooks Function({bool turnsRefs, bool messagesRefs})
         > {
   $$SessionsTableTableManager(_$AtlasDatabase db, $SessionsTable table)
     : super(
@@ -3644,6 +3126,12 @@ class $$SessionsTableTableManager
                 Value<int> lastTotalTokens = const Value.absent(),
                 Value<int> lastCacheReadTokens = const Value.absent(),
                 Value<int> lastCacheWriteTokens = const Value.absent(),
+                Value<int?> compactionSequence = const Value.absent(),
+                Value<String> compactionSummary = const Value.absent(),
+                Value<int> compactionKeptRecent = const Value.absent(),
+                Value<int> compactionTokensBefore = const Value.absent(),
+                Value<int> compactionTokensAfter = const Value.absent(),
+                Value<DateTime?> compactionCreatedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3657,6 +3145,12 @@ class $$SessionsTableTableManager
                 lastTotalTokens: lastTotalTokens,
                 lastCacheReadTokens: lastCacheReadTokens,
                 lastCacheWriteTokens: lastCacheWriteTokens,
+                compactionSequence: compactionSequence,
+                compactionSummary: compactionSummary,
+                compactionKeptRecent: compactionKeptRecent,
+                compactionTokensBefore: compactionTokensBefore,
+                compactionTokensAfter: compactionTokensAfter,
+                compactionCreatedAt: compactionCreatedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -3672,6 +3166,12 @@ class $$SessionsTableTableManager
                 Value<int> lastTotalTokens = const Value.absent(),
                 Value<int> lastCacheReadTokens = const Value.absent(),
                 Value<int> lastCacheWriteTokens = const Value.absent(),
+                Value<int?> compactionSequence = const Value.absent(),
+                Value<String> compactionSummary = const Value.absent(),
+                Value<int> compactionKeptRecent = const Value.absent(),
+                Value<int> compactionTokensBefore = const Value.absent(),
+                Value<int> compactionTokensAfter = const Value.absent(),
+                Value<DateTime?> compactionCreatedAt = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -3685,6 +3185,12 @@ class $$SessionsTableTableManager
                 lastTotalTokens: lastTotalTokens,
                 lastCacheReadTokens: lastCacheReadTokens,
                 lastCacheWriteTokens: lastCacheWriteTokens,
+                compactionSequence: compactionSequence,
+                compactionSummary: compactionSummary,
+                compactionKeptRecent: compactionKeptRecent,
+                compactionTokensBefore: compactionTokensBefore,
+                compactionTokensAfter: compactionTokensAfter,
+                compactionCreatedAt: compactionCreatedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -3697,89 +3203,50 @@ class $$SessionsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({
-                turnsRefs = false,
-                timelineItemsRefs = false,
-                compactionCheckpointsRefs = false,
-              }) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (turnsRefs) db.turns,
-                    if (timelineItemsRefs) db.timelineItems,
-                    if (compactionCheckpointsRefs) db.compactionCheckpoints,
-                  ],
-                  addJoins: null,
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (turnsRefs)
-                        await $_getPrefetchedData<
-                          SessionRow,
-                          $SessionsTable,
-                          TurnRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$SessionsTableReferences
-                              ._turnsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$SessionsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).turnsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.sessionId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                      if (timelineItemsRefs)
-                        await $_getPrefetchedData<
-                          SessionRow,
-                          $SessionsTable,
-                          TimelineItemRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$SessionsTableReferences
-                              ._timelineItemsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$SessionsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).timelineItemsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.sessionId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                      if (compactionCheckpointsRefs)
-                        await $_getPrefetchedData<
-                          SessionRow,
-                          $SessionsTable,
-                          CompactionCheckpointRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$SessionsTableReferences
-                              ._compactionCheckpointsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$SessionsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).compactionCheckpointsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.sessionId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
+          prefetchHooksCallback: ({turnsRefs = false, messagesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (turnsRefs) db.turns,
+                if (messagesRefs) db.messages,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (turnsRefs)
+                    await $_getPrefetchedData<
+                      SessionRow,
+                      $SessionsTable,
+                      TurnRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$SessionsTableReferences
+                          ._turnsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$SessionsTableReferences(db, table, p0).turnsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.sessionId == item.id),
+                      typedResults: items,
+                    ),
+                  if (messagesRefs)
+                    await $_getPrefetchedData<
+                      SessionRow,
+                      $SessionsTable,
+                      MessageRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$SessionsTableReferences
+                          ._messagesRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$SessionsTableReferences(db, table, p0).messagesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.sessionId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -3796,11 +3263,7 @@ typedef $$SessionsTableProcessedTableManager =
       $$SessionsTableUpdateCompanionBuilder,
       (SessionRow, $$SessionsTableReferences),
       SessionRow,
-      PrefetchHooks Function({
-        bool turnsRefs,
-        bool timelineItemsRefs,
-        bool compactionCheckpointsRefs,
-      })
+      PrefetchHooks Function({bool turnsRefs, bool messagesRefs})
     >;
 typedef $$TurnsTableCreateCompanionBuilder =
     TurnsCompanion Function({
@@ -3864,19 +3327,19 @@ final class $$TurnsTableReferences
     );
   }
 
-  static MultiTypedResultKey<$TimelineItemsTable, List<TimelineItemRow>>
-  _timelineItemsRefsTable(_$AtlasDatabase db) => MultiTypedResultKey.fromTable(
-    db.timelineItems,
-    aliasName: 'turns__id__timeline_items__turn_id',
+  static MultiTypedResultKey<$MessagesTable, List<MessageRow>>
+  _messagesRefsTable(_$AtlasDatabase db) => MultiTypedResultKey.fromTable(
+    db.messages,
+    aliasName: 'turns__id__messages__turn_id',
   );
 
-  $$TimelineItemsTableProcessedTableManager get timelineItemsRefs {
-    final manager = $$TimelineItemsTableTableManager(
+  $$MessagesTableProcessedTableManager get messagesRefs {
+    final manager = $$MessagesTableTableManager(
       $_db,
-      $_db.timelineItems,
+      $_db.messages,
     ).filter((f) => f.turnId.id.sqlEquals($_itemColumn<String>('id')!));
 
-    final cache = $_typedResult.readTableOrNull(_timelineItemsRefsTable($_db));
+    final cache = $_typedResult.readTableOrNull(_messagesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -3990,22 +3453,22 @@ class $$TurnsTableFilterComposer
     return composer;
   }
 
-  Expression<bool> timelineItemsRefs(
-    Expression<bool> Function($$TimelineItemsTableFilterComposer f) f,
+  Expression<bool> messagesRefs(
+    Expression<bool> Function($$MessagesTableFilterComposer f) f,
   ) {
-    final $$TimelineItemsTableFilterComposer composer = $composerBuilder(
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.timelineItems,
+      referencedTable: $db.messages,
       getReferencedColumn: (t) => t.turnId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableFilterComposer(
+          }) => $$MessagesTableFilterComposer(
             $db: $db,
-            $table: $db.timelineItems,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4223,22 +3686,22 @@ class $$TurnsTableAnnotationComposer
     return composer;
   }
 
-  Expression<T> timelineItemsRefs<T extends Object>(
-    Expression<T> Function($$TimelineItemsTableAnnotationComposer a) f,
+  Expression<T> messagesRefs<T extends Object>(
+    Expression<T> Function($$MessagesTableAnnotationComposer a) f,
   ) {
-    final $$TimelineItemsTableAnnotationComposer composer = $composerBuilder(
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.timelineItems,
+      referencedTable: $db.messages,
       getReferencedColumn: (t) => t.turnId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableAnnotationComposer(
+          }) => $$MessagesTableAnnotationComposer(
             $db: $db,
-            $table: $db.timelineItems,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4262,7 +3725,7 @@ class $$TurnsTableTableManager
           $$TurnsTableUpdateCompanionBuilder,
           (TurnRow, $$TurnsTableReferences),
           TurnRow,
-          PrefetchHooks Function({bool sessionId, bool timelineItemsRefs})
+          PrefetchHooks Function({bool sessionId, bool messagesRefs})
         > {
   $$TurnsTableTableManager(_$AtlasDatabase db, $TurnsTable table)
     : super(
@@ -4357,72 +3820,59 @@ class $$TurnsTableTableManager
                     (e.readTable(table), $$TurnsTableReferences(db, table, e)),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({sessionId = false, timelineItemsRefs = false}) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (timelineItemsRefs) db.timelineItems,
-                  ],
-                  addJoins:
-                      <
-                        T extends TableManagerState<
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic
-                        >
-                      >(state) {
-                        if (sessionId) {
-                          state =
-                              state.withJoin(
-                                    currentTable: table,
-                                    currentColumn: table.sessionId,
-                                    referencedTable: $$TurnsTableReferences
-                                        ._sessionIdTable(db),
-                                    referencedColumn: $$TurnsTableReferences
-                                        ._sessionIdTable(db)
-                                        .id,
-                                  )
-                                  as T;
-                        }
+          prefetchHooksCallback: ({sessionId = false, messagesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (messagesRefs) db.messages],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (sessionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sessionId,
+                                referencedTable: $$TurnsTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$TurnsTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
 
-                        return state;
-                      },
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (timelineItemsRefs)
-                        await $_getPrefetchedData<
-                          TurnRow,
-                          $TurnsTable,
-                          TimelineItemRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$TurnsTableReferences
-                              ._timelineItemsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$TurnsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).timelineItemsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.turnId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
+                    return state;
                   },
-                );
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (messagesRefs)
+                    await $_getPrefetchedData<TurnRow, $TurnsTable, MessageRow>(
+                      currentTable: table,
+                      referencedTable: $$TurnsTableReferences
+                          ._messagesRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$TurnsTableReferences(db, table, p0).messagesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.turnId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -4439,10 +3889,10 @@ typedef $$TurnsTableProcessedTableManager =
       $$TurnsTableUpdateCompanionBuilder,
       (TurnRow, $$TurnsTableReferences),
       TurnRow,
-      PrefetchHooks Function({bool sessionId, bool timelineItemsRefs})
+      PrefetchHooks Function({bool sessionId, bool messagesRefs})
     >;
-typedef $$TimelineItemsTableCreateCompanionBuilder =
-    TimelineItemsCompanion Function({
+typedef $$MessagesTableCreateCompanionBuilder =
+    MessagesCompanion Function({
       required String id,
       required String sessionId,
       required String turnId,
@@ -4453,8 +3903,8 @@ typedef $$TimelineItemsTableCreateCompanionBuilder =
       required DateTime occurredAt,
       Value<int> rowid,
     });
-typedef $$TimelineItemsTableUpdateCompanionBuilder =
-    TimelineItemsCompanion Function({
+typedef $$MessagesTableUpdateCompanionBuilder =
+    MessagesCompanion Function({
       Value<String> id,
       Value<String> sessionId,
       Value<String> turnId,
@@ -4466,17 +3916,12 @@ typedef $$TimelineItemsTableUpdateCompanionBuilder =
       Value<int> rowid,
     });
 
-final class $$TimelineItemsTableReferences
-    extends
-        BaseReferences<_$AtlasDatabase, $TimelineItemsTable, TimelineItemRow> {
-  $$TimelineItemsTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
+final class $$MessagesTableReferences
+    extends BaseReferences<_$AtlasDatabase, $MessagesTable, MessageRow> {
+  $$MessagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $SessionsTable _sessionIdTable(_$AtlasDatabase db) =>
-      db.sessions.createAlias('timeline_items__session_id__sessions__id');
+      db.sessions.createAlias('messages__session_id__sessions__id');
 
   $$SessionsTableProcessedTableManager get sessionId {
     final $_column = $_itemColumn<String>('session_id')!;
@@ -4493,7 +3938,7 @@ final class $$TimelineItemsTableReferences
   }
 
   static $TurnsTable _turnIdTable(_$AtlasDatabase db) =>
-      db.turns.createAlias('timeline_items__turn_id__turns__id');
+      db.turns.createAlias('messages__turn_id__turns__id');
 
   $$TurnsTableProcessedTableManager get turnId {
     final $_column = $_itemColumn<String>('turn_id')!;
@@ -4508,32 +3953,11 @@ final class $$TimelineItemsTableReferences
       manager.$state.copyWith(prefetchedData: [item]),
     );
   }
-
-  static MultiTypedResultKey<$ModelCheckpointsTable, List<ModelCheckpointRow>>
-  _modelCheckpointsRefsTable(_$AtlasDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.modelCheckpoints,
-        aliasName: 'timeline_items__id__model_checkpoints__timeline_item_id',
-      );
-
-  $$ModelCheckpointsTableProcessedTableManager get modelCheckpointsRefs {
-    final manager = $$ModelCheckpointsTableTableManager(
-      $_db,
-      $_db.modelCheckpoints,
-    ).filter((f) => f.timelineItemId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _modelCheckpointsRefsTable($_db),
-    );
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
 }
 
-class $$TimelineItemsTableFilterComposer
-    extends Composer<_$AtlasDatabase, $TimelineItemsTable> {
-  $$TimelineItemsTableFilterComposer({
+class $$MessagesTableFilterComposer
+    extends Composer<_$AtlasDatabase, $MessagesTable> {
+  $$MessagesTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -4615,36 +4039,11 @@ class $$TimelineItemsTableFilterComposer
     );
     return composer;
   }
-
-  Expression<bool> modelCheckpointsRefs(
-    Expression<bool> Function($$ModelCheckpointsTableFilterComposer f) f,
-  ) {
-    final $$ModelCheckpointsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.modelCheckpoints,
-      getReferencedColumn: (t) => t.timelineItemId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$ModelCheckpointsTableFilterComposer(
-            $db: $db,
-            $table: $db.modelCheckpoints,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
 }
 
-class $$TimelineItemsTableOrderingComposer
-    extends Composer<_$AtlasDatabase, $TimelineItemsTable> {
-  $$TimelineItemsTableOrderingComposer({
+class $$MessagesTableOrderingComposer
+    extends Composer<_$AtlasDatabase, $MessagesTable> {
+  $$MessagesTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -4728,9 +4127,9 @@ class $$TimelineItemsTableOrderingComposer
   }
 }
 
-class $$TimelineItemsTableAnnotationComposer
-    extends Composer<_$AtlasDatabase, $TimelineItemsTable> {
-  $$TimelineItemsTableAnnotationComposer({
+class $$MessagesTableAnnotationComposer
+    extends Composer<_$AtlasDatabase, $MessagesTable> {
+  $$MessagesTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -4806,65 +4205,34 @@ class $$TimelineItemsTableAnnotationComposer
     );
     return composer;
   }
-
-  Expression<T> modelCheckpointsRefs<T extends Object>(
-    Expression<T> Function($$ModelCheckpointsTableAnnotationComposer a) f,
-  ) {
-    final $$ModelCheckpointsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.modelCheckpoints,
-      getReferencedColumn: (t) => t.timelineItemId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$ModelCheckpointsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.modelCheckpoints,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
 }
 
-class $$TimelineItemsTableTableManager
+class $$MessagesTableTableManager
     extends
         RootTableManager<
           _$AtlasDatabase,
-          $TimelineItemsTable,
-          TimelineItemRow,
-          $$TimelineItemsTableFilterComposer,
-          $$TimelineItemsTableOrderingComposer,
-          $$TimelineItemsTableAnnotationComposer,
-          $$TimelineItemsTableCreateCompanionBuilder,
-          $$TimelineItemsTableUpdateCompanionBuilder,
-          (TimelineItemRow, $$TimelineItemsTableReferences),
-          TimelineItemRow,
-          PrefetchHooks Function({
-            bool sessionId,
-            bool turnId,
-            bool modelCheckpointsRefs,
-          })
+          $MessagesTable,
+          MessageRow,
+          $$MessagesTableFilterComposer,
+          $$MessagesTableOrderingComposer,
+          $$MessagesTableAnnotationComposer,
+          $$MessagesTableCreateCompanionBuilder,
+          $$MessagesTableUpdateCompanionBuilder,
+          (MessageRow, $$MessagesTableReferences),
+          MessageRow,
+          PrefetchHooks Function({bool sessionId, bool turnId})
         > {
-  $$TimelineItemsTableTableManager(
-    _$AtlasDatabase db,
-    $TimelineItemsTable table,
-  ) : super(
+  $$MessagesTableTableManager(_$AtlasDatabase db, $MessagesTable table)
+    : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$TimelineItemsTableFilterComposer($db: db, $table: table),
+              $$MessagesTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$TimelineItemsTableOrderingComposer($db: db, $table: table),
+              $$MessagesTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$TimelineItemsTableAnnotationComposer($db: db, $table: table),
+              $$MessagesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
@@ -4876,7 +4244,7 @@ class $$TimelineItemsTableTableManager
                 Value<String> payloadJson = const Value.absent(),
                 Value<DateTime> occurredAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => TimelineItemsCompanion(
+              }) => MessagesCompanion(
                 id: id,
                 sessionId: sessionId,
                 turnId: turnId,
@@ -4898,7 +4266,7 @@ class $$TimelineItemsTableTableManager
                 required String payloadJson,
                 required DateTime occurredAt,
                 Value<int> rowid = const Value.absent(),
-              }) => TimelineItemsCompanion.insert(
+              }) => MessagesCompanion.insert(
                 id: id,
                 sessionId: sessionId,
                 turnId: turnId,
@@ -4913,760 +4281,11 @@ class $$TimelineItemsTableTableManager
               .map(
                 (e) => (
                   e.readTable(table),
-                  $$TimelineItemsTableReferences(db, table, e),
+                  $$MessagesTableReferences(db, table, e),
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({
-                sessionId = false,
-                turnId = false,
-                modelCheckpointsRefs = false,
-              }) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (modelCheckpointsRefs) db.modelCheckpoints,
-                  ],
-                  addJoins:
-                      <
-                        T extends TableManagerState<
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic,
-                          dynamic
-                        >
-                      >(state) {
-                        if (sessionId) {
-                          state =
-                              state.withJoin(
-                                    currentTable: table,
-                                    currentColumn: table.sessionId,
-                                    referencedTable:
-                                        $$TimelineItemsTableReferences
-                                            ._sessionIdTable(db),
-                                    referencedColumn:
-                                        $$TimelineItemsTableReferences
-                                            ._sessionIdTable(db)
-                                            .id,
-                                  )
-                                  as T;
-                        }
-                        if (turnId) {
-                          state =
-                              state.withJoin(
-                                    currentTable: table,
-                                    currentColumn: table.turnId,
-                                    referencedTable:
-                                        $$TimelineItemsTableReferences
-                                            ._turnIdTable(db),
-                                    referencedColumn:
-                                        $$TimelineItemsTableReferences
-                                            ._turnIdTable(db)
-                                            .id,
-                                  )
-                                  as T;
-                        }
-
-                        return state;
-                      },
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (modelCheckpointsRefs)
-                        await $_getPrefetchedData<
-                          TimelineItemRow,
-                          $TimelineItemsTable,
-                          ModelCheckpointRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$TimelineItemsTableReferences
-                              ._modelCheckpointsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$TimelineItemsTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).modelCheckpointsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.timelineItemId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
-              },
-        ),
-      );
-}
-
-typedef $$TimelineItemsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AtlasDatabase,
-      $TimelineItemsTable,
-      TimelineItemRow,
-      $$TimelineItemsTableFilterComposer,
-      $$TimelineItemsTableOrderingComposer,
-      $$TimelineItemsTableAnnotationComposer,
-      $$TimelineItemsTableCreateCompanionBuilder,
-      $$TimelineItemsTableUpdateCompanionBuilder,
-      (TimelineItemRow, $$TimelineItemsTableReferences),
-      TimelineItemRow,
-      PrefetchHooks Function({
-        bool sessionId,
-        bool turnId,
-        bool modelCheckpointsRefs,
-      })
-    >;
-typedef $$ModelCheckpointsTableCreateCompanionBuilder =
-    ModelCheckpointsCompanion Function({
-      required String timelineItemId,
-      required String providerId,
-      Value<String> reasoningSummary,
-      Value<String> payloadJson,
-      required DateTime createdAt,
-      Value<int> rowid,
-    });
-typedef $$ModelCheckpointsTableUpdateCompanionBuilder =
-    ModelCheckpointsCompanion Function({
-      Value<String> timelineItemId,
-      Value<String> providerId,
-      Value<String> reasoningSummary,
-      Value<String> payloadJson,
-      Value<DateTime> createdAt,
-      Value<int> rowid,
-    });
-
-final class $$ModelCheckpointsTableReferences
-    extends
-        BaseReferences<
-          _$AtlasDatabase,
-          $ModelCheckpointsTable,
-          ModelCheckpointRow
-        > {
-  $$ModelCheckpointsTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
-
-  static $TimelineItemsTable _timelineItemIdTable(_$AtlasDatabase db) => db
-      .timelineItems
-      .createAlias('model_checkpoints__timeline_item_id__timeline_items__id');
-
-  $$TimelineItemsTableProcessedTableManager get timelineItemId {
-    final $_column = $_itemColumn<String>('timeline_item_id')!;
-
-    final manager = $$TimelineItemsTableTableManager(
-      $_db,
-      $_db.timelineItems,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_timelineItemIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-}
-
-class $$ModelCheckpointsTableFilterComposer
-    extends Composer<_$AtlasDatabase, $ModelCheckpointsTable> {
-  $$ModelCheckpointsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get providerId => $composableBuilder(
-    column: $table.providerId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get reasoningSummary => $composableBuilder(
-    column: $table.reasoningSummary,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get payloadJson => $composableBuilder(
-    column: $table.payloadJson,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  $$TimelineItemsTableFilterComposer get timelineItemId {
-    final $$TimelineItemsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.timelineItemId,
-      referencedTable: $db.timelineItems,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableFilterComposer(
-            $db: $db,
-            $table: $db.timelineItems,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$ModelCheckpointsTableOrderingComposer
-    extends Composer<_$AtlasDatabase, $ModelCheckpointsTable> {
-  $$ModelCheckpointsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get providerId => $composableBuilder(
-    column: $table.providerId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get reasoningSummary => $composableBuilder(
-    column: $table.reasoningSummary,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get payloadJson => $composableBuilder(
-    column: $table.payloadJson,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  $$TimelineItemsTableOrderingComposer get timelineItemId {
-    final $$TimelineItemsTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.timelineItemId,
-      referencedTable: $db.timelineItems,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableOrderingComposer(
-            $db: $db,
-            $table: $db.timelineItems,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$ModelCheckpointsTableAnnotationComposer
-    extends Composer<_$AtlasDatabase, $ModelCheckpointsTable> {
-  $$ModelCheckpointsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get providerId => $composableBuilder(
-    column: $table.providerId,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get reasoningSummary => $composableBuilder(
-    column: $table.reasoningSummary,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get payloadJson => $composableBuilder(
-    column: $table.payloadJson,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  $$TimelineItemsTableAnnotationComposer get timelineItemId {
-    final $$TimelineItemsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.timelineItemId,
-      referencedTable: $db.timelineItems,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$TimelineItemsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.timelineItems,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$ModelCheckpointsTableTableManager
-    extends
-        RootTableManager<
-          _$AtlasDatabase,
-          $ModelCheckpointsTable,
-          ModelCheckpointRow,
-          $$ModelCheckpointsTableFilterComposer,
-          $$ModelCheckpointsTableOrderingComposer,
-          $$ModelCheckpointsTableAnnotationComposer,
-          $$ModelCheckpointsTableCreateCompanionBuilder,
-          $$ModelCheckpointsTableUpdateCompanionBuilder,
-          (ModelCheckpointRow, $$ModelCheckpointsTableReferences),
-          ModelCheckpointRow,
-          PrefetchHooks Function({bool timelineItemId})
-        > {
-  $$ModelCheckpointsTableTableManager(
-    _$AtlasDatabase db,
-    $ModelCheckpointsTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$ModelCheckpointsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$ModelCheckpointsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$ModelCheckpointsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<String> timelineItemId = const Value.absent(),
-                Value<String> providerId = const Value.absent(),
-                Value<String> reasoningSummary = const Value.absent(),
-                Value<String> payloadJson = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => ModelCheckpointsCompanion(
-                timelineItemId: timelineItemId,
-                providerId: providerId,
-                reasoningSummary: reasoningSummary,
-                payloadJson: payloadJson,
-                createdAt: createdAt,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required String timelineItemId,
-                required String providerId,
-                Value<String> reasoningSummary = const Value.absent(),
-                Value<String> payloadJson = const Value.absent(),
-                required DateTime createdAt,
-                Value<int> rowid = const Value.absent(),
-              }) => ModelCheckpointsCompanion.insert(
-                timelineItemId: timelineItemId,
-                providerId: providerId,
-                reasoningSummary: reasoningSummary,
-                payloadJson: payloadJson,
-                createdAt: createdAt,
-                rowid: rowid,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable(table),
-                  $$ModelCheckpointsTableReferences(db, table, e),
-                ),
-              )
-              .toList(),
-          prefetchHooksCallback: ({timelineItemId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (timelineItemId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.timelineItemId,
-                                referencedTable:
-                                    $$ModelCheckpointsTableReferences
-                                        ._timelineItemIdTable(db),
-                                referencedColumn:
-                                    $$ModelCheckpointsTableReferences
-                                        ._timelineItemIdTable(db)
-                                        .id,
-                              )
-                              as T;
-                    }
-
-                    return state;
-                  },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
-        ),
-      );
-}
-
-typedef $$ModelCheckpointsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AtlasDatabase,
-      $ModelCheckpointsTable,
-      ModelCheckpointRow,
-      $$ModelCheckpointsTableFilterComposer,
-      $$ModelCheckpointsTableOrderingComposer,
-      $$ModelCheckpointsTableAnnotationComposer,
-      $$ModelCheckpointsTableCreateCompanionBuilder,
-      $$ModelCheckpointsTableUpdateCompanionBuilder,
-      (ModelCheckpointRow, $$ModelCheckpointsTableReferences),
-      ModelCheckpointRow,
-      PrefetchHooks Function({bool timelineItemId})
-    >;
-typedef $$CompactionCheckpointsTableCreateCompanionBuilder =
-    CompactionCheckpointsCompanion Function({
-      required String sessionId,
-      required int compactedThroughSequence,
-      required String summary,
-      required int inputTokensBefore,
-      required int inputTokensAfter,
-      required DateTime createdAt,
-      Value<int> rowid,
-    });
-typedef $$CompactionCheckpointsTableUpdateCompanionBuilder =
-    CompactionCheckpointsCompanion Function({
-      Value<String> sessionId,
-      Value<int> compactedThroughSequence,
-      Value<String> summary,
-      Value<int> inputTokensBefore,
-      Value<int> inputTokensAfter,
-      Value<DateTime> createdAt,
-      Value<int> rowid,
-    });
-
-final class $$CompactionCheckpointsTableReferences
-    extends
-        BaseReferences<
-          _$AtlasDatabase,
-          $CompactionCheckpointsTable,
-          CompactionCheckpointRow
-        > {
-  $$CompactionCheckpointsTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
-
-  static $SessionsTable _sessionIdTable(_$AtlasDatabase db) => db.sessions
-      .createAlias('compaction_checkpoints__session_id__sessions__id');
-
-  $$SessionsTableProcessedTableManager get sessionId {
-    final $_column = $_itemColumn<String>('session_id')!;
-
-    final manager = $$SessionsTableTableManager(
-      $_db,
-      $_db.sessions,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_sessionIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-}
-
-class $$CompactionCheckpointsTableFilterComposer
-    extends Composer<_$AtlasDatabase, $CompactionCheckpointsTable> {
-  $$CompactionCheckpointsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get compactedThroughSequence => $composableBuilder(
-    column: $table.compactedThroughSequence,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get summary => $composableBuilder(
-    column: $table.summary,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get inputTokensBefore => $composableBuilder(
-    column: $table.inputTokensBefore,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get inputTokensAfter => $composableBuilder(
-    column: $table.inputTokensAfter,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  $$SessionsTableFilterComposer get sessionId {
-    final $$SessionsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.sessionId,
-      referencedTable: $db.sessions,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$SessionsTableFilterComposer(
-            $db: $db,
-            $table: $db.sessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$CompactionCheckpointsTableOrderingComposer
-    extends Composer<_$AtlasDatabase, $CompactionCheckpointsTable> {
-  $$CompactionCheckpointsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get compactedThroughSequence => $composableBuilder(
-    column: $table.compactedThroughSequence,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get summary => $composableBuilder(
-    column: $table.summary,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get inputTokensBefore => $composableBuilder(
-    column: $table.inputTokensBefore,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get inputTokensAfter => $composableBuilder(
-    column: $table.inputTokensAfter,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  $$SessionsTableOrderingComposer get sessionId {
-    final $$SessionsTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.sessionId,
-      referencedTable: $db.sessions,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$SessionsTableOrderingComposer(
-            $db: $db,
-            $table: $db.sessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$CompactionCheckpointsTableAnnotationComposer
-    extends Composer<_$AtlasDatabase, $CompactionCheckpointsTable> {
-  $$CompactionCheckpointsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get compactedThroughSequence => $composableBuilder(
-    column: $table.compactedThroughSequence,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get summary =>
-      $composableBuilder(column: $table.summary, builder: (column) => column);
-
-  GeneratedColumn<int> get inputTokensBefore => $composableBuilder(
-    column: $table.inputTokensBefore,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get inputTokensAfter => $composableBuilder(
-    column: $table.inputTokensAfter,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  $$SessionsTableAnnotationComposer get sessionId {
-    final $$SessionsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.sessionId,
-      referencedTable: $db.sessions,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$SessionsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.sessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-}
-
-class $$CompactionCheckpointsTableTableManager
-    extends
-        RootTableManager<
-          _$AtlasDatabase,
-          $CompactionCheckpointsTable,
-          CompactionCheckpointRow,
-          $$CompactionCheckpointsTableFilterComposer,
-          $$CompactionCheckpointsTableOrderingComposer,
-          $$CompactionCheckpointsTableAnnotationComposer,
-          $$CompactionCheckpointsTableCreateCompanionBuilder,
-          $$CompactionCheckpointsTableUpdateCompanionBuilder,
-          (CompactionCheckpointRow, $$CompactionCheckpointsTableReferences),
-          CompactionCheckpointRow,
-          PrefetchHooks Function({bool sessionId})
-        > {
-  $$CompactionCheckpointsTableTableManager(
-    _$AtlasDatabase db,
-    $CompactionCheckpointsTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$CompactionCheckpointsTableFilterComposer(
-                $db: db,
-                $table: table,
-              ),
-          createOrderingComposer: () =>
-              $$CompactionCheckpointsTableOrderingComposer(
-                $db: db,
-                $table: table,
-              ),
-          createComputedFieldComposer: () =>
-              $$CompactionCheckpointsTableAnnotationComposer(
-                $db: db,
-                $table: table,
-              ),
-          updateCompanionCallback:
-              ({
-                Value<String> sessionId = const Value.absent(),
-                Value<int> compactedThroughSequence = const Value.absent(),
-                Value<String> summary = const Value.absent(),
-                Value<int> inputTokensBefore = const Value.absent(),
-                Value<int> inputTokensAfter = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => CompactionCheckpointsCompanion(
-                sessionId: sessionId,
-                compactedThroughSequence: compactedThroughSequence,
-                summary: summary,
-                inputTokensBefore: inputTokensBefore,
-                inputTokensAfter: inputTokensAfter,
-                createdAt: createdAt,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required String sessionId,
-                required int compactedThroughSequence,
-                required String summary,
-                required int inputTokensBefore,
-                required int inputTokensAfter,
-                required DateTime createdAt,
-                Value<int> rowid = const Value.absent(),
-              }) => CompactionCheckpointsCompanion.insert(
-                sessionId: sessionId,
-                compactedThroughSequence: compactedThroughSequence,
-                summary: summary,
-                inputTokensBefore: inputTokensBefore,
-                inputTokensAfter: inputTokensAfter,
-                createdAt: createdAt,
-                rowid: rowid,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable(table),
-                  $$CompactionCheckpointsTableReferences(db, table, e),
-                ),
-              )
-              .toList(),
-          prefetchHooksCallback: ({sessionId = false}) {
+          prefetchHooksCallback: ({sessionId = false, turnId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -5691,13 +4310,24 @@ class $$CompactionCheckpointsTableTableManager
                           state.withJoin(
                                 currentTable: table,
                                 currentColumn: table.sessionId,
-                                referencedTable:
-                                    $$CompactionCheckpointsTableReferences
-                                        ._sessionIdTable(db),
-                                referencedColumn:
-                                    $$CompactionCheckpointsTableReferences
-                                        ._sessionIdTable(db)
-                                        .id,
+                                referencedTable: $$MessagesTableReferences
+                                    ._sessionIdTable(db),
+                                referencedColumn: $$MessagesTableReferences
+                                    ._sessionIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (turnId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.turnId,
+                                referencedTable: $$MessagesTableReferences
+                                    ._turnIdTable(db),
+                                referencedColumn: $$MessagesTableReferences
+                                    ._turnIdTable(db)
+                                    .id,
                               )
                               as T;
                     }
@@ -5713,19 +4343,19 @@ class $$CompactionCheckpointsTableTableManager
       );
 }
 
-typedef $$CompactionCheckpointsTableProcessedTableManager =
+typedef $$MessagesTableProcessedTableManager =
     ProcessedTableManager<
       _$AtlasDatabase,
-      $CompactionCheckpointsTable,
-      CompactionCheckpointRow,
-      $$CompactionCheckpointsTableFilterComposer,
-      $$CompactionCheckpointsTableOrderingComposer,
-      $$CompactionCheckpointsTableAnnotationComposer,
-      $$CompactionCheckpointsTableCreateCompanionBuilder,
-      $$CompactionCheckpointsTableUpdateCompanionBuilder,
-      (CompactionCheckpointRow, $$CompactionCheckpointsTableReferences),
-      CompactionCheckpointRow,
-      PrefetchHooks Function({bool sessionId})
+      $MessagesTable,
+      MessageRow,
+      $$MessagesTableFilterComposer,
+      $$MessagesTableOrderingComposer,
+      $$MessagesTableAnnotationComposer,
+      $$MessagesTableCreateCompanionBuilder,
+      $$MessagesTableUpdateCompanionBuilder,
+      (MessageRow, $$MessagesTableReferences),
+      MessageRow,
+      PrefetchHooks Function({bool sessionId, bool turnId})
     >;
 
 class $AtlasDatabaseManager {
@@ -5735,10 +4365,6 @@ class $AtlasDatabaseManager {
       $$SessionsTableTableManager(_db, _db.sessions);
   $$TurnsTableTableManager get turns =>
       $$TurnsTableTableManager(_db, _db.turns);
-  $$TimelineItemsTableTableManager get timelineItems =>
-      $$TimelineItemsTableTableManager(_db, _db.timelineItems);
-  $$ModelCheckpointsTableTableManager get modelCheckpoints =>
-      $$ModelCheckpointsTableTableManager(_db, _db.modelCheckpoints);
-  $$CompactionCheckpointsTableTableManager get compactionCheckpoints =>
-      $$CompactionCheckpointsTableTableManager(_db, _db.compactionCheckpoints);
+  $$MessagesTableTableManager get messages =>
+      $$MessagesTableTableManager(_db, _db.messages);
 }

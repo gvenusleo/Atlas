@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import '../domain/content.dart';
 import '../domain/events.dart';
@@ -33,6 +34,8 @@ final class AgentRuntime {
     this.maxSteps = 20,
     this.maxOutputTokens = 0,
     this.temperature,
+    this.compactionThreshold = 0.8,
+    this.keptRecentTurns = 5,
   }) : _now = now ?? DateTime.now;
 
   /// The session persistence adapter.
@@ -66,6 +69,12 @@ final class AgentRuntime {
   /// Optional model temperature.
   final double? temperature;
 
+  /// Context window fraction that triggers compaction after a turn.
+  final double compactionThreshold;
+
+  /// The number of most recent turns kept verbatim during compaction.
+  final int keptRecentTurns;
+
   final DateTime Function() _now;
   final Map<SessionId, Future<void>> _sessionTails = {};
   final Map<String, SessionContext> _sessionContexts = {};
@@ -80,6 +89,35 @@ final class AgentRuntime {
     final release = await _acquireSessionLock(sessionId);
     try {
       yield* _runTurn(request);
+    } finally {
+      release();
+    }
+  }
+
+  /// Manually compacts [sessionId] without the threshold check.
+  ///
+  /// Uses the model and turn of the latest recorded turn so the emitted
+  /// events stay attached to the session's most recent execution.
+  Stream<AgentEvent> compact(SessionId sessionId) async* {
+    final release = await _acquireSessionLock(sessionId);
+    try {
+      final snapshot = await store.loadSession(sessionId);
+      final turns = snapshot.turns;
+      if (turns.isEmpty) {
+        return;
+      }
+      final lastTurn = turns.last;
+      var eventSequence = 0;
+      yield* _compactContext(
+        session: snapshot.session,
+        timeline: snapshot.timeline,
+        context: _contextOrNull(snapshot.session.workingDirectory),
+        model: lastTurn.model ?? defaultModel,
+        turnId: lastTurn.id,
+        latestUsage: lastTurn.usage,
+        enforceThreshold: false,
+        nextSequence: () => eventSequence++,
+      );
     } finally {
       release();
     }
@@ -267,6 +305,15 @@ final class AgentRuntime {
             occurredAt: _now().toUtc(),
             outcome: outcome,
           );
+          yield* _compactContext(
+            session: session,
+            timeline: timeline,
+            context: context,
+            model: model,
+            turnId: turnId,
+            latestUsage: latestUsage,
+            nextSequence: () => eventSequence++,
+          );
           return;
         }
 
@@ -328,6 +375,15 @@ final class AgentRuntime {
         ),
       );
       yield _finishedEvent(outcome, session.id, turnId, eventSequence++);
+      yield* _compactContext(
+        session: session,
+        timeline: timeline,
+        context: _contextOrNull(session.workingDirectory),
+        model: model,
+        turnId: turnId,
+        latestUsage: latestUsage,
+        nextSequence: () => eventSequence++,
+      );
     } catch (error, stackTrace) {
       final outcome = TurnOutcome(
         sessionId: session.id,
@@ -353,6 +409,15 @@ final class AgentRuntime {
         ),
       );
       yield _finishedEvent(outcome, session.id, turnId, eventSequence++);
+      yield* _compactContext(
+        session: session,
+        timeline: timeline,
+        context: _contextOrNull(session.workingDirectory),
+        model: model,
+        turnId: turnId,
+        latestUsage: latestUsage,
+        nextSequence: () => eventSequence++,
+      );
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
@@ -408,15 +473,217 @@ final class AgentRuntime {
 
   String _systemPrompt(Session session, SessionContext context) {
     final prompt = systemPromptBuilder(context);
-    final summary = session.compaction?.summary.trim();
+    final checkpoint = session.compaction;
+    final summary = checkpoint?.summary.trim();
     if (summary == null || summary.isEmpty) {
       return prompt;
     }
+    final summaryText =
+        'Context compacted. '
+        'Kept ${checkpoint!.keptRecentMessages} recent messages.\n\n$summary';
     if (prompt.trim().isEmpty) {
-      return '<context_summary>\n$summary\n</context_summary>';
+      return '<context_summary>\n$summaryText\n</context_summary>';
     }
-    return '$prompt\n\n<context_summary>\n$summary\n</context_summary>';
+    return '$prompt\n\n<context_summary>\n$summaryText\n</context_summary>';
   }
+
+  /// The largest output budget for a generated compaction summary.
+  static const maxSummaryTokens = 4096;
+
+  /// The instruction prefix used for compaction summary generation.
+  static const _compactionInstruction =
+      'You are summarizing the early portion of a session transcript so the '
+      'conversation can continue within a compact context.\n\n'
+      'Preserve, in dense factual plain text:\n'
+      '- The user\'s goals and constraints.\n'
+      '- Key decisions and their rationale.\n'
+      '- The current task state and what remains undone.\n'
+      '- Files, commands, and code touched, with their purposes.\n'
+      '- Any unresolved issues or open questions.\n\n'
+      'Do not summarize the recent messages that are kept in context verbatim.';
+
+  /// Compacts the session context after a terminal turn when the context
+  /// window is nearly exhausted, keeping the newest turns verbatim.
+  Stream<AgentEvent> _compactContext({
+    required Session session,
+    required List<TimelineItem> timeline,
+    required SessionContext? context,
+    required ModelRef model,
+    required TurnId turnId,
+    required TokenUsage latestUsage,
+    required int Function() nextSequence,
+    bool enforceThreshold = true,
+  }) async* {
+    final kept = _keptWindow(timeline, keptRecentTurns);
+    final boundaryIndex = timeline.length - kept.length - 1;
+    if (boundaryIndex < 0) {
+      return;
+    }
+    final boundary = timeline[boundaryIndex];
+    final ModelDescriptor descriptor;
+    try {
+      descriptor = await provider.describe(model);
+    } catch (_) {
+      return;
+    }
+    if (descriptor.contextWindow <= 0) {
+      return;
+    }
+    final tokens = latestUsage.inputTokens > 0
+        ? latestUsage.inputTokens
+        : estimateTokens(
+            '${context == null ? '' : _systemPrompt(session, context)}\n'
+            '${_renderTimeline(timeline)}',
+          );
+    if (enforceThreshold &&
+        tokens < descriptor.contextWindow * compactionThreshold) {
+      return;
+    }
+    yield CompactionStarted(
+      sessionId: session.id,
+      turnId: turnId,
+      sequence: nextSequence(),
+      occurredAt: _now().toUtc(),
+    );
+    try {
+      final compacted = timeline.sublist(0, boundaryIndex + 1);
+      final summary = await _generateSummary(
+        session: session,
+        compacted: compacted,
+        model: model,
+        turnId: turnId,
+      );
+      final checkpoint = CompactionCheckpoint(
+        sessionId: session.id,
+        compactedThroughSequence: boundary.sequence,
+        summary: summary,
+        keptRecentMessages: kept.length,
+        inputTokensBefore: tokens,
+        inputTokensAfter:
+            estimateTokens(summary) + estimateTokens(_renderTimeline(kept)),
+        createdAt: _now().toUtc(),
+      );
+      await store.saveCompaction(session.id, checkpoint);
+      yield CompactionFinished(
+        sessionId: session.id,
+        turnId: turnId,
+        sequence: nextSequence(),
+        occurredAt: _now().toUtc(),
+        checkpoint: checkpoint,
+      );
+    } catch (error) {
+      yield CompactionFailed(
+        sessionId: session.id,
+        turnId: turnId,
+        sequence: nextSequence(),
+        occurredAt: _now().toUtc(),
+        message: _safeErrorMessage('Context compaction failed', error),
+      );
+    }
+  }
+
+  /// Generates a compaction summary over the compacted items with one model
+  /// call, chaining the previous checkpoint summary when present.
+  Future<String> _generateSummary({
+    required Session session,
+    required List<TimelineItem> compacted,
+    required ModelRef model,
+    required TurnId turnId,
+  }) async {
+    final buffer = StringBuffer(_compactionInstruction);
+    final previous = session.compaction?.summary.trim();
+    if (previous != null && previous.isNotEmpty) {
+      buffer.write('\n\n<previous_summary>\n$previous\n</previous_summary>');
+    }
+    buffer.write(
+      '\n\n<transcript>\n${_renderTimeline(compacted)}\n</transcript>',
+    );
+    final request = ModelRequest(
+      sessionId: session.id,
+      turnId: turnId,
+      model: model,
+      messages: [
+        ModelMessage(
+          role: ModelMessageRole.user,
+          content: [TextContent(buffer.toString())],
+        ),
+      ],
+      maxOutputTokens: maxSummaryTokens,
+    );
+    ModelResponse? completed;
+    await for (final event in provider.stream(request)) {
+      switch (event) {
+        case TextDeltaEvent() || ReasoningDeltaEvent():
+          break;
+        case ModelCompletedEvent(:final response):
+          if (completed != null) {
+            throw StateError('model stream completed more than once');
+          }
+          completed = response;
+        case ModelFailedEvent(:final error, :final stackTrace):
+          Error.throwWithStackTrace(error, stackTrace);
+      }
+    }
+    if (completed == null) {
+      throw StateError('model stream ended without response');
+    }
+    final summary = textFromContent(completed.content).trim();
+    if (summary.isEmpty) {
+      throw StateError('compaction summary is empty');
+    }
+    return summary;
+  }
+
+  /// Renders timeline items as a transcript for summary generation.
+  static String _renderTimeline(List<TimelineItem> items) {
+    final buffer = StringBuffer();
+    for (final item in items) {
+      switch (item) {
+        case UserMessageItem(:final content):
+          buffer.writeln(
+            '<user>\n${_escapeXml(textFromContent(content))}\n</user>',
+          );
+        case AssistantMessageItem(:final content):
+          buffer.writeln(
+            '<assistant>\n${_escapeXml(textFromContent(content))}\n</assistant>',
+          );
+        case ToolCallItem(:final call):
+          buffer
+            ..write('<tool_call name="${_escapeXml(call.name)}" arguments="')
+            ..write(_escapeXml(jsonEncode(call.arguments)))
+            ..writeln('"/>');
+        case ToolResultItem(:final content, :final isError):
+          buffer
+            ..writeln('<tool_result error="$isError">')
+            ..writeln(_escapeXml(content))
+            ..writeln('</tool_result>');
+      }
+    }
+    return buffer.toString().trimRight();
+  }
+
+  /// Returns the newest [keptRecentTurns] whole turns from [timeline].
+  static List<TimelineItem> _keptWindow(
+    List<TimelineItem> timeline,
+    int keptRecentTurns,
+  ) {
+    if (timeline.isEmpty || keptRecentTurns <= 0) {
+      return const [];
+    }
+    final keptTurns = <TurnId>{};
+    for (
+      var i = timeline.length - 1;
+      i >= 0 && keptTurns.length < keptRecentTurns;
+      i--
+    ) {
+      keptTurns.add(timeline[i].turnId);
+    }
+    return timeline.where((item) => keptTurns.contains(item.turnId)).toList();
+  }
+
+  /// Estimates token count from text using the common four-characters-per-
+  /// token ratio; used when the provider does not report usage.
+  static int estimateTokens(String text) => text.length ~/ 4;
 
   Future<ToolResult> _executeTool({
     required Session session,
@@ -451,6 +718,15 @@ final class AgentRuntime {
 
   /// The maximum total size of skill instructions injected into one turn.
   static const maxSelectedSkillBytes = 64 * 1024;
+
+  /// Returns the cached session context, or null when the builder fails.
+  SessionContext? _contextOrNull(String workingDirectory) {
+    try {
+      return _contextFor(workingDirectory);
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// The cached session context for a working directory.
   SessionContext _contextFor(String workingDirectory) =>
@@ -499,11 +775,12 @@ final class AgentRuntime {
       '<path>${_escapeXml(skill.path)}</path>\n'
       '${skill.content.trimRight()}\n</skill>';
 
-  /// Escapes XML-significant characters in skill metadata.
+  /// Escapes XML-significant characters in skill metadata and transcripts.
   static String _escapeXml(String value) => value
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
 
   static List<ModelMessage> _projectTimeline(
     List<TimelineItem> items,

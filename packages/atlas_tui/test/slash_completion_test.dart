@@ -53,7 +53,12 @@ void main() {
       final completer = SlashCompleter();
       completer.sync('/', 1);
       expect(completer.active, isTrue);
-      expect(completer.matches.map((c) => c.name), ['model', 'new', 'quit']);
+      expect(completer.matches.map((c) => c.name), [
+        'model',
+        'new',
+        'compact',
+        'quit',
+      ]);
       expect(completer.selected, 0);
     });
 
@@ -69,7 +74,12 @@ void main() {
       final completer = SlashCompleter();
       completer.showAll();
       expect(completer.active, isTrue);
-      expect(completer.matches.map((c) => c.name), ['model', 'new', 'quit']);
+      expect(completer.matches.map((c) => c.name), [
+        'model',
+        'new',
+        'compact',
+        'quit',
+      ]);
       expect(completer.selected, 0);
     });
 
@@ -88,7 +98,7 @@ void main() {
       completer.move(-5);
       expect(completer.selected, 0);
       completer.move(10);
-      expect(completer.selected, 2);
+      expect(completer.selected, 3);
     });
 
     test('closes when the cursor leaves the token', () {

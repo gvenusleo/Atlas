@@ -42,6 +42,8 @@ providers:
 agent:
   max_steps: 10
   temperature: 0.7
+  compaction:
+    threshold: 0.9
 session:
   db_path: ~/.atlas/atlas.db
 ''',
@@ -89,6 +91,7 @@ session:
 
     expect(config.agent.maxSteps, 10);
     expect(config.agent.temperature, 0.7);
+    expect(config.agent.compaction.threshold, 0.9);
     expect(config.session.dbPath, '/home/test/.atlas/atlas.db');
   });
 
@@ -117,6 +120,7 @@ providers:
     expect(descriptor.reasoningEfforts, isEmpty);
     expect(openai.configuration.models.single.promptCacheEnabled, isFalse);
     expect(config.agent.maxSteps, 100);
+    expect(config.agent.compaction.threshold, 0.8);
     expect(config.agent.temperature, isNull);
     expect(config.session.dbPath, '~/.atlas/atlas.db');
   });
@@ -339,5 +343,32 @@ providers:
         ),
       ),
     );
+  });
+
+  test('rejects an invalid compaction threshold', () {
+    for (final threshold in ['0', '-0.5', '1.5']) {
+      expect(
+        () => parseConfig('''
+default_model: oa/m
+providers:
+  - name: oa
+    type: chat_completions
+    base_url: https://example.com
+    api_key: k
+    models:
+      - value: m
+agent:
+  compaction:
+    threshold: $threshold
+'''),
+        throwsA(
+          isA<ConfigLoadException>().having(
+            (error) => error.message,
+            'message',
+            contains('agent.compaction.threshold'),
+          ),
+        ),
+      );
+    }
   });
 }

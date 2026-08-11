@@ -57,7 +57,7 @@ external tools to the tool layer.
 | Package | Responsibility |
 |---|---|
 | `atlas_runtime` | Session/turn domain models, ordered timeline items, model/tool ports, the single agent engine, cancellation, compaction, and skills |
-| `atlas_storage` | Drift persistence for sessions, turns, typed timeline items, model continuations, compaction checkpoints, queries, and schema migrations |
+| `atlas_storage` | Drift persistence for sessions, turns, and typed timeline messages, with provider continuations and the compaction checkpoint embedded in their owning rows, plus queries
 | `atlas_provider` | OpenAI-compatible Chat Completions and Responses plus Anthropic Messages adapters: authentication, request mapping, SSE decoding, retries, and response conversion |
 | `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration objects |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
@@ -91,10 +91,10 @@ product-level contracts:
 - Each model tool call receives one model-visible result in the original order, including failures.
 - `AgentEvent` values are emitted in occurrence order so clients do not regroup output after a turn.
 - A `Session` contains ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request.
-- Every assistant item may have a provider-owned `ModelContinuation`, persisted as a `ModelCheckpoint` and restored onto the corresponding provider-neutral message.
+- Every assistant message may carry a provider-owned `ModelContinuation`; it is persisted inside the assistant row and restored onto the corresponding provider-neutral message.
 - Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary.
 - Planned skill injection will preserve the original user text in history. Full skill instructions will be turn-scoped model context rather than transcript content.
-- Compaction preserves the durable timeline while replacing only the active context checkpoint. An optional compact instruction changes the generated summary, not user history.
+- Compaction preserves the durable timeline while replacing the active context checkpoint, which is stored on the session row. The runtime keeps the newest whole turns verbatim, summarizes everything earlier, and injects `Context compacted. Kept {n} recent messages.` with the summary into the system prompt. An optional compact instruction changes the generated summary, not user history.
 
 These contracts define expected behavior, not compatibility with the removed Go implementation or its database schema.
 

@@ -119,6 +119,47 @@ final class ToolFinished extends AgentEvent {
   final ToolResultItem result;
 }
 
+/// Indicates that context compaction has started after a terminal turn.
+final class CompactionStarted extends AgentEvent {
+  /// Creates a compaction-started event.
+  const CompactionStarted({
+    required super.sessionId,
+    required super.turnId,
+    required super.sequence,
+    required super.occurredAt,
+  });
+}
+
+/// Indicates that a context checkpoint was persisted.
+final class CompactionFinished extends AgentEvent {
+  /// Creates a compaction-finished event.
+  const CompactionFinished({
+    required super.sessionId,
+    required super.turnId,
+    required super.sequence,
+    required super.occurredAt,
+    required this.checkpoint,
+  });
+
+  /// The persisted compaction checkpoint.
+  final CompactionCheckpoint checkpoint;
+}
+
+/// Indicates that compaction failed without affecting the turn outcome.
+final class CompactionFailed extends AgentEvent {
+  /// Creates a compaction-failed event.
+  const CompactionFailed({
+    required super.sessionId,
+    required super.turnId,
+    required super.sequence,
+    required super.occurredAt,
+    required this.message,
+  });
+
+  /// A safe, model-visible description of the failure.
+  final String message;
+}
+
 /// Indicates that a turn completed successfully or with a terminal state.
 final class TurnFinished extends AgentEvent {
   /// Creates a turn-finished event.

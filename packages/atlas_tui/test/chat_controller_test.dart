@@ -175,6 +175,108 @@ void main() {
     expect(controller.busy, isFalse);
   });
 
+  test('shows a compaction notice after a long session', () async {
+    final compactingProvider = _ScriptedProvider()
+      ..contextWindow = 10000
+      ..inputTokens = 9500;
+    final compactingRuntime = AgentRuntime(
+      store: DriftSessionStore.inMemory(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final controller = ChatController(runtime: compactingRuntime);
+
+    await controller.send('first');
+    await controller.send('second');
+
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(
+      controller.messages.last.text,
+      'Context compacted. Kept 2 recent messages.',
+    );
+  });
+
+  test('shows compacting in the status line during compaction', () async {
+    final compactingProvider = _ScriptedProvider()
+      ..contextWindow = 10000
+      ..inputTokens = 9500;
+    final compactingRuntime = AgentRuntime(
+      store: DriftSessionStore.inMemory(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final controller = ChatController(runtime: compactingRuntime);
+    await controller.send('first');
+
+    compactingProvider.compactionGate = Completer<void>();
+    final second = controller.send('second');
+    for (
+      var i = 0;
+      i < 200 && controller.turnPhase != TurnPhase.compacting;
+      i++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(controller.turnPhase, TurnPhase.compacting);
+    expect(controller.busy, isTrue);
+
+    compactingProvider.compactionGate!.complete();
+    await second;
+    expect(controller.turnPhase, TurnPhase.idle);
+  });
+
+  test('compact command compacts the session', () async {
+    final compactingProvider = _ScriptedProvider()..contextWindow = 10000;
+    final compactingRuntime = AgentRuntime(
+      store: DriftSessionStore.inMemory(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final controller = ChatController(runtime: compactingRuntime);
+
+    await controller.send('first');
+    await controller.send('second');
+    await controller.compact();
+
+    expect(controller.turnPhase, TurnPhase.idle);
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(
+      controller.messages.last.text,
+      'Context compacted. Kept 2 recent messages.',
+    );
+  });
+
+  test('compact shows a notice when nothing can be compacted', () async {
+    final controller = ChatController(runtime: runtime);
+
+    await controller.send('hello');
+    await controller.compact();
+
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(controller.messages.last.text, 'Nothing to compact');
+  });
+
   test('cancelTurn interrupts a running turn', () async {
     provider.gate = Completer<void>();
     final controller = ChatController(runtime: runtime);
@@ -329,9 +431,18 @@ final class _ScriptedProvider implements ModelProvider {
   String? lastReasoningEffort;
   List<ModelMessage>? lastMessages;
 
+  /// Model context window reported by [describe]; zero disables compaction.
+  int contextWindow = 0;
+
+  /// Input tokens reported by the final response of each turn.
+  int inputTokens = 0;
+
+  /// Blocks the compaction request when set.
+  Completer<void>? compactionGate;
+
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
-      ModelDescriptor(ref: model);
+      ModelDescriptor(ref: model, contextWindow: contextWindow);
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
@@ -340,6 +451,17 @@ final class _ScriptedProvider implements ModelProvider {
     lastReasoningEffort = request.reasoningEffort;
     lastMessages = request.messages;
     _requests++;
+    final compaction =
+        request.messages.length == 1 &&
+        textFromContent(
+          request.messages.single.content,
+        ).contains('<transcript>');
+    if (compaction) {
+      final gate = compactionGate;
+      if (gate != null) {
+        await gate.future;
+      }
+    }
     if (failTurn) {
       throw StateError('provider exploded');
     }
@@ -375,11 +497,11 @@ final class _ScriptedProvider implements ModelProvider {
     // Stream the final answer as deltas so the controller accumulates text.
     yield const TextDeltaEvent('do');
     yield const TextDeltaEvent('ne');
-    yield const ModelCompletedEvent(
+    yield ModelCompletedEvent(
       ModelResponse(
-        content: [TextContent('done')],
+        content: const [TextContent('done')],
         stopReason: StopReason.endTurn,
-        usage: TokenUsage(totalTokens: 4321),
+        usage: TokenUsage(inputTokens: inputTokens, totalTokens: 4321),
       ),
     );
   }

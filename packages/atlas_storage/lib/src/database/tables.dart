@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-/// Durable session metadata.
+/// Durable session metadata and its latest compaction checkpoint.
 @DataClassName('SessionRow')
 class Sessions extends Table {
   /// Serialized session identifier.
@@ -32,6 +32,27 @@ class Sessions extends Table {
   /// Cached input tokens written by the latest model response.
   IntColumn get lastCacheWriteTokens =>
       integer().withDefault(const Constant(0))();
+
+  /// Last timeline sequence represented by the compaction summary.
+  IntColumn get compactionSequence => integer().nullable()();
+
+  /// Compact model context summary.
+  TextColumn get compactionSummary => text().withDefault(const Constant(''))();
+
+  /// Timeline messages after the boundary kept verbatim.
+  IntColumn get compactionKeptRecent =>
+      integer().withDefault(const Constant(0))();
+
+  /// Input token count before compaction.
+  IntColumn get compactionTokensBefore =>
+      integer().withDefault(const Constant(0))();
+
+  /// Input token count after compaction.
+  IntColumn get compactionTokensAfter =>
+      integer().withDefault(const Constant(0))();
+
+  /// UTC checkpoint creation time; null when no checkpoint exists.
+  DateTimeColumn get compactionCreatedAt => dateTime().nullable()();
 
   /// UTC creation time.
   DateTimeColumn get createdAt => dateTime()();
@@ -99,10 +120,10 @@ class Turns extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-/// One strongly typed item in the durable session timeline.
-@DataClassName('TimelineItemRow')
-class TimelineItems extends Table {
-  /// Serialized timeline item identifier.
+/// One strongly typed message in the durable session timeline.
+@DataClassName('MessageRow')
+class Messages extends Table {
+  /// Serialized message identifier.
   TextColumn get id => text()();
 
   /// Owning session identifier.
@@ -116,13 +137,14 @@ class TimelineItems extends Table {
   /// Strict session-local order.
   IntColumn get sequence => integer()();
 
-  /// Stable timeline item discriminant.
+  /// Stable message discriminant.
   TextColumn get kind => text()();
 
   /// Version of the JSON payload schema.
   IntColumn get payloadVersion => integer().withDefault(const Constant(1))();
 
-  /// Versioned JSON payload.
+  /// Versioned JSON payload; assistant payloads include the provider
+  /// continuation when one was returned.
   TextColumn get payloadJson => text()();
 
   /// UTC append time.
@@ -135,53 +157,4 @@ class TimelineItems extends Table {
   List<Set<Column<Object>>> get uniqueKeys => [
     {sessionId, sequence},
   ];
-}
-
-/// Provider-owned continuation state for an assistant item.
-@DataClassName('ModelCheckpointRow')
-class ModelCheckpoints extends Table {
-  /// Assistant timeline item that owns this continuation.
-  TextColumn get timelineItemId =>
-      text().references(TimelineItems, #id, onDelete: KeyAction.cascade)();
-
-  /// Provider that can interpret the payload.
-  TextColumn get providerId => text()();
-
-  /// Provider-produced reasoning summary.
-  TextColumn get reasoningSummary => text().withDefault(const Constant(''))();
-
-  /// Provider-owned continuation payload.
-  TextColumn get payloadJson => text().withDefault(const Constant('{}'))();
-
-  /// UTC checkpoint creation time.
-  DateTimeColumn get createdAt => dateTime()();
-
-  @override
-  Set<Column<Object>> get primaryKey => {timelineItemId};
-}
-
-/// The latest context compaction boundary for a session.
-@DataClassName('CompactionCheckpointRow')
-class CompactionCheckpoints extends Table {
-  /// Owning session identifier.
-  TextColumn get sessionId =>
-      text().references(Sessions, #id, onDelete: KeyAction.cascade)();
-
-  /// Last timeline sequence represented by the summary.
-  IntColumn get compactedThroughSequence => integer()();
-
-  /// Compact model context summary.
-  TextColumn get summary => text()();
-
-  /// Input token count before compaction.
-  IntColumn get inputTokensBefore => integer()();
-
-  /// Input token count after compaction.
-  IntColumn get inputTokensAfter => integer()();
-
-  /// UTC checkpoint creation time.
-  DateTimeColumn get createdAt => dateTime()();
-
-  @override
-  Set<Column<Object>> get primaryKey => {sessionId};
 }

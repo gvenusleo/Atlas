@@ -43,6 +43,8 @@ providers:
 agent:
   max_steps: 100                      # 可选，默认 100
   temperature: 0.7                    # 可选
+  compaction:
+    threshold: 0.8                    # 可选，默认 0.8
 
 session:
   db_path: ~/.atlas/atlas.db         # 可选，~ 展开为用户主目录
@@ -59,5 +61,7 @@ session:
   中带有变量名。
 - `max_tokens`、`context_window`、`max_steps`、`thinking_budget_tokens`
   不能为负。
+- `agent.compaction.threshold` 必须大于 0 且不超过 1；它是触发 turn 结束后
+  自动压缩的上下文窗口比例。
 - 校验失败抛出 `ConfigLoadException`，消息包含字段路径，例如
   `providers[0].base_url`。

@@ -23,6 +23,9 @@ enum TurnPhase {
 
   /// The model is emitting chain-of-thought reasoning.
   thinking,
+
+  /// The turn finished and the context is being compacted.
+  compacting,
 }
 
 /// The interval at which the status row advances its spinner and clock.
@@ -144,6 +147,41 @@ final class ChatController implements Listenable {
     _cancellation?.cancel();
   }
 
+  /// Manually compacts the current session, skipping the threshold check.
+  ///
+  /// Ignored while a turn is running or before any session exists. Shows a
+  /// notice when there is nothing outside the kept window to compact.
+  Future<void> compact() async {
+    final sessionId = _sessionId;
+    if (sessionId == null || _busy) {
+      return;
+    }
+    _busy = true;
+    _turnPhase = TurnPhase.compacting;
+    _startTurnTimer();
+    var compacted = false;
+    try {
+      await for (final event in runtime.compact(sessionId)) {
+        if (event is CompactionStarted) {
+          compacted = true;
+        }
+        _handle(event);
+      }
+    } catch (error) {
+      _messages.add(ChatMessage(kind: ChatMessageKind.error, text: '$error'));
+    } finally {
+      _busy = false;
+      _cancellation = null;
+      _turnPhase = TurnPhase.idle;
+      _turnStartedAt = null;
+      _stopTurnTimer();
+      _notify();
+    }
+    if (!compacted) {
+      addNotice('Nothing to compact');
+    }
+  }
+
   /// Releases the status timer; call from the owning widget's dispose.
   void dispose() {
     _stopTurnTimer();
@@ -219,6 +257,24 @@ final class ChatController implements Listenable {
       case ToolFinished():
         _turnPhase = TurnPhase.working;
         _updateLastTool(event.result);
+      case CompactionStarted():
+        _turnPhase = TurnPhase.compacting;
+      case CompactionFinished(:final checkpoint):
+        _messages.add(
+          ChatMessage(
+            kind: ChatMessageKind.system,
+            text:
+                'Context compacted. '
+                'Kept ${checkpoint.keptRecentMessages} recent messages.',
+          ),
+        );
+      case CompactionFailed(:final message):
+        _messages.add(
+          ChatMessage(
+            kind: ChatMessageKind.system,
+            text: 'Context compaction failed: $message',
+          ),
+        );
       case TurnFinished(:final outcome):
         _turnPhase = TurnPhase.idle;
         _sealed = true;

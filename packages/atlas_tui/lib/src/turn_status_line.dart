@@ -7,9 +7,10 @@ const miniDotFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '
 
 /// Transient status row above the input bar.
 ///
-/// Mirrors the Go TUI turn status: a spinner, the activity label (Working or
-/// Thinking), the wall-clock elapsed time, and an esc-to-interrupt hint. It
-/// renders nothing while no turn is running.
+/// Mirrors the Go TUI turn status: a spinner, the activity label (Working,
+/// Thinking, or Compacting), the wall-clock elapsed time, and an
+/// esc-to-interrupt hint. Compaction omits the hint because it cannot be
+/// interrupted. It renders nothing while no turn is running.
 final class TurnStatusLine extends StatelessComponent {
   /// Creates a turn status line.
   const TurnStatusLine({
@@ -35,9 +36,17 @@ final class TurnStatusLine extends StatelessComponent {
     }
     final theme = TuiTheme.of(context);
     final thinking = phase == TurnPhase.thinking;
-    final label = thinking ? 'Thinking' : 'Working';
+    final compacting = phase == TurnPhase.compacting;
+    final label = thinking
+        ? 'Thinking'
+        : compacting
+        ? 'Compacting'
+        : 'Working';
     final color = thinking ? theme.warning : theme.primary;
     final spinner = miniDotFrames[frame % miniDotFrames.length];
+    final hint = compacting
+        ? ''
+        : ' (${formatTurnElapsed(elapsed)} • esc to interrupt)';
     return RichText(
       text: TextSpan(
         children: [
@@ -46,7 +55,7 @@ final class TurnStatusLine extends StatelessComponent {
             style: TextStyle(color: color),
           ),
           TextSpan(
-            text: ' (${formatTurnElapsed(elapsed)} • esc to interrupt)',
+            text: hint,
             style: TextStyle(color: theme.outline),
           ),
         ],

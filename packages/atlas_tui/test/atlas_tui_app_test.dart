@@ -136,6 +136,7 @@ void main() {
       await tester.pump();
       expect(tester.terminalState, containsText('/model'));
       expect(tester.terminalState, containsText('/new'));
+      expect(tester.terminalState, containsText('/compact'));
       expect(tester.terminalState, containsText('/quit'));
       expect(tester.terminalState, containsText('[Skill] Review code.'));
     });
