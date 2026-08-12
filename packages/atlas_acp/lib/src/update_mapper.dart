@@ -95,7 +95,10 @@ final class TurnUpdateMapper {
 /// replayed as plan updates and their results are skipped.
 List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
   final updates = <SessionUpdate>[];
-  final planCallIds = <String>{};
+  // Call ids of plan tool calls whose result is skipped. Results always
+  // follow their owning call in the timeline, so a FIFO queue matches them
+  // even when the model reuses a call id across turns.
+  final pendingPlanResults = <String>[];
   for (final item in timeline) {
     switch (item) {
       case UserMessageItem(:final content):
@@ -117,7 +120,7 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
       case ToolCallItem(:final call):
         final plan = planEntries(call.arguments['plan']);
         if (call.name == 'plan' && plan != null) {
-          planCallIds.add(call.id.value);
+          pendingPlanResults.add(call.id.value);
           updates.add(planUpdate(item.sessionId, plan));
         } else {
           updates.add(
@@ -130,16 +133,19 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
           );
         }
       case ToolResultItem(:final callId, :final content, :final isError):
-        if (!planCallIds.contains(callId.value)) {
-          updates.add(
-            toolCallUpdate(
-              item.sessionId,
-              toolCallId: callId.value,
-              status: isError ? 'failed' : 'completed',
-              content: content,
-            ),
-          );
+        if (pendingPlanResults.isNotEmpty &&
+            pendingPlanResults.first == callId.value) {
+          pendingPlanResults.removeAt(0);
+          break;
         }
+        updates.add(
+          toolCallUpdate(
+            item.sessionId,
+            toolCallId: callId.value,
+            status: isError ? 'failed' : 'completed',
+            content: content,
+          ),
+        );
     }
   }
   return updates;

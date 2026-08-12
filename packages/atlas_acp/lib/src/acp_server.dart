@@ -66,13 +66,18 @@ final class AcpServer {
   Future<JsonObject> _initialize(Parameters params) async => initializeResult();
 
   Future<JsonObject> _newSession(Parameters params) async {
-    final cwd = params['cwd'].asString;
+    final cwd = _absolutePath(params['cwd'].asString, 'cwd');
     final additional = params['additionalDirectories'].valueOr(null);
     final additionalDirectories = switch (additional) {
       null => const <String>[],
       final List<Object?> list => [
         for (final entry in list)
-          if (entry is String) entry,
+          if (entry is String)
+            _absolutePath(entry, 'additionalDirectories')
+          else
+            throw RpcException.invalidParams(
+              'additionalDirectories must contain only strings',
+            ),
       ],
       _ => throw RpcException.invalidParams(
         'additionalDirectories must be an array',
@@ -100,6 +105,7 @@ final class AcpServer {
 
   Future<SessionSnapshot> _load(Parameters params) async {
     final sessionId = params['sessionId'].asString;
+    _absolutePath(params['cwd'].asString, 'cwd');
     try {
       return await runtime.loadSession(SessionId(sessionId));
     } on SessionNotFoundException {
@@ -122,6 +128,7 @@ final class AcpServer {
     final mapper = TurnUpdateMapper(session);
     try {
       String? stopReason;
+      String? failureCode;
       await for (final event in runtime.run(
         TurnRequest(
           sessionId: session,
@@ -133,18 +140,29 @@ final class AcpServer {
           _sendUpdate(update);
         }
         if (event case TurnFinished(:final outcome)) {
-          stopReason = switch (outcome.status) {
-            TurnStatus.completed => 'end_turn',
-            TurnStatus.cancelled => 'cancelled',
-            TurnStatus.failed => throw RpcException(
-              -32603,
-              'turn failed (${outcome.failure?.code ?? 'unknown'})',
-            ),
-            TurnStatus.running => null,
-          };
+          switch (outcome.status) {
+            case TurnStatus.completed:
+              stopReason = 'end_turn';
+            case TurnStatus.cancelled:
+              stopReason = 'cancelled';
+            case TurnStatus.failed:
+              failureCode = outcome.failure?.code;
+            case TurnStatus.running:
+              break;
+          }
         }
       }
+      // Consume the whole stream (including trailing compaction events)
+      // before reporting the failure so the runtime turn settles.
+      if (failureCode != null) {
+        throw RpcException(-32603, 'turn failed ($failureCode)');
+      }
+      if (stopReason == null) {
+        throw RpcException(-32603, 'turn ended without a stop reason');
+      }
       return {'stopReason': stopReason};
+    } on SessionNotFoundException catch (error) {
+      throw RpcException.invalidParams('session not found: ${error.sessionId}');
     } on RpcException {
       rethrow;
     } catch (error) {
@@ -155,7 +173,7 @@ final class AcpServer {
   }
 
   void _cancelPrompt(Parameters params) {
-    final sessionId = params['sessionId'].valueOr(null) as String?;
+    final sessionId = _optionalString(params, 'sessionId');
     if (sessionId == null) {
       return;
     }
@@ -163,8 +181,11 @@ final class AcpServer {
   }
 
   Future<JsonObject> _listSessions(Parameters params) async {
-    final cwd = params['cwd'].valueOr(null) as String?;
-    final cursor = params['cursor'].valueOr(null) as String?;
+    final cwd = _optionalString(params, 'cwd');
+    if (cwd != null) {
+      _absolutePath(cwd, 'cwd');
+    }
+    final cursor = _optionalString(params, 'cursor');
     final page = await runtime.listSessions(
       workingDirectory: cwd,
       cursor: cursor,
@@ -189,10 +210,12 @@ final class AcpServer {
     return <String, Object?>{};
   }
 
-  /// Extracts the single text payload from an ACP prompt array.
+  /// Extracts the text payload from an ACP prompt array.
   ///
   /// Atlas advertises only baseline text prompt capabilities, so non-text
-  /// content blocks are rejected.
+  /// content blocks are rejected. `resource_link` blocks are a baseline
+  /// content type and are accepted but ignored: Atlas tools access the local
+  /// filesystem directly and do not need client-provided resource contents.
   static String _promptText(List<Object?> blocks) {
     if (blocks.isEmpty) {
       throw RpcException.invalidParams('prompt must not be empty');
@@ -202,9 +225,13 @@ final class AcpServer {
       if (block is! Map) {
         throw RpcException.invalidParams('prompt blocks must be objects');
       }
-      if (block['type'] != 'text') {
+      final type = block['type'];
+      if (type == 'resource_link') {
+        continue;
+      }
+      if (type != 'text') {
         throw RpcException.invalidParams(
-          'unsupported content block type: ${block['type']}',
+          'unsupported content block type: $type',
         );
       }
       final text = block['text'];
@@ -219,6 +246,30 @@ final class AcpServer {
       throw RpcException.invalidParams('prompt must contain text');
     }
     return texts.join('\n\n');
+  }
+
+  /// Returns the optional string parameter, rejecting non-string values with
+  /// an invalid-params error.
+  static String? _optionalString(Parameters params, String key) {
+    final value = params[key].valueOr(null);
+    if (value == null) {
+      return null;
+    }
+    if (value is String) {
+      return value;
+    }
+    throw RpcException.invalidParams('$key must be a string');
+  }
+
+  /// Validates that [path] is absolute, as required by ACP, and returns it.
+  static String _absolutePath(String path, String field) {
+    // Accepts POSIX and Windows drive-letter roots.
+    final isAbsolute =
+        path.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+    if (!isAbsolute) {
+      throw RpcException.invalidParams('$field must be an absolute path');
+    }
+    return path;
   }
 
   void _sendUpdate(SessionUpdate update) {

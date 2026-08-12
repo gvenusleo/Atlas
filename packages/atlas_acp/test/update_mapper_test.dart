@@ -93,6 +93,50 @@ void main() {
       expect(updates[0].update['messageId'], updates[1].update['messageId']);
     });
 
+    test('uses distinct message ids across assistant messages in one turn', () {
+      final mapper = TurnUpdateMapper(session);
+      final all = <SessionUpdate>[
+        ...mapper.map(
+          ModelTextDelta(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            delta: 'First',
+          ),
+        ),
+        ...mapper.map(
+          ModelResponseReceived(
+            sessionId: session,
+            turnId: turn,
+            sequence: 1,
+            occurredAt: time,
+            assistantMessage: _assistant([TextContent('I will check.')]),
+            toolCalls: [_toolCallItem('call-1', 'read', 2)],
+          ),
+        ),
+        ...mapper.map(
+          ModelTextDelta(
+            sessionId: session,
+            turnId: turn,
+            sequence: 3,
+            occurredAt: time,
+            delta: 'Second',
+          ),
+        ),
+      ];
+      final chunks = all
+          .where(
+            (update) => update.update['sessionUpdate'] == 'agent_message_chunk',
+          )
+          .toList();
+      expect(chunks, hasLength(2));
+      expect(
+        chunks[0].update['messageId'],
+        isNot(chunks[1].update['messageId']),
+      );
+    });
+
     test('maps a tool loop to pending, in_progress, and completed updates', () {
       final mapper = TurnUpdateMapper(session);
       final updates = <SessionUpdate>[
@@ -266,6 +310,53 @@ void main() {
       final updates = replayTimeline(timeline);
       expect(updates, hasLength(1));
       expect(updates.single.update['sessionUpdate'], 'plan');
+    });
+
+    test('replay skips only the plan result matching its own call', () {
+      // The model reuses the call id across turns: turn one is a plan call,
+      // turn two is a plain read with the same id. Only the plan result is
+      // skipped.
+      final timeline = <TimelineItem>[
+        UserMessageItem(
+          id: TimelineItemId('item-1'),
+          sessionId: session,
+          turnId: TurnId('t1'),
+          sequence: 0,
+          occurredAt: time,
+          content: const [TextContent('plan it')],
+        ),
+        _toolCallItem(
+          'call-1',
+          'plan',
+          1,
+          id: 'item-2',
+          arguments: {
+            'plan': [
+              {'step': 'A', 'status': 'completed'},
+            ],
+          },
+        ),
+        _resultItem('call-1', 'Plan updated', 2, id: 'item-3'),
+        UserMessageItem(
+          id: TimelineItemId('item-4'),
+          sessionId: session,
+          turnId: TurnId('t2'),
+          sequence: 3,
+          occurredAt: time,
+          content: const [TextContent('read it')],
+        ),
+        _toolCallItem('call-1', 'read', 4, id: 'item-5'),
+        _resultItem('call-1', 'file list', 5, id: 'item-6'),
+      ];
+      final updates = replayTimeline(timeline);
+      expect(updates.map((u) => u.update['sessionUpdate']), [
+        'user_message_chunk',
+        'plan',
+        'user_message_chunk',
+        'tool_call',
+        'tool_call_update',
+      ]);
+      expect(updates.last.update['status'], 'completed');
     });
   });
 }

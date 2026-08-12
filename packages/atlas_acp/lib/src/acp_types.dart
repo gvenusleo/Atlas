@@ -35,6 +35,7 @@ JsonObject initializeResult() => {
       'resume': <String, Object?>{},
       'list': <String, Object?>{},
       'close': <String, Object?>{},
+      'additionalDirectories': <String, Object?>{},
     },
     'promptCapabilities': <String, Object?>{},
   },

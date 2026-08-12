@@ -25,7 +25,10 @@ void main() {
     expect(capabilities['loadSession'], isTrue);
     final sessionCaps =
         capabilities['sessionCapabilities'] as Map<String, Object?>;
-    expect(sessionCaps.keys, containsAll(['resume', 'list', 'close']));
+    expect(
+      sessionCaps.keys,
+      containsAll(['resume', 'list', 'close', 'additionalDirectories']),
+    );
     final info = result['agentInfo'] as Map<String, Object?>;
     expect(info['name'], 'atlas');
     expect(result['authMethods'], isEmpty);
@@ -240,6 +243,94 @@ void main() {
       },
     });
     expect((response['error'] as Map)['code'], -32602);
+    await wire.close();
+  });
+
+  test('accepts resource link prompt blocks and runs the turn', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {
+            'type': 'resource_link',
+            'uri': 'file:///tmp/project/main.dart',
+            'name': 'main.dart',
+          },
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    final updates = await wire.notifications.take(5).toList();
+    expect(updates, hasLength(5));
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('prompt with an unknown session returns invalid params', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': 'missing',
+        'prompt': [
+          {'type': 'text', 'text': 'Hello'},
+        ],
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], contains('session not found'));
+    await wire.close();
+  });
+
+  test('session/new rejects a relative cwd', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {'cwd': 'relative/path'},
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], contains('absolute path'));
+    await wire.close();
+  });
+
+  test('session/new rejects non-string additional directories', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {
+        'cwd': '/tmp/project',
+        'additionalDirectories': [123],
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    await wire.close();
+  });
+
+  test('session/list rejects a non-string cwd filter', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/list',
+      'params': {'cwd': 123},
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
     await wire.close();
   });
 
