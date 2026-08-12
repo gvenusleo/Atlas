@@ -160,4 +160,20 @@ void main() {
 
     expect(prompt, contains('Working directory: (unknown)'));
   });
+
+  test('includes the responses section and operating principles', () {
+    final prompt = buildSystemPrompt(
+      workingDirectory: '/work',
+      tools: const [],
+      platform: 'macos',
+      shell: '/bin/sh',
+    );
+
+    expect(prompt, contains('## Responses'));
+    expect(prompt, contains('Match the user\'s language.'));
+    expect(prompt, contains('each tool\'s schema'));
+    expect(prompt, contains('If a tool fails, use the error text'));
+    expect(prompt, contains('Avoid touching unrelated files'));
+    expect(prompt, contains('For generated files'));
+  });
 }
