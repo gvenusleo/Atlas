@@ -51,6 +51,10 @@ Working directory: {workingDirectory}.
 - Do not treat command completion alone as proof. If expected output is missing or a task changes files, verify the observable result with an appropriate follow-up check.
 - You may issue independent tool calls in a single response to reduce model round trips. Atlas executes them in model order, so do not batch calls when a later call depends on an earlier result or when their writes could conflict.
 
+## Task Tracking
+
+For multi-step tasks, use plan to plan and track progress. Create a task plan at the start of complex work, mark one step in_progress as you begin each task, and mark it completed immediately when done. Update the plan only after real progress — do not re-call the tool when nothing has changed. Skip plan tracking for simple single-step tasks where it adds no clarity.
+
 ## Responses
 
 - Match the user's language.

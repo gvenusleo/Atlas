@@ -68,6 +68,7 @@ final class _MessageRow extends StatelessComponent {
       ),
       ChatMessageKind.tool => switch (message.toolName) {
         'shell' || 'read' || 'edit' || 'write' => _ToolLine(message: message),
+        'plan' => _PlanLine(message: message),
         _ => Text(
           '${message.toolName ?? 'tool'}: ${message.text}',
           style: TextStyle(
@@ -274,6 +275,105 @@ final class _ToolLine extends StatelessComponent {
       TextSpan(text: detail, style: outlineStyle),
     ],
   );
+}
+
+/// Renders a plan tool call as a title plus one line per step.
+///
+/// Steps carry a status symbol: `□` pending, `✔` completed with
+/// strikethrough, and the current step bold in the primary color, mirroring
+/// the Go reference plan block.
+final class _PlanLine extends StatelessComponent {
+  /// Creates a plan line.
+  const _PlanLine({required this.message});
+
+  final ChatMessage message;
+
+  @override
+  Component build(BuildContext context) {
+    final theme = TuiTheme.of(context);
+    final rawPlan = message.arguments?['plan'];
+    final entries = rawPlan is List
+        ? rawPlan.whereType<Map<dynamic, dynamic>>().toList()
+        : const <Map<dynamic, dynamic>>[];
+    final allCompleted =
+        entries.isNotEmpty &&
+        entries.every((entry) => entry['status'] == 'completed');
+    final titleStyle = TextStyle(
+      color: message.isError
+          ? theme.error
+          : allCompleted
+          ? theme.success
+          : theme.primary,
+      fontWeight: FontWeight.bold,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.floor();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message.isError ? 'Plan failed' : 'Plan', style: titleStyle),
+            if (entries.isEmpty)
+              Text(
+                '(no steps provided)',
+                style: TextStyle(color: theme.outline),
+              )
+            else
+              for (final entry in entries) _step(entry, theme, width),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Renders one plan step on a single line with its status symbol.
+  ///
+  /// The symbol reserves two columns; the step text is head-truncated so a
+  /// long step never wraps.
+  Component _step(Map<Object?, Object?> entry, TuiThemeData theme, int width) {
+    final status = entry['status'];
+    final outline = TextStyle(color: theme.outline);
+    final step = headWindow('${entry['step'] ?? ''}', width - 2);
+    switch (status) {
+      case 'completed':
+        return RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '✔ ',
+                style: TextStyle(color: theme.success),
+              ),
+              TextSpan(
+                text: step,
+                style: outline.copyWith(decoration: TextDecoration.lineThrough),
+              ),
+            ],
+          ),
+        );
+      case 'in_progress':
+        final active = TextStyle(
+          color: theme.primary,
+          fontWeight: FontWeight.bold,
+        );
+        return RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(text: '□ ', style: active),
+              TextSpan(text: step, style: active),
+            ],
+          ),
+        );
+      default:
+        return RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(text: '□ ', style: outline),
+              TextSpan(text: step, style: outline),
+            ],
+          ),
+        );
+    }
+  }
 }
 
 /// Returns the leading part of [text] that fits within [maxWidth] columns.

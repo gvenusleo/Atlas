@@ -25,7 +25,13 @@ AgentRuntime composeRuntime(
       DriftSessionStore.openFile(File(dbPath ?? config.session.dbPath));
   final resolvedTools =
       tools ??
-      LocalToolRegistry([ReadTool(), WriteTool(), EditTool(), ShellTool()]);
+      LocalToolRegistry([
+        ReadTool(),
+        WriteTool(),
+        EditTool(),
+        ShellTool(),
+        PlanTool(),
+      ]);
   final resolvedContextBuilder = sessionContextBuilder ?? buildSessionContext;
 
   // Index configured providers by their file-order identifier.

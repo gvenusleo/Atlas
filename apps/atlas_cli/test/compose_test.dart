@@ -78,6 +78,7 @@ providers:
       'write',
       'edit',
       'shell',
+      'plan',
     ]);
   });
 

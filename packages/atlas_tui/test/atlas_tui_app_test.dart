@@ -633,6 +633,60 @@ void main() {
     });
   });
 
+  test('renders the plan block with step statuses', () async {
+    await testNocterm('plan block', (tester) async {
+      final provider = _ScriptedProvider()
+        ..toolCalls = [
+          ToolCall(
+            id: ToolCallId('call-plan'),
+            name: 'plan',
+            arguments: {
+              'plan': [
+                {'step': 'Read main.go', 'status': 'in_progress'},
+                {'step': 'Fix the handler', 'status': 'pending'},
+                {'step': 'Run tests', 'status': 'completed'},
+                {'step': 'x' * 120, 'status': 'pending'},
+              ],
+            },
+          ),
+        ];
+      final runtime = AgentRuntime(
+        store: DriftSessionStore.inMemory(),
+        provider: provider,
+        tools: LocalToolRegistry([PlanTool()]),
+        ids: SecureIdGenerator(),
+        defaultModel: ModelRef(
+          providerId: ProviderId('fake'),
+          modelId: ModelId('model'),
+        ),
+      );
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      await tester.enterText('go');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      final text = tester.terminalState.getText();
+      expect(text, contains('Plan'));
+      expect(text, contains('Read main.go'));
+      expect(text, contains('Fix the handler'));
+      expect(text, contains('Run tests'));
+      // Long steps render on one line with a trailing ellipsis.
+      expect(text, contains('...'));
+      // The plan renders as a structured block, not the generic tool line.
+      expect(text, isNot(contains('plan: Plan updated')));
+    });
+  });
+
   test('/quit invokes the quit callback', () async {
     await testNocterm('slash quit', (tester) async {
       final provider = _ScriptedProvider();

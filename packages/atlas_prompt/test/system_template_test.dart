@@ -175,5 +175,7 @@ void main() {
     expect(prompt, contains('If a tool fails, use the error text'));
     expect(prompt, contains('Avoid touching unrelated files'));
     expect(prompt, contains('For generated files'));
+    expect(prompt, contains('## Task Tracking'));
+    expect(prompt, contains('use plan to plan and track progress'));
   });
 }
