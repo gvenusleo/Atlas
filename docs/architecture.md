@@ -4,10 +4,10 @@
 
 > **Status:** In progress. `atlas_runtime`, `atlas_storage`, the `atlas_provider`
 > adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
-> prompt construction, and the `atlas_tui` Nocterm chat interface are
-> executable. `atlas_cli` provides the process composition root
-> (`composeRuntime`) and the `atlas` entry point; protocol adapters remain
-> planned.
+> prompt construction, the `atlas_tui` Nocterm chat interface, and the ACP
+> server adapter (`atlas_acp`, served by `atlas acp`) are executable.
+> `atlas_cli` provides the process composition root (`composeRuntime`) and the
+> `atlas` entry point; the MCP adapter and WebSocket transport remain planned.
 
 ## System Shape
 
@@ -46,11 +46,12 @@ graph TD
 `composeRuntime`: it loads `atlas_config` to construct provider, storage, and
 tool adapters and injects the `atlas_prompt` system prompt builder.
 `atlas_flutter` will use its own process bootstrap for the desktop client.
-Running `atlas` will enter the Nocterm TUI by default. Running `atlas server`
-will expose the composed runtime handler through `atlas_ws` for remote clients.
-Local Flutter and Nocterm interactions do not serialize through the remote
-protocol. ACP is an inbound adapter to the same runtime; MCP primarily connects
-external tools to the tool layer.
+Running `atlas` will enter the Nocterm TUI by default. Running `atlas acp`
+serves the composed runtime to ACP clients (editors such as Zed) over NDJSON
+stdio. Running `atlas server` will expose the composed runtime handler
+through `atlas_ws` for remote clients. Local Flutter and Nocterm interactions
+do not serialize through the remote protocol. ACP is an inbound adapter to
+the same runtime; MCP primarily connects external tools to the tool layer.
 
 ## Package Responsibilities
 

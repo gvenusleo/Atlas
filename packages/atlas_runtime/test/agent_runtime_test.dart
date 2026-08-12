@@ -8,6 +8,45 @@ void main() {
     expect(() => SessionId(''), throwsArgumentError);
   });
 
+  test('createSession persists a blank session that can be loaded', () async {
+    final store = _MemorySessionStore();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _ScriptedProvider(const []),
+      tools: _ThrowingTools(),
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    final session = await runtime.createSession(
+      workingDirectory: '/tmp',
+      additionalDirectories: ['/shared'],
+    );
+
+    expect(session.workingDirectory, '/tmp');
+    expect(session.additionalDirectories, ['/shared']);
+    expect(session.compaction, isNull);
+    final snapshot = await runtime.loadSession(session.id);
+    expect(snapshot.session.id, session.id);
+    expect(snapshot.timeline, isEmpty);
+    expect(snapshot.turns, isEmpty);
+  });
+
+  test('createSession rejects an empty working directory', () async {
+    final runtime = AgentRuntime(
+      store: _MemorySessionStore(),
+      provider: _ScriptedProvider(const []),
+      tools: _ThrowingTools(),
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    await expectLater(
+      runtime.createSession(workingDirectory: ''),
+      throwsArgumentError,
+    );
+  });
+
   test('persists and emits a tool loop in occurrence order', () async {
     final store = _MemorySessionStore();
     final provider = _ScriptedProvider([

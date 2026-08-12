@@ -139,6 +139,29 @@ final class AgentRuntime {
     ),
   );
 
+  /// Creates a new blank session and persists it.
+  ///
+  /// Used by protocol adapters whose session lifecycle is separate from the
+  /// first turn, such as ACP's `session/new`.
+  Future<Session> createSession({
+    required String workingDirectory,
+    List<String> additionalDirectories = const <String>[],
+  }) async {
+    if (workingDirectory.trim().isEmpty) {
+      throw ArgumentError('workingDirectory is required for a new session');
+    }
+    final now = _now().toUtc();
+    final session = Session(
+      id: ids.sessionId(),
+      workingDirectory: workingDirectory,
+      additionalDirectories: List<String>.unmodifiable(additionalDirectories),
+      createdAt: now,
+      updatedAt: now,
+    );
+    await store.createSession(session);
+    return session;
+  }
+
   /// Loads one session and its timeline for display or resume.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.

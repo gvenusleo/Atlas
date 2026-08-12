@@ -4,8 +4,10 @@
 
 > **状态：** 开发中。`atlas_runtime`、`atlas_storage`、`atlas_provider`
 > 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
-> prompt 构建与 `atlas_tui` Nocterm 聊天界面已经可以执行。`atlas_cli`
-> 提供进程组合根（`composeRuntime`）与 `atlas` 入口；协议适配器仍在规划中。
+> prompt 构建、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器
+> （`atlas_acp`，由 `atlas acp` 提供）已经可以执行。`atlas_cli`
+> 提供进程组合根（`composeRuntime`）与 `atlas` 入口；MCP 适配器与
+> WebSocket transport 仍在规划中。
 
 ## 系统形态
 
@@ -42,10 +44,11 @@ graph TD
 `atlas_cli` 通过 `composeRuntime` 为 Nocterm 进程组装一个 runtime：它加载
 `atlas_config` 以构造 provider、存储与工具适配器，并注入 `atlas_prompt`
 系统提示词构建器。`atlas_flutter` 将使用自己的进程 bootstrap 组装桌面
-客户端。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas server` 时通过
-`atlas_ws` 将已组装的 runtime handler 暴露给远程客户端。本地 Flutter 与
-Nocterm 调用无需经过远程协议序列化。ACP 作为入口适配到同一 runtime；MCP
-主要用于把外部工具接入工具层。
+客户端。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas acp` 时通过 NDJSON
+stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）；运行
+`atlas server` 时通过 `atlas_ws` 将已组装的 runtime handler 暴露给远程
+客户端。本地 Flutter 与 Nocterm 调用无需经过远程协议序列化。ACP 作为入口
+适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 
 ## Package 职责
 
