@@ -123,6 +123,28 @@ final class AgentRuntime {
     }
   }
 
+  /// Lists session summaries in descending update order.
+  ///
+  /// Passes [workingDirectory] to restrict results to one directory, or
+  /// `null` to list every session. See [SessionQuery] for pagination.
+  Future<SessionPage> listSessions({
+    String? workingDirectory,
+    String? cursor,
+    int limit = 20,
+  }) => store.listSessions(
+    SessionQuery(
+      workingDirectory: workingDirectory,
+      cursor: cursor,
+      limit: limit,
+    ),
+  );
+
+  /// Loads one session and its timeline for display or resume.
+  ///
+  /// Throws [SessionNotFoundException] when [sessionId] does not exist.
+  Future<SessionSnapshot> loadSession(SessionId sessionId) =>
+      store.loadSession(sessionId);
+
   Stream<AgentEvent> _runTurn(TurnRequest request) async* {
     final cancellation = request.cancellation ?? CancellationToken();
     final now = _now().toUtc();

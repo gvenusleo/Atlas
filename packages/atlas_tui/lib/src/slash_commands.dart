@@ -18,6 +18,7 @@ const slashCommands = [
   SlashCommand(name: 'model', description: 'Choose a model'),
   SlashCommand(name: 'new', description: 'Start a new session'),
   SlashCommand(name: 'quit', description: 'Quit Atlas'),
+  SlashCommand(name: 'resume', description: 'Resume a previous session'),
 ];
 
 /// Parses a whole-line slash command from [text].

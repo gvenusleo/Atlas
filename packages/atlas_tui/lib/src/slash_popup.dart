@@ -8,7 +8,7 @@ import 'prompt_line.dart';
 import 'slash_commands.dart';
 
 /// Maximum number of command rows shown at once.
-const maxSlashPopupRows = 5;
+const maxSlashPopupRows = 8;
 
 /// Renders the slash command completion popup above the input bar.
 final class SlashPopup extends StatelessComponent {

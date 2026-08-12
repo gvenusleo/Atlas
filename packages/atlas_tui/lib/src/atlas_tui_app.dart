@@ -59,6 +59,9 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
   late SlashCompleter _slash;
   bool _pickingModel = false;
   bool _pickingEffort = false;
+  bool _pickingSession = false;
+  List<SessionSummary> _sessionSummaries = const [];
+  List<SlashCommand> _sessionCommands = const [];
   ModelDescriptor? _pickedModel;
   Color? _background;
 
@@ -159,9 +162,43 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     setState(() {});
   }
 
+  /// Opens the session picker with the most recently updated sessions from
+  /// the current working directory.
+  ///
+  /// The picker reuses the slash popup, exactly like the model picker.
+  Future<void> _enterSessionPick() async {
+    _pickingSession = true;
+    _pickingModel = false;
+    _pickingEffort = false;
+    setState(() {});
+    final SessionPage page;
+    try {
+      page = await _controller.listSessions();
+    } catch (error) {
+      _controller.addNotice('Cannot list sessions: $error');
+      _exitPick();
+      return;
+    }
+    if (!mounted || !_pickingSession) {
+      return;
+    }
+    _sessionSummaries = page.items;
+    _sessionCommands = [
+      for (final summary in _sessionSummaries)
+        SlashCommand(
+          name: summary.title.isEmpty ? '(untitled)' : summary.title,
+          description: summary.id.value,
+        ),
+    ];
+    _slash = SlashCompleter(commands: _sessionCommands);
+    _slash.showAll();
+    setState(() {});
+  }
+
   void _exitPick() {
     _pickingModel = false;
     _pickingEffort = false;
+    _pickingSession = false;
     _pickedModel = null;
     _slash = SlashCompleter(commands: _slashCommands);
     setState(() {});
@@ -261,6 +298,45 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     return false;
   }
 
+  /// Handles keys while the session picker is open; returns `true` when
+  /// consumed.
+  ///
+  /// Enter resolves the selected row by index so duplicated titles still
+  /// select the right session; enter is ignored while the list is loading.
+  bool _handleSessionKey(KeyboardEvent event) {
+    if (event.logicalKey == LogicalKey.arrowUp) {
+      _slash.move(-1);
+      setState(() {});
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.arrowDown) {
+      _slash.move(1);
+      setState(() {});
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.enter) {
+      final command = _slash.selectedCommand;
+      if (command != null) {
+        final index = _sessionCommands.indexOf(command);
+        final summary = _sessionSummaries[index];
+        _exitPick();
+        _controller.resume(summary.id).then((resumed) {
+          if (resumed) {
+            _controller.addNotice(
+              'Resumed: ${summary.title.isEmpty ? '(untitled)' : summary.title}',
+            );
+          }
+        });
+      }
+      return true;
+    }
+    if (event.logicalKey == LogicalKey.escape) {
+      _exitPick();
+      return true;
+    }
+    return false;
+  }
+
   /// Handles keys while the slash popup is open; returns `true` when consumed.
   bool _handleSlashKey(KeyboardEvent event) {
     if (!_slash.active) {
@@ -297,6 +373,9 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     if (_pickingModel) {
       return _handleModelKey(event);
     }
+    if (_pickingSession) {
+      return _handleSessionKey(event);
+    }
     if (_pickingEffort) {
       return _handleEffortKey(event);
     }
@@ -326,6 +405,8 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
           _controller.reset();
         case 'compact':
           _controller.compact();
+        case 'resume':
+          _enterSessionPick();
         case 'quit':
           component.onQuit?.call();
       }
@@ -414,20 +495,24 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
             SlashPopup(
               matches: _slash.matches,
               selected: _slash.selected,
-              showSlash: !(_pickingModel || _pickingEffort),
+              showSlash: !(_pickingModel || _pickingEffort || _pickingSession),
               title: _pickingEffort && _pickedModel != null
                   ? 'Select reasoning effort for ${_modelLabel(_pickedModel!)}'
                   : _pickingModel
                   ? 'Select model'
+                  : _pickingSession
+                  ? 'Resume session'
                   : null,
             ),
           InputBar(
             controller: _textController,
             busy: _controller.busy,
-            readOnly: _pickingModel || _pickingEffort,
+            readOnly: _pickingModel || _pickingEffort || _pickingSession,
             onSubmitted: _submit,
             onChanged: (_) => _syncSlash(),
-            onKeyEvent: _pickingModel || _pickingEffort ? null : _handleKey,
+            onKeyEvent: _pickingModel || _pickingEffort || _pickingSession
+                ? null
+                : _handleKey,
           ),
           SessionStatusLine(
             modelName: _modelLabel(activeModel),

@@ -232,6 +232,9 @@ void main() {
 
       await tester.enterText('/');
       await tester.pump();
+      // Alphabetical order: compact, model, new, ... so two moves reach /new.
+      await tester.sendArrowDown();
+      await tester.pump();
       await tester.sendArrowDown();
       await tester.pump();
       await tester.sendEnter();
@@ -433,6 +436,139 @@ void main() {
       await tester.pump();
 
       expect(tester.terminalState, isNot(containsText('Switched to')));
+    });
+  });
+
+  test('/resume opens the picker and resumes the selected session', () async {
+    await testNocterm('slash resume', (tester) async {
+      final provider = _ScriptedProvider();
+      final runtime = _runtime(provider);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      // Create a session worth resuming.
+      await tester.enterText('hello there');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      // /resume opens the picker with the session listed.
+      await tester.enterText('/resume');
+      await tester.sendEnter();
+      await tester.pump();
+      // First Enter fills the popup completion; the second submits the command.
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+
+      expect(tester.terminalState, containsText('Resume session'));
+      expect(tester.terminalState, containsText('hello there'));
+
+      // The first row is the session; confirm directly.
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+
+      expect(tester.terminalState, containsText('Resumed: hello there'));
+    });
+  });
+
+  test('/resume escape cancels without resuming', () async {
+    await testNocterm('slash resume cancel', (tester) async {
+      final provider = _ScriptedProvider();
+      final runtime = _runtime(provider);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      await tester.enterText('hello there');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.enterText('/resume');
+      await tester.sendEnter();
+      await tester.pump();
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      expect(tester.terminalState, containsText('Resume session'));
+
+      await tester.sendEscape();
+      await tester.pump();
+
+      expect(tester.terminalState, isNot(containsText('Resume session')));
+      expect(tester.terminalState, isNot(containsText('Resumed:')));
+    });
+  });
+
+  test('/resume failure shows an error without a success notice', () async {
+    await testNocterm('slash resume failure', (tester) async {
+      final store = DriftSessionStore.inMemory();
+      final provider = _ScriptedProvider();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: provider,
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: ModelRef(
+          providerId: ProviderId('fake'),
+          modelId: ModelId('model'),
+        ),
+      );
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      // Create a session worth resuming.
+      await tester.enterText('hello there');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      // Open the picker, then delete the session before confirming.
+      await tester.enterText('/resume');
+      await tester.sendEnter();
+      await tester.pump();
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      expect(tester.terminalState, containsText('Resume session'));
+
+      final page = await store.listSessions(SessionQuery());
+      await store.deleteSession(page.items.single.id);
+
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+
+      // The failure surfaces as an error message, not a success notice.
+      expect(tester.terminalState, containsText('Session not found'));
+      expect(tester.terminalState, isNot(containsText('Resumed:')));
     });
   });
 

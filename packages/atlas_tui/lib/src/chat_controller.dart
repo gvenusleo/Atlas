@@ -45,7 +45,7 @@ final class ChatController implements Listenable {
   /// The runtime that executes turns.
   final AgentRuntime runtime;
 
-  final String _workingDirectory;
+  String _workingDirectory;
   final List<ChatMessage> _messages = [];
   final List<void Function()> _listeners = [];
   SessionId? _sessionId;
@@ -76,6 +76,9 @@ final class ChatController implements Listenable {
 
   /// The total tokens of the most recently finished turn.
   int get contextTokens => _contextTokens;
+
+  /// The working directory used for tool execution.
+  String get workingDirectory => _workingDirectory;
 
   /// The activity phase of the running turn.
   TurnPhase get turnPhase => _turnPhase;
@@ -180,6 +183,51 @@ final class ChatController implements Listenable {
     if (!compacted) {
       addNotice('Nothing to compact');
     }
+  }
+
+  /// Lists recoverable sessions from the current working directory.
+  Future<SessionPage> listSessions() =>
+      runtime.listSessions(workingDirectory: _workingDirectory);
+
+  /// Switches the transcript and session id to the persisted [sessionId].
+  ///
+  /// Returns `false` — leaving the transcript untouched — when a turn is
+  /// running or the session cannot be loaded. On success, renders the
+  /// timeline as the transcript and announces a previous compaction with
+  /// the same wording as the live compaction event.
+  Future<bool> resume(SessionId sessionId) async {
+    if (_busy) {
+      return false;
+    }
+    final SessionSnapshot snapshot;
+    try {
+      snapshot = await runtime.loadSession(sessionId);
+    } catch (error) {
+      _messages.add(ChatMessage(kind: ChatMessageKind.error, text: '$error'));
+      _notify();
+      return false;
+    }
+    final session = snapshot.session;
+    _messages
+      ..clear()
+      ..addAll(messagesFromTimeline(snapshot.timeline));
+    _sessionId = session.id;
+    _workingDirectory = session.workingDirectory;
+    _contextTokens = session.lastUsage.totalTokens;
+    _sealed = true;
+    final checkpoint = session.compaction;
+    if (checkpoint != null && checkpoint.summary.trim().isNotEmpty) {
+      _messages.add(
+        ChatMessage(
+          kind: ChatMessageKind.system,
+          text:
+              'Context compacted. '
+              'Kept ${checkpoint.keptRecentMessages} recent messages.',
+        ),
+      );
+    }
+    _notify();
+    return true;
   }
 
   /// Releases the status timer; call from the owning widget's dispose.
@@ -343,4 +391,53 @@ final class ChatController implements Listenable {
       listener();
     }
   }
+}
+
+/// Renders a persisted timeline as transcript messages for a resumed
+/// session, pairing each tool call with the result that followed it.
+List<ChatMessage> messagesFromTimeline(List<TimelineItem> timeline) {
+  final messages = <ChatMessage>[];
+  for (final item in timeline) {
+    switch (item) {
+      case UserMessageItem(:final content):
+        final text = textFromContent(content);
+        if (text.isNotEmpty) {
+          messages.add(ChatMessage(kind: ChatMessageKind.user, text: text));
+        }
+      case AssistantMessageItem(:final content):
+        final text = textFromContent(content);
+        if (text.isNotEmpty) {
+          messages.add(
+            ChatMessage(kind: ChatMessageKind.assistant, text: text),
+          );
+        }
+      case ToolCallItem(:final call):
+        messages.add(
+          ChatMessage(
+            kind: ChatMessageKind.tool,
+            toolName: call.name,
+            arguments: call.arguments,
+            text: 'running…',
+          ),
+        );
+      case ToolResultItem(:final content, :final isError):
+        final index = messages.lastIndexWhere(
+          (message) => message.kind == ChatMessageKind.tool,
+        );
+        if (index >= 0) {
+          final summary = content.length > maxToolResultChars
+              ? '...${content.substring(content.length - maxToolResultChars)}'
+              : content;
+          final previous = messages[index];
+          messages[index] = ChatMessage(
+            kind: ChatMessageKind.tool,
+            toolName: previous.toolName,
+            arguments: previous.arguments,
+            text: isError ? 'failed: $summary' : summary,
+            isError: isError,
+          );
+        }
+    }
+  }
+  return messages;
 }

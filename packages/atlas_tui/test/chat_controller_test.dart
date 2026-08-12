@@ -357,6 +357,206 @@ void main() {
     expect(controller.messages, isEmpty);
     expect(controller.model, isNotNull);
   });
+
+  test('listSessions filters by the working directory', () async {
+    final other = ChatController(runtime: runtime, workingDirectory: '/other');
+    await other.send('from elsewhere');
+
+    final local = ChatController(runtime: runtime);
+    final localPage = await local.listSessions();
+    expect(localPage.items, isEmpty);
+
+    // The runtime still lists every session without a directory filter.
+    final allPage = await runtime.listSessions();
+    expect(allPage.items, hasLength(1));
+    expect(allPage.items.single.title, 'from elsewhere');
+  });
+
+  test('resume restores the transcript and session state', () async {
+    final controller = ChatController(runtime: runtime);
+    await controller.send('hello');
+    final summary = (await controller.listSessions()).items.single;
+    expect(summary.title, 'hello');
+
+    controller.reset();
+    expect(controller.messages, isEmpty);
+
+    expect(await controller.resume(summary.id), isTrue);
+
+    expect(controller.messages.map((m) => m.kind), [
+      ChatMessageKind.user,
+      ChatMessageKind.tool,
+      ChatMessageKind.assistant,
+    ]);
+    expect(controller.messages.first.text, 'hello');
+    expect(controller.messages.last.text, 'done');
+    expect(controller.contextTokens, 4321);
+  });
+
+  test('resume keeps new turns in the resumed session', () async {
+    final controller = ChatController(runtime: runtime);
+    await controller.send('first');
+    final firstId = (await controller.listSessions()).items.single.id;
+    controller.reset();
+    await controller.resume(firstId);
+
+    final before = provider.sessionIds.length;
+    await controller.send('second');
+
+    expect(provider.sessionIds, hasLength(before + 1));
+    expect(provider.sessionIds.last, firstId.value);
+  });
+
+  test('resume switches the working directory to the session', () async {
+    final other = ChatController(runtime: runtime, workingDirectory: '/other');
+    await other.send('from elsewhere');
+    final id = (await other.listSessions()).items.single.id;
+
+    final controller = ChatController(runtime: runtime);
+    expect(controller.workingDirectory, isNot('/other'));
+
+    await controller.resume(id);
+
+    expect(controller.workingDirectory, '/other');
+  });
+
+  test('resume reports load failures as error messages', () async {
+    final controller = ChatController(runtime: runtime);
+
+    expect(await controller.resume(SessionId('missing')), isFalse);
+
+    expect(controller.messages.last.kind, ChatMessageKind.error);
+    expect(controller.messages.last.text, contains('Session not found'));
+  });
+
+  test('resume announces a previous compaction', () async {
+    final compactingProvider = _ScriptedProvider()
+      ..contextWindow = 10000
+      ..inputTokens = 9500;
+    final compactingRuntime = AgentRuntime(
+      store: DriftSessionStore.inMemory(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final writer = ChatController(runtime: compactingRuntime);
+    await writer.send('first');
+    await writer.send('second');
+    final id = (await writer.listSessions()).items.single.id;
+
+    final controller = ChatController(runtime: compactingRuntime);
+    await controller.resume(id);
+
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(
+      controller.messages.last.text,
+      'Context compacted. Kept 2 recent messages.',
+    );
+  });
+
+  test('messagesFromTimeline renders and pairs tool items', () {
+    final sessionId = SessionId('s');
+    final turnId = TurnId('t');
+    final at = DateTime.utc(2026, 1, 1);
+    TimelineItemId nextId(int sequence) => TimelineItemId('i$sequence');
+    final timeline = <TimelineItem>[
+      UserMessageItem(
+        id: nextId(1),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 1,
+        occurredAt: at,
+        content: [TextContent('hi')],
+      ),
+      AssistantMessageItem(
+        id: nextId(2),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 2,
+        occurredAt: at,
+        content: [TextContent('let me check')],
+        model: ModelRef(providerId: ProviderId('p'), modelId: ModelId('m')),
+        stopReason: StopReason.toolUse,
+      ),
+      ToolCallItem(
+        id: nextId(3),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 3,
+        occurredAt: at,
+        call: ToolCall(
+          id: ToolCallId('c1'),
+          name: 'read',
+          arguments: {'path': '/a'},
+        ),
+      ),
+      ToolResultItem(
+        id: nextId(4),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 4,
+        occurredAt: at,
+        callId: ToolCallId('c1'),
+        content: 'content of a',
+      ),
+    ];
+
+    final messages = messagesFromTimeline(timeline);
+
+    expect(messages.map((m) => m.kind), [
+      ChatMessageKind.user,
+      ChatMessageKind.assistant,
+      ChatMessageKind.tool,
+    ]);
+    expect(messages.first.text, 'hi');
+    expect(messages[1].text, 'let me check');
+    expect(messages[2].toolName, 'read');
+    expect(messages[2].arguments, {'path': '/a'});
+    expect(messages[2].text, 'content of a');
+    expect(messages[2].isError, isFalse);
+  });
+
+  test('messagesFromTimeline marks failed tool results', () {
+    final sessionId = SessionId('s');
+    final turnId = TurnId('t');
+    final at = DateTime.utc(2026, 1, 1);
+    final timeline = <TimelineItem>[
+      ToolCallItem(
+        id: TimelineItemId('a'),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 1,
+        occurredAt: at,
+        call: ToolCall(
+          id: ToolCallId('c1'),
+          name: 'shell',
+          arguments: const {},
+        ),
+      ),
+      ToolResultItem(
+        id: TimelineItemId('b'),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 2,
+        occurredAt: at,
+        callId: ToolCallId('c1'),
+        content: 'boom',
+        isError: true,
+      ),
+    ];
+
+    final messages = messagesFromTimeline(timeline);
+
+    expect(messages.single.kind, ChatMessageKind.tool);
+    expect(messages.single.text, 'failed: boom');
+    expect(messages.single.isError, isTrue);
+  });
 }
 
 /// Echoes a tool result so tool success paths run without real tools.

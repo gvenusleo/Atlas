@@ -54,10 +54,11 @@ void main() {
       completer.sync('/', 1);
       expect(completer.active, isTrue);
       expect(completer.matches.map((c) => c.name), [
+        'compact',
         'model',
         'new',
-        'compact',
         'quit',
+        'resume',
       ]);
       expect(completer.selected, 0);
     });
@@ -67,7 +68,7 @@ void main() {
       completer.sync('/n', 2);
       expect(completer.matches.map((c) => c.name), ['new']);
       completer.sync('/e', 2);
-      expect(completer.matches.map((c) => c.name), ['model', 'new']);
+      expect(completer.matches.map((c) => c.name), ['model', 'new', 'resume']);
     });
 
     test('showAll activates with the whole catalog', () {
@@ -75,10 +76,11 @@ void main() {
       completer.showAll();
       expect(completer.active, isTrue);
       expect(completer.matches.map((c) => c.name), [
+        'compact',
         'model',
         'new',
-        'compact',
         'quit',
+        'resume',
       ]);
       expect(completer.selected, 0);
     });
@@ -98,7 +100,7 @@ void main() {
       completer.move(-5);
       expect(completer.selected, 0);
       completer.move(10);
-      expect(completer.selected, 3);
+      expect(completer.selected, 4);
     });
 
     test('closes when the cursor leaves the token', () {
