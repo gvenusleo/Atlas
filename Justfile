@@ -39,6 +39,11 @@ ci: fmt-check analyze test
 tui-debug:
     mise exec -- dart --enable-vm-service apps/atlas_cli/bin/atlas.dart
 
+# Build the native `atlas` executable.
+build-cli: deps
+    mkdir -p build
+    mise exec -- dart compile exe apps/atlas_cli/bin/atlas.dart -o build/atlas
+
 [working-directory: 'apps/atlas_flutter']
 app-run device='macos': deps
     mise exec -- flutter run --no-pub -d {{ quote(device) }}
