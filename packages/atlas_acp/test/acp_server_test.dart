@@ -72,17 +72,35 @@ void main() {
     });
 
     final updates = await wire.notifications.take(5).toList();
-    expect(updates.map((u) => (u['update'] as Map)['sessionUpdate']), [
-      'agent_message_chunk',
-      'tool_call',
-      'tool_call_update',
-      'tool_call_update',
-      'agent_message_chunk',
-    ]);
-    final toolCall = updates[1]['update'] as Map<String, Object?>;
+    expect(
+      updates.map(
+        (u) => ((u['params'] as Map)['update'] as Map)['sessionUpdate'],
+      ),
+      [
+        'agent_message_chunk',
+        'tool_call',
+        'tool_call_update',
+        'tool_call_update',
+        'agent_message_chunk',
+      ],
+    );
+    // Every notification must be a well-formed JSON-RPC message carrying the
+    // session/update method; a bare params object breaks ACP clients.
+    for (final update in updates) {
+      expect(update['jsonrpc'], '2.0');
+      expect(update['method'], 'session/update');
+      final params = update['params'] as Map<String, Object?>;
+      expect(params['sessionId'], sessionId);
+      expect(params['update'], isNotNull);
+    }
+    final toolCall =
+        ((updates[1]['params'] as Map)['update'] as Map<String, Object?>);
     expect(toolCall['toolCallId'], 'call-1');
     expect(toolCall['kind'], 'read');
-    expect((updates[3]['update'] as Map)['status'], 'completed');
+    expect(
+      ((updates[3]['params'] as Map)['update'] as Map)['status'],
+      'completed',
+    );
 
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
@@ -131,13 +149,18 @@ void main() {
       'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
     });
     final replay = await wire.notifications.take(5).toList();
-    expect(replay.map((u) => (u['update'] as Map)['sessionUpdate']), [
-      'user_message_chunk',
-      'agent_message_chunk',
-      'tool_call',
-      'tool_call_update',
-      'agent_message_chunk',
-    ]);
+    expect(
+      replay.map(
+        (u) => ((u['params'] as Map)['update'] as Map)['sessionUpdate'],
+      ),
+      [
+        'user_message_chunk',
+        'agent_message_chunk',
+        'tool_call',
+        'tool_call_update',
+        'agent_message_chunk',
+      ],
+    );
     final response = await loadFuture;
     expect(response['result'], isNull);
     await wire.close();
@@ -288,6 +311,27 @@ void main() {
     final error = response['error'] as Map<String, Object?>;
     expect(error['code'], -32602);
     expect(error['message'], contains('session not found'));
+    await wire.close();
+  });
+
+  test('prompt with an empty session id returns invalid params', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': '',
+        'prompt': [
+          {'type': 'text', 'text': 'Hello'},
+        ],
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    final data = error['data'] as Map<String, Object?>?;
+    expect(data?['stack'], isNull);
+    expect(data?['full'], isNull);
     await wire.close();
   });
 

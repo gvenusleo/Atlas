@@ -87,13 +87,18 @@ final class AcpServer {
         }
         return result;
       } catch (error) {
-        if (_debug && error is RpcException) {
+        if (_debug) {
           stderr.writeln(
-            'atlas_acp: >> ${params.method}: error '
-            '${error.code} ${error.message}',
+            'atlas_acp: >> ${params.method}: '
+            '${error is RpcException ? 'error ${error.code} ${error.message}' : error.runtimeType}',
           );
         }
-        rethrow;
+        if (error is RpcException) {
+          rethrow;
+        }
+        // Never let raw exceptions reach json_rpc_2's default serializer,
+        // which embeds the full stack trace in the error data.
+        throw RpcException(-32603, 'internal error (${error.runtimeType})');
       }
     };
   }
@@ -150,6 +155,9 @@ final class AcpServer {
 
   Future<JsonObject> _prompt(Parameters params) async {
     final sessionId = params['sessionId'].asString;
+    if (sessionId.isEmpty) {
+      throw RpcException.invalidParams('sessionId must not be empty');
+    }
     final session = SessionId(sessionId);
     if (_activeTurns.containsKey(sessionId)) {
       throw RpcException(

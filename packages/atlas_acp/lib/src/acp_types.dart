@@ -19,8 +19,12 @@ final class SessionUpdate {
   /// The typed update object.
   final JsonObject update;
 
-  /// Serializes the notification for the wire.
-  JsonObject toJson() => {'sessionId': sessionId.value, 'update': update};
+  /// Serializes the full JSON-RPC notification for the wire.
+  JsonObject toJson() => {
+    'jsonrpc': '2.0',
+    'method': 'session/update',
+    'params': {'sessionId': sessionId.value, 'update': update},
+  };
 
   /// The JSON-encoded notification.
   String toJsonString() => jsonEncode(toJson());
