@@ -955,6 +955,55 @@ void main() {
     );
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
+    // A bare /compact carries no instruction into the summary request.
+    final summaryPrompt = textFromContent(
+      wire.lastRequest!.messages.single.content,
+    );
+    expect(summaryPrompt, isNot(contains('Additional user instruction')));
+    await wire.close();
+  });
+
+  test('/compact forwards an instruction to the summary request', () async {
+    final wire = await _Wire.open(
+      // One kept turn leaves the first turn compactable.
+      keptRecentTurns: 1,
+      responses: [
+        ..._defaultResponses(),
+        ..._defaultResponses(),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+    await _runPrompt(wire, sessionId);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact keep files'},
+        ],
+      },
+    });
+    final message = await wire.turnNotifications.first;
+    final update = (message['params'] as Map)['update'] as Map<String, Object?>;
+    expect(update['sessionUpdate'], 'agent_message_chunk');
+    expect(
+      (update['content'] as Map)['text'],
+      startsWith('Context compacted.'),
+    );
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    final summaryPrompt = textFromContent(
+      wire.lastRequest!.messages.single.content,
+    );
+    expect(summaryPrompt, contains('Additional user instruction:\nkeep files'));
     await wire.close();
   });
 

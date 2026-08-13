@@ -260,7 +260,7 @@ final class AcpServer {
       // Validate the session up front so an unknown session reports invalid
       // params like any other prompt.
       await _configFor(session);
-      return _runCompact(session, sessionId);
+      return _runCompact(session, sessionId, compactInstruction);
     }
     final cancellation = CancellationToken();
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
@@ -516,13 +516,23 @@ final class AcpServer {
 
   /// Runs the `/compact` slash command: manually compacts [session] and
   /// reports the outcome as an assistant message, without a model turn.
-  Future<JsonObject> _runCompact(SessionId session, String sessionId) async {
+  ///
+  /// [instruction] is the optional user text after `/compact`, forwarded to
+  /// the runtime compaction summary request.
+  Future<JsonObject> _runCompact(
+    SessionId session,
+    String sessionId,
+    String instruction,
+  ) async {
     final cancellation = CancellationToken();
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
     try {
       var keptMessages = -1;
       var failed = false;
-      await for (final event in runtime.compact(session)) {
+      await for (final event in runtime.compact(
+        session,
+        instruction: instruction,
+      )) {
         cancellation.throwIfCancelled();
         switch (event) {
           case CompactionFinished(:final checkpoint):

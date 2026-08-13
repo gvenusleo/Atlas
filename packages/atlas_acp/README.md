@@ -18,8 +18,9 @@ as a subprocess and drive sessions through JSON-RPC.
   new/load/resume, `category: "model"` and `category: "thought_level"`) with
   `session/set_config_option` applying them to subsequent turns
 - Slash commands: `available_commands_update` advertising `/compact` (manual
-  compaction without a model turn) and one command per available skill, with
-  `/name` tokens in prompts injecting the matching skill instructions
+  compaction without a model turn, with any trailing `/compact <instruction>`
+  text forwarded to the summary request) and one command per available skill,
+  with `/name` tokens in prompts injecting the matching skill instructions
 - `session/prompt` mapping runtime turns to `session/update` notifications:
   `agent_message_chunk`, `agent_thought_chunk`, `tool_call` (with `rawInput`),
   `tool_call_update` (with `rawOutput`), `plan` (from the `plan` tool),

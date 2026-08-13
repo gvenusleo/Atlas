@@ -716,7 +716,9 @@ void main() {
         .toList();
     expect(second.whereType<CompactionStarted>(), isEmpty);
 
-    final events = await runtime.compact(first.first.sessionId).toList();
+    final events = await runtime
+        .compact(first.first.sessionId, instruction: 'keep files')
+        .toList();
     expect(events.map((event) => event.runtimeType), [
       CompactionStarted,
       CompactionFinished,
@@ -725,10 +727,11 @@ void main() {
     expect(checkpoint.summary, 'Manual summary.');
     expect(checkpoint.compactedThroughSequence, 1);
     expect(checkpoint.keptRecentMessages, 2);
-    expect(
-      textFromContent(provider.requests.last.messages.single.content),
-      contains('<transcript>'),
+    final summaryPrompt = textFromContent(
+      provider.requests.last.messages.single.content,
     );
+    expect(summaryPrompt, contains('<transcript>'));
+    expect(summaryPrompt, contains('Additional user instruction:\nkeep files'));
   });
 
   test(

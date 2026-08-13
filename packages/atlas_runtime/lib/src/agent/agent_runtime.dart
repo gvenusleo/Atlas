@@ -96,9 +96,15 @@ final class AgentRuntime {
 
   /// Manually compacts [sessionId] without the threshold check.
   ///
+  /// [instruction] is an optional user-provided direction for the compaction
+  /// summary; when non-empty it is included in the summary request.
+  ///
   /// Uses the model and turn of the latest recorded turn so the emitted
   /// events stay attached to the session's most recent execution.
-  Stream<AgentEvent> compact(SessionId sessionId) async* {
+  Stream<AgentEvent> compact(
+    SessionId sessionId, {
+    String? instruction,
+  }) async* {
     final release = await _acquireSessionLock(sessionId);
     try {
       final snapshot = await store.loadSession(sessionId);
@@ -116,6 +122,7 @@ final class AgentRuntime {
         turnId: lastTurn.id,
         latestUsage: lastTurn.usage,
         enforceThreshold: false,
+        instruction: instruction,
         nextSequence: () => eventSequence++,
       );
     } finally {
@@ -574,6 +581,7 @@ final class AgentRuntime {
     required TokenUsage latestUsage,
     required int Function() nextSequence,
     bool enforceThreshold = true,
+    String? instruction,
   }) async* {
     final kept = _keptWindow(timeline, keptRecentTurns);
     final boundaryIndex = timeline.length - kept.length - 1;
@@ -613,6 +621,7 @@ final class AgentRuntime {
         compacted: compacted,
         model: model,
         turnId: turnId,
+        instruction: instruction,
       );
       final checkpoint = CompactionCheckpoint(
         sessionId: session.id,
@@ -650,8 +659,13 @@ final class AgentRuntime {
     required List<TimelineItem> compacted,
     required ModelRef model,
     required TurnId turnId,
+    String? instruction,
   }) async {
     final buffer = StringBuffer(_compactionInstruction);
+    final instructionText = instruction?.trim();
+    if (instructionText != null && instructionText.isNotEmpty) {
+      buffer.write('\n\nAdditional user instruction:\n$instructionText');
+    }
     final previous = session.compaction?.summary.trim();
     if (previous != null && previous.isNotEmpty) {
       buffer.write('\n\n<previous_summary>\n$previous\n</previous_summary>');

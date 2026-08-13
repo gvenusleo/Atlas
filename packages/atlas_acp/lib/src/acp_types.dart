@@ -238,8 +238,8 @@ const compactCommandName = 'compact';
 /// command followed by one command per available skill, skipping names that
 /// collide with `/compact` or cannot be represented as slash commands.
 ///
-/// `/compact` carries no input hint: Atlas compacts the full context and
-/// ignores any trailing instruction text.
+/// `/compact` carries no input hint: Atlas forwards any trailing instruction
+/// text to the compaction summary request.
 List<JsonObject> availableCommandsFor(List<SkillSummary> skills) => [
   {
     'name': compactCommandName,
@@ -297,7 +297,7 @@ String? slashCommandName(String text) {
 ///
 /// Returns the trailing instruction text (possibly empty) when [text] is a
 /// compact command, or null when it is a regular prompt. The instruction is
-/// accepted for compatibility but ignored by the runtime compaction.
+/// forwarded to the runtime compaction summary request when non-empty.
 String? compactCommandInstruction(String text) {
   final trimmed = text.trim();
   if (trimmed == '/$compactCommandName') {
