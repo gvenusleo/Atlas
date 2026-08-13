@@ -50,6 +50,16 @@ just ci           # 完整仓库验证
 `dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
 （sqlite3）不能使用 `dart compile exe`。
 
+使用 `just install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
+预编译 release 二进制：macOS/Linux 运行
+`curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash`，
+Windows 运行 `irm .../download/latest/install.ps1 | iex`；脚本会下载与当前
+平台和架构匹配的带版本归档，并支持 `ATLAS_INSTALL_DIR` 覆盖安装目录。
+
+推送 `v*.*.*` tag 即可发布新版本：`.github/workflows/release.yml` 使用
+`dart build cli` 构建 linux（amd64/arm64）、macOS（arm64）与 Windows
+（amd64）二进制，连同安装脚本一起上传到 GitHub Release。
+
 ## Package 规则
 
 - 领域概念与 runtime ports 放在 `atlas_runtime`；Provider、存储、工具、UI 和协议实现分别放在其所属 package。

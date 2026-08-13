@@ -30,6 +30,27 @@ WebSocket transport and MCP integrations are not implemented yet. The CLI
 builds as a single executable with `just build-cli`
 (`build/bundle/bin/atlas`).
 
+## Installation
+
+Install the latest release with one command:
+
+```sh
+curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/gvenusleo/atlas/releases/download/latest/install.ps1 | iex
+```
+
+Or build and install from source:
+
+```sh
+just build-cli    # build/bundle/bin/atlas
+just install      # install into ~/.local/bin
+```
+
 ## Development
 
 Prerequisites are Git, [mise](https://mise.jdx.dev/), and [just](https://github.com/casey/just).
@@ -40,11 +61,10 @@ just deps
 just ci
 ```
 
-Run the existing Flutter shell on macOS, or build the single-file CLI binary:
+Run the existing Flutter shell on macOS:
 
 ```sh
 just app-run macos
-just build-cli   # build/bundle/bin/atlas
 ```
 
 See [Development](docs/development.md) for workspace commands and [Architecture](docs/architecture.md) for runtime boundaries.

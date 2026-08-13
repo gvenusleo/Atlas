@@ -50,6 +50,18 @@ Build the single-file CLI binary with `just build-cli`. Dart 3.13's
 `dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks
 (sqlite3) cannot use `dart compile exe`.
 
+Install a locally built binary into `~/.local/bin` with `just install`.
+End users install a prebuilt release binary with
+`curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash`
+(macOS/Linux) or `irm .../download/latest/install.ps1 | iex` (Windows); the
+scripts download the versioned artifact matching the platform and
+architecture and honor `ATLAS_INSTALL_DIR`.
+
+Releases are cut by pushing a `v*.*.*` tag:
+`.github/workflows/release.yml` builds linux (amd64/arm64), macOS (arm64),
+and Windows (amd64) binaries with `dart build cli` and uploads them together
+with the install scripts to the GitHub release.
+
 ## Package Rules
 
 - Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.
