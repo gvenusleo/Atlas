@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-仓库目前是 Dart 与 Flutter workspace。`atlas_runtime` 与 `atlas_storage` 已是带聚焦测试的可执行 package；Provider、CLI、WebSocket transport、TUI、ACP 与 MCP 行为仍处于规划阶段。
+仓库目前是 Dart 与 Flutter workspace。`atlas_runtime`、`atlas_storage`、Provider 适配器、`atlas_config`、`atlas_tools`、`atlas_prompt`、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器（`atlas_acp`）已是带聚焦测试的可执行 package；MCP 适配器与 WebSocket transport 仍处于规划阶段。
 
 ## Workspace 结构
 
@@ -25,7 +25,7 @@ apps/atlas_flutter        Flutter 桌面端与移动端应用
 
 ## 工具链
 
-根 `mise.toml` 固定 Flutter 3.44.9，其中包含 Dart 3.12.2。
+根 `mise.toml` 固定 Flutter 3.47.0，其中包含 Dart 3.13.0。
 
 ```sh
 mise install
@@ -45,6 +45,10 @@ just ci           # 完整仓库验证
 ```
 
 使用 `just app-run macos` 运行当前 Flutter 外壳。各平台 debug 构建使用对应的 `just app-build-*` recipe。
+
+使用 `just build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
+`dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
+（sqlite3）不能使用 `dart compile exe`。
 
 ## Package 规则
 

@@ -45,8 +45,8 @@ graph TD
 `atlas_config` 以构造 provider、存储与工具适配器，并注入 `atlas_prompt`
 系统提示词构建器。`atlas_flutter` 将使用自己的进程 bootstrap 组装桌面
 客户端。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas acp` 时通过 NDJSON
-stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）；运行
-`atlas server` 时通过 `atlas_ws` 将已组装的 runtime handler 暴露给远程
+stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）；规划中的
+`atlas server` 子命令将通过 `atlas_ws` 把已组装的 runtime handler 暴露给远程
 客户端。本地 Flutter 与 Nocterm 调用无需经过远程协议序列化。ACP 作为入口
 适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 

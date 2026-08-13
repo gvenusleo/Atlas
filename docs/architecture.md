@@ -46,10 +46,10 @@ graph TD
 `composeRuntime`: it loads `atlas_config` to construct provider, storage, and
 tool adapters and injects the `atlas_prompt` system prompt builder.
 `atlas_flutter` will use its own process bootstrap for the desktop client.
-Running `atlas` will enter the Nocterm TUI by default. Running `atlas acp`
+Running `atlas` enters the Nocterm TUI by default. Running `atlas acp`
 serves the composed runtime to ACP clients (editors such as Zed) over NDJSON
-stdio. Running `atlas server` will expose the composed runtime handler
-through `atlas_ws` for remote clients. Local Flutter and Nocterm interactions
+stdio. A planned `atlas server` subcommand will expose the composed runtime
+handler through `atlas_ws` for remote clients. Local Flutter and Nocterm interactions
 do not serialize through the remote protocol. ACP is an inbound adapter to
 the same runtime; MCP primarily connects external tools to the tool layer.
 

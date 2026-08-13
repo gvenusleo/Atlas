@@ -4,7 +4,7 @@
 
 - Atlas is a local general-purpose agent. Its tools have the same filesystem and shell permissions as the Atlas process.
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
-- The repository is being rebuilt as a Dart and Flutter workspace. The Flutter application shell exists; the agent runtime, CLI, WebSocket transport, ACP, MCP, and Nocterm behavior are not implemented yet.
+- The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, and Nocterm TUI are implemented; the Flutter application shell exists; the WebSocket transport and MCP remain unimplemented.
 - All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
 - Local Flutter and Nocterm entry points receive the runtime directly. Remote clients use the versioned WebSocket contract in `atlas_ws`.
 - Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.
@@ -17,7 +17,7 @@
 - Preserve package boundaries. Add an abstraction only when real call sites require it.
 - Do not predeclare package dependencies. Add a dependency from the owning package with `dart pub add` only when implementation code first imports it; use `flutter pub add` for the Flutter application.
 - Use Dio for all HTTP requests. Do not add `package:http` or another HTTP client. Add a dedicated WebSocket dependency only when `atlas_ws` contains an implementation that requires it.
-- Keep the future agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
+- Keep the agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
 - Persisted timeline items must belong to the same session and turn; storage writes that update multiple records must be atomic.
 - The runtime serializes active turns per session, and persisted provider/tool failures use safe summaries rather than raw exception text.
 - Compaction checkpoints end at the final timeline item of a terminal turn; they must never split an assistant/tool/result group.
@@ -32,7 +32,7 @@
 - `atlas_acp` and `atlas_mcp` use `json_rpc_2` directly and own their different lifecycle and transport rules. Extract shared RPC code only after stable duplication exists.
 - `atlas_acp` and `atlas_mcp` adapt protocols to the shared runtime.
 - `atlas_tui` renders and interacts with an injected runtime interface; it does not depend on remote client protocols.
-- `atlas_cli` and `atlas_flutter` are application composition roots. Running `atlas` will enter the TUI by default; `atlas server` will expose the composed runtime through `atlas_ws`.
+- `atlas_cli` and `atlas_flutter` are application composition roots. Running `atlas` enters the TUI by default; `atlas acp` serves the composed runtime to ACP clients; a planned `atlas server` will expose the composed runtime through `atlas_ws`.
 
 ## Flutter App
 
@@ -55,4 +55,5 @@
 - Run focused tests for changed behavior first.
 - Run `just ci` before delivery. It resolves the locked workspace, checks formatting, analyzes Dart and Flutter code, and runs available tests.
 - For Flutter platform integration changes, also run the matching `just app-build-*` recipe.
+- Build the CLI with `just build-cli` (`dart build cli`, required for packages with build hooks like sqlite3; `dart compile exe` cannot link them). The binary lands at `build/bundle/bin/atlas`; do not recreate a `build/atlas` symlink.
 - Report commands that passed and remaining risk. Command completion alone is not proof; verify the observable file or behavior change.

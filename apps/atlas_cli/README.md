@@ -8,9 +8,11 @@ The command-line and Nocterm entry point for Atlas.
   constructs provider, tool, and storage adapters, and injects the
   `atlas_prompt` system prompt builder into one `atlas_runtime` `AgentRuntime`
   instance.
-- Will start the Nocterm TUI by default; the planned `atlas server` subcommand
-  exposes the composed runtime through `atlas_ws`. Other non-interactive
-  commands share the same runtime instead of duplicating the agent loop.
+- Starts the Nocterm TUI by default (`atlas`); `atlas acp` serves the same
+  runtime to ACP clients over NDJSON stdio. The planned `atlas server`
+  subcommand will expose the composed runtime through `atlas_ws`. Other
+  non-interactive commands share the same runtime instead of duplicating the
+  agent loop.
 
 ## Allowed dependencies
 

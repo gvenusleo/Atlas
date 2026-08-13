@@ -19,11 +19,16 @@ The repository currently contains:
 - an `atlas_cli` composition root that wires config, providers, tools, storage,
   and the system prompt into one runtime;
 - a Nocterm chat interface in `atlas_tui` that runs as the default `atlas`
-  terminal entry point (`dart run apps/atlas_cli/bin/atlas.dart`).
+  terminal entry point, with slash commands (`/model`, `/new`, `/resume`,
+  `/compact`, `/quit`) and skill injection;
+- an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON
+  stdio, covering session lifecycle, model and effort config, slash commands,
+  turn streaming, and agent plans;
 - architecture and development contracts for the Dart implementation.
 
-WebSocket transport, ACP, and MCP integrations are not implemented yet. There
-is currently no supported Atlas command-line release from this branch.
+WebSocket transport and MCP integrations are not implemented yet. The CLI
+builds as a single executable with `just build-cli`
+(`build/bundle/bin/atlas`).
 
 ## Development
 
@@ -35,10 +40,11 @@ just deps
 just ci
 ```
 
-Run the existing Flutter shell on macOS:
+Run the existing Flutter shell on macOS, or build the single-file CLI binary:
 
 ```sh
 just app-run macos
+just build-cli   # build/bundle/bin/atlas
 ```
 
 See [Development](docs/development.md) for workspace commands and [Architecture](docs/architecture.md) for runtime boundaries.

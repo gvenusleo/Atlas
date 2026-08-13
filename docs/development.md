@@ -4,7 +4,7 @@
 
 ## Current State
 
-The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, and the `atlas_tui` Nocterm chat interface are executable packages with focused tests; protocol, server, and remaining CLI behavior remain planned.
+The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, the `atlas_tui` Nocterm chat interface, and the ACP server adapter (`atlas_acp`) are executable packages with focused tests; the MCP adapter and WebSocket transport remain planned.
 
 ## Workspace Layout
 
@@ -25,7 +25,7 @@ The root Pub workspace owns the only `pubspec.lock`. Workspace members use `reso
 
 ## Toolchain
 
-The root `mise.toml` pins Flutter 3.44.9, which provides Dart 3.12.2.
+The root `mise.toml` pins Flutter 3.47.0, which provides Dart 3.13.0.
 
 ```sh
 mise install
@@ -45,6 +45,10 @@ just ci           # complete repository verification
 ```
 
 Run the current Flutter shell with `just app-run macos`. Platform debug builds use the matching `just app-build-*` recipe.
+
+Build the single-file CLI binary with `just build-cli`. Dart 3.13's
+`dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks
+(sqlite3) cannot use `dart compile exe`.
 
 ## Package Rules
 
