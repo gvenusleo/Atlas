@@ -1,0 +1,16 @@
+name: atlas_tui
+description: Nocterm terminal client for Atlas.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+dependencies:
+  atlas_runtime: ^0.1.0
+  nocterm: ^0.9.0
+dev_dependencies:
+  atlas_storage: ^0.1.0
+  atlas_tools: ^0.1.0
+  test: ^1.31.0

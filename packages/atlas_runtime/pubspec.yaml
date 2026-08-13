@@ -1,0 +1,11 @@
+name: atlas_runtime
+description: The shared Atlas agent runtime and orchestration layer.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+dev_dependencies:
+  test: ^1.31.0

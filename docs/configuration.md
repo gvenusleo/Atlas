@@ -2,136 +2,69 @@
 
 [中文](zh-CN/configuration.md)
 
-Atlas reads configuration from `~/.atlas/config.json`. Full example:
+Atlas loads its application configuration from `~/.atlas/config.yaml` through
+the `atlas_config` package. Composition roots (`atlas_cli`, `atlas_flutter`)
+locate the file and pass it to `loadConfig`; the package parses, validates, and
+maps it onto provider configuration objects.
 
-```json
-{
-  "default_model": "deepseek/deepseek-v4-flash",
-  "providers": [
-    {
-      "name": "deepseek",
-      "format": "chat_completions",
-      "base_url": "https://api.deepseek.com",
-      "api_key": "sk-...",
-      "models": [
-        {
-          "value": "deepseek-v4-flash",
-          "name": "DeepSeek V4 Flash",
-          "context_window": 1000000,
-          "max_tokens": 384000,
-          "input_formats": ["text"],
-          "reasoning_efforts": [
-            {
-              "value": "high",
-              "name": "High"
-            },
-            {
-              "value": "max",
-              "name": "Max"
-            }
-          ]
-        },
-        {
-          "value": "deepseek-v4-pro",
-          "name": "DeepSeek V4 Pro",
-          "context_window": 1000000,
-          "max_tokens": 384000,
-          "input_formats": ["text", "image"]
-        }
-      ]
-    },
-    {
-      "name": "openai",
-      "format": "responses",
-      "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-...",
-      "models": [
-        {
-          "value": "gpt-5",
-          "name": "GPT-5",
-          "context_window": 400000,
-          "max_tokens": 128000,
-          "input_formats": ["text", "image"],
-          "prompt_cache": {
-            "enabled": true
-          }
-        }
-      ]
-    }
-  ],
-  "agent": {
-    "max_steps": 20,
-    "temperature": 0.2,
-    "compaction_trigger_ratio": 0.8
-  },
-  "session": {
-    "db_path": "~/.atlas/atlas.db"
-  },
-  "services": {
-    "tavily": {
-      "api_key": "tvly-..."
-    },
-    "ws": {
-      "host": "127.0.0.1",
-      "port": 8765
-    }
-  }
-}
+## Example
+
+```yaml
+default_model: anthropic/claude-sonnet
+
+providers:
+  - name: anthropic
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: ${ANTHROPIC_API_KEY}
+    api_version: "2023-06-01"        # optional, default 2023-06-01
+    models:
+      - value: claude-sonnet
+        name: Claude Sonnet           # optional
+        description: ...              # optional
+        context_window: 200000
+        max_tokens: 4096
+        reasoning_efforts:            # optional
+          - value: high
+            name: High                # optional
+        thinking_budget_tokens: 4096  # optional, default 0 (thinking off)
+
+  - name: openai
+    type: responses                 # chat_completions | responses | anthropic
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    user_agent: Atlas                 # optional
+    models:
+      - value: gpt-4o
+        context_window: 128000
+        max_tokens: 4096
+        input_capabilities: [text, image]  # optional, default [text]
+        prompt_cache: true            # optional, default false
+
+agent:
+  max_steps: 100                      # optional, default 100
+  temperature: 0.7                    # optional
+  compaction:
+    threshold: 0.8                    # optional, default 0.8
+
+session:
+  db_path: ~/.atlas/atlas.db         # optional, ~ expands to home
 ```
 
-## Field Reference
+## Rules
 
-### Top-level
-
-| Field | Description |
-|---|---|
-| `default_model` | Recommended in `provider/model` format (e.g. `"openai/gpt-5"`). A bare value (e.g. `"gpt-5"`) is also accepted when unambiguous. Used when no model is explicitly selected. |
-
-### Provider
-
-| Field | Description |
-|---|---|
-| `providers[].name` | Provider name, must be unique. |
-| `providers[].format` | Optional, defaults to `chat_completions`. Use `responses` for OpenAI Responses API. |
-| `providers[].base_url` | Provider API URL. |
-| `providers[].api_key` | Authentication key. |
-| `providers[].user_agent` | Optional, overrides the `User-Agent` header sent to the provider API. Defaults to `atlas/<version>`. |
-
-### Models
-
-| Field | Description |
-|---|---|
-| `models[].value` | Model name sent to the provider. Must be unique within a provider; the same value may appear in multiple providers. |
-| `models[].name` | Display name shown by clients, including the TUI footer. |
-| `models[].context_window` | Context window size, used for compaction and ACP/TUI usage display. |
-| `models[].max_tokens` | Maximum output tokens per model request, must be ≤ `context_window`. |
-| `models[].input_formats` | Supported input formats: `text` and `image`. Must include `text`. |
-| `models[].prompt_cache.enabled` | Optional, defaults to off. When `true`, sends a stable `prompt_cache_key` to compatible providers within the same session. |
-| `models[].reasoning_efforts` | Declares supported reasoning depth options. Uses the first option when not explicitly selected; the TUI displays that default in its footer. |
-
-Only enable `prompt_cache.enabled` after confirming the provider accepts the corresponding field. OpenAI-compatible services vary in compatibility; if requests return unknown field errors or 400s after enabling, remove the `prompt_cache` config for that model to fall back.
-
-### Agent
-
-| Field | Default | Description |
-|---|---|---|
-| `agent.max_steps` | `20` | Maximum loop steps per turn. |
-| `agent.temperature` | `0` | Sampling temperature, from 0 to 2. |
-| `agent.compaction_trigger_ratio` | `0.8` | Auto-compaction triggers when context input reaches this ratio of the window. |
-
-### Session
-
-| Field | Default | Description |
-|---|---|---|
-| `session.db_path` | `~/.atlas/atlas.db` | Session database path. |
-
-### Services
-
-| Field | Description |
-|---|---|
-| `services.tavily.api_key` | Enables `web_search` and `web_fetch` when configured. |
-| `services.ws.host` | WebSocket server bind address. Defaults to `127.0.0.1`. Non-loopback addresses require `services.ws.token`. |
-| `services.ws.port` | WebSocket server port. Defaults to `8765`. |
-| `services.ws.token` | Bearer token required by WebSocket clients when binding to a non-loopback address. |
-
-> **Database migration**: The project is in early stage and does not provide a migration framework. After schema changes, delete the old `~/.atlas/atlas.db` to recreate.
+- `default_model` is `"<provider>/<model>"` and must reference a configured
+  provider and model.
+- Provider names must be unique; model ids must be unique within a provider.
+- `type` is `chat_completions`, `responses`, or `anthropic`. The first two
+  select the OpenAI-compatible adapter with the matching API; `anthropic`
+  selects the Anthropic adapter.
+- `base_url` must be an HTTP(S) URL without a query or fragment.
+- `api_key` supports `${ENV_VAR}` references; an undefined variable fails
+  loading with the variable name in the message.
+- `max_tokens`, `context_window`, `max_steps`, and `thinking_budget_tokens`
+  must not be negative.
+- `agent.compaction.threshold` must be greater than 0 and at most 1; it is the
+  context window fraction that triggers automatic compaction after a turn.
+- Validation failures raise `ConfigLoadException` with a field path such as
+  `providers[0].base_url`.

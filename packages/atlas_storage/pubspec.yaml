@@ -1,0 +1,16 @@
+name: atlas_storage
+description: Drift persistence for Atlas sessions and turns.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+dependencies:
+  atlas_runtime: ^0.1.0
+  drift: ^2.34.3
+dev_dependencies:
+  build_runner: ^2.15.1
+  drift_dev: ^2.34.0
+  test: ^1.31.0

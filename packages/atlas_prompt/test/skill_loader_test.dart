@@ -1,0 +1,172 @@
+import 'dart:io';
+
+import 'package:atlas_prompt/atlas_prompt.dart';
+import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:test/test.dart';
+
+void main() {
+  late Directory root;
+  late Directory userAtlas;
+  late Directory userAgents;
+  late Directory projectAgents;
+
+  setUp(() {
+    root = Directory.systemTemp.createTempSync('skill_loader_test');
+    userAtlas = Directory('${root.path}/.atlas/skills')
+      ..createSync(recursive: true);
+    userAgents = Directory('${root.path}/.agents/skills')
+      ..createSync(recursive: true);
+    projectAgents = Directory('${root.path}/proj/.agents/skills')
+      ..createSync(recursive: true);
+  });
+
+  tearDown(() => root.deleteSync(recursive: true));
+
+  void writeSkill(String dir, String name, String body) {
+    File('$dir/$name/SKILL.md')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(body);
+  }
+
+  FileSkillCatalog load() => loadSkillCatalog(
+    homeDirectory: root.path,
+    workingDirectory: '${root.path}/proj',
+  );
+
+  test('loads skills from all four roots in priority order', () {
+    writeSkill(
+      userAtlas.path,
+      'alpha',
+      '---\nname: alpha\ndescription: From user atlas.\n---\nContent A',
+    );
+    writeSkill(
+      userAgents.path,
+      'beta',
+      '---\nname: beta\ndescription: From user agents.\n---\nContent B',
+    );
+    writeSkill(
+      projectAgents.path,
+      'gamma',
+      '---\nname: gamma\ndescription: From project agents.\n---\nContent C',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['alpha', 'beta', 'gamma']);
+    expect(catalog.lookup('gamma')!.content, contains('Content C'));
+  });
+
+  test('later roots override earlier roots for duplicate names', () {
+    writeSkill(
+      userAtlas.path,
+      'dup',
+      '---\nname: dup\ndescription: User atlas version.\n---\nUser content',
+    );
+    writeSkill(
+      projectAgents.path,
+      'dup',
+      '---\nname: dup\ndescription: Project version.\n---\nProject content',
+    );
+
+    final catalog = load();
+    expect(catalog.lookup('dup')!.content, contains('Project content'));
+    expect(catalog.summaries.single.description, 'Project version.');
+  });
+
+  test('unquotes quoted frontmatter values', () {
+    writeSkill(
+      userAgents.path,
+      'quoted',
+      '---\nname: "quoted"\ndescription: \'Single quoted desc\'\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.lookup('quoted')!.description, 'Single quoted desc');
+  });
+
+  test('skips directories without SKILL.md and missing roots', () {
+    Directory('${userAtlas.path}/empty').createSync();
+    writeSkill(
+      userAgents.path,
+      'only',
+      '---\nname: only\ndescription: Only one.\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['only']);
+  });
+
+  test('hides skills with disable-model-invocation', () {
+    writeSkill(
+      userAgents.path,
+      'hidden',
+      '---\nname: hidden\ndescription: Hidden skill.\ndisable-model-invocation: true\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries, isEmpty);
+    expect(catalog.lookup('hidden'), isNull);
+  });
+
+  test('skips SKILL.md without frontmatter', () {
+    writeSkill(userAgents.path, 'bad', 'just plain text without frontmatter');
+    writeSkill(
+      userAgents.path,
+      'good',
+      '---\nname: good\ndescription: Fine.\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['good']);
+    expect(catalog.lookup('bad'), isNull);
+  });
+
+  test('skips SKILL.md missing name or description', () {
+    writeSkill(
+      userAgents.path,
+      'noname',
+      '---\ndescription: No name here.\n---\nBody',
+    );
+    writeSkill(
+      userAgents.path,
+      'good',
+      '---\nname: good\ndescription: Fine.\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['good']);
+  });
+
+  test('skips oversized SKILL.md', () {
+    final padding = 'x' * (Skill.maxBytes + 1);
+    writeSkill(
+      userAgents.path,
+      'huge',
+      '---\nname: huge\ndescription: Big.\n---\n$padding',
+    );
+    writeSkill(
+      userAgents.path,
+      'good',
+      '---\nname: good\ndescription: Fine.\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['good']);
+  });
+
+  test('skips SKILL.md with an oversized description', () {
+    final long = 'd' * (maxSkillDescriptionBytes + 1);
+    writeSkill(
+      userAgents.path,
+      'longdesc',
+      '---\nname: longdesc\ndescription: $long\n---\nBody',
+    );
+    writeSkill(
+      userAgents.path,
+      'good',
+      '---\nname: good\ndescription: Fine.\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['good']);
+  });
+}

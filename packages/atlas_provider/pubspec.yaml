@@ -1,0 +1,14 @@
+name: atlas_provider
+description: Model provider adapters for Atlas.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+dependencies:
+  atlas_runtime: ^0.1.0
+  dio: ^5.11.0
+dev_dependencies:
+  test: ^1.31.0

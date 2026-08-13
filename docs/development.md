@@ -2,69 +2,71 @@
 
 [中文](zh-CN/development.md)
 
-## Project Structure
+## Current State
+
+The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, the `atlas_tui` Nocterm chat interface, and the ACP server adapter (`atlas_acp`) are executable packages with focused tests; the MCP adapter and WebSocket transport remain planned.
+
+## Workspace Layout
 
 ```text
-cmd/atlas              CLI entry point
-internal/acp           ACP protocol adapter and client capability bridge
-internal/agent         headless agent loop (core loop)
-internal/compact       context compaction planning and summarization
-internal/config        config loading and validation
-internal/model         generic chat protocol and Provider interface
-internal/prompt        system prompt construction
-internal/provider      provider adapters by API format
-  ├── chatcompletions  Chat Completions API
-  └── responses        OpenAI Responses API
-internal/runtime       orchestration layer, connecting agent, tools, and session
-internal/session       SQLite session persistence
-internal/skill         skill scanning and loading
-internal/tool          tool registry and built-in tools
-internal/transcript    in-memory message sequence
-internal/tui           interactive terminal UI
-internal/version       version info
-internal/ws            WebSocket channel
-app                    Flutter desktop and mobile client
-  ├── lib/app          application root, routing, and platform integration
-  ├── lib/features     feature-first pages, layouts, and widgets
-  └── lib/shared       application-wide theme and shared UI
+packages/atlas_runtime    Session/Turn domain, timeline, ports, and agent engine
+packages/atlas_storage    Drift persistence and runtime row mapping
+packages/atlas_provider   model provider adapters
+packages/atlas_tools      built-in tools
+packages/atlas_ws         versioned WebSocket protocol and transport
+packages/atlas_acp        ACP adapter
+packages/atlas_mcp        MCP adapter
+packages/atlas_tui        Nocterm presentation package
+apps/atlas_cli            atlas CLI, TUI, server, and other commands
+apps/atlas_flutter        Flutter desktop and mobile application
 ```
 
-## Build and Test
+The root Pub workspace owns the only `pubspec.lock`. Workspace members use `resolution: workspace` and must not add member lockfiles.
+
+## Toolchain
+
+The root `mise.toml` pins Flutter 3.47.0, which provides Dart 3.13.0.
 
 ```sh
-go build ./cmd/atlas           # build
-go test ./...                  # run all tests
-go test ./internal/agent/...   # run a single package's tests
-go test ./internal/tui         # run terminal UI tests
-just ci                        # full non-modifying CI check (requires just)
+mise install
+just deps
 ```
 
-### Flutter App
+Use `just deps-update` only when intentionally changing dependency constraints or the lockfile.
 
-The Flutter client uses the SDK pinned by FVM. From `app/`:
+## Verification
 
 ```sh
-fvm flutter run -d macos          # run the macOS client
-fvm flutter analyze               # static analysis
-fvm flutter test                  # widget and unit tests
-fvm flutter build macos --debug   # build the macOS debug app
+just fmt          # format Dart sources
+just fmt-check    # check formatting without rewriting
+just analyze      # analyze the workspace
+just test         # run available Dart and Flutter tests
+just ci           # complete repository verification
 ```
 
-The current client implements the responsive application shell only. It is not
-connected to the Atlas runtime yet.
+Run the current Flutter shell with `just app-run macos`. Platform debug builds use the matching `just app-build-*` recipe.
 
-## Run from Source
+Build the single-file CLI binary with `just build-cli`. Dart 3.13's
+`dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks
+(sqlite3) cannot use `dart compile exe`.
 
-```sh
-go run ./cmd/atlas                              # start the terminal UI
-go run ./cmd/atlas run "Read README and summarize"  # run a one-shot task
-go run ./cmd/atlas doctor                       # verify configuration
-```
+## Package Rules
 
-## Design Principles
+- Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.
+- Add public abstractions only when a real adapter or test requires them.
+- Do not predeclare dependencies for planned code. Run `dart pub add` from the owning Dart package, or `flutter pub add` from `atlas_flutter`, when implementation code first needs a package.
+- Use Dio for every HTTP request. Do not add `package:http` or a second HTTP client. Add a WebSocket dependency only with the first real `atlas_ws` implementation.
+- Public Dart APIs require concise documentation comments.
+- Runtime and protocol packages must not import Flutter.
+- Presentation packages must not import provider, tool, or storage implementations.
+- Application bootstrap code in `atlas_cli` and `atlas_flutter` composes those adapters and injects the runtime.
+- `atlas_ws` owns WebSocket transport only and accepts an injected request handler.
+- Generated serialization files stay beside their source and are committed only when the selected generator requires it.
+- Add focused tests with behavior. Empty scaffold packages do not need placeholder tests.
 
-- **Small and verifiable**: the agent loop stays headless and dependency-injected. Provider and tool effects enter through narrow interfaces, while runtime owns configuration, persistence, and compaction.
-- **No premature abstraction**: don't abstract before two real call sites exist. Don't keep duplicate interfaces for "maybe later."
-- **Local permission boundary**: no permission abstraction. Tools have the full permissions of the host process.
-- **Single core**: TUI, CLI commands, ACP, and WebSocket share the same `runtime.Runtime` and agent loop. Entry layers only adapt their interface or protocol.
-- **Thin Flutter client**: Flutter owns client presentation and interaction state. Agent orchestration, tools, providers, and session persistence stay in the Go runtime and will be consumed through the WebSocket channel.
+## Documentation Rules
+
+- Root README files contain product status and supported commands, not internal architecture.
+- Architecture and dependency boundaries belong in `docs/architecture.md`.
+- Mark unavailable behavior as `Planned`; remove stale examples when behavior is removed.
+- Keep English and Chinese counterparts synchronized.

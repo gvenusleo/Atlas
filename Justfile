@@ -1,155 +1,73 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
-set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]
-
-binary := if os_family() == "windows" { "atlas.exe" } else { "atlas" }
-build_dir := "dist"
-install_dir := if os_family() == "windows" { env("USERPROFILE", ".") + "/.local/bin" } else { env("HOME", ".") + "/.local/bin" }
 
 default:
     @just --list
 
-fmt:
-    go fmt ./...
+# Resolve the shared workspace lockfile without changing locked versions.
+deps:
+    mise exec -- flutter pub get --enforce-lockfile
 
-tidy:
-    go mod tidy
+# Refresh the shared workspace lockfile after dependency changes.
+deps-update:
+    mise exec -- flutter pub get
+
+fmt:
+    mise exec -- dart format packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test
 
 fmt-check:
-    @just --justfile {{ quote(justfile()) }} _fmt_check_{{ os_family() }}
+    mise exec -- dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test
 
-gopls-check:
-    @just --justfile {{ quote(justfile()) }} _gopls_check_{{ os_family() }}
+analyze: deps
+    mise exec -- dart analyze
 
-_fmt_check_windows:
-    $sources = @(git ls-files --cached --others --exclude-standard '*.go' | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); $files = @(gofmt -l $sources); if ($files.Count -gt 0) { $files; exit 1 }
+dart-test: deps
+    @for package in packages/* apps/atlas_cli; do \
+        if [ -d "$package/test" ] && find "$package/test" -name '*_test.dart' -print -quit | grep -q .; then \
+            (cd "$package" && mise exec -- dart test); \
+        fi; \
+    done
 
-_fmt_check_unix:
-    @sources=(); while IFS= read -r file; do if [ -f "$file" ]; then sources+=("$file"); fi; done < <(git ls-files --cached --others --exclude-standard '*.go'); files="$(gofmt -l "${sources[@]}")"; if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
+[working-directory: 'apps/atlas_flutter']
+app-test: deps
+    mise exec -- flutter test --no-pub
 
-_gopls_check_windows:
-    & go run golang.org/x/tools/gopls@v0.23.0 version *> $null; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $sources = @(git ls-files --cached --others --exclude-standard '*.go' | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }); if ($sources.Count -eq 0) { exit 0 }; $output = @(& go run golang.org/x/tools/gopls@v0.23.0 check -severity=hint @sources 2>&1); if ($LASTEXITCODE -ne 0 -or $output.Count -gt 0) { $output; exit 1 }
+test: dart-test app-test
 
-_gopls_check_unix:
-    @go run golang.org/x/tools/gopls@v0.23.0 version >/dev/null 2>&1; sources=(); while IFS= read -r file; do if [ -f "$file" ]; then sources+=("$file"); fi; done < <(git ls-files --cached --others --exclude-standard '*.go'); if [ "${#sources[@]}" -eq 0 ]; then exit 0; fi; if ! output="$(go run golang.org/x/tools/gopls@v0.23.0 check -severity=hint "${sources[@]}" 2>&1)"; then printf '%s\n' "$output"; exit 1; fi; if [ -n "$output" ]; then printf '%s\n' "$output"; exit 1; fi
+ci: fmt-check analyze test
 
-test:
-    go test ./...
+# Run the TUI with the Dart VM service enabled for debugging.
+tui-debug:
+    mise exec -- dart --enable-vm-service apps/atlas_cli/bin/atlas.dart
 
-# go-ci runs the complete Go verification pipeline without modifying files.
-go-ci: fmt-check gopls-check
-    go mod tidy -diff
-    go build ./...
-    go vet ./...
-    go test -race ./...
-    @just --justfile {{ quote(justfile()) }} _cross_build_{{ os_family() }}
+# Build the native `atlas` executable (Dart 3.13+ requires `dart build`
+# for packages with build hooks; the output lands under build/bundle/).
+build-cli: deps
+    mise exec -- dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/
 
-[working-directory: 'app']
-app-deps:
-    fvm flutter pub get --enforce-lockfile
+[working-directory: 'apps/atlas_flutter']
+app-run device='macos': deps
+    mise exec -- flutter run --no-pub -d {{ quote(device) }}
 
-[working-directory: 'app']
-app-fmt:
-    fvm dart format lib test
+[working-directory: 'apps/atlas_flutter']
+app-build-linux: deps
+    mise exec -- flutter build linux --debug --no-pub
 
-[working-directory: 'app']
-app-fmt-check:
-    fvm dart format --output=none --set-exit-if-changed lib test
+[working-directory: 'apps/atlas_flutter']
+app-build-macos: deps
+    mise exec -- flutter build macos --debug --no-pub
 
-[working-directory: 'app']
-app-analyze: app-deps
-    fvm flutter analyze --no-pub
+[working-directory: 'apps/atlas_flutter']
+app-build-windows: deps
+    mise exec -- flutter build windows --debug --no-pub
 
-[working-directory: 'app']
-app-test: app-deps
-    fvm flutter test --no-pub
+[working-directory: 'apps/atlas_flutter']
+app-build-android: deps
+    mise exec -- flutter build apk --debug --no-pub
 
-# app-ci runs the Flutter checks shared by local development and CI.
-app-ci: app-deps app-fmt-check app-analyze app-test
+[working-directory: 'apps/atlas_flutter']
+app-build-ios: deps
+    mise exec -- flutter build ios --debug --no-codesign --no-pub
 
-# ci is the repository-wide verification entry point.
-ci: go-ci app-ci
-
-[working-directory: 'app']
-app-run device='macos': app-deps
-    fvm flutter run --no-pub -d {{ quote(device) }}
-
-[working-directory: 'app']
-app-build-linux: app-deps
-    fvm flutter build linux --debug --no-pub
-
-[working-directory: 'app']
-app-build-macos: app-deps
-    fvm flutter build macos --debug --no-pub
-
-[working-directory: 'app']
-app-build-windows: app-deps
-    fvm flutter build windows --debug --no-pub
-
-[working-directory: 'app']
-app-build-android: app-deps
-    fvm flutter build apk --debug --no-pub
-
-[working-directory: 'app']
-app-build-ios: app-deps
-    fvm flutter build ios --debug --no-codesign --no-pub
-
-_cross_build_windows:
-    $env:CGO_ENABLED = "0"; $env:GOOS = "linux"; $env:GOARCH = "amd64"; go build ./...
-    $env:CGO_ENABLED = "0"; $env:GOOS = "darwin"; $env:GOARCH = "amd64"; go build ./...
-    $env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = "amd64"; go build ./...
-
-_cross_build_unix:
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...
-    CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build ./...
-    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...
-
-build:
-    @just --justfile {{ quote(justfile()) }} _build_{{ os_family() }}
-
-_build_windows:
-    New-Item -ItemType Directory -Force -Path {{ quote(build_dir) }} | Out-Null
-    go build -o {{ quote(build_dir + "/" + binary) }} ./cmd/atlas
-
-_build_unix:
-    mkdir -p {{ quote(build_dir) }}
-    go build -o {{ quote(build_dir + "/" + binary) }} ./cmd/atlas
-
-install: build
-    @just --justfile {{ quote(justfile()) }} _install_{{ os_family() }}
-
-_install_windows:
-    New-Item -ItemType Directory -Force -Path {{ quote(install_dir) }} | Out-Null
-    Copy-Item -Force {{ quote(build_dir + "/" + binary) }} {{ quote(install_dir + "/" + binary) }}
-
-_install_unix:
-    mkdir -p {{ quote(install_dir) }}
-    rm -f {{ quote(install_dir + "/" + binary) }}
-    cp {{ quote(build_dir + "/" + binary) }} {{ quote(install_dir + "/" + binary) }}
-    chmod +x {{ quote(install_dir + "/" + binary) }}
-
-run prompt:
-    go run ./cmd/atlas run {{ quote(prompt) }}
-
-run-session session prompt:
-    go run ./cmd/atlas run --session {{ quote(session) }} {{ quote(prompt) }}
-
-acp:
-    go run ./cmd/atlas acp
-
-sessions:
-    go run ./cmd/atlas sessions
-
-session-show session:
-    go run ./cmd/atlas session show {{ quote(session) }}
-
-session-delete session:
-    go run ./cmd/atlas session delete {{ quote(session) }}
-
+[working-directory: 'apps/atlas_flutter']
 clean:
-    @just --justfile {{ quote(justfile()) }} _clean_{{ os_family() }}
-
-_clean_windows:
-    if (Test-Path {{ quote(build_dir) }}) { Remove-Item -Recurse -Force {{ quote(build_dir) }} }
-
-_clean_unix:
-    rm -rf {{ quote(build_dir) }}
+    mise exec -- flutter clean

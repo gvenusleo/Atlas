@@ -1,137 +1,67 @@
 # 配置
 
-[English](../configuration.md)
+[English](configuration.md)
 
-Atlas 从 `~/.atlas/config.json` 读取配置。完整示例：
+Atlas 通过 `atlas_config` 包从 `~/.atlas/config.yaml` 加载应用配置。组合根
+（`atlas_cli`、`atlas_flutter`）负责定位文件并交给 `loadConfig`；该包负责
+解析、校验并映射到 provider 配置对象。
 
-```json
-{
-  "default_model": "deepseek/deepseek-v4-flash",
-  "providers": [
-    {
-      "name": "deepseek",
-      "format": "chat_completions",
-      "base_url": "https://api.deepseek.com",
-      "api_key": "sk-...",
-      "models": [
-        {
-          "value": "deepseek-v4-flash",
-          "name": "DeepSeek V4 Flash",
-          "context_window": 1000000,
-          "max_tokens": 384000,
-          "input_formats": ["text"],
-          "reasoning_efforts": [
-            {
-              "value": "high",
-              "name": "High"
-            },
-            {
-              "value": "max",
-              "name": "Max"
-            }
-          ]
-        },
-        {
-          "value": "deepseek-v4-pro",
-          "name": "DeepSeek V4 Pro",
-          "context_window": 1000000,
-          "max_tokens": 384000,
-          "input_formats": ["text", "image"]
-        }
-      ]
-    },
-    {
-      "name": "openai",
-      "format": "responses",
-      "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-...",
-      "models": [
-        {
-          "value": "gpt-5",
-          "name": "GPT-5",
-          "context_window": 400000,
-          "max_tokens": 128000,
-          "input_formats": ["text", "image"],
-          "prompt_cache": {
-            "enabled": true
-          }
-        }
-      ]
-    }
-  ],
-  "agent": {
-    "max_steps": 20,
-    "temperature": 0.2,
-    "compaction_trigger_ratio": 0.8
-  },
-  "session": {
-    "db_path": "~/.atlas/atlas.db"
-  },
-  "services": {
-    "tavily": {
-      "api_key": "tvly-..."
-    },
-    "ws": {
-      "host": "127.0.0.1",
-      "port": 8765
-    }
-  }
-}
+## 示例
+
+```yaml
+default_model: anthropic/claude-sonnet
+
+providers:
+  - name: anthropic
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: ${ANTHROPIC_API_KEY}
+    api_version: "2023-06-01"        # 可选，默认 2023-06-01
+    models:
+      - value: claude-sonnet
+        name: Claude Sonnet           # 可选
+        description: ...              # 可选
+        context_window: 200000
+        max_tokens: 4096
+        reasoning_efforts:            # 可选
+          - value: high
+            name: High                # 可选
+        thinking_budget_tokens: 4096  # 可选，默认 0（关闭 thinking）
+
+  - name: openai
+    type: responses                 # chat_completions | responses | anthropic
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    user_agent: Atlas                 # 可选
+    models:
+      - value: gpt-4o
+        context_window: 128000
+        max_tokens: 4096
+        input_capabilities: [text, image]  # 可选，默认 [text]
+        prompt_cache: true            # 可选，默认 false
+
+agent:
+  max_steps: 100                      # 可选，默认 100
+  temperature: 0.7                    # 可选
+  compaction:
+    threshold: 0.8                    # 可选，默认 0.8
+
+session:
+  db_path: ~/.atlas/atlas.db         # 可选，~ 展开为用户主目录
 ```
 
-## 字段说明
+## 规则
 
-### 顶层
-
-| 字段 | 说明 |
-|---|---|
-| `default_model` | 推荐使用 `provider/model` 格式（如 `"openai/gpt-5"`）。无歧义时也可使用裸值（如 `"gpt-5"`）。未显式选择模型时使用 |
-
-### Provider
-
-| 字段 | 说明 |
-|---|---|
-| `providers[].name` | Provider 名称，必须唯一 |
-| `providers[].format` | 可省略，默认 `chat_completions`；OpenAI Responses API 使用 `responses` |
-| `providers[].base_url` | Provider API 地址 |
-| `providers[].api_key` | 鉴权密钥 |
-| `providers[].user_agent` | 可省略，覆盖发送给 Provider API 的 `User-Agent` 请求头，默认 `atlas/<version>` |
-
-### 模型
-
-| 字段 | 说明 |
-|---|---|
-| `models[].value` | 发送给 Provider 的模型名，同一 provider 内必须唯一，不同 provider 间可重复 |
-| `models[].name` | 客户端显示名，也会显示在 TUI 底栏 |
-| `models[].context_window` | 上下文窗口，用于压缩以及 ACP 和 TUI 的用量展示 |
-| `models[].max_tokens` | 每次模型请求的最大输出 token 数，需 ≤ `context_window` |
-| `models[].input_formats` | 支持的输入格式，当前支持 `text` 和 `image`，且必须包含 `text` |
-| `models[].prompt_cache.enabled` | 可省略，默认关闭；设为 `true` 时，同一 Atlas session 会向兼容 Provider 发送稳定的 `prompt_cache_key` |
-| `models[].reasoning_efforts` | 声明支持的思考深度选项；未显式选择时使用第一项，TUI 会在底栏显示该默认值 |
-
-`prompt_cache.enabled` 只应在确认 Provider 接受对应字段后开启。OpenAI-compatible 服务兼容性不一致；如果开启后请求返回未知字段或 400 错误，删除该模型的 `prompt_cache` 配置即可回退。
-
-### Agent
-
-| 字段 | 默认值 | 说明 |
-|---|---|---|
-| `agent.max_steps` | `20` | 单次 turn 最大循环步数 |
-| `agent.temperature` | `0` | 采样温度，范围为 0 到 2 |
-| `agent.compaction_trigger_ratio` | `0.8` | 上下文输入达到窗口的该比例时自动压缩 |
-
-### Session
-
-| 字段 | 默认值 | 说明 |
-|---|---|---|
-| `session.db_path` | `~/.atlas/atlas.db` | 会话数据库路径 |
-
-### Services
-
-| 字段 | 说明 |
-|---|---|
-| `services.tavily.api_key` | 配置后启用 `web_search` 和 `web_fetch` |
-| `services.ws.host` | WebSocket 服务绑定地址，默认 `127.0.0.1`；非 loopback 地址必须配置 `services.ws.token` |
-| `services.ws.port` | WebSocket 服务端口，默认 `8765` |
-| `services.ws.token` | 绑定非 loopback 地址时，WebSocket 客户端必须发送的 Bearer token |
-
-> **数据库迁移**：当前项目处于早期阶段，不提供迁移框架。schema 变化后请删除旧的 `~/.atlas/atlas.db` 重新生成。
+- `default_model` 格式为 `"<provider>/<model>"`，必须引用已配置的 provider 与模型。
+- provider 名称必须唯一；provider 内模型 id 必须唯一。
+- `type` 为 `chat_completions`、`responses` 或 `anthropic`。前两者选择
+  OpenAI-compatible 适配器并使用对应的 API；`anthropic` 选择 Anthropic 适配器。
+- `base_url` 必须是 HTTP(S) URL，且不含 query 与 fragment。
+- `api_key` 支持 `${ENV_VAR}` 引用；未定义的变量会导致加载失败，错误消息
+  中带有变量名。
+- `max_tokens`、`context_window`、`max_steps`、`thinking_budget_tokens`
+  不能为负。
+- `agent.compaction.threshold` 必须大于 0 且不超过 1；它是触发 turn 结束后
+  自动压缩的上下文窗口比例。
+- 校验失败抛出 `ConfigLoadException`，消息包含字段路径，例如
+  `providers[0].base_url`。

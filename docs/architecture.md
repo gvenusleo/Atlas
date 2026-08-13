@@ -2,110 +2,103 @@
 
 [中文](zh-CN/architecture.md)
 
-## Layered Design
+> **Status:** In progress. `atlas_runtime`, `atlas_storage`, the `atlas_provider`
+> adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
+> prompt construction, the `atlas_tui` Nocterm chat interface, and the ACP
+> server adapter (`atlas_acp`, served by `atlas acp`) are executable.
+> `atlas_cli` provides the process composition root (`composeRuntime`) and the
+> `atlas` entry point; the MCP adapter and WebSocket transport remain planned.
 
-Atlas is divided into entry layer, orchestration layer, core loop, capability layer, and persistence layer. All entry points share the same `runtime.Runtime`. The core agent loop remains headless, dependency-injected, and independently testable; runtime owns configuration, persistence, and orchestration.
+## System Shape
+
+Atlas uses one Dart runtime implementation with local application composition
+roots and optional remote transports. No presentation or protocol adapter owns
+a separate agent loop.
 
 ```mermaid
 graph TD
-    subgraph Entry Layer
-        TUI[Terminal UI]
-        CLI[CLI Commands]
-        ACP[ACP Adapter]
-        WS[WebSocket Channel]
-    end
-
-    subgraph Orchestration Layer
-        RT[runtime.Runtime]
-    end
-
-    subgraph Core Loop
-        AG[agent loop]
-        PR[Provider Interface]
-    end
-
-    subgraph Capability Layer
-        TOOLS[Tool Registry]
-        PRMPT[System Prompt]
-        CMP[Context Compaction]
-    end
-
-    subgraph Persistence Layer
-        TR[transcript]
-        SS[session SQLite]
-    end
-
+    CLI[atlas_cli] --> TUI[atlas_tui]
+    CLI --> RT[atlas_runtime]
+    CLI --> WS[atlas_ws]
+    CLI --> PROMPT[atlas_prompt]
+    CLI --> CONFIG[atlas_config]
+    CLI --> PROVIDER[atlas_provider]
+    CLI --> TOOLS[atlas_tools]
+    CLI --> STORAGE[atlas_storage]
+    FL[atlas_flutter] --> RT
+    FL --> PROVIDER
+    FL --> TOOLS
+    FL --> STORAGE
+    FL --> CONFIG
     TUI --> RT
-    CLI --> RT
-    ACP --> RT
+    REMOTE[Remote client] --> WS
     WS --> RT
-    RT --> AG
-    AG --> PR
-    AG --> TOOLS
-    RT --> PRMPT
-    RT --> CMP
-    AG --> TR
-    RT --> SS
+    ACP[atlas_acp] --> RT[atlas_runtime]
+    MCP --> RT
+    PROVIDER --> RT
+    TOOLS --> RT
+    STORAGE --> RT
+    ACP --> JRPC[json_rpc_2]
+    MCP --> JRPC
 ```
 
-The TUI is an entry-layer adapter like ACP and WebSocket. It converts keyboard and mouse input into runtime turns and manual compaction requests, consumes ordered observer events for streaming output and tool activity, and leaves orchestration and persistence in `runtime.Runtime`.
+`atlas_cli` composes one runtime for the Nocterm process through
+`composeRuntime`: it loads `atlas_config` to construct provider, storage, and
+tool adapters and injects the `atlas_prompt` system prompt builder.
+`atlas_flutter` will use its own process bootstrap for the desktop client.
+Running `atlas` enters the Nocterm TUI by default. Running `atlas acp`
+serves the composed runtime to ACP clients (editors such as Zed) over NDJSON
+stdio. A planned `atlas server` subcommand will expose the composed runtime
+handler through `atlas_ws` for remote clients. Local Flutter and Nocterm interactions
+do not serialize through the remote protocol. ACP is an inbound adapter to
+the same runtime; MCP primarily connects external tools to the tool layer.
 
-## Flutter Client
+## Package Responsibilities
 
-The Flutter client under `app/` currently implements the responsive desktop
-and mobile application shell only. Because it does not yet connect to the Go
-runtime, it is not shown as an active entry point in the diagram above.
+| Package | Responsibility |
+|---|---|
+| `atlas_runtime` | Session/turn domain models, ordered timeline items, model/tool ports, the single agent engine, cancellation, compaction, and skills |
+| `atlas_storage` | Drift persistence for sessions, turns, and typed timeline messages, with provider continuations and the compaction checkpoint embedded in their owning rows, plus queries
+| `atlas_provider` | OpenAI-compatible Chat Completions and Responses plus Anthropic Messages adapters: authentication, request mapping, SSE decoding, retries, and response conversion |
+| `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration objects |
+| `atlas_tools` | Built-in tool implementations with structured calls and results |
+| `atlas_prompt` | System prompt construction: operating template, tool listing, `~/.atlas/AGENTS.md` and working-directory `AGENTS.md` loading, and platform/shell/date context |
+| `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
+| `atlas_acp` | ACP server adaptation to the shared runtime |
+| `atlas_mcp` | MCP client first, with server support deferred until needed |
+| `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
+| `atlas_cli` | Composition root for the default TUI and other CLI commands: `composeRuntime` wires config, providers, tools, storage, and the system prompt into one runtime |
+| `atlas_flutter` | Composition root and presentation client for desktop and mobile |
 
-When runtime integration is added, the app will act as a client of the existing
-WebSocket channel. Agent orchestration, model providers, tools, compaction, and
-session persistence remain in `runtime.Runtime`; the Flutter client owns
-presentation, navigation, and client-side interaction state only.
+## Dependency Rules
 
-Within the client, `lib/app` contains bootstrap, routing, and platform
-integration; product UI is organized by feature under `lib/features`; and
-application-wide theme and shared UI live under `lib/shared`. Riverpod manages
-application-wide, asynchronous, and cross-page state, while go_router owns
-page-level navigation.
+- `atlas_runtime` owns domain models and ports but has no dependency on Flutter, storage, providers, tools, or transports.
+- Storage, provider, and tool packages depend on and implement runtime ports; adapters do not own orchestration.
+- Provider-specific request fields remain in `atlas_provider`.
+- `atlas_provider` selects a configured endpoint by `ModelRef`; its public configuration is programmatic and does not define CLI or configuration-file parsing.
+- OpenAI and Anthropic providers share `HttpStreamClient` for retries, timeouts, and cancellation, and `decodeSse` for SSE framing. `CompositeModelProvider` routes requests by provider identifier so several providers share one runtime instance.
+- Streaming failures are emitted as one terminal runtime event. Retries happen only before the first streamed event; cancellation is bridged to Dio's `CancelToken`.
+- `atlas_ws` may depend on runtime types but owns an explicit versioned wire schema rather than serializing runtime objects directly. It accepts an injected request handler and does not compose runtime services.
+- Local Flutter and Nocterm presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters; in the Dart workspace this bootstrap lives in `atlas_cli.composeRuntime` (and `atlas_flutter` bootstrap).
+- `atlas_prompt` depends on `atlas_runtime` public types only and is consumed by composition roots through `buildSystemPrompt`.
+- `atlas_cli` and `atlas_flutter` are separate process-level composition roots; they share runtime code, not runtime instances.
+- ACP and MCP own their protocol lifecycle rules and use `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.
 
-## Core Loop
+## Runtime Contracts
 
-A turn starts with user input: appended to the transcript, then the model is called in a loop. When the model returns text deltas, they are streamed out; when it returns tool calls, they are executed in order and results are written back to the transcript. The loop ends when there are no tool calls, an error occurs, or the step limit is reached.
+The runtime implementation and remaining adapters must preserve these
+product-level contracts:
 
-```mermaid
-sequenceDiagram
-    participant RT as runtime.RunTurn
-    participant AG as agent loop
-    participant PR as provider.Stream
-    participant TR as transcript
-    participant TOOLS as tool.Registry
+- Each model tool call receives one model-visible result in the original order, including failures.
+- `AgentEvent` values are emitted in occurrence order so clients do not regroup output after a turn.
+- A `Session` contains ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request.
+- Every assistant message may carry a provider-owned `ModelContinuation`; it is persisted inside the assistant row and restored onto the corresponding provider-neutral message.
+- Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary.
+- Planned skill injection will preserve the original user text in history. Full skill instructions will be turn-scoped model context rather than transcript content.
+- Compaction preserves the durable timeline while replacing the active context checkpoint, which is stored on the session row. The runtime keeps the newest whole turns verbatim, summarizes everything earlier, and injects `Context compacted. Kept {n} recent messages.` with the summary into the system prompt. An optional compact instruction changes the generated summary, not user history.
 
-    RT->>AG: user input
-    AG->>TR: append user message
-    loop step < maxSteps
-        AG->>PR: Stream(ChatRequest)
-        PR-->>AG: streaming delta
-        PR-->>AG: ChatResponse
-        AG->>TR: append assistant message
-        alt no tool calls
-            AG-->>RT: return final reply
-        else has tool calls
-            loop each tool call in order
-                AG->>TOOLS: Run(call)
-                TOOLS-->>AG: result or error
-                AG->>TR: append tool message
-            end
-        end
-    end
-    AG-->>RT: step limit exceeded
-```
+These contracts define expected behavior, not compatibility with the removed Go implementation or its database schema.
 
-Key constraints:
+## Local Security Boundary
 
-- Every tool call has a paired tool result, in the same order the model returned them.
-- Tool errors are written back as model-visible tool results, letting the model adjust accordingly.
-- Observer events preserve occurrence order so streaming clients can render model output, tool calls, and completion without regrouping them.
-- The loop ends when there are no tool calls, an error occurs, or `max_steps` (default 20) is reached.
-
-## Context Compaction and Task Plans
-
-Runtime triggers context compaction automatically at the configured threshold. Entry adapters and CLI commands can also request it manually through `CompactSession`. Both paths summarize earlier messages, keep recent messages active, and preserve the full transcript. If the latest `update_plan` task plan contains unfinished steps, that complete plan is injected into the summary prompt. This keeps both progress and pending work available after compaction.
+Atlas tools run with the permissions of the local Atlas process. The product does not provide a sandbox, permission prompts, or an approval gate. Protocol adapters must not imply a stronger security boundary than the runtime provides.

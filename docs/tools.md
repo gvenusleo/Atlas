@@ -1,4 +1,4 @@
-# Built-in Tools and Skills
+# Built-in Tools
 
 [中文](zh-CN/tools.md)
 
@@ -6,33 +6,24 @@
 
 | Tool | Description |
 |---|---|
-| `read` | Read UTF-8 text by path with optional 1-indexed `offset` and `limit`; returns at most 2,000 complete lines or 50 KiB of file content and reports the next offset when more content remains |
-| `run_shell` | Discover paths, search text, list directories, run commands, and verify with PowerShell on Windows or `/bin/sh` elsewhere; requires a short user-facing purpose and command, accepts optional standard input and accepted exit codes, and local execution retains a full temporary log when bounded output is truncated |
+| `read` | Read a bounded range from a UTF-8 text file with optional 1-indexed `offset` and `limit`; returns at most 2,000 complete lines or 50 KiB of content (an oversized single line is returned in full) and reports `next_offset` when more content remains |
+| `write` | Create a file or replace its complete contents, creating parent directories as needed |
 | `edit` | Apply one or more exact replacements to an existing UTF-8 file; every `old_text` must occur exactly once in the original content, edits must not overlap, and validation failure leaves the file unchanged |
-| `write` | Create a file or replace its complete contents, creating parent directories as needed and preserving permissions when overwriting an existing file |
-| `load_skill` | Load a local skill's instructions by name |
-| `web_search` | Search the public web with Tavily; requires `services.tavily.api_key` |
-| `web_fetch` | Extract public web page content with Tavily; requires `services.tavily.api_key` |
-| `update_plan` | Manage a structured task plan for multi-step work; each call replaces the entire plan |
+| `shell` | Run a command with the platform default shell, optionally passing standard input; returns combined output with the exit code |
+| `plan` | Replace the complete task plan for multi-step work: one `step` description per entry with a `pending`, `in_progress`, or `completed` status, at most one step `in_progress` at a time; every call replaces the entire plan |
 
-Relative paths for `read`, `edit`, and `write` are resolved from the session working directory. `read` rejects directories and non-UTF-8 content. `edit` preserves a UTF-8 BOM and the file's primary LF or CRLF line ending; it intentionally does not use fuzzy whitespace or Unicode matching. `write` is a full-file operation and does not append. Use `run_shell` for directory discovery, `rg`/`find` searches, binary or byte-oriented inspection, generators, formatters, and other commands.
+Relative paths for file tools are resolved from the session working directory.
+`read` rejects directories and non-UTF-8 content. `edit` preserves a UTF-8 BOM
+and the file's primary LF or CRLF line ending; it intentionally does not use
+fuzzy whitespace or Unicode matching. `write` is a full-file operation and does
+not append. `shell` returns at most 50 KiB of output (keeping both edges) and
+reports `timed out` or `cancelled` when a command is interrupted; the default
+timeout is 30 seconds and the maximum is 300. `plan` accepts at most 50
+steps of 500 characters each.
 
-## Plan Tracking
+## Security Boundary
 
-The `update_plan` tool lets the model track multi-step work with `pending` / `in_progress` / `completed` statuses. Each call fully replaces the previous plan. A plan can contain up to 50 steps, with at most 500 characters per step and one `in_progress` step. The model is instructed to use it for tasks that span several tool calls, and to avoid churn by only updating after real progress.
-
-Plan updates are preserved in transcript tool calls and structured metadata. When context compaction occurs, the latest `update_plan` plan is injected into the summary prompt if it contains unfinished steps, so both completed progress and pending work survive compaction.
-
-Channel-specific rendering:
-
-- **ACP**: plan updates are sent as `plan_update` session updates, mapping each step to a `PlanEntry`. Editors like Zed render them as a structured plan panel.
-- **TUI**: each update appears as a structured plan snapshot with completed, in-progress, and pending step styles.
-
-## Instructions and Skills
-
-Atlas loads two additional instruction files (current user requests take precedence over instruction files; current-directory instructions take precedence over global ones; parent and child directories are not searched recursively):
-
-- `~/.atlas/AGENTS.md`
-- `AGENTS.md` in the current working directory
-
-Atlas also scans user-level and current-directory-level skills, injecting only `name` and `description` summaries into the system prompt. When full instructions are needed, the model reads the corresponding `SKILL.md` via `load_skill`. When connected via ACP, available skills are exposed as `/<skill>` commands scoped to the current session's working directory. User input is passed as-is to the model, and the full `SKILL.md` is injected directly for that turn.
+Tools run with the permissions of the local Atlas process. Atlas does not
+provide a sandbox, permission prompts, or an approval gate. `shell` executes
+commands with those permissions; the model sees every exit code and decides
+how to proceed.

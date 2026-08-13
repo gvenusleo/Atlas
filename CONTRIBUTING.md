@@ -1,60 +1,46 @@
 # Contributing to Atlas
 
-Thanks for your interest in contributing to Atlas.
-
-## Issues vs PRs
-
-If the problem is easy to reproduce, prefer opening a GitHub issue. A clear issue should include: reproduction steps, expected behavior, actual behavior, logs or screenshots.
-
-PRs are more useful when the problem depends on a specific environment (e.g. macOS/Windows-specific behavior, particular shells or filesystems), because they capture the behavior in the environment where the problem actually occurs.
-
-## When you can open a PR directly
-
-- Reproducible bug fixes with a focused diff
-- Documentation fixes, typos
-- Small changes that clearly match an existing issue
-
-## When to discuss first
-
-Open an issue first to align before investing time in a PR:
-
-- New features or user-visible behavior changes
-- Architectural changes or refactors larger than ~100 lines
-- Public API or configuration format changes
-- New provider adapters
+Atlas is currently a Dart and Flutter workspace scaffold. Check the current implementation before documenting or depending on a planned capability.
 
 ## Development Setup
 
-Prerequisites: Go 1.26+, Git, [just](https://github.com/casey/just).
+Prerequisites: Git, [mise](https://mise.jdx.dev/), and [just](https://github.com/casey/just).
 
 ```sh
 git clone https://github.com/gvenusleo/atlas.git
 cd atlas
-go build ./...                # build
-go test ./...                 # run all tests
-go test ./internal/agent/...  # run a single package's tests
+mise install
+just deps
+just ci
 ```
 
-Before submitting a change, run `just ci` to check formatting, module files, builds, vet, race tests, and release-target cross-builds.
+Use `just deps-update` only when intentionally changing dependencies. The workspace has one root `pubspec.lock`.
 
-## Commit Convention
+## Change Boundaries
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+- Keep the agent loop in `atlas_runtime`; adapters and clients must not duplicate it.
+- Keep Flutter and Nocterm independent of providers, tools, and persistence.
+- Add dependencies in the package that owns the behavior, not at the workspace root.
+- Do not create placeholder abstractions for planned features.
+- Mark unimplemented behavior as `Planned` in documentation.
+- Keep English and Chinese documents synchronized when a translated counterpart exists.
 
+Package responsibilities and dependency direction are defined in [Architecture](docs/architecture.md). Commands and verification are documented in [Development](docs/development.md).
+
+## Pull Requests
+
+Open an issue before large architectural changes, public protocol changes, persistent schema changes, or new provider adapters. Reproducible bug fixes and focused documentation corrections can be submitted directly.
+
+Before submitting, run:
+
+```sh
+just ci
 ```
-feat: add MCP support
-fix(acp): fix cwd lost on session restore
-docs: update README configuration guide
-chore(release): bump version to 0.8.0
+
+Use Conventional Commits, for example:
+
+```text
+feat(runtime): add run cancellation
+fix(protocol): preserve event ordering
+docs: clarify workspace boundaries
 ```
-
-## Code Principles
-
-Atlas aims to be small, clear, and verifiable. Before submitting, confirm:
-
-- **Minimal changes**: only touch code directly related to the task. No drive-by refactors.
-- **Testable**: cover key behavior with fake providers and temp directories.
-- **No premature abstraction**: don't abstract before two real call sites exist. Don't keep interfaces for "maybe later."
-- **Single core**: CLI, ACP, and WebSocket share the same `runtime.Runtime`. Channel layers only do protocol adaptation.
-
-See [AGENTS.md](AGENTS.md) for full design principles.

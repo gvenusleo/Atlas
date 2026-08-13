@@ -2,68 +2,71 @@
 
 [English](../development.md)
 
-## 项目结构
+## 当前状态
+
+仓库目前是 Dart 与 Flutter workspace。`atlas_runtime`、`atlas_storage`、Provider 适配器、`atlas_config`、`atlas_tools`、`atlas_prompt`、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器（`atlas_acp`）已是带聚焦测试的可执行 package；MCP 适配器与 WebSocket transport 仍处于规划阶段。
+
+## Workspace 结构
 
 ```text
-cmd/atlas              CLI 入口
-internal/acp           ACP 协议适配与客户端能力桥接
-internal/agent         headless agent loop（核心循环）
-internal/compact       上下文压缩规划与摘要
-internal/config        配置加载与校验
-internal/model         通用聊天协议与 Provider 接口
-internal/prompt        系统提示词构造
-internal/provider      按 API 格式实现的 Provider 适配器
-  ├── chatcompletions  Chat Completions API
-  └── responses        OpenAI Responses API
-internal/runtime       编排层，串联 agent、工具和 session
-internal/session       SQLite 会话持久化
-internal/skill         skill 扫描与加载
-internal/tool          工具注册表与内置工具
-internal/transcript    内存消息序列
-internal/tui           交互式终端界面
-internal/version       版本信息
-internal/ws            WebSocket 通道
-app                    Flutter 桌面端与移动端客户端
-  ├── lib/app          应用根节点、路由和平台集成
-  ├── lib/features     按功能组织的页面、布局和组件
-  └── lib/shared       应用级主题和共享 UI
+packages/atlas_runtime    Session/Turn 领域、timeline、ports 与 Agent engine
+packages/atlas_storage    Drift 持久化与 runtime 行映射
+packages/atlas_provider   模型 Provider 适配器
+packages/atlas_tools      内置工具
+packages/atlas_ws         版本化 WebSocket 协议与 transport
+packages/atlas_acp        ACP 适配器
+packages/atlas_mcp        MCP 适配器
+packages/atlas_tui        Nocterm 展示 package
+apps/atlas_cli            atlas CLI、TUI、server 与其他命令
+apps/atlas_flutter        Flutter 桌面端与移动端应用
 ```
 
-## 构建与测试
+根 Pub workspace 维护唯一的 `pubspec.lock`。所有成员使用 `resolution: workspace`，不得增加成员级 lockfile。
+
+## 工具链
+
+根 `mise.toml` 固定 Flutter 3.47.0，其中包含 Dart 3.13.0。
 
 ```sh
-go build ./cmd/atlas           # 构建
-go test ./...                  # 运行全部测试
-go test ./internal/agent/...   # 运行单个包的测试
-go test ./internal/tui         # 运行终端界面测试
-just ci                        # 完整且不修改文件的 CI 检查（需安装 just）
+mise install
+just deps
 ```
 
-### Flutter App
+只有在有意调整依赖约束或 lockfile 时才使用 `just deps-update`。
 
-Flutter 客户端使用 FVM 固定的 SDK。在 `app/` 目录运行：
+## 验证
 
 ```sh
-fvm flutter run -d macos          # 运行 macOS 客户端
-fvm flutter analyze               # 静态分析
-fvm flutter test                  # Widget 与单元测试
-fvm flutter build macos --debug   # 构建 macOS Debug App
+just fmt          # 格式化 Dart 源码
+just fmt-check    # 不改文件，仅检查格式
+just analyze      # 分析整个 workspace
+just test         # 运行已有 Dart 与 Flutter 测试
+just ci           # 完整仓库验证
 ```
 
-当前客户端只实现了响应式应用外壳，尚未接入 Atlas runtime。
+使用 `just app-run macos` 运行当前 Flutter 外壳。各平台 debug 构建使用对应的 `just app-build-*` recipe。
 
-## 从源码运行
+使用 `just build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
+`dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
+（sqlite3）不能使用 `dart compile exe`。
 
-```sh
-go run ./cmd/atlas                              # 启动终端界面
-go run ./cmd/atlas run "读取 README 并总结"          # 执行单次任务
-go run ./cmd/atlas doctor                       # 验证配置
-```
+## Package 规则
 
-## 设计原则
+- 领域概念与 runtime ports 放在 `atlas_runtime`；Provider、存储、工具、UI 和协议实现分别放在其所属 package。
+- 只有真实适配器或测试需要时才增加公共抽象。
+- 不要为规划中的代码预先声明依赖。实现代码首次需要某个 package 时，在所属 Dart package 中运行 `dart pub add`；`atlas_flutter` 使用 `flutter pub add`。
+- 所有 HTTP 请求统一使用 Dio，不得添加 `package:http` 或第二套 HTTP client。只有 `atlas_ws` 出现真实实现时才添加 WebSocket 依赖。
+- 公共 Dart API 必须有简明文档注释。
+- Runtime 与协议 package 不得导入 Flutter。
+- 展示 package 不得导入 Provider、工具或存储实现。
+- `atlas_cli` 与 `atlas_flutter` 的应用 bootstrap 负责组装这些适配器并注入 runtime。
+- `atlas_ws` 只负责 WebSocket transport，并接收注入的 request handler。
+- 生成的序列化文件与源文件放在一起，仅在所选生成器要求时提交。
+- 行为实现必须添加聚焦测试；空骨架 package 不需要占位测试。
 
-- **小而可验证**：agent loop 保持 headless 和依赖注入，Provider 与工具副作用通过窄接口进入；配置、持久化和压缩由 runtime 负责。
-- **不提前抽象**：两个真实调用点出现前不抽象，不为"可能以后"保留两套接口。
-- **本地权限边界**：不引入权限抽象，工具拥有本机进程的全部权限。
-- **单一核心**：TUI、CLI 命令、ACP 和 WebSocket 共享同一个 `runtime.Runtime` 和 agent loop，入口层只适配界面或协议。
-- **轻量 Flutter 客户端**：Flutter 只负责客户端展示和交互状态；agent 编排、工具、Provider 和 session 持久化仍由 Go runtime 负责，后续通过 WebSocket 通道使用。
+## 文档规则
+
+- 根 README 只描述产品状态和可用命令，不写内部架构。
+- 架构和依赖边界写入 `docs/architecture.md`。
+- 不可用行为必须标记为 `Planned`；功能移除时同步删除失效示例。
+- 英文与中文对应文档必须同步更新。
