@@ -24,6 +24,7 @@ final class AcpServer {
 
   final _activeTurns = <String, CancellationToken>{};
   StreamSink<String>? _output;
+  bool _debug = false;
 
   /// Serves ACP over [input] and [output], completing when the connection
   /// closes.
@@ -39,6 +40,10 @@ final class AcpServer {
   /// Serves over an existing string channel, exposed for tests.
   Future<void> serveChannel(StreamChannel<String> channel) async {
     _output = channel.sink;
+    // ACP stdout carries only protocol messages; all diagnostics go to
+    // stderr. ACP_DEBUG follows the ecosystem convention (Gemini CLI,
+    // acpcli) and logs request/response summaries without payload text.
+    _debug = Platform.environment['ACP_DEBUG'] == '1';
     final server = Server(
       channel,
       onUnhandledError: (error, stackTrace) {
@@ -51,16 +56,46 @@ final class AcpServer {
 
   void _registerMethods(Server server) {
     server
-      ..registerMethod('initialize', _initialize)
-      ..registerMethod('session/new', _newSession)
-      ..registerMethod('session/load', _loadSession)
-      ..registerMethod('session/resume', _resumeSession)
-      ..registerMethod('session/prompt', _prompt)
-      ..registerMethod('session/list', _listSessions)
-      ..registerMethod('session/close', _closeSession)
+      ..registerMethod('initialize', _requestLog(_initialize))
+      ..registerMethod('session/new', _requestLog(_newSession))
+      ..registerMethod('session/load', _requestLog(_loadSession))
+      ..registerMethod('session/resume', _requestLog(_resumeSession))
+      ..registerMethod('session/prompt', _requestLog(_prompt))
+      ..registerMethod('session/list', _requestLog(_listSessions))
+      ..registerMethod('session/close', _requestLog(_closeSession))
       // A notification is a request without an id; json_rpc_2 dispatches it
       // through the same registration path.
-      ..registerMethod('session/cancel', _cancelPrompt);
+      ..registerMethod('session/cancel', _requestLog(_cancelPrompt));
+  }
+
+  /// Wraps [handler] with request/response logging when ACP_DEBUG is set.
+  FutureOr<Object?> Function(Parameters) _requestLog(
+    FutureOr<Object?> Function(Parameters) handler,
+  ) {
+    return (params) async {
+      final sessionId = params['sessionId'].valueOr(null);
+      if (_debug) {
+        stderr.writeln(
+          'atlas_acp: << ${params.method}'
+          '${sessionId == null ? '' : ' session=$sessionId'}',
+        );
+      }
+      try {
+        final result = await handler(params);
+        if (_debug) {
+          stderr.writeln('atlas_acp: >> ${params.method}: ok');
+        }
+        return result;
+      } catch (error) {
+        if (_debug && error is RpcException) {
+          stderr.writeln(
+            'atlas_acp: >> ${params.method}: error '
+            '${error.code} ${error.message}',
+          );
+        }
+        rethrow;
+      }
+    };
   }
 
   Future<JsonObject> _initialize(Parameters params) async => initializeResult();
@@ -273,6 +308,10 @@ final class AcpServer {
   }
 
   void _sendUpdate(SessionUpdate update) {
+    if (_debug) {
+      final kind = update.update['sessionUpdate'];
+      stderr.writeln('atlas_acp: ~ session=${update.sessionId} update=$kind');
+    }
     _output?.add(update.toJsonString());
   }
 }
