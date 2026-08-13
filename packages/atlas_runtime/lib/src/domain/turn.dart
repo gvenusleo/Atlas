@@ -1,5 +1,6 @@
 import 'content.dart';
 import 'ids.dart';
+import 'model.dart';
 import 'usage.dart';
 import '../ports/cancellation.dart';
 
@@ -80,6 +81,7 @@ final class TurnOutcome {
     required this.status,
     this.content = const <ContentPart>[],
     this.usage = const TokenUsage(),
+    this.stopReason,
     this.failure,
   });
 
@@ -97,6 +99,9 @@ final class TurnOutcome {
 
   /// The latest model usage.
   final TokenUsage usage;
+
+  /// Why the terminal model step stopped, for completed turns.
+  final StopReason? stopReason;
 
   /// The failure when the turn did not complete successfully.
   final TurnFailure? failure;

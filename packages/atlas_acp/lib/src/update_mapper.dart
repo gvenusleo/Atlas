@@ -9,10 +9,16 @@ import 'acp_types.dart';
 /// updates instead of ordinary tool calls.
 final class TurnUpdateMapper {
   /// Creates a mapper for one turn of [sessionId].
-  TurnUpdateMapper(this.sessionId);
+  ///
+  /// [toolTitles] maps tool names to their human-readable descriptions,
+  /// used as the `tool_call` title; unknown tools fall back to the name.
+  TurnUpdateMapper(this.sessionId, [this.toolTitles = const {}]);
 
   /// The session being mapped.
   final SessionId sessionId;
+
+  /// Tool display titles by tool name.
+  final Map<String, String> toolTitles;
 
   String? _messageId;
   int _messageCounter = 0;
@@ -45,7 +51,7 @@ final class TurnUpdateMapper {
             toolCall(
               sessionId,
               toolCallId: item.call.id.value,
-              title: item.call.name,
+              title: _toolTitle(item.call.name),
               kind: toolCallKind(item.call.name),
             ),
         ];
@@ -86,14 +92,20 @@ final class TurnUpdateMapper {
 
   String _messageIdFor(TurnId turnId) =>
       _messageId ??= 'msg-${turnId.value}-${_messageCounter++}';
+
+  String _toolTitle(String name) => toolTitles[name] ?? name;
 }
 
 /// Converts a persisted timeline into the `session/update` replay stream
 /// required by `session/load`.
 ///
 /// Message ids come from the durable timeline item ids; plan tool calls are
-/// replayed as plan updates and their results are skipped.
-List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
+/// replayed as plan updates and their results are skipped. [toolTitles]
+/// provides the human-readable `tool_call` titles by tool name.
+List<SessionUpdate> replayTimeline(
+  List<TimelineItem> timeline, [
+  Map<String, String> toolTitles = const {},
+]) {
   final updates = <SessionUpdate>[];
   // Call ids of plan tool calls whose result is skipped. Results always
   // follow their owning call in the timeline, so a FIFO queue matches them
@@ -127,7 +139,7 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
             toolCall(
               item.sessionId,
               toolCallId: call.id.value,
-              title: call.name,
+              title: toolTitles[call.name] ?? call.name,
               kind: toolCallKind(call.name),
             ),
           );

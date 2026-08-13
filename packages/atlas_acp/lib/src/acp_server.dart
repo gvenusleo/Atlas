@@ -17,12 +17,29 @@ import 'update_mapper.dart';
 /// `session/update` notifications.
 final class AcpServer {
   /// Creates an ACP server over [runtime].
-  AcpServer(this.runtime);
+  AcpServer(this.runtime)
+    : _toolTitles = {
+        for (final tool in runtime.tools.descriptors)
+          if (tool.description.trim().isNotEmpty)
+            tool.name: tool.description.trim(),
+      };
 
   /// The runtime serving ACP sessions.
   final AgentRuntime runtime;
 
-  final _activeTurns = <String, CancellationToken>{};
+  /// Tool names mapped to their model-facing descriptions, used as the
+  /// human-readable `tool_call` title required by ACP.
+  final Map<String, String> _toolTitles;
+
+  /// Cancellation tokens of pending turns per session. The runtime serializes
+  /// turns per session, so several prompts may be queued behind one active
+  /// turn; cancelling must reach all of them.
+  final _activeTurns = <String, List<CancellationToken>>{};
+
+  /// Delays connection close until in-flight requests have responded, so EOF
+  /// never drops a pending response.
+  final _inFlight = _InFlightGate();
+
   StreamSink<String>? _output;
   bool _debug = false;
 
@@ -45,7 +62,7 @@ final class AcpServer {
     // acpcli) and logs request/response summaries without payload text.
     _debug = Platform.environment['ACP_DEBUG'] == '1';
     final server = Server(
-      channel,
+      StreamChannel<String>(_inFlight.wrap(channel.stream), channel.sink),
       onUnhandledError: (error, stackTrace) {
         stderr.writeln('atlas_acp: unhandled error: $error');
       },
@@ -68,11 +85,12 @@ final class AcpServer {
       ..registerMethod('session/cancel', _requestLog(_cancelPrompt));
   }
 
-  /// Wraps [handler] with request/response logging when ACP_DEBUG is set.
+  /// Wraps [handler] with in-flight tracking and request/response logging
+  /// when ACP_DEBUG is set.
   FutureOr<Object?> Function(Parameters) _requestLog(
     FutureOr<Object?> Function(Parameters) handler,
   ) {
-    return (params) async {
+    return (params) {
       final sessionId = params['sessionId'].valueOr(null);
       if (_debug) {
         stderr.writeln(
@@ -80,32 +98,35 @@ final class AcpServer {
           '${sessionId == null ? '' : ' session=$sessionId'}',
         );
       }
-      try {
-        final result = await handler(params);
-        if (_debug) {
-          stderr.writeln('atlas_acp: >> ${params.method}: ok');
+      return _inFlight.run(() async {
+        try {
+          final result = await handler(params);
+          if (_debug) {
+            stderr.writeln('atlas_acp: >> ${params.method}: ok');
+          }
+          return result;
+        } catch (error) {
+          if (_debug) {
+            stderr.writeln(
+              'atlas_acp: >> ${params.method}: '
+              '${error is RpcException ? 'error ${error.code} ${error.message}' : error.runtimeType}',
+            );
+          }
+          if (error is RpcException) {
+            rethrow;
+          }
+          // Never let raw exceptions reach json_rpc_2's default serializer,
+          // which embeds the full stack trace in the error data.
+          throw RpcException(-32603, 'internal error (${error.runtimeType})');
         }
-        return result;
-      } catch (error) {
-        if (_debug) {
-          stderr.writeln(
-            'atlas_acp: >> ${params.method}: '
-            '${error is RpcException ? 'error ${error.code} ${error.message}' : error.runtimeType}',
-          );
-        }
-        if (error is RpcException) {
-          rethrow;
-        }
-        // Never let raw exceptions reach json_rpc_2's default serializer,
-        // which embeds the full stack trace in the error data.
-        throw RpcException(-32603, 'internal error (${error.runtimeType})');
-      }
+      });
     };
   }
 
   Future<JsonObject> _initialize(Parameters params) async => initializeResult();
 
   Future<JsonObject> _newSession(Parameters params) async {
+    _rejectMcpServers(params);
     final cwd = _absolutePath(params['cwd'].asString, 'cwd');
     final additional = params['additionalDirectories'].valueOr(null);
     final additionalDirectories = switch (additional) {
@@ -144,6 +165,7 @@ final class AcpServer {
   }
 
   Future<SessionSnapshot> _load(Parameters params) async {
+    _rejectMcpServers(params);
     final sessionId = params['sessionId'].asString;
     _absolutePath(params['cwd'].asString, 'cwd');
     try {
@@ -159,16 +181,12 @@ final class AcpServer {
       throw RpcException.invalidParams('sessionId must not be empty');
     }
     final session = SessionId(sessionId);
-    if (_activeTurns.containsKey(sessionId)) {
-      throw RpcException(
-        -32603,
-        'session already has an active turn: $sessionId',
-      );
-    }
     final text = _promptText(params['prompt'].asList);
     final cancellation = CancellationToken();
-    _activeTurns[sessionId] = cancellation;
-    final mapper = TurnUpdateMapper(session);
+    (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
+    // The runtime serializes turns per session, so a prompt sent while
+    // another turn is running waits for it instead of failing.
+    final mapper = TurnUpdateMapper(session, _toolTitles);
     try {
       String? stopReason;
       String? failureCode;
@@ -185,7 +203,9 @@ final class AcpServer {
         if (event case TurnFinished(:final outcome)) {
           switch (outcome.status) {
             case TurnStatus.completed:
-              stopReason = 'end_turn';
+              stopReason = outcome.stopReason == StopReason.maxTokens
+                  ? 'max_tokens'
+                  : 'end_turn';
             case TurnStatus.cancelled:
               stopReason = 'cancelled';
             case TurnStatus.failed:
@@ -211,7 +231,13 @@ final class AcpServer {
     } catch (error) {
       throw RpcException(-32603, 'turn failed (${error.runtimeType})');
     } finally {
-      _activeTurns.remove(sessionId);
+      final pending = _activeTurns[sessionId];
+      if (pending != null) {
+        pending.remove(cancellation);
+        if (pending.isEmpty) {
+          _activeTurns.remove(sessionId);
+        }
+      }
     }
   }
 
@@ -220,7 +246,10 @@ final class AcpServer {
     if (sessionId == null) {
       return;
     }
-    _activeTurns[sessionId]?.cancel();
+    for (final token
+        in _activeTurns[sessionId] ?? const <CancellationToken>[]) {
+      token.cancel();
+    }
   }
 
   Future<JsonObject> _listSessions(Parameters params) async {
@@ -239,6 +268,8 @@ final class AcpServer {
           {
             'sessionId': session.id.value,
             'cwd': session.workingDirectory,
+            if (session.additionalDirectories.isNotEmpty)
+              'additionalDirectories': session.additionalDirectories,
             if (session.title.isNotEmpty) 'title': session.title,
             'updatedAt': session.updatedAt.toUtc().toIso8601String(),
           },
@@ -249,7 +280,10 @@ final class AcpServer {
 
   Future<JsonObject> _closeSession(Parameters params) async {
     final sessionId = params['sessionId'].asString;
-    _activeTurns.remove(sessionId)?.cancel();
+    for (final token
+        in _activeTurns[sessionId] ?? const <CancellationToken>[]) {
+      token.cancel();
+    }
     return <String, Object?>{};
   }
 
@@ -291,6 +325,24 @@ final class AcpServer {
     return texts.join('\n\n');
   }
 
+  /// Rejects a non-empty `mcpServers` parameter: Atlas does not implement
+  /// MCP server connections (a MUST-level ACP stdio capability), so a client
+  /// asking for them gets an explicit error instead of silent failure.
+  static void _rejectMcpServers(Parameters params) {
+    final value = params['mcpServers'].valueOr(null);
+    if (value == null) {
+      return;
+    }
+    if (value is! List) {
+      throw RpcException.invalidParams('mcpServers must be an array');
+    }
+    if (value.isNotEmpty) {
+      throw RpcException.invalidParams(
+        'mcpServers are not supported by this agent',
+      );
+    }
+  }
+
   /// Returns the optional string parameter, rejecting non-string values with
   /// an invalid-params error.
   static String? _optionalString(Parameters params, String key) {
@@ -321,5 +373,56 @@ final class AcpServer {
       stderr.writeln('atlas_acp: ~ session=${update.sessionId} update=$kind');
     }
     _output?.add(update.toJsonString());
+  }
+}
+
+/// Delays a stream's done event until every tracked task has completed.
+///
+/// json_rpc_2 completes its server future as soon as the input stream ends;
+/// a response whose handler is still running when EOF arrives would be
+/// discarded. The gate holds the stream open until all in-flight request
+/// handlers finish, so their responses are written before the connection
+/// closes.
+final class _InFlightGate {
+  final _controller = StreamController<String>();
+  int _pending = 0;
+  bool _inputDone = false;
+  bool _doneScheduled = false;
+
+  /// Wraps [input], mirroring its events but delaying `done` until no
+  /// tracked task is pending.
+  Stream<String> wrap(Stream<String> input) {
+    input.listen(
+      _controller.add,
+      onError: _controller.addError,
+      onDone: () {
+        _inputDone = true;
+        _maybeDone();
+      },
+    );
+    return _controller.stream;
+  }
+
+  /// Runs [action] while keeping the connection open.
+  Future<T> run<T>(Future<T> Function() action) {
+    _pending++;
+    return Future<T>.sync(action).whenComplete(() {
+      _pending--;
+      _maybeDone();
+    });
+  }
+
+  void _maybeDone() {
+    if (!_inputDone || _pending != 0 || _doneScheduled) {
+      return;
+    }
+    _doneScheduled = true;
+    // Defer past the current microtask so the finishing handler's response
+    // is written before json_rpc_2 observes the closed input stream.
+    scheduleMicrotask(() {
+      if (!_controller.isClosed) {
+        _controller.close();
+      }
+    });
   }
 }

@@ -51,6 +51,7 @@ final class SessionSummary {
     required this.title,
     required this.workingDirectory,
     required this.updatedAt,
+    this.additionalDirectories = const <String>[],
     this.lastUsage = const TokenUsage(),
   });
 
@@ -62,6 +63,9 @@ final class SessionSummary {
 
   /// The primary working directory.
   final String workingDirectory;
+
+  /// Additional working directory roots granted to tools.
+  final List<String> additionalDirectories;
 
   /// The last update time in UTC.
   final DateTime updatedAt;

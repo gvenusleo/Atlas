@@ -28,6 +28,9 @@ final class RowMappers {
         id: runtime.SessionId(row.id),
         title: row.title,
         workingDirectory: row.workingDirectory,
+        additionalDirectories: _decodeDirectories(
+          row.additionalDirectoriesJson,
+        ),
         updatedAt: row.updatedAt.toUtc(),
         lastUsage: _sessionUsage(row),
       );

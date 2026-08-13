@@ -137,6 +137,39 @@ void main() {
       );
     });
 
+    test(
+      'tool_call titles fall back to the tool name without descriptions',
+      () {
+        final mapper = TurnUpdateMapper(session);
+        final updates = mapper.map(
+          ModelResponseReceived(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            assistantMessage: _assistant([TextContent('I will check.')]),
+            toolCalls: [_toolCallItem('call-1', 'read', 1)],
+          ),
+        );
+        expect(updates.single.update['title'], 'read');
+      },
+    );
+
+    test('tool_call titles use the tool description when provided', () {
+      final mapper = TurnUpdateMapper(session, {'read': 'Read a file'});
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [_toolCallItem('call-1', 'read', 1)],
+        ),
+      );
+      expect(updates.single.update['title'], 'Read a file');
+    });
+
     test('maps a tool loop to pending, in_progress, and completed updates', () {
       final mapper = TurnUpdateMapper(session);
       final updates = <SessionUpdate>[
@@ -310,6 +343,14 @@ void main() {
       final updates = replayTimeline(timeline);
       expect(updates, hasLength(1));
       expect(updates.single.update['sessionUpdate'], 'plan');
+    });
+
+    test('replay uses the tool description for tool_call titles', () {
+      final timeline = <TimelineItem>[
+        _toolCallItem('call-1', 'read', 0, id: 'item-1'),
+      ];
+      final updates = replayTimeline(timeline, {'read': 'Read a file'});
+      expect(updates.single.update['title'], 'Read a file');
     });
 
     test('replay skips only the plan result matching its own call', () {

@@ -338,6 +338,7 @@ final class AgentRuntime {
             status: TurnStatus.completed,
             content: finalContent,
             usage: latestUsage,
+            stopReason: completedResponse.stopReason,
           );
           await store.finishTurn(
             session.id,

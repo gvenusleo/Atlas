@@ -97,6 +97,8 @@ void main() {
         ((updates[1]['params'] as Map)['update'] as Map<String, Object?>);
     expect(toolCall['toolCallId'], 'call-1');
     expect(toolCall['kind'], 'read');
+    // The title is the human-readable tool description, not the tool name.
+    expect(toolCall['title'], 'Read a file');
     expect(
       ((updates[3]['params'] as Map)['update'] as Map)['status'],
       'completed',
@@ -214,8 +216,10 @@ void main() {
     await wire.close();
   });
 
-  test('rejects a second prompt while one is active', () async {
-    final wire = await _Wire.open(blockingProvider: true);
+  test('serializes concurrent prompts on one session', () async {
+    final wire = await _Wire.open(
+      responses: [..._defaultResponses(), ..._defaultResponses()],
+    );
     final sessionId = await _newSession(wire);
 
     final first = wire.send({
@@ -225,29 +229,28 @@ void main() {
       'params': {
         'sessionId': sessionId,
         'prompt': [
-          {'type': 'text', 'text': 'Block forever'},
+          {'type': 'text', 'text': 'First turn'},
         ],
       },
     });
+    // Wait until the first turn is provably running before queueing another.
     await wire.notifications.first;
-    final second = await wire.send({
+    final second = wire.send({
       'jsonrpc': '2.0',
       'id': 3,
       'method': 'session/prompt',
       'params': {
         'sessionId': sessionId,
         'prompt': [
-          {'type': 'text', 'text': 'Again'},
+          {'type': 'text', 'text': 'Second turn'},
         ],
       },
     });
-    expect((second['error'] as Map)['code'], -32603);
-    wire.sendNotification({
-      'jsonrpc': '2.0',
-      'method': 'session/cancel',
-      'params': {'sessionId': sessionId},
-    });
-    await first;
+
+    final firstResponse = await first;
+    final secondResponse = await second;
+    expect((firstResponse['result'] as Map)['stopReason'], 'end_turn');
+    expect((secondResponse['result'] as Map)['stopReason'], 'end_turn');
     await wire.close();
   });
 
@@ -332,6 +335,148 @@ void main() {
     final data = error['data'] as Map<String, Object?>?;
     expect(data?['stack'], isNull);
     expect(data?['full'], isNull);
+    await wire.close();
+  });
+
+  test('session/new rejects non-empty mcpServers', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {
+        'cwd': '/tmp/project',
+        'mcpServers': <Map<String, Object?>>[
+          {'name': 'fs', 'command': '/usr/bin/server', 'args': [], 'env': []},
+        ],
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], contains('mcpServers'));
+    await wire.close();
+  });
+
+  test('session/new accepts an empty mcpServers array', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {'cwd': '/tmp/project', 'mcpServers': <Object?>[]},
+    });
+    expect(response.containsKey('result'), isTrue);
+    await wire.close();
+  });
+
+  test('session/new rejects a non-array mcpServers value', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {'cwd': '/tmp/project', 'mcpServers': 'stdio'},
+    });
+    expect((response['error'] as Map)['code'], -32602);
+    await wire.close();
+  });
+
+  test('session/load and session/resume reject non-empty mcpServers', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final mcpServers = <Map<String, Object?>>[
+      {'name': 'fs', 'command': '/usr/bin/server', 'args': [], 'env': []},
+    ];
+    for (final method in ['session/load', 'session/resume']) {
+      final response = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 2,
+        'method': method,
+        'params': {
+          'sessionId': sessionId,
+          'cwd': '/tmp/project',
+          'mcpServers': mcpServers,
+        },
+      });
+      expect((response['error'] as Map)['code'], -32602);
+    }
+    await wire.close();
+  });
+
+  test(
+    'prompt reports max_tokens when the model hits the token limit',
+    () async {
+      final wire = await _Wire.open(
+        responses: [
+          const ModelResponse(
+            content: [TextContent('Truncated.')],
+            stopReason: StopReason.maxTokens,
+          ),
+        ],
+      );
+      final sessionId = await _newSession(wire);
+      final response = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 2,
+        'method': 'session/prompt',
+        'params': {
+          'sessionId': sessionId,
+          'prompt': [
+            {'type': 'text', 'text': 'Long output please'},
+          ],
+        },
+      });
+      expect((response['result'] as Map)['stopReason'], 'max_tokens');
+      await wire.close();
+    },
+  );
+
+  test('EOF does not drop the in-flight prompt response', () async {
+    final wire = await _Wire.open(
+      providerDelay: const Duration(milliseconds: 50),
+    );
+    final sessionId = await _newSession(wire);
+    final prompt = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    // Close stdin while the turn is still running; the response must still
+    // be delivered before the connection shuts down.
+    await wire.closeInput();
+    final response = await prompt;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('session/list reports additional directories', () async {
+    final wire = await _Wire.open();
+    final created = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {
+        'cwd': '/tmp/project',
+        'additionalDirectories': ['/tmp/shared'],
+      },
+    });
+    expect(created.containsKey('result'), isTrue);
+
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/list',
+      'params': <String, Object?>{},
+    });
+    final sessions = (response['result'] as Map)['sessions'] as List<Object?>;
+    final first = sessions.single as Map<String, Object?>;
+    expect(first['additionalDirectories'], ['/tmp/shared']);
     await wire.close();
   });
 
@@ -455,6 +600,25 @@ Future<void> _runPrompt(_Wire wire, String sessionId) async {
 
 final _model = ModelRef(providerId: ProviderId('test'), modelId: ModelId('m'));
 
+/// The default scripted turn: one tool call followed by a final response.
+List<ModelResponse> _defaultResponses() => [
+  ModelResponse(
+    content: const [TextContent('I will inspect the files.')],
+    toolCalls: [
+      ToolCall(
+        id: ToolCallId('call-1'),
+        name: 'read',
+        arguments: <String, Object?>{'path': '.'},
+      ),
+    ],
+    stopReason: StopReason.toolUse,
+  ),
+  const ModelResponse(
+    content: [TextContent('Done.')],
+    stopReason: StopReason.endTurn,
+  ),
+];
+
 /// A JSON-RPC wire harness driving an [AcpServer] over an in-memory channel.
 final class _Wire {
   _Wire._(this._requests);
@@ -465,28 +629,19 @@ final class _Wire {
   var _notificationCount = 0;
   late final Future<void> _serverDone;
 
-  static Future<_Wire> open({bool blockingProvider = false}) async {
+  static Future<_Wire> open({
+    bool blockingProvider = false,
+    List<ModelResponse>? responses,
+    Duration providerDelay = Duration.zero,
+  }) async {
     final runtime = AgentRuntime(
       store: _MemorySessionStore(),
       provider: blockingProvider
           ? _BlockingProvider()
-          : _ScriptedProvider([
-              ModelResponse(
-                content: const [TextContent('I will inspect the files.')],
-                toolCalls: [
-                  ToolCall(
-                    id: ToolCallId('call-1'),
-                    name: 'read',
-                    arguments: <String, Object?>{'path': '.'},
-                  ),
-                ],
-                stopReason: StopReason.toolUse,
-              ),
-              const ModelResponse(
-                content: [TextContent('Done.')],
-                stopReason: StopReason.endTurn,
-              ),
-            ]),
+          : _ScriptedProvider(
+              responses ?? _defaultResponses(),
+              delay: providerDelay,
+            ),
       tools: _MemoryTools(),
       ids: _Ids(),
       defaultModel: _model,
@@ -533,17 +688,25 @@ final class _Wire {
     _requests.add(jsonEncode(notification));
   }
 
-  Future<void> close() async {
+  /// Closes the input (EOF) as a client would when shutting down.
+  Future<void> closeInput() async {
     await _requests.close();
+  }
+
+  Future<void> close() async {
+    await closeInput();
     await _serverDone;
     await _notifications.close();
   }
 }
 
 final class _ScriptedProvider implements ModelProvider {
-  _ScriptedProvider(this.responses);
+  _ScriptedProvider(this.responses, {this.delay = Duration.zero});
 
   final List<ModelResponse> responses;
+
+  /// Artificial latency so a turn is still running when a test closes EOF.
+  final Duration delay;
   var _index = 0;
 
   @override
@@ -555,6 +718,9 @@ final class _ScriptedProvider implements ModelProvider {
     final index = _index++;
     if (index >= responses.length) {
       throw const TurnCancelledException();
+    }
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
     }
     final response = responses[index];
     for (final part in response.content) {
@@ -626,6 +792,7 @@ final class _MemorySessionStore implements SessionStore {
           id: session!.id,
           title: session!.title,
           workingDirectory: session!.workingDirectory,
+          additionalDirectories: session!.additionalDirectories,
           updatedAt: session!.updatedAt,
         ),
     ],
