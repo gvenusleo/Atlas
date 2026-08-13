@@ -21,3 +21,8 @@ workspace:
 
 dev_dependencies:
   lints: ^6.1.0
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: system

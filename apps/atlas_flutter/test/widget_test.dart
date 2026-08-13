@@ -8,7 +8,7 @@ import 'package:atlas_flutter/features/workspace/presentation/workspace_shell.da
 import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

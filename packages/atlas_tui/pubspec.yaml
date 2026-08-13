@@ -9,7 +9,7 @@ environment:
 resolution: workspace
 dependencies:
   atlas_runtime: ^0.1.0
-  nocterm: ^0.8.0
+  nocterm: ^0.9.0
 dev_dependencies:
   atlas_storage: ^0.1.0
   atlas_tools: ^0.1.0

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -48,11 +48,13 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
       routerConfig: ref.watch(appRouterProvider),
       builder: (context, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: isDark
-              ? SystemUiOverlayStyle.light
-              : SystemUiOverlayStyle.dark,
-          child: child ?? const SizedBox.shrink(),
+        return MaterialUiCompatibilityBridge(
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: isDark
+                ? SystemUiOverlayStyle.light
+                : SystemUiOverlayStyle.dark,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );
