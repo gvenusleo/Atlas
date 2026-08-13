@@ -175,6 +175,12 @@ final class TimelineCodec {
           'mime_type': ?mimeType,
           'detail': detail.name,
         },
+        ResourceContent(:final uri, :final mimeType, :final text) => {
+          'type': 'resource',
+          'uri': uri,
+          'mime_type': ?mimeType,
+          'text': text,
+        },
       },
   ];
 
@@ -197,6 +203,12 @@ final class TimelineCodec {
                 _string(object, 'detail'),
                 'detail',
               ),
+            );
+          case 'resource':
+            return ResourceContent(
+              uri: _string(object, 'uri'),
+              mimeType: object['mime_type'] as String?,
+              text: _stringOrDefault(object, 'text'),
             );
           default:
             throw FormatException(

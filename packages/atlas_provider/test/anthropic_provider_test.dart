@@ -194,6 +194,56 @@ void main() {
     expect(tools.single['name'], 'lookup');
     expect(tools.single['input_schema'], {'type': 'object'});
   });
+
+  test('embeds resources as document blocks', () async {
+    final requests = <Map<String, Object?>>[];
+    final server = await _startServer((request) async {
+      requests.add(
+        jsonDecode(await utf8.decoder.bind(request).join())
+            as Map<String, Object?>,
+      );
+      await _sendSse(request.response, [
+        '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+        '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+        '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
+        '{"type":"message_stop"}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    await _provider(server)
+        .stream(
+          _request(
+            messages: const [
+              ModelMessage(
+                role: ModelMessageRole.user,
+                content: [
+                  TextContent('look'),
+                  ResourceContent(
+                    uri: 'file:///tmp/a.dart',
+                    mimeType: 'text/x-dart',
+                    text: 'void main() {}',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        )
+        .toList();
+
+    final user = (requests.single['messages'] as List).first;
+    expect((user as Map)['content'], [
+      {'type': 'text', 'text': 'look'},
+      {
+        'type': 'document',
+        'source': {
+          'type': 'text',
+          'media_type': 'text/x-dart',
+          'data': 'void main() {}',
+        },
+      },
+    ]);
+  });
 }
 
 ModelRequest _request({List<ModelMessage>? messages}) => ModelRequest(

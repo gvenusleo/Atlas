@@ -264,6 +264,11 @@ Object _chatContent(List<ContentPart> parts) {
     if (part is TextContent) {
       return <String, Object?>{'type': 'text', 'text': part.text};
     }
+    if (part is ResourceContent) {
+      // OpenAI-compatible APIs have no resource block; embed the text as a
+      // plain text part.
+      return <String, Object?>{'type': 'text', 'text': part.text};
+    }
     final image = part as ImageContent;
     return <String, Object?>{
       'type': 'image_url',
@@ -334,6 +339,10 @@ List<Object?> _responsesInput(
 
 List<Object?> _responsesContent(List<ContentPart> parts) => parts.map((part) {
   if (part is TextContent) {
+    return <String, Object?>{'type': 'input_text', 'text': part.text};
+  }
+  if (part is ResourceContent) {
+    // The Responses API has no resource block; embed the text as plain text.
     return <String, Object?>{'type': 'input_text', 'text': part.text};
   }
   final image = part as ImageContent;

@@ -170,6 +170,51 @@ void main() {
       expect(updates.single.update['title'], 'Read a file');
     });
 
+    test('tool_call includes the raw input arguments', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem('call-1', 'read', 1, arguments: {'path': '/tmp/a'}),
+          ],
+        ),
+      );
+      expect(updates.single.update['rawInput'], {'path': '/tmp/a'});
+    });
+
+    test('completed tool results include the raw output', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ToolFinished(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          result: _resultItem('call-1', 'file list', 1),
+        ),
+      );
+      expect(updates.single.update['rawOutput'], {'output': 'file list'});
+    });
+
+    test('failed tool results omit the raw output', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ToolFinished(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          result: _resultItem('call-1', 'boom', 1, isError: true),
+        ),
+      );
+      expect(updates.single.update.containsKey('rawOutput'), isFalse);
+    });
+
     test('maps a tool loop to pending, in_progress, and completed updates', () {
       final mapper = TurnUpdateMapper(session);
       final updates = <SessionUpdate>[
@@ -322,7 +367,9 @@ void main() {
       ]);
       expect(updates[0].update['messageId'], 'item-1');
       expect(updates[2].update['toolCallId'], 'call-1');
+      expect(updates[2].update['rawInput'], <String, Object?>{});
       expect(updates[3].update['status'], 'completed');
+      expect(updates[3].update['rawOutput'], {'output': 'file list'});
     });
 
     test('replays plan tool calls as plan updates', () {

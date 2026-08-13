@@ -27,8 +27,18 @@ void main() {
         capabilities['sessionCapabilities'] as Map<String, Object?>;
     expect(
       sessionCaps.keys,
-      containsAll(['resume', 'list', 'close', 'additionalDirectories']),
+      containsAll([
+        'resume',
+        'list',
+        'close',
+        'delete',
+        'additionalDirectories',
+      ]),
     );
+    final promptCaps =
+        capabilities['promptCapabilities'] as Map<String, Object?>;
+    expect(promptCaps['image'], isTrue);
+    expect(promptCaps['embeddedContext'], isTrue);
     final info = result['agentInfo'] as Map<String, Object?>;
     expect(info['name'], 'atlas');
     expect(result['authMethods'], isEmpty);
@@ -99,10 +109,11 @@ void main() {
     expect(toolCall['kind'], 'read');
     // The title is the human-readable tool description, not the tool name.
     expect(toolCall['title'], 'Read a file');
-    expect(
-      ((updates[3]['params'] as Map)['update'] as Map)['status'],
-      'completed',
-    );
+    expect(toolCall['rawInput'], {'path': '.'});
+    final completed =
+        ((updates[3]['params'] as Map)['update'] as Map<String, Object?>);
+    expect(completed['status'], 'completed');
+    expect(completed['rawOutput'], {'output': 'file list'});
 
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
@@ -180,7 +191,8 @@ void main() {
       'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
     });
     expect(response['result'], <String, Object?>{});
-    expect(wire.notificationCount, 5);
+    // The turn's five updates plus the auto-generated title notification.
+    expect(wire.notificationCount, 6);
     await wire.close();
   });
 
@@ -254,7 +266,7 @@ void main() {
     await wire.close();
   });
 
-  test('rejects non-text prompt content', () async {
+  test('rejects unsupported prompt content types', () async {
     final wire = await _Wire.open();
     final sessionId = await _newSession(wire);
     final response = await wire.send({
@@ -264,7 +276,7 @@ void main() {
       'params': {
         'sessionId': sessionId,
         'prompt': [
-          {'type': 'image', 'data': 'iVBOR', 'mimeType': 'image/png'},
+          {'type': 'audio', 'data': 'AAAA', 'mimeType': 'audio/mpeg'},
         ],
       },
     });
@@ -477,6 +489,214 @@ void main() {
     final sessions = (response['result'] as Map)['sessions'] as List<Object?>;
     final first = sessions.single as Map<String, Object?>;
     expect(first['additionalDirectories'], ['/tmp/shared']);
+    await wire.close();
+  });
+
+  test('session/delete removes a session from session/list', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/delete',
+      'params': {'sessionId': sessionId},
+    });
+    expect(response['result'], <String, Object?>{});
+    final list = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/list',
+      'params': <String, Object?>{},
+    });
+    expect((list['result'] as Map)['sessions'] as List<Object?>, isEmpty);
+    await wire.close();
+  });
+
+  test('session/delete of an unknown session succeeds silently', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/delete',
+      'params': {'sessionId': 'missing'},
+    });
+    expect(response['result'], <String, Object?>{});
+    await wire.close();
+  });
+
+  test('session/delete cancels the active turn', () async {
+    final wire = await _Wire.open(blockingProvider: true);
+    final sessionId = await _newSession(wire);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Block forever'},
+        ],
+      },
+    });
+    await wire.notifications.first;
+    final deleted = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/delete',
+      'params': {'sessionId': sessionId},
+    });
+    expect(deleted['result'], <String, Object?>{});
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'cancelled');
+    await wire.close();
+  });
+
+  test('emits session_info_update when a prompt generates a title', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    final updates = await wire.notifications.take(6).toList();
+    final info =
+        ((updates[5]['params'] as Map)['update'] as Map<String, Object?>);
+    expect(info['sessionUpdate'], 'session_info_update');
+    expect(info['title'], 'Inspect the files');
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('accepts image prompt blocks and runs the turn', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'image', 'data': 'iVBORw0KGgo=', 'mimeType': 'image/png'},
+          {'type': 'text', 'text': 'What is in this image?'},
+        ],
+      },
+    });
+    final updates = await wire.notifications.take(5).toList();
+    expect(updates, hasLength(5));
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('rejects an image block without mimeType', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'image', 'data': 'iVBORw0KGgo='},
+        ],
+      },
+    });
+    expect((response['error'] as Map)['code'], -32602);
+    await wire.close();
+  });
+
+  test('accepts embedded resource prompt blocks and runs the turn', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {
+            'type': 'resource',
+            'resource': {
+              'uri': 'file:///tmp/project/main.dart',
+              'mimeType': 'text/x-dart',
+              'text': 'void main() {}',
+            },
+          },
+          {'type': 'text', 'text': 'Review this file'},
+        ],
+      },
+    });
+    final updates = await wire.notifications.take(5).toList();
+    expect(updates, hasLength(5));
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('rejects a resource block without a uri', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {
+            'type': 'resource',
+            'resource': {'text': 'no uri'},
+          },
+        ],
+      },
+    });
+    expect((response['error'] as Map)['code'], -32602);
+    await wire.close();
+  });
+
+  test('emits usage_update with used tokens and context size', () async {
+    final wire = await _Wire.open(
+      responses: [
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+          usage: TokenUsage(totalTokens: 1200),
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Summarize'},
+        ],
+      },
+    });
+    // agent_message_chunk, session_info_update, usage_update.
+    final updates = await wire.notifications.take(3).toList();
+    final usage =
+        ((updates[2]['params'] as Map)['update'] as Map<String, Object?>);
+    expect(usage['sessionUpdate'], 'usage_update');
+    expect(usage['used'], 1200);
+    expect(usage['size'], 128000);
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
     await wire.close();
   });
 
@@ -800,7 +1020,26 @@ final class _MemorySessionStore implements SessionStore {
 
   @override
   Future<void> beginTurn(BeginTurn operation) async {
-    session = operation.session;
+    // Mirror DriftSessionStore: the title is auto-generated from the first
+    // user message when the session has none yet.
+    var value = operation.session;
+    if (value.title.isEmpty) {
+      final text = textFromContent(operation.userMessage.content).trim();
+      if (text.isNotEmpty) {
+        final firstLine = text.split('\n').first.trim();
+        value = Session(
+          id: value.id,
+          title: String.fromCharCodes(firstLine.runes.take(80)),
+          workingDirectory: value.workingDirectory,
+          additionalDirectories: value.additionalDirectories,
+          createdAt: value.createdAt,
+          updatedAt: value.updatedAt,
+          compaction: value.compaction,
+          lastUsage: value.lastUsage,
+        );
+      }
+    }
+    session = value;
     turns.add(operation.turn);
     timeline.add(operation.userMessage);
   }
@@ -823,7 +1062,13 @@ final class _MemorySessionStore implements SessionStore {
 
   @override
   Future<void> finishTurn(SessionId sessionId, Turn turn) async {
-    turns[turns.indexWhere((item) => item.id == turn.id)] = turn;
+    final index = turns.indexWhere((item) => item.id == turn.id);
+    if (index < 0) {
+      // Mirror DriftSessionStore: the turn row is gone, e.g. because the
+      // session was deleted with ON DELETE CASCADE while the turn ran.
+      throw SessionNotFoundException(sessionId);
+    }
+    turns[index] = turn;
   }
 
   @override
@@ -847,7 +1092,17 @@ final class _MemorySessionStore implements SessionStore {
   }
 
   @override
-  Future<void> deleteSession(SessionId sessionId) async => session = null;
+  Future<void> deleteSession(SessionId sessionId) async {
+    // Mirror DriftSessionStore: unknown sessions throw, and deleting a
+    // session cascades to its turns, messages, and checkpoints.
+    if (session == null || session!.id != sessionId) {
+      throw SessionNotFoundException(sessionId);
+    }
+    session = null;
+    turns.clear();
+    timeline.clear();
+    checkpoints.clear();
+  }
 }
 
 final class _Ids implements IdGenerator {

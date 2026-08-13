@@ -31,6 +31,10 @@ final class AcpServer {
   /// human-readable `tool_call` title required by ACP.
   final Map<String, String> _toolTitles;
 
+  /// Last title reported to the client per session, used to emit
+  /// `session_info_update` when the runtime auto-generates a title.
+  final _titles = <String, String>{};
+
   /// Cancellation tokens of pending turns per session. The runtime serializes
   /// turns per session, so several prompts may be queued behind one active
   /// turn; cancelling must reach all of them.
@@ -80,6 +84,7 @@ final class AcpServer {
       ..registerMethod('session/prompt', _requestLog(_prompt))
       ..registerMethod('session/list', _requestLog(_listSessions))
       ..registerMethod('session/close', _requestLog(_closeSession))
+      ..registerMethod('session/delete', _requestLog(_deleteSession))
       // A notification is a request without an id; json_rpc_2 dispatches it
       // through the same registration path.
       ..registerMethod('session/cancel', _requestLog(_cancelPrompt));
@@ -148,19 +153,22 @@ final class AcpServer {
       workingDirectory: cwd,
       additionalDirectories: additionalDirectories,
     );
+    _titles[session.id.value] = session.title;
     return {'sessionId': session.id.value};
   }
 
   Future<Object?> _loadSession(Parameters params) async {
     final snapshot = await _load(params);
-    for (final update in replayTimeline(snapshot.timeline)) {
+    _titles[snapshot.session.id.value] = snapshot.session.title;
+    for (final update in replayTimeline(snapshot.timeline, _toolTitles)) {
       _sendUpdate(update);
     }
     return null;
   }
 
   Future<JsonObject> _resumeSession(Parameters params) async {
-    await _load(params);
+    final snapshot = await _load(params);
+    _titles[snapshot.session.id.value] = snapshot.session.title;
     return <String, Object?>{};
   }
 
@@ -181,7 +189,7 @@ final class AcpServer {
       throw RpcException.invalidParams('sessionId must not be empty');
     }
     final session = SessionId(sessionId);
-    final text = _promptText(params['prompt'].asList);
+    final content = _promptContent(params['prompt'].asList);
     final cancellation = CancellationToken();
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
     // The runtime serializes turns per session, so a prompt sent while
@@ -190,10 +198,11 @@ final class AcpServer {
     try {
       String? stopReason;
       String? failureCode;
+      int? usedTokens;
       await for (final event in runtime.run(
         TurnRequest(
           sessionId: session,
-          content: [TextContent(text)],
+          content: content,
           cancellation: cancellation,
         ),
       )) {
@@ -206,6 +215,7 @@ final class AcpServer {
               stopReason = outcome.stopReason == StopReason.maxTokens
                   ? 'max_tokens'
                   : 'end_turn';
+              usedTokens = outcome.usage.totalTokens;
             case TurnStatus.cancelled:
               stopReason = 'cancelled';
             case TurnStatus.failed:
@@ -223,6 +233,10 @@ final class AcpServer {
       if (stopReason == null) {
         throw RpcException(-32603, 'turn ended without a stop reason');
       }
+      // Title and usage notifications are best-effort: a failure here must
+      // not fail a turn that already completed.
+      await _bestEffort(() => _notifyTitleChange(session));
+      await _bestEffort(() => _sendUsageUpdate(session, usedTokens));
       return {'stopReason': stopReason};
     } on SessionNotFoundException catch (error) {
       throw RpcException.invalidParams('session not found: ${error.sessionId}');
@@ -262,6 +276,11 @@ final class AcpServer {
       workingDirectory: cwd,
       cursor: cursor,
     );
+    // Record listed titles so a later prompt does not re-send a title the
+    // client already saw in the list response.
+    for (final item in page.items) {
+      _titles[item.id.value] = item.title;
+    }
     return {
       'sessions': [
         for (final session in page.items)
@@ -287,42 +306,159 @@ final class AcpServer {
     return <String, Object?>{};
   }
 
-  /// Extracts the text payload from an ACP prompt array.
+  Future<JsonObject> _deleteSession(Parameters params) async {
+    final sessionId = params['sessionId'].asString;
+    for (final token
+        in _activeTurns[sessionId] ?? const <CancellationToken>[]) {
+      token.cancel();
+    }
+    try {
+      await runtime.deleteSession(SessionId(sessionId));
+    } on SessionNotFoundException {
+      // Deleting an unknown or already-deleted session succeeds silently.
+    }
+    _titles.remove(sessionId);
+    return <String, Object?>{};
+  }
+
+  /// Emits `session_info_update` when the runtime has auto-generated a title
+  /// (from the first user message) that the client has not seen yet.
+  Future<void> _notifyTitleChange(SessionId session) async {
+    try {
+      final snapshot = await runtime.loadSession(session);
+      final title = snapshot.session.title;
+      if (title.isNotEmpty && title != _titles[session.value]) {
+        _titles[session.value] = title;
+        _sendUpdate(sessionInfoUpdate(session, title: title));
+      }
+    } on SessionNotFoundException {
+      // The session was deleted mid-turn; there is nothing to update.
+    }
+  }
+
+  /// Runs [action], swallowing failures: optional ACP notifications must
+  /// never turn a completed turn into an error response.
+  Future<void> _bestEffort(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (_) {
+      // Best-effort by design.
+    }
+  }
+
+  int? _contextSize;
+
+  /// The cached context window of the default model, or 0 when unknown.
   ///
-  /// Atlas advertises only baseline text prompt capabilities, so non-text
-  /// content blocks are rejected. `resource_link` blocks are a baseline
-  /// content type and are accepted but ignored: Atlas tools access the local
-  /// filesystem directly and do not need client-provided resource contents.
-  static String _promptText(List<Object?> blocks) {
+  /// Only positive values are cached, so a transient describe failure is
+  /// retried on the next turn instead of disabling usage updates forever.
+  Future<int> _contextWindow() async {
+    final cached = _contextSize;
+    if (cached != null && cached > 0) {
+      return cached;
+    }
+    final size = await runtime.contextWindowSize();
+    if (size > 0) {
+      _contextSize = size;
+    }
+    return size;
+  }
+
+  /// Emits a `usage_update` after a completed turn when usage is known.
+  Future<void> _sendUsageUpdate(SessionId session, int? usedTokens) async {
+    if (usedTokens == null || usedTokens <= 0) {
+      return;
+    }
+    final size = await _contextWindow();
+    if (size <= 0) {
+      return;
+    }
+    _sendUpdate(usageUpdate(session, used: usedTokens, size: size));
+  }
+
+  /// Converts an ACP prompt array into runtime content parts.
+  ///
+  /// Atlas advertises text + image prompt capabilities, so those blocks are
+  /// accepted; `resource` blocks are accepted once embeddedContext support
+  /// advertises them. `resource_link` blocks are a baseline content type and
+  /// are ignored: Atlas tools access the local filesystem directly and do not
+  /// need client-provided resource contents.
+  static List<ContentPart> _promptContent(List<Object?> blocks) {
     if (blocks.isEmpty) {
       throw RpcException.invalidParams('prompt must not be empty');
     }
-    final texts = <String>[];
+    final parts = <ContentPart>[];
     for (final block in blocks) {
       if (block is! Map) {
         throw RpcException.invalidParams('prompt blocks must be objects');
       }
-      final type = block['type'];
-      if (type == 'resource_link') {
-        continue;
-      }
-      if (type != 'text') {
-        throw RpcException.invalidParams(
-          'unsupported content block type: $type',
-        );
-      }
-      final text = block['text'];
-      if (text is! String) {
-        throw RpcException.invalidParams('text block must contain text');
-      }
-      if (text.isNotEmpty) {
-        texts.add(text);
+      switch (block['type']) {
+        case 'text':
+          final text = block['text'];
+          if (text is! String) {
+            throw RpcException.invalidParams('text block must contain text');
+          }
+          if (text.isNotEmpty) {
+            parts.add(TextContent(text));
+          }
+        case 'image':
+          parts.add(_imageContent(block));
+        case 'resource':
+          parts.add(_resourceContent(block));
+        case 'resource_link':
+          break;
+        default:
+          throw RpcException.invalidParams(
+            'unsupported content block type: ${block['type']}',
+          );
       }
     }
-    if (texts.isEmpty) {
-      throw RpcException.invalidParams('prompt must contain text');
+    if (parts.isEmpty) {
+      throw RpcException.invalidParams(
+        'prompt must contain text or image content',
+      );
     }
-    return texts.join('\n\n');
+    return parts;
+  }
+
+  /// Builds an image part from an ACP image block (base64 data).
+  static ImageContent _imageContent(Map<Object?, Object?> block) {
+    final data = block['data'];
+    final mimeType = block['mimeType'];
+    if (data is! String || data.isEmpty) {
+      throw RpcException.invalidParams('image block must contain data');
+    }
+    if (mimeType is! String || mimeType.isEmpty) {
+      throw RpcException.invalidParams('image block must contain mimeType');
+    }
+    return ImageContent(
+      source: 'data:$mimeType;base64,$data',
+      mimeType: mimeType,
+    );
+  }
+
+  /// Builds a resource part from an ACP resource block (text payload).
+  static ResourceContent _resourceContent(Map<Object?, Object?> block) {
+    final resource = block['resource'];
+    if (resource is! Map<Object?, Object?>) {
+      throw RpcException.invalidParams(
+        'resource block must contain a resource object',
+      );
+    }
+    final uri = resource['uri'];
+    final text = resource['text'];
+    if (uri is! String || uri.isEmpty) {
+      throw RpcException.invalidParams('resource must contain a uri');
+    }
+    if (text is! String) {
+      throw RpcException.invalidParams('resource text must be a string');
+    }
+    final mimeType = resource['mimeType'];
+    return ResourceContent(
+      uri: uri,
+      mimeType: mimeType is String && mimeType.isNotEmpty ? mimeType : null,
+      text: text,
+    );
   }
 
   /// Rejects a non-empty `mcpServers` parameter: Atlas does not implement

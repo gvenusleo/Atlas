@@ -168,6 +168,21 @@ final class AgentRuntime {
   Future<SessionSnapshot> loadSession(SessionId sessionId) =>
       store.loadSession(sessionId);
 
+  /// Deletes [sessionId] and all of its dependent records.
+  ///
+  /// Throws [SessionNotFoundException] when [sessionId] does not exist.
+  Future<void> deleteSession(SessionId sessionId) =>
+      store.deleteSession(sessionId);
+
+  /// The context window size of the default model, or 0 when unknown.
+  Future<int> contextWindowSize() async {
+    try {
+      return (await provider.describe(defaultModel)).contextWindow;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Stream<AgentEvent> _runTurn(TurnRequest request) async* {
     final cancellation = request.cancellation ?? CancellationToken();
     final now = _now().toUtc();
@@ -340,7 +355,7 @@ final class AgentRuntime {
             usage: latestUsage,
             stopReason: completedResponse.stopReason,
           );
-          await store.finishTurn(
+          await _finishTurnToleratingDeletion(
             session.id,
             _terminalTurn(turn, TurnStatus.completed, latestUsage),
           );
@@ -411,7 +426,7 @@ final class AgentRuntime {
         usage: latestUsage,
         failure: TurnFailure(code: 'cancelled', message: error.toString()),
       );
-      await store.finishTurn(
+      await _finishTurnToleratingDeletion(
         session.id,
         _terminalTurn(
           turn,
@@ -442,7 +457,7 @@ final class AgentRuntime {
           message: _safeErrorMessage('Turn failed', error),
         ),
       );
-      await store.finishTurn(
+      await _finishTurnToleratingDeletion(
         session.id,
         _terminalTurn(
           turn,
@@ -905,6 +920,19 @@ final class AgentRuntime {
     failure: failure,
     cancelReason: cancelReason,
   );
+
+  /// Persists a terminal turn, tolerating a session that was deleted while
+  /// the turn was running: the terminal outcome still stands for the caller.
+  Future<void> _finishTurnToleratingDeletion(
+    SessionId sessionId,
+    Turn terminal,
+  ) async {
+    try {
+      await store.finishTurn(sessionId, terminal);
+    } on SessionNotFoundException {
+      // The session and its rows were deleted mid-turn.
+    }
+  }
 
   TurnFinished _finishedEvent(
     TurnOutcome outcome,

@@ -8,12 +8,18 @@ as a subprocess and drive sessions through JSON-RPC.
 
 ## Implemented
 
-- `initialize` with ACP v1 capability negotiation
+- `initialize` with ACP v1 capability negotiation, advertising `loadSession`,
+  `sessionCapabilities` (`resume`, `list`, `close`, `delete`,
+  `additionalDirectories`), and `promptCapabilities` (`image`,
+  `embeddedContext`)
 - `session/new`, `session/load` (with timeline replay), `session/resume`,
-  `session/list`, `session/close`
+  `session/list`, `session/close`, `session/delete`
 - `session/prompt` mapping runtime turns to `session/update` notifications:
-  `agent_message_chunk`, `agent_thought_chunk`, `tool_call`,
-  `tool_call_update`, and `plan` (from the `plan` tool)
+  `agent_message_chunk`, `agent_thought_chunk`, `tool_call` (with `rawInput`),
+  `tool_call_update` (with `rawOutput`), `plan` (from the `plan` tool),
+  `session_info_update` (auto-generated titles), and `usage_update`
+- Prompt content: text, image (base64 data URLs), embedded text resources,
+  and baseline `resource_link` blocks
 - `session/cancel` mapping to cooperative turn cancellation
 
 ## Constraints

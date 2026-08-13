@@ -94,6 +94,46 @@ void main() {
     expect(loaded.session.updatedAt, DateTime.utc(2026, 1, 2, 0, 0, 3));
   });
 
+  test('round trips mixed text, image, and resource content', () async {
+    final session = _session('session-1', updatedAt: DateTime.utc(2026, 1, 2));
+    final turn = _turn(session.id, 'turn-1');
+    final user = runtime.UserMessageItem(
+      id: runtime.TimelineItemId('item-1'),
+      sessionId: session.id,
+      turnId: turn.id,
+      sequence: 0,
+      occurredAt: DateTime.utc(2026, 1, 2),
+      content: const [
+        runtime.TextContent('look at this'),
+        runtime.ImageContent(
+          source: 'data:image/png;base64,abc',
+          mimeType: 'image/png',
+        ),
+        runtime.ResourceContent(
+          uri: 'file:///tmp/main.dart',
+          mimeType: 'text/x-dart',
+          text: 'void main() {}',
+        ),
+      ],
+    );
+
+    await store.beginTurn(
+      runtime.BeginTurn(session: session, turn: turn, userMessage: user),
+    );
+
+    final loaded = await store.loadSession(session.id);
+    final item = loaded.timeline.single as runtime.UserMessageItem;
+    expect(item.content, hasLength(3));
+    expect((item.content[0] as runtime.TextContent).text, 'look at this');
+    final image = item.content[1] as runtime.ImageContent;
+    expect(image.source, 'data:image/png;base64,abc');
+    expect(image.mimeType, 'image/png');
+    final resource = item.content[2] as runtime.ResourceContent;
+    expect(resource.uri, 'file:///tmp/main.dart');
+    expect(resource.mimeType, 'text/x-dart');
+    expect(resource.text, 'void main() {}');
+  });
+
   test('lists sessions with a stable cursor and deletes sessions', () async {
     final first = _session('session-a', updatedAt: DateTime.utc(2026, 1, 1));
     final second = _session('session-b', updatedAt: DateTime.utc(2026, 1, 2));

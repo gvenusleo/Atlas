@@ -39,9 +39,10 @@ JsonObject initializeResult() => {
       'resume': <String, Object?>{},
       'list': <String, Object?>{},
       'close': <String, Object?>{},
+      'delete': <String, Object?>{},
       'additionalDirectories': <String, Object?>{},
     },
-    'promptCapabilities': <String, Object?>{},
+    'promptCapabilities': {'image': true, 'embeddedContext': true},
   },
   'agentInfo': {'name': 'atlas', 'title': 'Atlas', 'version': acpAgentVersion},
   'authMethods': <Object?>[],
@@ -86,12 +87,14 @@ SessionUpdate toolCall(
   required String toolCallId,
   required String title,
   required String kind,
+  Map<String, Object?>? rawInput,
 }) => SessionUpdate(sessionId, {
   'sessionUpdate': 'tool_call',
   'toolCallId': toolCallId,
   'title': title,
   'kind': kind,
   'status': 'pending',
+  'rawInput': ?rawInput,
 });
 
 /// A tool call progress or result update (`tool_call_update`).
@@ -100,6 +103,7 @@ SessionUpdate toolCallUpdate(
   required String toolCallId,
   required String status,
   String? content,
+  Map<String, Object?>? rawOutput,
 }) => SessionUpdate(sessionId, {
   'sessionUpdate': 'tool_call_update',
   'toolCallId': toolCallId,
@@ -111,11 +115,30 @@ SessionUpdate toolCallUpdate(
         'content': {'type': 'text', 'text': content},
       },
     ],
+  'rawOutput': ?rawOutput,
 });
 
 /// A complete plan replacement (`plan`).
 SessionUpdate planUpdate(SessionId sessionId, List<JsonObject> entries) =>
     SessionUpdate(sessionId, {'sessionUpdate': 'plan', 'entries': entries});
+
+/// A session metadata change (`session_info_update`).
+SessionUpdate sessionInfoUpdate(SessionId sessionId, {required String title}) =>
+    SessionUpdate(sessionId, {
+      'sessionUpdate': 'session_info_update',
+      'title': title,
+    });
+
+/// A context usage report (`usage_update`).
+SessionUpdate usageUpdate(
+  SessionId sessionId, {
+  required int used,
+  required int size,
+}) => SessionUpdate(sessionId, {
+  'sessionUpdate': 'usage_update',
+  'used': used,
+  'size': size,
+});
 
 /// Maps an Atlas tool name to the ACP tool kind.
 String toolCallKind(String name) => switch (name) {

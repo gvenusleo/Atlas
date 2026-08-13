@@ -44,6 +44,21 @@ final class ImageContent extends ContentPart {
   final ImageDetail detail;
 }
 
+/// An embedded resource content segment (text payload).
+final class ResourceContent extends ContentPart {
+  /// Creates a resource segment.
+  const ResourceContent({required this.uri, this.mimeType, this.text = ''});
+
+  /// The resource URI.
+  final String uri;
+
+  /// The MIME type when known.
+  final String? mimeType;
+
+  /// The embedded text payload.
+  final String text;
+}
+
 /// Returns the text content from a list of parts.
 String textFromContent(List<ContentPart> parts) => parts
     .whereType<TextContent>()

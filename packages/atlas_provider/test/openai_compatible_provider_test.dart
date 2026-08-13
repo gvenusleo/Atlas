@@ -304,6 +304,50 @@ void main() {
       StopReason.endTurn,
     );
   });
+
+  test('embeds resources as text blocks in chat requests', () async {
+    final requests = <Map<String, Object?>>[];
+    final server = await _startServer((request) async {
+      requests.add(
+        jsonDecode(await utf8.decoder.bind(request).join())
+            as Map<String, Object?>,
+      );
+      await _sendSse(request.response, [
+        '{"choices":[{"delta":{"content":"ok"}}]}',
+        '{"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        '{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}',
+        '[DONE]',
+      ]);
+    });
+    addTearDown(server.close);
+
+    await _provider(server, OpenAIProtocol.chatCompletions)
+        .stream(
+          _request(
+            messages: const [
+              ModelMessage(
+                role: ModelMessageRole.user,
+                content: [
+                  TextContent('look'),
+                  ResourceContent(
+                    uri: 'file:///tmp/a.dart',
+                    text: 'void main() {}',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        )
+        .toList();
+
+    final messages = (requests.single['messages'] as List)
+        .cast<Map<String, Object?>>();
+    final user = messages.firstWhere((message) => message['role'] == 'user');
+    expect(user['content'], [
+      {'type': 'text', 'text': 'look'},
+      {'type': 'text', 'text': 'void main() {}'},
+    ]);
+  });
 }
 
 ModelRequest _request({

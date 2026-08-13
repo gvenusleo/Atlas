@@ -249,6 +249,16 @@ List<Object?> _anthropicContent(List<ContentPart> parts) => parts.map((part) {
   if (part is TextContent) {
     return <String, Object?>{'type': 'text', 'text': part.text};
   }
+  if (part is ResourceContent) {
+    return <String, Object?>{
+      'type': 'document',
+      'source': <String, Object?>{
+        'type': 'text',
+        'media_type': part.mimeType ?? 'text/plain',
+        'data': part.text,
+      },
+    };
+  }
   final image = part as ImageContent;
   return <String, Object?>{'type': 'image', 'source': _imageSource(image)};
 }).toList();

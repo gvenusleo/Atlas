@@ -53,6 +53,7 @@ final class TurnUpdateMapper {
               toolCallId: item.call.id.value,
               title: _toolTitle(item.call.name),
               kind: toolCallKind(item.call.name),
+              rawInput: item.call.arguments,
             ),
         ];
       case ToolStarted(:final call):
@@ -78,6 +79,7 @@ final class TurnUpdateMapper {
             toolCallId: result.callId.value,
             status: result.isError ? 'failed' : 'completed',
             content: result.content,
+            rawOutput: result.isError ? null : _toolRawOutput(result.content),
           ),
         ];
       case TurnStarted() ||
@@ -141,6 +143,7 @@ List<SessionUpdate> replayTimeline(
               toolCallId: call.id.value,
               title: toolTitles[call.name] ?? call.name,
               kind: toolCallKind(call.name),
+              rawInput: call.arguments,
             ),
           );
         }
@@ -156,9 +159,15 @@ List<SessionUpdate> replayTimeline(
             toolCallId: callId.value,
             status: isError ? 'failed' : 'completed',
             content: content,
+            rawOutput: isError ? null : _toolRawOutput(content),
           ),
         );
     }
   }
   return updates;
 }
+
+/// Wraps a text tool result as the object `rawOutput` ACP expects; returns
+/// null for empty results.
+Map<String, Object?>? _toolRawOutput(String content) =>
+    content.trim().isEmpty ? null : {'output': content};
