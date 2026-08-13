@@ -54,6 +54,14 @@ final class AcpServer {
   /// never drops a pending response.
   final _inFlight = _InFlightGate();
 
+  /// Pending deferred lifecycle notifications, flushed before the connection
+  /// closes so clients can receive them.
+  final _deferred = <Future<void>>{};
+
+  /// Message id counter for `/compact` result messages, which are not part of
+  /// a model turn and need unique ids across invocations.
+  int _compactCounter = 0;
+
   StreamSink<String>? _output;
   bool _debug = false;
 
@@ -83,6 +91,9 @@ final class AcpServer {
     );
     _registerMethods(server);
     await server.listen();
+    // Flush deferred lifecycle notifications so the connection closes only
+    // after the client could have received them.
+    await Future.wait(_deferred.toList());
   }
 
   void _registerMethods(Server server) {
@@ -168,8 +179,9 @@ final class AcpServer {
       additionalDirectories: additionalDirectories,
     );
     _titles[session.id.value] = session.title;
-    final config = _defaultConfig();
+    final config = _defaultConfig(cwd);
     _sessionConfigs[session.id.value] = config;
+    _sendAvailableCommandsLater(session.id, cwd);
     return {
       'sessionId': session.id.value,
       'configOptions': sessionConfigOptions(
@@ -183,11 +195,15 @@ final class AcpServer {
   Future<Object?> _loadSession(Parameters params) async {
     final snapshot = await _load(params);
     _titles[snapshot.session.id.value] = snapshot.session.title;
-    final config = _defaultConfig();
+    final config = _defaultConfig(snapshot.session.workingDirectory);
     _sessionConfigs[snapshot.session.id.value] = config;
     for (final update in replayTimeline(snapshot.timeline, _toolTitles)) {
       _sendUpdate(update);
     }
+    _sendAvailableCommandsLater(
+      snapshot.session.id,
+      snapshot.session.workingDirectory,
+    );
     return {
       'configOptions': sessionConfigOptions(
         models,
@@ -200,8 +216,12 @@ final class AcpServer {
   Future<JsonObject> _resumeSession(Parameters params) async {
     final snapshot = await _load(params);
     _titles[snapshot.session.id.value] = snapshot.session.title;
-    final config = _defaultConfig();
+    final config = _defaultConfig(snapshot.session.workingDirectory);
     _sessionConfigs[snapshot.session.id.value] = config;
+    _sendAvailableCommandsLater(
+      snapshot.session.id,
+      snapshot.session.workingDirectory,
+    );
     return {
       'configOptions': sessionConfigOptions(
         models,
@@ -229,12 +249,26 @@ final class AcpServer {
     }
     final session = SessionId(sessionId);
     final content = _promptContent(params['prompt'].asList);
+    final promptText = _promptText(content);
+    final compactInstruction = compactCommandInstruction(promptText);
+    if (compactInstruction != null) {
+      if (content.any((part) => part is ImageContent)) {
+        throw RpcException.invalidParams(
+          'slash commands do not support images',
+        );
+      }
+      // Validate the session up front so an unknown session reports invalid
+      // params like any other prompt.
+      await _configFor(session);
+      return _runCompact(session, sessionId);
+    }
     final cancellation = CancellationToken();
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
     // The runtime serializes turns per session, so a prompt sent while
     // another turn is running waits for it instead of failing.
     final mapper = TurnUpdateMapper(session, _toolTitles);
-    final config = _sessionConfigs[sessionId] ?? _defaultConfig();
+    final config = _sessionConfigs[sessionId] ?? await _configFor(session);
+    final skills = _matchedSkillNames(config.cwd, promptText);
     try {
       String? stopReason;
       String? failureCode;
@@ -245,6 +279,7 @@ final class AcpServer {
           content: content,
           model: config.model,
           reasoningEffort: config.effort,
+          skills: skills,
           cancellation: cancellation,
         ),
       )) {
@@ -407,8 +442,9 @@ final class AcpServer {
         effort != null &&
         descriptor.reasoningEfforts.any((option) => option.value == effort);
     return _SessionConfig(
-      descriptor.ref,
-      supportsEffort
+      cwd: config.cwd,
+      model: descriptor.ref,
+      effort: supportsEffort
           ? effort
           : (descriptor.reasoningEfforts.isEmpty
                 ? null
@@ -425,16 +461,17 @@ final class AcpServer {
         'unsupported reasoning effort for ${config.model}: $value',
       );
     }
-    return _SessionConfig(config.model, value);
+    return _SessionConfig(cwd: config.cwd, model: config.model, effort: value);
   }
 
-  /// The default session config: the runtime default model with its first
-  /// reasoning effort when the model declares any.
-  _SessionConfig _defaultConfig() {
+  /// The default session config for [cwd]: the runtime default model with
+  /// its first reasoning effort when the model declares any.
+  _SessionConfig _defaultConfig(String cwd) {
     final descriptor = _descriptorFor(runtime.defaultModel);
     return _SessionConfig(
-      runtime.defaultModel,
-      descriptor.reasoningEfforts.isEmpty
+      cwd: cwd,
+      model: runtime.defaultModel,
+      effort: descriptor.reasoningEfforts.isEmpty
           ? null
           : descriptor.reasoningEfforts.first.value,
     );
@@ -475,6 +512,111 @@ final class AcpServer {
     } on SessionNotFoundException {
       // The session was deleted mid-turn; there is nothing to update.
     }
+  }
+
+  /// Runs the `/compact` slash command: manually compacts [session] and
+  /// reports the outcome as an assistant message, without a model turn.
+  Future<JsonObject> _runCompact(SessionId session, String sessionId) async {
+    final cancellation = CancellationToken();
+    (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
+    try {
+      var keptMessages = -1;
+      var failed = false;
+      await for (final event in runtime.compact(session)) {
+        cancellation.throwIfCancelled();
+        switch (event) {
+          case CompactionFinished(:final checkpoint):
+            keptMessages = checkpoint.keptRecentMessages;
+          case CompactionFailed():
+            failed = true;
+          default:
+            break;
+        }
+      }
+      final message = switch ((keptMessages, failed)) {
+        (final kept, _) when kept >= 0 =>
+          'Context compacted. Kept $kept recent messages.',
+        (_, true) => 'Compaction failed.',
+        _ => 'No safe context to compact.',
+      };
+      _sendUpdate(
+        agentMessageChunk(
+          session,
+          messageId: 'msg-compact-${_compactCounter++}',
+          text: message,
+        ),
+      );
+      return {'stopReason': 'end_turn'};
+    } on TurnCancelledException {
+      return {'stopReason': 'cancelled'};
+    } on SessionNotFoundException catch (error) {
+      // The session was deleted while the manual compaction ran.
+      throw RpcException.invalidParams('session not found: ${error.sessionId}');
+    } finally {
+      final pending = _activeTurns[sessionId];
+      if (pending != null) {
+        pending.remove(cancellation);
+        if (pending.isEmpty) {
+          _activeTurns.remove(sessionId);
+        }
+      }
+    }
+  }
+
+  /// The session config for [session], loading the stored working directory
+  /// when the session was not configured in this process.
+  Future<_SessionConfig> _configFor(SessionId session) async {
+    final SessionSnapshot snapshot;
+    try {
+      snapshot = await runtime.loadSession(session);
+    } on SessionNotFoundException catch (error) {
+      throw RpcException.invalidParams('session not found: ${error.sessionId}');
+    }
+    return _defaultConfig(snapshot.session.workingDirectory);
+  }
+
+  /// The plain text of [content], used for slash command recognition.
+  static String _promptText(List<ContentPart> content) =>
+      content.whereType<TextContent>().map((part) => part.text).join('\n');
+
+  /// The skill names referenced by `/name` tokens in [promptText], limited
+  /// to skills available in [cwd] and in order of first appearance.
+  List<String> _matchedSkillNames(String cwd, String promptText) {
+    final known = {for (final skill in _skillsFor(cwd)) skill.name};
+    if (known.isEmpty) {
+      return const [];
+    }
+    return matchedCommandNames(promptText, known);
+  }
+
+  /// The skill summaries available in [cwd], or an empty list when the
+  /// session context cannot be built.
+  List<SkillSummary> _skillsFor(String cwd) {
+    try {
+      return runtime.sessionContextBuilder(cwd).skills.summaries;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Sends the `available_commands_update` notification after [session] is
+  /// registered, matching the ACP client lifecycle.
+  void _sendAvailableCommandsLater(SessionId session, String cwd) {
+    // Defer past the response: clients may not have registered the session
+    // when the notification would otherwise arrive first.
+    final future = Future<void>(() {
+      try {
+        final known = _skillsFor(cwd);
+        _sendUpdate(
+          availableCommandsUpdate(session, availableCommandsFor(known)),
+        );
+      } catch (_) {
+        // The connection may already be closing; the notification is
+        // optional and must never surface as an unhandled error.
+      }
+    });
+    _deferred.add(future);
+    future.whenComplete(() => _deferred.remove(future));
   }
 
   /// Runs [action], swallowing failures: optional ACP notifications must
@@ -653,10 +795,17 @@ final class AcpServer {
   }
 }
 
-/// The per-session model and reasoning effort selection.
+/// The per-session model, reasoning effort, and working directory selection.
 final class _SessionConfig {
   /// Creates a session config.
-  const _SessionConfig(this.model, this.effort);
+  const _SessionConfig({
+    required this.cwd,
+    required this.model,
+    required this.effort,
+  });
+
+  /// The session working directory, used to resolve local skills.
+  final String cwd;
 
   /// The selected model.
   final ModelRef model;

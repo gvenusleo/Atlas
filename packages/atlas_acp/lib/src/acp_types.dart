@@ -222,6 +222,108 @@ SessionUpdate usageUpdate(
   'size': size,
 });
 
+/// The slash commands available in a session (`available_commands_update`).
+SessionUpdate availableCommandsUpdate(
+  SessionId sessionId,
+  List<JsonObject> commands,
+) => SessionUpdate(sessionId, {
+  'sessionUpdate': 'available_commands_update',
+  'availableCommands': commands,
+});
+
+/// The built-in slash command that manually compacts the session context.
+const compactCommandName = 'compact';
+
+/// Builds the slash commands offered in one session: the built-in `/compact`
+/// command followed by one command per available skill, skipping names that
+/// collide with `/compact` or cannot be represented as slash commands.
+///
+/// `/compact` carries no input hint: Atlas compacts the full context and
+/// ignores any trailing instruction text.
+List<JsonObject> availableCommandsFor(List<SkillSummary> skills) => [
+  {
+    'name': compactCommandName,
+    'description': 'Compact earlier conversation context.',
+  },
+  for (final summary in skills)
+    if (summary.name != compactCommandName &&
+        validSlashCommandName(summary.name))
+      {
+        'name': summary.name,
+        'description': summary.description,
+        'input': {'hint': 'task'},
+      },
+];
+
+/// Whether [name] can be safely exposed as a slash command name.
+///
+/// Restricted to ASCII letters, digits, `_`, `-`, and `.` so a command token
+/// can always be parsed out of a prompt without escaping.
+bool validSlashCommandName(String name) {
+  if (name.isEmpty) {
+    return false;
+  }
+  for (final code in name.codeUnits) {
+    final isLetter =
+        (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
+    final isDigit = code >= 0x30 && code <= 0x39;
+    if (!isLetter && !isDigit && code != 0x5F && code != 0x2D && code != 0x2E) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Parses the name from a `/name` token, or returns null when [text] is not
+/// a well-formed slash command token.
+String? slashCommandName(String text) {
+  final trimmed = text.trim();
+  if (!trimmed.startsWith('/')) {
+    return null;
+  }
+  final withoutSlash = trimmed.substring(1);
+  if (withoutSlash.isEmpty) {
+    return null;
+  }
+  final index = withoutSlash.indexOf(RegExp(r'\s'));
+  final name = index < 0 ? withoutSlash : withoutSlash.substring(0, index);
+  if (!validSlashCommandName(name)) {
+    return null;
+  }
+  return name;
+}
+
+/// Parses a `/compact [instruction]` command from [text].
+///
+/// Returns the trailing instruction text (possibly empty) when [text] is a
+/// compact command, or null when it is a regular prompt. The instruction is
+/// accepted for compatibility but ignored by the runtime compaction.
+String? compactCommandInstruction(String text) {
+  final trimmed = text.trim();
+  if (trimmed == '/$compactCommandName') {
+    return '';
+  }
+  if (RegExp('^/$compactCommandName\\s').hasMatch(trimmed)) {
+    return trimmed.substring(compactCommandName.length + 1).trim();
+  }
+  return null;
+}
+
+/// Scans [text] for whitespace-separated `/name` tokens matching a known
+/// command name, in order of first appearance and deduplicated.
+List<String> matchedCommandNames(String text, Set<String> known) {
+  final result = <String>[];
+  final seen = <String>{};
+  for (final field in text.split(RegExp(r'\s+'))) {
+    final name = slashCommandName(field);
+    if (name == null || !known.contains(name) || !seen.add(name)) {
+      continue;
+    }
+    result.add(name);
+  }
+  return result;
+}
+
 /// Maps an Atlas tool name to the ACP tool kind.
 String toolCallKind(String name) => switch (name) {
   'read' => 'read',

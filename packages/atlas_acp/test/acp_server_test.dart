@@ -81,7 +81,7 @@ void main() {
       },
     });
 
-    final updates = await wire.notifications.take(5).toList();
+    final updates = await wire.turnNotifications.take(5).toList();
     expect(
       updates.map(
         (u) => ((u['params'] as Map)['update'] as Map)['sessionUpdate'],
@@ -137,7 +137,7 @@ void main() {
           ],
         },
       });
-      await wire.notifications.first;
+      await wire.turnNotifications.first;
       wire.sendNotification({
         'jsonrpc': '2.0',
         'method': 'session/cancel',
@@ -163,7 +163,7 @@ void main() {
         'method': 'session/load',
         'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
       });
-      final replay = await wire.notifications.take(5).toList();
+      final replay = await wire.turnNotifications.take(5).toList();
       expect(
         replay.map(
           (u) => ((u['params'] as Map)['update'] as Map)['sessionUpdate'],
@@ -254,7 +254,7 @@ void main() {
       },
     });
     // Wait until the first turn is provably running before queueing another.
-    await wire.notifications.first;
+    await wire.turnNotifications.first;
     final second = wire.send({
       'jsonrpc': '2.0',
       'id': 3,
@@ -311,7 +311,7 @@ void main() {
         ],
       },
     });
-    final updates = await wire.notifications.take(5).toList();
+    final updates = await wire.turnNotifications.take(5).toList();
     expect(updates, hasLength(5));
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
@@ -547,7 +547,7 @@ void main() {
         ],
       },
     });
-    await wire.notifications.first;
+    await wire.turnNotifications.first;
     final deleted = await wire.send({
       'jsonrpc': '2.0',
       'id': 3,
@@ -794,6 +794,307 @@ void main() {
     await wire.close();
   });
 
+  test('session/new advertises compact and skill commands', () async {
+    final wire = await _Wire.open(
+      skills: [
+        _skill('review', 'Review the code'),
+        // Collides with the built-in command and is filtered out.
+        _skill('compact', 'Duplicate'),
+        // Not representable as a slash command and is filtered out.
+        _skill('bad name', 'Spaces'),
+      ],
+    );
+    final created = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/new',
+      'params': {'cwd': '/tmp/project'},
+    });
+    final sessionId = (created['result'] as Map)['sessionId'] as String;
+    final commands = await _availableCommands(wire, sessionId);
+    expect(commands.map((command) => command['name']), ['compact', 'review']);
+    expect(commands[0]['description'], 'Compact earlier conversation context.');
+    expect(commands[1]['description'], 'Review the code');
+    expect((commands[1]['input'] as Map)['hint'], 'task');
+    await wire.close();
+  });
+
+  test(
+    'session/load and session/resume advertise available commands',
+    () async {
+      final wire = await _Wire.open(
+        skills: [_skill('review', 'Review the code')],
+      );
+      final sessionId = await _newSession(wire);
+      for (final method in ['session/load', 'session/resume']) {
+        await wire.send({
+          'jsonrpc': '2.0',
+          'id': 2,
+          'method': method,
+          'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
+        });
+        final commands = await _availableCommands(wire, sessionId);
+        expect(commands.map((command) => command['name']), [
+          'compact',
+          'review',
+        ]);
+      }
+      await wire.close();
+    },
+  );
+
+  test('slash skill command injects the skill into the turn', () async {
+    final wire = await _Wire.open(
+      skills: [_skill('review', 'Review the code')],
+      responses: [
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    final prompt = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/review inspect the layout'},
+        ],
+      },
+    });
+    final response = await prompt;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    // The skill instructions are injected as a non-persistent context message.
+    final messages = wire.lastRequest!.messages;
+    expect(
+      messages.any(
+        (message) => message.content.any(
+          (part) =>
+              part is TextContent && part.text.contains('<name>review</name>'),
+        ),
+      ),
+      isTrue,
+    );
+    await wire.close();
+  });
+
+  test('unknown slash token falls through to a normal turn', () async {
+    final wire = await _Wire.open(
+      skills: [_skill('review', 'Review the code')],
+      responses: [
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    final prompt = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/nope tell me a joke'},
+        ],
+      },
+    });
+    final response = await prompt;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    // No skill context is injected for an unknown token.
+    final messages = wire.lastRequest!.messages;
+    expect(
+      messages.any(
+        (message) => message.content.any(
+          (part) => part is TextContent && part.text.contains('review'),
+        ),
+      ),
+      isFalse,
+    );
+    await wire.close();
+  });
+
+  test('/compact runs a manual compaction without a model turn', () async {
+    final wire = await _Wire.open(
+      // One kept turn leaves the first turn compactable.
+      keptRecentTurns: 1,
+      responses: [
+        ..._defaultResponses(),
+        ..._defaultResponses(),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+    await _runPrompt(wire, sessionId);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    final message = await wire.turnNotifications.first;
+    final update = (message['params'] as Map)['update'] as Map<String, Object?>;
+    expect(update['sessionUpdate'], 'agent_message_chunk');
+    expect(
+      (update['content'] as Map)['text'],
+      startsWith('Context compacted.'),
+    );
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('/compact with nothing to compact reports it', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    final message = await wire.turnNotifications.first;
+    final update = (message['params'] as Map)['update'] as Map<String, Object?>;
+    expect(update['sessionUpdate'], 'agent_message_chunk');
+    expect((update['content'] as Map)['text'], 'No safe context to compact.');
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('/compact with an image is rejected', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'image', 'data': 'iVBORw0KGgo=', 'mimeType': 'image/png'},
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], contains('slash commands do not support images'));
+    await wire.close();
+  });
+
+  test('/compact with an unknown session returns invalid params', () async {
+    final wire = await _Wire.open();
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': 'missing',
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], contains('session not found'));
+    await wire.close();
+  });
+
+  test('/compact cancelled by session/delete reports cancelled', () async {
+    final wire = await _Wire.open(
+      // One kept turn leaves the first turn compactable; the provider delay
+      // keeps the summary call in flight while the session is deleted.
+      keptRecentTurns: 1,
+      providerDelay: const Duration(milliseconds: 100),
+      responses: [
+        ..._defaultResponses(),
+        ..._defaultResponses(),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+    await _runPrompt(wire, sessionId);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    // Let the compaction summary call enter its provider delay, then delete
+    // the session so the turn is cancelled instead of completing.
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await wire.send({
+      'jsonrpc': '2.0',
+      'id': 4,
+      'method': 'session/delete',
+      'params': {'sessionId': sessionId},
+    });
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'cancelled');
+    await wire.close();
+  });
+
+  test('/compact uses a unique message id per invocation', () async {
+    final wire = await _Wire.open();
+    final sessionId = await _newSession(wire);
+    final ids = <String>[];
+    for (var i = 0; i < 2; i++) {
+      final promptFuture = wire.send({
+        'jsonrpc': '2.0',
+        'id': 2 + i,
+        'method': 'session/prompt',
+        'params': {
+          'sessionId': sessionId,
+          'prompt': [
+            {'type': 'text', 'text': '/compact'},
+          ],
+        },
+      });
+      final message = await wire.turnNotifications.first;
+      final update =
+          (message['params'] as Map)['update'] as Map<String, Object?>;
+      expect(update['sessionUpdate'], 'agent_message_chunk');
+      ids.add(update['messageId']! as String);
+      await promptFuture;
+    }
+    expect(ids, hasLength(2));
+    expect(ids[0], isNot(ids[1]));
+    await wire.close();
+  });
+
   test('emits session_info_update when a prompt generates a title', () async {
     final wire = await _Wire.open();
     final sessionId = await _newSession(wire);
@@ -808,7 +1109,7 @@ void main() {
         ],
       },
     });
-    final updates = await wire.notifications.take(6).toList();
+    final updates = await wire.turnNotifications.take(6).toList();
     final info =
         ((updates[5]['params'] as Map)['update'] as Map<String, Object?>);
     expect(info['sessionUpdate'], 'session_info_update');
@@ -833,7 +1134,7 @@ void main() {
         ],
       },
     });
-    final updates = await wire.notifications.take(5).toList();
+    final updates = await wire.turnNotifications.take(5).toList();
     expect(updates, hasLength(5));
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
@@ -880,7 +1181,7 @@ void main() {
         ],
       },
     });
-    final updates = await wire.notifications.take(5).toList();
+    final updates = await wire.turnNotifications.take(5).toList();
     expect(updates, hasLength(5));
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
@@ -931,7 +1232,7 @@ void main() {
       },
     });
     // agent_message_chunk, session_info_update, usage_update.
-    final updates = await wire.notifications.take(3).toList();
+    final updates = await wire.turnNotifications.take(3).toList();
     final usage =
         ((updates[2]['params'] as Map)['update'] as Map<String, Object?>);
     expect(usage['sessionUpdate'], 'usage_update');
@@ -1000,7 +1301,7 @@ void main() {
         ],
       },
     });
-    await wire.notifications.first;
+    await wire.turnNotifications.first;
     final closed = await wire.send({
       'jsonrpc': '2.0',
       'id': 3,
@@ -1056,14 +1357,42 @@ Future<void> _runPrompt(_Wire wire, String sessionId) async {
       ],
     },
   });
-  await wire.notifications.take(5).toList();
+  await wire.turnNotifications.take(5).toList();
   await promptFuture;
+}
+
+/// Awaits the latest `available_commands_update` notification for
+/// [sessionId] and returns its command list.
+Future<List<Map<String, Object?>>> _availableCommands(
+  _Wire wire,
+  String sessionId,
+) async {
+  final message = await wire.notifications.where((m) {
+    final update = (m['params'] as Map?)?['update'];
+    return update is Map &&
+        update['sessionUpdate'] == 'available_commands_update' &&
+        (m['params'] as Map)['sessionId'] == sessionId;
+  }).first;
+  final update = (message['params'] as Map)['update'] as Map<String, Object?>;
+  return [
+    for (final command in update['availableCommands'] as List<Object?>)
+      (command as Map).cast<String, Object?>(),
+  ];
 }
 
 final _model = ModelRef(providerId: ProviderId('test'), modelId: ModelId('m'));
 final _model2 = ModelRef(
   providerId: ProviderId('test'),
   modelId: ModelId('m2'),
+);
+
+/// Builds a test skill with the given [name] and [description].
+Skill _skill(String name, String description) => Skill(
+  name: name,
+  description: description,
+  dir: '/tmp/project/.atlas/skills/$name',
+  path: '/tmp/project/.atlas/skills/$name/SKILL.md',
+  content: 'Instructions for $name.',
 );
 
 /// A model catalog with one reasoning-capable model and one plain model.
@@ -1116,6 +1445,8 @@ final class _Wire {
     List<ModelResponse>? responses,
     Duration providerDelay = Duration.zero,
     List<ModelDescriptor> models = const [],
+    List<Skill> skills = const [],
+    int keptRecentTurns = 5,
   }) async {
     final provider = blockingProvider
         ? _BlockingProvider()
@@ -1130,6 +1461,19 @@ final class _Wire {
       ids: _Ids(),
       defaultModel: _model,
       maxSteps: 2,
+      keptRecentTurns: keptRecentTurns,
+      sessionContextBuilder: (cwd) => SessionContext(
+        workingDirectory: cwd,
+        instructions: const [],
+        skills: _MemorySkillCatalog([
+          for (final skill in skills)
+            SkillSummary(
+              name: skill.name,
+              path: skill.path,
+              description: skill.description,
+            ),
+        ], skills: skills),
+      ),
     );
     final server = AcpServer(runtime, models: models);
     final requests = StreamController<String>();
@@ -1142,7 +1486,15 @@ final class _Wire {
         if (map.containsKey('id')) {
           wire._pending.remove(map['id'])?.complete(map);
         } else {
-          wire._notificationCount++;
+          // Lifecycle notifications (e.g. available_commands_update) are
+          // excluded from the turn notification count.
+          final update = (map['params'] as Map?)?['update'];
+          final isTurn =
+              !(update is Map &&
+                  update['sessionUpdate'] == 'available_commands_update');
+          if (isTurn) {
+            wire._notificationCount++;
+          }
           wire._notifications.add(map);
         }
       }
@@ -1155,6 +1507,15 @@ final class _Wire {
 
   /// Notifications received so far.
   Stream<Map<String, Object?>> get notifications => _notifications.stream;
+
+  /// Turn notifications, excluding lifecycle notifications such as
+  /// `available_commands_update` that arrive between requests.
+  Stream<Map<String, Object?>> get turnNotifications =>
+      _notifications.stream.where((message) {
+        final update = (message['params'] as Map?)?['update'];
+        return !(update is Map &&
+            update['sessionUpdate'] == 'available_commands_update');
+      });
 
   /// The number of notifications received so far.
   int get notificationCount => _notificationCount;
@@ -1186,6 +1547,9 @@ final class _Wire {
   Future<void> close() async {
     await closeInput();
     await _serverDone;
+    // Let deferred lifecycle notifications (available_commands_update) flush
+    // before the broadcast controller closes.
+    await Future<void>.delayed(Duration.zero);
     await _notifications.close();
   }
 }
@@ -1237,6 +1601,30 @@ final class _BlockingProvider implements ModelProvider {
     yield const TextDeltaEvent('thinking');
     await request.cancellation!.whenCancelled;
     throw const TurnCancelledException();
+  }
+}
+
+/// An in-memory skill catalog returning the injected summaries and skills.
+final class _MemorySkillCatalog implements SkillCatalog {
+  _MemorySkillCatalog(
+    Iterable<SkillSummary> summaries, {
+    this.skills = const [],
+  }) : _summaries = List.unmodifiable(summaries);
+
+  final List<Skill> skills;
+  final List<SkillSummary> _summaries;
+
+  @override
+  List<SkillSummary> get summaries => _summaries;
+
+  @override
+  Skill? lookup(String name) {
+    for (final skill in skills) {
+      if (skill.name == name) {
+        return skill;
+      }
+    }
+    return null;
   }
 }
 
