@@ -26,3 +26,5 @@ hooks:
   user_defines:
     sqlite3:
       source: system
+      # Windows has no `sqlite3.dll`; the system ships `winsqlite3.dll`.
+      name_windows: winsqlite3

@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    os_name: linux,   arch: amd64 }
+          - { os: ubuntu-24.04-arm, os_name: linux,   arch: arm64 }
+          - { os: macos-latest,     os_name: darwin,  arch: arm64 }
+          - { os: windows-latest,   os_name: windows, arch: amd64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          cache: true
+      - name: Build
+        shell: bash
+        run: |
+          mise exec -- flutter pub get --enforce-lockfile
+          mise exec -- dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Archive (tar.gz)
+        if: matrix.os_name != 'windows'
+        shell: bash
+        run: tar czf "atlas-${{ matrix.os_name }}-${{ matrix.arch }}-v${VERSION}.tar.gz" -C build/bundle/bin atlas
+      - name: Archive (zip)
+        if: matrix.os_name == 'windows'
+        shell: bash
+        run: |
+          cd build/bundle/bin
+          7z a "../../atlas-windows-${{ matrix.arch }}-v${VERSION}.zip" atlas.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: atlas-${{ matrix.os_name }}-${{ matrix.arch }}-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: artifacts
+        run: sha256sum atlas-* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/atlas-*.tar.gz
+            artifacts/atlas-*.zip
+            artifacts/SHA256SUMS
+            scripts/install.sh
+            scripts/install.ps1

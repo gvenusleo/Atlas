@@ -1,5 +1,8 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
+# Directory the CLI binary is installed into by `just install`.
+INSTALL_DIR := "$HOME/.local/bin"
+
 default:
     @just --list
 
@@ -43,6 +46,13 @@ tui-debug:
 # for packages with build hooks; the output lands under build/bundle/).
 build-cli: deps
     mise exec -- dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/
+
+# Install the built CLI binary into ~/.local/bin (override with INSTALL_DIR).
+install: build-cli
+    @mkdir -p {{ INSTALL_DIR }}
+    @mv -f build/bundle/bin/atlas {{ INSTALL_DIR }}/atlas
+    @chmod +x {{ INSTALL_DIR }}/atlas
+    @echo "Installed atlas to {{ INSTALL_DIR }}/atlas"
 
 [working-directory: 'apps/atlas_flutter']
 app-run device='macos': deps
