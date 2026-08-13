@@ -572,6 +572,86 @@ void main() {
     });
   });
 
+  test('/compact with an instruction compacts instead of turning', () async {
+    await testNocterm('slash compact instruction', (tester) async {
+      final provider = _ScriptedProvider();
+      final runtime = _runtime(provider);
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          skills: _testSkills,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      // Create a session so compaction has a target.
+      await tester.enterText('hello there');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      final callsBefore = provider.streamCalls;
+
+      await tester.enterText('/compact keep files');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      // The command ran compaction, not a model turn.
+      expect(provider.streamCalls, callsBefore);
+      expect(tester.terminalState, containsText('Nothing to compact'));
+    });
+  });
+
+  test('/resume with a session id resumes directly', () async {
+    await testNocterm('slash resume direct', (tester) async {
+      final store = DriftSessionStore.inMemory();
+      final provider = _ScriptedProvider();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: provider,
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: ModelRef(
+          providerId: ProviderId('fake'),
+          modelId: ModelId('model'),
+        ),
+      );
+      await tester.pumpComponent(
+        AtlasTuiApp(
+          runtime: runtime,
+          models: _testModels,
+          workingDirectory: '/tmp',
+        ),
+      );
+
+      // Create a session worth resuming.
+      await tester.enterText('hello there');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      final page = await store.listSessions(SessionQuery());
+      final sessionId = page.items.single.id;
+
+      await tester.enterText('/resume ${sessionId.value}');
+      await tester.sendEnter();
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.terminalState, containsText('Resumed: ${sessionId.value}'));
+    });
+  });
+
   test('renders structured headings for known tools', () async {
     await testNocterm('tool headings', (tester) async {
       final provider = _ScriptedProvider()

@@ -7,6 +7,7 @@ final class SlashToken {
     required this.start,
     required this.end,
     required this.query,
+    required this.skillsOnly,
   });
 
   /// Start offset of the token (including the `/`).
@@ -18,15 +19,20 @@ final class SlashToken {
   /// The token text without the leading `/`.
   final String query;
 
+  /// Whether the buffer holds content besides this token, in which case only
+  /// skill commands complete (built-ins are whole-line commands).
+  final bool skillsOnly;
+
   @override
   bool operator ==(Object other) =>
       other is SlashToken &&
       other.start == start &&
       other.end == end &&
-      other.query == query;
+      other.query == query &&
+      other.skillsOnly == skillsOnly;
 
   @override
-  int get hashCode => Object.hash(start, end, query);
+  int get hashCode => Object.hash(start, end, query, skillsOnly);
 
   @override
   String toString() => 'SlashToken($start..$end, "/$query")';
@@ -91,7 +97,10 @@ final class SlashCompleter {
     final targetChanged = token != _target;
     _target = token;
     final query = token.query.toLowerCase();
-    _matches = _rank(query, _commands);
+    final commands = token.skillsOnly
+        ? _commands.where((command) => command.isSkill).toList()
+        : _commands;
+    _matches = _rank(query, commands);
     if (targetChanged) {
       _selected = 0;
     } else {
@@ -186,7 +195,15 @@ SlashToken? slashTokenAt(String text, int offset) {
   if (query.isNotEmpty && !validSlashCommandName(query)) {
     return null;
   }
-  return SlashToken(start: start, end: end, query: query);
+  final skillsOnly = '${text.substring(0, start)}${text.substring(end)}'
+      .trim()
+      .isNotEmpty;
+  return SlashToken(
+    start: start,
+    end: end,
+    query: query,
+    skillsOnly: skillsOnly,
+  );
 }
 
 /// Whether [char] is a whitespace separator. A single code unit is enough for

@@ -203,6 +203,42 @@ void main() {
     );
   });
 
+  test('compact forwards an instruction to the summary request', () async {
+    final compactingProvider = _ScriptedProvider()..contextWindow = 10000;
+    final compactingRuntime = AgentRuntime(
+      store: DriftSessionStore.inMemory(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final controller = ChatController(runtime: compactingRuntime);
+    await controller.send('first');
+    await controller.send('second');
+
+    await controller.compact(instruction: 'keep files');
+
+    final summaryPrompt = textFromContent(
+      compactingProvider.lastMessages!.single.content,
+    );
+    expect(summaryPrompt, contains('Additional user instruction:\nkeep files'));
+    expect(controller.messages.last.text, startsWith('Context compacted.'));
+  });
+
+  test('compact without a session shows a notice', () async {
+    final controller = ChatController(runtime: runtime);
+
+    await controller.compact();
+
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(controller.messages.last.text, 'No session to compact.');
+  });
+
   test('shows compacting in the status line during compaction', () async {
     final compactingProvider = _ScriptedProvider()
       ..contextWindow = 10000

@@ -152,11 +152,16 @@ final class ChatController implements Listenable {
 
   /// Manually compacts the current session, skipping the threshold check.
   ///
-  /// Ignored while a turn is running or before any session exists. Shows a
-  /// notice when there is nothing outside the kept window to compact.
-  Future<void> compact() async {
+  /// [instruction] is an optional user direction forwarded to the compaction
+  /// summary request. Ignored while a turn is running or before any session
+  /// exists; both cases show a notice.
+  Future<void> compact({String? instruction}) async {
     final sessionId = _sessionId;
-    if (sessionId == null || _busy) {
+    if (sessionId == null) {
+      addNotice('No session to compact.');
+      return;
+    }
+    if (_busy) {
       return;
     }
     _busy = true;
@@ -164,7 +169,10 @@ final class ChatController implements Listenable {
     _startTurnTimer();
     var compacted = false;
     try {
-      await for (final event in runtime.compact(sessionId)) {
+      await for (final event in runtime.compact(
+        sessionId,
+        instruction: instruction,
+      )) {
         if (event is CompactionStarted) {
           compacted = true;
         }

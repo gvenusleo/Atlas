@@ -117,6 +117,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
         SlashCommand(
           name: skill.name,
           description: '[Skill] ${skill.description}',
+          isSkill: true,
         ),
   ];
 
@@ -394,34 +395,45 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
       // Keep the draft in the input bar until the running turn finishes.
       return;
     }
+    final compactInstruction = compactCommandInstruction(text);
+    if (compactInstruction != null) {
+      _textController.clear();
+      _slash.dismiss('');
+      _controller.compact(instruction: compactInstruction);
+      return;
+    }
+    final resumeSessionId = resumeCommandSessionID(text);
+    if (resumeSessionId != null) {
+      _textController.clear();
+      _slash.dismiss('');
+      if (resumeSessionId.isEmpty) {
+        _enterSessionPick();
+      } else {
+        _controller.resume(SessionId(resumeSessionId)).then((resumed) {
+          if (resumed) {
+            _controller.addNotice('Resumed: $resumeSessionId');
+          }
+        });
+      }
+      return;
+    }
     final command = parseSlashCommand(text);
     if (command != null) {
       _textController.clear();
       _slash.dismiss('');
       switch (command.name) {
-        case 'model':
+        case modelCommandName:
           _enterModelPick();
-        case 'new':
+        case newCommandName:
           _controller.reset();
-        case 'compact':
-          _controller.compact();
-        case 'resume':
-          _enterSessionPick();
-        case 'quit':
+        case quitCommandName:
           component.onQuit?.call();
       }
       return;
     }
-    final skill = parseSkillCommand(text, component.skills);
-    if (skill != null) {
-      _textController.clear();
-      _slash.dismiss('');
-      _controller.send(text, selectedSkills: [skill.name]);
-      return;
-    }
     _textController.clear();
     _slash.dismiss('');
-    _controller.send(text);
+    _controller.send(text, selectedSkills: selectedSkillNames(text));
   }
 
   /// Copies text selected by dragging across the message list.

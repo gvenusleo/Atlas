@@ -1,16 +1,5 @@
-import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_tui/atlas_tui.dart';
 import 'package:test/test.dart';
-
-final _catalog = _MemorySkillCatalog(const [
-  Skill(
-    name: 'check',
-    description: 'Review code.',
-    dir: '/skills/check',
-    path: '/skills/check/SKILL.md',
-    content: '# Check instructions',
-  ),
-]);
 
 void main() {
   group('parseSlashCommand', () {
@@ -49,51 +38,56 @@ void main() {
     });
   });
 
-  group('parseSkillCommand', () {
-    test('matches a leading skill command', () {
-      expect(parseSkillCommand('/check', _catalog)?.name, 'check');
-      expect(parseSkillCommand('/check review this', _catalog)?.name, 'check');
+  group('compactCommandInstruction', () {
+    test('matches a bare compact command', () {
+      expect(compactCommandInstruction('/compact'), '');
+      expect(compactCommandInstruction('  /compact  '), '');
     });
 
-    test('allows surrounding whitespace', () {
-      expect(parseSkillCommand('  /check  ', _catalog)?.name, 'check');
+    test('matches a compact command with an instruction', () {
+      expect(compactCommandInstruction('/compact keep files'), 'keep files');
+      expect(compactCommandInstruction('/compact\tfocus'), 'focus');
     });
 
-    test('rejects unknown skills and normal messages', () {
-      expect(parseSkillCommand('/unknown', _catalog), isNull);
-      expect(parseSkillCommand('hello', _catalog), isNull);
-      expect(parseSkillCommand('', _catalog), isNull);
-      expect(parseSkillCommand('/', _catalog), isNull);
-    });
-
-    test('returns null without a catalog', () {
-      expect(parseSkillCommand('/check', null), isNull);
+    test('rejects normal messages and lookalike commands', () {
+      expect(compactCommandInstruction('hello'), isNull);
+      expect(compactCommandInstruction('/compactness'), isNull);
+      expect(compactCommandInstruction('/model'), isNull);
     });
   });
-}
 
-final class _MemorySkillCatalog implements SkillCatalog {
-  _MemorySkillCatalog(this.skills);
+  group('resumeCommandSessionID', () {
+    test('matches a bare resume command', () {
+      expect(resumeCommandSessionID('/resume'), '');
+      expect(resumeCommandSessionID('  /resume  '), '');
+    });
 
-  final List<Skill> skills;
+    test('matches a resume command with a session id', () {
+      expect(resumeCommandSessionID('/resume abc123'), 'abc123');
+      expect(resumeCommandSessionID('/resume\txyz'), 'xyz');
+    });
 
-  @override
-  List<SkillSummary> get summaries => [
-    for (final skill in skills)
-      SkillSummary(
-        name: skill.name,
-        path: skill.path,
-        description: skill.description,
-      ),
-  ];
+    test('rejects normal messages and lookalike commands', () {
+      expect(resumeCommandSessionID('hello'), isNull);
+      expect(resumeCommandSessionID('/resumable'), isNull);
+      expect(resumeCommandSessionID('/quit'), isNull);
+    });
+  });
 
-  @override
-  Skill? lookup(String name) {
-    for (final skill in skills) {
-      if (skill.name == name) {
-        return skill;
-      }
-    }
-    return null;
-  }
+  group('selectedSkillNames', () {
+    test('collects every slash token in order and deduplicates', () {
+      expect(selectedSkillNames('/check then /write'), ['check', 'write']);
+      expect(selectedSkillNames('/check /check again'), ['check']);
+    });
+
+    test('excludes built-in command names', () {
+      expect(selectedSkillNames('/compact /model /check'), ['check']);
+    });
+
+    test('rejects invalid tokens and returns empty for plain text', () {
+      expect(selectedSkillNames('/héllo'), isEmpty);
+      expect(selectedSkillNames('hello world'), isEmpty);
+      expect(selectedSkillNames(''), isEmpty);
+    });
+  });
 }
