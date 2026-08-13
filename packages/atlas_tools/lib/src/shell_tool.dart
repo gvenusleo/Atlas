@@ -160,7 +160,26 @@ final class ShellTool implements Tool {
     }
 
     void interrupt() {
-      process.kill();
+      // Windows: `taskkill /T` terminates the whole tree.
+      if (Platform.isWindows) {
+        unawaited(
+          Process.run('taskkill', ['/PID', '${process.pid}', '/T', '/F']),
+        );
+        process.kill();
+      } else {
+        // Collect descendants before the shell dies: once the shell exits its
+        // children are reparented and `pgrep -P` can no longer find them.
+        // Killing the shell alone would leave children (e.g. a backgrounded
+        // `sleep`) running as orphans that keep the output pipes open until
+        // they finish.
+        unawaited(() async {
+          final children = await _collectDescendants(process.pid);
+          process.kill();
+          for (final child in children) {
+            Process.killPid(child, ProcessSignal.sigkill);
+          }
+        }());
+      }
       unawaited(
         process.exitCode
             .timeout(
@@ -186,6 +205,32 @@ final class ShellTool implements Tool {
       finish(_cancelled);
     });
     return completer.future;
+  }
+
+  /// Collects the process ids of every descendant of [rootPid] by walking
+  /// `pgrep -P` parent relationships breadth-first.
+  static Future<List<int>> _collectDescendants(int rootPid) async {
+    final descendants = <int>[];
+    final queue = <int>[rootPid];
+    while (queue.isNotEmpty) {
+      final parent = queue.removeLast();
+      final result = await Process.run('pgrep', ['-P', '$parent']);
+      if (result.exitCode != 0) {
+        continue;
+      }
+      final stdout = result.stdout;
+      if (stdout is! String) {
+        continue;
+      }
+      for (final line in stdout.split('\n')) {
+        final child = int.tryParse(line.trim());
+        if (child != null) {
+          descendants.add(child);
+          queue.add(child);
+        }
+      }
+    }
+    return descendants;
   }
 
   static ({String text, bool truncated}) _bounded(String output) {

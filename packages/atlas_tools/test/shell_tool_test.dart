@@ -71,6 +71,23 @@ void main() {
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
   });
 
+  test('kills the whole command tree on timeout', () async {
+    final dir = await tempDir();
+
+    // `sleep 5 & wait` runs the child in the background, so killing the shell
+    // alone would leave the child holding the output pipes until it finishes.
+    final stopwatch = Stopwatch()..start();
+    final result = await tool.execute(toolContext(dir), {
+      'command': 'sleep 5 & wait',
+      'timeout_seconds': 1,
+    });
+    stopwatch.stop();
+
+    expect(result.isError, isTrue);
+    expect(result.content, contains('timed out'));
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
+
   test('cancellation kills the command', () async {
     final dir = await tempDir();
     final cancellation = CancellationToken();
