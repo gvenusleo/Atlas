@@ -138,6 +138,13 @@ void main() {
       expect(tester.terminalState, containsText('/new'));
       expect(tester.terminalState, containsText('/compact'));
       expect(tester.terminalState, containsText('/quit'));
+      expect(tester.terminalState, containsText('/resume'));
+      // The five-row popup window shows the built-in commands; the skill row
+      // sits below it and is reached by scrolling to the end of the list.
+      for (var i = 0; i < 5; i++) {
+        await tester.sendArrowDown();
+        await tester.pump();
+      }
       expect(tester.terminalState, containsText('[Skill] Review code.'));
     });
   });
@@ -180,9 +187,14 @@ void main() {
       await tester.enterText('/');
       await tester.pump();
       final text = tester.terminalState.getText();
-      expect(text, contains('[Skill] Review code.'));
       expect(text, isNot(contains('/bad')));
       expect('/model'.allMatches(text).length, 1);
+      // The skill row is below the five-row window; scroll to it.
+      for (var i = 0; i < 5; i++) {
+        await tester.sendArrowDown();
+        await tester.pump();
+      }
+      expect(tester.terminalState, containsText('[Skill] Review code.'));
     });
   });
 
