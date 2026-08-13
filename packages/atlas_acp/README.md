@@ -14,6 +14,9 @@ as a subprocess and drive sessions through JSON-RPC.
   `embeddedContext`)
 - `session/new`, `session/load` (with timeline replay), `session/resume`,
   `session/list`, `session/close`, `session/delete`
+- Session `configOptions` (model and reasoning effort selectors returned by
+  new/load/resume, `category: "model"` and `category: "thought_level"`) with
+  `session/set_config_option` applying them to subsequent turns
 - `session/prompt` mapping runtime turns to `session/update` notifications:
   `agent_message_chunk`, `agent_thought_chunk`, `tool_call` (with `rawInput`),
   `tool_call_update` (with `rawOutput`), `plan` (from the `plan` tool),
@@ -33,5 +36,6 @@ as a subprocess and drive sessions through JSON-RPC.
 ## Not implemented
 
 MCP server connections, filesystem and terminal client methods, permission
-requests, elicitation, session modes, and HTTP/WebSocket transports. These
-capabilities are not advertised during initialization.
+requests, elicitation, session modes (superseded by `configOptions`), and
+HTTP/WebSocket transports. These capabilities are not advertised during
+initialization.

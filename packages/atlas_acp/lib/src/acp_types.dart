@@ -5,6 +5,88 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 /// The ACP protocol version implemented by this adapter.
 const acpProtocolVersion = 1;
 
+/// The config option identifier for model selection.
+const acpConfigIdModel = 'model';
+
+/// The config option identifier for reasoning effort selection.
+const acpConfigIdReasoningEffort = 'reasoning_effort';
+
+/// Builds the session `configOptions` list for [models] with [currentModel]
+/// selected and [currentEffort] as the current reasoning effort.
+///
+/// Model values use the `<provider>/<model>` reference so clients can select
+/// across providers. The reasoning effort option is only offered when the
+/// current model declares supported efforts, matching the ACP `thought_level`
+/// category.
+List<JsonObject> sessionConfigOptions(
+  List<ModelDescriptor> models,
+  ModelRef currentModel,
+  String? currentEffort,
+) => [
+  {
+    'id': acpConfigIdModel,
+    'name': 'Model',
+    'description': 'The model used for this session',
+    'category': 'model',
+    'type': 'select',
+    'currentValue': currentModel.toString(),
+    'options': [
+      for (final model in _catalogFor(models, currentModel))
+        {
+          'value': model.ref.toString(),
+          'name': model.name.isEmpty ? model.ref.modelId.value : model.name,
+          if (model.description.isNotEmpty) 'description': model.description,
+        },
+    ],
+  },
+  ?_reasoningEffortOption(models, currentModel, currentEffort),
+];
+
+/// The model catalog with [currentModel] guaranteed present, so the select
+/// option always offers a matching entry for its current value even when the
+/// catalog is empty or omits the default model.
+List<ModelDescriptor> _catalogFor(
+  List<ModelDescriptor> models,
+  ModelRef currentModel,
+) {
+  if (models.any((model) => model.ref == currentModel)) {
+    return models;
+  }
+  return [...models, ModelDescriptor(ref: currentModel)];
+}
+
+/// Builds the reasoning effort config option for [currentModel], or returns
+/// null when the model declares no supported efforts.
+JsonObject? _reasoningEffortOption(
+  List<ModelDescriptor> models,
+  ModelRef currentModel,
+  String? currentEffort,
+) {
+  final descriptor = models.firstWhere(
+    (model) => model.ref == currentModel,
+    orElse: () => ModelDescriptor(ref: currentModel),
+  );
+  if (descriptor.reasoningEfforts.isEmpty) {
+    return null;
+  }
+  return {
+    'id': acpConfigIdReasoningEffort,
+    'name': 'Reasoning effort',
+    'description': 'Controls model reasoning depth',
+    'category': 'thought_level',
+    'type': 'select',
+    'currentValue': currentEffort ?? descriptor.reasoningEfforts.first.value,
+    'options': [
+      for (final effort in descriptor.reasoningEfforts)
+        {
+          'value': effort.value,
+          'name': effort.name.isEmpty ? effort.value : effort.name,
+          if (effort.description.isNotEmpty) 'description': effort.description,
+        },
+    ],
+  };
+}
+
 /// The agent version reported during initialization.
 const acpAgentVersion = '0.1.0';
 

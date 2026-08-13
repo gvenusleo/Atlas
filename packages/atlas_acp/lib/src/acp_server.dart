@@ -17,7 +17,10 @@ import 'update_mapper.dart';
 /// `session/update` notifications.
 final class AcpServer {
   /// Creates an ACP server over [runtime].
-  AcpServer(this.runtime)
+  ///
+  /// [models] is the configured model catalog offered through session
+  /// `configOptions`; when empty, only the runtime default model is shown.
+  AcpServer(this.runtime, {this.models = const <ModelDescriptor>[]})
     : _toolTitles = {
         for (final tool in runtime.tools.descriptors)
           if (tool.description.trim().isNotEmpty)
@@ -27,6 +30,9 @@ final class AcpServer {
   /// The runtime serving ACP sessions.
   final AgentRuntime runtime;
 
+  /// The configured model catalog, in display priority order.
+  final List<ModelDescriptor> models;
+
   /// Tool names mapped to their model-facing descriptions, used as the
   /// human-readable `tool_call` title required by ACP.
   final Map<String, String> _toolTitles;
@@ -34,6 +40,10 @@ final class AcpServer {
   /// Last title reported to the client per session, used to emit
   /// `session_info_update` when the runtime auto-generates a title.
   final _titles = <String, String>{};
+
+  /// Current model and reasoning effort per session, set on session/new,
+  /// load, and resume, and changed through `session/set_config_option`.
+  final _sessionConfigs = <String, _SessionConfig>{};
 
   /// Cancellation tokens of pending turns per session. The runtime serializes
   /// turns per session, so several prompts may be queued behind one active
@@ -85,6 +95,10 @@ final class AcpServer {
       ..registerMethod('session/list', _requestLog(_listSessions))
       ..registerMethod('session/close', _requestLog(_closeSession))
       ..registerMethod('session/delete', _requestLog(_deleteSession))
+      ..registerMethod(
+        'session/set_config_option',
+        _requestLog(_setConfigOption),
+      )
       // A notification is a request without an id; json_rpc_2 dispatches it
       // through the same registration path.
       ..registerMethod('session/cancel', _requestLog(_cancelPrompt));
@@ -154,22 +168,47 @@ final class AcpServer {
       additionalDirectories: additionalDirectories,
     );
     _titles[session.id.value] = session.title;
-    return {'sessionId': session.id.value};
+    final config = _defaultConfig();
+    _sessionConfigs[session.id.value] = config;
+    return {
+      'sessionId': session.id.value,
+      'configOptions': sessionConfigOptions(
+        models,
+        config.model,
+        config.effort,
+      ),
+    };
   }
 
   Future<Object?> _loadSession(Parameters params) async {
     final snapshot = await _load(params);
     _titles[snapshot.session.id.value] = snapshot.session.title;
+    final config = _defaultConfig();
+    _sessionConfigs[snapshot.session.id.value] = config;
     for (final update in replayTimeline(snapshot.timeline, _toolTitles)) {
       _sendUpdate(update);
     }
-    return null;
+    return {
+      'configOptions': sessionConfigOptions(
+        models,
+        config.model,
+        config.effort,
+      ),
+    };
   }
 
   Future<JsonObject> _resumeSession(Parameters params) async {
     final snapshot = await _load(params);
     _titles[snapshot.session.id.value] = snapshot.session.title;
-    return <String, Object?>{};
+    final config = _defaultConfig();
+    _sessionConfigs[snapshot.session.id.value] = config;
+    return {
+      'configOptions': sessionConfigOptions(
+        models,
+        config.model,
+        config.effort,
+      ),
+    };
   }
 
   Future<SessionSnapshot> _load(Parameters params) async {
@@ -195,6 +234,7 @@ final class AcpServer {
     // The runtime serializes turns per session, so a prompt sent while
     // another turn is running waits for it instead of failing.
     final mapper = TurnUpdateMapper(session, _toolTitles);
+    final config = _sessionConfigs[sessionId] ?? _defaultConfig();
     try {
       String? stopReason;
       String? failureCode;
@@ -203,6 +243,8 @@ final class AcpServer {
         TurnRequest(
           sessionId: session,
           content: content,
+          model: config.model,
+          reasoningEffort: config.effort,
           cancellation: cancellation,
         ),
       )) {
@@ -318,7 +360,106 @@ final class AcpServer {
       // Deleting an unknown or already-deleted session succeeds silently.
     }
     _titles.remove(sessionId);
+    _sessionConfigs.remove(sessionId);
     return <String, Object?>{};
+  }
+
+  /// Handles `session/set_config_option`, updating the session's model or
+  /// reasoning effort and returning the complete new configuration state.
+  Future<JsonObject> _setConfigOption(Parameters params) async {
+    final sessionId = params['sessionId'].asString;
+    final configId = params['configId'].asString;
+    final rawValue = params['value'].valueOr(null);
+    final config = _sessionConfigs[sessionId];
+    if (config == null) {
+      throw RpcException.invalidParams('session not found: $sessionId');
+    }
+    if (rawValue is! String || rawValue.isEmpty) {
+      throw RpcException.invalidParams('value must be a non-empty string');
+    }
+    final updated = switch (configId) {
+      acpConfigIdModel => _setModel(config, rawValue),
+      acpConfigIdReasoningEffort => _setReasoningEffort(config, rawValue),
+      _ => throw RpcException.invalidParams(
+        'unsupported session config option: $configId',
+      ),
+    };
+    _sessionConfigs[sessionId] = updated;
+    return {
+      'configOptions': sessionConfigOptions(
+        models,
+        updated.model,
+        updated.effort,
+      ),
+    };
+  }
+
+  /// Returns the session config for [config] with the model switched to
+  /// [value], resetting the reasoning effort when the new model does not
+  /// support the current one.
+  _SessionConfig _setModel(_SessionConfig config, String value) {
+    final descriptor = _descriptorByValue(value);
+    if (descriptor == null) {
+      throw RpcException.invalidParams('unknown model: $value');
+    }
+    final effort = config.effort;
+    final supportsEffort =
+        effort != null &&
+        descriptor.reasoningEfforts.any((option) => option.value == effort);
+    return _SessionConfig(
+      descriptor.ref,
+      supportsEffort
+          ? effort
+          : (descriptor.reasoningEfforts.isEmpty
+                ? null
+                : descriptor.reasoningEfforts.first.value),
+    );
+  }
+
+  /// Returns the session config for [config] with the reasoning effort
+  /// switched to [value], which must be supported by the current model.
+  _SessionConfig _setReasoningEffort(_SessionConfig config, String value) {
+    final descriptor = _descriptorFor(config.model);
+    if (!descriptor.reasoningEfforts.any((option) => option.value == value)) {
+      throw RpcException.invalidParams(
+        'unsupported reasoning effort for ${config.model}: $value',
+      );
+    }
+    return _SessionConfig(config.model, value);
+  }
+
+  /// The default session config: the runtime default model with its first
+  /// reasoning effort when the model declares any.
+  _SessionConfig _defaultConfig() {
+    final descriptor = _descriptorFor(runtime.defaultModel);
+    return _SessionConfig(
+      runtime.defaultModel,
+      descriptor.reasoningEfforts.isEmpty
+          ? null
+          : descriptor.reasoningEfforts.first.value,
+    );
+  }
+
+  /// The catalog descriptor for [ref], or a bare descriptor when the catalog
+  /// does not include it.
+  ModelDescriptor _descriptorFor(ModelRef ref) {
+    for (final model in models) {
+      if (model.ref == ref) {
+        return model;
+      }
+    }
+    return ModelDescriptor(ref: ref);
+  }
+
+  /// The catalog descriptor whose `<provider>/<model>` value is [value], or
+  /// null when no configured model matches.
+  ModelDescriptor? _descriptorByValue(String value) {
+    for (final model in models) {
+      if (model.ref.toString() == value) {
+        return model;
+      }
+    }
+    return null;
   }
 
   /// Emits `session_info_update` when the runtime has auto-generated a title
@@ -510,6 +651,18 @@ final class AcpServer {
     }
     _output?.add(update.toJsonString());
   }
+}
+
+/// The per-session model and reasoning effort selection.
+final class _SessionConfig {
+  /// Creates a session config.
+  const _SessionConfig(this.model, this.effort);
+
+  /// The selected model.
+  final ModelRef model;
+
+  /// The selected reasoning effort, or null when the model has none.
+  final String? effort;
 }
 
 /// Delays a stream's done event until every tracked task has completed.

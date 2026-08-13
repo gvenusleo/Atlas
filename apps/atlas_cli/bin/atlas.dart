@@ -27,7 +27,7 @@ Future<void> main(List<String> args) async {
     // The connection ends when the client closes stdin. Flush pending wire
     // output and exit explicitly so lingering storage handles do not keep
     // the process alive.
-    await AcpServer(runtime).serve();
+    await AcpServer(runtime, models: composeModels(config)).serve();
     await stdout.flush();
     exit(0);
   }

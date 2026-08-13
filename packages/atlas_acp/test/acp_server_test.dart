@@ -150,36 +150,43 @@ void main() {
     },
   );
 
-  test('session/load replays timeline updates then returns null', () async {
-    final wire = await _Wire.open();
-    final sessionId = await _newSession(wire);
-    await _runPrompt(wire, sessionId);
+  test(
+    'session/load replays timeline updates then returns config options',
+    () async {
+      final wire = await _Wire.open();
+      final sessionId = await _newSession(wire);
+      await _runPrompt(wire, sessionId);
 
-    final loadFuture = wire.send({
-      'jsonrpc': '2.0',
-      'id': 3,
-      'method': 'session/load',
-      'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
-    });
-    final replay = await wire.notifications.take(5).toList();
-    expect(
-      replay.map(
-        (u) => ((u['params'] as Map)['update'] as Map)['sessionUpdate'],
-      ),
-      [
-        'user_message_chunk',
-        'agent_message_chunk',
-        'tool_call',
-        'tool_call_update',
-        'agent_message_chunk',
-      ],
-    );
-    final response = await loadFuture;
-    expect(response['result'], isNull);
-    await wire.close();
-  });
+      final loadFuture = wire.send({
+        'jsonrpc': '2.0',
+        'id': 3,
+        'method': 'session/load',
+        'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
+      });
+      final replay = await wire.notifications.take(5).toList();
+      expect(
+        replay.map(
+          (u) => ((u['params'] as Map)['update'] as Map)['sessionUpdate'],
+        ),
+        [
+          'user_message_chunk',
+          'agent_message_chunk',
+          'tool_call',
+          'tool_call_update',
+          'agent_message_chunk',
+        ],
+      );
+      final response = await loadFuture;
+      final result = response['result'] as Map<String, Object?>;
+      // The catalog is empty, so only the default model option is offered.
+      final options = result['configOptions'] as List<Object?>;
+      expect(options, hasLength(1));
+      expect((options[0] as Map)['id'], 'model');
+      await wire.close();
+    },
+  );
 
-  test('session/resume returns without replaying', () async {
+  test('session/resume returns config options without replaying', () async {
     final wire = await _Wire.open();
     final sessionId = await _newSession(wire);
     await _runPrompt(wire, sessionId);
@@ -190,7 +197,8 @@ void main() {
       'method': 'session/resume',
       'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
     });
-    expect(response['result'], <String, Object?>{});
+    final result = response['result'] as Map<String, Object?>;
+    expect(result['configOptions'], isNotEmpty);
     // The turn's five updates plus the auto-generated title notification.
     expect(wire.notificationCount, 6);
     await wire.close();
@@ -552,6 +560,240 @@ void main() {
     await wire.close();
   });
 
+  test(
+    'session/new returns model and reasoning effort config options',
+    () async {
+      final wire = await _Wire.open(models: _catalog);
+      final created = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'session/new',
+        'params': {'cwd': '/tmp/project'},
+      });
+      final result = created['result'] as Map<String, Object?>;
+      final options = result['configOptions'] as List<Object?>;
+      expect(options, hasLength(2));
+      final modelOption = options[0] as Map<String, Object?>;
+      expect(modelOption['id'], 'model');
+      expect(modelOption['category'], 'model');
+      expect(modelOption['type'], 'select');
+      expect(modelOption['currentValue'], 'test/m');
+      final modelValues = modelOption['options'] as List<Object?>;
+      expect(modelValues, hasLength(2));
+      expect((modelValues[0] as Map)['value'], 'test/m');
+      expect((modelValues[0] as Map)['name'], 'Model One');
+      expect((modelValues[1] as Map)['value'], 'test/m2');
+      final effortOption = options[1] as Map<String, Object?>;
+      expect(effortOption['id'], 'reasoning_effort');
+      expect(effortOption['category'], 'thought_level');
+      expect(effortOption['currentValue'], 'low');
+      final effortValues = effortOption['options'] as List<Object?>;
+      expect(effortValues, hasLength(2));
+      await wire.close();
+    },
+  );
+
+  test(
+    'session/new with an empty catalog still offers the default model',
+    () async {
+      final wire = await _Wire.open();
+      final created = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'session/new',
+        'params': {'cwd': '/tmp/project'},
+      });
+      final result = created['result'] as Map<String, Object?>;
+      final options = result['configOptions'] as List<Object?>;
+      final modelOption = options[0] as Map<String, Object?>;
+      expect(modelOption['currentValue'], 'test/m');
+      // The current value must always have a matching selectable option.
+      final values = modelOption['options'] as List<Object?>;
+      expect(values, hasLength(1));
+      expect((values.single as Map)['value'], 'test/m');
+      await wire.close();
+    },
+  );
+
+  test('session/load and session/resume return config options', () async {
+    final wire = await _Wire.open(models: _catalog);
+    final sessionId = await _newSession(wire);
+    for (final method in ['session/load', 'session/resume']) {
+      final response = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 2,
+        'method': method,
+        'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
+      });
+      final result = response['result'] as Map<String, Object?>;
+      expect(result['configOptions'] as List<Object?>, hasLength(2));
+    }
+    await wire.close();
+  });
+
+  test('set_config_option switches the model for subsequent prompts', () async {
+    final wire = await _Wire.open(
+      models: _catalog,
+      responses: [
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    final set = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/set_config_option',
+      'params': {
+        'sessionId': sessionId,
+        'configId': 'model',
+        'value': 'test/m2',
+      },
+    });
+    final options = (set['result'] as Map)['configOptions'] as List<Object?>;
+    // m2 declares no reasoning efforts, so the option reverts to one entry.
+    expect((options[0] as Map)['currentValue'], 'test/m2');
+    expect(options, hasLength(1));
+
+    final prompt = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    final response = await prompt;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    expect(wire.lastRequest!.model, _model2);
+    expect(wire.lastRequest!.reasoningEffort, isNull);
+    await wire.close();
+  });
+
+  test('set_config_option switches the reasoning effort', () async {
+    final wire = await _Wire.open(
+      models: _catalog,
+      responses: [
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    final set = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/set_config_option',
+      'params': {
+        'sessionId': sessionId,
+        'configId': 'reasoning_effort',
+        'value': 'high',
+      },
+    });
+    final options = (set['result'] as Map)['configOptions'] as List<Object?>;
+    expect(((options[1] as Map)['currentValue']), 'high');
+
+    final prompt = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    final response = await prompt;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    expect(wire.lastRequest!.model, _model);
+    expect(wire.lastRequest!.reasoningEffort, 'high');
+    await wire.close();
+  });
+
+  test(
+    'set_config_option resets effort when the new model lacks support',
+    () async {
+      final wire = await _Wire.open(
+        models: _catalog,
+        responses: [
+          const ModelResponse(
+            content: [TextContent('Done.')],
+            stopReason: StopReason.endTurn,
+          ),
+        ],
+      );
+      final sessionId = await _newSession(wire);
+      await wire.send({
+        'jsonrpc': '2.0',
+        'id': 2,
+        'method': 'session/set_config_option',
+        'params': {
+          'sessionId': sessionId,
+          'configId': 'model',
+          'value': 'test/m2',
+        },
+      });
+      final back = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 3,
+        'method': 'session/set_config_option',
+        'params': {
+          'sessionId': sessionId,
+          'configId': 'model',
+          'value': 'test/m',
+        },
+      });
+      final options = (back['result'] as Map)['configOptions'] as List<Object?>;
+      // The previous effort no longer applies; the model's first effort wins.
+      expect(((options[1] as Map)['currentValue']), 'low');
+      await wire.close();
+    },
+  );
+
+  test('set_config_option rejects unknown values and option ids', () async {
+    final wire = await _Wire.open(models: _catalog);
+    final sessionId = await _newSession(wire);
+    for (final params in [
+      {'configId': 'model', 'value': 'test/nope'},
+      {'configId': 'reasoning_effort', 'value': 'ultra'},
+      {'configId': 'theme', 'value': 'dark'},
+    ]) {
+      final response = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 2,
+        'method': 'session/set_config_option',
+        'params': {'sessionId': sessionId, ...params},
+      });
+      expect((response['error'] as Map)['code'], -32602);
+    }
+    await wire.close();
+  });
+
+  test('set_config_option rejects unknown sessions', () async {
+    final wire = await _Wire.open(models: _catalog);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'session/set_config_option',
+      'params': {
+        'sessionId': 'missing',
+        'configId': 'model',
+        'value': 'test/m',
+      },
+    });
+    final error = response['error'] as Map<String, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], contains('session not found'));
+    await wire.close();
+  });
+
   test('emits session_info_update when a prompt generates a title', () async {
     final wire = await _Wire.open();
     final sessionId = await _newSession(wire);
@@ -819,6 +1061,25 @@ Future<void> _runPrompt(_Wire wire, String sessionId) async {
 }
 
 final _model = ModelRef(providerId: ProviderId('test'), modelId: ModelId('m'));
+final _model2 = ModelRef(
+  providerId: ProviderId('test'),
+  modelId: ModelId('m2'),
+);
+
+/// A model catalog with one reasoning-capable model and one plain model.
+final _catalog = <ModelDescriptor>[
+  ModelDescriptor(
+    ref: _model,
+    name: 'Model One',
+    description: 'Fast model',
+    contextWindow: 128000,
+    reasoningEfforts: const [
+      ReasoningEffortOption(value: 'low', name: 'Low'),
+      ReasoningEffortOption(value: 'high', name: 'High'),
+    ],
+  ),
+  ModelDescriptor(ref: _model2, name: 'Model Two', contextWindow: 64000),
+];
 
 /// The default scripted turn: one tool call followed by a final response.
 List<ModelResponse> _defaultResponses() => [
@@ -841,9 +1102,10 @@ List<ModelResponse> _defaultResponses() => [
 
 /// A JSON-RPC wire harness driving an [AcpServer] over an in-memory channel.
 final class _Wire {
-  _Wire._(this._requests);
+  _Wire._(this._requests, this._provider);
 
   final StreamController<String> _requests;
+  final ModelProvider _provider;
   final _pending = <Object?, Completer<Map<String, Object?>>>{};
   final _notifications = StreamController<Map<String, Object?>>.broadcast();
   var _notificationCount = 0;
@@ -853,24 +1115,26 @@ final class _Wire {
     bool blockingProvider = false,
     List<ModelResponse>? responses,
     Duration providerDelay = Duration.zero,
+    List<ModelDescriptor> models = const [],
   }) async {
+    final provider = blockingProvider
+        ? _BlockingProvider()
+        : _ScriptedProvider(
+            responses ?? _defaultResponses(),
+            delay: providerDelay,
+          );
     final runtime = AgentRuntime(
       store: _MemorySessionStore(),
-      provider: blockingProvider
-          ? _BlockingProvider()
-          : _ScriptedProvider(
-              responses ?? _defaultResponses(),
-              delay: providerDelay,
-            ),
+      provider: provider,
       tools: _MemoryTools(),
       ids: _Ids(),
       defaultModel: _model,
       maxSteps: 2,
     );
-    final server = AcpServer(runtime);
+    final server = AcpServer(runtime, models: models);
     final requests = StreamController<String>();
     final outgoing = StreamController<String>();
-    final wire = _Wire._(requests);
+    final wire = _Wire._(requests, provider);
     outgoing.stream.listen((line) {
       final message = jsonDecode(line);
       if (message is Map) {
@@ -894,6 +1158,12 @@ final class _Wire {
 
   /// The number of notifications received so far.
   int get notificationCount => _notificationCount;
+
+  /// The model request of the most recent turn, when one was run.
+  ModelRequest? get lastRequest => switch (_provider) {
+    _ScriptedProvider(:final lastRequest) => lastRequest,
+    _ => null,
+  };
 
   /// Sends a request and awaits its response.
   Future<Map<String, Object?>> send(Map<String, Object?> request) {
@@ -929,12 +1199,16 @@ final class _ScriptedProvider implements ModelProvider {
   final Duration delay;
   var _index = 0;
 
+  /// The most recent model request, captured for assertions.
+  ModelRequest? lastRequest;
+
   @override
   Future<ModelDescriptor> describe(ModelRef model) async =>
       ModelDescriptor(ref: model, name: 'test', contextWindow: 128000);
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    lastRequest = request;
     final index = _index++;
     if (index >= responses.length) {
       throw const TurnCancelledException();
