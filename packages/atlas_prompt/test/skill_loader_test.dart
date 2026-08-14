@@ -83,6 +83,117 @@ void main() {
     expect(catalog.lookup('quoted')!.description, 'Single quoted desc');
   });
 
+  test('parses YAML block scalars with dedented multi-line values', () {
+    writeSkill(
+      userAgents.path,
+      'block',
+      '---\n'
+          'name: block\n'
+          'description: |\n'
+          '  First line of the description.\n'
+          '  Second line stays on its own line.\n'
+          'allowed-tools: Bash(tvly *)\n'
+          '---\n'
+          'Body',
+    );
+
+    final catalog = load();
+    expect(
+      catalog.lookup('block')!.description,
+      'First line of the description.\nSecond line stays on its own line.',
+    );
+  });
+
+  test('block scalar values may contain colons', () {
+    writeSkill(
+      userAgents.path,
+      'colons',
+      '---\n'
+          'name: colons\n'
+          'description: |\n'
+          '  Fetch the page at https://example.com and extract it.\n'
+          '---\n'
+          'Body',
+    );
+
+    final catalog = load();
+    expect(
+      catalog.lookup('colons')!.description,
+      'Fetch the page at https://example.com and extract it.',
+    );
+  });
+
+  test('folds lines in a `>` block scalar like YAML', () {
+    writeSkill(
+      userAgents.path,
+      'folded',
+      '---\n'
+          'name: folded\n'
+          'description: >\n'
+          '  Folded into\n'
+          '  one line.\n'
+          '---\n'
+          'Body',
+    );
+
+    final catalog = load();
+    expect(catalog.lookup('folded')!.description, 'Folded into one line.');
+  });
+
+  test('block scalars accept tab indentation', () {
+    writeSkill(
+      userAgents.path,
+      'tabbed',
+      '---\n'
+          'name: tabbed\n'
+          'description: |\n'
+          '\tTab-indented description.\n'
+          '---\n'
+          'Body',
+    );
+
+    final catalog = load();
+    expect(catalog.lookup('tabbed')!.description, 'Tab-indented description.');
+  });
+
+  test('block scalars keep blank lines inside the block', () {
+    writeSkill(
+      userAgents.path,
+      'blank',
+      '---\n'
+          'name: blank\n'
+          'description: |\n'
+          '  First paragraph.\n'
+          '\n'
+          '  Second paragraph.\n'
+          '---\n'
+          'Body',
+    );
+
+    final catalog = load();
+    expect(
+      catalog.lookup('blank')!.description,
+      'First paragraph.\n\nSecond paragraph.',
+    );
+  });
+
+  test('skips a block scalar with no content', () {
+    writeSkill(
+      userAgents.path,
+      'emptyblock',
+      '---\nname: emptyblock\ndescription: |\n---\nBody',
+    );
+    writeSkill(
+      userAgents.path,
+      'good',
+      '---\nname: good\ndescription: Fine.\n---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['good']);
+    expect(catalog.lookup('emptyblock'), isNull);
+  });
+
   test('skips directories without SKILL.md and missing roots', () {
     Directory('${userAtlas.path}/empty').createSync();
     writeSkill(

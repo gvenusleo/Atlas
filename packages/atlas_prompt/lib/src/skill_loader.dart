@@ -150,8 +150,8 @@ Map<String, String> _parseFrontmatter(String path, String text) {
     throw FormatException('$path: missing frontmatter terminator');
   }
   final meta = <String, String>{};
-  for (final line in lines.sublist(1, end)) {
-    final trimmed = line.trim();
+  for (var i = 1; i < end; i++) {
+    final trimmed = lines[i].trim();
     if (trimmed.isEmpty || trimmed.startsWith('#')) {
       continue;
     }
@@ -159,11 +159,57 @@ Map<String, String> _parseFrontmatter(String path, String text) {
     if (colon <= 0) {
       throw FormatException('$path: invalid frontmatter line "$trimmed"');
     }
-    meta[trimmed.substring(0, colon).trim()] = _unquote(
-      trimmed.substring(colon + 1).trim(),
-    );
+    final key = trimmed.substring(0, colon).trim();
+    final value = trimmed.substring(colon + 1).trim();
+    if (value == '|' || value == '>') {
+      // YAML block scalar: collect the indented lines that follow until the
+      // next non-indented line or the end of the frontmatter, dedented to
+      // their common indentation. `|` keeps line breaks; `>` folds adjacent
+      // lines into spaces (a simplified fold: blank lines become spaces
+      // too), which is enough for descriptions.
+      final block = <String>[];
+      while (i + 1 < end) {
+        final next = lines[i + 1];
+        if (next.isEmpty || _isIndented(next)) {
+          block.add(next);
+          i++;
+        } else {
+          break;
+        }
+      }
+      meta[key] = value == '>'
+          ? _dedentBlock(block).replaceAll('\n', ' ').trim()
+          : _dedentBlock(block);
+      continue;
+    }
+    meta[key] = _unquote(value);
   }
   return meta;
+}
+
+/// Whether [line] starts with whitespace, marking it as block scalar content.
+bool _isIndented(String line) => line.startsWith(' ') || line.startsWith('\t');
+
+/// Removes the common leading indentation from [block], preserving empty
+/// lines, and joins the lines with newlines.
+String _dedentBlock(List<String> block) {
+  var minIndent = -1;
+  for (final line in block) {
+    if (line.trim().isEmpty) {
+      continue;
+    }
+    final indent = line.length - line.trimLeft().length;
+    if (minIndent < 0 || indent < minIndent) {
+      minIndent = indent;
+    }
+  }
+  if (minIndent <= 0) {
+    return block.join('\n');
+  }
+  return [
+    for (final line in block)
+      line.length >= minIndent ? line.substring(minIndent) : line.trimLeft(),
+  ].join('\n');
 }
 
 String _unquote(String value) {
