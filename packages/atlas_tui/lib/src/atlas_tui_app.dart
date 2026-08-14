@@ -551,3 +551,31 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
     );
   }
 }
+
+/// Runs the Atlas chat application until the user quits.
+///
+/// Owns the Nocterm bootstrap ([runApp] with a [NoctermApp] root) so the
+/// terminal framework stays a dependency of atlas_tui and composition roots
+/// never import nocterm directly.
+///
+/// [onQuit] is invoked when the user submits `/quit`; it defaults to
+/// [shutdownApp] so the process exits cleanly.
+Future<void> runAtlasTui({
+  required AgentRuntime runtime,
+  required List<ModelDescriptor> models,
+  SkillCatalog? skills,
+  String? workingDirectory,
+  void Function()? onQuit,
+}) {
+  return runApp(
+    NoctermApp(
+      child: AtlasTuiApp(
+        runtime: runtime,
+        models: models,
+        skills: skills,
+        workingDirectory: workingDirectory,
+        onQuit: onQuit ?? shutdownApp,
+      ),
+    ),
+  );
+}
