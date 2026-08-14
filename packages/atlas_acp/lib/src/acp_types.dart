@@ -170,6 +170,7 @@ SessionUpdate toolCall(
   required String title,
   required String kind,
   Map<String, Object?>? rawInput,
+  List<JsonObject>? locations,
 }) => SessionUpdate(sessionId, {
   'sessionUpdate': 'tool_call',
   'toolCallId': toolCallId,
@@ -177,6 +178,7 @@ SessionUpdate toolCall(
   'kind': kind,
   'status': 'pending',
   'rawInput': ?rawInput,
+  if (locations != null && locations.isNotEmpty) 'locations': locations,
 });
 
 /// A tool call progress or result update (`tool_call_update`).
@@ -332,6 +334,39 @@ String toolCallKind(String name) => switch (name) {
   'plan' => 'think',
   _ => 'other',
 };
+
+/// The short human-readable `tool_call` title for [name], shown by clients as
+/// the headline of the tool call. ACP titles describe what the tool is doing
+/// rather than duplicating the model-facing description.
+String toolCallTitle(String name) => switch (name) {
+  'read' => 'Read file',
+  'write' => 'Write file',
+  'edit' => 'Edit file',
+  'shell' => 'Run shell command',
+  'plan' => 'Update plan',
+  _ => name,
+};
+
+/// The absolute file locations affected by a tool call, extracted from its
+/// arguments for ACP `locations` follow-along support.
+///
+/// Only tools that act on a single `path` argument report locations; shell
+/// commands and plan updates operate on no file and return an empty list.
+List<JsonObject> toolCallLocations(
+  String name,
+  Map<String, Object?> arguments,
+) {
+  if (name != 'read' && name != 'write' && name != 'edit') {
+    return const [];
+  }
+  final path = arguments['path'];
+  if (path is! String || path.isEmpty) {
+    return const [];
+  }
+  return [
+    {'path': path},
+  ];
+}
 
 /// Converts the `plan` tool argument list into ACP plan entries, or returns
 /// `null` when [rawPlan] is not a well-formed plan payload.

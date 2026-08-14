@@ -22,9 +22,10 @@ as a subprocess and drive sessions through JSON-RPC.
   text forwarded to the summary request) and one command per available skill,
   with `/name` tokens in prompts injecting the matching skill instructions
 - `session/prompt` mapping runtime turns to `session/update` notifications:
-  `agent_message_chunk`, `agent_thought_chunk`, `tool_call` (with `rawInput`),
-  `tool_call_update` (with `rawOutput`), `plan` (from the `plan` tool),
-  `session_info_update` (auto-generated titles), and `usage_update`
+  `agent_message_chunk`, `agent_thought_chunk`, `tool_call` (with `rawInput`
+  and file `locations`), `tool_call_update` (with `rawOutput`), `plan` (from
+  the `plan` tool), `session_info_update` (auto-generated titles), and
+  `usage_update`
 - Prompt content: text, image (base64 data URLs), embedded text resources,
   and baseline `resource_link` blocks
 - `session/cancel` mapping to cooperative turn cancellation

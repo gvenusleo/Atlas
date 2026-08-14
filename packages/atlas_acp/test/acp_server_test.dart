@@ -107,9 +107,14 @@ void main() {
         ((updates[1]['params'] as Map)['update'] as Map<String, Object?>);
     expect(toolCall['toolCallId'], 'call-1');
     expect(toolCall['kind'], 'read');
-    // The title is the human-readable tool description, not the tool name.
-    expect(toolCall['title'], 'Read a file');
+    // The title is a short human-readable phrase, not the model-facing
+    // description or the tool name.
+    expect(toolCall['title'], 'Read file');
     expect(toolCall['rawInput'], {'path': '.'});
+    // The path argument is reported as a file location for follow-along.
+    expect(toolCall['locations'], [
+      {'path': '.'},
+    ]);
     final completed =
         ((updates[3]['params'] as Map)['update'] as Map<String, Object?>);
     expect(completed['status'], 'completed');

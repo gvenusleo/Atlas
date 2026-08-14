@@ -137,26 +137,8 @@ void main() {
       );
     });
 
-    test(
-      'tool_call titles fall back to the tool name without descriptions',
-      () {
-        final mapper = TurnUpdateMapper(session);
-        final updates = mapper.map(
-          ModelResponseReceived(
-            sessionId: session,
-            turnId: turn,
-            sequence: 0,
-            occurredAt: time,
-            assistantMessage: _assistant([TextContent('I will check.')]),
-            toolCalls: [_toolCallItem('call-1', 'read', 1)],
-          ),
-        );
-        expect(updates.single.update['title'], 'read');
-      },
-    );
-
-    test('tool_call titles use the tool description when provided', () {
-      final mapper = TurnUpdateMapper(session, {'read': 'Read a file'});
+    test('tool_call titles are short human-readable phrases', () {
+      final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(
         ModelResponseReceived(
           sessionId: session,
@@ -167,7 +149,22 @@ void main() {
           toolCalls: [_toolCallItem('call-1', 'read', 1)],
         ),
       );
-      expect(updates.single.update['title'], 'Read a file');
+      expect(updates.single.update['title'], 'Read file');
+    });
+
+    test('tool_call titles fall back to the tool name for unknown tools', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [_toolCallItem('call-1', 'search', 1)],
+        ),
+      );
+      expect(updates.single.update['title'], 'search');
     });
 
     test('tool_call includes the raw input arguments', () {
@@ -185,6 +182,47 @@ void main() {
         ),
       );
       expect(updates.single.update['rawInput'], {'path': '/tmp/a'});
+    });
+
+    test('tool_call reports file locations for path-based tools', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem(
+              'call-1',
+              'edit',
+              1,
+              arguments: {'path': '/tmp/main.dart'},
+            ),
+          ],
+        ),
+      );
+      expect(updates.single.update['locations'], [
+        {'path': '/tmp/main.dart'},
+      ]);
+    });
+
+    test('tool_call omits locations when the tool has no file path', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem('call-1', 'shell', 1, arguments: {'command': 'ls'}),
+          ],
+        ),
+      );
+      expect(updates.single.update.containsKey('locations'), isFalse);
     });
 
     test('completed tool results include the raw output', () {
@@ -392,12 +430,28 @@ void main() {
       expect(updates.single.update['sessionUpdate'], 'plan');
     });
 
-    test('replay uses the tool description for tool_call titles', () {
+    test('replay uses short human-readable tool_call titles', () {
       final timeline = <TimelineItem>[
         _toolCallItem('call-1', 'read', 0, id: 'item-1'),
       ];
-      final updates = replayTimeline(timeline, {'read': 'Read a file'});
-      expect(updates.single.update['title'], 'Read a file');
+      final updates = replayTimeline(timeline);
+      expect(updates.single.update['title'], 'Read file');
+    });
+
+    test('replay reports locations for path-based tool calls', () {
+      final timeline = <TimelineItem>[
+        _toolCallItem(
+          'call-1',
+          'write',
+          0,
+          id: 'item-1',
+          arguments: {'path': '/tmp/out.txt', 'content': 'hi'},
+        ),
+      ];
+      final updates = replayTimeline(timeline);
+      expect(updates.single.update['locations'], [
+        {'path': '/tmp/out.txt'},
+      ]);
     });
 
     test('replay skips only the plan result matching its own call', () {

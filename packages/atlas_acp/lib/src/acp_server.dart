@@ -20,22 +20,13 @@ final class AcpServer {
   ///
   /// [models] is the configured model catalog offered through session
   /// `configOptions`; when empty, only the runtime default model is shown.
-  AcpServer(this.runtime, {this.models = const <ModelDescriptor>[]})
-    : _toolTitles = {
-        for (final tool in runtime.tools.descriptors)
-          if (tool.description.trim().isNotEmpty)
-            tool.name: tool.description.trim(),
-      };
+  AcpServer(this.runtime, {this.models = const <ModelDescriptor>[]});
 
   /// The runtime serving ACP sessions.
   final AgentRuntime runtime;
 
   /// The configured model catalog, in display priority order.
   final List<ModelDescriptor> models;
-
-  /// Tool names mapped to their model-facing descriptions, used as the
-  /// human-readable `tool_call` title required by ACP.
-  final Map<String, String> _toolTitles;
 
   /// Last title reported to the client per session, used to emit
   /// `session_info_update` when the runtime auto-generates a title.
@@ -197,7 +188,7 @@ final class AcpServer {
     _titles[snapshot.session.id.value] = snapshot.session.title;
     final config = _defaultConfig(snapshot.session.workingDirectory);
     _sessionConfigs[snapshot.session.id.value] = config;
-    for (final update in replayTimeline(snapshot.timeline, _toolTitles)) {
+    for (final update in replayTimeline(snapshot.timeline)) {
       _sendUpdate(update);
     }
     _sendAvailableCommandsLater(
@@ -266,7 +257,7 @@ final class AcpServer {
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
     // The runtime serializes turns per session, so a prompt sent while
     // another turn is running waits for it instead of failing.
-    final mapper = TurnUpdateMapper(session, _toolTitles);
+    final mapper = TurnUpdateMapper(session);
     final config = _sessionConfigs[sessionId] ?? await _configFor(session);
     final skills = _matchedSkillNames(config.cwd, promptText);
     try {
