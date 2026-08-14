@@ -204,8 +204,9 @@ void main() {
     });
     final result = response['result'] as Map<String, Object?>;
     expect(result['configOptions'], isNotEmpty);
-    // The turn's five updates plus the auto-generated title notification.
-    expect(wire.notificationCount, 6);
+    // The turn's five updates plus the auto-generated title notification and
+    // the usage report emitted on resume.
+    expect(wire.notificationCount, 7);
     await wire.close();
   });
 
@@ -1294,6 +1295,266 @@ void main() {
     expect(usage['size'], 128000);
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test(
+    'emits post-compaction usage_update after automatic compaction',
+    () async {
+      final wire = await _Wire.open(
+        // One kept turn leaves the first turn compactable at the end of the
+        // second turn, whose reported usage exceeds the 80% threshold.
+        keptRecentTurns: 1,
+        responses: [
+          ..._defaultResponses(),
+          ModelResponse(
+            content: const [TextContent('I will inspect.')],
+            toolCalls: [
+              ToolCall(
+                id: ToolCallId('call-2'),
+                name: 'read',
+                arguments: <String, Object?>{'path': '.'},
+              ),
+            ],
+            stopReason: StopReason.toolUse,
+          ),
+          const ModelResponse(
+            content: [TextContent('Done.')],
+            stopReason: StopReason.endTurn,
+            usage: TokenUsage(inputTokens: 200000, totalTokens: 200000),
+          ),
+          const ModelResponse(
+            content: [TextContent('Summary.')],
+            stopReason: StopReason.endTurn,
+          ),
+        ],
+      );
+      final sessionId = await _newSession(wire);
+      await _runPrompt(wire, sessionId);
+
+      final updates = <Map<String, Object?>>[];
+      final sub = wire.turnNotifications.listen(updates.add);
+      final promptFuture = wire.send({
+        'jsonrpc': '2.0',
+        'id': 3,
+        'method': 'session/prompt',
+        'params': {
+          'sessionId': sessionId,
+          'prompt': [
+            {'type': 'text', 'text': 'Summarize'},
+          ],
+        },
+      });
+      final response = await promptFuture;
+      await sub.cancel();
+      final usages = updates
+          .map((m) => (m['params'] as Map)['update'] as Map<String, Object?>)
+          .where((u) => u['sessionUpdate'] == 'usage_update')
+          .toList();
+      // Only the post-compaction usage is reported; the pre-compaction turn
+      // usage (200000) is replaced by the compacted estimate.
+      expect(usages, hasLength(1));
+      expect(usages.single['used'], greaterThan(0));
+      expect(usages.single['used'], lessThan(200000));
+      expect(usages.single['size'], 128000);
+      expect((response['result'] as Map)['stopReason'], 'end_turn');
+      await wire.close();
+    },
+  );
+
+  test('/compact emits usage_update with the post-compaction usage', () async {
+    final wire = await _Wire.open(
+      // One kept turn leaves the first turn compactable.
+      keptRecentTurns: 1,
+      responses: [
+        ..._defaultResponses(),
+        ..._defaultResponses(),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+    await _runPrompt(wire, sessionId);
+
+    final updates = <Map<String, Object?>>[];
+    final sub = wire.turnNotifications.listen(updates.add);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    final response = await promptFuture;
+    await sub.cancel();
+    final updatesList = updates
+        .map((m) => (m['params'] as Map)['update'] as Map<String, Object?>)
+        .toList();
+    final chunk = updatesList.firstWhere(
+      (u) => u['sessionUpdate'] == 'agent_message_chunk',
+    );
+    expect((chunk['content'] as Map)['text'], startsWith('Context compacted.'));
+    final usages = updatesList
+        .where((u) => u['sessionUpdate'] == 'usage_update')
+        .toList();
+    expect(usages, hasLength(1));
+    expect(usages.single['used'], greaterThan(0));
+    expect(usages.single['used'], lessThan(200000));
+    expect(usages.single['size'], 128000);
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('/compact failure emits no usage_update', () async {
+    final wire = await _Wire.open(
+      // One kept turn leaves the first turn compactable; the empty summary
+      // response makes the runtime report CompactionFailed.
+      keptRecentTurns: 1,
+      responses: [
+        ..._defaultResponses(),
+        ..._defaultResponses(),
+        const ModelResponse(content: [], stopReason: StopReason.endTurn),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+    await _runPrompt(wire, sessionId);
+
+    final updates = <Map<String, Object?>>[];
+    final sub = wire.turnNotifications.listen(updates.add);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    final response = await promptFuture;
+    await sub.cancel();
+    final updatesList = updates
+        .map((m) => (m['params'] as Map)['update'] as Map<String, Object?>)
+        .toList();
+    final chunk = updatesList.firstWhere(
+      (u) => u['sessionUpdate'] == 'agent_message_chunk',
+    );
+    expect((chunk['content'] as Map)['text'], 'Compaction failed.');
+    expect(
+      updatesList.where((u) => u['sessionUpdate'] == 'usage_update'),
+      isEmpty,
+    );
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+
+  test('session/load reports the last usage without a turn', () async {
+    final wire = await _Wire.open(
+      responses: [
+        ModelResponse(
+          content: const [TextContent('I will inspect.')],
+          toolCalls: [
+            ToolCall(
+              id: ToolCallId('call-1'),
+              name: 'read',
+              arguments: <String, Object?>{'path': '.'},
+            ),
+          ],
+          stopReason: StopReason.toolUse,
+        ),
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+          usage: TokenUsage(inputTokens: 1200, totalTokens: 1200),
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+
+    // A fresh usage_update is expected on load, so the one from the turn
+    // above must not be confused with it.
+    final updates = <Map<String, Object?>>[];
+    final sub = wire.turnNotifications.listen(updates.add);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/load',
+      'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
+    });
+    expect(response.containsKey('result'), isTrue);
+    await sub.cancel();
+    final usages = updates
+        .map((m) => (m['params'] as Map)['update'] as Map<String, Object?>)
+        .where((u) => u['sessionUpdate'] == 'usage_update')
+        .toList();
+    expect(usages, hasLength(1));
+    // The runtime does not persist per-turn usage, so loading estimates the
+    // timeline instead: a small positive figure for the single mock turn.
+    expect(usages.single['used'], greaterThan(0));
+    expect(usages.single['used'], lessThan(1200));
+    expect(usages.single['size'], 128000);
+    await wire.close();
+  });
+
+  test('session/load reports the post-compaction usage', () async {
+    final wire = await _Wire.open(
+      // One kept turn leaves the first turn compactable.
+      keptRecentTurns: 1,
+      responses: [
+        ..._defaultResponses(),
+        ..._defaultResponses(),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+    await _runPrompt(wire, sessionId);
+    final compactFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    await compactFuture;
+
+    final updates = <Map<String, Object?>>[];
+    final sub = wire.turnNotifications.listen(updates.add);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 4,
+      'method': 'session/load',
+      'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
+    });
+    expect(response.containsKey('result'), isTrue);
+    await sub.cancel();
+    final usages = updates
+        .map((m) => (m['params'] as Map)['update'] as Map<String, Object?>)
+        .where((u) => u['sessionUpdate'] == 'usage_update')
+        .toList();
+    expect(usages, hasLength(1));
+    // The checkpoint estimate (summary + kept window) is small; the loaded
+    // session reports it instead of the turn's pre-compaction occupancy.
+    expect(usages.single['used'], greaterThan(0));
+    expect(usages.single['used'], lessThan(200000));
+    expect(usages.single['size'], 128000);
     await wire.close();
   });
 

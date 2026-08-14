@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
@@ -195,6 +196,12 @@ final class AcpServer {
       snapshot.session.id,
       snapshot.session.workingDirectory,
     );
+    // Report the loaded session's context occupancy instead of leaving the
+    // client without a usage figure until the next turn completes.
+    final usage = _estimatedSessionUsage(snapshot);
+    if (usage != null) {
+      await _bestEffort(() => _sendUsageUpdate(snapshot.session.id, usage));
+    }
     return {
       'configOptions': sessionConfigOptions(
         models,
@@ -213,6 +220,11 @@ final class AcpServer {
       snapshot.session.id,
       snapshot.session.workingDirectory,
     );
+    // Same as session/load: surface the context occupancy immediately.
+    final usage = _estimatedSessionUsage(snapshot);
+    if (usage != null) {
+      await _bestEffort(() => _sendUsageUpdate(snapshot.session.id, usage));
+    }
     return {
       'configOptions': sessionConfigOptions(
         models,
@@ -220,6 +232,51 @@ final class AcpServer {
         config.effort,
       ),
     };
+  }
+
+  /// The best known context occupancy for a loaded session, or null when the
+  /// session carries no usage information.
+  ///
+  /// With a compaction checkpoint, the post-compaction estimate is the
+  /// baseline plus an estimate of the timeline added after the checkpoint;
+  /// otherwise the whole timeline is estimated. The runtime does not persist
+  /// per-turn usage today (stored `lastUsage` stays zero), so this must fall
+  /// back to estimating the timeline; re-check this branch if the runtime
+  /// starts persisting usage.
+  int? _estimatedSessionUsage(SessionSnapshot snapshot) {
+    final checkpoint = snapshot.session.compaction;
+    if (checkpoint != null && checkpoint.inputTokensAfter > 0) {
+      final active = snapshot.timeline
+          .where((item) => item.sequence > checkpoint.compactedThroughSequence)
+          .toList();
+      return checkpoint.inputTokensAfter + _estimateTimelineTokens(active);
+    }
+    final estimate = _estimateTimelineTokens(snapshot.timeline);
+    return estimate > 0 ? estimate : null;
+  }
+
+  /// A rough token estimate for [items] using the same four-characters-per-
+  /// token ratio as the runtime compaction accounting.
+  ///
+  /// The text is rendered without the XML markup the runtime uses for
+  /// compaction transcripts, so this estimate runs slightly lower than the
+  /// runtime's own accounting; both are approximations for display purposes.
+  static int _estimateTimelineTokens(List<TimelineItem> items) {
+    final buffer = StringBuffer();
+    for (final item in items) {
+      switch (item) {
+        case UserMessageItem(:final content):
+        case AssistantMessageItem(:final content):
+          buffer.write(textFromContent(content));
+        case ToolCallItem(:final call):
+          buffer
+            ..write(call.name)
+            ..write(jsonEncode(call.arguments));
+        case ToolResultItem(:final content):
+          buffer.write(content);
+      }
+    }
+    return buffer.length ~/ 4;
   }
 
   Future<SessionSnapshot> _load(Parameters params) async {
@@ -293,6 +350,11 @@ final class AcpServer {
             case TurnStatus.running:
               break;
           }
+        }
+        if (event case CompactionFinished(:final checkpoint)) {
+          // The trailing compaction shrinks the context; report the
+          // post-compaction usage instead of the turn's pre-compaction value.
+          usedTokens = checkpoint.inputTokensAfter;
         }
       }
       // Consume the whole stream (including trailing compaction events)
@@ -532,6 +594,7 @@ final class AcpServer {
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
     try {
       var keptMessages = -1;
+      int? compactedUsage;
       var failed = false;
       await for (final event in runtime.compact(
         session,
@@ -541,6 +604,7 @@ final class AcpServer {
         switch (event) {
           case CompactionFinished(:final checkpoint):
             keptMessages = checkpoint.keptRecentMessages;
+            compactedUsage = checkpoint.inputTokensAfter;
           case CompactionFailed():
             failed = true;
           default:
@@ -560,6 +624,11 @@ final class AcpServer {
           text: message,
         ),
       );
+      // Report the post-compaction context usage so clients show the freed
+      // space instead of the pre-compaction occupancy.
+      if (compactedUsage != null) {
+        await _bestEffort(() => _sendUsageUpdate(session, compactedUsage));
+      }
       return {'stopReason': 'end_turn'};
     } on TurnCancelledException {
       return {'stopReason': 'cancelled'};
