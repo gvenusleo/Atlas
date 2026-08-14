@@ -29,28 +29,28 @@ The root `mise.toml` pins Flutter 3.47.0, which provides Dart 3.13.0.
 
 ```sh
 mise install
-just deps
+mise run deps
 ```
 
-Use `just deps-update` only when intentionally changing dependency constraints or the lockfile.
+Use `mise run deps-update` only when intentionally changing dependency constraints or the lockfile.
 
 ## Verification
 
 ```sh
-just fmt          # format Dart sources
-just fmt-check    # check formatting without rewriting
-just analyze      # analyze the workspace
-just test         # run available Dart and Flutter tests
-just ci           # complete repository verification
+mise run fmt          # format Dart sources
+mise run fmt-check    # check formatting without rewriting
+mise run analyze      # analyze the workspace
+mise run test         # run available Dart and Flutter tests
+mise run ci           # complete repository verification
 ```
 
-Run the current Flutter shell with `just app-run macos`. Platform debug builds use the matching `just app-build-*` recipe.
+Run the current Flutter shell with `mise run app-run --device macos`. Platform debug builds use the matching `mise run app-build-*` task.
 
-Build the single-file CLI binary with `just build-cli`. Dart 3.13's
+Build the single-file CLI binary with `mise run build-cli`. Dart 3.13's
 `dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks
 (sqlite3) cannot use `dart compile exe`.
 
-Install a locally built binary into `~/.local/bin` with `just install`.
+Install a locally built binary into `~/.local/bin` with `mise run install`.
 End users install a prebuilt release binary with
 `curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash`
 (macOS/Linux) or `irm .../download/latest/install.ps1 | iex` (Windows); the

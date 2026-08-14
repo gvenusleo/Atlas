@@ -1,2 +1,120 @@
 [tools]
 flutter = { version = "3.47.0", checksum_expr = '"sha256:" + filter(fromJSON(body).releases, { #.archive endsWith filename })[0].sha256', platforms = { linux-x64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version }}-stable.tar.xz" }, macos-arm64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version }}-stable.zip" }, macos-x64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{{ version }}-stable.zip" }, windows-x64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version }}-stable.zip" } }, version_expr = 'fromJSON(body).releases | filter({ #.channel == "stable" }) | map({ replace(#.version, "-stable", "") }) | sortVersions()', version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json" }
+
+[vars]
+# Directory the CLI binary is installed into by `mise run install`.
+INSTALL_DIR = "$HOME/.local/bin"
+
+[tasks.default]
+description = "List all tasks"
+run = "mise tasks"
+
+[tasks.deps]
+description = "Resolve the shared workspace lockfile without changing locked versions"
+run = "flutter pub get --enforce-lockfile"
+
+[tasks.deps-update]
+description = "Refresh the shared workspace lockfile after dependency changes"
+run = "flutter pub get"
+
+[tasks.fmt]
+description = "Format Dart sources"
+run = "dart format packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test"
+
+[tasks.fmt-check]
+description = "Check formatting without rewriting"
+run = "dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test"
+
+[tasks.analyze]
+description = "Analyze the workspace"
+depends = ["deps"]
+run = "dart analyze"
+
+[tasks.dart-test]
+description = "Run Dart tests in every package that has them"
+depends = ["deps"]
+shell = "bash -eu -o pipefail -c"
+run = '''
+for package in packages/* apps/atlas_cli; do
+  if [ -d "$package/test" ] && find "$package/test" -name '*_test.dart' -print -quit | grep -q .; then
+    (cd "$package" && dart test)
+  fi
+done
+'''
+
+[tasks.app-test]
+description = "Run Flutter tests"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter test --no-pub"
+
+[tasks.test]
+description = "Run all Dart and Flutter tests"
+depends = ["dart-test", "app-test"]
+
+[tasks.ci]
+description = "Complete repository verification (fmt-check + analyze + test)"
+depends = ["fmt-check", "analyze", "test"]
+
+[tasks.tui-debug]
+description = "Run the TUI with the Dart VM service enabled for debugging"
+run = "dart --enable-vm-service apps/atlas_cli/bin/atlas.dart"
+
+[tasks.build-cli]
+description = "Build the native atlas executable (output lands under build/bundle/)"
+depends = ["deps"]
+run = "dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/"
+
+[tasks.install]
+description = "Install the built CLI binary into ~/.local/bin (override with INSTALL_DIR)"
+depends = ["build-cli"]
+run = [
+  "mkdir -p {{ vars.INSTALL_DIR }}",
+  "mv -f build/bundle/bin/atlas {{ vars.INSTALL_DIR }}/atlas",
+  "chmod +x {{ vars.INSTALL_DIR }}/atlas",
+  "echo \"Installed atlas to {{ vars.INSTALL_DIR }}/atlas\"",
+]
+
+[tasks.app-run]
+description = "Run the Flutter app on a device"
+usage = '''
+flag "--device <device>" help="Target device" default="macos"
+'''
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter run --no-pub -d {{ usage.device }}"
+
+[tasks.app-build-linux]
+description = "Build the Flutter app for Linux"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter build linux --debug --no-pub"
+
+[tasks.app-build-macos]
+description = "Build the Flutter app for macOS"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter build macos --debug --no-pub"
+
+[tasks.app-build-windows]
+description = "Build the Flutter app for Windows"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter build windows --debug --no-pub"
+
+[tasks.app-build-android]
+description = "Build the Flutter app for Android"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter build apk --debug --no-pub"
+
+[tasks.app-build-ios]
+description = "Build the Flutter app for iOS"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter build ios --debug --no-codesign --no-pub"
+
+[tasks.clean]
+description = "Clean Flutter build artifacts"
+dir = "apps/atlas_flutter"
+run = "flutter clean"

@@ -29,28 +29,28 @@ apps/atlas_flutter        Flutter 桌面端与移动端应用
 
 ```sh
 mise install
-just deps
+mise run deps
 ```
 
-只有在有意调整依赖约束或 lockfile 时才使用 `just deps-update`。
+只有在有意调整依赖约束或 lockfile 时才使用 `mise run deps-update`。
 
 ## 验证
 
 ```sh
-just fmt          # 格式化 Dart 源码
-just fmt-check    # 不改文件，仅检查格式
-just analyze      # 分析整个 workspace
-just test         # 运行已有 Dart 与 Flutter 测试
-just ci           # 完整仓库验证
+mise run fmt          # 格式化 Dart 源码
+mise run fmt-check    # 不改文件，仅检查格式
+mise run analyze      # 分析整个 workspace
+mise run test         # 运行已有 Dart 与 Flutter 测试
+mise run ci           # 完整仓库验证
 ```
 
-使用 `just app-run macos` 运行当前 Flutter 外壳。各平台 debug 构建使用对应的 `just app-build-*` recipe。
+使用 `mise run app-run --device macos` 运行当前 Flutter 外壳。各平台 debug 构建使用对应的 `mise run app-build-*` 任务。
 
-使用 `just build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
+使用 `mise run build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
 `dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
 （sqlite3）不能使用 `dart compile exe`。
 
-使用 `just install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
+使用 `mise run install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
 预编译 release 二进制：macOS/Linux 运行
 `curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash`，
 Windows 运行 `irm .../download/latest/install.ps1 | iex`；脚本会下载与当前

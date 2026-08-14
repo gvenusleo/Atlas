@@ -25,8 +25,8 @@ lib/shared                            application-wide theme and shared UI
 From the repository root:
 
 ```sh
-just app-run macos
-just ci
+mise run app-run --device macos
+mise run ci
 ```
 
-Platform debug builds remain available through the `just app-build-*` recipes.
+Platform debug builds remain available through the `mise run app-build-*` tasks.

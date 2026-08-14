@@ -4,17 +4,17 @@ Atlas is currently a Dart and Flutter workspace scaffold. Check the current impl
 
 ## Development Setup
 
-Prerequisites: Git, [mise](https://mise.jdx.dev/), and [just](https://github.com/casey/just).
+Prerequisites: Git and [mise](https://mise.jdx.dev/).
 
 ```sh
 git clone https://github.com/gvenusleo/atlas.git
 cd atlas
 mise install
-just deps
-just ci
+mise run deps
+mise run ci
 ```
 
-Use `just deps-update` only when intentionally changing dependencies. The workspace has one root `pubspec.lock`.
+Use `mise run deps-update` only when intentionally changing dependencies. The workspace has one root `pubspec.lock`.
 
 ## Change Boundaries
 
@@ -34,7 +34,7 @@ Open an issue before large architectural changes, public protocol changes, persi
 Before submitting, run:
 
 ```sh
-just ci
+mise run ci
 ```
 
 Use Conventional Commits, for example:

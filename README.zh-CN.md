@@ -25,7 +25,7 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   与 agent plan；
 - Dart 实现需要遵守的架构与开发规范。
 
-WebSocket transport 与 MCP 集成尚未实现。CLI 可通过 `just build-cli`
+WebSocket transport 与 MCP 集成尚未实现。CLI 可通过 `mise run build-cli`
 构建为单文件可执行程序（`build/bundle/bin/atlas`）。
 
 ## 安装
@@ -45,24 +45,24 @@ irm https://github.com/gvenusleo/atlas/releases/download/latest/install.ps1 | ie
 或从源码构建并安装：
 
 ```sh
-just build-cli    # build/bundle/bin/atlas
-just install      # 安装到 ~/.local/bin
+mise run build-cli    # build/bundle/bin/atlas
+mise run install      # 安装到 ~/.local/bin
 ```
 
 ## 开发
 
-开发环境需要 Git、[mise](https://mise.jdx.dev/) 和 [just](https://github.com/casey/just)。
+开发环境需要 Git 和 [mise](https://mise.jdx.dev/)。
 
 ```sh
 mise install
-just deps
-just ci
+mise run deps
+mise run ci
 ```
 
 在 macOS 上运行现有 Flutter 应用外壳：
 
 ```sh
-just app-run macos
+mise run app-run --device macos
 ```
 
 Workspace 命令见[开发文档](docs/zh-CN/development.md)，runtime 边界见[架构文档](docs/zh-CN/architecture.md)。

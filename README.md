@@ -27,7 +27,7 @@ The repository currently contains:
 - architecture and development contracts for the Dart implementation.
 
 WebSocket transport and MCP integrations are not implemented yet. The CLI
-builds as a single executable with `just build-cli`
+builds as a single executable with `mise run build-cli`
 (`build/bundle/bin/atlas`).
 
 ## Installation
@@ -47,24 +47,24 @@ irm https://github.com/gvenusleo/atlas/releases/download/latest/install.ps1 | ie
 Or build and install from source:
 
 ```sh
-just build-cli    # build/bundle/bin/atlas
-just install      # install into ~/.local/bin
+mise run build-cli    # build/bundle/bin/atlas
+mise run install      # install into ~/.local/bin
 ```
 
 ## Development
 
-Prerequisites are Git, [mise](https://mise.jdx.dev/), and [just](https://github.com/casey/just).
+Prerequisites are Git and [mise](https://mise.jdx.dev/).
 
 ```sh
 mise install
-just deps
-just ci
+mise run deps
+mise run ci
 ```
 
 Run the existing Flutter shell on macOS:
 
 ```sh
-just app-run macos
+mise run app-run --device macos
 ```
 
 See [Development](docs/development.md) for workspace commands and [Architecture](docs/architecture.md) for runtime boundaries.
