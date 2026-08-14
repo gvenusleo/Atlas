@@ -335,17 +335,46 @@ String toolCallKind(String name) => switch (name) {
   _ => 'other',
 };
 
+/// The maximum length of a shell command shown in a `tool_call` title.
+const shellTitleLimit = 1000;
+
 /// The short human-readable `tool_call` title for [name], shown by clients as
 /// the headline of the tool call. ACP titles describe what the tool is doing
 /// rather than duplicating the model-facing description.
-String toolCallTitle(String name) => switch (name) {
-  'read' => 'Read file',
-  'write' => 'Write file',
-  'edit' => 'Edit file',
-  'shell' => 'Run shell command',
-  'plan' => 'Update plan',
-  _ => name,
-};
+///
+/// Shell calls use the command itself as the title so clients show what is
+/// running; commands longer than [shellTitleLimit] code units are truncated
+/// with an ellipsis. Other tools keep their fixed titles.
+String toolCallTitle(String name, Map<String, Object?> arguments) {
+  if (name == 'shell') {
+    final command = arguments['command'];
+    if (command is String && command.trim().isNotEmpty) {
+      return _truncateCommand(command);
+    }
+    return 'Run shell command';
+  }
+  return switch (name) {
+    'read' => 'Read file',
+    'write' => 'Write file',
+    'edit' => 'Edit file',
+    'plan' => 'Update plan',
+    _ => name,
+  };
+}
+
+/// Truncates [command] to [shellTitleLimit] code units, appending an
+/// ellipsis (U+2026) when it is longer.
+String _truncateCommand(String command) {
+  if (command.codeUnits.length <= shellTitleLimit) {
+    return command;
+  }
+  return '${command.substring(0, shellTitleLimit)}…';
+}
+
+/// The in-progress content text for a shell call: `Running <command>` with
+/// [command] truncated like the tool-call title.
+String shellRunningContent(String command) =>
+    'Running ${_truncateCommand(command)}';
 
 /// The absolute file locations affected by a tool call, extracted from its
 /// arguments for ACP `locations` follow-along support.

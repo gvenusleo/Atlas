@@ -167,6 +167,93 @@ void main() {
       expect(updates.single.update['title'], 'search');
     });
 
+    test('tool_call titles show the shell command being run', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem(
+              'call-1',
+              'shell',
+              1,
+              arguments: {'command': 'ls -la'},
+            ),
+          ],
+        ),
+      );
+      expect(updates.single.update['title'], 'ls -la');
+    });
+
+    test('tool_call titles truncate shell commands over the limit', () {
+      final mapper = TurnUpdateMapper(session);
+      final longCommand = 'echo ${'x' * 2000}';
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem(
+              'call-1',
+              'shell',
+              1,
+              arguments: {'command': longCommand},
+            ),
+          ],
+        ),
+      );
+      final title = updates.single.update['title'] as String;
+      expect(title, 'echo ${'x' * 995}…');
+      expect(title.codeUnits.length, shellTitleLimit + 1);
+    });
+
+    test('in_progress shell updates show the running command', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ToolStarted(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          call: _toolCallItem(
+            'call-1',
+            'shell',
+            1,
+            arguments: {'command': 'ls -la'},
+          ),
+        ),
+      );
+      expect(updates.single.update['status'], 'in_progress');
+      expect(updates.single.update['content'], [
+        {
+          'type': 'content',
+          'content': {'type': 'text', 'text': 'Running ls -la'},
+        },
+      ]);
+    });
+
+    test('in_progress updates omit content for non-shell tools', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ToolStarted(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          call: _toolCallItem('call-1', 'read', 1),
+        ),
+      );
+      expect(updates.single.update['status'], 'in_progress');
+      expect(updates.single.update.containsKey('content'), isFalse);
+    });
+
     test('tool_call includes the raw input arguments', () {
       final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(

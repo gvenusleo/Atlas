@@ -45,7 +45,7 @@ final class TurnUpdateMapper {
             toolCall(
               sessionId,
               toolCallId: item.call.id.value,
-              title: toolCallTitle(item.call.name),
+              title: toolCallTitle(item.call.name, item.call.arguments),
               kind: toolCallKind(item.call.name),
               rawInput: item.call.arguments,
               locations: toolCallLocations(item.call.name, item.call.arguments),
@@ -62,6 +62,7 @@ final class TurnUpdateMapper {
             sessionId,
             toolCallId: call.call.id.value,
             status: 'in_progress',
+            content: _runningContent(call.call.name, call.call.arguments),
           ),
         ];
       case ToolFinished(:final result):
@@ -89,6 +90,19 @@ final class TurnUpdateMapper {
 
   String _messageIdFor(TurnId turnId) =>
       _messageId ??= 'msg-${turnId.value}-${_messageCounter++}';
+
+  /// The in-progress content for a started tool call: shell calls show the
+  /// command that is running, everything else stays empty.
+  static String? _runningContent(String name, Map<String, Object?> arguments) {
+    if (name != 'shell') {
+      return null;
+    }
+    final command = arguments['command'];
+    if (command is! String || command.trim().isEmpty) {
+      return null;
+    }
+    return shellRunningContent(command);
+  }
 }
 
 /// Converts a persisted timeline into the `session/update` replay stream
@@ -130,7 +144,7 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
             toolCall(
               item.sessionId,
               toolCallId: call.id.value,
-              title: toolCallTitle(call.name),
+              title: toolCallTitle(call.name, call.arguments),
               kind: toolCallKind(call.name),
               rawInput: call.arguments,
               locations: toolCallLocations(call.name, call.arguments),
