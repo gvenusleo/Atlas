@@ -21,8 +21,9 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   斜杠命令（`/model`、`/new`、`/resume`、`/compact`、`/quit`）与 skill
   注入；
 - `atlas_acp` 中的 ACP 服务端适配器，由 `atlas acp` 通过 NDJSON stdio
-  提供，覆盖会话生命周期、模型与 effort 配置、斜杠命令、turn 流式输出
-  与 agent plan；
+  提供，覆盖会话生命周期、模型与 effort 配置、斜杠命令、turn 流式输出、
+  agent plan，以及 Zed 展示增强（实时 shell 终端、文件 diff 与
+  follow-along 位置）；
 - Dart 实现需要遵守的架构与开发规范。
 
 WebSocket transport 与 MCP 集成尚未实现。CLI 可通过 `mise run build-cli`

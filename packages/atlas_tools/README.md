@@ -1,6 +1,7 @@
 # atlas_tools
 
-Built-in Atlas tool implementations: `read`, `write`, `edit`, and `shell`.
+Built-in Atlas tool implementations: `read`, `write`, `edit`, `shell`, and
+`plan`.
 
 ## Responsibility
 
@@ -9,6 +10,8 @@ Built-in Atlas tool implementations: `read`, `write`, `edit`, and `shell`.
 - File tools resolve relative paths against the session working directory.
 - `shell` executes commands with the platform default shell, bounded output,
   timeout, and cancellation support.
+- `plan` replaces the complete task plan for multi-step work, tracking each
+  step as `pending`, `in_progress`, or `completed`.
 
 ## Allowed dependencies
 

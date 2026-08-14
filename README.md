@@ -23,7 +23,8 @@ The repository currently contains:
   `/compact`, `/quit`) and skill injection;
 - an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON
   stdio, covering session lifecycle, model and effort config, slash commands,
-  turn streaming, and agent plans;
+  turn streaming, agent plans, and Zed display enhancements (live shell
+  terminals, file diffs, and follow-along locations);
 - architecture and development contracts for the Dart implementation.
 
 WebSocket transport and MCP integrations are not implemented yet. The CLI

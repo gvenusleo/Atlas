@@ -1,6 +1,6 @@
 # Contributing to Atlas
 
-Atlas is currently a Dart and Flutter workspace scaffold. Check the current implementation before documenting or depending on a planned capability.
+Atlas is a Dart and Flutter workspace. Check the current implementation before documenting or depending on a planned capability.
 
 ## Development Setup
 

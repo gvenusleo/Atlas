@@ -10,6 +10,9 @@ The Nocterm presentation package for Atlas.
 - Owns `ChatController`, which bridges `atlas_runtime` turn events into
   rendered messages. It receives an injected `AgentRuntime` and never calls
   providers, tools, or storage directly.
+- Exposes `runAtlasTui` as the single entry point that boots the Nocterm app
+  and its shutdown; `atlas_cli` depends on this entry instead of importing
+  the rendering library directly.
 
 ## Allowed dependencies
 
