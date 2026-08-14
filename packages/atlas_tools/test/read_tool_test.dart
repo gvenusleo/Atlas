@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:test/test.dart';
 
@@ -116,65 +115,4 @@ void main() {
     expect(badOffset.isError, isTrue);
     expect(badLimit.isError, isTrue);
   });
-
-  test(
-    'delegates to the client reader with an absolute path and lines',
-    () async {
-      final dir = await tempDir();
-      final reader = _RecordingReader();
-
-      final result = await tool.execute(toolContext(dir, fileReader: reader), {
-        'path': 'note.txt',
-        'offset': 3,
-        'limit': 10,
-      });
-
-      expect(reader.calls, hasLength(1));
-      expect(reader.calls.single.path, '${dir.path}/note.txt');
-      expect(reader.calls.single.line, 3);
-      expect(reader.calls.single.limit, 10);
-      expect(result.isError, isFalse);
-      expect(result.content, 'client content');
-      // The delegated path has no local truncation or continuation.
-      expect(result.metadata, isEmpty);
-    },
-  );
-
-  test('reports client reader failures as tool errors', () async {
-    final dir = await tempDir();
-    final result = await tool.execute(
-      toolContext(dir, fileReader: _FailingReader()),
-      {'path': 'note.txt'},
-    );
-
-    expect(result.isError, isTrue);
-    expect(result.content, contains('client read failed'));
-  });
-}
-
-/// Records delegated read calls for assertions.
-final class _RecordingReader implements ClientFileReader {
-  final calls = <({String path, int? line, int? limit})>[];
-
-  @override
-  Future<ClientReadResult> readTextFile(
-    SessionId sessionId, {
-    required String path,
-    int? line,
-    int? limit,
-  }) async {
-    calls.add((path: path, line: line, limit: limit));
-    return const ClientReadResult(content: 'client content');
-  }
-}
-
-/// A client reader that always fails.
-final class _FailingReader implements ClientFileReader {
-  @override
-  Future<ClientReadResult> readTextFile(
-    SessionId sessionId, {
-    required String path,
-    int? line,
-    int? limit,
-  }) => throw Exception('client read failed');
 }

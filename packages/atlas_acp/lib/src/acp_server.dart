@@ -21,30 +21,13 @@ final class AcpServer {
   ///
   /// [models] is the configured model catalog offered through session
   /// `configOptions`; when empty, only the runtime default model is shown.
-  /// [clientFileReadTimeout] bounds how long an agent-to-client request
-  /// (such as `fs/read_text_file`) waits for the client's answer.
-  AcpServer(
-    this.runtime, {
-    this.models = const <ModelDescriptor>[],
-    this.clientFileReadTimeout = _defaultClientFileReadTimeout,
-  });
+  AcpServer(this.runtime, {this.models = const <ModelDescriptor>[]});
 
   /// The runtime serving ACP sessions.
   final AgentRuntime runtime;
 
   /// The configured model catalog, in display priority order.
   final List<ModelDescriptor> models;
-
-  /// How long to wait for a client answer to an agent-to-client request
-  /// (such as `fs/read_text_file`) before failing the tool call.
-  final Duration clientFileReadTimeout;
-
-  /// The default timeout for client file reads.
-  static const _defaultClientFileReadTimeout = Duration(seconds: 30);
-
-  /// The JSON-RPC peer, set while serving; used to issue agent-to-client
-  /// requests such as `fs/read_text_file`.
-  Peer? _peer;
 
   /// Last title reported to the client per session, used to emit
   /// `session_info_update` when the runtime auto-generates a title.
@@ -98,7 +81,6 @@ final class AcpServer {
         stderr.writeln('atlas_acp: unhandled error: $error');
       },
     );
-    _peer = peer;
     _registerMethods(peer);
     await peer.listen();
     // Flush deferred lifecycle notifications so the connection closes only
@@ -164,25 +146,7 @@ final class AcpServer {
   }
 
   Future<JsonObject> _initialize(Parameters params) async {
-    _attachClientFileReader(params);
     return initializeResult();
-  }
-
-  /// Mounts the client file reader when the client claims filesystem read
-  /// support, switching the `read` tool to `fs/read_text_file` delegation so
-  /// unsaved editor state becomes visible to the model.
-  void _attachClientFileReader(Parameters params) {
-    final capabilities = params['clientCapabilities'].valueOr(const {});
-    final fs = capabilities is Map ? capabilities['fs'] : null;
-    final readTextFile = fs is Map ? fs['readTextFile'] : null;
-    if (readTextFile != true) {
-      return;
-    }
-    final peer = _peer;
-    if (peer == null) {
-      return;
-    }
-    runtime.clientFileReader = _AcpFileReader(peer, clientFileReadTimeout);
   }
 
   Future<JsonObject> _newSession(Parameters params) async {
@@ -916,53 +880,6 @@ final class AcpServer {
       stderr.writeln('atlas_acp: ~ session=${update.sessionId} update=$kind');
     }
     _output?.add(update.toJsonString());
-  }
-}
-
-/// Reads text files through the ACP client's `fs/read_text_file` method.
-///
-/// Uses the JSON-RPC peer to issue an agent-to-client request; the client
-/// answers from its editor buffers, so unsaved changes are visible. Errors
-/// from the client surface as [RpcException] with a safe message; a missing
-/// answer fails as a [TimeoutException] after [timeout].
-final class _AcpFileReader implements ClientFileReader {
-  /// Creates a reader over [peer] with [timeout] for the client's answer.
-  _AcpFileReader(this._peer, this.timeout);
-
-  final Peer _peer;
-
-  /// The maximum wait for the client's response.
-  final Duration timeout;
-
-  @override
-  Future<ClientReadResult> readTextFile(
-    SessionId sessionId, {
-    required String path,
-    int? line,
-    int? limit,
-  }) async {
-    final response = await _peer
-        .sendRequest('fs/read_text_file', {
-          'sessionId': sessionId.value,
-          'path': path,
-          'line': ?line,
-          'limit': ?limit,
-        })
-        .timeout(timeout)
-        .then(_requireJsonObject);
-    final content = response['content'];
-    if (content is! String) {
-      throw const FormatException('fs/read_text_file returned no text content');
-    }
-    return ClientReadResult(content: content);
-  }
-
-  /// Coerces a JSON-RPC response value into a JSON object.
-  static Map<String, Object?> _requireJsonObject(Object? value) {
-    if (value is Map<String, Object?>) {
-      return value;
-    }
-    throw const FormatException('fs/read_text_file returned a malformed reply');
   }
 }
 

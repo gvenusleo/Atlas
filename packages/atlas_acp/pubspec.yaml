@@ -12,6 +12,4 @@ dependencies:
   json_rpc_2: ^4.1.0
   stream_channel: ^2.1.4
 dev_dependencies:
-  atlas_tools:
-    path: ../atlas_tools
   test: ^1.31.0

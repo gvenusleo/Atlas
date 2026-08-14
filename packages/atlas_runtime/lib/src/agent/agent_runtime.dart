@@ -48,12 +48,6 @@ final class AgentRuntime {
   /// The registered local tools.
   final ToolRegistry tools;
 
-  /// The client file reader, set by a protocol adapter once the client
-  /// claims filesystem read support. Read once per tool call and never
-  /// mutated after the connection's capability negotiation, so it does not
-  /// race the per-session turn serialization.
-  ClientFileReader? clientFileReader;
-
   /// Builds the filesystem context (instructions and skills) for a session
   /// working directory; invoked once per directory and cached.
   final SessionContext Function(String workingDirectory) sessionContextBuilder;
@@ -784,7 +778,6 @@ final class AgentRuntime {
           additionalDirectories:
               request.additionalDirectories ?? session.additionalDirectories,
           cancellation: cancellation,
-          fileReader: clientFileReader,
         ),
         call,
       );

@@ -12,7 +12,6 @@ final class ToolContext {
     required this.workingDirectory,
     this.additionalDirectories = const <String>[],
     this.cancellation,
-    this.fileReader,
   });
 
   /// The active session.
@@ -29,35 +28,6 @@ final class ToolContext {
 
   /// Cooperative cancellation for the tool invocation.
   final CancellationToken? cancellation;
-
-  /// The client file reader, when the ACP client claims filesystem read
-  /// support; null keeps tools on their local execution path.
-  final ClientFileReader? fileReader;
-}
-
-/// The result of a delegated client file read.
-final class ClientReadResult {
-  /// Creates a client read result.
-  const ClientReadResult({required this.content});
-
-  /// The file contents as reported by the client.
-  final String content;
-}
-
-/// Reads text files through the ACP client (for example to surface unsaved
-/// editor state that the local filesystem cannot see).
-///
-/// Implemented by protocol adapters; runtime and tools only depend on this
-/// port.
-abstract interface class ClientFileReader {
-  /// Reads [path] (already absolute), optionally starting at 1-indexed
-  /// [line] with at most [limit] lines, and returns the client's contents.
-  Future<ClientReadResult> readTextFile(
-    SessionId sessionId, {
-    required String path,
-    int? line,
-    int? limit,
-  });
 }
 
 /// A built-in or installed Atlas tool.

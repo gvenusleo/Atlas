@@ -41,12 +41,6 @@ as a subprocess and drive sessions through JSON-RPC.
   summary. Reads starting at an explicit `offset` report `line` in
   `locations`, and edits report the first replacement's line when the result
   completes.
-- The `read` tool delegates to the client's `fs/read_text_file` when the
-  client claims `fs.readTextFile` in `initialize`, so the model sees unsaved
-  editor buffers instead of the on-disk file. The client receives absolute
-  paths with the requested `line`/`limit`; the delegated path reports the
-  client's content as-is (no local byte truncation or `next_offset`
-  continuation). Clients without filesystem support keep the local read path.
 - Prompt content: text, image (base64 data URLs), embedded text resources,
   and baseline `resource_link` blocks
 - `session/cancel` mapping to cooperative turn cancellation
