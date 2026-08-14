@@ -26,6 +26,14 @@ as a subprocess and drive sessions through JSON-RPC.
   and file `locations`), `tool_call_update` (with `rawOutput`), `plan` (from
   the `plan` tool), `session_info_update` (auto-generated titles), and
   `usage_update`
+- Shell tool calls render as **display-only terminals** in Zed: the call
+  embeds a `terminal` content reference registered through Zed's v1 `_meta`
+  extension (`terminal_info` / `terminal_output` / `terminal_exit`), so a
+  locally-executed command shows a live, auto-expanding terminal instead of a
+  collapsed card. The command still runs in Atlas; ACP v2 standardizes the
+  same capability as `terminal_update` / `terminal_output_chunk`. Other ACP
+  clients that do not register the terminal will fail to resolve the
+  `terminal` content reference.
 - Prompt content: text, image (base64 data URLs), embedded text resources,
   and baseline `resource_link` blocks
 - `session/cancel` mapping to cooperative turn cancellation

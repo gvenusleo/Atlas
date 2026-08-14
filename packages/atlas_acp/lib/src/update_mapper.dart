@@ -17,6 +17,7 @@ final class TurnUpdateMapper {
   String? _messageId;
   int _messageCounter = 0;
   final _planCallIds = <String>{};
+  final _shellCallIds = <String>{};
 
   /// Converts [event] into zero or more `session/update` notifications.
   List<SessionUpdate> map(AgentEvent event) {
@@ -40,17 +41,7 @@ final class TurnUpdateMapper {
       case ModelResponseReceived(:final toolCalls) when toolCalls.isNotEmpty:
         // A new assistant message starts after the previous response.
         _messageId = null;
-        return [
-          for (final item in toolCalls)
-            toolCall(
-              sessionId,
-              toolCallId: item.call.id.value,
-              title: toolCallTitle(item.call.name, item.call.arguments),
-              kind: toolCallKind(item.call.name),
-              rawInput: item.call.arguments,
-              locations: toolCallLocations(item.call.name, item.call.arguments),
-            ),
-        ];
+        return [for (final item in toolCalls) _toolCallUpdate(item)];
       case ToolStarted(:final call):
         final plan = planEntries(call.call.arguments['plan']);
         if (call.call.name == 'plan' && plan != null) {
@@ -62,20 +53,37 @@ final class TurnUpdateMapper {
             sessionId,
             toolCallId: call.call.id.value,
             status: 'in_progress',
-            content: _runningContent(call.call.name, call.call.arguments),
+            // Keep the terminal reference for shell calls so Zed does not
+            // replace the live terminal with a collapsed card.
+            content: _isShell(call.call.name)
+                ? shellTerminalContent(call.call.id.value)
+                : null,
           ),
         ];
       case ToolFinished(:final result):
         if (_planCallIds.contains(result.callId.value)) {
           return const [];
         }
+        final isShell = _shellCallIds.contains(result.callId.value);
+        final exitCode = (result.metadata['exit_code'] as num?)?.toInt();
         return [
           toolCallUpdate(
             sessionId,
             toolCallId: result.callId.value,
             status: result.isError ? 'failed' : 'completed',
-            content: result.content,
+            content: isShell
+                ? shellTerminalContent(result.callId.value)
+                : (result.content.isEmpty
+                      ? null
+                      : textToolCallContent(result.content)),
             rawOutput: result.isError ? null : _toolRawOutput(result.content),
+            meta: isShell
+                ? shellTerminalUpdateMeta(
+                    result.callId.value,
+                    result.content,
+                    exitCode,
+                  )
+                : null,
           ),
         ];
       case TurnStarted() ||
@@ -88,21 +96,31 @@ final class TurnUpdateMapper {
     }
   }
 
+  /// Builds the pending `tool_call` update for [item], recording shell calls
+  /// so their results can keep the display-only terminal reference.
+  SessionUpdate _toolCallUpdate(ToolCallItem item) {
+    final isShell = _isShell(item.call.name);
+    if (isShell) {
+      _shellCallIds.add(item.call.id.value);
+    }
+    return toolCall(
+      sessionId,
+      toolCallId: item.call.id.value,
+      title: toolCallTitle(item.call.name, item.call.arguments),
+      kind: toolCallKind(item.call.name),
+      rawInput: item.call.arguments,
+      locations: toolCallLocations(item.call.name, item.call.arguments),
+      content: isShell ? shellTerminalContent(item.call.id.value) : null,
+      meta: isShell
+          ? shellTerminalInfo(item.call.id.value, item.call.arguments)
+          : null,
+    );
+  }
+
+  static bool _isShell(String name) => name == 'shell';
+
   String _messageIdFor(TurnId turnId) =>
       _messageId ??= 'msg-${turnId.value}-${_messageCounter++}';
-
-  /// The in-progress content for a started tool call: shell calls show the
-  /// command that is running, everything else stays empty.
-  static String? _runningContent(String name, Map<String, Object?> arguments) {
-    if (name != 'shell') {
-      return null;
-    }
-    final command = arguments['command'];
-    if (command is! String || command.trim().isEmpty) {
-      return null;
-    }
-    return shellRunningContent(command);
-  }
 }
 
 /// Converts a persisted timeline into the `session/update` replay stream
@@ -116,6 +134,9 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
   // follow their owning call in the timeline, so a FIFO queue matches them
   // even when the model reuses a call id across turns.
   final pendingPlanResults = <String>[];
+  // Call ids of shell tool calls, whose results keep the display-only
+  // terminal reference instead of a text content block.
+  final pendingShellResults = <String>[];
   for (final item in timeline) {
     switch (item) {
       case UserMessageItem(:final content):
@@ -140,6 +161,10 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
           pendingPlanResults.add(call.id.value);
           updates.add(planUpdate(item.sessionId, plan));
         } else {
+          final isShell = call.name == 'shell';
+          if (isShell) {
+            pendingShellResults.add(call.id.value);
+          }
           updates.add(
             toolCall(
               item.sessionId,
@@ -148,6 +173,10 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
               kind: toolCallKind(call.name),
               rawInput: call.arguments,
               locations: toolCallLocations(call.name, call.arguments),
+              content: isShell ? shellTerminalContent(call.id.value) : null,
+              meta: isShell
+                  ? shellTerminalInfo(call.id.value, call.arguments)
+                  : null,
             ),
           );
         }
@@ -157,13 +186,25 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
           pendingPlanResults.removeAt(0);
           break;
         }
+        final isShell =
+            pendingShellResults.isNotEmpty &&
+            pendingShellResults.first == callId.value;
+        if (isShell) {
+          pendingShellResults.removeAt(0);
+        }
+        final exitCode = (item.metadata['exit_code'] as num?)?.toInt();
         updates.add(
           toolCallUpdate(
             item.sessionId,
             toolCallId: callId.value,
             status: isError ? 'failed' : 'completed',
-            content: content,
+            content: isShell
+                ? shellTerminalContent(callId.value)
+                : (content.isEmpty ? null : textToolCallContent(content)),
             rawOutput: isError ? null : _toolRawOutput(content),
+            meta: isShell
+                ? shellTerminalUpdateMeta(callId.value, content, exitCode)
+                : null,
           ),
         );
     }

@@ -189,6 +189,34 @@ void main() {
       expect(updates.single.update['title'], 'ls -la');
     });
 
+    test('shell tool calls embed a display-only terminal reference', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem(
+              'call-1',
+              'shell',
+              1,
+              arguments: {'command': 'ls -la', 'cwd': '/tmp'},
+            ),
+          ],
+        ),
+      );
+      final update = updates.single.update;
+      expect(update['content'], [
+        {'type': 'terminal', 'terminalId': 'term-call-1'},
+      ]);
+      expect(update['_meta'], {
+        'terminal_info': {'terminal_id': 'term-call-1', 'cwd': '/tmp'},
+      });
+    });
+
     test('tool_call titles truncate shell commands over the limit', () {
       final mapper = TurnUpdateMapper(session);
       final longCommand = 'echo ${'x' * 2000}';
@@ -214,7 +242,7 @@ void main() {
       expect(title.codeUnits.length, shellTitleLimit + 1);
     });
 
-    test('in_progress shell updates show the running command', () {
+    test('in_progress shell updates keep the terminal reference', () {
       final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(
         ToolStarted(
@@ -232,11 +260,82 @@ void main() {
       );
       expect(updates.single.update['status'], 'in_progress');
       expect(updates.single.update['content'], [
-        {
-          'type': 'content',
-          'content': {'type': 'text', 'text': 'Running ls -la'},
-        },
+        {'type': 'terminal', 'terminalId': 'term-call-1'},
       ]);
+    });
+
+    test('completed shell results stream output through terminal meta', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = <SessionUpdate>[
+        ...mapper.map(
+          ModelResponseReceived(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            assistantMessage: _assistant([TextContent('I will check.')]),
+            toolCalls: [
+              _toolCallItem('call-1', 'shell', 1, arguments: {'command': 'ls'}),
+            ],
+          ),
+        ),
+        ...mapper.map(
+          ToolFinished(
+            sessionId: session,
+            turnId: turn,
+            sequence: 1,
+            occurredAt: time,
+            result: _resultItem(
+              'call-1',
+              'file list',
+              2,
+              metadata: const {'exit_code': 0},
+            ),
+          ),
+        ),
+      ];
+      final completed = updates.last.update;
+      expect(completed['status'], 'completed');
+      expect(completed['content'], [
+        {'type': 'terminal', 'terminalId': 'term-call-1'},
+      ]);
+      expect(completed['_meta'], {
+        'terminal_output': {'terminal_id': 'term-call-1', 'data': 'file list'},
+        'terminal_exit': {'terminal_id': 'term-call-1', 'exit_code': 0},
+      });
+    });
+
+    test('failed shell results omit the exit code from terminal meta', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = <SessionUpdate>[
+        ...mapper.map(
+          ModelResponseReceived(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            assistantMessage: _assistant([TextContent('I will check.')]),
+            toolCalls: [
+              _toolCallItem('call-1', 'shell', 1, arguments: {'command': 'ls'}),
+            ],
+          ),
+        ),
+        ...mapper.map(
+          ToolFinished(
+            sessionId: session,
+            turnId: turn,
+            sequence: 1,
+            occurredAt: time,
+            result: _resultItem('call-1', 'timed out', 2, isError: true),
+          ),
+        ),
+      ];
+      final failed = updates.last.update;
+      expect(failed['status'], 'failed');
+      expect(failed['_meta'], {
+        'terminal_output': {'terminal_id': 'term-call-1', 'data': 'timed out'},
+        'terminal_exit': {'terminal_id': 'term-call-1'},
+      });
     });
 
     test('in_progress updates omit content for non-shell tools', () {
@@ -541,6 +640,37 @@ void main() {
       ]);
     });
 
+    test('replay keeps the terminal reference for shell calls', () {
+      final timeline = <TimelineItem>[
+        _toolCallItem(
+          'call-1',
+          'shell',
+          0,
+          id: 'item-1',
+          arguments: {'command': 'ls'},
+        ),
+        _resultItem(
+          'call-1',
+          'file list',
+          1,
+          id: 'item-2',
+          metadata: const {'exit_code': 0},
+        ),
+      ];
+      final updates = replayTimeline(timeline);
+      expect(updates.map((u) => u.update['sessionUpdate']), [
+        'tool_call',
+        'tool_call_update',
+      ]);
+      expect(updates[0].update['content'], [
+        {'type': 'terminal', 'terminalId': 'term-call-1'},
+      ]);
+      expect(updates[1].update['_meta'], {
+        'terminal_output': {'terminal_id': 'term-call-1', 'data': 'file list'},
+        'terminal_exit': {'terminal_id': 'term-call-1', 'exit_code': 0},
+      });
+    });
+
     test('replay skips only the plan result matching its own call', () {
       // The model reuses the call id across turns: turn one is a plan call,
       // turn two is a plain read with the same id. Only the plan result is
@@ -637,6 +767,7 @@ ToolResultItem _resultItem(
   int sequence, {
   String id = 'result-item',
   bool isError = false,
+  Map<String, Object?> metadata = const {},
 }) => ToolResultItem(
   id: TimelineItemId(id),
   sessionId: SessionId('s1'),
@@ -646,4 +777,5 @@ ToolResultItem _resultItem(
   callId: ToolCallId(callId),
   content: content,
   isError: isError,
+  metadata: metadata,
 );

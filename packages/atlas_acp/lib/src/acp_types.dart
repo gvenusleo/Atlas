@@ -171,6 +171,8 @@ SessionUpdate toolCall(
   required String kind,
   Map<String, Object?>? rawInput,
   List<JsonObject>? locations,
+  List<JsonObject>? content,
+  Map<String, Object?>? meta,
 }) => SessionUpdate(sessionId, {
   'sessionUpdate': 'tool_call',
   'toolCallId': toolCallId,
@@ -179,6 +181,8 @@ SessionUpdate toolCall(
   'status': 'pending',
   'rawInput': ?rawInput,
   if (locations != null && locations.isNotEmpty) 'locations': locations,
+  if (content != null && content.isNotEmpty) 'content': content,
+  if (meta != null && meta.isNotEmpty) '_meta': meta,
 });
 
 /// A tool call progress or result update (`tool_call_update`).
@@ -186,21 +190,71 @@ SessionUpdate toolCallUpdate(
   SessionId sessionId, {
   required String toolCallId,
   required String status,
-  String? content,
+  List<JsonObject>? content,
   Map<String, Object?>? rawOutput,
+  Map<String, Object?>? meta,
 }) => SessionUpdate(sessionId, {
   'sessionUpdate': 'tool_call_update',
   'toolCallId': toolCallId,
   'status': status,
-  if (content != null && content.isNotEmpty)
-    'content': [
-      {
-        'type': 'content',
-        'content': {'type': 'text', 'text': content},
-      },
-    ],
+  if (content != null && content.isNotEmpty) 'content': content,
   'rawOutput': ?rawOutput,
+  if (meta != null && meta.isNotEmpty) '_meta': meta,
 });
+
+/// A standard text content block for tool call output.
+List<JsonObject> textToolCallContent(String text) => [
+  {
+    'type': 'content',
+    'content': {'type': 'text', 'text': text},
+  },
+];
+
+/// The display-only terminal id for a shell tool call. Derived from the
+/// tool call id so it stays unique within the session.
+String shellTerminalId(String toolCallId) => 'term-$toolCallId';
+
+/// The terminal content block for a shell tool call, which makes Zed render
+/// the call as a live terminal instead of a collapsed card.
+List<JsonObject> shellTerminalContent(String toolCallId) => [
+  {'type': 'terminal', 'terminalId': shellTerminalId(toolCallId)},
+];
+
+/// The `_meta` registration for Zed's display-only terminal: a v1 extension
+/// (not part of the ACP v1 spec) that lets a locally-executed command render
+/// as a live terminal in Zed. ACP v2 standardizes the same capability as
+/// `terminal_update` / `terminal_output_chunk`; migrate there when Atlas
+/// moves to v2.
+Map<String, Object?> shellTerminalInfo(
+  String toolCallId,
+  Map<String, Object?> arguments,
+) {
+  final cwd = arguments['cwd'];
+  return {
+    'terminal_info': {
+      'terminal_id': shellTerminalId(toolCallId),
+      if (cwd is String && cwd.isNotEmpty) 'cwd': cwd,
+    },
+  };
+}
+
+/// The `_meta` payload for a finished shell tool call: the captured output
+/// and exit status, streamed to Zed's display-only terminal. [output] is the
+/// raw text (Zed's v1 extension carries it as a JSON string, not base64).
+Map<String, Object?> shellTerminalUpdateMeta(
+  String toolCallId,
+  String output,
+  int? exitCode,
+) => {
+  'terminal_output': {
+    'terminal_id': shellTerminalId(toolCallId),
+    'data': output,
+  },
+  'terminal_exit': {
+    'terminal_id': shellTerminalId(toolCallId),
+    'exit_code': ?exitCode,
+  },
+};
 
 /// A complete plan replacement (`plan`).
 SessionUpdate planUpdate(SessionId sessionId, List<JsonObject> entries) =>
@@ -370,11 +424,6 @@ String _truncateCommand(String command) {
   }
   return '${command.substring(0, shellTitleLimit)}…';
 }
-
-/// The in-progress content text for a shell call: `Running <command>` with
-/// [command] truncated like the tool-call title.
-String shellRunningContent(String command) =>
-    'Running ${_truncateCommand(command)}';
 
 /// The absolute file locations affected by a tool call, extracted from its
 /// arguments for ACP `locations` follow-along support.
