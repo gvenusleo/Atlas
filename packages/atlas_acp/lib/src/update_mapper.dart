@@ -8,16 +8,22 @@ import 'acp_types.dart';
 /// assistant message, and the tool call ids that were reported as plan
 /// updates instead of ordinary tool calls.
 final class TurnUpdateMapper {
-  /// Creates a mapper for one turn of [sessionId].
-  TurnUpdateMapper(this.sessionId);
+  /// Creates a mapper for one turn of [sessionId]. [workingDirectory]
+  /// resolves relative tool paths into absolute ACP locations; when null,
+  /// paths are reported as given.
+  TurnUpdateMapper(this.sessionId, {this.workingDirectory});
 
   /// The session being mapped.
   final SessionId sessionId;
+
+  /// The session working directory used to absolutize file locations.
+  final String? workingDirectory;
 
   String? _messageId;
   int _messageCounter = 0;
   final _planCallIds = <String>{};
   final _shellCallIds = <String>{};
+  final _fileCallIds = <String>{};
 
   /// Converts [event] into zero or more `session/update` notifications.
   List<SessionUpdate> map(AgentEvent event) {
@@ -66,6 +72,9 @@ final class TurnUpdateMapper {
         }
         final isShell = _shellCallIds.contains(result.callId.value);
         final exitCode = (result.metadata['exit_code'] as num?)?.toInt();
+        final diff = _fileCallIds.contains(result.callId.value)
+            ? _diffContent(result)
+            : null;
         return [
           toolCallUpdate(
             sessionId,
@@ -73,10 +82,12 @@ final class TurnUpdateMapper {
             status: result.isError ? 'failed' : 'completed',
             content: isShell
                 ? shellTerminalContent(result.callId.value)
-                : (result.content.isEmpty
-                      ? null
-                      : textToolCallContent(result.content)),
+                : (diff ??
+                      (result.content.isEmpty
+                          ? null
+                          : textToolCallContent(result.content))),
             rawOutput: result.isError ? null : _toolRawOutput(result.content),
+            locations: diff != null ? _diffLocation(result) : null,
             meta: isShell
                 ? shellTerminalUpdateMeta(
                     result.callId.value,
@@ -96,12 +107,16 @@ final class TurnUpdateMapper {
     }
   }
 
-  /// Builds the pending `tool_call` update for [item], recording shell calls
-  /// so their results can keep the display-only terminal reference.
+  /// Builds the pending `tool_call` update for [item], recording shell and
+  /// file tool calls so their results keep the terminal reference or render
+  /// as diffs.
   SessionUpdate _toolCallUpdate(ToolCallItem item) {
     final isShell = _isShell(item.call.name);
     if (isShell) {
       _shellCallIds.add(item.call.id.value);
+    }
+    if (_isFileTool(item.call.name)) {
+      _fileCallIds.add(item.call.id.value);
     }
     return toolCall(
       sessionId,
@@ -109,7 +124,11 @@ final class TurnUpdateMapper {
       title: toolCallTitle(item.call.name, item.call.arguments),
       kind: toolCallKind(item.call.name),
       rawInput: item.call.arguments,
-      locations: toolCallLocations(item.call.name, item.call.arguments),
+      locations: toolCallLocations(
+        item.call.name,
+        item.call.arguments,
+        workingDirectory: workingDirectory,
+      ),
       content: isShell ? shellTerminalContent(item.call.id.value) : null,
       meta: isShell
           ? shellTerminalInfo(item.call.id.value, item.call.arguments)
@@ -119,6 +138,8 @@ final class TurnUpdateMapper {
 
   static bool _isShell(String name) => name == 'shell';
 
+  static bool _isFileTool(String name) => name == 'write' || name == 'edit';
+
   String _messageIdFor(TurnId turnId) =>
       _messageId ??= 'msg-${turnId.value}-${_messageCounter++}';
 }
@@ -127,8 +148,12 @@ final class TurnUpdateMapper {
 /// required by `session/load`.
 ///
 /// Message ids come from the durable timeline item ids; plan tool calls are
-/// replayed as plan updates and their results are skipped.
-List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
+/// replayed as plan updates and their results are skipped. [workingDirectory]
+/// resolves relative tool paths into absolute ACP locations.
+List<SessionUpdate> replayTimeline(
+  List<TimelineItem> timeline, {
+  String? workingDirectory,
+}) {
   final updates = <SessionUpdate>[];
   // Call ids of plan tool calls whose result is skipped. Results always
   // follow their owning call in the timeline, so a FIFO queue matches them
@@ -137,6 +162,8 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
   // Call ids of shell tool calls, whose results keep the display-only
   // terminal reference instead of a text content block.
   final pendingShellResults = <String>[];
+  // Call ids of write/edit tool calls, whose results render as diffs.
+  final pendingFileResults = <String>[];
   for (final item in timeline) {
     switch (item) {
       case UserMessageItem(:final content):
@@ -162,8 +189,12 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
           updates.add(planUpdate(item.sessionId, plan));
         } else {
           final isShell = call.name == 'shell';
+          final isFile = call.name == 'write' || call.name == 'edit';
           if (isShell) {
             pendingShellResults.add(call.id.value);
+          }
+          if (isFile) {
+            pendingFileResults.add(call.id.value);
           }
           updates.add(
             toolCall(
@@ -172,7 +203,11 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
               title: toolCallTitle(call.name, call.arguments),
               kind: toolCallKind(call.name),
               rawInput: call.arguments,
-              locations: toolCallLocations(call.name, call.arguments),
+              locations: toolCallLocations(
+                call.name,
+                call.arguments,
+                workingDirectory: workingDirectory,
+              ),
               content: isShell ? shellTerminalContent(call.id.value) : null,
               meta: isShell
                   ? shellTerminalInfo(call.id.value, call.arguments)
@@ -192,6 +227,13 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
         if (isShell) {
           pendingShellResults.removeAt(0);
         }
+        final isFile =
+            pendingFileResults.isNotEmpty &&
+            pendingFileResults.first == callId.value;
+        if (isFile) {
+          pendingFileResults.removeAt(0);
+        }
+        final diff = isFile ? _diffContent(item) : null;
         final exitCode = (item.metadata['exit_code'] as num?)?.toInt();
         updates.add(
           toolCallUpdate(
@@ -200,8 +242,10 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
             status: isError ? 'failed' : 'completed',
             content: isShell
                 ? shellTerminalContent(callId.value)
-                : (content.isEmpty ? null : textToolCallContent(content)),
+                : (diff ??
+                      (content.isEmpty ? null : textToolCallContent(content))),
             rawOutput: isError ? null : _toolRawOutput(content),
+            locations: diff != null ? _diffLocation(item) : null,
             meta: isShell
                 ? shellTerminalUpdateMeta(callId.value, content, exitCode)
                 : null,
@@ -216,3 +260,36 @@ List<SessionUpdate> replayTimeline(List<TimelineItem> timeline) {
 /// null for empty results.
 Map<String, Object?>? _toolRawOutput(String content) =>
     content.trim().isEmpty ? null : {'output': content};
+
+/// Builds a `diff` content block from [result] metadata when a file tool
+/// reported old and new contents; returns null for failures or non-file
+/// tools.
+List<JsonObject>? _diffContent(ToolResultItem result) {
+  final path = result.metadata['path'];
+  final newText = result.metadata['newText'];
+  if (result.isError || path is! String || newText is! String) {
+    return null;
+  }
+  final oldText = result.metadata['oldText'];
+  return diffToolCallContent(
+    path: path,
+    oldText: oldText is String ? oldText : null,
+    newText: newText,
+  );
+}
+
+/// The follow-along location for a diff result, anchored at the first
+/// replacement's line when the tool reported one.
+List<JsonObject>? _diffLocation(ToolResultItem result) {
+  final path = result.metadata['path'];
+  final line = result.metadata['line'];
+  if (path is! String) {
+    return null;
+  }
+  return [
+    if (line is num && line >= 1)
+      {'path': path, 'line': line.toInt()}
+    else
+      {'path': path},
+  ];
+}

@@ -56,4 +56,46 @@ void main() {
     expect(result.isError, isTrue);
     expect(result.content, contains('path is required'));
   });
+
+  test('reports diff metadata when overwriting an existing file', () async {
+    final dir = await tempDir();
+    final file = File('${dir.path}/a.txt');
+    await file.writeAsString('old content');
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'a.txt',
+      'content': 'new content',
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.metadata['path'], '${dir.path}/a.txt');
+    expect(result.metadata['oldText'], 'old content');
+    expect(result.metadata['newText'], 'new content');
+  });
+
+  test('reports no old text for newly created files', () async {
+    final dir = await tempDir();
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'fresh.txt',
+      'content': 'hello',
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.metadata['path'], '${dir.path}/fresh.txt');
+    expect(result.metadata.containsKey('oldText'), isFalse);
+    expect(result.metadata['newText'], 'hello');
+  });
+
+  test('omits diff metadata for oversized content', () async {
+    final dir = await tempDir();
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'huge.txt',
+      'content': 'x' * (toolDiffContentLimit + 1),
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.metadata, isEmpty);
+  });
 }

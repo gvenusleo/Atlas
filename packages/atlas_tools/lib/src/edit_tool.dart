@@ -135,8 +135,21 @@ final class EditTool implements Tool {
       result = result.replaceAll('\n', newline);
       final output = bom ? '\uFEFF$result' : result;
       await file.writeAsString(output);
+      // Diff metadata is only reported for bounded files; the first
+      // replacement's start line anchors the follow-along location.
+      final belowLimit =
+          text.codeUnits.length <= toolDiffContentLimit &&
+          output.codeUnits.length <= toolDiffContentLimit;
       return ToolResult(
         content: 'Applied ${replacements.length} edit(s) to $path',
+        metadata: belowLimit
+            ? {
+                'path': path,
+                'oldText': text,
+                'newText': output,
+                'line': lineAtOffset(text, replacements.first.start),
+              }
+            : const {},
       );
     } catch (error) {
       return ToolResult(

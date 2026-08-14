@@ -63,6 +63,41 @@ void main() {
     });
   });
 
+  group('toolCallLocations', () {
+    test('reports paths and the read start line', () {
+      expect(toolCallLocations('read', {'path': 'a.dart'}), [
+        {'path': 'a.dart'},
+      ]);
+      expect(toolCallLocations('read', {'path': 'a.dart', 'offset': 42}), [
+        {'path': 'a.dart', 'line': 42},
+      ]);
+      expect(toolCallLocations('write', {'path': 'a.dart'}), [
+        {'path': 'a.dart'},
+      ]);
+      expect(toolCallLocations('shell', {'command': 'ls'}), isEmpty);
+    });
+
+    test('resolves relative paths against the working directory', () {
+      expect(
+        toolCallLocations('read', {
+          'path': 'src/a.dart',
+          'offset': 3,
+        }, workingDirectory: '/home/user/project'),
+        [
+          {'path': '/home/user/project/src/a.dart', 'line': 3},
+        ],
+      );
+      expect(
+        toolCallLocations('edit', {
+          'path': '/abs/path/b.dart',
+        }, workingDirectory: '/home/user/project'),
+        [
+          {'path': '/abs/path/b.dart'},
+        ],
+      );
+    });
+  });
+
   group('TurnUpdateMapper', () {
     test('shares one message id across assistant chunks', () {
       final mapper = TurnUpdateMapper(session);
@@ -319,6 +354,148 @@ void main() {
       expect(updates.single.update['status'], 'in_progress');
       expect(updates.single.update['content'], [
         {'type': 'terminal', 'terminalId': 'term-call-1'},
+      ]);
+    });
+
+    test('file tool results render as diffs with follow-along locations', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = <SessionUpdate>[
+        ...mapper.map(
+          ModelResponseReceived(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            assistantMessage: _assistant([TextContent('I will check.')]),
+            toolCalls: [_toolCallItem('call-1', 'edit', 1)],
+          ),
+        ),
+        ...mapper.map(
+          ToolFinished(
+            sessionId: session,
+            turnId: turn,
+            sequence: 1,
+            occurredAt: time,
+            result: _resultItem(
+              'call-1',
+              'Applied 1 edit(s) to /tmp/a.dart',
+              2,
+              metadata: const {
+                'path': '/tmp/a.dart',
+                'oldText': 'final a = 1;\n',
+                'newText': 'final a = 2;\n',
+                'line': 1,
+              },
+            ),
+          ),
+        ),
+      ];
+      final completed = updates.last.update;
+      expect(completed['status'], 'completed');
+      expect(completed['content'], [
+        {
+          'type': 'diff',
+          'path': '/tmp/a.dart',
+          'oldText': 'final a = 1;\n',
+          'newText': 'final a = 2;\n',
+        },
+      ]);
+      expect(completed['locations'], [
+        {'path': '/tmp/a.dart', 'line': 1},
+      ]);
+    });
+
+    test('new file writes render as diffs with no old text', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = <SessionUpdate>[
+        ...mapper.map(
+          ModelResponseReceived(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            assistantMessage: _assistant([TextContent('I will check.')]),
+            toolCalls: [_toolCallItem('call-1', 'write', 1)],
+          ),
+        ),
+        ...mapper.map(
+          ToolFinished(
+            sessionId: session,
+            turnId: turn,
+            sequence: 1,
+            occurredAt: time,
+            result: _resultItem(
+              'call-1',
+              'Wrote 5 bytes to /tmp/new.dart',
+              2,
+              metadata: const {'path': '/tmp/new.dart', 'newText': 'hello'},
+            ),
+          ),
+        ),
+      ];
+      final completed = updates.last.update;
+      expect(completed['content'], [
+        {
+          'type': 'diff',
+          'path': '/tmp/new.dart',
+          'oldText': null,
+          'newText': 'hello',
+        },
+      ]);
+      expect(completed['locations'], [
+        {'path': '/tmp/new.dart'},
+      ]);
+    });
+
+    test('failed file results keep the text summary instead of a diff', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ToolFinished(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          result: _resultItem(
+            'call-1',
+            'old_text not found: x',
+            1,
+            isError: true,
+            metadata: const {'path': '/tmp/a.dart', 'newText': 'changed'},
+          ),
+        ),
+      );
+      final completed = updates.single.update;
+      expect(completed['status'], 'failed');
+      expect(completed['content'], [
+        {
+          'type': 'content',
+          'content': {'type': 'text', 'text': 'old_text not found: x'},
+        },
+      ]);
+      expect(completed.containsKey('locations'), isFalse);
+    });
+
+    test('non-file tools never render diffs from stray metadata', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ToolFinished(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          result: _resultItem(
+            'call-1',
+            'search results',
+            1,
+            metadata: const {'path': '/tmp/a.dart', 'newText': 'changed'},
+          ),
+        ),
+      );
+      expect(updates.single.update['content'], [
+        {
+          'type': 'content',
+          'content': {'type': 'text', 'text': 'search results'},
+        },
       ]);
     });
 
@@ -672,6 +849,40 @@ void main() {
       final updates = replayTimeline(timeline);
       expect(updates, hasLength(1));
       expect(updates.single.update['sessionUpdate'], 'plan');
+    });
+
+    test('replays file tool results as diffs with absolute locations', () {
+      final timeline = <TimelineItem>[
+        _toolCallItem(
+          'call-1',
+          'write',
+          0,
+          id: 'item-1',
+          arguments: {'path': 'new.txt', 'content': 'hello'},
+        ),
+        _resultItem(
+          'call-1',
+          'Wrote 5 bytes to /tmp/project/new.txt',
+          1,
+          id: 'item-2',
+          metadata: const {'path': '/tmp/project/new.txt', 'newText': 'hello'},
+        ),
+      ];
+      final updates = replayTimeline(
+        timeline,
+        workingDirectory: '/tmp/project',
+      );
+      expect(updates[0].update['locations'], [
+        {'path': '/tmp/project/new.txt'},
+      ]);
+      expect(updates[1].update['content'], [
+        {
+          'type': 'diff',
+          'path': '/tmp/project/new.txt',
+          'oldText': null,
+          'newText': 'hello',
+        },
+      ]);
     });
 
     test('replay uses short human-readable tool_call titles', () {

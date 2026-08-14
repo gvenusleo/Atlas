@@ -23,9 +23,9 @@ as a subprocess and drive sessions through JSON-RPC.
   with `/name` tokens in prompts injecting the matching skill instructions
 - `session/prompt` mapping runtime turns to `session/update` notifications:
   `agent_message_chunk`, `agent_thought_chunk`, `tool_call` (with `rawInput`
-  and file `locations`), `tool_call_update` (with `rawOutput`), `plan` (from
-  the `plan` tool), `session_info_update` (auto-generated titles), and
-  `usage_update`
+  and file `locations`), `tool_call_update` (with `rawOutput` or a `diff`
+  content block for bounded file modifications), `plan` (from the `plan`
+  tool), `session_info_update` (auto-generated titles), and `usage_update`
 - Shell tool calls render as **display-only terminals** in Zed: the call
   embeds a `terminal` content reference registered through Zed's v1 `_meta`
   extension (`terminal_info` / `terminal_output` / `terminal_exit`), so a
@@ -34,6 +34,13 @@ as a subprocess and drive sessions through JSON-RPC.
   same capability as `terminal_update` / `terminal_output_chunk`. Other ACP
   clients that do not register the terminal will fail to resolve the
   `terminal` content reference.
+- `write`/`edit` results render as **diffs**: the tools report the previous
+  and new file contents through result metadata, and Atlas emits a `diff`
+  content block with absolute `path`/`oldText`/`newText` (`oldText` is null
+  for new files). Contents above 1M code units fall back to the plain text
+  summary. Reads starting at an explicit `offset` report `line` in
+  `locations`, and edits report the first replacement's line when the result
+  completes.
 - The `read` tool delegates to the client's `fs/read_text_file` when the
   client claims `fs.readTextFile` in `initialize`, so the model sees unsaved
   editor buffers instead of the on-disk file. The client receives absolute

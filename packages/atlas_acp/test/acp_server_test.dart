@@ -273,9 +273,10 @@ void main() {
     // description or the tool name.
     expect(toolCall['title'], 'Read: .');
     expect(toolCall['rawInput'], {'path': '.'});
-    // The path argument is reported as a file location for follow-along.
+    // The path argument is reported as an absolute file location for
+    // follow-along, resolved against the session cwd.
     expect(toolCall['locations'], [
-      {'path': '.'},
+      {'path': '/tmp/project/.'},
     ]);
     final completed =
         ((updates[3]['params'] as Map)['update'] as Map<String, Object?>);

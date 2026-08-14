@@ -191,6 +191,7 @@ SessionUpdate toolCallUpdate(
   required String toolCallId,
   required String status,
   List<JsonObject>? content,
+  List<JsonObject>? locations,
   Map<String, Object?>? rawOutput,
   Map<String, Object?>? meta,
 }) => SessionUpdate(sessionId, {
@@ -198,6 +199,7 @@ SessionUpdate toolCallUpdate(
   'toolCallId': toolCallId,
   'status': status,
   if (content != null && content.isNotEmpty) 'content': content,
+  if (locations != null && locations.isNotEmpty) 'locations': locations,
   'rawOutput': ?rawOutput,
   if (meta != null && meta.isNotEmpty) '_meta': meta,
 });
@@ -436,15 +438,28 @@ String _truncateCommand(String command) {
   return '${command.substring(0, shellTitleLimit)}…';
 }
 
+/// A `diff` content block for a file modification shown by clients as a
+/// before/after view. [oldText] is null for newly created files.
+List<JsonObject> diffToolCallContent({
+  required String path,
+  required String? oldText,
+  required String newText,
+}) => [
+  {'type': 'diff', 'path': path, 'oldText': oldText, 'newText': newText},
+];
+
 /// The absolute file locations affected by a tool call, extracted from its
 /// arguments for ACP `locations` follow-along support.
 ///
 /// Only tools that act on a single `path` argument report locations; shell
 /// commands and plan updates operate on no file and return an empty list.
+/// Relative paths are resolved against [workingDirectory] when one is known;
+/// reads that start at an explicit `offset` also report the start line.
 List<JsonObject> toolCallLocations(
   String name,
-  Map<String, Object?> arguments,
-) {
+  Map<String, Object?> arguments, {
+  String? workingDirectory,
+}) {
   if (name != 'read' && name != 'write' && name != 'edit') {
     return const [];
   }
@@ -452,9 +467,25 @@ List<JsonObject> toolCallLocations(
   if (path is! String || path.isEmpty) {
     return const [];
   }
+  final absolute = _absolutePath(path, workingDirectory);
+  final offset = arguments['offset'];
+  if (name == 'read' && offset is num && offset >= 1) {
+    return [
+      {'path': absolute, 'line': offset.toInt()},
+    ];
+  }
   return [
-    {'path': path},
+    {'path': absolute},
   ];
+}
+
+/// Resolves [path] against [workingDirectory] when it is relative and a
+/// working directory is known; absolute paths pass through unchanged.
+String _absolutePath(String path, String? workingDirectory) {
+  if (workingDirectory == null || workingDirectory.isEmpty) {
+    return path;
+  }
+  return path.startsWith('/') ? path : '$workingDirectory/$path';
 }
 
 /// Converts the `plan` tool argument list into ACP plan entries, or returns

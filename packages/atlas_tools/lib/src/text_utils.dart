@@ -4,6 +4,21 @@ library;
 /// The UTF-8 byte-order mark.
 const utf8BomBytes = [0xEF, 0xBB, 0xBF];
 
+/// File contents larger than this (in code units) are not reported as diff
+/// metadata, keeping persisted timeline items bounded.
+const toolDiffContentLimit = 1000000;
+
+/// Returns the 1-indexed line containing [offset] within [text].
+int lineAtOffset(String text, int offset) {
+  var line = 1;
+  for (var index = 0; index < offset; index++) {
+    if (text.codeUnitAt(index) == 0x0A) {
+      line++;
+    }
+  }
+  return line;
+}
+
 /// Returns whether [bytes] starts with a UTF-8 byte-order mark.
 bool hasUtf8Bom(List<int> bytes) {
   if (bytes.length < utf8BomBytes.length) {

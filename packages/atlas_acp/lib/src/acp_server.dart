@@ -227,7 +227,10 @@ final class AcpServer {
     _titles[snapshot.session.id.value] = snapshot.session.title;
     final config = _defaultConfig(snapshot.session.workingDirectory);
     _sessionConfigs[snapshot.session.id.value] = config;
-    for (final update in replayTimeline(snapshot.timeline)) {
+    for (final update in replayTimeline(
+      snapshot.timeline,
+      workingDirectory: snapshot.session.workingDirectory,
+    )) {
       _sendUpdate(update);
     }
     _sendAvailableCommandsLater(
@@ -352,8 +355,8 @@ final class AcpServer {
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
     // The runtime serializes turns per session, so a prompt sent while
     // another turn is running waits for it instead of failing.
-    final mapper = TurnUpdateMapper(session);
     final config = _sessionConfigs[sessionId] ?? await _configFor(session);
+    final mapper = TurnUpdateMapper(session, workingDirectory: config.cwd);
     final skills = _matchedSkillNames(config.cwd, promptText);
     try {
       String? stopReason;

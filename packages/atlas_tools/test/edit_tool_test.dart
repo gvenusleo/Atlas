@@ -128,4 +128,39 @@ void main() {
     expect(result.isError, isTrue);
     expect(result.content, contains('UTF-8'));
   });
+
+  test('reports diff metadata with the first replacement line', () async {
+    final dir = await tempDir();
+    final file = File('${dir.path}/code.dart');
+    await file.writeAsString('line one\nline two\nline three\n');
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'code.dart',
+      'edits': [
+        {'old_text': 'line two', 'new_text': 'line TWO'},
+      ],
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.metadata['path'], '${dir.path}/code.dart');
+    expect(result.metadata['oldText'], 'line one\nline two\nline three\n');
+    expect(result.metadata['newText'], 'line one\nline TWO\nline three\n');
+    expect(result.metadata['line'], 2);
+  });
+
+  test('omits diff metadata for oversized files', () async {
+    final dir = await tempDir();
+    final file = File('${dir.path}/huge.txt');
+    await file.writeAsString('x' * (toolDiffContentLimit + 1) + '\ntarget\n');
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'huge.txt',
+      'edits': [
+        {'old_text': 'target', 'new_text': 'replaced'},
+      ],
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.metadata, isEmpty);
+  });
 }

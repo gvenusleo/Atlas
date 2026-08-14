@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 import 'file_path.dart';
+import 'text_utils.dart';
 
 /// Creates a file or replaces its complete contents.
 final class WriteTool implements Tool {
@@ -41,8 +42,27 @@ final class WriteTool implements Tool {
       final content = arguments['content'] as String? ?? '';
       final file = File(path);
       await file.parent.create(recursive: true);
+      // Read the previous content before overwriting so the result can carry
+      // a diff; unreadable files simply report no old text.
+      String? oldText;
+      if (await file.exists()) {
+        try {
+          oldText = await file.readAsString();
+        } on FileSystemException {
+          oldText = null;
+        }
+      }
       await file.writeAsString(content);
-      return ToolResult(content: 'Wrote ${utf8Length(content)} bytes to $path');
+      // Diff metadata is only reported for bounded files.
+      final belowLimit =
+          content.codeUnits.length <= toolDiffContentLimit &&
+          (oldText?.codeUnits.length ?? 0) <= toolDiffContentLimit;
+      return ToolResult(
+        content: 'Wrote ${utf8Length(content)} bytes to $path',
+        metadata: belowLimit
+            ? {'path': path, 'newText': content, 'oldText': ?oldText}
+            : const {},
+      );
     } catch (error) {
       return ToolResult(
         content: error is FormatException ? error.message : '$error',
