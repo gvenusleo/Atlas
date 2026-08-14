@@ -73,6 +73,10 @@ final class OpenAICompatibleProvider implements ModelProvider {
             message: message,
             statusCode: statusCode,
           ),
+        FormatException() => OpenAIProviderException(
+          providerId: entry.provider.id,
+          message: 'stream returned malformed data',
+        ),
         _ => error,
       },
     );

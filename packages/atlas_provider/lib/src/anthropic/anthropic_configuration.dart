@@ -47,7 +47,7 @@ final class AnthropicModelConfiguration {
 }
 
 /// A safe provider failure with the endpoint identity and optional HTTP status.
-final class AnthropicProviderException implements Exception {
+final class AnthropicProviderException implements SafeMessageException {
   /// Creates a provider failure.
   const AnthropicProviderException({
     required this.providerId,
@@ -63,6 +63,9 @@ final class AnthropicProviderException implements Exception {
 
   /// A redacted, provider-safe error message.
   final String message;
+
+  @override
+  String get safeMessage => message;
 
   @override
   String toString() {

@@ -263,6 +263,7 @@ final class AcpServer {
     try {
       String? stopReason;
       String? failureCode;
+      String? failureMessage;
       int? usedTokens;
       await for (final event in runtime.run(
         TurnRequest(
@@ -288,6 +289,7 @@ final class AcpServer {
               stopReason = 'cancelled';
             case TurnStatus.failed:
               failureCode = outcome.failure?.code;
+              failureMessage = outcome.failure?.message;
             case TurnStatus.running:
               break;
           }
@@ -296,7 +298,12 @@ final class AcpServer {
       // Consume the whole stream (including trailing compaction events)
       // before reporting the failure so the runtime turn settles.
       if (failureCode != null) {
-        throw RpcException(-32603, 'turn failed ($failureCode)');
+        throw RpcException(
+          -32603,
+          failureMessage == null
+              ? 'turn failed ($failureCode)'
+              : 'turn failed ($failureCode): $failureMessage',
+        );
       }
       if (stopReason == null) {
         throw RpcException(-32603, 'turn ended without a stop reason');
@@ -311,7 +318,13 @@ final class AcpServer {
     } on RpcException {
       rethrow;
     } catch (error) {
-      throw RpcException(-32603, 'turn failed (${error.runtimeType})');
+      // Never let raw exceptions reach json_rpc_2's default serializer,
+      // which embeds the full stack trace in the error data. Failures with
+      // a safe message surface it; everything else reports the type only.
+      final detail = error is SafeMessageException
+          ? ': ${error.safeMessage}'
+          : '';
+      throw RpcException(-32603, 'turn failed (${error.runtimeType}$detail)');
     } finally {
       final pending = _activeTurns[sessionId];
       if (pending != null) {

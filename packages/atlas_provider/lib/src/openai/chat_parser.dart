@@ -83,7 +83,18 @@ final class ChatParser implements StreamParser {
           message: 'chat stream returned an incomplete tool call',
         );
       }
-      final decoded = jsonDecode(call.arguments.toString());
+      final argumentsText = call.arguments.toString();
+      final Object? decoded;
+      try {
+        decoded = argumentsText.isEmpty
+            ? const <String, Object?>{}
+            : jsonDecode(argumentsText);
+      } on FormatException {
+        throw OpenAIProviderException(
+          providerId: providerId,
+          message: 'chat stream returned invalid tool arguments',
+        );
+      }
       if (decoded is! Map<String, Object?>) {
         throw OpenAIProviderException(
           providerId: providerId,

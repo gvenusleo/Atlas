@@ -154,7 +154,7 @@ final class TimelineCodec {
             sequence: sequence,
             occurredAt: occurredAt.toUtc(),
             callId: ToolCallId(_string(decoded, 'call_id')),
-            content: _string(decoded, 'content'),
+            content: _stringOrDefault(decoded, 'content'),
             isError: _bool(decoded, 'is_error'),
             metadata: _jsonObject(decoded['metadata'], 'metadata'),
           ),

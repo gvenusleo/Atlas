@@ -214,6 +214,68 @@ void main() {
     expect(loaded.modelCheckpoints, isEmpty);
   });
 
+  test('round trips an empty tool result content string', () async {
+    final session = _session(
+      'session-empty-tool-result',
+      updatedAt: DateTime.utc(2026),
+    );
+    final turn = _turn(session.id, 'turn-empty-tool-result');
+    await store.beginTurn(
+      runtime.BeginTurn(
+        session: session,
+        turn: turn,
+        userMessage: _user(session, turn, 'run a silent command'),
+      ),
+    );
+    final assistant = runtime.AssistantMessageItem(
+      id: runtime.TimelineItemId('empty-tool-result-assistant'),
+      sessionId: session.id,
+      turnId: turn.id,
+      sequence: 1,
+      occurredAt: session.updatedAt,
+      content: const [runtime.TextContent('running it')],
+      model: _model,
+      stopReason: runtime.StopReason.toolUse,
+    );
+    final call = runtime.ToolCallItem(
+      id: runtime.TimelineItemId('empty-tool-result-call'),
+      sessionId: session.id,
+      turnId: turn.id,
+      sequence: 2,
+      occurredAt: session.updatedAt,
+      call: runtime.ToolCall(
+        id: runtime.ToolCallId('empty-tool-result-call-id'),
+        name: 'terminal',
+        arguments: <String, Object?>{},
+      ),
+    );
+    await store.appendModelStep(
+      session.id,
+      runtime.PersistedModelStep(
+        assistantMessage: assistant,
+        toolCalls: [call],
+      ),
+    );
+    await store.appendToolResult(
+      session.id,
+      runtime.ToolResultItem(
+        id: runtime.TimelineItemId('empty-tool-result-item'),
+        sessionId: session.id,
+        turnId: turn.id,
+        sequence: 3,
+        occurredAt: session.updatedAt,
+        callId: runtime.ToolCallId('empty-tool-result-call-id'),
+        content: '',
+        metadata: const {'exit_code': 0},
+      ),
+    );
+
+    final loaded = await store.loadSession(session.id);
+    final result = loaded.timeline.whereType<runtime.ToolResultItem>().single;
+    expect(result.content, '');
+    expect(result.metadata['exit_code'], 0);
+  });
+
   test(
     'rejects timeline items whose turn belongs to another session',
     () async {

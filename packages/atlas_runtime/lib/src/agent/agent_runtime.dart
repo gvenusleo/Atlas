@@ -12,6 +12,7 @@ import '../domain/timeline.dart';
 import '../domain/turn.dart';
 import '../domain/usage.dart';
 import '../ports/cancellation.dart';
+import '../ports/failures.dart';
 import '../ports/id_generator.dart';
 import '../ports/model_provider.dart';
 import '../ports/session_store.dart';
@@ -788,8 +789,12 @@ final class AgentRuntime {
     }
   }
 
-  static String _safeErrorMessage(String prefix, Object error) =>
-      '$prefix (${error.runtimeType})';
+  static String _safeErrorMessage(String prefix, Object error) {
+    if (error is SafeMessageException) {
+      return '$prefix (${error.runtimeType}): ${error.safeMessage}';
+    }
+    return '$prefix (${error.runtimeType})';
+  }
 
   /// The maximum total size of skill instructions injected into one turn.
   static const maxSelectedSkillBytes = 64 * 1024;

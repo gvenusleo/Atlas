@@ -56,7 +56,7 @@ final class OpenAIModelConfiguration {
 }
 
 /// A safe provider failure with the endpoint identity and optional HTTP status.
-final class OpenAIProviderException implements Exception {
+final class OpenAIProviderException implements SafeMessageException {
   /// Creates a provider failure.
   const OpenAIProviderException({
     required this.providerId,
@@ -72,6 +72,9 @@ final class OpenAIProviderException implements Exception {
 
   /// A redacted, provider-safe error message.
   final String message;
+
+  @override
+  String get safeMessage => message;
 
   @override
   String toString() {

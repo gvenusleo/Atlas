@@ -39,6 +39,55 @@ void main() {
     expect(requests.single['stream_options'], {'include_usage': true});
   });
 
+  test('treats an empty Chat Completions tool call as no arguments', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":""}}]}}]}',
+        '{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        '[DONE]',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.chatCompletions,
+    ).stream(_request()).toList();
+
+    final response = (events.last as ModelCompletedEvent).response;
+    expect(response.stopReason, StopReason.toolUse);
+    expect(response.toolCalls.single.arguments, isEmpty);
+  });
+
+  test(
+    'reports malformed Chat Completions tool arguments as a provider error',
+    () async {
+      final server = await _startServer((request) async {
+        // The tool arguments JSON is cut off mid-stream, so the accumulated
+        // payload is not parseable; the parser must surface a provider error
+        // instead of a bare FormatException.
+        await _sendSse(request.response, [
+          '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":"{\\"q\\":\\"x"}}]}}]}',
+          '{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+          '[DONE]',
+        ]);
+      });
+      addTearDown(server.close);
+
+      final events = await _provider(
+        server,
+        OpenAIProtocol.chatCompletions,
+      ).stream(_request()).toList();
+
+      final failed = events.single as ModelFailedEvent;
+      expect(failed.error, isA<OpenAIProviderException>());
+      expect(
+        (failed.error as OpenAIProviderException).message,
+        'chat stream returned invalid tool arguments',
+      );
+    },
+  );
+
   test('replays Responses continuation items for the same provider', () async {
     var callCount = 0;
     final inputs = <List<Object?>>[];
@@ -147,6 +196,49 @@ void main() {
 
     expect((inputs[1].first as Map<String, Object?>)['role'], 'assistant');
     expect((inputs[1].first as Map<String, Object?>)['type'], isNull);
+  });
+
+  test('treats an empty Responses tool call arguments as no arguments', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-4","name":"inspect","arguments":""}}',
+        '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call-4","name":"inspect","arguments":""}]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.responses,
+    ).stream(_request()).toList();
+
+    final response = (events.last as ModelCompletedEvent).response;
+    expect(response.stopReason, StopReason.toolUse);
+    expect(response.toolCalls.single.arguments, isEmpty);
+  });
+
+  test('reports malformed Responses tool arguments as a provider error', () async {
+    final server = await _startServer((request) async {
+      // The tool arguments JSON is truncated, so the parser must surface a
+      // provider error instead of a bare FormatException.
+      await _sendSse(request.response, [
+        '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-4","name":"inspect","arguments":"{\\"path\\": \\"x"}}',
+        '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call-4","name":"inspect","arguments":"{\\"path\\": \\"x"}]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.responses,
+    ).stream(_request()).toList();
+
+    final failed = events.single as ModelFailedEvent;
+    expect(failed.error, isA<OpenAIProviderException>());
+    expect(
+      (failed.error as OpenAIProviderException).message,
+      'responses stream returned invalid tool arguments',
+    );
   });
 
   test('rejects an empty Responses tool call id as a provider error', () async {

@@ -151,7 +151,17 @@ final class ResponsesParser implements StreamParser {
         message: 'responses stream returned an incomplete tool call',
       );
     }
-    final decoded = jsonDecode(arguments);
+    final Object? decoded;
+    try {
+      decoded = arguments.isEmpty
+          ? const <String, Object?>{}
+          : jsonDecode(arguments);
+    } on FormatException {
+      throw OpenAIProviderException(
+        providerId: providerId,
+        message: 'responses stream returned invalid tool arguments',
+      );
+    }
     if (decoded is! Map<String, Object?>) {
       throw OpenAIProviderException(
         providerId: providerId,

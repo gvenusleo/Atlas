@@ -66,6 +66,10 @@ final class AnthropicProvider implements ModelProvider {
             message: message,
             statusCode: statusCode,
           ),
+        FormatException() => AnthropicProviderException(
+          providerId: entry.provider.id,
+          message: 'stream returned malformed data',
+        ),
         _ => error,
       },
     );
