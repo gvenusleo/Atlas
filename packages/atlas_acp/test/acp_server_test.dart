@@ -271,7 +271,7 @@ void main() {
     expect(toolCall['kind'], 'read');
     // The title is a short human-readable phrase, not the model-facing
     // description or the tool name.
-    expect(toolCall['title'], 'Read file');
+    expect(toolCall['title'], 'Read: .');
     expect(toolCall['rawInput'], {'path': '.'});
     // The path argument is reported as a file location for follow-along.
     expect(toolCall['locations'], [

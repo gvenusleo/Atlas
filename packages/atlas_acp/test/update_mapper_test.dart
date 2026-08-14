@@ -152,6 +152,64 @@ void main() {
       expect(updates.single.update['title'], 'Read file');
     });
 
+    test('tool_call titles include the target path when present', () {
+      final mapper = TurnUpdateMapper(session);
+      List<SessionUpdate> titles(String name, Map<String, Object?> arguments) =>
+          mapper.map(
+            ModelResponseReceived(
+              sessionId: session,
+              turnId: turn,
+              sequence: 0,
+              occurredAt: time,
+              assistantMessage: _assistant([TextContent('I will check.')]),
+              toolCalls: [
+                _toolCallItem('call-1', name, 1, arguments: arguments),
+              ],
+            ),
+          );
+
+      expect(
+        titles('read', {'path': '/tmp/a.txt'}).single.update['title'],
+        'Read: /tmp/a.txt',
+      );
+      expect(
+        titles('write', {'path': 'lib/a.dart'}).single.update['title'],
+        'Write: lib/a.dart',
+      );
+      expect(
+        titles('edit', {'path': 'test/a_test.dart'}).single.update['title'],
+        'Edit: test/a_test.dart',
+      );
+    });
+
+    test('tool_call title for plan shows completed over total steps', () {
+      final mapper = TurnUpdateMapper(session);
+      final updates = mapper.map(
+        ModelResponseReceived(
+          sessionId: session,
+          turnId: turn,
+          sequence: 0,
+          occurredAt: time,
+          assistantMessage: _assistant([TextContent('I will check.')]),
+          toolCalls: [
+            _toolCallItem(
+              'call-1',
+              'plan',
+              1,
+              arguments: {
+                'plan': [
+                  {'step': 'Read files', 'status': 'completed'},
+                  {'step': 'Fix bug', 'status': 'in_progress'},
+                  {'step': 'Verify', 'status': 'pending'},
+                ],
+              },
+            ),
+          ],
+        ),
+      );
+      expect(updates.single.update['title'], 'Plan: 1/3 completed');
+    });
+
     test('tool_call titles fall back to the tool name for unknown tools', () {
       final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(

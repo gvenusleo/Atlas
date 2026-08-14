@@ -396,25 +396,36 @@ const shellTitleLimit = 1000;
 /// the headline of the tool call. ACP titles describe what the tool is doing
 /// rather than duplicating the model-facing description.
 ///
-/// Shell calls use the command itself as the title so clients show what is
-/// running; commands longer than [shellTitleLimit] code units are truncated
-/// with an ellipsis. Other tools keep their fixed titles.
-String toolCallTitle(String name, Map<String, Object?> arguments) {
-  if (name == 'shell') {
-    final command = arguments['command'];
-    if (command is String && command.trim().isNotEmpty) {
-      return _truncateCommand(command);
-    }
-    return 'Run shell command';
-  }
-  return switch (name) {
-    'read' => 'Read file',
-    'write' => 'Write file',
-    'edit' => 'Edit file',
-    'plan' => 'Update plan',
-    _ => name,
-  };
-}
+/// Shell calls use the command itself as the title (truncated to
+/// [shellTitleLimit] code units with an ellipsis); file tools prefix their
+/// target path; and the plan tool reports completed steps over the total.
+/// Titles fall back to a fixed phrase or the tool name when the arguments do
+/// not carry enough information.
+String toolCallTitle(String name, Map<String, Object?> arguments) =>
+    switch (name) {
+      'shell' => switch (arguments['command']) {
+        final String command when command.trim().isNotEmpty => _truncateCommand(
+          command,
+        ),
+        _ => 'Run shell command',
+      },
+      'read' || 'write' || 'edit' => switch (arguments['path']) {
+        final String path when path.trim().isNotEmpty =>
+          '${_titleCase(name)}: $path',
+        _ => '${_titleCase(name)} file',
+      },
+      'plan' => switch (planEntries(arguments['plan'])) {
+        final List<JsonObject> plan =>
+          'Plan: '
+              '${plan.where((entry) => entry['status'] == 'completed').length}'
+              '/${plan.length} completed',
+        _ => 'Update plan',
+      },
+      _ => name,
+    };
+
+/// Capitalizes the first letter of [name] for display titles.
+String _titleCase(String name) => name[0].toUpperCase() + name.substring(1);
 
 /// Truncates [command] to [shellTitleLimit] code units, appending an
 /// ellipsis (U+2026) when it is longer.
