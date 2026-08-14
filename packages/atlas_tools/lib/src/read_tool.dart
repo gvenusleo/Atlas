@@ -60,6 +60,19 @@ final class ReadTool implements Tool {
           'offset must be >= 1 and limit must be between 1 and 2000',
         );
       }
+      final reader = context.fileReader;
+      if (reader != null) {
+        // Delegate to the ACP client so unsaved editor state is visible;
+        // the client returns the requested lines without local byte
+        // truncation or a next-offset continuation.
+        final result = await reader.readTextFile(
+          context.sessionId,
+          path: path,
+          line: offset,
+          limit: limit,
+        );
+        return ToolResult(content: result.content);
+      }
       final file = File(path);
       final type = await file.stat().then((stat) => stat.type);
       if (type == FileSystemEntityType.directory) {

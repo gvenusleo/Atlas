@@ -11,10 +11,14 @@ Future<Directory> tempDir() async {
 }
 
 /// Builds a tool context rooted at [dir].
-ToolContext toolContext(Directory dir, {CancellationToken? cancellation}) =>
-    ToolContext(
-      sessionId: SessionId('session-test'),
-      turnId: TurnId('turn-test'),
-      workingDirectory: dir.path,
-      cancellation: cancellation,
-    );
+ToolContext toolContext(
+  Directory dir, {
+  CancellationToken? cancellation,
+  ClientFileReader? fileReader,
+}) => ToolContext(
+  sessionId: SessionId('session-test'),
+  turnId: TurnId('turn-test'),
+  workingDirectory: dir.path,
+  cancellation: cancellation,
+  fileReader: fileReader,
+);

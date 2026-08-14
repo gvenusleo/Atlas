@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:atlas_acp/atlas_acp.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:atlas_tools/atlas_tools.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 
@@ -42,6 +43,167 @@ void main() {
     final info = result['agentInfo'] as Map<String, Object?>;
     expect(info['name'], 'atlas');
     expect(result['authMethods'], isEmpty);
+  });
+
+  test(
+    'read delegates to fs/read_text_file when the client claims support',
+    () async {
+      final wire = await _Wire.open(tools: LocalToolRegistry([ReadTool()]));
+      final init = await wire.send({
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'initialize',
+        'params': {
+          'protocolVersion': 1,
+          'clientCapabilities': {
+            'fs': {'readTextFile': true},
+          },
+          'clientInfo': {'name': 'test', 'version': '1.0.0'},
+        },
+      });
+      expect(init.containsKey('result'), isTrue);
+      final sessionId = await _newSession(wire);
+
+      final promptFuture = wire.send({
+        'jsonrpc': '2.0',
+        'id': 3,
+        'method': 'session/prompt',
+        'params': {
+          'sessionId': sessionId,
+          'prompt': [
+            {'type': 'text', 'text': 'Inspect the files'},
+          ],
+        },
+      });
+      // The read tool call turns into an agent-to-client request; answer it
+      // with editor-buffer content before the turn can proceed.
+      final request = await wire.clientRequests.first;
+      expect(request['method'], 'fs/read_text_file');
+      final params = request['params'] as Map<String, Object?>;
+      expect(params['sessionId'], sessionId);
+      expect(params['path'], '/tmp/project/');
+      wire.respondToRequest(request, result: {'content': 'client content'});
+
+      final response = await promptFuture;
+      expect((response['result'] as Map)['stopReason'], 'end_turn');
+      // The delegated content reaches the model's next request.
+      final messages = wire.lastRequest!.messages
+          .map(
+            (message) => message.toolOutput ?? textFromContent(message.content),
+          )
+          .join('\n');
+      expect(messages, contains('client content'));
+      await wire.close();
+    },
+  );
+
+  test('read stays local when the client does not claim fs support', () async {
+    final wire = await _Wire.open(tools: LocalToolRegistry([ReadTool()]));
+    final sessionId = await _newSession(wire);
+    await _runPrompt(wire, sessionId);
+
+    // No fs/read_text_file was issued; the local read of the working
+    // directory failed because a directory cannot be read.
+    expect(wire.clientRequestCount, 0);
+    final messages = wire.lastRequest!.messages
+        .map(
+          (message) => message.toolOutput ?? textFromContent(message.content),
+        )
+        .join('\n');
+    expect(messages, contains('file not found: /tmp/project/'));
+    await wire.close();
+  });
+
+  test('read surfaces a client error reply as a tool failure', () async {
+    final wire = await _Wire.open(tools: LocalToolRegistry([ReadTool()]));
+    final init = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'initialize',
+      'params': {
+        'protocolVersion': 1,
+        'clientCapabilities': {
+          'fs': {'readTextFile': true},
+        },
+        'clientInfo': {'name': 'test', 'version': '1.0.0'},
+      },
+    });
+    expect(init.containsKey('result'), isTrue);
+    final sessionId = await _newSession(wire);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    final request = await wire.clientRequests.first;
+    wire.respondToRequest(
+      request,
+      error: {'code': -32000, 'message': 'client read failed'},
+    );
+
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    final messages = wire.lastRequest!.messages
+        .map(
+          (message) => message.toolOutput ?? textFromContent(message.content),
+        )
+        .join('\n');
+    expect(messages, contains('client read failed'));
+    await wire.close();
+  });
+
+  test('read fails when the client never answers', () async {
+    final wire = await _Wire.open(
+      tools: LocalToolRegistry([ReadTool()]),
+      fileReadTimeout: const Duration(milliseconds: 100),
+    );
+    final init = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'initialize',
+      'params': {
+        'protocolVersion': 1,
+        'clientCapabilities': {
+          'fs': {'readTextFile': true},
+        },
+        'clientInfo': {'name': 'test', 'version': '1.0.0'},
+      },
+    });
+    expect(init.containsKey('result'), isTrue);
+    final sessionId = await _newSession(wire);
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    // The request goes out but is never answered; the read times out and
+    // reports a tool failure instead of hanging the turn.
+    final request = await wire.clientRequests.first;
+    expect(request['method'], 'fs/read_text_file');
+
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    final messages = wire.lastRequest!.messages
+        .map(
+          (message) => message.toolOutput ?? textFromContent(message.content),
+        )
+        .join('\n');
+    expect(messages, contains('TimeoutException'));
+    await wire.close();
   });
 
   test('session/new creates a loadable session', () async {
@@ -1752,7 +1914,9 @@ final class _Wire {
   final ModelProvider _provider;
   final _pending = <Object?, Completer<Map<String, Object?>>>{};
   final _notifications = StreamController<Map<String, Object?>>.broadcast();
+  final _clientRequests = StreamController<Map<String, Object?>>.broadcast();
   var _notificationCount = 0;
+  var _clientRequestCount = 0;
   late final Future<void> _serverDone;
 
   static Future<_Wire> open({
@@ -1762,6 +1926,8 @@ final class _Wire {
     List<ModelDescriptor> models = const [],
     List<Skill> skills = const [],
     int keptRecentTurns = 5,
+    ToolRegistry? tools,
+    Duration fileReadTimeout = const Duration(seconds: 30),
   }) async {
     final provider = blockingProvider
         ? _BlockingProvider()
@@ -1772,7 +1938,7 @@ final class _Wire {
     final runtime = AgentRuntime(
       store: _MemorySessionStore(),
       provider: provider,
-      tools: _MemoryTools(),
+      tools: tools ?? _MemoryTools(),
       ids: _Ids(),
       defaultModel: _model,
       maxSteps: 2,
@@ -1790,7 +1956,11 @@ final class _Wire {
         ], skills: skills),
       ),
     );
-    final server = AcpServer(runtime, models: models);
+    final server = AcpServer(
+      runtime,
+      models: models,
+      clientFileReadTimeout: fileReadTimeout,
+    );
     final requests = StreamController<String>();
     final outgoing = StreamController<String>();
     final wire = _Wire._(requests, provider);
@@ -1798,7 +1968,12 @@ final class _Wire {
       final message = jsonDecode(line);
       if (message is Map) {
         final map = message.cast<String, Object?>();
-        if (map.containsKey('id')) {
+        if (map['method'] != null && map.containsKey('id')) {
+          // Agent-to-client requests (e.g. fs/read_text_file) must be
+          // answered by the harness before the agent proceeds.
+          wire._clientRequestCount++;
+          wire._clientRequests.add(map);
+        } else if (map.containsKey('id')) {
           wire._pending.remove(map['id'])?.complete(map);
         } else {
           // Lifecycle notifications (e.g. available_commands_update) are
@@ -1834,6 +2009,29 @@ final class _Wire {
 
   /// The number of notifications received so far.
   int get notificationCount => _notificationCount;
+
+  /// Agent-to-client requests (e.g. `fs/read_text_file`) awaiting a reply.
+  Stream<Map<String, Object?>> get clientRequests => _clientRequests.stream;
+
+  /// The number of agent-to-client requests received so far.
+  int get clientRequestCount => _clientRequestCount;
+
+  /// Answers an agent-to-client [request] with [result], or with a JSON-RPC
+  /// [error] to exercise the client-failure path.
+  void respondToRequest(
+    Map<String, Object?> request, {
+    Map<String, Object?>? result,
+    Map<String, Object?>? error,
+  }) {
+    _requests.add(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': request['id'],
+        'result': ?result,
+        'error': ?error,
+      }),
+    );
+  }
 
   /// The model request of the most recent turn, when one was run.
   ModelRequest? get lastRequest => switch (_provider) {

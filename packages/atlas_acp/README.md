@@ -34,6 +34,12 @@ as a subprocess and drive sessions through JSON-RPC.
   same capability as `terminal_update` / `terminal_output_chunk`. Other ACP
   clients that do not register the terminal will fail to resolve the
   `terminal` content reference.
+- The `read` tool delegates to the client's `fs/read_text_file` when the
+  client claims `fs.readTextFile` in `initialize`, so the model sees unsaved
+  editor buffers instead of the on-disk file. The client receives absolute
+  paths with the requested `line`/`limit`; the delegated path reports the
+  client's content as-is (no local byte truncation or `next_offset`
+  continuation). Clients without filesystem support keep the local read path.
 - Prompt content: text, image (base64 data URLs), embedded text resources,
   and baseline `resource_link` blocks
 - `session/cancel` mapping to cooperative turn cancellation
@@ -48,7 +54,8 @@ as a subprocess and drive sessions through JSON-RPC.
 
 ## Not implemented
 
-MCP server connections, filesystem and terminal client methods, permission
-requests, elicitation, session modes (superseded by `configOptions`), and
-HTTP/WebSocket transports. These capabilities are not advertised during
+MCP server connections, filesystem **write** and terminal client methods,
+permission requests, elicitation, session modes (superseded by
+`configOptions`), and HTTP/WebSocket transports. These capabilities are not
+advertised during
 initialization.
