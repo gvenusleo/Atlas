@@ -73,7 +73,8 @@ no separate changelog file.
 - Public Dart APIs require concise documentation comments.
 - Runtime and protocol packages must not import Flutter.
 - Presentation packages must not import provider, tool, or storage implementations.
-- Application bootstrap code in `atlas_cli` and `atlas_flutter` composes those adapters and injects the runtime.
+- Application bootstrap code composes those adapters and injects the runtime.
+  It currently lives in `atlas_cli`; the Flutter bootstrap is planned.
 - `atlas_ws` owns WebSocket transport only and accepts an injected request handler.
 - Generated serialization files stay beside their source and are committed only when the selected generator requires it.
 - Add focused tests with behavior. Empty scaffold packages do not need placeholder tests.

@@ -70,7 +70,8 @@ notes 在 GitHub Release 页自动生成，仓库不维护单独的 changelog �
 - 公共 Dart API 必须有简明文档注释。
 - Runtime 与协议 package 不得导入 Flutter。
 - 展示 package 不得导入 Provider、工具或存储实现。
-- `atlas_cli` 与 `atlas_flutter` 的应用 bootstrap 负责组装这些适配器并注入 runtime。
+- 应用 bootstrap 负责组装这些适配器并注入 runtime。当前实现位于
+  `atlas_cli`，Flutter bootstrap 仍在规划中。
 - `atlas_ws` 只负责 WebSocket transport，并接收注入的 request handler。
 - 生成的序列化文件与源文件放在一起，仅在所选生成器要求时提交。
 - 行为实现必须添加聚焦测试；空骨架 package 不需要占位测试。

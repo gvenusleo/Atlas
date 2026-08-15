@@ -6,8 +6,8 @@
 > 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
 > prompt 构建、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器
 > （`atlas_acp`，由 `atlas acp` 提供）均**Available**。`atlas_cli`
-> 提供进程组合根（`composeRuntime`）与 `atlas` 入口；MCP 适配器与
-> WebSocket transport 为 **Planned**。
+> 提供进程组合根（`composeRuntime`）与 `atlas` 入口；Flutter runtime 组装、
+> MCP 适配器与 WebSocket transport 为 **Planned**。
 
 ## 系统形态
 
@@ -41,8 +41,8 @@ graph TD
     MCP --> JRPC
 ```
 
-图中 `atlas_ws` 与 MCP 为 **Planned** 组件，仅用于展示目标形态，当前代码
-中尚未接线。
+图中 `atlas_ws`、MCP 与 Flutter runtime 组装为 **Planned** 组件或连线，仅
+用于展示目标形态，当前代码中尚未接线。
 
 `atlas_cli` 通过 `composeRuntime` 为 Nocterm 进程组装一个 runtime：它加载
 `atlas_config` 以构造 provider、存储与工具适配器，并注入 `atlas_prompt`
@@ -58,7 +58,7 @@ stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）�
 | Package | 职责 |
 |---|---|
 | `atlas_runtime` | Session/turn 领域模型、有序 timeline item、model/tool ports、唯一 Agent engine、取消、compact 与 skill |
-| `atlas_storage` | Session、turn、有类型 timeline message 的 Drift 持久化；provider continuation 与 compact checkpoint 嵌入所属行，外加查询
+| `atlas_storage` | Session、turn、有类型 timeline message 的 Drift 持久化；provider continuation 与 compact checkpoint 嵌入所属行，外加查询 |
 | `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages 适配器：认证、请求映射、SSE 解码、重试与响应转换 |
 | `atlas_config` | YAML 配置文件 schema、加载与校验，并映射为 provider 配置对象 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
@@ -68,7 +68,7 @@ stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）�
 | `atlas_mcp` | 优先实现 MCP client，server 按真实需求再增加 |
 | `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
 | `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根：`composeRuntime` 把 config、provider、工具、存储与系统提示词组装进同一个 runtime |
-| `atlas_flutter` | 桌面端与移动端的组合根和展示客户端 |
+| `atlas_flutter` | 桌面端与移动端应用外壳；runtime 组装和 Agent 功能仍在规划中 |
 
 ## 依赖规则
 
@@ -79,9 +79,9 @@ stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）�
 - OpenAI 与 Anthropic 共享 `HttpStreamClient`（重试、超时、取消）和 `decodeSse`（SSE 分帧）；`CompositeModelProvider` 按 provider 标识路由请求，使多个 provider 共享一个 runtime 实例。
 - 流式失败会转换为一个 runtime 终态事件；只有首个流事件产生前才会重试，取消会桥接到 Dio 的 `CancelToken`。
 - `atlas_ws` 可以依赖 runtime 类型，但必须维护显式的版本化 wire schema，不能直接序列化 runtime 对象。它接收注入的 request handler，且不负责组装 runtime 服务。
-- 本地 Flutter 与 Nocterm 展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器，在 Dart workspace 中该 bootstrap 位于 `atlas_cli.composeRuntime`（以及 `atlas_flutter` 的 bootstrap）。
+- 本地展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器。当前 bootstrap 位于 `atlas_cli.composeRuntime`，独立的 Flutter bootstrap 仍在规划中。
 - `atlas_prompt` 只依赖 `atlas_runtime` 公开类型，组合根通过 `buildSystemPrompt` 使用它。
-- `atlas_cli` 与 `atlas_flutter` 是独立的进程级组合根；它们共享 runtime 代码，而不共享 runtime 实例。
+- `atlas_cli` 是当前的进程级组合根。`atlas_flutter` 后续将成为独立组合根，与 CLI 共享 runtime 代码而不共享 runtime 实例。
 - ACP 和 MCP 负责各自协议生命周期并直接使用 `json_rpc_2`；只有出现稳定重复代码后才提取共享 wrapper。
 
 ## Runtime 行为契约
