@@ -48,8 +48,8 @@ final composite = CompositeModelProvider({
 });
 ```
 
-The package owns endpoint authentication, request mapping, SSE parsing, bounded
-error-body handling, retries before streaming starts, cancellation bridging,
+The package owns endpoint authentication, request mapping, SSE parsing, error
+body discarding, retries before streaming starts, cancellation bridging,
 usage normalization, and provider continuation replay. OpenAI and Anthropic
 providers share `HttpStreamClient` for the retry/timeout/cancellation policy
 and `decodeSse` for SSE framing. Provider-specific fields must not leak into

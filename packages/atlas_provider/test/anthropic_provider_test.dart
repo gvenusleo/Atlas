@@ -66,7 +66,7 @@ void main() {
   test('surfaces HTTP errors as provider exceptions', () async {
     final server = await _startServer((request) async {
       request.response.statusCode = HttpStatus.badRequest;
-      request.response.write('{"error":{"message":"bad request"}}');
+      request.response.write('{"error":{"message":"secret user prompt"}}');
       await request.response.close();
     });
     addTearDown(server.close);
@@ -74,20 +74,44 @@ void main() {
     final events = await _provider(server).stream(_request()).toList();
     final error = (events.single as ModelFailedEvent).error;
     expect(error, isA<AnthropicProviderException>());
-    expect((error as AnthropicProviderException).statusCode, 400);
+    final providerError = error as AnthropicProviderException;
+    expect(providerError.statusCode, 400);
+    expect(providerError.message, 'provider request failed (status 400)');
+    expect(providerError.message, isNot(contains('secret user prompt')));
+  });
+
+  test('does not expose an Anthropic stream error message', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"error","error":{"type":"api_error","message":"secret user prompt"}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(server).stream(_request()).toList();
+    final error = (events.single as ModelFailedEvent).error;
+    expect(error, isA<AnthropicProviderException>());
+    expect(
+      (error as AnthropicProviderException).message,
+      'anthropic stream failed',
+    );
+    expect(error.message, isNot(contains('secret user prompt')));
   });
 
   test('captures thinking blocks with signatures for replay', () async {
     final server = await _startServer((request) async {
       await _sendSse(request.response, [
         '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
-        '{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":"sig-1"}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}',
         '{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"let me think"}}',
         '{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" more"}}',
+        '{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-1"}}',
         '{"type":"content_block_stop","index":0}',
-        '{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
-        '{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Done"}}',
+        '{"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"opaque-data"}}',
         '{"type":"content_block_stop","index":1}',
+        '{"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}',
+        '{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"Done"}}',
+        '{"type":"content_block_stop","index":2}',
         '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}',
         '{"type":"message_stop"}',
       ]);
@@ -104,11 +128,14 @@ void main() {
     final blocks =
         (response.continuation!.opaquePayload['thinking_blocks'] as List)
             .cast<Map<String, Object?>>();
-    expect(blocks.single['signature'], 'sig-1');
-    expect(blocks.single['thinking'], 'let me think more');
+    expect(blocks, hasLength(2));
+    expect(blocks.first['type'], 'thinking');
+    expect(blocks.first['signature'], 'sig-1');
+    expect(blocks.first['thinking'], 'let me think more');
+    expect(blocks.last, {'type': 'redacted_thinking', 'data': 'opaque-data'});
   });
 
-  test('replays thinking blocks on the next request', () async {
+  test('replays empty and redacted thinking blocks on the next request', () async {
     final requests = <Map<String, Object?>>[];
     final server = await _startServer((request) async {
       requests.add(
@@ -136,7 +163,12 @@ void main() {
                   reasoningSummary: 'thought',
                   opaquePayload: const <String, Object?>{
                     'thinking_blocks': [
-                      {'thinking': 'thought', 'signature': 'sig-1'},
+                      {
+                        'type': 'thinking',
+                        'thinking': '',
+                        'signature': 'sig-1',
+                      },
+                      {'type': 'redacted_thinking', 'data': 'opaque-data'},
                     ],
                   },
                 ),
@@ -156,7 +188,8 @@ void main() {
         .cast<Map<String, Object?>>();
     expect(content.first['type'], 'thinking');
     expect(content.first['signature'], 'sig-1');
-    expect(content.first['thinking'], 'thought');
+    expect(content.first['thinking'], '');
+    expect(content[1], {'type': 'redacted_thinking', 'data': 'opaque-data'});
   });
 
   test('sends Anthropic headers, tools, and thinking configuration', () async {
@@ -181,18 +214,62 @@ void main() {
     final provider = _provider(
       server,
       thinkingBudgetTokens: 2048,
-      maxOutputTokens: 512,
+      maxOutputTokens: 4096,
     );
-    await provider.stream(_request()).toList();
+    await provider.stream(_request(temperature: 0.7)).toList();
 
     expect(headers['x-api-key'], 'secret-key');
     expect(headers['anthropic-version'], '2023-06-01');
     final body = requests.single;
-    expect(body['max_tokens'], 512);
+    expect(body['max_tokens'], 4096);
     expect(body['thinking'], {'type': 'enabled', 'budget_tokens': 2048});
+    expect(body.containsKey('temperature'), isFalse);
     final tools = (body['tools'] as List).cast<Map<String, Object?>>();
     expect(tools.single['name'], 'lookup');
     expect(tools.single['input_schema'], {'type': 'object'});
+  });
+
+  test('rejects a thinking budget that reaches max_tokens', () async {
+    var requests = 0;
+    final server = await _startServer((request) async {
+      requests++;
+      await request.response.close();
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      thinkingBudgetTokens: 2048,
+      maxOutputTokens: 512,
+    ).stream(_request()).toList();
+
+    final error = (events.single as ModelFailedEvent).error;
+    expect(error, isA<AnthropicProviderException>());
+    expect(
+      (error as AnthropicProviderException).message,
+      'thinking budget must be less than max_tokens',
+    );
+    expect(requests, 0);
+  });
+
+  test('sends temperature when thinking is disabled', () async {
+    final requests = <Map<String, Object?>>[];
+    final server = await _startServer((request) async {
+      requests.add(
+        jsonDecode(await utf8.decoder.bind(request).join())
+            as Map<String, Object?>,
+      );
+      await _sendSse(request.response, [
+        '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+        '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
+        '{"type":"message_stop"}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    await _provider(server).stream(_request(temperature: 0.7)).toList();
+
+    expect(requests.single['temperature'], 0.7);
   });
 
   test('embeds resources as document blocks', () async {
@@ -246,25 +323,30 @@ void main() {
   });
 }
 
-ModelRequest _request({List<ModelMessage>? messages}) => ModelRequest(
-  sessionId: SessionId('session-1'),
-  turnId: TurnId('turn-1'),
-  model: _modelRef,
-  messages:
-      messages ??
-      const [
-        ModelMessage(role: ModelMessageRole.user, content: [TextContent('Hi')]),
+ModelRequest _request({List<ModelMessage>? messages, double? temperature}) =>
+    ModelRequest(
+      sessionId: SessionId('session-1'),
+      turnId: TurnId('turn-1'),
+      model: _modelRef,
+      messages:
+          messages ??
+          const [
+            ModelMessage(
+              role: ModelMessageRole.user,
+              content: [TextContent('Hi')],
+            ),
+          ],
+      systemPrompt: 'Be concise.',
+      tools: const [
+        ToolDescriptor(
+          name: 'lookup',
+          description: 'Look something up.',
+          inputSchema: {'type': 'object'},
+        ),
       ],
-  systemPrompt: 'Be concise.',
-  tools: const [
-    ToolDescriptor(
-      name: 'lookup',
-      description: 'Look something up.',
-      inputSchema: {'type': 'object'},
-    ),
-  ],
-  reasoningEffort: 'high',
-);
+      reasoningEffort: 'high',
+      temperature: temperature,
+    );
 
 final _modelRef = ModelRef(
   providerId: ProviderId('anthropic'),

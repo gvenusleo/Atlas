@@ -63,9 +63,10 @@ final class ResponsesParser implements StreamParser {
         }
       }
     } else if (type == 'response.failed') {
-      _failure =
-          asJsonMap(value['error'])['message'] as String? ??
-          'responses request failed';
+      _failure = 'responses request failed';
+      _status = 'failed';
+    } else if (type == 'error') {
+      _failure = 'responses request failed';
       _status = 'failed';
     }
   }

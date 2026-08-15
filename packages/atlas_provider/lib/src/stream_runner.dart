@@ -50,6 +50,11 @@ Stream<ModelStreamEvent> runModelStream({
         return;
       }
       disposed = true;
+      final subscription = sseSubscription;
+      if (subscription != null) {
+        unawaited(subscription.cancel());
+      }
+      active?.close();
       controller.add(ModelFailedEvent(toFailure(error), stackTrace));
       controller.close();
     }

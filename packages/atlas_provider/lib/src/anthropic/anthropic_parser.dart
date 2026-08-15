@@ -14,8 +14,9 @@ final class AnthropicParser implements StreamParser {
 
   /// The provider that owns this stream.
   final ProviderId providerId;
-  final _thinkingBlocks = <_ThinkingBlock>[];
+  final _thinkingBlocks = <Map<String, Object?>>[];
   _ThinkingBlock? _currentThinking;
+  final _reasoning = StringBuffer();
   final _content = StringBuffer();
   final _toolBlocks = <int, _ToolBlock>{};
   int _inputTokens = 0;
@@ -54,6 +55,14 @@ final class AnthropicParser implements StreamParser {
             _currentThinking = _ThinkingBlock(
               signature: block['signature'] as String? ?? '',
             );
+          case 'redacted_thinking':
+            final data = block['data'];
+            if (data is String && data.isNotEmpty) {
+              _thinkingBlocks.add(<String, Object?>{
+                'type': 'redacted_thinking',
+                'data': data,
+              });
+            }
         }
       case 'content_block_delta':
         final delta = asJsonMap(value['delta']);
@@ -69,7 +78,13 @@ final class AnthropicParser implements StreamParser {
             final thinking = delta['thinking'];
             if (thinking is String && thinking.isNotEmpty) {
               _currentThinking?.text.write(thinking);
+              _reasoning.write(thinking);
               yield ReasoningDeltaEvent(thinking);
+            }
+          case 'signature_delta':
+            final signature = delta['signature'];
+            if (signature is String) {
+              _currentThinking?.signature = signature;
             }
           case 'input_json_delta':
             final partial = delta['partial_json'];
@@ -83,8 +98,12 @@ final class AnthropicParser implements StreamParser {
       case 'content_block_stop':
         final thinkingBlock = _currentThinking;
         if (thinkingBlock != null) {
-          if (thinkingBlock.text.isNotEmpty) {
-            _thinkingBlocks.add(thinkingBlock);
+          if (thinkingBlock.signature.isNotEmpty) {
+            _thinkingBlocks.add(<String, Object?>{
+              'type': 'thinking',
+              'thinking': thinkingBlock.text.toString(),
+              'signature': thinkingBlock.signature,
+            });
           }
           _currentThinking = null;
         }
@@ -102,9 +121,7 @@ final class AnthropicParser implements StreamParser {
       case 'message_stop':
         _sawMessageStop = true;
       case 'error':
-        _failure =
-            asJsonMap(value['error'])['message'] as String? ??
-            'anthropic stream failed';
+        _failure = 'anthropic stream failed';
       case 'ping':
         break;
     }
@@ -173,18 +190,11 @@ final class AnthropicParser implements StreamParser {
           ? null
           : ModelContinuation(
               providerId: providerId,
-              reasoningSummary: _thinkingBlocks
-                  .map((block) => block.text.toString())
-                  .join(),
+              reasoningSummary: _reasoning.toString(),
               opaquePayload: <String, Object?>{
-                'thinking_blocks': [
-                  for (final block in _thinkingBlocks)
-                    <String, Object?>{
-                      'thinking': block.text.toString(),
-                      if (block.signature.isNotEmpty)
-                        'signature': block.signature,
-                    },
-                ],
+                'thinking_blocks': List<Map<String, Object?>>.unmodifiable(
+                  _thinkingBlocks,
+                ),
               },
             ),
     );
@@ -194,7 +204,7 @@ final class AnthropicParser implements StreamParser {
 final class _ThinkingBlock {
   _ThinkingBlock({required this.signature});
 
-  final String signature;
+  String signature;
   final text = StringBuffer();
 }
 

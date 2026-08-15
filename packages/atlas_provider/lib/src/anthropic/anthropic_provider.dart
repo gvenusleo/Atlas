@@ -60,12 +60,13 @@ final class AnthropicProvider implements ModelProvider {
                   providerId: entry.provider.id,
                   message: 'stream failed after the response started',
                 ),
-        HttpStreamException(:final message, :final statusCode) =>
-          AnthropicProviderException(
-            providerId: entry.provider.id,
-            message: message,
-            statusCode: statusCode,
-          ),
+        HttpStreamException(:final statusCode) => AnthropicProviderException(
+          providerId: entry.provider.id,
+          message: statusCode == null
+              ? 'provider request failed'
+              : 'provider request failed (status $statusCode)',
+          statusCode: statusCode,
+        ),
         FormatException() => AnthropicProviderException(
           providerId: entry.provider.id,
           message: 'stream returned malformed data',
@@ -94,7 +95,6 @@ final class AnthropicProvider implements ModelProvider {
       uri: uri,
       body: _anthropicRequest(request, entry),
       headers: headers,
-      secret: entry.provider.apiKey,
       cancellation: request.cancellation,
     );
   }
@@ -153,11 +153,20 @@ Map<String, Object?> _anthropicRequest(
   _ModelEntry entry,
 ) {
   final descriptor = entry.configuration.descriptor;
+  final maxTokens = request.maxOutputTokens > 0
+      ? request.maxOutputTokens
+      : (descriptor.maxOutputTokens > 0 ? descriptor.maxOutputTokens : 4096);
+  final thinkingBudget = entry.configuration.thinkingBudgetTokens;
+  final thinkingEnabled = request.reasoningEffort != null && thinkingBudget > 0;
+  if (thinkingEnabled && thinkingBudget >= maxTokens) {
+    throw AnthropicProviderException(
+      providerId: entry.provider.id,
+      message: 'thinking budget must be less than max_tokens',
+    );
+  }
   final result = <String, Object?>{
     'model': descriptor.ref.modelId.value,
-    'max_tokens': request.maxOutputTokens > 0
-        ? request.maxOutputTokens
-        : (descriptor.maxOutputTokens > 0 ? descriptor.maxOutputTokens : 4096),
+    'max_tokens': maxTokens,
     'messages': _anthropicMessages(request.messages),
     'stream': true,
   };
@@ -168,14 +177,13 @@ Map<String, Object?> _anthropicRequest(
   if (tools.isNotEmpty) {
     result['tools'] = tools;
   }
-  if (request.temperature != null) {
+  if (!thinkingEnabled && request.temperature != null) {
     result['temperature'] = request.temperature;
   }
-  if (request.reasoningEffort != null &&
-      entry.configuration.thinkingBudgetTokens > 0) {
+  if (thinkingEnabled) {
     result['thinking'] = <String, Object?>{
       'type': 'enabled',
-      'budget_tokens': entry.configuration.thinkingBudgetTokens,
+      'budget_tokens': thinkingBudget,
     };
   }
   return result;
@@ -233,12 +241,19 @@ List<Object?> _replayedThinking(ModelMessage message) {
   final result = <Object?>[];
   for (final raw in blocks) {
     final block = asJsonMap(raw);
+    if (block['type'] == 'redacted_thinking') {
+      final data = block['data'];
+      if (data is String && data.isNotEmpty) {
+        result.add(<String, Object?>{
+          'type': 'redacted_thinking',
+          'data': data,
+        });
+      }
+      continue;
+    }
     final text = block['thinking'];
     final signature = block['signature'];
-    if (text is String &&
-        text.isNotEmpty &&
-        signature is String &&
-        signature.isNotEmpty) {
+    if (text is String && signature is String && signature.isNotEmpty) {
       result.add(<String, Object?>{
         'type': 'thinking',
         'thinking': text,

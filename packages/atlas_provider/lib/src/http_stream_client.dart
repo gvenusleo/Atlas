@@ -56,13 +56,11 @@ abstract interface class HttpStreamClient {
   ///
   /// Connection failures, HTTP 429, and HTTP 5xx are retried before the
   /// stream starts. Other failures throw [HttpStreamException]; cancellation
-  /// raises [TurnCancelledException], including during retry waits. The
-  /// optional [secret] is redacted from error bodies.
+  /// raises [TurnCancelledException], including during retry waits.
   Future<ActiveHttpStream> openStream({
     required Uri uri,
     required Map<String, Object?> body,
     required Map<String, Object> headers,
-    String? secret,
     CancellationToken? cancellation,
   });
 }
@@ -91,7 +89,6 @@ final class DioHttpStreamClient implements HttpStreamClient {
     required Uri uri,
     required Map<String, Object?> body,
     required Map<String, Object> headers,
-    String? secret,
     CancellationToken? cancellation,
   }) async {
     Object? lastError;
@@ -133,9 +130,10 @@ final class DioHttpStreamClient implements HttpStreamClient {
           );
         }
         final retryable = status == 429 || status >= 500;
+        await _discardErrorBody(response.data?.stream);
         lastError = HttpStreamException(
           statusCode: status,
-          message: await _errorBody(response.data?.stream, secret),
+          message: 'provider returned an error response',
         );
         if (!retryable || attempt == maxAttempts - 1) {
           throw lastError;
@@ -165,20 +163,9 @@ final class DioHttpStreamClient implements HttpStreamClient {
   }
 }
 
-Future<String> _errorBody(Stream<List<int>>? stream, String? secret) async {
-  if (stream == null) return 'provider returned an error';
-  final bytes = <int>[];
-  await for (final chunk in stream) {
-    final remaining = 65536 - bytes.length;
-    if (remaining > 0) {
-      bytes.addAll(chunk.take(remaining));
-    }
-  }
-  final text = utf8.decode(bytes, allowMalformed: true).trim();
-  if (text.isEmpty) return 'provider returned an error';
-  return secret == null || secret.isEmpty
-      ? text
-      : text.replaceAll(secret, '[redacted]');
+Future<void> _discardErrorBody(Stream<List<int>>? stream) async {
+  if (stream == null) return;
+  await stream.listen((_) {}).cancel();
 }
 
 Duration _retryDelay(int attempt, Headers? headers) {

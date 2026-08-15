@@ -353,7 +353,7 @@ void main() {
   test('surfaces HTTP errors as provider exceptions', () async {
     final server = await _startServer((request) async {
       request.response.statusCode = HttpStatus.badRequest;
-      request.response.write('nope');
+      request.response.write('secret user prompt');
       await request.response.close();
     });
     addTearDown(server.close);
@@ -364,7 +364,31 @@ void main() {
     ).stream(_request()).toList();
     final error = (events.single as ModelFailedEvent).error;
     expect(error, isA<OpenAIProviderException>());
-    expect((error as OpenAIProviderException).statusCode, 400);
+    final providerError = error as OpenAIProviderException;
+    expect(providerError.statusCode, 400);
+    expect(providerError.message, 'provider request failed (status 400)');
+    expect(providerError.message, isNot(contains('secret user prompt')));
+  });
+
+  test('does not expose a Responses failure message', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"response.failed","response":{"status":"failed","error":{"message":"secret user prompt"}}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.responses,
+    ).stream(_request()).toList();
+    final error = (events.single as ModelFailedEvent).error;
+    expect(error, isA<OpenAIProviderException>());
+    expect(
+      (error as OpenAIProviderException).message,
+      'responses request failed',
+    );
+    expect(error.message, isNot(contains('secret user prompt')));
   });
 
   test('retries a rate limit before the stream starts', () async {

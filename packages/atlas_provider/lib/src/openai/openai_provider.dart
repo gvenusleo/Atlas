@@ -67,12 +67,13 @@ final class OpenAICompatibleProvider implements ModelProvider {
                   providerId: entry.provider.id,
                   message: 'stream failed after the response started',
                 ),
-        HttpStreamException(:final message, :final statusCode) =>
-          OpenAIProviderException(
-            providerId: entry.provider.id,
-            message: message,
-            statusCode: statusCode,
-          ),
+        HttpStreamException(:final statusCode) => OpenAIProviderException(
+          providerId: entry.provider.id,
+          message: statusCode == null
+              ? 'provider request failed'
+              : 'provider request failed (status $statusCode)',
+          statusCode: statusCode,
+        ),
         FormatException() => OpenAIProviderException(
           providerId: entry.provider.id,
           message: 'stream returned malformed data',
@@ -104,7 +105,6 @@ final class OpenAICompatibleProvider implements ModelProvider {
           ? _responsesRequest(request, entry)
           : _chatRequest(request, entry),
       headers: headers,
-      secret: entry.provider.apiKey,
       cancellation: request.cancellation,
     );
   }
