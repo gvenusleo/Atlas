@@ -99,15 +99,18 @@ final class AgentRuntime {
   ///
   /// [instruction] is an optional user-provided direction for the compaction
   /// summary; when non-empty it is included in the summary request.
+  /// [cancellation] stops the summary model request cooperatively.
   ///
   /// Uses the model and turn of the latest recorded turn so the emitted
   /// events stay attached to the session's most recent execution.
   Stream<AgentEvent> compact(
     SessionId sessionId, {
     String? instruction,
+    CancellationToken? cancellation,
   }) async* {
     final release = await _acquireSessionLock(sessionId);
     try {
+      cancellation?.throwIfCancelled();
       final snapshot = await store.loadSession(sessionId);
       final turns = snapshot.turns;
       if (turns.isEmpty) {
@@ -124,6 +127,7 @@ final class AgentRuntime {
         latestUsage: lastTurn.usage,
         enforceThreshold: false,
         instruction: instruction,
+        cancellation: cancellation,
         nextSequence: () => eventSequence++,
       );
     } finally {
@@ -387,7 +391,6 @@ final class AgentRuntime {
         }
 
         for (final callItem in calls) {
-          cancellation.throwIfCancelled();
           yield ToolStarted(
             sessionId: session.id,
             turnId: turnId,
@@ -395,13 +398,17 @@ final class AgentRuntime {
             occurredAt: _now().toUtc(),
             call: callItem,
           );
-          final result = await _executeTool(
-            session: session,
-            turn: turn,
-            request: request,
-            call: callItem.call,
-            cancellation: cancellation,
-          );
+          final result = cancellation.isCancelled
+              ? const ToolResult(
+                  content: 'Tool execution cancelled',
+                  isError: true,
+                )
+              : await _executeTool(
+                  session: session,
+                  turn: turn,
+                  call: callItem.call,
+                  cancellation: cancellation,
+                );
           final resultItem = ToolResultItem(
             id: ids.timelineItemId(),
             sessionId: session.id,
@@ -583,7 +590,9 @@ final class AgentRuntime {
     required int Function() nextSequence,
     bool enforceThreshold = true,
     String? instruction,
+    CancellationToken? cancellation,
   }) async* {
+    cancellation?.throwIfCancelled();
     final kept = _keptWindow(timeline, keptRecentTurns);
     final boundaryIndex = timeline.length - kept.length - 1;
     if (boundaryIndex < 0) {
@@ -623,6 +632,7 @@ final class AgentRuntime {
         model: model,
         turnId: turnId,
         instruction: instruction,
+        cancellation: cancellation,
       );
       final checkpoint = CompactionCheckpoint(
         sessionId: session.id,
@@ -642,6 +652,8 @@ final class AgentRuntime {
         occurredAt: _now().toUtc(),
         checkpoint: checkpoint,
       );
+    } on TurnCancelledException {
+      rethrow;
     } catch (error) {
       yield CompactionFailed(
         sessionId: session.id,
@@ -661,6 +673,7 @@ final class AgentRuntime {
     required ModelRef model,
     required TurnId turnId,
     String? instruction,
+    CancellationToken? cancellation,
   }) async {
     final buffer = StringBuffer(_compactionInstruction);
     final instructionText = instruction?.trim();
@@ -685,9 +698,11 @@ final class AgentRuntime {
         ),
       ],
       maxOutputTokens: maxSummaryTokens,
+      cancellation: cancellation,
     );
     ModelResponse? completed;
     await for (final event in provider.stream(request)) {
+      cancellation?.throwIfCancelled();
       switch (event) {
         case TextDeltaEvent() || ReasoningDeltaEvent():
           break;
@@ -764,7 +779,6 @@ final class AgentRuntime {
   Future<ToolResult> _executeTool({
     required Session session,
     required Turn turn,
-    required TurnRequest request,
     required ToolCall call,
     required CancellationToken cancellation,
   }) async {
@@ -773,10 +787,8 @@ final class AgentRuntime {
         ToolContext(
           sessionId: session.id,
           turnId: turn.id,
-          workingDirectory:
-              request.workingDirectory ?? session.workingDirectory,
-          additionalDirectories:
-              request.additionalDirectories ?? session.additionalDirectories,
+          workingDirectory: session.workingDirectory,
+          additionalDirectories: session.additionalDirectories,
           cancellation: cancellation,
         ),
         call,

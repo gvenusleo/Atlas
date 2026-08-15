@@ -1084,7 +1084,8 @@ void main() {
       // One kept turn leaves the first turn compactable; the provider delay
       // keeps the summary call in flight while the session is deleted.
       keptRecentTurns: 1,
-      providerDelay: const Duration(milliseconds: 100),
+      providerDelay: const Duration(seconds: 2),
+      delayedResponseIndex: 4,
       responses: [
         ..._defaultResponses(),
         ..._defaultResponses(),
@@ -1098,6 +1099,7 @@ void main() {
     await _runPrompt(wire, sessionId);
     await _runPrompt(wire, sessionId);
 
+    final stopwatch = Stopwatch()..start();
     final promptFuture = wire.send({
       'jsonrpc': '2.0',
       'id': 3,
@@ -1119,7 +1121,9 @@ void main() {
       'params': {'sessionId': sessionId},
     });
     final response = await promptFuture;
+    stopwatch.stop();
     expect((response['result'] as Map)['stopReason'], 'cancelled');
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
     await wire.close();
   });
 
@@ -1762,6 +1766,7 @@ final class _Wire {
     bool blockingProvider = false,
     List<ModelResponse>? responses,
     Duration providerDelay = Duration.zero,
+    int? delayedResponseIndex,
     List<ModelDescriptor> models = const [],
     List<Skill> skills = const [],
     int keptRecentTurns = 5,
@@ -1772,6 +1777,7 @@ final class _Wire {
         : _ScriptedProvider(
             responses ?? _defaultResponses(),
             delay: providerDelay,
+            delayedResponseIndex: delayedResponseIndex,
           );
     final runtime = AgentRuntime(
       store: _MemorySessionStore(),
@@ -1902,12 +1908,19 @@ final class _Wire {
 }
 
 final class _ScriptedProvider implements ModelProvider {
-  _ScriptedProvider(this.responses, {this.delay = Duration.zero});
+  _ScriptedProvider(
+    this.responses, {
+    this.delay = Duration.zero,
+    this.delayedResponseIndex,
+  });
 
   final List<ModelResponse> responses;
 
   /// Artificial latency so a turn is still running when a test closes EOF.
   final Duration delay;
+
+  /// Limits [delay] to one response index when set.
+  final int? delayedResponseIndex;
   var _index = 0;
 
   /// The most recent model request, captured for assertions.
@@ -1924,8 +1937,13 @@ final class _ScriptedProvider implements ModelProvider {
     if (index >= responses.length) {
       throw const TurnCancelledException();
     }
-    if (delay > Duration.zero) {
-      await Future<void>.delayed(delay);
+    if (delay > Duration.zero &&
+        (delayedResponseIndex == null || delayedResponseIndex == index)) {
+      await Future.any<void>([
+        Future<void>.delayed(delay),
+        if (request.cancellation != null) request.cancellation!.whenCancelled,
+      ]);
+      request.cancellation?.throwIfCancelled();
     }
     final response = responses[index];
     for (final part in response.content) {

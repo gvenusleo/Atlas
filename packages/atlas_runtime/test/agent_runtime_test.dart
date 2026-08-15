@@ -157,6 +157,46 @@ void main() {
     expect(store.turns.single.status, TurnStatus.failed);
   });
 
+  test('pairs every persisted tool call when cancellation arrives', () async {
+    final store = _MemorySessionStore();
+    final tools = _CancellingTools();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _ScriptedProvider([
+        ModelResponse(
+          toolCalls: [
+            for (final id in ['call-1', 'call-2'])
+              ToolCall(
+                id: ToolCallId(id),
+                name: 'inspect',
+                arguments: const <String, Object?>{},
+              ),
+          ],
+          stopReason: StopReason.toolUse,
+        ),
+      ]),
+      tools: tools,
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    final events = await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('Inspect both')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    expect(tools.calls.map((call) => call.id.value), ['call-1']);
+    final results = store.timeline.whereType<ToolResultItem>().toList();
+    expect(results.map((result) => result.callId.value), ['call-1', 'call-2']);
+    expect(results.last.isError, isTrue);
+    expect(results.last.content, 'Tool execution cancelled');
+    expect((events.last as TurnFinished).outcome.status, TurnStatus.cancelled);
+  });
+
   test('persists user input before a provider failure', () async {
     final store = _MemorySessionStore();
     final runtime = AgentRuntime(
@@ -455,15 +495,28 @@ void main() {
         updatedAt: sessionTime,
       );
       final provider = _ScriptedProvider([
+        ModelResponse(
+          toolCalls: [
+            ToolCall(
+              id: ToolCallId('call-1'),
+              name: 'inspect',
+              arguments: const <String, Object?>{},
+            ),
+          ],
+          stopReason: StopReason.toolUse,
+        ),
         const ModelResponse(
           content: [TextContent('resumed')],
           stopReason: StopReason.endTurn,
         ),
       ]);
+      final tools = _MemoryTools(
+        result: const ToolResult(content: 'inspected'),
+      );
       final runtime = AgentRuntime(
         store: store,
         provider: provider,
-        tools: _MemoryTools(result: const ToolResult(content: 'unused')),
+        tools: tools,
         ids: _Ids(),
         defaultModel: _model,
       );
@@ -479,6 +532,7 @@ void main() {
           .toList();
 
       expect(store.session!.workingDirectory, '/original');
+      expect(tools.contexts.single.workingDirectory, '/original');
     },
   );
 
@@ -1265,6 +1319,8 @@ final class _MemoryTools implements ToolRegistry {
   _MemoryTools({required this.result});
 
   final ToolResult result;
+  final contexts = <ToolContext>[];
+  final calls = <ToolCall>[];
 
   @override
   List<ToolDescriptor> get descriptors => const [
@@ -1276,8 +1332,32 @@ final class _MemoryTools implements ToolRegistry {
   ];
 
   @override
-  Future<ToolResult> execute(ToolContext context, ToolCall call) async =>
-      result;
+  Future<ToolResult> execute(ToolContext context, ToolCall call) async {
+    contexts.add(context);
+    calls.add(call);
+    return result;
+  }
+}
+
+/// Cancels after its first call to exercise result pairing for queued calls.
+final class _CancellingTools implements ToolRegistry {
+  final calls = <ToolCall>[];
+
+  @override
+  List<ToolDescriptor> get descriptors => const [
+    ToolDescriptor(
+      name: 'inspect',
+      description: 'Inspect files',
+      inputSchema: <String, Object?>{},
+    ),
+  ];
+
+  @override
+  Future<ToolResult> execute(ToolContext context, ToolCall call) async {
+    calls.add(call);
+    context.cancellation!.cancel();
+    return const ToolResult(content: 'first result');
+  }
 }
 
 final class _ThrowingTools implements ToolRegistry {

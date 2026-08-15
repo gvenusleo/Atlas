@@ -604,6 +604,7 @@ final class AcpServer {
       await for (final event in runtime.compact(
         session,
         instruction: instruction,
+        cancellation: cancellation,
       )) {
         cancellation.throwIfCancelled();
         switch (event) {

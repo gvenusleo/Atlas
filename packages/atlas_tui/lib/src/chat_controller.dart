@@ -145,7 +145,7 @@ final class ChatController implements Listenable {
     }
   }
 
-  /// Requests cancellation of the running turn; ignored when idle.
+  /// Requests cancellation of the running turn or compaction; ignored when idle.
   void cancelTurn() {
     _cancellation?.cancel();
   }
@@ -165,19 +165,28 @@ final class ChatController implements Listenable {
       return;
     }
     _busy = true;
+    final cancellation = CancellationToken();
+    _cancellation = cancellation;
     _turnPhase = TurnPhase.compacting;
     _startTurnTimer();
     var compacted = false;
+    var cancelled = false;
     try {
       await for (final event in runtime.compact(
         sessionId,
         instruction: instruction,
+        cancellation: cancellation,
       )) {
         if (event is CompactionStarted) {
           compacted = true;
         }
         _handle(event);
       }
+    } on TurnCancelledException {
+      cancelled = true;
+      _messages.add(
+        ChatMessage(kind: ChatMessageKind.system, text: 'Compaction cancelled'),
+      );
     } catch (error) {
       _messages.add(ChatMessage(kind: ChatMessageKind.error, text: '$error'));
     } finally {
@@ -188,7 +197,7 @@ final class ChatController implements Listenable {
       _stopTurnTimer();
       _notify();
     }
-    if (!compacted) {
+    if (!compacted && !cancelled) {
       addNotice('Nothing to compact');
     }
   }

@@ -9,11 +9,15 @@ import 'package:test/test.dart';
 void main() {
   late AgentRuntime runtime;
   late _ScriptedProvider provider;
+  late DriftSessionStore defaultStore;
+  var defaultStoreOpen = false;
 
   setUp(() {
     provider = _ScriptedProvider();
+    defaultStore = DriftSessionStore.inMemory();
+    defaultStoreOpen = true;
     runtime = AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: defaultStore,
       provider: provider,
       tools: LocalToolRegistry([_EchoTool()]),
       ids: SecureIdGenerator(),
@@ -25,6 +29,17 @@ void main() {
       maxSteps: 5,
     );
   });
+
+  tearDown(() async {
+    if (defaultStoreOpen) {
+      await defaultStore.close();
+    }
+  });
+
+  Future<void> closeDefaultStore() async {
+    await defaultStore.close();
+    defaultStoreOpen = false;
+  }
 
   test('records the user message and streams the assistant reply', () async {
     provider.toolFirst = false;
@@ -176,11 +191,12 @@ void main() {
   });
 
   test('shows a compaction notice after a long session', () async {
+    await closeDefaultStore();
     final compactingProvider = _ScriptedProvider()
       ..contextWindow = 10000
       ..inputTokens = 9500;
     final compactingRuntime = AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       provider: compactingProvider,
       tools: LocalToolRegistry([_EchoTool()]),
       ids: SecureIdGenerator(),
@@ -204,9 +220,10 @@ void main() {
   });
 
   test('compact forwards an instruction to the summary request', () async {
+    await closeDefaultStore();
     final compactingProvider = _ScriptedProvider()..contextWindow = 10000;
     final compactingRuntime = AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       provider: compactingProvider,
       tools: LocalToolRegistry([_EchoTool()]),
       ids: SecureIdGenerator(),
@@ -240,11 +257,12 @@ void main() {
   });
 
   test('shows compacting in the status line during compaction', () async {
+    await closeDefaultStore();
     final compactingProvider = _ScriptedProvider()
       ..contextWindow = 10000
       ..inputTokens = 9500;
     final compactingRuntime = AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       provider: compactingProvider,
       tools: LocalToolRegistry([_EchoTool()]),
       ids: SecureIdGenerator(),
@@ -276,9 +294,10 @@ void main() {
   });
 
   test('compact command compacts the session', () async {
+    await closeDefaultStore();
     final compactingProvider = _ScriptedProvider()..contextWindow = 10000;
     final compactingRuntime = AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       provider: compactingProvider,
       tools: LocalToolRegistry([_EchoTool()]),
       ids: SecureIdGenerator(),
@@ -301,6 +320,36 @@ void main() {
       controller.messages.last.text,
       'Context compacted. Kept 2 recent messages.',
     );
+  });
+
+  test('cancelTurn interrupts manual compaction', () async {
+    await closeDefaultStore();
+    final compactingProvider = _ScriptedProvider()..contextWindow = 10000;
+    final compactingRuntime = AgentRuntime(
+      store: _testStore(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final controller = ChatController(runtime: compactingRuntime);
+    await controller.send('first');
+    await controller.send('second');
+    compactingProvider.compactionGate = Completer<void>();
+
+    final compacting = controller.compact();
+    expect(controller.turnPhase, TurnPhase.compacting);
+    controller.cancelTurn();
+    await compacting;
+
+    expect(controller.turnPhase, TurnPhase.idle);
+    expect(controller.messages.last.kind, ChatMessageKind.system);
+    expect(controller.messages.last.text, 'Compaction cancelled');
   });
 
   test('compact shows a notice when nothing can be compacted', () async {
@@ -466,11 +515,12 @@ void main() {
   });
 
   test('resume announces a previous compaction', () async {
+    await closeDefaultStore();
     final compactingProvider = _ScriptedProvider()
       ..contextWindow = 10000
       ..inputTokens = 9500;
     final compactingRuntime = AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       provider: compactingProvider,
       tools: LocalToolRegistry([_EchoTool()]),
       ids: SecureIdGenerator(),
@@ -595,6 +645,13 @@ void main() {
   });
 }
 
+/// Creates an in-memory store and closes it after the current test.
+DriftSessionStore _testStore() {
+  final store = DriftSessionStore.inMemory();
+  addTearDown(store.close);
+  return store;
+}
+
 /// Echoes a tool result so tool success paths run without real tools.
 final class _EchoTool implements Tool {
   @override
@@ -695,7 +752,11 @@ final class _ScriptedProvider implements ModelProvider {
     if (compaction) {
       final gate = compactionGate;
       if (gate != null) {
-        await gate.future;
+        await Future.any<void>([
+          gate.future,
+          if (request.cancellation != null) request.cancellation!.whenCancelled,
+        ]);
+        request.cancellation?.throwIfCancelled();
       }
     }
     if (failTurn) {
