@@ -39,7 +39,10 @@ final class WriteTool implements Tool {
         context.workingDirectory,
         arguments['path'] as String? ?? '',
       );
-      final content = arguments['content'] as String? ?? '';
+      final content = arguments['content'];
+      if (content is! String) {
+        throw const FormatException('content is required and must be a string');
+      }
       final file = File(path);
       await file.parent.create(recursive: true);
       // Read the previous content before overwriting so the result can carry

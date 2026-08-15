@@ -67,16 +67,25 @@ final class EditTool implements Tool {
       if (rawEdits is! List || rawEdits.isEmpty) {
         throw const FormatException('edits must be a non-empty list');
       }
-      final edits = <TextEdit>[
-        for (final raw in rawEdits)
-          if (raw is Map<String, Object?>)
-            TextEdit(
-              oldText: raw['old_text'] as String? ?? '',
-              newText: raw['new_text'] as String? ?? '',
-            )
-          else
-            throw const FormatException('each edit must be an object'),
-      ];
+      final edits = <TextEdit>[];
+      for (final raw in rawEdits) {
+        if (raw is! Map<String, Object?>) {
+          throw const FormatException('each edit must be an object');
+        }
+        final oldText = raw['old_text'];
+        final newText = raw['new_text'];
+        if (oldText is! String) {
+          throw const FormatException(
+            'old_text is required and must be a string',
+          );
+        }
+        if (newText is! String) {
+          throw const FormatException(
+            'new_text is required and must be a string',
+          );
+        }
+        edits.add(TextEdit(oldText: oldText, newText: newText));
+      }
       final file = File(path);
       final type = await file.stat().then((stat) => stat.type);
       if (type == FileSystemEntityType.directory) {

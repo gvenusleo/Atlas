@@ -36,6 +36,30 @@ void main() {
     expect(File('${dir.path}/a.txt').readAsStringSync(), 'new content');
   });
 
+  test('rejects missing content without truncating the file', () async {
+    final dir = await tempDir();
+    final file = File('${dir.path}/a.txt');
+    await file.writeAsString('keep me');
+
+    final result = await tool.execute(toolContext(dir), {'path': 'a.txt'});
+
+    expect(result.isError, isTrue);
+    expect(result.content, contains('content is required'));
+    expect(file.readAsStringSync(), 'keep me');
+  });
+
+  test('preserves URI-special characters in file names', () async {
+    final dir = await tempDir();
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'a#b?c%d.txt',
+      'content': 'special',
+    });
+
+    expect(result.isError, isFalse);
+    expect(File('${dir.path}/a#b?c%d.txt').readAsStringSync(), 'special');
+  });
+
   test('resolves absolute paths', () async {
     final dir = await tempDir();
 

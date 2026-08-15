@@ -14,5 +14,8 @@ String resolveFilePath(String cwd, String path) {
   }
   final file = File(path);
   final combined = file.isAbsolute || cwd.isEmpty ? path : '$cwd/$path';
-  return Uri.parse(combined).normalizePath().toFilePath();
+  return Uri.file(
+    combined,
+    windows: Platform.isWindows,
+  ).normalizePath().toFilePath(windows: Platform.isWindows);
 }

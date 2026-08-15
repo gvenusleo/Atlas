@@ -59,6 +59,23 @@ void main() {
     expect(file.readAsStringSync(), 'original');
   });
 
+  test('rejects missing new_text without changing the file', () async {
+    final dir = await tempDir();
+    final file = File('${dir.path}/none.txt');
+    await file.writeAsString('original');
+
+    final result = await tool.execute(toolContext(dir), {
+      'path': 'none.txt',
+      'edits': [
+        {'old_text': 'original'},
+      ],
+    });
+
+    expect(result.isError, isTrue);
+    expect(result.content, contains('new_text is required'));
+    expect(file.readAsStringSync(), 'original');
+  });
+
   test('rejects overlapping edits', () async {
     final dir = await tempDir();
     final file = File('${dir.path}/overlap.txt');
