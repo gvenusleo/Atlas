@@ -51,7 +51,7 @@ providers:
 ''');
     final runtime = composeRuntime(
       config,
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       tools: LocalToolRegistry(const []),
     );
 
@@ -71,7 +71,7 @@ providers:
     models:
       - value: gpt-4o
 ''');
-    final runtime = composeRuntime(config, store: DriftSessionStore.inMemory());
+    final runtime = composeRuntime(config, store: _testStore());
 
     expect(runtime.tools.descriptors.map((d) => d.name), [
       'read',
@@ -93,7 +93,7 @@ providers:
     models:
       - value: gpt-4o
 ''');
-    final runtime = composeRuntime(config, store: DriftSessionStore.inMemory());
+    final runtime = composeRuntime(config, store: _testStore());
 
     // The config-driven provider branch is exercised: the composite provider
     // resolves the configured default model without any HTTP traffic.
@@ -123,7 +123,7 @@ providers:
       final fakeProvider = _FakeProvider();
       final runtime = composeRuntime(
         config,
-        store: DriftSessionStore.inMemory(),
+        store: _testStore(),
         tools: LocalToolRegistry([ReadTool(), ShellTool()]),
         provider: fakeProvider,
       );
@@ -168,6 +168,13 @@ providers:
 // Fake provider drives the tool loop: the first request asks to read the file,
 // every later request (which carries the tool result) finishes the turn. It
 // records every system prompt it receives so tests can assert the wiring.
+/// Creates an in-memory store and closes it after the current test.
+DriftSessionStore _testStore() {
+  final store = DriftSessionStore.inMemory();
+  addTearDown(store.close);
+  return store;
+}
+
 final class _FakeProvider implements ModelProvider {
   _FakeProvider();
 

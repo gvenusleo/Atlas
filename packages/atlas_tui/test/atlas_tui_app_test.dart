@@ -12,7 +12,7 @@ void main() {
     await testNocterm('chat app', (tester) async {
       final provider = _ScriptedProvider();
       final runtime = AgentRuntime(
-        store: DriftSessionStore.inMemory(),
+        store: _testStore(),
         provider: provider,
         tools: LocalToolRegistry(const []),
         ids: SecureIdGenerator(),
@@ -54,7 +54,7 @@ void main() {
     await testNocterm('chat app busy input', (tester) async {
       final provider = _ScriptedProvider()..gate = Completer<void>();
       final runtime = AgentRuntime(
-        store: DriftSessionStore.inMemory(),
+        store: _testStore(),
         provider: provider,
         tools: LocalToolRegistry(const []),
         ids: SecureIdGenerator(),
@@ -532,7 +532,7 @@ void main() {
 
   test('/resume failure shows an error without a success notice', () async {
     await testNocterm('slash resume failure', (tester) async {
-      final store = DriftSessionStore.inMemory();
+      final store = _testStore();
       final provider = _ScriptedProvider();
       final runtime = AgentRuntime(
         store: store,
@@ -622,7 +622,7 @@ void main() {
 
   test('/resume with a session id resumes directly', () async {
     await testNocterm('slash resume direct', (tester) async {
-      final store = DriftSessionStore.inMemory();
+      final store = _testStore();
       final provider = _ScriptedProvider();
       final runtime = AgentRuntime(
         store: store,
@@ -743,7 +743,7 @@ void main() {
           ),
         ];
       final runtime = AgentRuntime(
-        store: DriftSessionStore.inMemory(),
+        store: _testStore(),
         provider: provider,
         tools: LocalToolRegistry([PlanTool()]),
         ids: SecureIdGenerator(),
@@ -825,9 +825,16 @@ void main() {
   });
 }
 
+/// Creates an in-memory store and closes it after the current test.
+DriftSessionStore _testStore() {
+  final store = DriftSessionStore.inMemory();
+  addTearDown(store.close);
+  return store;
+}
+
 AgentRuntime _runtime(_ScriptedProvider provider, {SkillCatalog? skills}) =>
     AgentRuntime(
-      store: DriftSessionStore.inMemory(),
+      store: _testStore(),
       provider: provider,
       tools: LocalToolRegistry(const []),
       ids: SecureIdGenerator(),
