@@ -2,9 +2,9 @@
 
 [English](configuration.md)
 
-Atlas 通过 `atlas_config` 包从 `~/.atlas/config.yaml` 加载应用配置。组合根
-（`atlas_cli`、`atlas_flutter`）负责定位文件并交给 `loadConfig`；该包负责
-解析、校验并映射到 provider 配置对象。
+Atlas 通过 `atlas_config` 包从 `~/.atlas/config.yaml` 加载应用配置。当前由
+`atlas_cli` 组合根定位文件并交给 `loadConfig`；Flutter 运行时组合仍为
+`Planned`。该包负责解析、校验并映射到 provider 配置对象。
 
 ## 示例
 
@@ -26,7 +26,7 @@ providers:
         reasoning_efforts:            # 可选
           - value: high
             name: High                # 可选
-        thinking_budget_tokens: 4096  # 可选，默认 0（关闭 thinking）
+        thinking_budget_tokens: 2048  # 可选，默认 0（关闭 thinking）
 
   - name: openai
     type: responses                 # chat_completions | responses | anthropic
@@ -59,8 +59,11 @@ session:
 - `base_url` 必须是 HTTP(S) URL，且不含 query 与 fragment。
 - `api_key` 支持 `${ENV_VAR}` 引用；未定义的变量会导致加载失败，错误消息
   中带有变量名。
-- `max_tokens`、`context_window`、`max_steps`、`thinking_budget_tokens`
-  不能为负。
+- `max_tokens`、`context_window`、`thinking_budget_tokens` 不能为负；
+  `max_steps` 必须大于 0。
+- Anthropic 的 `thinking_budget_tokens` 必须小于最终生效的 `max_tokens`。
+  启用 thinking 时，Atlas 会省略 Anthropic 请求中的 `agent.temperature`，
+  因为该采样选项不兼容。
 - `agent.compaction.threshold` 必须大于 0 且不超过 1；它是触发 turn 结束后
   自动压缩的上下文窗口比例。
 - 校验失败抛出 `ConfigLoadException`，消息包含字段路径，例如

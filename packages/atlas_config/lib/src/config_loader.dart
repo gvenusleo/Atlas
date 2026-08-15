@@ -227,13 +227,21 @@ AnthropicModelConfiguration _anthropicModel(
   Set<String> seen,
 ) {
   final id = _modelId(map, path, seen);
+  final descriptor = _descriptor(map, providerName, path, id);
+  final thinkingBudget = _nonNegativeInt(
+    map['thinking_budget_tokens'],
+    '$path.thinking_budget_tokens',
+    0,
+  );
+  if (descriptor.maxOutputTokens > 0 &&
+      thinkingBudget >= descriptor.maxOutputTokens) {
+    throw ConfigLoadException(
+      '$path.thinking_budget_tokens must be less than $path.max_tokens',
+    );
+  }
   return AnthropicModelConfiguration(
-    descriptor: _descriptor(map, providerName, path, id),
-    thinkingBudgetTokens: _nonNegativeInt(
-      map['thinking_budget_tokens'],
-      '$path.thinking_budget_tokens',
-      0,
-    ),
+    descriptor: descriptor,
+    thinkingBudgetTokens: thinkingBudget,
   );
 }
 
@@ -312,7 +320,7 @@ AgentConfig _agent(Map<String, Object?> root) {
     'agent.compaction',
   );
   return AgentConfig(
-    maxSteps: _nonNegativeInt(map['max_steps'], 'agent.max_steps', 100),
+    maxSteps: _positiveInt(map['max_steps'], 'agent.max_steps', 100),
     temperature: _doubleOrNull(map['temperature'], 'agent.temperature'),
     compaction: CompactionConfig(
       threshold: _fraction(
@@ -462,6 +470,14 @@ int _nonNegativeInt(Object? value, String path, int fallback) {
   final result = _intDefault(value, path, fallback);
   if (result < 0) {
     throw ConfigLoadException('$path must not be negative');
+  }
+  return result;
+}
+
+int _positiveInt(Object? value, String path, int fallback) {
+  final result = _intDefault(value, path, fallback);
+  if (result <= 0) {
+    throw ConfigLoadException('$path must be greater than zero');
   }
   return result;
 }

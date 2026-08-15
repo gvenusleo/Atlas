@@ -25,7 +25,7 @@ providers:
         name: Claude Sonnet
         context_window: 200000
         max_tokens: 4096
-        thinking_budget_tokens: 4096
+        thinking_budget_tokens: 2048
         reasoning_efforts:
           - value: high
   - name: openai
@@ -63,7 +63,7 @@ session:
     final anthropic = config.providers.first as ConfiguredAnthropic;
     expect(anthropic.configuration.apiKey, 'sk-ant-test');
     expect(anthropic.configuration.apiVersion, '2023-06-01');
-    expect(anthropic.configuration.models.single.thinkingBudgetTokens, 4096);
+    expect(anthropic.configuration.models.single.thinkingBudgetTokens, 2048);
     expect(
       anthropic.configuration.models.single.descriptor.name,
       'Claude Sonnet',
@@ -123,6 +123,54 @@ providers:
     expect(config.agent.compaction.threshold, 0.8);
     expect(config.agent.temperature, isNull);
     expect(config.session.dbPath, '~/.atlas/atlas.db');
+  });
+
+  test('rejects zero max_steps', () {
+    expect(
+      () => parseConfig('''
+default_model: oa/gpt-4o
+providers:
+  - name: oa
+    type: responses
+    base_url: https://example.com
+    api_key: key
+    models:
+      - value: gpt-4o
+agent:
+  max_steps: 0
+'''),
+      throwsA(
+        isA<ConfigLoadException>().having(
+          (error) => error.message,
+          'message',
+          contains('agent.max_steps must be greater than zero'),
+        ),
+      ),
+    );
+  });
+
+  test('rejects an Anthropic thinking budget at max_tokens', () {
+    expect(
+      () => parseConfig('''
+default_model: anthropic/claude
+providers:
+  - name: anthropic
+    type: anthropic
+    base_url: https://api.anthropic.com
+    api_key: key
+    models:
+      - value: claude
+        max_tokens: 2048
+        thinking_budget_tokens: 2048
+'''),
+      throwsA(
+        isA<ConfigLoadException>().having(
+          (error) => error.message,
+          'message',
+          contains('thinking_budget_tokens must be less than'),
+        ),
+      ),
+    );
   });
 
   test('expands the home directory only for a leading tilde', () {

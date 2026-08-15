@@ -3,9 +3,9 @@
 [中文](zh-CN/configuration.md)
 
 Atlas loads its application configuration from `~/.atlas/config.yaml` through
-the `atlas_config` package. Composition roots (`atlas_cli`, `atlas_flutter`)
-locate the file and pass it to `loadConfig`; the package parses, validates, and
-maps it onto provider configuration objects.
+the `atlas_config` package. The current `atlas_cli` composition root locates the
+file and passes it to `loadConfig`; Flutter runtime composition is `Planned`.
+The package parses, validates, and maps configuration onto provider objects.
 
 ## Example
 
@@ -27,7 +27,7 @@ providers:
         reasoning_efforts:            # optional
           - value: high
             name: High                # optional
-        thinking_budget_tokens: 4096  # optional, default 0 (thinking off)
+        thinking_budget_tokens: 2048  # optional, default 0 (thinking off)
 
   - name: openai
     type: responses                 # chat_completions | responses | anthropic
@@ -62,8 +62,11 @@ session:
 - `base_url` must be an HTTP(S) URL without a query or fragment.
 - `api_key` supports `${ENV_VAR}` references; an undefined variable fails
   loading with the variable name in the message.
-- `max_tokens`, `context_window`, `max_steps`, and `thinking_budget_tokens`
-  must not be negative.
+- `max_tokens`, `context_window`, and `thinking_budget_tokens` must not be
+  negative. `max_steps` must be greater than zero.
+- Anthropic `thinking_budget_tokens` must be less than the effective
+  `max_tokens`. When thinking is enabled, Atlas omits `agent.temperature` from
+  Anthropic requests because that sampling option is incompatible.
 - `agent.compaction.threshold` must be greater than 0 and at most 1; it is the
   context window fraction that triggers automatic compaction after a turn.
 - Validation failures raise `ConfigLoadException` with a field path such as
