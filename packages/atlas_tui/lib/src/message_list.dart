@@ -35,6 +35,16 @@ final class MessageList extends StatelessComponent {
       itemBuilder: (context, index) {
         final message = messages[messages.length - 1 - index];
         return Row(
+          // The reversed index shifts whenever a new message is appended, so
+          // it cannot identify a message across rebuilds. Without a stable
+          // key the ListView reconciles the new top row into the element that
+          // previously rendered a structurally different row (user rows wrap
+          // their content in a padded container while other rows carry a
+          // bullet prefix), leaving stale layout state that paints the bullet
+          // at the wrong column for the rest of the process lifetime. The
+          // forward index stays fixed for existing messages as the list only
+          // grows at the tail.
+          key: ValueKey(messages.length - 1 - index),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (message.kind != ChatMessageKind.user) Text('• '),

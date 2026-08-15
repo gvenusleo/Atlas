@@ -19,6 +19,45 @@ void main() {
         expect(tester.terminalState.getText(), isNot(contains('message 0')));
       });
     });
+
+    test(
+      'keeps the bullet at column 0 when a reply arrives after a user message',
+      () async {
+        await testNocterm('bullet stays at column 0', (tester) async {
+          final messages = <ChatMessage>[
+            ChatMessage(kind: ChatMessageKind.user, text: '你好？'),
+          ];
+          final holder = _MessageListHolder(messages);
+          await tester.pumpComponent(
+            SizedBox(
+              width: 60,
+              height: 10,
+              child: _RebuildableMessageList(holder: holder),
+            ),
+          );
+          await tester.pump();
+
+          // A new reply arrives: the list now grows at the tail, and the
+          // reversed ListView must re-render the new top row in place.
+          holder.messages.add(
+            ChatMessage(
+              kind: ChatMessageKind.reasoning,
+              text: '用户用中文打招呼，需要直接用中文回复。',
+            ),
+          );
+          holder.notify();
+          await tester.pump();
+
+          final state = tester.terminalState;
+          // Locate the reply row by its content, then verify its bullet
+          // starts at column 0 rather than drifting to the line end.
+          final match = state
+              .findText('用户用中文打招呼')
+              .firstWhere((hit) => hit.x == 2);
+          expect(state, hasTextAt(0, match.y, '•'));
+        });
+      },
+    );
   });
 
   group('tailLines', () {
@@ -93,4 +132,39 @@ void main() {
       expect(tailWindow('abc', 0), '');
     });
   });
+}
+
+/// Mutable message list holder that rebuilds its listener on every change.
+class _MessageListHolder {
+  _MessageListHolder(this.messages);
+
+  final List<ChatMessage> messages;
+  void Function()? _listener;
+
+  void notify() => _listener?.call();
+}
+
+/// Rebuilds a [MessageList] whenever the holder changes, mirroring how the
+/// app streams new content into the transcript across frames.
+class _RebuildableMessageList extends StatefulComponent {
+  const _RebuildableMessageList({required this.holder});
+
+  final _MessageListHolder holder;
+
+  @override
+  State<_RebuildableMessageList> createState() =>
+      _RebuildableMessageListState();
+}
+
+class _RebuildableMessageListState extends State<_RebuildableMessageList> {
+  @override
+  void initState() {
+    super.initState();
+    component.holder._listener = () => setState(() {});
+  }
+
+  @override
+  Component build(BuildContext context) {
+    return MessageList(messages: List.of(component.holder.messages));
+  }
 }
