@@ -17,7 +17,7 @@ packages/atlas_ws         versioned WebSocket protocol and transport
 packages/atlas_acp        ACP adapter
 packages/atlas_mcp        MCP adapter
 packages/atlas_tui        Nocterm presentation package
-apps/atlas_cli            atlas CLI, TUI, server, and other commands
+apps/atlas_cli            atlas CLI, TUI, and other commands (planned `atlas server` subcommand)
 apps/atlas_flutter        Flutter desktop and mobile application
 ```
 
@@ -58,9 +58,11 @@ scripts download the versioned artifact matching the platform and
 architecture and honor `ATLAS_INSTALL_DIR`.
 
 Releases are cut by pushing a `v*.*.*` tag:
-`.github/workflows/release.yml` builds linux (amd64/arm64), macOS (arm64),
-and Windows (amd64) binaries with `dart build cli` and uploads them together
-with the install scripts to the GitHub release.
+`.github/workflows/release.yml` builds linux (amd64/arm64), macOS
+(amd64/arm64), and Windows (amd64) binaries with `dart build cli` and uploads
+them together with the install scripts to the GitHub release. Release notes
+are generated automatically on the GitHub release page; the repository keeps
+no separate changelog file.
 
 ## Package Rules
 

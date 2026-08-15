@@ -17,7 +17,7 @@ packages/atlas_ws         版本化 WebSocket 协议与 transport
 packages/atlas_acp        ACP 适配器
 packages/atlas_mcp        MCP 适配器
 packages/atlas_tui        Nocterm 展示 package
-apps/atlas_cli            atlas CLI、TUI、server 与其他命令
+apps/atlas_cli            atlas CLI、TUI 与其他命令（规划的 `atlas server` 子命令）
 apps/atlas_flutter        Flutter 桌面端与移动端应用
 ```
 
@@ -57,8 +57,9 @@ Windows 运行 `irm .../download/latest/install.ps1 | iex`；脚本会下载与�
 平台和架构匹配的带版本归档，并支持 `ATLAS_INSTALL_DIR` 覆盖安装目录。
 
 推送 `v*.*.*` tag 即可发布新版本：`.github/workflows/release.yml` 使用
-`dart build cli` 构建 linux（amd64/arm64）、macOS（arm64）与 Windows
-（amd64）二进制，连同安装脚本一起上传到 GitHub Release。
+`dart build cli` 构建 linux（amd64/arm64）、macOS（amd64/arm64）与
+Windows（amd64）二进制，连同安装脚本一起上传到 GitHub Release。Release
+notes 在 GitHub Release 页自动生成，仓库不维护单独的 changelog 文件。
 
 ## Package 规则
 

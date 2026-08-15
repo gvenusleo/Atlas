@@ -63,3 +63,16 @@ the explicit way to stop a long-running turn.
 
 API keys may be empty for local compatible test servers; in that case OpenAI
 sends no authorization header. The default user agent is `Atlas`.
+
+## Allowed dependencies
+
+- `atlas_runtime` public types and `dio` for HTTP.
+
+## Prohibited ownership
+
+- No CLI or configuration-file parsing: providers are configured
+  programmatically and selected by `ModelRef`.
+- No tool implementations or application composition; composition roots
+  construct and inject providers.
+- Provider-specific fields must not leak into `atlas_runtime` domain
+  requests.

@@ -6,6 +6,12 @@ Serves the shared runtime to ACP clients (such as Zed) over NDJSON stdio.
 `atlas acp` starts the adapter as the process entry point; clients launch it
 as a subprocess and drive sessions through JSON-RPC.
 
+## Responsibility
+
+- Owns the ACP JSON-RPC lifecycle and uses `json_rpc_2` directly instead of
+  a shared Atlas RPC wrapper.
+- stdout carries only protocol messages; logging goes to stderr.
+
 ## Implemented
 
 - `initialize` with ACP v1 capability negotiation, advertising `loadSession`,
@@ -45,18 +51,21 @@ as a subprocess and drive sessions through JSON-RPC.
   and baseline `resource_link` blocks
 - `session/cancel` mapping to cooperative turn cancellation
 
-## Constraints
+## Allowed dependencies
 
-- Atlas owns the JSON-RPC lifecycle and uses `json_rpc_2` directly instead of
-  a shared Atlas RPC wrapper.
-- The adapter maps protocol methods to runtime calls; it must not duplicate
-  agent orchestration or persistence.
-- stdout carries only protocol messages; logging goes to stderr.
+- `atlas_runtime` public types, `json_rpc_2`, and `stream_channel` for the
+  stdio channel.
+
+## Prohibited ownership
+
+- No agent orchestration or persistence: the adapter maps protocol methods
+  to runtime calls and must not duplicate runtime behavior.
+- No HTTP/WebSocket transport and no client-side terminal or filesystem
+  implementations; see Not implemented below.
 
 ## Not implemented
 
 MCP server connections, filesystem **write** and terminal client methods,
 permission requests, elicitation, session modes (superseded by
 `configOptions`), and HTTP/WebSocket transports. These capabilities are not
-advertised during
-initialization.
+advertised during initialization.

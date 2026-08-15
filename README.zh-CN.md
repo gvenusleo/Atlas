@@ -10,7 +10,7 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
 
 - 定义 runtime、协议、客户端与适配器边界的 Pub workspace；
 - 初步完成的 Flutter 桌面端和移动端应用外壳；
-- 可执行的 `atlas_runtime` Agent engine 与 `atlas_storage` Drift 适配器；
+- 可运行的 `atlas_runtime` Agent engine 与 `atlas_storage` Drift 适配器；
 - 提供 OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages
   适配器，并通过 composite provider 将多个 provider 路由到同一个 runtime 的
   `atlas_provider` 包；
@@ -66,7 +66,7 @@ mise run ci
 mise run app-run --device macos
 ```
 
-Workspace 命令见[开发文档](docs/zh-CN/development.md)，runtime 边界见[架构文档](docs/zh-CN/architecture.md)。
+Workspace 命令见[开发文档](docs/zh-CN/development.md)，runtime 边界见[架构文档](docs/zh-CN/architecture.md)，配置 schema 见[配置文档](docs/zh-CN/configuration.md)，工具行为见[内置工具](docs/zh-CN/tools.md)。
 
 ## 安全模型
 

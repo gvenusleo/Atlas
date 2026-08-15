@@ -10,7 +10,7 @@ The repository currently contains:
 
 - a Pub workspace that defines runtime, protocol, client, and adapter boundaries;
 - an initial Flutter desktop and mobile application shell;
-- an executable `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
+- a working `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
 - an `atlas_provider` package with OpenAI-compatible Chat Completions and
   Responses adapters plus an Anthropic Messages adapter, and a composite
   provider for routing multiple providers to one runtime;
@@ -68,7 +68,7 @@ Run the existing Flutter shell on macOS:
 mise run app-run --device macos
 ```
 
-See [Development](docs/development.md) for workspace commands and [Architecture](docs/architecture.md) for runtime boundaries.
+See [Development](docs/development.md) for workspace commands, [Architecture](docs/architecture.md) for runtime boundaries, [Configuration](docs/configuration.md) for the config file schema, and [Built-in Tools](docs/tools.md) for tool behavior.
 
 ## Security Model
 

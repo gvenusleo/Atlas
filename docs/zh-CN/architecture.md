@@ -2,12 +2,12 @@
 
 [English](../architecture.md)
 
-> **状态：** 开发中。`atlas_runtime`、`atlas_storage`、`atlas_provider`
+> **状态：** `atlas_runtime`、`atlas_storage`、`atlas_provider`
 > 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
 > prompt 构建、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器
-> （`atlas_acp`，由 `atlas acp` 提供）已经可以执行。`atlas_cli`
+> （`atlas_acp`，由 `atlas acp` 提供）均**Available**。`atlas_cli`
 > 提供进程组合根（`composeRuntime`）与 `atlas` 入口；MCP 适配器与
-> WebSocket transport 仍在规划中。
+> WebSocket transport 为 **Planned**。
 
 ## 系统形态
 
@@ -40,6 +40,9 @@ graph TD
     ACP --> JRPC[json_rpc_2]
     MCP --> JRPC
 ```
+
+图中 `atlas_ws` 与 MCP 为 **Planned** 组件，仅用于展示目标形态，当前代码
+中尚未接线。
 
 `atlas_cli` 通过 `composeRuntime` 为 Nocterm 进程组装一个 runtime：它加载
 `atlas_config` 以构造 provider、存储与工具适配器，并注入 `atlas_prompt`
@@ -90,7 +93,7 @@ stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）�
 - `Session` 包含有序的 `TimelineItem` 与持久化的 `Turn`。用户输入会和 running turn 原子写入，然后才发起第一个 Provider 请求。
 - 每个 assistant message 可以携带 Provider 所有的 `ModelContinuation`；它内嵌在 assistant 行中持久化，并恢复到对应的 provider-neutral message。
 - turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界。
-- 计划中的 skill 注入将保留历史中的原始用户文本；完整 skill 指令将只作为当前 turn 可见的模型上下文，不写入 transcript。
+- Skill 注入会保留历史中的原始用户文本；完整 skill 指令仅作为当前 turn 可见的模型上下文，不写入 transcript。
 - Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并在 system prompt 中注入 `Context compacted. Kept {n} recent messages.` 与摘要。可选 compact 指令只影响摘要，不修改用户历史。
 
 这些是产品行为约束，不表示需要兼容已删除 Go 实现的内部结构或数据库 schema。

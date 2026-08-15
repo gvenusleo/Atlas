@@ -2,12 +2,12 @@
 
 [中文](zh-CN/architecture.md)
 
-> **Status:** In progress. `atlas_runtime`, `atlas_storage`, the `atlas_provider`
+> **Status:** `atlas_runtime`, `atlas_storage`, the `atlas_provider`
 > adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
 > prompt construction, the `atlas_tui` Nocterm chat interface, and the ACP
-> server adapter (`atlas_acp`, served by `atlas acp`) are executable.
+> server adapter (`atlas_acp`, served by `atlas acp`) are **Available**.
 > `atlas_cli` provides the process composition root (`composeRuntime`) and the
-> `atlas` entry point; the MCP adapter and WebSocket transport remain planned.
+> `atlas` entry point. The MCP adapter and WebSocket transport are **Planned**.
 
 ## System Shape
 
@@ -41,6 +41,9 @@ graph TD
     ACP --> JRPC[json_rpc_2]
     MCP --> JRPC
 ```
+
+Planned components (`atlas_ws`, MCP) appear above for target-state context;
+their edges are not wired in code yet.
 
 `atlas_cli` composes one runtime for the Nocterm process through
 `composeRuntime`: it loads `atlas_config` to construct provider, storage, and
@@ -94,7 +97,7 @@ product-level contracts:
 - A `Session` contains ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request.
 - Every assistant message may carry a provider-owned `ModelContinuation`; it is persisted inside the assistant row and restored onto the corresponding provider-neutral message.
 - Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary.
-- Planned skill injection will preserve the original user text in history. Full skill instructions will be turn-scoped model context rather than transcript content.
+- Skill injection preserves the original user text in history. Full skill instructions are turn-scoped model context, not transcript content.
 - Compaction preserves the durable timeline while replacing the active context checkpoint, which is stored on the session row. The runtime keeps the newest whole turns verbatim, summarizes everything earlier, and injects `Context compacted. Kept {n} recent messages.` with the summary into the system prompt. An optional compact instruction changes the generated summary, not user history.
 
 These contracts define expected behavior, not compatibility with the removed Go implementation or its database schema.
