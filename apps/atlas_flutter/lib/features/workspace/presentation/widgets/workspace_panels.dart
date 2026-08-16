@@ -220,6 +220,7 @@ class DetailsPanel extends ConsumerStatefulWidget {
 
 class _DetailsPanelState extends ConsumerState<DetailsPanel> {
   var _terminal = false;
+  var _terminalCreated = false;
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +251,12 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       compact: widget.onClose != null,
       title: _ToolTabs(
         terminal: _terminal,
-        onChanged: (terminal) => setState(() => _terminal = terminal),
+        onChanged: (terminal) => setState(() {
+          _terminal = terminal;
+          if (terminal) {
+            _terminalCreated = true;
+          }
+        }),
       ),
       action: widget.onClose != null
           ? WorkspaceToolbarButton(
@@ -260,9 +266,16 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
               onPressed: widget.onClose!,
             )
           : const SizedBox(width: 40),
-      child: _terminal
-          ? TerminalPanel(workingDirectory: workingDirectory)
-          : FileBrowser(workingDirectory: workingDirectory),
+      child: IndexedStack(
+        index: _terminal ? 1 : 0,
+        children: [
+          FileBrowser(workingDirectory: workingDirectory),
+          if (_terminalCreated)
+            TerminalPanel(workingDirectory: workingDirectory)
+          else
+            const SizedBox.shrink(),
+        ],
+      ),
     );
   }
 }
