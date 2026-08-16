@@ -1,15 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_pty/flutter_pty.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:terminal_view/terminal_view.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
 
-const _maximumTerminalCharacters = 100000;
-
-/// Persistent local shell with streamed output and command history.
+/// Interactive shell backed by a pseudo-terminal and a terminal emulator.
 class TerminalPanel extends StatefulWidget {
   /// Creates a shell rooted at [workingDirectory].
   const TerminalPanel({super.key, required this.workingDirectory});
@@ -22,19 +21,16 @@ class TerminalPanel extends StatefulWidget {
 }
 
 class _TerminalPanelState extends State<TerminalPanel> {
-  final _inputController = TextEditingController();
-  final _scrollController = ScrollController();
-  final _output = StringBuffer();
-  final _history = <String>[];
-  Process? _process;
-  StreamSubscription<String>? _stdoutSubscription;
-  StreamSubscription<String>? _stderrSubscription;
-  int _historyIndex = 0;
+  final _terminal = Terminal();
+  Pty? _pty;
+  StreamSubscription<String>? _outputSubscription;
   bool _starting = false;
 
   @override
   void initState() {
     super.initState();
+    _terminal.onOutput = _writeToPty;
+    _terminal.onResize = _resizePty;
     unawaited(_startShell());
   }
 
@@ -48,197 +44,105 @@ class _TerminalPanelState extends State<TerminalPanel> {
 
   @override
   void dispose() {
-    _stdoutSubscription?.cancel();
-    _stderrSubscription?.cancel();
-    _process?.kill();
-    _inputController.dispose();
-    _scrollController.dispose();
+    _outputSubscription?.cancel();
+    _pty?.kill();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = AtlasColors.of(context);
-    return Column(
-      children: [
-        Expanded(
-          child: SelectionArea(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  _output.toString(),
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontFamily: 'monospace',
-                    fontSize: 11.5,
-                    height: 1.45,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const Divider(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 6, 8),
-          child: Row(
-            children: [
-              Text(
-                '>',
-                style: TextStyle(
-                  color: colors.accent,
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Focus(
-                  onKeyEvent: _handleHistoryKey,
-                  child: TextField(
-                    key: const ValueKey('atlas-terminal-input'),
-                    controller: _inputController,
-                    enabled: _process != null && !_starting,
-                    maxLines: 1,
-                    onSubmitted: (_) => _submit(),
-                    style: TextStyle(
-                      color: colors.textPrimary,
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      isCollapsed: true,
-                      hintText: _starting ? 'Starting shell' : null,
-                      hintStyle: TextStyle(color: colors.textSecondary),
-                    ),
-                  ),
-                ),
-              ),
-              Tooltip(
-                message: 'Run command',
-                child: CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size.square(32),
-                  pressedOpacity: 0.72,
-                  onPressed: _process == null || _starting ? null : _submit,
-                  child: Icon(
-                    CupertinoIcons.return_icon,
-                    size: 15,
-                    color: colors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  /// Forwards user input from the emulator to the shell.
+  void _writeToPty(String data) {
+    _pty?.write(utf8.encode(data));
+  }
+
+  /// Keeps the pseudo-terminal window size in sync with the emulator.
+  void _resizePty(int cols, int rows, int pixelWidth, int pixelHeight) {
+    _pty?.resize(rows, cols);
   }
 
   Future<void> _startShell() async {
     if (_starting) {
       return;
     }
-    setState(() => _starting = true);
+    _starting = true;
     final executable = Platform.isWindows
         ? 'cmd.exe'
         : Platform.environment['SHELL'] ?? '/bin/sh';
     try {
-      final process = await Process.start(
+      final pty = Pty.start(
         executable,
-        const [],
         workingDirectory: widget.workingDirectory,
-        environment: {...Platform.environment, 'TERM': 'dumb', 'PS1': ''},
       );
-      _process = process;
-      _append('Shell: $executable\n');
-      _stdoutSubscription = process.stdout
-          .transform(systemEncoding.decoder)
-          .listen(_append);
-      _stderrSubscription = process.stderr
-          .transform(systemEncoding.decoder)
-          .listen(_append);
+      _pty = pty;
+      _outputSubscription = pty.output
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .listen(_terminal.write);
       unawaited(
-        process.exitCode.then((code) {
-          if (mounted && identical(_process, process)) {
-            _append('\nShell exited with code $code.\n');
-            setState(() => _process = null);
+        pty.exitCode.then((code) {
+          if (mounted && identical(_pty, pty)) {
+            _terminal.write('\r\n[Process exited with code $code]\r\n');
+            setState(() => _pty = null);
           }
         }),
       );
-    } on ProcessException catch (error) {
-      _append('Cannot start shell: ${error.message}\n');
+    } catch (error) {
+      _terminal.write('Cannot start shell: $error\r\n');
     } finally {
-      if (mounted) {
-        setState(() => _starting = false);
-      }
+      _starting = false;
     }
   }
 
   Future<void> _restartShell() async {
-    await _stdoutSubscription?.cancel();
-    await _stderrSubscription?.cancel();
-    _process?.kill();
-    _process = null;
-    _append('\nWorking directory changed to ${widget.workingDirectory}.\n');
+    await _outputSubscription?.cancel();
+    _pty?.kill();
+    _pty = null;
+    _terminal.write(
+      '\r\nWorking directory changed to ${widget.workingDirectory}.\r\n',
+    );
     await _startShell();
   }
 
-  void _submit() {
-    final command = _inputController.text.trimRight();
-    final process = _process;
-    if (command.trim().isEmpty || process == null) {
-      return;
-    }
-    _history.add(command);
-    _historyIndex = _history.length;
-    _inputController.clear();
-    _append('> $command\n');
-    process.stdin.writeln(command);
-  }
-
-  KeyEventResult _handleHistoryKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent || _history.isEmpty) {
-      return KeyEventResult.ignored;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      _historyIndex = (_historyIndex - 1).clamp(0, _history.length - 1);
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      _historyIndex = (_historyIndex + 1).clamp(0, _history.length);
-    } else {
-      return KeyEventResult.ignored;
-    }
-    _inputController.text = _historyIndex == _history.length
-        ? ''
-        : _history[_historyIndex];
-    _inputController.selection = TextSelection.collapsed(
-      offset: _inputController.text.length,
+  @override
+  Widget build(BuildContext context) {
+    return TerminalView(
+      _terminal,
+      autofocus: true,
+      theme: _terminalTheme(context),
+      textStyle: const TerminalStyle(
+        fontSize: 12,
+        fontFamily: 'monospace',
+      ),
     );
-    return KeyEventResult.handled;
   }
+}
 
-  void _append(String text) {
-    if (!mounted) {
-      return;
-    }
-    final combined = '${_output.toString()}$text';
-    _output
-      ..clear()
-      ..write(
-        combined.length <= _maximumTerminalCharacters
-            ? combined
-            : combined.substring(combined.length - _maximumTerminalCharacters),
-      );
-    setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
+/// Builds a terminal palette that follows the active Atlas theme.
+TerminalTheme _terminalTheme(BuildContext context) {
+  final colors = AtlasColors.of(context);
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  return TerminalTheme(
+    cursor: colors.accent,
+    selection: colors.accent.withValues(alpha: 0.35),
+    foreground: colors.textPrimary,
+    background: colors.panel,
+    black: dark ? const Color(0xFF3A404B) : const Color(0xFF4A5568),
+    red: colors.error,
+    green: colors.success,
+    yellow: dark ? const Color(0xFFE5C07B) : const Color(0xFFB7791F),
+    blue: colors.accent,
+    magenta: dark ? const Color(0xFFC678DD) : const Color(0xFF8E44AD),
+    cyan: dark ? const Color(0xFF56B6C2) : const Color(0xFF0E7490),
+    white: colors.textPrimary,
+    brightBlack: colors.textSecondary,
+    brightRed: colors.error,
+    brightGreen: colors.success,
+    brightYellow: dark ? const Color(0xFFF5D08A) : const Color(0xFFD69E2E),
+    brightBlue: colors.accent,
+    brightMagenta: dark ? const Color(0xFFD7A0E8) : const Color(0xFFA55EEA),
+    brightCyan: dark ? const Color(0xFF6CC7D2) : const Color(0xFF0E9BB8),
+    brightWhite: colors.textPrimary,
+    searchHitBackground: colors.raised,
+    searchHitBackgroundCurrent: colors.accent,
+    searchHitForeground: colors.canvas,
+  );
 }

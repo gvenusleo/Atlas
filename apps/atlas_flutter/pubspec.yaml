@@ -48,6 +48,8 @@ dependencies:
   atlas_storage: ^0.1.0
   atlas_tools: ^0.1.0
   flutter_markdown: ^0.7.7+1
+  terminal_view: ^0.1.3
+  flutter_pty: ^0.4.2
 
 dev_dependencies:
   flutter_test:
