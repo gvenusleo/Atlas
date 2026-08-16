@@ -181,7 +181,7 @@ class _FileBrowserState extends State<FileBrowser> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       itemCount: _visibleNodes.length,
       itemBuilder: (context, index) =>
           _buildRow(_visibleNodes[index], colors),
@@ -195,16 +195,27 @@ class _FileBrowserState extends State<FileBrowser> {
           ? _toggleNode(node)
           : _openFile(node.entity as File),
       child: SizedBox(
-        height: 30,
+        height: 26,
         child: Padding(
-          padding: EdgeInsets.only(left: 6.0 + node.depth * 12.0, right: 8),
+          padding: const EdgeInsets.only(left: 6, right: 8),
           child: Row(
             children: [
+              // One guide line per ancestor level, running the full row.
+              for (var depth = 0; depth < node.depth; depth++)
+                SizedBox(
+                  width: 12,
+                  height: double.infinity,
+                  child: CustomPaint(
+                    painter: _GuideLinePainter(
+                      color: colors.textSecondary.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ),
               Icon(
                 isDirectory
                     ? (node.expanded
                         ? LucideIcons.folderOpen
-                        : LucideIcons.folder)
+                        : LucideIcons.folderClosed)
                     : LucideIcons.file,
                 size: 15,
                 color: colors.textPrimary,
@@ -387,6 +398,26 @@ class _FileBrowserState extends State<FileBrowser> {
       }
     }
   }
+}
+
+/// Paints a vertical tree guide line spanning the full row height.
+class _GuideLinePainter extends CustomPainter {
+  const _GuideLinePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    final x = size.width / 2;
+    canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _GuideLinePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _FileAction extends StatelessWidget {
