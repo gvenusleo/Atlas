@@ -452,6 +452,36 @@ void main() {
       expect(find.byTooltip('Show sessions'), findsOneWidget);
     },
   );
+
+  testWidgets('new session button opens the directory picker', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 760);
+      addTearDown(tester.view.reset);
+      var picked = false;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            directoryPickerProvider.overrideWithValue(() async {
+              picked = true;
+              return null;
+            }),
+          ],
+          child: const AtlasApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final button = find.byKey(const ValueKey('atlas-new-session-button'));
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pump();
+      expect(picked, isTrue);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }
 
 /// Pumps the workspace shell at [size] on [platform] and restores the

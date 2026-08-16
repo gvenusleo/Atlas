@@ -8,10 +8,20 @@ import '../../../app/runtime_environment.dart';
 import 'workspace_message.dart';
 import 'workspace_state.dart';
 
-/// Initial working directory for a new workspace, overridable in tests.
-final workspaceWorkingDirectoryProvider = Provider<String>(
-  (ref) => Directory.current.path,
+/// Working directory for the workspace, overridable in tests.
+final workspaceWorkingDirectoryProvider =
+    NotifierProvider<WorkspaceWorkingDirectory, String>(
+  WorkspaceWorkingDirectory.new,
 );
+
+/// Holds the workspace working directory.
+class WorkspaceWorkingDirectory extends Notifier<String> {
+  @override
+  String build() => Directory.current.path;
+
+  /// Switches the working directory for subsequent sessions.
+  void set(String directory) => state = directory;
+}
 
 /// Coordinates one Flutter workspace with the injected shared runtime.
 final class WorkspaceController extends Notifier<WorkspaceState> {

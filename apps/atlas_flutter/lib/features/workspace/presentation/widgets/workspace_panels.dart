@@ -63,16 +63,11 @@ class _SessionList extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+          padding: const EdgeInsets.fromLTRB(10, 6, 30, 6),
           child: InkWell(
-            key: const ValueKey('atlas-new-session'),
+            key: const ValueKey('atlas-search-session'),
             borderRadius: BorderRadius.circular(AtlasRadii.control),
-            onTap: busy
-                ? null
-                : () {
-                    controller.newSession();
-                    onClose?.call();
-                  },
+            onTap: null,
             child: Container(
               height: 36,
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -83,13 +78,13 @@ class _SessionList extends ConsumerWidget {
               child: Row(
                 children: [
                   Icon(
-                    LucideIcons.plus,
+                    LucideIcons.search,
                     color: colors.textSecondary,
                     size: 15,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'New session',
+                    'Search session',
                     style: TextStyle(
                       color: colors.textPrimary,
                       fontSize: 12.5,

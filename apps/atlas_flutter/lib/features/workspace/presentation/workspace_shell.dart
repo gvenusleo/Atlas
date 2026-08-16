@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:file_selector/file_selector.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,11 @@ import '../application/workspace_controller.dart';
 import 'widgets/workspace_controls.dart';
 import 'widgets/workspace_panels.dart';
 import 'workspace_metrics.dart';
+
+/// Picks a working directory for a new session; overridable in tests.
+final directoryPickerProvider = Provider<Future<String?> Function()>(
+  (ref) => getDirectoryPath,
+);
 
 /// Responsive Atlas workspace with desktop side panels and compact drawers.
 class WorkspaceShell extends ConsumerStatefulWidget {
@@ -152,6 +158,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
               ),
             ),
             Positioned(
+              key: const ValueKey('atlas-left-toggle-positioned'),
               top: 6,
               left: closedLeftButtonX,
               child: WorkspaceToolbarButton(
@@ -161,7 +168,20 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                 onPressed: () => _setLeftVisible(!_leftVisible, leftPanelWidth),
               ),
             ),
+            if (_leftVisible)
+              Positioned(
+                key: const ValueKey('atlas-new-session-positioned'),
+                top: 6,
+                left: leftPanelWidth - 30,
+                child: WorkspaceToolbarButton(
+                  key: const ValueKey('atlas-new-session-button'),
+                  icon: LucideIcons.plus,
+                  tooltip: 'New session',
+                  onPressed: _startNewSession,
+                ),
+              ),
             Positioned(
+              key: const ValueKey('atlas-right-toggle-positioned'),
               top: 6,
               right: 6,
               child: WorkspaceToolbarButton(
@@ -315,6 +335,19 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
       _leftVisible = visible;
     });
     _animateSidebar(_leftSidebarAnimation, visible);
+  }
+
+  /// Picks a working directory and starts a fresh session in it.
+  Future<void> _startNewSession() async {
+    final picker = ref.read(directoryPickerProvider);
+    final directory = await picker();
+    if (directory == null || !mounted) {
+      return;
+    }
+    ref.read(workspaceWorkingDirectoryProvider.notifier).set(directory);
+    final controller = ref.read(workspaceProvider.notifier);
+    controller.newSession();
+    unawaited(controller.refreshSessions());
   }
 
   void _setRightVisible(bool visible, double panelWidth) {
