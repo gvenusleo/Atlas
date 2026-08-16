@@ -24,7 +24,7 @@ abstract final class WorkspaceMetrics {
   static const rightMinimumWidth = 220.0;
 
   /// Maximum width of the details sidebar.
-  static const rightMaximumWidth = 380.0;
+  static const rightMaximumWidth = 540.0;
 
   /// Width of the interactive resize gutter.
   static const resizeHandleWidth = 8.0;
