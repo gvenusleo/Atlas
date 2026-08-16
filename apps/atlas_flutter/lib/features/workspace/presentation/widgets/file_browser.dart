@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
@@ -55,8 +55,8 @@ class _FileBrowserState extends State<FileBrowser> {
             children: [
               _FileAction(
                 icon: _selectedFile == null
-                    ? CupertinoIcons.chevron_left
-                    : CupertinoIcons.arrow_left,
+                    ? LucideIcons.chevronLeft
+                    : LucideIcons.arrowLeft,
                 tooltip: _selectedFile == null
                     ? 'Parent folder'
                     : 'Back to files',
@@ -77,7 +77,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 ),
               ),
               _FileAction(
-                icon: CupertinoIcons.refresh,
+                icon: LucideIcons.refreshCw,
                 tooltip: 'Refresh files',
                 onPressed: _selectedFile == null ? _loadEntries : _loadPreview,
               ),
@@ -149,7 +149,7 @@ class _FileBrowserState extends State<FileBrowser> {
               child: Row(
                 children: [
                   Icon(
-                    isDirectory ? CupertinoIcons.folder : CupertinoIcons.doc,
+                    isDirectory ? LucideIcons.folder : LucideIcons.file,
                     size: 15,
                     color: isDirectory ? colors.accent : colors.textSecondary,
                   ),
@@ -310,12 +310,11 @@ class _FileAction extends StatelessWidget {
     final colors = AtlasColors.of(context);
     return Tooltip(
       message: tooltip,
-      child: CupertinoButton(
+      child: IconButton(
         padding: EdgeInsets.zero,
-        minimumSize: const Size.square(38),
-        pressedOpacity: 0.72,
+        constraints: const BoxConstraints.tightFor(width: 38, height: 38),
         onPressed: enabled ? onPressed : null,
-        child: Icon(
+        icon: Icon(
           icon,
           size: 15,
           color: enabled ? colors.textSecondary : colors.divider,

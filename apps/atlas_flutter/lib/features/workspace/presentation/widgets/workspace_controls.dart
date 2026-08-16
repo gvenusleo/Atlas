@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -153,13 +152,14 @@ class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
         ),
         child: Tooltip(
           message: widget.tooltip,
-          child: CupertinoButton(
+          child: IconButton(
             padding: EdgeInsets.zero,
-            minimumSize: Size.square(widget.size),
-            pressedOpacity: 1,
-            focusColor: Colors.transparent,
+            constraints: BoxConstraints.tightFor(
+              width: widget.size,
+              height: widget.size,
+            ),
             onPressed: widget.onPressed,
-            child: Icon(
+            icon: Icon(
               widget.icon,
               color: widget.active ? colors.textPrimary : colors.textSecondary,
               size: 18,

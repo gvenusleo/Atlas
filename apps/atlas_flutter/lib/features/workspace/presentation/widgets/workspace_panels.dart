@@ -1,4 +1,4 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -28,7 +28,7 @@ class SessionsPanel extends ConsumerWidget {
       compact: onClose != null,
       action: onClose != null
           ? WorkspaceToolbarButton(
-              icon: CupertinoIcons.xmark,
+              icon: LucideIcons.x,
               tooltip: 'Close sessions',
               size: 44,
               onPressed: onClose!,
@@ -36,7 +36,7 @@ class SessionsPanel extends ConsumerWidget {
           : const SizedBox(width: 40),
       child: environment == null
           ? const _PanelEmptyState(
-              icon: CupertinoIcons.exclamationmark_triangle,
+              icon: LucideIcons.triangleAlert,
               message: 'Runtime unavailable',
             )
           : _SessionList(onClose: onClose),
@@ -64,36 +64,40 @@ class _SessionList extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
-          child: CupertinoButton(
+          child: InkWell(
             key: const ValueKey('atlas-new-session'),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            minimumSize: const Size.fromHeight(36),
-            pressedOpacity: 0.72,
-            color: colors.raised,
             borderRadius: BorderRadius.circular(AtlasRadii.control),
-            onPressed: busy
+            onTap: busy
                 ? null
                 : () {
                     controller.newSession();
                     onClose?.call();
                   },
-            child: Row(
-              children: [
-                Icon(
-                  CupertinoIcons.add,
-                  color: colors.textSecondary,
-                  size: 15,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'New session',
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: colors.raised,
+                borderRadius: BorderRadius.circular(AtlasRadii.control),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.plus,
+                    color: colors.textSecondary,
+                    size: 15,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Text(
+                    'New session',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -110,7 +114,7 @@ class _SessionList extends ConsumerWidget {
                 )
               : sessions.isEmpty
               ? const _PanelEmptyState(
-                  icon: CupertinoIcons.bubble_left_bubble_right,
+                  icon: LucideIcons.messageCircle,
                   message: 'No sessions yet',
                 )
               : RefreshIndicator(
@@ -226,14 +230,14 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
         compact: widget.onClose != null,
         action: widget.onClose != null
             ? WorkspaceToolbarButton(
-                icon: CupertinoIcons.xmark,
+                icon: LucideIcons.x,
                 tooltip: 'Close workspace tools',
                 size: 44,
                 onPressed: widget.onClose!,
               )
             : const SizedBox(width: 40),
         child: const _PanelEmptyState(
-          icon: CupertinoIcons.exclamationmark_triangle,
+          icon: LucideIcons.triangleAlert,
           message: 'Runtime unavailable',
         ),
       );
@@ -250,7 +254,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       ),
       action: widget.onClose != null
           ? WorkspaceToolbarButton(
-              icon: CupertinoIcons.xmark,
+              icon: LucideIcons.x,
               tooltip: 'Close workspace tools',
               size: 44,
               onPressed: widget.onClose!,
@@ -275,14 +279,14 @@ class _ToolTabs extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         WorkspaceToolbarButton(
-          icon: CupertinoIcons.folder,
+          icon: LucideIcons.folder,
           tooltip: 'Files',
           active: !terminal,
           onPressed: () => onChanged(false),
         ),
         const SizedBox(width: 4),
         WorkspaceToolbarButton(
-          icon: CupertinoIcons.chevron_left_slash_chevron_right,
+          icon: LucideIcons.terminal,
           tooltip: 'Terminal',
           active: terminal,
           onPressed: () => onChanged(true),
@@ -413,7 +417,7 @@ class WorkspacePanel extends ConsumerWidget {
                     if (compact)
                       WorkspaceToolbarButton(
                         key: const ValueKey('atlas-left-toggle'),
-                        icon: CupertinoIcons.sidebar_left,
+                        icon: LucideIcons.panelLeft,
                         tooltip: 'Open sessions',
                         size: 44,
                         onPressed: onLeftPressed,
@@ -442,7 +446,7 @@ class WorkspacePanel extends ConsumerWidget {
                     if (compact)
                       WorkspaceToolbarButton(
                         key: const ValueKey('atlas-right-toggle'),
-                        icon: CupertinoIcons.sidebar_right,
+                        icon: LucideIcons.panelRight,
                         tooltip: 'Open workspace tools',
                         size: 44,
                         onPressed: onRightPressed,
@@ -499,7 +503,7 @@ class _StartupFailure extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                CupertinoIcons.exclamationmark_triangle,
+                LucideIcons.triangleAlert,
                 color: colors.error,
                 size: 20,
               ),

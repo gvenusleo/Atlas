@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -156,7 +156,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
               left: closedLeftButtonX,
               child: WorkspaceToolbarButton(
                 key: const ValueKey('atlas-left-toggle'),
-                icon: CupertinoIcons.sidebar_left,
+                icon: LucideIcons.panelLeft,
                 tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
                 active: _leftVisible,
                 onPressed: () => _setLeftVisible(!_leftVisible, leftPanelWidth),
@@ -167,7 +167,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
               right: 6,
               child: WorkspaceToolbarButton(
                 key: const ValueKey('atlas-right-toggle'),
-                icon: CupertinoIcons.sidebar_right,
+                icon: LucideIcons.panelRight,
                 tooltip: _rightVisible ? 'Hide details' : 'Show details',
                 active: _rightVisible,
                 onPressed: () =>

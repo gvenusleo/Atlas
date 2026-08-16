@@ -1,5 +1,5 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -142,13 +142,15 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                           ),
                         Tooltip(
                           message: busy ? 'Stop' : 'Send',
-                          child: CupertinoButton(
+                          child: IconButton(
                             key: const ValueKey('atlas-send-button'),
                             padding: EdgeInsets.zero,
-                            minimumSize: const Size.square(32),
-                            pressedOpacity: 0.72,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
                             onPressed: busy ? controller.cancel : _submit,
-                            child: DecoratedBox(
+                            icon: DecoratedBox(
                               decoration: BoxDecoration(
                                 color: colors.accent,
                                 borderRadius: BorderRadius.circular(
@@ -159,8 +161,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                 dimension: 28,
                                 child: Icon(
                                   busy
-                                      ? CupertinoIcons.stop_fill
-                                      : CupertinoIcons.arrow_up,
+                                      ? LucideIcons.square
+                                      : LucideIcons.arrowUp,
                                   size: 14,
                                   color: colors.canvas,
                                 ),
