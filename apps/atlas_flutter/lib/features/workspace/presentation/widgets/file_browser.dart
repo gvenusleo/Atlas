@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,8 +8,10 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 
 const _maximumPreviewBytes = 512 * 1024;
+const _maximumEntriesPerFolder = 500;
 
-/// Browses a working directory and previews UTF-8 text files.
+/// Browses a working directory as a lazy-loading file tree and previews
+/// UTF-8 text files.
 class FileBrowser extends StatefulWidget {
   /// Creates a browser rooted at [workingDirectory].
   const FileBrowser({super.key, required this.workingDirectory});
@@ -20,14 +23,27 @@ class FileBrowser extends StatefulWidget {
   State<FileBrowser> createState() => _FileBrowserState();
 }
 
+/// A directory node in the lazy-loading file tree.
+class _TreeNode {
+  _TreeNode({required this.entity, required this.depth});
+
+  final FileSystemEntity entity;
+  final int depth;
+  bool expanded = false;
+
+  /// Children once loaded; null while not yet read.
+  List<_TreeNode>? children;
+  bool loading = false;
+  String? error;
+}
+
 class _FileBrowserState extends State<FileBrowser> {
   late Directory _root;
-  late Directory _current;
-  List<FileSystemEntity> _entries = const [];
+  late _TreeNode _rootNode;
+  List<_TreeNode> _visibleNodes = const [];
   File? _selectedFile;
   String? _preview;
   String? _error;
-  bool _loading = false;
 
   @override
   void initState() {
@@ -51,38 +67,9 @@ class _FileBrowserState extends State<FileBrowser> {
       children: [
         SizedBox(
           height: 38,
-          child: Row(
-            children: [
-              _FileAction(
-                icon: _selectedFile == null
-                    ? LucideIcons.chevronLeft
-                    : LucideIcons.arrowLeft,
-                tooltip: _selectedFile == null
-                    ? 'Parent folder'
-                    : 'Back to files',
-                enabled: _selectedFile != null || !_samePath(_current, _root),
-                onPressed: _selectedFile == null ? _goUp : _closePreview,
-              ),
-              Expanded(
-                child: Text(
-                  _selectedFile?.path.split(Platform.pathSeparator).last ??
-                      _relativeCurrentPath,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: colors.textSecondary,
-                    fontSize: 11.5,
-                    fontFamily: _selectedFile == null ? null : 'monospace',
-                  ),
-                ),
-              ),
-              _FileAction(
-                icon: LucideIcons.refreshCw,
-                tooltip: 'Refresh files',
-                onPressed: _selectedFile == null ? _loadEntries : _loadPreview,
-              ),
-            ],
-          ),
+          child: _selectedFile == null
+              ? _buildToolbar(colors)
+              : _buildPreviewToolbar(colors),
         ),
         const Divider(),
         Expanded(child: _buildContent(colors)),
@@ -90,28 +77,67 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
-  Widget _buildContent(AtlasColors colors) {
-    if (_loading) {
-      return Center(
-        child: SizedBox.square(
-          dimension: 18,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: colors.accent,
+  Widget _buildToolbar(AtlasColors colors) {
+    return Row(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Text(
+              _root.path,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
+            ),
           ),
         ),
-      );
-    }
-    if (_error != null) {
-      return Padding(
-        padding: const EdgeInsets.all(14),
-        child: Text(
-          _error!,
-          style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
+        _FileAction(
+          icon: LucideIcons.refreshCw,
+          tooltip: 'Refresh files',
+          onPressed: _refresh,
         ),
-      );
-    }
+      ],
+    );
+  }
+
+  Widget _buildPreviewToolbar(AtlasColors colors) {
+    return Row(
+      children: [
+        _FileAction(
+          icon: LucideIcons.arrowLeft,
+          tooltip: 'Back to files',
+          onPressed: _closePreview,
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              _selectedFile?.path.split(Platform.pathSeparator).last ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 11.5,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContent(AtlasColors colors) {
     if (_selectedFile != null) {
+      if (_error != null) {
+        return Padding(
+          padding: const EdgeInsets.all(14),
+          child: Text(
+            _error!,
+            style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
+          ),
+        );
+      }
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
         child: SelectableText(
@@ -125,7 +151,27 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       );
     }
-    if (_entries.isEmpty) {
+    if (_rootNode.loading && _rootNode.children == null) {
+      return Center(
+        child: SizedBox.square(
+          dimension: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.5,
+            color: colors.accent,
+          ),
+        ),
+      );
+    }
+    if (_rootNode.error != null && _rootNode.children == null) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: Text(
+          _rootNode.error!,
+          style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
+        ),
+      );
+    }
+    if (_rootNode.children?.isEmpty ?? false) {
       return Center(
         child: Text(
           'Empty folder',
@@ -135,70 +181,103 @@ class _FileBrowserState extends State<FileBrowser> {
     }
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: _entries.length,
-      itemBuilder: (context, index) {
-        final entry = _entries[index];
-        final isDirectory = entry is Directory;
-        return InkWell(
-          onTap: () =>
-              isDirectory ? _openDirectory(entry) : _openFile(entry as File),
-          child: SizedBox(
-            height: 34,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    isDirectory ? LucideIcons.folder : LucideIcons.file,
-                    size: 15,
-                    color: isDirectory ? colors.accent : colors.textSecondary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      entry.path.split(Platform.pathSeparator).last,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: colors.textPrimary, fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+      itemCount: _visibleNodes.length,
+      itemBuilder: (context, index) =>
+          _buildRow(_visibleNodes[index], colors),
     );
   }
 
-  String get _relativeCurrentPath {
-    if (_samePath(_current, _root)) {
-      return _root.path;
-    }
-    final prefix = '${_root.path}${Platform.pathSeparator}';
-    return _current.path.startsWith(prefix)
-        ? _current.path.substring(prefix.length)
-        : _current.path;
+  Widget _buildRow(_TreeNode node, AtlasColors colors) {
+    final isDirectory = node.entity is Directory;
+    return InkWell(
+      onTap: () => isDirectory
+          ? _toggleNode(node)
+          : _openFile(node.entity as File),
+      child: SizedBox(
+        height: 30,
+        child: Padding(
+          padding: EdgeInsets.only(left: 6.0 + node.depth * 12.0, right: 8),
+          child: Row(
+            children: [
+              if (isDirectory)
+                Icon(
+                  node.expanded
+                      ? LucideIcons.chevronDown
+                      : LucideIcons.chevronRight,
+                  size: 14,
+                  color: colors.textSecondary,
+                )
+              else
+                const SizedBox(width: 14),
+              const SizedBox(width: 2),
+              Icon(
+                isDirectory ? LucideIcons.folder : LucideIcons.file,
+                size: 15,
+                color: isDirectory ? colors.accent : colors.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  node.entity.path.split(Platform.pathSeparator).last,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textPrimary, fontSize: 12),
+                ),
+              ),
+              if (node.loading)
+                SizedBox.square(
+                  dimension: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: colors.accent,
+                  ),
+                )
+              else if (node.error != null)
+                Tooltip(
+                  message: node.error!,
+                  child: Icon(
+                    LucideIcons.triangleAlert,
+                    size: 14,
+                    color: colors.error,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _resetRoot() {
     _root = Directory(widget.workingDirectory).absolute;
-    _current = _root;
+    _rootNode = _TreeNode(entity: _root, depth: 0)..expanded = true;
+    _visibleNodes = const [];
     _selectedFile = null;
     _preview = null;
     _error = null;
-    _loadEntries();
+    unawaited(_loadChildren(_rootNode));
   }
 
-  Future<void> _loadEntries() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _toggleNode(_TreeNode node) async {
+    if (node.expanded) {
+      node.expanded = false;
+      _rebuildVisible();
+      return;
+    }
+    node.expanded = true;
+    if (node.children == null) {
+      await _loadChildren(node);
+    }
+    _rebuildVisible();
+  }
+
+  Future<void> _loadChildren(_TreeNode node) async {
+    node.loading = true;
+    _rebuildVisible();
     try {
-      final entries = await _current
+      final entries = await (node.entity as Directory)
           .list(followLinks: false)
-          .take(500)
+          .take(_maximumEntriesPerFolder)
           .toList();
       entries.sort((a, b) {
         final directoryOrder =
@@ -208,36 +287,68 @@ class _FileBrowserState extends State<FileBrowser> {
         }
         return a.path.toLowerCase().compareTo(b.path.toLowerCase());
       });
-      if (mounted) {
-        setState(() => _entries = entries);
-      }
+      // Reuse existing child nodes by path so expanded state survives reloads.
+      final existing = {
+        for (final child in node.children ?? const <_TreeNode>[])
+          child.entity.path: child,
+      };
+      final childDepth = node == _rootNode ? 0 : node.depth + 1;
+      node.children = entries
+          .map((entry) =>
+              existing[entry.path] ??
+              _TreeNode(entity: entry, depth: childDepth))
+          .toList();
+      node.error = null;
     } on FileSystemException catch (error) {
-      if (mounted) {
-        setState(() => _error = error.message);
-      }
+      node.error = error.message;
     } finally {
+      node.loading = false;
       if (mounted) {
-        setState(() => _loading = false);
+        _rebuildVisible();
       }
     }
   }
 
-  void _openDirectory(Directory directory) {
-    _current = directory.absolute;
-    _loadEntries();
+  /// Reloads every expanded folder so newly created files appear.
+  Future<void> _refresh() async {
+    await _reloadExpanded(_rootNode);
   }
 
-  void _goUp() {
-    if (_samePath(_current, _root)) {
+  /// Reloads [node] and, when expanded, its expanded descendants.
+  Future<void> _reloadExpanded(_TreeNode node) async {
+    if (!node.expanded) {
       return;
     }
-    final parent = _current.parent.absolute;
-    _current = parent.path.startsWith(_root.path) ? parent : _root;
-    _loadEntries();
+    await _loadChildren(node);
+    for (final child in node.children ?? const <_TreeNode>[]) {
+      await _reloadExpanded(child);
+    }
+  }
+
+  void _rebuildVisible() {
+    final nodes = <_TreeNode>[];
+    void visit(_TreeNode node) {
+      nodes.add(node);
+      if (node.expanded && node.children != null) {
+        for (final child in node.children!) {
+          visit(child);
+        }
+      }
+    }
+
+    // The root directory itself is not shown; its children are the top level.
+    for (final child in _rootNode.children ?? const <_TreeNode>[]) {
+      visit(child);
+    }
+    setState(() => _visibleNodes = nodes);
   }
 
   void _openFile(File file) {
-    _selectedFile = file;
+    setState(() {
+      _selectedFile = file;
+      _preview = null;
+      _error = null;
+    });
     _loadPreview();
   }
 
@@ -255,7 +366,6 @@ class _FileBrowserState extends State<FileBrowser> {
       return;
     }
     setState(() {
-      _loading = true;
       _error = null;
     });
     try {
@@ -281,15 +391,8 @@ class _FileBrowserState extends State<FileBrowser> {
       if (mounted) {
         setState(() => _error = error.message);
       }
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
     }
   }
-
-  static bool _samePath(FileSystemEntity a, FileSystemEntity b) =>
-      a.absolute.path == b.absolute.path;
 }
 
 class _FileAction extends StatelessWidget {
@@ -297,13 +400,11 @@ class _FileAction extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
-    this.enabled = true,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -313,11 +414,11 @@ class _FileAction extends StatelessWidget {
       child: IconButton(
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 38, height: 38),
-        onPressed: enabled ? onPressed : null,
+        onPressed: onPressed,
         icon: Icon(
           icon,
           size: 15,
-          color: enabled ? colors.textSecondary : colors.divider,
+          color: colors.textSecondary,
         ),
       ),
     );
