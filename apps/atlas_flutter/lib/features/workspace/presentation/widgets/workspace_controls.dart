@@ -148,7 +148,7 @@ class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
         width: widget.size,
         height: widget.size,
         decoration: BoxDecoration(
-          color: _hovered ? colors.raised : null,
+          color: widget.active || _hovered ? colors.raised : null,
           borderRadius: BorderRadius.circular(AtlasRadii.control),
         ),
         child: Tooltip(
@@ -159,7 +159,11 @@ class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
             pressedOpacity: 1,
             focusColor: Colors.transparent,
             onPressed: widget.onPressed,
-            child: Icon(widget.icon, color: colors.textSecondary, size: 18),
+            child: Icon(
+              widget.icon,
+              color: widget.active ? colors.textPrimary : colors.textSecondary,
+              size: 18,
+            ),
           ),
         ),
       ),

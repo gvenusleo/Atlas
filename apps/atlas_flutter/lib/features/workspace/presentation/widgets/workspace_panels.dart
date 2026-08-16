@@ -271,68 +271,23 @@ class _ToolTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = AtlasColors.of(context);
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: _ToolTab(
-            label: 'Files',
-            selected: !terminal,
-            colors: colors,
-            onPressed: () => onChanged(false),
-          ),
+        WorkspaceToolbarButton(
+          icon: CupertinoIcons.folder,
+          tooltip: 'Files',
+          active: !terminal,
+          onPressed: () => onChanged(false),
         ),
-        Expanded(
-          child: _ToolTab(
-            label: 'Terminal',
-            selected: terminal,
-            colors: colors,
-            onPressed: () => onChanged(true),
-          ),
+        const SizedBox(width: 4),
+        WorkspaceToolbarButton(
+          icon: CupertinoIcons.chevron_left_slash_chevron_right,
+          tooltip: 'Terminal',
+          active: terminal,
+          onPressed: () => onChanged(true),
         ),
       ],
-    );
-  }
-}
-
-class _ToolTab extends StatelessWidget {
-  const _ToolTab({
-    required this.label,
-    required this.selected,
-    required this.colors,
-    required this.onPressed,
-  });
-
-  final String label;
-  final bool selected;
-  final AtlasColors colors;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AtlasRadii.small),
-        onTap: onPressed,
-        child: SizedBox(
-          height: 30,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: selected ? colors.textPrimary : colors.textSecondary,
-                  fontSize: 11.5,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -370,8 +325,15 @@ class _SidePanel extends StatelessWidget {
                     : WorkspaceMetrics.desktopToolbarHeight,
                 child: Row(
                   children: [
-                    const SizedBox(width: 40),
-                    Expanded(child: Center(child: title)),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: title,
+                        ),
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: action,
