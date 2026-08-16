@@ -1,0 +1,377 @@
+import 'dart:convert';
+
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
+
+import '../../../../shared/theme/atlas_theme.dart';
+import '../../application/workspace_controller.dart';
+import '../../application/workspace_message.dart';
+
+/// Scrollable conversation transcript with streaming Markdown and disclosures.
+class ConversationView extends ConsumerStatefulWidget {
+  /// Creates a transcript bound to the workspace state.
+  const ConversationView({super.key});
+
+  @override
+  ConsumerState<ConversationView> createState() => _ConversationViewState();
+}
+
+class _ConversationViewState extends ConsumerState<ConversationView> {
+  final _scrollController = ScrollController();
+  var _lastMessageCount = 0;
+  var _lastTextLength = 0;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = ref.watch(workspaceProvider.select((s) => s.messages));
+    final textLength = messages.fold<int>(
+      0,
+      (length, message) => length + message.text.length,
+    );
+    if (messages.length != _lastMessageCount || textLength != _lastTextLength) {
+      _lastMessageCount = messages.length;
+      _lastTextLength = textLength;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+    }
+
+    if (messages.isEmpty) {
+      return const _ConversationEmptyState();
+    }
+    return SelectionArea(
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        itemCount: messages.length,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(
+            bottom: index == messages.length - 1 ? 0 : 18,
+          ),
+          child: _MessageView(message: messages[index]),
+        ),
+      ),
+    );
+  }
+
+  void _scrollToEnd() {
+    if (!mounted || !_scrollController.hasClients) {
+      return;
+    }
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+  }
+}
+
+class _ConversationEmptyState extends StatelessWidget {
+  const _ConversationEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'Atlas',
+          style: TextStyle(
+            color: colors.textSecondary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageView extends StatelessWidget {
+  const _MessageView({required this.message});
+
+  final WorkspaceMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (message.kind) {
+      WorkspaceMessageKind.user => _UserMessage(message.text),
+      WorkspaceMessageKind.assistant => _AssistantMessage(message.text),
+      WorkspaceMessageKind.reasoning => _ReasoningMessage(message.text),
+      WorkspaceMessageKind.tool => _ToolMessage(message),
+      WorkspaceMessageKind.notice => _NoticeMessage(message.text),
+      WorkspaceMessageKind.error => _ErrorMessage(message.text),
+    };
+  }
+}
+
+class _UserMessage extends StatelessWidget {
+  const _UserMessage(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.raised,
+            borderRadius: BorderRadius.circular(AtlasRadii.surface),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: SelectableText(
+              text,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantMessage extends StatelessWidget {
+  const _AssistantMessage(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 780),
+        child: MarkdownBody(
+          data: text,
+          selectable: false,
+          softLineBreak: true,
+          styleSheet: MarkdownStyleSheet(
+            p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.55),
+            h1: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 22,
+              height: 1.25,
+              fontWeight: FontWeight.w600,
+            ),
+            h2: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 18,
+              height: 1.3,
+              fontWeight: FontWeight.w600,
+            ),
+            h3: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 15,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+            code: TextStyle(
+              color: colors.textPrimary,
+              backgroundColor: colors.raised,
+              fontSize: 12.5,
+              fontFamily: 'monospace',
+            ),
+            codeblockDecoration: BoxDecoration(
+              color: colors.panel,
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
+            ),
+            blockquoteDecoration: BoxDecoration(
+              border: Border(left: BorderSide(color: colors.divider, width: 2)),
+            ),
+            blockquotePadding: const EdgeInsets.only(left: 12),
+            horizontalRuleDecoration: BoxDecoration(
+              border: Border(top: BorderSide(color: colors.divider)),
+            ),
+            listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReasoningMessage extends StatelessWidget {
+  const _ReasoningMessage(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: 24, bottom: 6),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        leading: Icon(
+          Icons.psychology_outlined,
+          size: 16,
+          color: colors.textSecondary,
+        ),
+        title: Text(
+          'Reasoning',
+          style: TextStyle(color: colors.textSecondary, fontSize: 12),
+        ),
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SelectableText(
+              text,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 12.5,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolMessage extends StatelessWidget {
+  const _ToolMessage(this.message);
+
+  final WorkspaceMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final statusColor = message.isError ? colors.error : colors.textSecondary;
+    final details = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(message.arguments ?? {});
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.panel,
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          leading: message.isRunning
+              ? SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: colors.accent,
+                  ),
+                )
+              : Icon(
+                  message.isError
+                      ? Icons.error_outline
+                      : Icons.check_circle_outline,
+                  size: 16,
+                  color: statusColor,
+                ),
+          title: Text(
+            message.toolName ?? 'Tool',
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          subtitle: details == '{}'
+              ? null
+              : Text(
+                  _singleLineArguments(message.arguments ?? {}),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
+                ),
+          children: [
+            if (details != '{}') _CodeBlock(details),
+            if (details != '{}' && message.text.isNotEmpty)
+              const SizedBox(height: 8),
+            if (message.text.isNotEmpty) _CodeBlock(message.text),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _singleLineArguments(Map<String, Object?> arguments) =>
+      arguments.entries
+          .map((entry) => '${entry.key}: ${entry.value}')
+          .join(', ')
+          .replaceAll('\n', ' ');
+}
+
+class _CodeBlock extends StatelessWidget {
+  const _CodeBlock(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SelectableText(
+        text,
+        style: TextStyle(
+          color: colors.textSecondary,
+          fontFamily: 'monospace',
+          fontSize: 11.5,
+          height: 1.45,
+        ),
+      ),
+    );
+  }
+}
+
+class _NoticeMessage extends StatelessWidget {
+  const _NoticeMessage(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Center(
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
+      ),
+    );
+  }
+}
+
+class _ErrorMessage extends StatelessWidget {
+  const _ErrorMessage(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: TextStyle(color: colors.error, fontSize: 12.5, height: 1.45),
+      ),
+    );
+  }
+}

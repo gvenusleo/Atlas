@@ -5,39 +5,6 @@ import 'package:window_manager/window_manager.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../workspace_metrics.dart';
 
-/// Tab-shaped label shown in the workspace toolbar.
-class WorkspaceTab extends StatelessWidget {
-  const WorkspaceTab({super.key, required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = AtlasColors.of(context);
-
-    return Container(
-      height: WorkspaceMetrics.desktopTabHeight,
-      constraints: const BoxConstraints(minWidth: 104, maxWidth: 168),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      alignment: Alignment.centerLeft,
-      decoration: BoxDecoration(
-        color: colors.raised,
-        borderRadius: BorderRadius.circular(AtlasRadii.control),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-}
-
 /// Makes a toolbar draggable on platforms with an integrated titlebar.
 class WorkspaceTitlebarDragArea extends StatelessWidget {
   const WorkspaceTitlebarDragArea({super.key, required this.child});

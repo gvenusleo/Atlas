@@ -5,7 +5,6 @@ import 'package:atlas_flutter/app/atlas_app.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_page.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_metrics.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_shell.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
@@ -129,10 +128,6 @@ void main() {
           const Size.square(WorkspaceMetrics.desktopToolbarButtonSize),
         );
       }
-      expect(
-        tester.getSize(find.byType(WorkspaceTab)),
-        const Size(168, WorkspaceMetrics.desktopTabHeight),
-      );
       expect(
         tester.getCenter(find.byKey(const ValueKey('atlas-left-toggle'))).dx,
         lessThan(tester.getTopRight(left).dx),
@@ -393,7 +388,7 @@ void main() {
       expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
       expect(find.byKey(const ValueKey('atlas-right-panel')), findsNothing);
       expect(find.byTooltip('Open sessions'), findsOneWidget);
-      expect(find.byTooltip('Open details'), findsOneWidget);
+      expect(find.byTooltip('Open workspace tools'), findsOneWidget);
 
       for (final key in const ['atlas-left-toggle', 'atlas-right-toggle']) {
         final button = find.descendant(
@@ -405,17 +400,15 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Sessions'), findsNothing);
-      expect(find.text('No sessions yet'), findsOneWidget);
+      expect(find.text('Runtime unavailable'), findsOneWidget);
       expect(find.byTooltip('Close sessions'), findsOneWidget);
       await tester.tap(find.byTooltip('Close sessions'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('atlas-right-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Details'), findsNothing);
-      expect(find.text('No active session'), findsOneWidget);
-      expect(find.byTooltip('Close details'), findsOneWidget);
+      expect(find.text('Runtime unavailable'), findsOneWidget);
+      expect(find.byTooltip('Close workspace tools'), findsOneWidget);
     },
   );
 
@@ -427,11 +420,11 @@ void main() {
       expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
       expect(find.byKey(const ValueKey('atlas-right-panel')), findsNothing);
       expect(find.byTooltip('Open sessions'), findsOneWidget);
-      expect(find.byTooltip('Open details'), findsOneWidget);
+      expect(find.byTooltip('Open workspace tools'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
       await tester.pumpAndSettle();
-      expect(find.text('Sessions'), findsNothing);
+      expect(find.text('Runtime unavailable'), findsOneWidget);
       expect(find.byTooltip('Close sessions'), findsOneWidget);
     },
   );

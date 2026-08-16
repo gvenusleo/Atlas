@@ -2,22 +2,32 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../app/runtime_environment.dart';
 import '../../../shared/theme/atlas_theme.dart';
+import '../application/workspace_controller.dart';
 import 'widgets/workspace_controls.dart';
 import 'widgets/workspace_panels.dart';
 import 'workspace_metrics.dart';
 
 /// Responsive Atlas workspace with desktop side panels and compact drawers.
-class WorkspaceShell extends StatefulWidget {
-  const WorkspaceShell({super.key});
+class WorkspaceShell extends ConsumerStatefulWidget {
+  const WorkspaceShell({super.key, this.environment, this.startupError});
+
+  /// Shared runtime services, absent when bootstrap failed or in shell tests.
+  final RuntimeEnvironment? environment;
+
+  /// Configuration error shown in the empty conversation state.
+  final String? startupError;
 
   @override
-  State<WorkspaceShell> createState() => _WorkspaceShellState();
+  ConsumerState<WorkspaceShell> createState() => _WorkspaceShellState();
 }
 
-class _WorkspaceShellState extends State<WorkspaceShell>
+class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     with TickerProviderStateMixin {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -33,6 +43,15 @@ class _WorkspaceShellState extends State<WorkspaceShell>
   @override
   void initState() {
     super.initState();
+    if (widget.environment != null) {
+      // Load the session list after the first frame so the workspace provider
+      // already has listeners and its autoDispose lifecycle stays alive.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(workspaceProvider.notifier).refreshSessions();
+        }
+      });
+    }
     _leftSidebarAnimation = AnimationController(
       value: 1,
       duration: WorkspaceMetrics.sidebarAnimationDuration,
@@ -101,6 +120,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   ),
                   Expanded(
                     child: WorkspacePanel(
+                      startupError: widget.startupError,
                       compact: false,
                       leftActive: _leftVisible,
                       onLeftPressed: () => _setLeftVisible(true, widths.left),
@@ -183,6 +203,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
       ),
       body: SafeArea(
         child: WorkspacePanel(
+          startupError: widget.startupError,
           compact: true,
           leftActive: false,
           onLeftPressed: () => _scaffoldKey.currentState?.openDrawer(),

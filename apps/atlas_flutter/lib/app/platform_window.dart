@@ -30,7 +30,11 @@ Future<void> initializePlatformWindow() async {
         : TitleBarStyle.normal,
     windowButtonVisibility: true,
   );
-  windowManager.waitUntilReadyToShow(windowOptions, () async {
+  await windowManager.waitUntilReadyToShow(windowOptions, () async {
+    // Keep the native shell at the desktop baseline even when the host restores
+    // a stale miniature frame from a previous run.
+    await windowManager.setSize(const Size(1200, 760));
+    await windowManager.setMinimumSize(const Size(400, 600));
     await windowManager.show();
     await windowManager.focus();
   });

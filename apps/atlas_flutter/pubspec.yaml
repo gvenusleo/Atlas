@@ -41,6 +41,13 @@ dependencies:
   window_manager: ^0.5.2
   material_ui: ^1.0.0
   cupertino_ui: ^1.0.0
+  atlas_config: ^0.1.0
+  atlas_prompt: ^0.1.0
+  atlas_provider: ^0.1.0
+  atlas_runtime: ^0.1.0
+  atlas_storage: ^0.1.0
+  atlas_tools: ^0.1.0
+  flutter_markdown: ^0.7.7+1
 
 dev_dependencies:
   flutter_test:
