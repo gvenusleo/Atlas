@@ -107,13 +107,27 @@ class _TerminalPanelState extends State<TerminalPanel> {
     return TerminalView(
       _terminal,
       autofocus: true,
+      cursorType: TerminalCursorType.verticalBar,
+      padding: const EdgeInsets.only(bottom: 8),
       theme: _terminalTheme(context),
-      textStyle: const TerminalStyle(
-        fontSize: 12,
-        fontFamily: 'monospace',
+      textStyle: TerminalStyle(
+        fontSize: 13,
+        fontFamily: _terminalFontFamily,
+        fontFamilyFallback: const ['SF Mono', 'Monaco', 'monospace'],
       ),
     );
   }
+}
+
+/// Picks a system monospace font for the terminal, falling back per platform.
+String get _terminalFontFamily {
+  if (Platform.isMacOS) {
+    return 'JetBrainsMono Nerd Font Mono';
+  }
+  if (Platform.isWindows) {
+    return 'Cascadia Mono';
+  }
+  return 'monospace';
 }
 
 /// Builds a terminal palette that follows the active Atlas theme.
