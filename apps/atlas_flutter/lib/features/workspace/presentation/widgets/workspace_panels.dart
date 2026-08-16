@@ -63,7 +63,7 @@ class _SessionList extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 30, 6),
+          padding: const EdgeInsets.fromLTRB(8, 8, 4, 4),
           child: InkWell(
             key: const ValueKey('atlas-search-session'),
             borderRadius: BorderRadius.circular(AtlasRadii.control),
@@ -115,7 +115,7 @@ class _SessionList extends ConsumerWidget {
               : RefreshIndicator(
                   onRefresh: controller.refreshSessions,
                   child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(6, 2, 6, 12),
+                    padding: const EdgeInsets.fromLTRB(8, 4, 4, 12),
                     itemCount: sessions.length,
                     itemBuilder: (context, index) {
                       final session = sessions[index];
@@ -510,11 +510,7 @@ class _StartupFailure extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                LucideIcons.triangleAlert,
-                color: colors.error,
-                size: 20,
-              ),
+              Icon(LucideIcons.triangleAlert, color: colors.error, size: 20),
               const SizedBox(height: 12),
               Text(
                 message,
