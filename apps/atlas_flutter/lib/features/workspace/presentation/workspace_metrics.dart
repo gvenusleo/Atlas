@@ -33,7 +33,7 @@ abstract final class WorkspaceMetrics {
   static const desktopToolbarHeight = 38.0;
 
   /// Square side length of desktop toolbar buttons.
-  static const desktopToolbarButtonSize = 34.0;
+  static const desktopToolbarButtonSize = 26.0;
 
   /// Toolbar height used by compact layouts.
   static const compactToolbarHeight = 48.0;

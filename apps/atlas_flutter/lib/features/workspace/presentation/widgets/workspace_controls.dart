@@ -158,11 +158,20 @@ class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
               width: widget.size,
               height: widget.size,
             ),
+            style: IconButton.styleFrom(
+              // The outer container paints the hover/active background as a
+              // rounded rectangle; keep the button's own overlay transparent
+              // so it never draws a circular highlight on top.
+              overlayColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AtlasRadii.control),
+              ),
+            ),
             onPressed: widget.onPressed,
             icon: Icon(
               widget.icon,
               color: widget.active ? colors.textPrimary : colors.textSecondary,
-              size: 18,
+              size: 16,
             ),
           ),
         ),
