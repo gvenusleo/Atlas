@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../workspace_metrics.dart';
 
 const _maximumPreviewBytes = 512 * 1024;
 const _maximumEntriesPerFolder = 500;
@@ -144,7 +145,7 @@ class _FileBrowserState extends State<FileBrowser> {
           _preview ?? '',
           style: TextStyle(
             color: colors.textPrimary,
-            fontFamily: 'monospace',
+            fontFamily: WorkspaceMetrics.monospaceFontFamily,
             fontSize: 11.5,
             height: 1.45,
           ),
@@ -199,21 +200,14 @@ class _FileBrowserState extends State<FileBrowser> {
           padding: EdgeInsets.only(left: 6.0 + node.depth * 12.0, right: 8),
           child: Row(
             children: [
-              if (isDirectory)
-                Icon(
-                  node.expanded
-                      ? LucideIcons.chevronDown
-                      : LucideIcons.chevronRight,
-                  size: 14,
-                  color: colors.textSecondary,
-                )
-              else
-                const SizedBox(width: 14),
-              const SizedBox(width: 2),
               Icon(
-                isDirectory ? LucideIcons.folder : LucideIcons.file,
+                isDirectory
+                    ? (node.expanded
+                        ? LucideIcons.folderOpen
+                        : LucideIcons.folder)
+                    : LucideIcons.file,
                 size: 15,
-                color: isDirectory ? colors.accent : colors.textSecondary,
+                color: colors.textPrimary,
               ),
               const SizedBox(width: 8),
               Expanded(

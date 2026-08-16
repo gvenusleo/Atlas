@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 /// Shared geometry and platform rules for the workspace shell.
@@ -53,4 +55,15 @@ abstract final class WorkspaceMetrics {
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// Picks a system monospace font for code and terminal views.
+  static String get monospaceFontFamily {
+    if (Platform.isMacOS) {
+      return 'JetBrainsMono Nerd Font Mono';
+    }
+    if (Platform.isWindows) {
+      return 'Cascadia Mono';
+    }
+    return 'monospace';
+  }
 }

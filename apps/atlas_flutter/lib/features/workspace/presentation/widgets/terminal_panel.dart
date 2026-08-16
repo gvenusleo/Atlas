@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:terminal_view/terminal_view.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../workspace_metrics.dart';
 
 /// Interactive shell backed by a pseudo-terminal and a terminal emulator.
 class TerminalPanel extends StatefulWidget {
@@ -112,22 +113,11 @@ class _TerminalPanelState extends State<TerminalPanel> {
       theme: _terminalTheme(context),
       textStyle: TerminalStyle(
         fontSize: 13,
-        fontFamily: _terminalFontFamily,
+        fontFamily: WorkspaceMetrics.monospaceFontFamily,
         fontFamilyFallback: const ['SF Mono', 'Monaco', 'monospace'],
       ),
     );
   }
-}
-
-/// Picks a system monospace font for the terminal, falling back per platform.
-String get _terminalFontFamily {
-  if (Platform.isMacOS) {
-    return 'JetBrainsMono Nerd Font Mono';
-  }
-  if (Platform.isWindows) {
-    return 'Cascadia Mono';
-  }
-  return 'monospace';
 }
 
 /// Builds a terminal palette that follows the active Atlas theme.
