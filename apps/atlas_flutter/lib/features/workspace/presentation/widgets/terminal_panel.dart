@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_pty/flutter_pty.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:pty2/pty2.dart';
 import 'package:terminal_view/terminal_view.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
@@ -23,7 +22,7 @@ class TerminalPanel extends StatefulWidget {
 
 class _TerminalPanelState extends State<TerminalPanel> {
   final _terminal = Terminal();
-  Pty? _pty;
+  PseudoTerminal? _pty;
   StreamSubscription<String>? _outputSubscription;
   bool _starting = false;
 
@@ -52,12 +51,12 @@ class _TerminalPanelState extends State<TerminalPanel> {
 
   /// Forwards user input from the emulator to the shell.
   void _writeToPty(String data) {
-    _pty?.write(utf8.encode(data));
+    _pty?.write(data);
   }
 
   /// Keeps the pseudo-terminal window size in sync with the emulator.
   void _resizePty(int cols, int rows, int pixelWidth, int pixelHeight) {
-    _pty?.resize(rows, cols);
+    _pty?.resize(cols, rows);
   }
 
   Future<void> _startShell() async {
@@ -69,15 +68,14 @@ class _TerminalPanelState extends State<TerminalPanel> {
         ? 'cmd.exe'
         : Platform.environment['SHELL'] ?? '/bin/sh';
     try {
-      final pty = Pty.start(
+      final pty = PseudoTerminal.start(
         executable,
+        const [],
         workingDirectory: widget.workingDirectory,
+        environment: const {'TERM': 'xterm-256color'},
       );
       _pty = pty;
-      _outputSubscription = pty.output
-          .cast<List<int>>()
-          .transform(utf8.decoder)
-          .listen(_terminal.write);
+      _outputSubscription = pty.out.listen(_terminal.write);
       unawaited(
         pty.exitCode.then((code) {
           if (mounted && identical(_pty, pty)) {
