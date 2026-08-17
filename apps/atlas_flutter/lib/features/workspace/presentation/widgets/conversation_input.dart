@@ -9,6 +9,7 @@ import '../../../../app/platform_window.dart';
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
+import '../workspace_metrics.dart';
 
 const _builtInCommands = <(String, String)>[
   ('compact', 'Compact the conversation'),
@@ -136,7 +137,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                               '$contextTokens tokens',
                               style: TextStyle(
                                 color: colors.textSecondary,
-                                fontSize: 10.5,
+                                fontSize: 11,
                               ),
                             ),
                           ),
@@ -305,7 +306,7 @@ class _SlashSuggestions extends StatelessWidget {
                         '/${suggestion.$1}',
                         style: TextStyle(
                           color: colors.textPrimary,
-                          fontFamily: 'monospace',
+                          fontFamily: WorkspaceMetrics.monospaceFontFamily,
                           fontSize: 12,
                         ),
                       ),
@@ -351,7 +352,11 @@ class _ModelMenu extends StatelessWidget {
         value: activeModel.ref.toString(),
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         dropdownColor: colors.panel,
-        icon: Icon(Icons.expand_more, size: 14, color: colors.textSecondary),
+        icon: Icon(
+          LucideIcons.chevronDown,
+          size: 14,
+          color: colors.textSecondary,
+        ),
         isDense: true,
         style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
         items: [
@@ -397,7 +402,11 @@ class _EffortMenu extends StatelessWidget {
         value: current,
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         dropdownColor: colors.panel,
-        icon: Icon(Icons.expand_more, size: 14, color: colors.textSecondary),
+        icon: Icon(
+          LucideIcons.chevronDown,
+          size: 14,
+          color: colors.textSecondary,
+        ),
         isDense: true,
         style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
         items: [

@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
+import '../workspace_metrics.dart';
 
 /// Scrollable conversation transcript with streaming Markdown and disclosures.
 class ConversationView extends ConsumerStatefulWidget {
@@ -76,13 +78,23 @@ class _ConversationEmptyState extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          'Atlas',
-          style: TextStyle(
-            color: colors.textSecondary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Atlas',
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Start a conversation',
+              style: TextStyle(color: colors.textSecondary, fontSize: 12),
+            ),
+          ],
         ),
       ),
     );
@@ -180,12 +192,12 @@ class _AssistantMessage extends StatelessWidget {
             code: TextStyle(
               color: colors.textPrimary,
               backgroundColor: colors.raised,
-              fontSize: 12.5,
-              fontFamily: 'monospace',
+              fontSize: 12,
+              fontFamily: WorkspaceMetrics.monospaceFontFamily,
             ),
             codeblockDecoration: BoxDecoration(
               color: colors.panel,
-              borderRadius: BorderRadius.circular(AtlasRadii.control),
+              borderRadius: BorderRadius.circular(AtlasRadii.surface),
             ),
             blockquoteDecoration: BoxDecoration(
               border: Border(left: BorderSide(color: colors.divider, width: 2)),
@@ -218,7 +230,7 @@ class _ReasoningMessage extends StatelessWidget {
         dense: true,
         visualDensity: VisualDensity.compact,
         leading: Icon(
-          Icons.psychology_outlined,
+          LucideIcons.brain,
           size: 16,
           color: colors.textSecondary,
         ),
@@ -233,7 +245,7 @@ class _ReasoningMessage extends StatelessWidget {
               text,
               style: TextStyle(
                 color: colors.textSecondary,
-                fontSize: 12.5,
+                fontSize: 12,
                 height: 1.5,
               ),
             ),
@@ -259,7 +271,7 @@ class _ToolMessage extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.panel,
-        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        borderRadius: BorderRadius.circular(AtlasRadii.surface),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -278,8 +290,8 @@ class _ToolMessage extends StatelessWidget {
                 )
               : Icon(
                   message.isError
-                      ? Icons.error_outline
-                      : Icons.check_circle_outline,
+                      ? LucideIcons.circleAlert
+                      : LucideIcons.circleCheck,
                   size: 16,
                   color: statusColor,
                 ),
@@ -287,7 +299,7 @@ class _ToolMessage extends StatelessWidget {
             message.toolName ?? 'Tool',
             style: TextStyle(
               color: colors.textPrimary,
-              fontSize: 12.5,
+              fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -331,8 +343,8 @@ class _CodeBlock extends StatelessWidget {
         text,
         style: TextStyle(
           color: colors.textSecondary,
-          fontFamily: 'monospace',
-          fontSize: 11.5,
+          fontFamily: WorkspaceMetrics.monospaceFontFamily,
+          fontSize: 12,
           height: 1.45,
         ),
       ),
@@ -370,7 +382,7 @@ class _ErrorMessage extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Text(
         text,
-        style: TextStyle(color: colors.error, fontSize: 12.5, height: 1.45),
+        style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
       ),
     );
   }
