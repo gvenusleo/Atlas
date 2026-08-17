@@ -19,7 +19,6 @@ dependencies:
   atlas_storage: ^0.1.0
   atlas_tools: ^0.1.0
   file_selector: ^1.1.0
-  flutter_markdown: ^0.7.7+1
   flutter_riverpod: ^3.4.2
   go_router: ^17.4.0
   lucide_icons_flutter: ^3.1.15
@@ -27,7 +26,9 @@ dependencies:
   pty2: ^0.5.3
   terminal_view: ^0.1.4
   window_manager: ^0.5.2
-
+  flutter_markdown_plus: ^1.0.12
+  flutter_markdown_plus_latex: ^1.0.5
+  markdown: ^7.3.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

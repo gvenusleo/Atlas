@@ -1,8 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter_markdown_plus_latex/flutter_markdown_plus_latex.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
@@ -173,26 +175,61 @@ class _AssistantMessage extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 780),
         child: MarkdownBody(
           data: text,
-          selectable: false,
+          selectable: true,
           softLineBreak: true,
+          builders: {
+            'pre': _CodeBlockBuilder(),
+            'code': _InlineCodeBuilder(),
+            'latex': LatexElementBuilder(
+              textStyle: TextStyle(color: colors.textPrimary),
+            ),
+          },
+          checkboxBuilder: (bool checked) => Icon(
+            checked ? LucideIcons.squareCheckBig : LucideIcons.square,
+            size: 14,
+            color: colors.textPrimary,
+          ),
+          extensionSet: md.ExtensionSet(
+            [
+              ...md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+              LatexBlockSyntax(),
+            ],
+            [
+              ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+              LatexInlineSyntax(),
+            ],
+          ),
           styleSheet: MarkdownStyleSheet(
-            p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.55),
+            a: TextStyle(color: colors.accent, fontSize: 14),
+            p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
             h1: TextStyle(
               color: colors.textPrimary,
-              fontSize: 22,
-              height: 1.25,
+              fontSize: 20,
               fontWeight: FontWeight.w600,
             ),
             h2: TextStyle(
               color: colors.textPrimary,
               fontSize: 18,
-              height: 1.3,
               fontWeight: FontWeight.w600,
             ),
             h3: TextStyle(
               color: colors.textPrimary,
-              fontSize: 15,
-              height: 1.4,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+            h4: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            h5: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            h6: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
             code: TextStyle(
@@ -202,9 +239,10 @@ class _AssistantMessage extends StatelessWidget {
               fontFamily: WorkspaceMetrics.monospaceFontFamily,
             ),
             codeblockDecoration: BoxDecoration(
-              color: colors.panel,
+              color: colors.raised,
               borderRadius: BorderRadius.circular(AtlasRadii.surface),
             ),
+            blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
             blockquoteDecoration: BoxDecoration(
               border: Border(left: BorderSide(color: colors.divider, width: 2)),
             ),
@@ -213,7 +251,94 @@ class _AssistantMessage extends StatelessWidget {
               border: Border(top: BorderSide(color: colors.divider)),
             ),
             listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
+            tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
+            checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Renders fenced code blocks full-width with a language label.
+class _CodeBlockBuilder extends MarkdownElementBuilder {
+  @override
+  Widget visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final colors = AtlasColors.of(context);
+    final code = element.children
+        ?.whereType<md.Element>()
+        .where((child) => child.tag == 'code')
+        .firstOrNull;
+    final language = code?.attributes['class']?.replaceFirst('language-', '');
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        decoration: BoxDecoration(
+          color: colors.raised,
+          borderRadius: BorderRadius.circular(AtlasRadii.surface),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (language != null && language.isNotEmpty) ...[
+              Text(
+                language,
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontFamily: WorkspaceMetrics.monospaceFontFamily,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SelectableText(
+                element.textContent.trimRight(),
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontFamily: WorkspaceMetrics.monospaceFontFamily,
+                  fontSize: 12,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Renders inline code with a rounded raised background.
+class _InlineCodeBuilder extends MarkdownElementBuilder {
+  @override
+  Widget visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final colors = AtlasColors.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: colors.raised,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        element.textContent,
+        style: TextStyle(
+          color: colors.textPrimary,
+          fontFamily: WorkspaceMetrics.monospaceFontFamily,
+          fontSize: 12,
         ),
       ),
     );
