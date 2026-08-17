@@ -164,7 +164,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 4, 4),
+          padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
           child: Column(
             children: [
               PopupMenuButton<_NewSessionAction>(
@@ -197,7 +197,6 @@ class _SessionListState extends ConsumerState<_SessionList> {
                   label: 'New Task',
                 ),
               ),
-              const SizedBox(height: 2),
               const _SidebarActionButton(
                 key: ValueKey('atlas-search-session'),
                 icon: LucideIcons.search,
@@ -206,6 +205,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
             ],
           ),
         ),
+
         Expanded(
           child: loading && sessions.isEmpty
               ? Center(
@@ -225,7 +225,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
               : RefreshIndicator(
                   onRefresh: controller.refreshSessions,
                   child: ListView(
-                    padding: const EdgeInsets.fromLTRB(8, 4, 4, 12),
+                    padding: const EdgeInsets.fromLTRB(8, 0, 4, 12),
                     children: [
                       for (final group in groupSessionsByTime(sessions)) ...[
                         _SessionGroupHeader(
@@ -253,6 +253,17 @@ class _SessionListState extends ConsumerState<_SessionList> {
                   ),
                 ),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 4, 8),
+          child: Align(
+            alignment: Alignment.bottomLeft,
+            child: WorkspaceToolbarButton(
+              icon: LucideIcons.settings,
+              tooltip: 'Settings',
+              onPressed: () {},
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -277,8 +288,9 @@ class _SessionGroupHeader extends StatelessWidget {
       borderRadius: BorderRadius.circular(AtlasRadii.control),
       onTap: onToggle,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 14, 4, 6),
+        padding: const EdgeInsets.fromLTRB(6, 12, 4, 4),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               label,
@@ -292,7 +304,7 @@ class _SessionGroupHeader extends StatelessWidget {
               ),
             ),
             if (collapsed) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
               Icon(
                 LucideIcons.chevronRight,
                 size: 12,
@@ -323,76 +335,52 @@ class _SessionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 0.5),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AtlasRadii.control),
-        onTap: busy ? null : onTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 52),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? colors.raised : null,
-            borderRadius: BorderRadius.circular(AtlasRadii.control),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      session.title.isEmpty
-                          ? 'Untitled session'
-                          : session.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Icon(
-                          LucideIcons.folder,
-                          size: 12,
-                          color: colors.textSecondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            WorkspaceMetrics.directoryLabel(
-                              session.workingDirectory,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: colors.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+    return InkWell(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      onTap: busy ? null : onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: selected ? colors.raised : null,
+          borderRadius: BorderRadius.circular(AtlasRadii.control),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              session.title.isEmpty ? 'Untitled session' : session.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(top: 21),
-                child: Text(
+            ),
+            const SizedBox(height: 2),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(LucideIcons.folder, size: 12, color: colors.textSecondary),
+                const SizedBox(width: 4),
+                Flexible(
+                  fit: FlexFit.tight,
+                  child: Text(
+                    WorkspaceMetrics.directoryLabel(session.workingDirectory),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: colors.textSecondary, fontSize: 12),
+                  ),
+                ),
+                Text(
                   _relativeTime(session.updatedAt),
                   style: TextStyle(color: colors.textSecondary, fontSize: 12),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -831,19 +819,18 @@ class _SidebarActionButtonState extends State<_SidebarActionButton> {
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        height: 30,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: _hovered ? colors.raised : null,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(widget.icon, size: 14, color: colors.textSecondary),
-            const SizedBox(width: 6),
+            Icon(widget.icon, size: 14, color: colors.textPrimary),
+            const SizedBox(width: 12),
             Text(
               widget.label,
-              style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
+              style: TextStyle(color: colors.textPrimary, fontSize: 13),
             ),
           ],
         ),
