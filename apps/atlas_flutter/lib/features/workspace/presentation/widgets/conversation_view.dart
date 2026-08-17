@@ -274,11 +274,10 @@ class _ToolMessage extends StatelessWidget {
     final details = const JsonEncoder.withIndent(
       '  ',
     ).convert(message.arguments ?? {});
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.panel,
-        borderRadius: BorderRadius.circular(AtlasRadii.surface),
-      ),
+    return Material(
+      color: colors.panel,
+      borderRadius: BorderRadius.circular(AtlasRadii.surface),
+      clipBehavior: Clip.antiAlias,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
