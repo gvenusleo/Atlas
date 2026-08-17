@@ -99,6 +99,54 @@ void main() {
     expect(state.messages, isEmpty);
     expect(state.sessionId, isNull);
   });
+
+  test('refreshSessions loads sessions across all directories', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    container.read(workspaceWorkingDirectoryProvider.notifier).set('/tmp2');
+    await controller.send('second session');
+
+    await controller.refreshSessions();
+    final sessions = container.read(workspaceProvider).sessions;
+    expect(sessions, hasLength(2));
+    expect(sessions.map((session) => session.workingDirectory).toSet(), {
+      '/tmp',
+      '/tmp2',
+    });
+  });
 }
 
 /// Working directory fixed for tests.

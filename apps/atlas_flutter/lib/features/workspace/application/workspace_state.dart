@@ -79,7 +79,9 @@ final class WorkspaceState {
     reasoningEffort: identical(reasoningEffort, _unset)
         ? this.reasoningEffort
         : reasoningEffort as String?,
-    sessionId: identical(sessionId, _unset) ? this.sessionId : sessionId as SessionId?,
+    sessionId: identical(sessionId, _unset)
+        ? this.sessionId
+        : sessionId as SessionId?,
     workingDirectory: workingDirectory ?? this.workingDirectory,
     busy: busy ?? this.busy,
     loadingSessions: loadingSessions ?? this.loadingSessions,

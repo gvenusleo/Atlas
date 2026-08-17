@@ -183,17 +183,15 @@ class _FileBrowserState extends State<FileBrowser> {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 2),
       itemCount: _visibleNodes.length,
-      itemBuilder: (context, index) =>
-          _buildRow(_visibleNodes[index], colors),
+      itemBuilder: (context, index) => _buildRow(_visibleNodes[index], colors),
     );
   }
 
   Widget _buildRow(_TreeNode node, AtlasColors colors) {
     final isDirectory = node.entity is Directory;
     return InkWell(
-      onTap: () => isDirectory
-          ? _toggleNode(node)
-          : _openFile(node.entity as File),
+      onTap: () =>
+          isDirectory ? _toggleNode(node) : _openFile(node.entity as File),
       child: SizedBox(
         height: 26,
         child: Padding(
@@ -214,8 +212,8 @@ class _FileBrowserState extends State<FileBrowser> {
               Icon(
                 isDirectory
                     ? (node.expanded
-                        ? LucideIcons.folderOpen
-                        : LucideIcons.folderClosed)
+                          ? LucideIcons.folderOpen
+                          : LucideIcons.folderClosed)
                     : LucideIcons.file,
                 size: 15,
                 color: colors.textPrimary,
@@ -299,9 +297,11 @@ class _FileBrowserState extends State<FileBrowser> {
       };
       final childDepth = node == _rootNode ? 0 : node.depth + 1;
       node.children = entries
-          .map((entry) =>
-              existing[entry.path] ??
-              _TreeNode(entity: entry, depth: childDepth))
+          .map(
+            (entry) =>
+                existing[entry.path] ??
+                _TreeNode(entity: entry, depth: childDepth),
+          )
           .toList();
       node.error = null;
     } on FileSystemException catch (error) {
@@ -440,11 +440,7 @@ class _FileAction extends StatelessWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 38, height: 38),
         onPressed: onPressed,
-        icon: Icon(
-          icon,
-          size: 15,
-          color: colors.textSecondary,
-        ),
+        icon: Icon(icon, size: 15, color: colors.textSecondary),
       ),
     );
   }

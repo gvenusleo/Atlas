@@ -30,6 +30,7 @@ final class WorkspaceMessage {
     required this.text,
     this.toolName,
     this.arguments,
+    this.startedAt,
     this.isError = false,
     this.isRunning = false,
   });
@@ -49,6 +50,9 @@ final class WorkspaceMessage {
   /// Structured arguments for tool items.
   final JsonObject? arguments;
 
+  /// When a tool item started, used to render its elapsed time.
+  final DateTime? startedAt;
+
   /// Whether the item represents a failure.
   final bool isError;
 
@@ -63,6 +67,7 @@ final class WorkspaceMessage {
         text: text ?? this.text,
         toolName: toolName,
         arguments: arguments,
+        startedAt: startedAt,
         isError: isError ?? this.isError,
         isRunning: isRunning ?? this.isRunning,
       );

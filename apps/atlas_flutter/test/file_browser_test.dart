@@ -40,8 +40,9 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('shows root entries and expands and collapses folders',
-      (tester) async {
+  testWidgets('shows root entries and expands and collapses folders', (
+    tester,
+  ) async {
     final sub = Directory('${tempDir.path}/sub')..createSync();
     File('${sub.path}/a.txt').writeAsStringSync('hello');
     File('${tempDir.path}/b.txt').writeAsStringSync('world');
@@ -61,8 +62,9 @@ void main() {
     expect(find.text('a.txt'), findsNothing);
   });
 
-  testWidgets('keeps expanded children cached across collapse and expand',
-      (tester) async {
+  testWidgets('keeps expanded children cached across collapse and expand', (
+    tester,
+  ) async {
     final sub = Directory('${tempDir.path}/sub')..createSync();
     File('${sub.path}/a.txt').writeAsStringSync('hello');
 
@@ -98,8 +100,9 @@ void main() {
   });
 
   testWidgets('rejects oversized files', (tester) async {
-    File('${tempDir.path}/big.txt')
-        .writeAsBytesSync(List.filled(600 * 1024, 65));
+    File(
+      '${tempDir.path}/big.txt',
+    ).writeAsBytesSync(List.filled(600 * 1024, 65));
 
     await pumpBrowser(tester);
 

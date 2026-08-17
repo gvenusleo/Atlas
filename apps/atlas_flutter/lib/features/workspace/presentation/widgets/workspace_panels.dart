@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -11,6 +15,11 @@ import 'conversation_view.dart';
 import 'file_browser.dart';
 import 'terminal_panel.dart';
 import 'workspace_controls.dart';
+
+/// Picks a working directory for a new session; overridable in tests.
+final directoryPickerProvider = Provider<Future<String?> Function()>(
+  (ref) => getDirectoryPath,
+);
 
 /// Sessions sidebar used by desktop panels and compact drawers.
 class SessionsPanel extends ConsumerWidget {
@@ -44,13 +53,105 @@ class SessionsPanel extends ConsumerWidget {
   }
 }
 
-class _SessionList extends ConsumerWidget {
+/// A time-bucketed group of sessions ordered newest first.
+final class SessionGroup {
+  /// Creates a session group.
+  const SessionGroup({required this.label, required this.sessions});
+
+  /// The relative time label shared by the group.
+  final String label;
+
+  /// Sessions in descending update order.
+  final List<SessionSummary> sessions;
+}
+
+/// Groups sessions by recency, newest first, in fixed time buckets.
+List<SessionGroup> groupSessionsByTime(List<SessionSummary> sessions) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final yesterday = today.subtract(const Duration(days: 1));
+  final weekStart = today.subtract(const Duration(days: 7));
+  final monthStart = today.subtract(const Duration(days: 30));
+
+  final byLabel = <String, List<SessionSummary>>{};
+  for (final session in sessions) {
+    final updated = session.updatedAt.toLocal();
+    final day = DateTime(updated.year, updated.month, updated.day);
+    final String label;
+    if (!day.isBefore(today)) {
+      label = 'Today';
+    } else if (!day.isBefore(yesterday)) {
+      label = 'Yesterday';
+    } else if (!day.isBefore(weekStart)) {
+      label = 'This Week';
+    } else if (!day.isBefore(monthStart)) {
+      label = 'This Month';
+    } else {
+      label = 'Earlier';
+    }
+    byLabel.putIfAbsent(label, () => []).add(session);
+  }
+  return [
+    for (final label in const [
+      'Today',
+      'Yesterday',
+      'This Week',
+      'This Month',
+      'Earlier',
+    ])
+      if (byLabel[label] case final sessions?)
+        SessionGroup(
+          label: label,
+          sessions: [...sessions]
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+        ),
+  ];
+}
+
+class _SessionList extends ConsumerStatefulWidget {
   const _SessionList({this.onClose});
 
   final VoidCallback? onClose;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SessionList> createState() => _SessionListState();
+}
+
+class _SessionListState extends ConsumerState<_SessionList> {
+  /// Directories whose session groups are collapsed.
+  final Set<String> _collapsed = {};
+
+  /// Starts a fresh session in the current working directory.
+  void _newSessionHere() {
+    final controller = ref.read(workspaceProvider.notifier);
+    controller.newSession();
+    unawaited(controller.refreshSessions());
+  }
+
+  /// Picks a working directory and starts a fresh session in it.
+  Future<void> _newSessionInFolder() async {
+    final picker = ref.read(directoryPickerProvider);
+    final directory = await picker();
+    if (directory == null || !mounted) {
+      return;
+    }
+    ref.read(workspaceWorkingDirectoryProvider.notifier).set(directory);
+    final controller = ref.read(workspaceProvider.notifier);
+    controller.newSession();
+    unawaited(controller.refreshSessions());
+  }
+
+  void _handleNewSessionAction(_NewSessionAction action) {
+    switch (action) {
+      case _NewSessionAction.here:
+        _newSessionHere();
+      case _NewSessionAction.folder:
+        unawaited(_newSessionInFolder());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final sessions = ref.watch(workspaceProvider.select((s) => s.sessions));
     final busy = ref.watch(workspaceProvider.select((s) => s.busy));
@@ -64,36 +165,45 @@ class _SessionList extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 4, 4),
-          child: InkWell(
-            key: const ValueKey('atlas-search-session'),
-            borderRadius: BorderRadius.circular(AtlasRadii.control),
-            onTap: null,
-            child: Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: colors.raised,
-                borderRadius: BorderRadius.circular(AtlasRadii.control),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    LucideIcons.search,
-                    color: colors.textSecondary,
-                    size: 15,
+          child: Column(
+            children: [
+              PopupMenuButton<_NewSessionAction>(
+                key: const ValueKey('atlas-new-session-button'),
+                position: PopupMenuPosition.under,
+                offset: const Offset(0, 4),
+                constraints: const BoxConstraints(minWidth: 112, maxWidth: 360),
+                onSelected: _handleNewSessionAction,
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _NewSessionAction.here,
+                    height: 32,
+                    child: _NewSessionMenuItem(
+                      icon: LucideIcons.plus,
+                      label: 'New session here',
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Search session',
-                    style: TextStyle(
-                      color: colors.textPrimary,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
+                  PopupMenuItem(
+                    value: _NewSessionAction.folder,
+                    height: 32,
+                    child: _NewSessionMenuItem(
+                      icon: LucideIcons.folderOpen,
+                      label: 'New session in folder...',
                     ),
                   ),
                 ],
+                child: const _SidebarActionButton(
+                  key: ValueKey('atlas-new-task-button'),
+                  icon: LucideIcons.pencil,
+                  label: 'New Task',
+                ),
               ),
-            ),
+              const SizedBox(height: 2),
+              const _SidebarActionButton(
+                key: ValueKey('atlas-search-session'),
+                icon: LucideIcons.search,
+                label: 'Search',
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -114,72 +224,177 @@ class _SessionList extends ConsumerWidget {
                 )
               : RefreshIndicator(
                   onRefresh: controller.refreshSessions,
-                  child: ListView.builder(
+                  child: ListView(
                     padding: const EdgeInsets.fromLTRB(8, 4, 4, 12),
-                    itemCount: sessions.length,
-                    itemBuilder: (context, index) {
-                      final session = sessions[index];
-                      final selected = session.id == sessionId;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 1),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(
-                            AtlasRadii.control,
-                          ),
-                          onTap: busy
-                              ? null
-                              : () async {
-                                  await controller.resume(session.id);
-                                  onClose?.call();
-                                },
-                          child: Container(
-                            constraints: const BoxConstraints(minHeight: 50),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: selected ? colors.raised : null,
-                              borderRadius: BorderRadius.circular(
-                                AtlasRadii.control,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  session.title.isEmpty
-                                      ? 'Untitled session'
-                                      : session.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: colors.textPrimary,
-                                    fontSize: 12.5,
-                                    fontWeight: selected
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  _relativeTime(session.updatedAt),
-                                  style: TextStyle(
-                                    color: colors.textSecondary,
-                                    fontSize: 10.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                    children: [
+                      for (final group in groupSessionsByTime(sessions)) ...[
+                        _SessionGroupHeader(
+                          label: group.label,
+                          collapsed: _collapsed.contains(group.label),
+                          onToggle: () => setState(() {
+                            if (!_collapsed.add(group.label)) {
+                              _collapsed.remove(group.label);
+                            }
+                          }),
                         ),
-                      );
-                    },
+                        if (!_collapsed.contains(group.label))
+                          for (final session in group.sessions)
+                            _SessionTile(
+                              session: session,
+                              selected: session.id == sessionId,
+                              busy: busy,
+                              onTap: () async {
+                                await controller.resume(session.id);
+                                widget.onClose?.call();
+                              },
+                            ),
+                      ],
+                    ],
                   ),
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// Directory header above a group of sessions.
+class _SessionGroupHeader extends StatelessWidget {
+  const _SessionGroupHeader({
+    required this.label,
+    required this.collapsed,
+    required this.onToggle,
+  });
+
+  final String label;
+  final bool collapsed;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      onTap: onToggle,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 14, 4, 6),
+        child: Row(
+          children: [
+            Text(
+              label,
+              key: ValueKey('session-group-$label'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            if (collapsed) ...[
+              const SizedBox(width: 4),
+              Icon(
+                LucideIcons.chevronRight,
+                size: 12,
+                color: colors.textSecondary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One selectable session row inside a directory group.
+class _SessionTile extends StatelessWidget {
+  const _SessionTile({
+    required this.session,
+    required this.selected,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final SessionSummary session;
+  final bool selected;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 0.5),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        onTap: busy ? null : onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? colors.raised : null,
+            borderRadius: BorderRadius.circular(AtlasRadii.control),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      session.title.isEmpty
+                          ? 'Untitled session'
+                          : session.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(
+                          LucideIcons.folder,
+                          size: 12,
+                          color: colors.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            WorkspaceMetrics.directoryLabel(
+                              session.workingDirectory,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 21),
+                child: Text(
+                  _relativeTime(session.updatedAt),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -554,6 +769,81 @@ class _PanelEmptyState extends StatelessWidget {
                 fontSize: 12,
                 height: 1.4,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Actions offered by the new-session menu.
+enum _NewSessionAction { here, folder }
+
+/// One row of the new-session menu.
+class _NewSessionMenuItem extends StatelessWidget {
+  const _NewSessionMenuItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: colors.textSecondary),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
+        ),
+      ],
+    );
+  }
+}
+
+/// Sidebar action row with an icon and label, hover-highlighted.
+class _SidebarActionButton extends StatefulWidget {
+  const _SidebarActionButton({
+    super.key,
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  State<_SidebarActionButton> createState() => _SidebarActionButtonState();
+}
+
+class _SidebarActionButtonState extends State<_SidebarActionButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: _hovered ? colors.raised : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(widget.icon, size: 14, color: colors.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              widget.label,
+              style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
             ),
           ],
         ),

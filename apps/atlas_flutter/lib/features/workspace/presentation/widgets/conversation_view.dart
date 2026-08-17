@@ -235,11 +235,7 @@ class _ReasoningMessage extends StatelessWidget {
         childrenPadding: const EdgeInsets.only(left: 24, bottom: 6),
         dense: true,
         visualDensity: VisualDensity.compact,
-        leading: Icon(
-          LucideIcons.brain,
-          size: 16,
-          color: colors.textSecondary,
-        ),
+        leading: Icon(LucideIcons.brain, size: 16, color: colors.textSecondary),
         title: Text(
           'Reasoning',
           style: TextStyle(color: colors.textSecondary, fontSize: 12),
@@ -300,13 +296,26 @@ class _ToolMessage extends StatelessWidget {
                   size: 16,
                   color: statusColor,
                 ),
-          title: Text(
-            message.toolName ?? 'Tool',
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  message.toolName ?? 'Tool',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (!message.isRunning && message.startedAt != null)
+                Text(
+                  _elapsedLabel(message.startedAt!),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 10.5),
+                ),
+            ],
           ),
           subtitle: details == '{}'
               ? null
@@ -332,6 +341,14 @@ class _ToolMessage extends StatelessWidget {
           .map((entry) => '${entry.key}: ${entry.value}')
           .join(', ')
           .replaceAll('\n', ' ');
+
+  static String _elapsedLabel(DateTime startedAt) {
+    final seconds = DateTime.now().difference(startedAt).inSeconds;
+    if (seconds < 60) {
+      return 'Worked for ${seconds}s';
+    }
+    return 'Worked for ${seconds ~/ 60}m ${seconds % 60}s';
+  }
 }
 
 class _CodeBlock extends StatelessWidget {

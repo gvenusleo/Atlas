@@ -11,8 +11,8 @@ import 'workspace_state.dart';
 /// Working directory for the workspace, overridable in tests.
 final workspaceWorkingDirectoryProvider =
     NotifierProvider<WorkspaceWorkingDirectory, String>(
-  WorkspaceWorkingDirectory.new,
-);
+      WorkspaceWorkingDirectory.new,
+    );
 
 /// Holds the workspace working directory.
 class WorkspaceWorkingDirectory extends Notifier<String> {
@@ -53,15 +53,21 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     );
   }
 
-  /// Loads the most recently updated sessions for the working directory.
+  /// Loads every persisted session across all directories, newest first.
   Future<void> refreshSessions() async {
     state = state.copyWith(loadingSessions: true);
     try {
-      final page = await _environment.runtime.listSessions(
-        workingDirectory: state.workingDirectory,
-        limit: 100,
-      );
-      state = state.copyWith(sessions: page.items, loadingSessions: false);
+      final sessions = <SessionSummary>[];
+      String? cursor;
+      do {
+        final page = await _environment.runtime.listSessions(
+          cursor: cursor,
+          limit: 100,
+        );
+        sessions.addAll(page.items);
+        cursor = page.nextCursor;
+      } while (cursor != null && sessions.length < 500);
+      state = state.copyWith(sessions: sessions, loadingSessions: false);
     } catch (error) {
       _append(WorkspaceMessageKind.error, 'Cannot load sessions: $error');
       state = state.copyWith(loadingSessions: false);
@@ -234,6 +240,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
               text: '',
               toolName: call.call.name,
               arguments: call.call.arguments,
+              startedAt: DateTime.now(),
               isRunning: true,
             ),
           ],

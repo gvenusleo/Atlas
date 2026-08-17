@@ -66,4 +66,12 @@ abstract final class WorkspaceMetrics {
     }
     return 'monospace';
   }
+
+  /// Shortens a directory to its final path segment for compact labels.
+  static String directoryLabel(String directory) {
+    final segments = Uri.file(
+      directory,
+    ).pathSegments.where((segment) => segment.isNotEmpty).toList();
+    return segments.isEmpty ? directory : segments.last;
+  }
 }
