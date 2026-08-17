@@ -47,15 +47,21 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
       return const _ConversationEmptyState();
     }
     return SelectionArea(
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-        itemCount: messages.length,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(
-            bottom: index == messages.length - 1 ? 0 : 18,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 660),
+          child: ListView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            itemCount: messages.length,
+            itemBuilder: (context, index) => Padding(
+              padding: EdgeInsets.only(
+                bottom: index == messages.length - 1 ? 0 : 18,
+              ),
+              child: _MessageView(message: messages[index]),
+            ),
           ),
-          child: _MessageView(message: messages[index]),
         ),
       ),
     );

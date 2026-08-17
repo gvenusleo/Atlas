@@ -67,7 +67,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
+        constraints: const BoxConstraints(maxWidth: 660),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
