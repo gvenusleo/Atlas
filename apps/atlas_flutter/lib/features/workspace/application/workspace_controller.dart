@@ -30,7 +30,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   bool _streamOpen = false;
 
   /// Runtime services supplied by the application composition root.
-  RuntimeEnvironment get _environment => ref.read(runtimeEnvironmentProvider) ??
+  RuntimeEnvironment get _environment =>
+      ref.read(runtimeEnvironmentProvider) ??
       (throw StateError(
         'workspaceProvider requires runtimeEnvironmentProvider override',
       ));
