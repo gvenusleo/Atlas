@@ -244,10 +244,9 @@ final class AcpServer {
   ///
   /// With a compaction checkpoint, the post-compaction estimate is the
   /// baseline plus an estimate of the timeline added after the checkpoint;
-  /// otherwise the whole timeline is estimated. The runtime does not persist
-  /// per-turn usage today (stored `lastUsage` stays zero), so this must fall
-  /// back to estimating the timeline; re-check this branch if the runtime
-  /// starts persisting usage.
+  /// otherwise the whole timeline is estimated. The runtime persists the
+  /// latest model-step usage on the session, but a timeline estimate is still
+  /// needed when no usage has been recorded.
   int? _estimatedSessionUsage(SessionSnapshot snapshot) {
     final checkpoint = snapshot.session.compaction;
     if (checkpoint != null && checkpoint.inputTokensAfter > 0) {

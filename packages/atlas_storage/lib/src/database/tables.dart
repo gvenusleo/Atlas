@@ -118,6 +118,11 @@ class Turns extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => {id};
+
+  @override
+  List<Set<Column<Object>>> get indexes => [
+    {sessionId, startedAt},
+  ];
 }
 
 /// One strongly typed message in the durable session timeline.

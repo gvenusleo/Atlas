@@ -5,8 +5,9 @@ The desktop and mobile client for Atlas.
 ## Status
 
 The current implementation provides a responsive workspace shell, resizable
-desktop sidebars, compact mobile drawers, and system light and dark themes.
-Runtime connectivity, sessions, and agent turns are not implemented yet.
+desktop sidebars, compact mobile drawers, system light and dark themes, and a
+local runtime bootstrap with sessions and agent turns. Remote WebSocket mode is
+not implemented yet.
 
 ## Responsibility
 
@@ -20,8 +21,8 @@ Runtime connectivity, sessions, and agent turns are not implemented yet.
 
 - Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`, and the
   `material_ui` / `cupertino_ui` design libraries.
-- `atlas_runtime` public types for the injected runtime interface (added when
-  connectivity lands).
+- `atlas_composition` for process-level runtime construction.
+- `atlas_runtime` public types for the injected runtime interface.
 
 ## Prohibited ownership
 
