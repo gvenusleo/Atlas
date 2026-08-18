@@ -4,6 +4,7 @@ import 'package:atlas_composition/atlas_composition.dart';
 import 'package:atlas_config/atlas_config.dart';
 import 'package:atlas_prompt/atlas_prompt.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:atlas_storage/atlas_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Runtime services and catalogs injected into Flutter presentation code.
@@ -13,6 +14,7 @@ final class RuntimeEnvironment {
     required this.runtime,
     required this.models,
     required this.skills,
+    this.onClose,
   });
 
   /// The single runtime used by every Flutter feature.
@@ -23,6 +25,12 @@ final class RuntimeEnvironment {
 
   /// Skills available to slash-command completion.
   final SkillCatalog skills;
+
+  /// Closes process-owned resources when the application exits.
+  final Future<void> Function()? onClose;
+
+  /// Releases resources owned by this application environment.
+  Future<void> close() async => onClose?.call();
 }
 
 /// Result of loading the local Atlas configuration and composing the runtime.
@@ -57,19 +65,24 @@ RuntimeBootstrap bootstrapRuntime({Map<String, String>? environment}) {
   }
 
   final configFile = File('$home/.atlas/config.yaml');
+  DriftSessionStore? store;
   try {
     final config = loadConfig(configFile);
-    final runtime = composeRuntime(config);
+    store = DriftSessionStore.openFile(File(config.session.dbPath));
+    final runtime = composeRuntime(config, store: store);
     return RuntimeBootstrap.ready(
       RuntimeEnvironment(
         runtime: runtime,
         models: List.unmodifiable(composeModels(config)),
         skills: loadSkillCatalog(),
+        onClose: store.close,
       ),
     );
   } on ConfigLoadException catch (error) {
+    store?.close();
     return RuntimeBootstrap.failed('Cannot load ${configFile.path}: $error');
   } on Object catch (error) {
+    store?.close();
     return RuntimeBootstrap.failed('Cannot start Atlas: $error');
   }
 }

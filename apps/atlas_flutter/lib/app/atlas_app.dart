@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../shared/theme/atlas_theme.dart';
 import 'app_router.dart';
 import 'platform_window.dart';
+import 'runtime_environment.dart';
 
 /// Root application for the Atlas desktop and mobile clients.
 class AtlasApp extends ConsumerStatefulWidget {
@@ -27,6 +28,7 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(ref.read(runtimeEnvironmentProvider)?.close());
     super.dispose();
   }
 

@@ -5,9 +5,9 @@ import 'workspace_message.dart';
 /// Immutable state of one Flutter workspace, exposed by [WorkspaceController].
 final class WorkspaceState {
   /// Creates a workspace state.
-  const WorkspaceState({
-    required this.messages,
-    required this.sessions,
+  WorkspaceState({
+    required List<WorkspaceMessage> messages,
+    required List<SessionSummary> sessions,
     required this.activeModel,
     required this.workingDirectory,
     this.reasoningEffort,
@@ -15,7 +15,8 @@ final class WorkspaceState {
     this.busy = false,
     this.loadingSessions = false,
     this.contextTokens = 0,
-  });
+  }) : messages = List.unmodifiable(messages),
+       sessions = List.unmodifiable(sessions);
 
   /// Conversation items in occurrence order.
   final List<WorkspaceMessage> messages;

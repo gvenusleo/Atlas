@@ -300,6 +300,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         }
         state = state.copyWith(contextTokens: outcome.usage.totalTokens);
       case CompactionFinished(:final checkpoint):
+        state = state.copyWith(contextTokens: checkpoint.inputTokensAfter);
         _append(
           WorkspaceMessageKind.notice,
           'Context compacted, kept ${checkpoint.keptRecentMessages} recent messages.',
