@@ -1,24 +1,28 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../data/file_browser_service.dart';
 import '../workspace_metrics.dart';
-
-const _maximumPreviewBytes = 512 * 1024;
-const _maximumEntriesPerFolder = 500;
 
 /// Browses a working directory as a lazy-loading file tree and previews
 /// UTF-8 text files.
 class FileBrowser extends StatefulWidget {
   /// Creates a browser rooted at [workingDirectory].
-  const FileBrowser({super.key, required this.workingDirectory});
+  const FileBrowser({
+    super.key,
+    required this.workingDirectory,
+    this.service = const FileBrowserService(),
+  });
 
   /// Directory that users cannot navigate above.
   final String workingDirectory;
+
+  /// Filesystem adapter used by the browser.
+  final FileBrowserService service;
 
   @override
   State<FileBrowser> createState() => _FileBrowserState();
@@ -278,18 +282,9 @@ class _FileBrowserState extends State<FileBrowser> {
     node.loading = true;
     _rebuildVisible();
     try {
-      final entries = await (node.entity as Directory)
-          .list(followLinks: false)
-          .take(_maximumEntriesPerFolder)
-          .toList();
-      entries.sort((a, b) {
-        final directoryOrder =
-            (a is Directory ? 0 : 1) - (b is Directory ? 0 : 1);
-        if (directoryOrder != 0) {
-          return directoryOrder;
-        }
-        return a.path.toLowerCase().compareTo(b.path.toLowerCase());
-      });
+      final entries = await widget.service.listDirectory(
+        node.entity as Directory,
+      );
       // Reuse existing child nodes by path so expanded state survives reloads.
       final existing = {
         for (final child in node.children ?? const <_TreeNode>[])
@@ -374,17 +369,7 @@ class _FileBrowserState extends State<FileBrowser> {
       _error = null;
     });
     try {
-      final length = await file.length();
-      if (length > _maximumPreviewBytes) {
-        throw const FormatException(
-          'File is larger than the 512 KB preview limit.',
-        );
-      }
-      final bytes = await file.readAsBytes();
-      if (bytes.contains(0)) {
-        throw const FormatException('Binary files cannot be previewed.');
-      }
-      final preview = utf8.decode(bytes);
+      final preview = await widget.service.readPreview(file);
       if (mounted) {
         setState(() => _preview = preview);
       }

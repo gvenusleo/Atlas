@@ -19,16 +19,19 @@ class AtlasApp extends ConsumerStatefulWidget {
 
 class _AtlasAppState extends ConsumerState<AtlasApp>
     with WidgetsBindingObserver {
+  RuntimeEnvironment? _runtimeEnvironment;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _runtimeEnvironment = ref.read(runtimeEnvironmentProvider);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    unawaited(ref.read(runtimeEnvironmentProvider)?.close());
+    unawaited(_runtimeEnvironment?.close());
     super.dispose();
   }
 

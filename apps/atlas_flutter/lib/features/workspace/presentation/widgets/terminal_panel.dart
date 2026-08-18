@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:pty2/pty2.dart';
 import 'package:terminal_view/terminal_view.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../data/terminal_session.dart';
 import '../workspace_metrics.dart';
 
 /// Interactive shell backed by a pseudo-terminal and a terminal emulator.
@@ -22,8 +21,7 @@ class TerminalPanel extends StatefulWidget {
 
 class _TerminalPanelState extends State<TerminalPanel> {
   final _terminal = Terminal();
-  PseudoTerminal? _pty;
-  StreamSubscription<String>? _outputSubscription;
+  final _session = TerminalSession();
   bool _starting = false;
 
   @override
@@ -44,19 +42,18 @@ class _TerminalPanelState extends State<TerminalPanel> {
 
   @override
   void dispose() {
-    _outputSubscription?.cancel();
-    _pty?.kill();
+    unawaited(_session.close());
     super.dispose();
   }
 
   /// Forwards user input from the emulator to the shell.
   void _writeToPty(String data) {
-    _pty?.write(data);
+    _session.write(data);
   }
 
   /// Keeps the pseudo-terminal window size in sync with the emulator.
   void _resizePty(int cols, int rows, int pixelWidth, int pixelHeight) {
-    _pty?.resize(cols, rows);
+    _session.resize(cols, rows);
   }
 
   Future<void> _startShell() async {
@@ -64,25 +61,16 @@ class _TerminalPanelState extends State<TerminalPanel> {
       return;
     }
     _starting = true;
-    final executable = Platform.isWindows
-        ? 'cmd.exe'
-        : Platform.environment['SHELL'] ?? '/bin/sh';
     try {
-      final pty = PseudoTerminal.start(
-        executable,
-        const [],
+      await _session.start(
         workingDirectory: widget.workingDirectory,
-        environment: const {'TERM': 'xterm-256color'},
-      );
-      _pty = pty;
-      _outputSubscription = pty.out.listen(_terminal.write);
-      unawaited(
-        pty.exitCode.then((code) {
-          if (mounted && identical(_pty, pty)) {
+        onOutput: _terminal.write,
+        onExit: (code) {
+          if (mounted) {
             _terminal.write('\r\n[Process exited with code $code]\r\n');
-            setState(() => _pty = null);
+            setState(() {});
           }
-        }),
+        },
       );
     } catch (error) {
       _terminal.write('Cannot start shell: $error\r\n');
@@ -92,9 +80,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
   }
 
   Future<void> _restartShell() async {
-    await _outputSubscription?.cancel();
-    _pty?.kill();
-    _pty = null;
+    await _session.close();
     _terminal.write(
       '\r\nWorking directory changed to ${widget.workingDirectory}.\r\n',
     );

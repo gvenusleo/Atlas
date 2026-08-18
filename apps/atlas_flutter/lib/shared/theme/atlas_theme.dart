@@ -60,7 +60,9 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
 
   /// Returns the active Atlas palette from the nearest theme.
   static AtlasColors of(BuildContext context) {
-    return Theme.of(context).extension<AtlasColors>()!;
+    final theme = Theme.of(context);
+    return theme.extension<AtlasColors>() ??
+        AtlasColors.forBrightness(theme.brightness);
   }
 
   @override
@@ -130,6 +132,9 @@ ThemeData buildAtlasTheme(Brightness brightness) {
     onError: colors.canvas,
     surface: colors.canvas,
     onSurface: colors.textPrimary,
+    onSurfaceVariant: colors.textSecondary,
+    outline: colors.divider,
+    outlineVariant: colors.divider,
   );
   final base = ThemeData(brightness: brightness, useMaterial3: true);
 
@@ -144,10 +149,18 @@ ThemeData buildAtlasTheme(Brightness brightness) {
     highlightColor: Colors.transparent,
     hoverColor: colors.raised,
     focusColor: colors.accent,
-    textTheme: base.textTheme.apply(
-      bodyColor: colors.textPrimary,
-      displayColor: colors.textPrimary,
-    ),
+    textTheme: base.textTheme
+        .apply(bodyColor: colors.textPrimary, displayColor: colors.textPrimary)
+        .copyWith(
+          bodyMedium: TextStyle(color: colors.textPrimary, fontSize: 13),
+          bodySmall: TextStyle(color: colors.textSecondary, fontSize: 12),
+          labelMedium: TextStyle(color: colors.textPrimary, fontSize: 12.5),
+          titleMedium: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
     iconTheme: IconThemeData(color: colors.textSecondary, size: 18),
     dividerTheme: DividerThemeData(
       color: colors.divider,
