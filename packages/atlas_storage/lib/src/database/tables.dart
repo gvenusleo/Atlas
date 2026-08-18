@@ -65,6 +65,7 @@ class Sessions extends Table {
 }
 
 /// One user turn and its terminal state.
+@TableIndex(name: 'turns_session_started', columns: {#sessionId, #startedAt})
 @DataClassName('TurnRow')
 class Turns extends Table {
   /// Serialized turn identifier.
@@ -118,11 +119,6 @@ class Turns extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => {id};
-
-  @override
-  List<Set<Column<Object>>> get indexes => [
-    {sessionId, startedAt},
-  ];
 }
 
 /// One strongly typed message in the durable session timeline.

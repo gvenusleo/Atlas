@@ -2592,6 +2592,10 @@ abstract class _$AtlasDatabase extends GeneratedDatabase {
   late final $SessionsTable sessions = $SessionsTable(this);
   late final $TurnsTable turns = $TurnsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
+  late final Index turnsSessionStarted = Index(
+    'turns_session_started',
+    'CREATE INDEX turns_session_started ON turns (session_id, started_at)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2600,6 +2604,7 @@ abstract class _$AtlasDatabase extends GeneratedDatabase {
     sessions,
     turns,
     messages,
+    turnsSessionStarted,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
