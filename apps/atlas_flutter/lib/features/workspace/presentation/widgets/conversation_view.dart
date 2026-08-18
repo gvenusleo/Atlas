@@ -167,8 +167,6 @@ class _AssistantMessage extends StatelessWidget {
       selectable: false,
       softLineBreak: false,
       builders: {
-        'pre': _CodeBlockBuilder(),
-        'code': _InlineCodeBuilder(),
         'latex': LatexElementBuilder(
           textStyle: TextStyle(color: colors.textPrimary),
         ),
@@ -217,12 +215,10 @@ class _AssistantMessage extends StatelessWidget {
         ),
         code: TextStyle(
           color: colors.textPrimary,
-          backgroundColor: colors.raised,
-          fontSize: 12,
+          fontSize: 14,
           fontFamily: WorkspaceMetrics.monospaceFontFamily,
         ),
         codeblockDecoration: BoxDecoration(
-          color: colors.raised,
           borderRadius: BorderRadius.circular(AtlasRadii.surface),
         ),
         blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
@@ -236,90 +232,6 @@ class _AssistantMessage extends StatelessWidget {
         listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
         tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
         checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
-      ),
-    );
-  }
-}
-
-/// Renders fenced code blocks full-width with a language label.
-class _CodeBlockBuilder extends MarkdownElementBuilder {
-  @override
-  Widget visitElementAfterWithContext(
-    BuildContext context,
-    md.Element element,
-    TextStyle? preferredStyle,
-    TextStyle? parentStyle,
-  ) {
-    final colors = AtlasColors.of(context);
-    final code = element.children
-        ?.whereType<md.Element>()
-        .where((child) => child.tag == 'code')
-        .firstOrNull;
-    final language = code?.attributes['class']?.replaceFirst('language-', '');
-    return SizedBox(
-      width: double.infinity,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: colors.panel,
-          borderRadius: BorderRadius.circular(AtlasRadii.surface),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (language != null && language.isNotEmpty) ...[
-              Text(
-                language,
-                style: TextStyle(
-                  color: colors.textSecondary,
-                  fontFamily: WorkspaceMetrics.monospaceFontFamily,
-                  fontSize: 11,
-                ),
-              ),
-              const SizedBox(height: 6),
-            ],
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SelectableText(
-                element.textContent.trimRight(),
-                style: TextStyle(
-                  color: colors.textPrimary,
-                  fontFamily: WorkspaceMetrics.monospaceFontFamily,
-                  fontSize: 12,
-                  height: 1.45,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Renders inline code with a rounded raised background.
-class _InlineCodeBuilder extends MarkdownElementBuilder {
-  @override
-  Widget visitElementAfterWithContext(
-    BuildContext context,
-    md.Element element,
-    TextStyle? preferredStyle,
-    TextStyle? parentStyle,
-  ) {
-    final colors = AtlasColors.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: colors.panel,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        element.textContent,
-        style: TextStyle(
-          color: colors.textPrimary,
-          fontFamily: WorkspaceMetrics.monospaceFontFamily,
-          fontSize: 12,
-        ),
       ),
     );
   }
