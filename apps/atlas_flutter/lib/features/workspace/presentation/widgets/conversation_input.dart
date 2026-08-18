@@ -73,7 +73,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     final controller = ref.read(workspaceProvider.notifier);
     final environment = ref.watch(runtimeEnvironmentProvider)!;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 660),
         child: Stack(
@@ -92,107 +92,116 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                   ),
                 CompositedTransformTarget(
                   link: _layerLink,
-                  child: DecoratedBox(
+                  child: Container(
                     decoration: BoxDecoration(
-                      color: colors.panel,
-                      borderRadius: BorderRadius.circular(8),
+                      color: colors.canvas,
+                      borderRadius: BorderRadius.circular(AtlasRadii.surface),
                       border: Border.all(color: colors.divider),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colors.scrim.withValues(alpha: 0.08),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: [
-                          Focus(
-                            onKeyEvent: _handleKey,
-                            child: TextField(
-                              key: const ValueKey('atlas-prompt-input'),
-                              controller: _textController,
-                              focusNode: _focusNode,
-                              enabled: !busy,
-                              minLines: 1,
-                              maxLines: 6,
-                              keyboardType: TextInputType.multiline,
-                              textInputAction: TextInputAction.newline,
-                              style: TextStyle(
-                                color: colors.textPrimary,
-                                fontSize: 13,
-                                height: 1.4,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: 'Message Atlas',
-                                hintStyle: TextStyle(
-                                  color: colors.textSecondary,
-                                ),
-                                border: InputBorder.none,
-                                isCollapsed: true,
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      children: [
+                        Focus(
+                          onKeyEvent: _handleKey,
+                          child: TextField(
+                            key: const ValueKey('atlas-prompt-input'),
+                            controller: _textController,
+                            focusNode: _focusNode,
+                            enabled: !busy,
+                            minLines: 1,
+                            maxLines: 6,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            style: TextStyle(
+                              color: colors.textPrimary,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Message Atlas',
+                              hintStyle: TextStyle(color: colors.textSecondary),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              errorBorder: InputBorder.none,
+                              isCollapsed: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 12,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              _ModelMenu(
-                                models: environment.models,
-                                activeModel: activeModel,
-                                onTap: _toggleModel,
+                        ),
+                        Row(
+                          children: [
+                            _ModelMenu(
+                              models: environment.models,
+                              activeModel: activeModel,
+                              onTap: _toggleModel,
+                            ),
+                            const SizedBox(width: 4),
+                            if (activeModel.reasoningEfforts.isNotEmpty)
+                              _EffortMenu(
+                                efforts: activeModel.reasoningEfforts,
+                                value: reasoningEffort,
+                                onTap: _toggleEffort,
                               ),
-                              const SizedBox(width: 4),
-                              if (activeModel.reasoningEfforts.isNotEmpty)
-                                _EffortMenu(
-                                  efforts: activeModel.reasoningEfforts,
-                                  value: reasoningEffort,
-                                  onTap: _toggleEffort,
+                            const Spacer(),
+                            if (contextTokens > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Text(
+                                  '$contextTokens tokens',
+                                  style: TextStyle(
+                                    color: colors.textSecondary,
+                                    fontSize: 11,
+                                  ),
                                 ),
-                              const Spacer(),
-                              if (contextTokens > 0)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: Text(
-                                    '$contextTokens tokens',
-                                    style: TextStyle(
-                                      color: colors.textSecondary,
-                                      fontSize: 11,
+                              ),
+                            Tooltip(
+                              message: busy ? 'Stop' : 'Send',
+                              child: IconButton(
+                                key: const ValueKey('atlas-send-button'),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 28,
+                                  height: 28,
+                                ),
+                                onPressed: busy ? controller.cancel : _submit,
+                                icon: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: _canSend
+                                        ? colors.textPrimary
+                                        : colors.divider,
+                                    borderRadius: BorderRadius.circular(
+                                      AtlasRadii.control,
                                     ),
                                   ),
-                                ),
-                              Tooltip(
-                                message: busy ? 'Stop' : 'Send',
-                                child: IconButton(
-                                  key: const ValueKey('atlas-send-button'),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 28,
-                                    height: 28,
-                                  ),
-                                  onPressed: busy ? controller.cancel : _submit,
-                                  icon: DecoratedBox(
-                                    decoration: BoxDecoration(
+                                  child: SizedBox.square(
+                                    dimension: 28,
+                                    child: Icon(
+                                      busy
+                                          ? LucideIcons.square
+                                          : LucideIcons.arrowUp,
+                                      size: 14,
                                       color: _canSend
-                                          ? colors.textPrimary
-                                          : colors.divider,
-                                      borderRadius: BorderRadius.circular(
-                                        AtlasRadii.control,
-                                      ),
-                                    ),
-                                    child: SizedBox.square(
-                                      dimension: 28,
-                                      child: Icon(
-                                        busy
-                                            ? LucideIcons.square
-                                            : LucideIcons.arrowUp,
-                                        size: 14,
-                                        color: _canSend
-                                            ? colors.canvas
-                                            : colors.textSecondary,
-                                      ),
+                                          ? colors.canvas
+                                          : colors.textSecondary,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -534,14 +543,14 @@ class _FloatingMenuCard<T> extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.all(cardPadding),
         decoration: BoxDecoration(
-          color: colors.panel,
+          color: colors.canvas,
           borderRadius: BorderRadius.circular(AtlasRadii.surface),
           border: Border.all(color: colors.divider),
           boxShadow: [
             BoxShadow(
               color: colors.scrim.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -653,24 +662,25 @@ class _ModelMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(AtlasRadii.control),
-      onTap: onTap,
+    return TextButton(
+      style: ButtonStyle(
+        padding: WidgetStatePropertyAll(
+          const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        ),
+      ),
+      onPressed: onTap,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          Icon(LucideIcons.package, size: 12, color: colors.textSecondary),
+          const SizedBox(width: 6),
           Text(
             activeModel.name.isEmpty
                 ? activeModel.ref.modelId.value
                 : activeModel.name,
-            style: TextStyle(
-              color: colors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+            style: TextStyle(color: colors.textSecondary, fontSize: 12),
           ),
-          const SizedBox(width: 4),
-          Icon(LucideIcons.chevronDown, size: 12, color: colors.textSecondary),
         ],
       ),
     );
@@ -754,12 +764,19 @@ class _EffortMenu extends StatelessWidget {
         .where((effort) => effort.value == current)
         .map((effort) => effort.name.isEmpty ? effort.value : effort.name)
         .firstOrNull;
-    return InkWell(
-      borderRadius: BorderRadius.circular(AtlasRadii.control),
-      onTap: onTap,
+    return TextButton(
+      style: ButtonStyle(
+        padding: WidgetStatePropertyAll(
+          const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        ),
+      ),
+      onPressed: onTap,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          Icon(LucideIcons.brain, size: 12, color: colors.textSecondary),
+          const SizedBox(width: 6),
           Text(
             label ?? current,
             style: TextStyle(
@@ -768,8 +785,6 @@ class _EffortMenu extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(width: 4),
-          Icon(LucideIcons.chevronDown, size: 12, color: colors.textSecondary),
         ],
       ),
     );

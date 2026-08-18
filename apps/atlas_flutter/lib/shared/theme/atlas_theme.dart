@@ -17,8 +17,8 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
   });
 
   static const light = AtlasColors(
-    canvas: Color(0xFFF8F8F9),
-    panel: Color(0xFFF1F1F2),
+    canvas: Color(0xFFF8F8F8),
+    panel: Color(0xFFF1F2F3),
     raised: Color(0xFFE8E9EC),
     divider: Color(0xFFD3D5DA),
     textPrimary: Color(0xFF1F2733),
