@@ -173,24 +173,11 @@ ThemeData buildAtlasTheme(Brightness brightness) {
         height: 1.2,
       ),
     ),
-    popupMenuTheme: PopupMenuThemeData(
-      color: colors.panel,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AtlasRadii.control),
-        side: BorderSide(color: colors.divider),
-      ),
-      menuPadding: const EdgeInsets.all(8),
-      textStyle: TextStyle(color: colors.textPrimary, fontSize: 12.5),
-      iconColor: colors.textSecondary,
-      iconSize: 14,
-    ),
     menuTheme: MenuThemeData(
       style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(colors.panel),
-        elevation: WidgetStatePropertyAll(0),
+        backgroundColor: WidgetStatePropertyAll(colors.canvas),
+        elevation: WidgetStatePropertyAll(1),
         surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
-        side: WidgetStatePropertyAll(BorderSide(color: colors.divider)),
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
@@ -215,6 +202,63 @@ ThemeData buildAtlasTheme(Brightness brightness) {
           TextStyle(color: colors.textPrimary, fontSize: 12.5),
         ),
         foregroundColor: WidgetStatePropertyAll(colors.textPrimary),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AtlasRadii.control),
+          ),
+        ),
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return colors.textSecondary.withValues(alpha: 0.5);
+          }
+          return colors.textPrimary;
+        }),
+        overlayColor: WidgetStatePropertyAll(colors.raised),
+        padding: WidgetStatePropertyAll(
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        ),
+        minimumSize: WidgetStatePropertyAll(const Size(0, 30)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: WidgetStatePropertyAll(
+          TextStyle(color: colors.textPrimary, fontSize: 12.5),
+        ),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: colors.canvas,
+      elevation: 1,
+      shadowColor: colors.scrim,
+      barrierColor: colors.textSecondary.withAlpha(100),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AtlasRadii.surface),
+      ),
+      titleTextStyle: TextStyle(
+        color: colors.textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      contentTextStyle: TextStyle(
+        color: colors.textPrimary,
+        fontSize: 13,
+        height: 1.4,
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      contentPadding: const EdgeInsets.all(0),
+      border: UnderlineInputBorder(
+        borderSide: BorderSide(color: colors.textPrimary, width: 1),
+      ),
+      enabledBorder: UnderlineInputBorder(
+        borderSide: BorderSide(color: colors.textPrimary, width: 1),
+      ),
+      focusedBorder: UnderlineInputBorder(
+        borderSide: BorderSide(color: colors.textPrimary, width: 1),
       ),
     ),
   );

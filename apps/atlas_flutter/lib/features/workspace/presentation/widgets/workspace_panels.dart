@@ -155,6 +155,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
 
   /// Renames a session via a dialog.
   Future<void> _renameSession(SessionSummary session) async {
+    final colors = AtlasColors.of(context);
     final textController = TextEditingController(text: session.title);
     final title = await showDialog<String>(
       context: context,
@@ -163,7 +164,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
         content: TextField(
           controller: textController,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Title'),
+          decoration: const InputDecoration(hintText: 'Title'),
           onSubmitted: (value) => Navigator.pop(context, value.trim()),
         ),
         actions: [
@@ -171,9 +172,9 @@ class _SessionListState extends ConsumerState<_SessionList> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, textController.text.trim()),
-            child: const Text('Save'),
+            child: Text('Save', style: TextStyle(color: colors.accent)),
           ),
         ],
       ),
@@ -187,6 +188,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
 
   /// Deletes a session after confirmation.
   Future<void> _deleteSession(SessionSummary session) async {
+    final colors = AtlasColors.of(context);
     final label = session.title.isEmpty ? 'Untitled session' : session.title;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -196,11 +198,11 @@ class _SessionListState extends ConsumerState<_SessionList> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: colors.textPrimary)),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+            child: Text('Delete', style: TextStyle(color: colors.error)),
           ),
         ],
       ),
@@ -321,7 +323,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
                 ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 4, 8),
+          padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
           child: Align(
             alignment: Alignment.bottomLeft,
             child: WorkspaceToolbarButton(
