@@ -228,6 +228,17 @@ final class DriftSessionStore implements runtime.SessionStore {
     }
   }
 
+  @override
+  Future<void> renameSession(runtime.SessionId sessionId, String title) async {
+    final count =
+        await (_database.update(_database.sessions)
+              ..where((table) => table.id.equals(sessionId.value)))
+            .write(SessionsCompanion(title: Value(title)));
+    if (count == 0) {
+      throw runtime.SessionNotFoundException(sessionId);
+    }
+  }
+
   Future<SessionRow> _sessionRow(runtime.SessionId sessionId) async {
     final row = await (_database.select(
       _database.sessions,

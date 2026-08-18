@@ -103,4 +103,7 @@ abstract interface class SessionStore {
 
   /// Deletes a session and all of its dependent records.
   Future<void> deleteSession(SessionId sessionId);
+
+  /// Renames a session's display title.
+  Future<void> renameSession(SessionId sessionId, String title);
 }

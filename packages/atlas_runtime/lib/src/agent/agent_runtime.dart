@@ -186,6 +186,12 @@ final class AgentRuntime {
   Future<void> deleteSession(SessionId sessionId) =>
       store.deleteSession(sessionId);
 
+  /// Renames [sessionId]'s display title.
+  ///
+  /// Throws [SessionNotFoundException] when [sessionId] does not exist.
+  Future<void> renameSession(SessionId sessionId, String title) =>
+      store.renameSession(sessionId, title);
+
   /// The context window size of the default model, or 0 when unknown.
   Future<int> contextWindowSize() async {
     try {

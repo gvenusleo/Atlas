@@ -7,6 +7,7 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -234,6 +235,77 @@ void main() {
       await tester.tap(find.text('New session in folder...'));
       await tester.pumpAndSettle();
       expect(picked, isTrue);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('session tile right-click opens rename and delete menu', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 760);
+      addTearDown(tester.view.reset);
+
+      final model = ModelDescriptor(
+        ref: ModelRef(
+          providerId: ProviderId('test'),
+          modelId: ModelId('streaming'),
+        ),
+        name: 'Streaming test model',
+        reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+      );
+      final store = DriftSessionStore.inMemory();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: _FakeProvider(model.ref),
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: model.ref,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWithValue(
+            RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(store.close);
+      addTearDown(container.dispose);
+
+      final controller = container.read(workspaceProvider.notifier);
+      await controller.send('first session');
+      await controller.refreshSessions();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: buildAtlasTheme(Brightness.light),
+            home: const Scaffold(body: SessionsPanel()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Right-click the session tile to open the context menu.
+      await tester.tap(
+        find.text('first session'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rename'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }

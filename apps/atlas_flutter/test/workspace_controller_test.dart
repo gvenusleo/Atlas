@@ -147,6 +147,94 @@ void main() {
       '/tmp2',
     });
   });
+
+  test('renameSession updates the title and refreshes the list', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    final sessionId = container.read(workspaceProvider).sessionId!;
+
+    await controller.renameSession(sessionId, 'Renamed title');
+    final sessions = container.read(workspaceProvider).sessions;
+    expect(sessions.single.title, 'Renamed title');
+  });
+
+  test('deleteSession removes the session and resets the active one', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    final sessionId = container.read(workspaceProvider).sessionId!;
+
+    await controller.deleteSession(sessionId);
+    final state = container.read(workspaceProvider);
+    expect(state.sessions, isEmpty);
+    expect(state.sessionId, isNull);
+    expect(state.messages, isEmpty);
+  });
 }
 
 /// Working directory fixed for tests.

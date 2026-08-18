@@ -173,5 +173,49 @@ ThemeData buildAtlasTheme(Brightness brightness) {
         height: 1.2,
       ),
     ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: colors.panel,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        side: BorderSide(color: colors.divider),
+      ),
+      menuPadding: const EdgeInsets.all(8),
+      textStyle: TextStyle(color: colors.textPrimary, fontSize: 12.5),
+      iconColor: colors.textSecondary,
+      iconSize: 14,
+    ),
+    menuTheme: MenuThemeData(
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(colors.panel),
+        elevation: WidgetStatePropertyAll(0),
+        surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
+        side: WidgetStatePropertyAll(BorderSide(color: colors.divider)),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AtlasRadii.control),
+          ),
+        ),
+        padding: WidgetStatePropertyAll(const EdgeInsets.all(8)),
+      ),
+    ),
+    menuButtonTheme: MenuButtonThemeData(
+      style: ButtonStyle(
+        padding: WidgetStatePropertyAll(
+          const EdgeInsets.fromLTRB(8, 16, 24, 16),
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AtlasRadii.small),
+          ),
+        ),
+        minimumSize: WidgetStatePropertyAll(const Size(0, 30)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: WidgetStatePropertyAll(
+          TextStyle(color: colors.textPrimary, fontSize: 12.5),
+        ),
+        foregroundColor: WidgetStatePropertyAll(colors.textPrimary),
+      ),
+    ),
   );
 }

@@ -166,6 +166,23 @@ void main() {
     );
   });
 
+  test('renames a session title and rejects unknown sessions', () async {
+    final session = _session(
+      'session-rename',
+      updatedAt: DateTime.utc(2026, 1, 1),
+    );
+    await store.createSession(session);
+
+    await store.renameSession(session.id, 'My renamed session');
+    final snapshot = await store.loadSession(session.id);
+    expect(snapshot.session.title, 'My renamed session');
+
+    expect(
+      () => store.renameSession(runtime.SessionId('missing'), 'nope'),
+      throwsA(isA<runtime.SessionNotFoundException>()),
+    );
+  });
+
   test('rolls back an invalid checkpoint with its assistant item', () async {
     final session = _session('session-rollback', updatedAt: DateTime.utc(2026));
     final turn = _turn(session.id, 'turn-rollback');

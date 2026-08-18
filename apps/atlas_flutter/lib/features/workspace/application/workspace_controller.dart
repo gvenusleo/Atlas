@@ -106,6 +106,33 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
   }
 
+  /// Renames a persisted session's display title.
+  Future<void> renameSession(SessionId id, String title) async {
+    try {
+      await _environment.runtime.renameSession(id, title);
+      await refreshSessions();
+    } catch (error) {
+      _append(WorkspaceMessageKind.error, 'Cannot rename session: $error');
+    }
+  }
+
+  /// Deletes a persisted session and resets the workspace if it was active.
+  Future<void> deleteSession(SessionId id) async {
+    try {
+      await _environment.runtime.deleteSession(id);
+      if (state.sessionId == id) {
+        state = state.copyWith(
+          messages: const [],
+          sessionId: null,
+          contextTokens: 0,
+        );
+      }
+      await refreshSessions();
+    } catch (error) {
+      _append(WorkspaceMessageKind.error, 'Cannot delete session: $error');
+    }
+  }
+
   /// Changes the model and resets reasoning effort to its first option.
   void selectModel(ModelDescriptor model) {
     state = state.copyWith(

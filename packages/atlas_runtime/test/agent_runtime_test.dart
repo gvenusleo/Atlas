@@ -1471,4 +1471,22 @@ final class _MemorySessionStore implements SessionStore {
 
   @override
   Future<void> deleteSession(SessionId sessionId) async => session = null;
+
+  @override
+  Future<void> renameSession(SessionId sessionId, String title) async {
+    final value = session;
+    if (value == null || value.id != sessionId) {
+      throw SessionNotFoundException(sessionId);
+    }
+    session = Session(
+      id: value.id,
+      workingDirectory: value.workingDirectory,
+      additionalDirectories: value.additionalDirectories,
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      title: title,
+      compaction: value.compaction,
+      lastUsage: value.lastUsage,
+    );
+  }
 }
