@@ -2,6 +2,7 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -56,10 +57,118 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Model B'), findsNothing);
   });
+
+  testWidgets('slash suggestions highlight follows the mouse', (tester) async {
+    await _pumpComposer(tester);
+
+    // Type a slash to open the command picker.
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('/compact'), findsOneWidget);
+
+    // Hover the second row with a real mouse pointer.
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.text('/model')));
+    await tester.pump();
+
+    AnimatedPositioned highlight() =>
+        tester.widget<AnimatedPositioned>(find.byType(AnimatedPositioned));
+    expect(highlight().top, 30);
+  });
+
+  testWidgets('model picker supports keyboard navigation', (tester) async {
+    await _pumpComposer(tester);
+
+    // Open the model picker.
+    await tester.tap(find.text('Model A'));
+    await tester.pumpAndSettle();
+    expect(find.text('Model B'), findsOneWidget);
+
+    // Arrow down moves the highlight to the second row.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+
+    AnimatedPositioned highlight() =>
+        tester.widget<AnimatedPositioned>(find.byType(AnimatedPositioned));
+    expect(highlight().top, 30);
+
+    // Enter selects the highlighted model and closes the picker.
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('Model B'), findsOneWidget); // Only the trigger button.
+  });
+
+  testWidgets('slash suggestions have no footer hint', (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Type to search commands'), findsNothing);
+  });
+
+  testWidgets('escape closes the model menu', (tester) async {
+    await _pumpComposer(tester);
+
+    // Open the model picker.
+    await tester.tap(find.text('Model A'));
+    await tester.pumpAndSettle();
+    expect(find.text('Model B'), findsOneWidget);
+
+    // Escape closes the picker without selecting a model.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Model B'), findsNothing);
+  });
+
+  testWidgets('escape clears the slash suggestions', (tester) async {
+    await _pumpComposer(tester);
+
+    // Type a slash to open the command picker.
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('/compact'), findsOneWidget);
+
+    // Escape clears the input and closes the picker.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('/compact'), findsNothing);
+  });
+
+  testWidgets('model picker keyboard does not crash with no models', (
+    tester,
+  ) async {
+    await _pumpComposer(tester, models: const []);
+
+    // Open the model picker; the trigger shows the bare model id.
+    await tester.tap(find.text('model-a'));
+    await tester.pumpAndSettle();
+
+    // Arrow keys must not throw with an empty model list.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+  });
 }
 
 /// Pumps the composer anchored at the bottom of the screen, as in the app.
-Future<void> _pumpComposer(WidgetTester tester) async {
+Future<void> _pumpComposer(
+  WidgetTester tester, {
+  List<ModelDescriptor>? models,
+}) async {
   final modelA = ModelDescriptor(
     ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('model-a')),
     name: 'Model A',
@@ -70,6 +179,7 @@ Future<void> _pumpComposer(WidgetTester tester) async {
     name: 'Model B',
     reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
   );
+  final allModels = models ?? [modelA, modelB];
   final store = DriftSessionStore.inMemory();
   final runtime = AgentRuntime(
     store: store,
@@ -86,7 +196,7 @@ Future<void> _pumpComposer(WidgetTester tester) async {
         runtimeEnvironmentProvider.overrideWithValue(
           RuntimeEnvironment(
             runtime: runtime,
-            models: [modelA, modelB],
+            models: allModels,
             skills: _EmptySkillCatalog(),
           ),
         ),

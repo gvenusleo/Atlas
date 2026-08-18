@@ -36,6 +36,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   final _layerLink = LayerLink();
   final _overlayPortalController = OverlayPortalController();
   var _selectedSuggestion = 0;
+  var _modelHighlighted = 0;
+  var _effortHighlighted = 0;
   var _modelOpen = false;
   var _effortOpen = false;
 
@@ -84,6 +86,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                   _SlashSuggestions(
                     suggestions: suggestions,
                     selected: _selectedSuggestion,
+                    onHighlighted: (index) =>
+                        setState(() => _selectedSuggestion = index),
                     onSelected: _applySuggestion,
                   ),
                 CompositedTransformTarget(
@@ -223,6 +227,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                           key: _modelMenuKey,
                           models: environment.models,
                           activeModel: activeModel,
+                          highlighted: _modelHighlighted,
+                          onHighlighted: (index) =>
+                              setState(() => _modelHighlighted = index),
                           onSelected: (model) {
                             setState(() => _modelOpen = false);
                             _overlayPortalController.hide();
@@ -248,10 +255,13 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                           key: _effortMenuKey,
                           efforts: activeModel.reasoningEfforts,
                           value: reasoningEffort,
-                          onSelected: (value) {
+                          highlighted: _effortHighlighted,
+                          onHighlighted: (index) =>
+                              setState(() => _effortHighlighted = index),
+                          onSelected: (effort) {
                             setState(() => _effortOpen = false);
                             _overlayPortalController.hide();
-                            controller.selectReasoningEffort(value);
+                            controller.selectReasoningEffort(effort.value);
                           },
                         ),
                       ),
@@ -293,12 +303,23 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Opens or closes the model picker.
   void _toggleModel() {
+    final environment = ref.read(runtimeEnvironmentProvider)!;
+    final activeModel = ref.read(workspaceProvider).activeModel;
     setState(() {
       _modelOpen = !_modelOpen;
       _effortOpen = false;
+      if (_modelOpen) {
+        _modelHighlighted = environment.models.indexWhere(
+          (model) => model.ref == activeModel.ref,
+        );
+        if (_modelHighlighted < 0) {
+          _modelHighlighted = 0;
+        }
+      }
     });
     if (_modelOpen) {
       _overlayPortalController.show();
+      _focusNode.requestFocus();
     } else {
       _overlayPortalController.hide();
     }
@@ -306,12 +327,23 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Opens or closes the reasoning-effort picker.
   void _toggleEffort() {
+    final activeModel = ref.read(workspaceProvider).activeModel;
+    final current = ref.read(workspaceProvider).reasoningEffort;
     setState(() {
       _effortOpen = !_effortOpen;
       _modelOpen = false;
+      if (_effortOpen) {
+        _effortHighlighted = activeModel.reasoningEfforts.indexWhere(
+          (effort) => effort.value == current,
+        );
+        if (_effortHighlighted < 0) {
+          _effortHighlighted = 0;
+        }
+      }
     });
     if (_effortOpen) {
       _overlayPortalController.show();
+      _focusNode.requestFocus();
     } else {
       _overlayPortalController.hide();
     }
@@ -339,26 +371,94 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       return KeyEventResult.ignored;
     }
     final suggestions = _suggestions;
-    if (suggestions.isNotEmpty &&
-        event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      setState(() {
-        _selectedSuggestion = (_selectedSuggestion + 1) % suggestions.length;
-      });
-      return KeyEventResult.handled;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_modelOpen || _effortOpen || suggestions.isNotEmpty) {
+        setState(() {
+          _modelOpen = false;
+          _effortOpen = false;
+        });
+        _overlayPortalController.hide();
+        if (suggestions.isNotEmpty) {
+          _textController.clear();
+        }
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
     }
-    if (suggestions.isNotEmpty &&
-        event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      setState(() {
-        _selectedSuggestion =
-            (_selectedSuggestion - 1 + suggestions.length) % suggestions.length;
-      });
-      return KeyEventResult.handled;
+    if (suggestions.isNotEmpty) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        setState(() {
+          _selectedSuggestion = (_selectedSuggestion + 1) % suggestions.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        setState(() {
+          _selectedSuggestion =
+              (_selectedSuggestion - 1 + suggestions.length) %
+              suggestions.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.tab ||
+          event.logicalKey == LogicalKeyboardKey.enter) {
+        _applySuggestion(suggestions[_selectedSuggestion]);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
     }
-    if (suggestions.isNotEmpty &&
-        (event.logicalKey == LogicalKeyboardKey.tab ||
-            event.logicalKey == LogicalKeyboardKey.enter)) {
-      _applySuggestion(suggestions[_selectedSuggestion]);
-      return KeyEventResult.handled;
+    if (_modelOpen) {
+      final models = ref.read(runtimeEnvironmentProvider)!.models;
+      if (models.isEmpty) {
+        return KeyEventResult.ignored;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        setState(() {
+          _modelHighlighted = (_modelHighlighted + 1) % models.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        setState(() {
+          _modelHighlighted =
+              (_modelHighlighted - 1 + models.length) % models.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        setState(() => _modelOpen = false);
+        _overlayPortalController.hide();
+        ref
+            .read(workspaceProvider.notifier)
+            .selectModel(models[_modelHighlighted]);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (_effortOpen) {
+      final efforts = ref.read(workspaceProvider).activeModel.reasoningEfforts;
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        setState(() {
+          _effortHighlighted = (_effortHighlighted + 1) % efforts.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        setState(() {
+          _effortHighlighted =
+              (_effortHighlighted - 1 + efforts.length) % efforts.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        setState(() => _effortOpen = false);
+        _overlayPortalController.hide();
+        ref
+            .read(workspaceProvider.notifier)
+            .selectReasoningEffort(efforts[_effortHighlighted].value);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
     }
     if (event.logicalKey == LogicalKeyboardKey.enter &&
         !HardwareKeyboard.instance.isShiftPressed) {
@@ -403,17 +503,100 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   }
 }
 
+/// Floating picker card with a gliding highlight driven by hover or keys.
+class _FloatingMenuCard<T> extends StatelessWidget {
+  const _FloatingMenuCard({
+    super.key,
+    required this.items,
+    required this.selectedIndex,
+    required this.highlighted,
+    required this.onHighlighted,
+    required this.onSelected,
+    required this.rowHeight,
+    required this.cardPadding,
+    required this.itemBuilder,
+  });
+
+  final List<T> items;
+  final int selectedIndex;
+  final int highlighted;
+  final ValueChanged<int> onHighlighted;
+  final ValueChanged<T> onSelected;
+  final double rowHeight;
+  final double cardPadding;
+  final Widget Function(BuildContext context, T item, int index) itemBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.all(cardPadding),
+        decoration: BoxDecoration(
+          color: colors.panel,
+          borderRadius: BorderRadius.circular(AtlasRadii.surface),
+          border: Border.all(color: colors.divider),
+          boxShadow: [
+            BoxShadow(
+              color: colors.scrim.withValues(alpha: 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              left: 0,
+              right: 0,
+              top: highlighted * rowHeight,
+              height: rowHeight,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colors.raised,
+                  borderRadius: BorderRadius.circular(AtlasRadii.control),
+                ),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (index, item) in items.indexed)
+                  InkWell(
+                    onHover: (hovered) =>
+                        onHighlighted(hovered ? index : selectedIndex),
+                    onTap: () => onSelected(item),
+                    child: Container(
+                      height: rowHeight,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: itemBuilder(context, item, index),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SlashSuggestions extends StatelessWidget {
   const _SlashSuggestions({
     required this.suggestions,
     required this.selected,
+    required this.onHighlighted,
     required this.onSelected,
   });
 
-  static const _rowHeight = 36.0;
+  static const _rowHeight = 30.0;
 
   final List<(String, String)> suggestions;
   final int selected;
+  final ValueChanged<int> onHighlighted;
   final ValueChanged<(String, String)> onSelected;
 
   @override
@@ -421,91 +604,36 @@ class _SlashSuggestions extends StatelessWidget {
     final colors = AtlasColors.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: colors.panel,
-        borderRadius: BorderRadius.circular(AtlasRadii.surface),
-        border: Border.all(color: colors.divider),
-        boxShadow: [
-          BoxShadow(
-            color: colors.scrim.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            children: [
-              // Gliding highlight that moves to the selected row.
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                left: 0,
-                right: 0,
-                top: selected * _rowHeight,
-                height: _rowHeight,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: colors.raised,
-                    borderRadius: BorderRadius.circular(AtlasRadii.control),
-                  ),
-                ),
+      child: _FloatingMenuCard(
+        items: suggestions,
+        selectedIndex: 0,
+        highlighted: selected,
+        onHighlighted: onHighlighted,
+        onSelected: onSelected,
+        rowHeight: _rowHeight,
+        cardPadding: 8,
+        itemBuilder: (context, suggestion, index) => Row(
+          children: [
+            Text(
+              '/${suggestion.$1}',
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontFamily: WorkspaceMetrics.monospaceFontFamily,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
               ),
-              Column(
-                children: [
-                  for (final suggestion in suggestions)
-                    InkWell(
-                      onTap: () => onSelected(suggestion),
-                      child: Container(
-                        height: _rowHeight,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Row(
-                          children: [
-                            Text(
-                              '/${suggestion.$1}',
-                              style: TextStyle(
-                                color: colors.textPrimary,
-                                fontFamily:
-                                    WorkspaceMetrics.monospaceFontFamily,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                suggestion.$2,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: colors.textSecondary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                suggestion.$2,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colors.textSecondary, fontSize: 12),
               ),
-            ],
-          ),
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: colors.divider)),
             ),
-            child: Text(
-              'Type to search commands',
-              style: TextStyle(color: colors.textSecondary, fontSize: 11),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -550,11 +678,13 @@ class _ModelMenu extends StatelessWidget {
 }
 
 /// Floating model picker card with a gliding highlight.
-class _ModelMenuCard extends StatefulWidget {
+class _ModelMenuCard extends StatelessWidget {
   const _ModelMenuCard({
     super.key,
     required this.models,
     required this.activeModel,
+    required this.highlighted,
+    required this.onHighlighted,
     required this.onSelected,
   });
 
@@ -565,95 +695,41 @@ class _ModelMenuCard extends StatefulWidget {
 
   final List<ModelDescriptor> models;
   final ModelDescriptor activeModel;
+  final int highlighted;
+  final ValueChanged<int> onHighlighted;
   final ValueChanged<ModelDescriptor> onSelected;
-
-  @override
-  State<_ModelMenuCard> createState() => _ModelMenuCardState();
-}
-
-class _ModelMenuCardState extends State<_ModelMenuCard> {
-  int? _hovered;
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    final selectedIndex = widget.models.indexWhere(
-      (model) => model.ref == widget.activeModel.ref,
+    final selectedIndex = models.indexWhere(
+      (model) => model.ref == activeModel.ref,
     );
-    final highlightIndex = _hovered ?? selectedIndex;
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(_ModelMenuCard.cardPadding),
-        decoration: BoxDecoration(
-          color: colors.panel,
-          borderRadius: BorderRadius.circular(AtlasRadii.surface),
-          border: Border.all(color: colors.divider),
-          boxShadow: [
-            BoxShadow(
-              color: colors.scrim.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              left: 0,
-              right: 0,
-              top: highlightIndex * _ModelMenuCard.rowHeight,
-              height: _ModelMenuCard.rowHeight,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colors.raised,
-                  borderRadius: BorderRadius.circular(AtlasRadii.control),
-                ),
+    return _FloatingMenuCard(
+      items: models,
+      selectedIndex: selectedIndex,
+      highlighted: highlighted,
+      onHighlighted: onHighlighted,
+      onSelected: onSelected,
+      rowHeight: rowHeight,
+      cardPadding: cardPadding,
+      itemBuilder: (context, model, index) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              model.name.isEmpty ? model.ref.modelId.value : model.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final (index, model) in widget.models.indexed)
-                  InkWell(
-                    onHover: (hovered) =>
-                        setState(() => _hovered = hovered ? index : null),
-                    onTap: () => widget.onSelected(model),
-                    child: Container(
-                      height: _ModelMenuCard.rowHeight,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              model.name.isEmpty
-                                  ? model.ref.modelId.value
-                                  : model.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: colors.textPrimary,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          if (model.ref == widget.activeModel.ref)
-                            Icon(
-                              LucideIcons.check,
-                              size: 13,
-                              color: colors.textPrimary,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          if (model.ref == activeModel.ref)
+            Icon(LucideIcons.check, size: 13, color: colors.textPrimary),
+        ],
       ),
     );
   }
@@ -701,11 +777,13 @@ class _EffortMenu extends StatelessWidget {
 }
 
 /// Floating reasoning-effort picker card with a gliding highlight.
-class _EffortMenuCard extends StatefulWidget {
+class _EffortMenuCard extends StatelessWidget {
   const _EffortMenuCard({
     super.key,
     required this.efforts,
     required this.value,
+    required this.highlighted,
+    required this.onHighlighted,
     required this.onSelected,
   });
 
@@ -716,96 +794,42 @@ class _EffortMenuCard extends StatefulWidget {
 
   final List<ReasoningEffortOption> efforts;
   final String? value;
-  final ValueChanged<String?> onSelected;
-
-  @override
-  State<_EffortMenuCard> createState() => _EffortMenuCardState();
-}
-
-class _EffortMenuCardState extends State<_EffortMenuCard> {
-  int? _hovered;
+  final int highlighted;
+  final ValueChanged<int> onHighlighted;
+  final ValueChanged<ReasoningEffortOption> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    final current =
-        widget.value ??
-        (widget.efforts.isEmpty ? '' : widget.efforts.first.value);
-    final selectedIndex = widget.efforts.indexWhere(
+    final current = value ?? (efforts.isEmpty ? '' : efforts.first.value);
+    final selectedIndex = efforts.indexWhere(
       (effort) => effort.value == current,
     );
-    final highlightIndex = _hovered ?? selectedIndex;
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(_EffortMenuCard.cardPadding),
-        decoration: BoxDecoration(
-          color: colors.panel,
-          borderRadius: BorderRadius.circular(AtlasRadii.surface),
-          border: Border.all(color: colors.divider),
-          boxShadow: [
-            BoxShadow(
-              color: colors.scrim.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              left: 0,
-              right: 0,
-              top: highlightIndex * _EffortMenuCard.rowHeight,
-              height: _EffortMenuCard.rowHeight,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colors.raised,
-                  borderRadius: BorderRadius.circular(AtlasRadii.control),
-                ),
+    return _FloatingMenuCard(
+      items: efforts,
+      selectedIndex: selectedIndex,
+      highlighted: highlighted,
+      onHighlighted: onHighlighted,
+      onSelected: onSelected,
+      rowHeight: rowHeight,
+      cardPadding: cardPadding,
+      itemBuilder: (context, effort, index) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              effort.name.isEmpty ? effort.value : effort.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final (index, effort) in widget.efforts.indexed)
-                  InkWell(
-                    onHover: (hovered) =>
-                        setState(() => _hovered = hovered ? index : null),
-                    onTap: () => widget.onSelected(effort.value),
-                    child: Container(
-                      height: _EffortMenuCard.rowHeight,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              effort.name.isEmpty ? effort.value : effort.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: colors.textPrimary,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          if (effort.value == current)
-                            Icon(
-                              LucideIcons.check,
-                              size: 13,
-                              color: colors.textPrimary,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          if (effort.value == current)
+            Icon(LucideIcons.check, size: 13, color: colors.textPrimary),
+        ],
       ),
     );
   }
