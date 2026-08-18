@@ -52,7 +52,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 660),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: ListView.builder(
             controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
@@ -138,7 +138,7 @@ class _UserMessage extends StatelessWidget {
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680),
+        constraints: const BoxConstraints(maxWidth: 780),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.raised,
@@ -172,7 +172,7 @@ class _AssistantMessage extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780),
+        constraints: const BoxConstraints(maxWidth: 880),
         child: MarkdownBody(
           data: text,
           selectable: true,

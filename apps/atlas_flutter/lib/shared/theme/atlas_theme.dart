@@ -237,6 +237,7 @@ ThemeData buildAtlasTheme(Brightness brightness) {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AtlasRadii.surface),
       ),
+      constraints: const BoxConstraints(minWidth: 320, maxWidth: 400),
       titleTextStyle: TextStyle(
         color: colors.textPrimary,
         fontSize: 15,
