@@ -58,6 +58,56 @@ void main() {
     expect(container.read(workspaceProvider).sessions, hasLength(1));
   });
 
+  test('resume restores persisted reasoning messages', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('show me the stream');
+    final sessionId = container.read(workspaceProvider).sessionId!;
+
+    controller.newSession();
+    await controller.resume(sessionId);
+
+    final state = container.read(workspaceProvider);
+    expect(state.messages.map((message) => message.kind), [
+      WorkspaceMessageKind.user,
+      WorkspaceMessageKind.reasoning,
+      WorkspaceMessageKind.assistant,
+    ]);
+    expect(state.messages[1].text, 'first thought');
+    expect(state.messages[2].text, 'Hello from Atlas.');
+  });
+
   test('switching the working directory resets the workspace', () async {
     final model = ModelDescriptor(
       ref: ModelRef(
@@ -266,6 +316,7 @@ final class _FakeProvider implements ModelProvider {
       ModelResponse(
         content: [TextContent('Hello from Atlas.')],
         stopReason: StopReason.endTurn,
+        reasoning: 'first thought',
       ),
     );
   }

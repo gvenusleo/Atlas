@@ -105,6 +105,7 @@ final class ResponsesParser implements StreamParser {
             ],
       toolCalls: List.unmodifiable(_calls),
       stopReason: reason,
+      reasoning: _reasoning.toString(),
       usage: _usage,
       continuation: ModelContinuation(
         providerId: providerId,

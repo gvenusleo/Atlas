@@ -321,7 +321,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       state = state.copyWith(
         messages: [
           ...messages,
-          WorkspaceMessage(id: _nextId(), kind: kind, text: delta),
+          WorkspaceMessage(
+            id: _nextId(),
+            kind: kind,
+            text: delta,
+            startedAt: kind == WorkspaceMessageKind.reasoning
+                ? DateTime.now()
+                : null,
+          ),
         ],
       );
     }
@@ -382,7 +389,16 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
               ),
             );
           }
-        case AssistantMessageItem(:final content):
+        case AssistantMessageItem(:final content, :final reasoning):
+          if (reasoning.isNotEmpty) {
+            messages.add(
+              WorkspaceMessage(
+                id: _nextId(),
+                kind: WorkspaceMessageKind.reasoning,
+                text: reasoning,
+              ),
+            );
+          }
           final text = textFromContent(content);
           if (text.isNotEmpty) {
             messages.add(

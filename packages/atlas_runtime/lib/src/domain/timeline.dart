@@ -58,11 +58,15 @@ final class AssistantMessageItem extends TimelineItem {
     required this.content,
     required this.model,
     required this.stopReason,
+    this.reasoning = '',
     this.usage = const TokenUsage(),
   });
 
   /// The assistant content parts.
   final List<ContentPart> content;
+
+  /// Provider-neutral reasoning text produced before the response.
+  final String reasoning;
 
   /// The model that produced this response.
   final ModelRef model;

@@ -34,6 +34,7 @@ final class TimelineCodec {
         payload = {'content': _encodeContent(content)};
       case AssistantMessageItem(
         :final content,
+        :final reasoning,
         :final model,
         :final stopReason,
         :final usage,
@@ -41,6 +42,7 @@ final class TimelineCodec {
         kind = 'assistant_message';
         payload = {
           'content': _encodeContent(content),
+          'reasoning': reasoning,
           'provider_id': model.providerId.value,
           'model_id': model.modelId.value,
           'stop_reason': stopReason.name,
@@ -125,6 +127,7 @@ final class TimelineCodec {
               _string(decoded, 'stop_reason'),
               'stop_reason',
             ),
+            reasoning: _stringOrDefault(decoded, 'reasoning'),
             usage: _decodeUsage(decoded['usage']),
           ),
           checkpoint: _decodeContinuation(decoded, id, occurredAt),

@@ -124,6 +124,7 @@ void main() {
       ['let me think', ' more'],
     );
     final response = (events.last as ModelCompletedEvent).response;
+    expect(response.reasoning, 'let me think more');
     expect(response.continuation?.reasoningSummary, 'let me think more');
     final blocks =
         (response.continuation!.opaquePayload['thinking_blocks'] as List)

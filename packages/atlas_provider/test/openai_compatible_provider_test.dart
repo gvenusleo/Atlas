@@ -32,6 +32,7 @@ void main() {
     expect(events.whereType<TextDeltaEvent>().single.delta, 'Hello');
     expect(events.whereType<ReasoningDeltaEvent>().single.delta, 'checking');
     final response = (events.last as ModelCompletedEvent).response;
+    expect(response.reasoning, 'checking');
     expect(response.stopReason, StopReason.toolUse);
     expect(response.toolCalls.single.arguments['q'], 'x');
     expect(response.usage.totalTokens, 5);
@@ -99,6 +100,7 @@ void main() {
       callCount++;
       if (callCount == 1) {
         await _sendSse(request.response, [
+          '{"type":"response.reasoning_summary_text.delta","delta":"thinking"}',
           '{"type":"response.output_text.delta","delta":"Done"}',
           '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-2","name":"inspect","arguments":"{\\"path\\":\\".\\"}"}}',
           '{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6},"output":[{"type":"message","content":[{"type":"output_text","text":"Done"}]},{"type":"function_call","call_id":"call-2","name":"inspect","arguments":"{\\"path\\":\\".\\"}"}]}}',
@@ -115,6 +117,7 @@ void main() {
     final provider = _provider(server, OpenAIProtocol.responses);
     final first = await provider.stream(_request()).toList();
     final firstResponse = (first.last as ModelCompletedEvent).response;
+    expect(firstResponse.reasoning, 'thinking');
     expect((firstResponse.content.single as TextContent).text, 'Done');
     expect(firstResponse.toolCalls.single.name, 'inspect');
     expect(firstResponse.continuation?.opaquePayload['protocol'], 'responses');

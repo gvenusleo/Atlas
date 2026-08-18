@@ -120,6 +120,7 @@ final class ChatParser implements StreamParser {
       content: _content.isEmpty ? const [] : [TextContent(_content.toString())],
       toolCalls: calls,
       stopReason: reason,
+      reasoning: _reasoning.toString(),
       usage: _usage,
       continuation: _reasoning.isEmpty
           ? null

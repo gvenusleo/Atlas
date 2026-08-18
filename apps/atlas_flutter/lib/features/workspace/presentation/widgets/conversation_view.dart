@@ -53,16 +53,13 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView.builder(
+          child: ListView.separated(
             controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
             itemCount: messages.length,
-            itemBuilder: (context, index) => Padding(
-              padding: EdgeInsets.only(
-                bottom: index == messages.length - 1 ? 0 : 18,
-              ),
-              child: _MessageView(message: messages[index]),
-            ),
+            itemBuilder: (context, index) =>
+                _MessageView(message: messages[index]),
+            separatorBuilder: (_, _) => const SizedBox(height: 6),
           ),
         ),
       ),
@@ -119,7 +116,7 @@ class _MessageView extends StatelessWidget {
     return switch (message.kind) {
       WorkspaceMessageKind.user => _UserMessage(message.text),
       WorkspaceMessageKind.assistant => _AssistantMessage(message.text),
-      WorkspaceMessageKind.reasoning => _ReasoningMessage(message.text),
+      WorkspaceMessageKind.reasoning => _ReasoningMessage(message),
       WorkspaceMessageKind.tool => _ToolMessage(message),
       WorkspaceMessageKind.notice => _NoticeMessage(message.text),
       WorkspaceMessageKind.error => _ErrorMessage(message.text),
@@ -141,7 +138,7 @@ class _UserMessage extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 780),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: colors.raised,
+            color: colors.panel,
             borderRadius: BorderRadius.circular(AtlasRadii.surface),
           ),
           child: Padding(
@@ -175,8 +172,8 @@ class _AssistantMessage extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 880),
         child: MarkdownBody(
           data: text,
-          selectable: true,
-          softLineBreak: true,
+          selectable: false,
+          softLineBreak: false,
           builders: {
             'pre': _CodeBlockBuilder(),
             'code': _InlineCodeBuilder(),
@@ -278,10 +275,9 @@ class _CodeBlockBuilder extends MarkdownElementBuilder {
     return SizedBox(
       width: double.infinity,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: colors.raised,
+          color: colors.panel,
           borderRadius: BorderRadius.circular(AtlasRadii.surface),
         ),
         child: Column(
@@ -330,7 +326,7 @@ class _InlineCodeBuilder extends MarkdownElementBuilder {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
       decoration: BoxDecoration(
-        color: colors.raised,
+        color: colors.panel,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
@@ -345,10 +341,16 @@ class _InlineCodeBuilder extends MarkdownElementBuilder {
   }
 }
 
-class _ReasoningMessage extends StatelessWidget {
-  const _ReasoningMessage(this.text);
+class _ToolExpansionTile extends StatelessWidget {
+  const _ToolExpansionTile({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
 
-  final String text;
+  final IconData icon;
+  final Widget title;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -357,27 +359,70 @@ class _ReasoningMessage extends StatelessWidget {
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.only(left: 24, bottom: 6),
+        childrenPadding: const EdgeInsets.only(left: 6),
         dense: true,
         visualDensity: VisualDensity.compact,
-        leading: Icon(LucideIcons.brain, size: 16, color: colors.textSecondary),
-        title: Text(
-          'Reasoning',
-          style: TextStyle(color: colors.textSecondary, fontSize: 12),
+        showTrailingIcon: false,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(icon, size: 14, color: colors.textSecondary),
+            const SizedBox(width: 8),
+            title,
+          ],
         ),
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: SelectableText(
-              text,
-              style: TextStyle(
-                color: colors.textSecondary,
-                fontSize: 12,
-                height: 1.5,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(left: 12),
+            decoration: BoxDecoration(
+              border: BoxBorder.fromLTRB(
+                left: BorderSide(color: colors.divider),
               ),
             ),
+            child: child,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReasoningMessage extends StatelessWidget {
+  const _ReasoningMessage(this.message);
+
+  final WorkspaceMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return _ToolExpansionTile(
+      icon: LucideIcons.sparkle,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Thinking',
+            style: TextStyle(color: colors.textSecondary, fontSize: 12),
+          ),
+          if (message.startedAt != null) ...[
+            const SizedBox(width: 4),
+            Text(
+              '(${_elapsedLabel(message.startedAt!)})',
+              style: TextStyle(color: colors.textSecondary, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+      child: SelectableText(
+        message.text,
+        style: TextStyle(
+          color: colors.textSecondary,
+          fontSize: 12,
+          height: 1.5,
+        ),
       ),
     );
   }
@@ -466,14 +511,6 @@ class _ToolMessage extends StatelessWidget {
           .map((entry) => '${entry.key}: ${entry.value}')
           .join(', ')
           .replaceAll('\n', ' ');
-
-  static String _elapsedLabel(DateTime startedAt) {
-    final seconds = DateTime.now().difference(startedAt).inSeconds;
-    if (seconds < 60) {
-      return 'Worked for ${seconds}s';
-    }
-    return 'Worked for ${seconds ~/ 60}m ${seconds % 60}s';
-  }
 }
 
 class _CodeBlock extends StatelessWidget {
@@ -533,4 +570,12 @@ class _ErrorMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+String _elapsedLabel(DateTime startedAt) {
+  final seconds = DateTime.now().difference(startedAt).inSeconds;
+  if (seconds < 60) {
+    return 'Worked for ${seconds}s';
+  }
+  return 'Worked for ${seconds ~/ 60}m ${seconds % 60}s';
 }

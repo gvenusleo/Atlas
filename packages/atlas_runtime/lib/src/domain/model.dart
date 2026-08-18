@@ -208,6 +208,7 @@ final class ModelResponse {
     this.content = const [],
     this.toolCalls = const [],
     this.stopReason = StopReason.unknown,
+    this.reasoning = '',
     this.usage = const TokenUsage(),
     this.continuation,
   });
@@ -220,6 +221,9 @@ final class ModelResponse {
 
   /// Why the model step stopped.
   final StopReason stopReason;
+
+  /// Provider-neutral reasoning text produced before the response.
+  final String reasoning;
 
   /// Token usage for this step.
   final TokenUsage usage;

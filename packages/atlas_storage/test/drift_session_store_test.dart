@@ -31,6 +31,7 @@ void main() {
       content: const [runtime.TextContent('world')],
       model: _model,
       stopReason: runtime.StopReason.endTurn,
+      reasoning: 'thinking text',
     );
     final checkpoint = runtime.ModelCheckpoint(
       timelineItemId: assistant.id,
@@ -68,6 +69,10 @@ void main() {
     expect(loaded.timeline, hasLength(2));
     expect(loaded.timeline[0], isA<runtime.UserMessageItem>());
     expect(loaded.timeline[1], isA<runtime.AssistantMessageItem>());
+    expect(
+      (loaded.timeline[1] as runtime.AssistantMessageItem).reasoning,
+      'thinking text',
+    );
     expect(
       loaded.modelCheckpoints.single.continuation.opaquePayload['cursor'],
       'next',

@@ -569,6 +569,7 @@ void main() {
         content: [TextContent('let me check')],
         model: ModelRef(providerId: ProviderId('p'), modelId: ModelId('m')),
         stopReason: StopReason.toolUse,
+        reasoning: 'thinking',
       ),
       ToolCallItem(
         id: nextId(3),
@@ -597,15 +598,17 @@ void main() {
 
     expect(messages.map((m) => m.kind), [
       ChatMessageKind.user,
+      ChatMessageKind.reasoning,
       ChatMessageKind.assistant,
       ChatMessageKind.tool,
     ]);
     expect(messages.first.text, 'hi');
-    expect(messages[1].text, 'let me check');
-    expect(messages[2].toolName, 'read');
-    expect(messages[2].arguments, {'path': '/a'});
-    expect(messages[2].text, 'content of a');
-    expect(messages[2].isError, isFalse);
+    expect(messages[1].text, 'thinking');
+    expect(messages[2].text, 'let me check');
+    expect(messages[3].toolName, 'read');
+    expect(messages[3].arguments, {'path': '/a'});
+    expect(messages[3].text, 'content of a');
+    expect(messages[3].isError, isFalse);
   });
 
   test('messagesFromTimeline marks failed tool results', () {

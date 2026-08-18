@@ -317,6 +317,7 @@ final class AgentRuntime {
           content: List<ContentPart>.unmodifiable(completedResponse.content),
           model: model,
           stopReason: completedResponse.stopReason,
+          reasoning: completedResponse.reasoning,
           usage: completedResponse.usage,
         );
         final calls = <ToolCallItem>[];

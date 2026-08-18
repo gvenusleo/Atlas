@@ -377,11 +377,6 @@ final class ChatController implements Listenable {
     _sealed = false;
   }
 
-  /// Keeps only the tail of [text], bounded by [maxReasoningChars].
-  static String _tailBudget(String text) => text.length <= maxReasoningChars
-      ? text
-      : text.substring(text.length - maxReasoningChars);
-
   void _updateLastTool(ToolResultItem result) {
     final index = _messages.lastIndexWhere(
       (message) => message.kind == ChatMessageKind.tool,
@@ -410,6 +405,11 @@ final class ChatController implements Listenable {
   }
 }
 
+/// Keeps only the tail of [text], bounded by [maxReasoningChars].
+String _tailBudget(String text) => text.length <= maxReasoningChars
+    ? text
+    : text.substring(text.length - maxReasoningChars);
+
 /// Renders a persisted timeline as transcript messages for a resumed
 /// session, pairing each tool call with the result that followed it.
 List<ChatMessage> messagesFromTimeline(List<TimelineItem> timeline) {
@@ -421,7 +421,15 @@ List<ChatMessage> messagesFromTimeline(List<TimelineItem> timeline) {
         if (text.isNotEmpty) {
           messages.add(ChatMessage(kind: ChatMessageKind.user, text: text));
         }
-      case AssistantMessageItem(:final content):
+      case AssistantMessageItem(:final content, :final reasoning):
+        if (reasoning.isNotEmpty) {
+          messages.add(
+            ChatMessage(
+              kind: ChatMessageKind.reasoning,
+              text: _tailBudget(reasoning),
+            ),
+          );
+        }
         final text = textFromContent(content);
         if (text.isNotEmpty) {
           messages.add(

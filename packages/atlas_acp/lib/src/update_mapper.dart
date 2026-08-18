@@ -174,7 +174,16 @@ List<SessionUpdate> replayTimeline(
             text: textFromContent(content),
           ),
         );
-      case AssistantMessageItem(:final content):
+      case AssistantMessageItem(:final content, :final reasoning):
+        if (reasoning.isNotEmpty) {
+          updates.add(
+            agentThoughtChunk(
+              item.sessionId,
+              messageId: item.id.value,
+              text: reasoning,
+            ),
+          );
+        }
         updates.add(
           agentMessageChunk(
             item.sessionId,

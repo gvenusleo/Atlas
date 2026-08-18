@@ -179,6 +179,7 @@ final class AnthropicParser implements StreamParser {
       content: _content.isEmpty ? const [] : [TextContent(_content.toString())],
       toolCalls: calls,
       stopReason: reason,
+      reasoning: _reasoning.toString(),
       usage: TokenUsage(
         inputTokens: _inputTokens,
         outputTokens: _outputTokens,

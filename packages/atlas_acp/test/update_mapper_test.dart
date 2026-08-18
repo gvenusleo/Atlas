@@ -831,6 +831,26 @@ void main() {
       expect(updates[3].update['rawOutput'], {'output': 'file list'});
     });
 
+    test('replays assistant reasoning as thought chunks', () {
+      final timeline = <TimelineItem>[
+        _assistantItem(
+          [TextContent('reply')],
+          id: 'item-2',
+          reasoning: 'thinking text',
+        ),
+      ];
+      final updates = replayTimeline(timeline);
+      expect(updates.map((u) => u.update['sessionUpdate']), [
+        'agent_thought_chunk',
+        'agent_message_chunk',
+      ]);
+      expect(updates[0].update['messageId'], 'item-2');
+      expect(updates[0].update['content'], {
+        'type': 'text',
+        'text': 'thinking text',
+      });
+    });
+
     test('replays plan tool calls as plan updates', () {
       final timeline = <TimelineItem>[
         _toolCallItem(
@@ -992,6 +1012,7 @@ void main() {
 AssistantMessageItem _assistantItem(
   List<ContentPart> content, {
   required String id,
+  String reasoning = '',
 }) => AssistantMessageItem(
   id: TimelineItemId(id),
   sessionId: SessionId('s1'),
@@ -1001,6 +1022,7 @@ AssistantMessageItem _assistantItem(
   content: content,
   model: ModelRef(providerId: ProviderId('p'), modelId: ModelId('m')),
   stopReason: StopReason.endTurn,
+  reasoning: reasoning,
 );
 
 AssistantMessageItem _assistant(List<ContentPart> content) =>
