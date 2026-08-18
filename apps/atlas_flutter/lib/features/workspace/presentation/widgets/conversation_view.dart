@@ -133,22 +133,19 @@ class _UserMessage extends StatelessWidget {
     final colors = AtlasColors.of(context);
     return Align(
       alignment: Alignment.centerRight,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.panel,
-            borderRadius: BorderRadius.circular(AtlasRadii.surface),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: SelectableText(
-              text,
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontSize: 14,
-                height: 1.5,
-              ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.panel,
+          borderRadius: BorderRadius.circular(AtlasRadii.surface),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: SelectableText(
+            text,
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 14,
+              height: 1.5,
             ),
           ),
         ),
@@ -165,92 +162,80 @@ class _AssistantMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 880),
-        child: MarkdownBody(
-          data: text,
-          selectable: false,
-          softLineBreak: false,
-          builders: {
-            'pre': _CodeBlockBuilder(),
-            'code': _InlineCodeBuilder(),
-            'latex': LatexElementBuilder(
-              textStyle: TextStyle(color: colors.textPrimary),
-            ),
-          },
-          checkboxBuilder: (bool checked) => Icon(
-            checked ? LucideIcons.squareCheckBig : LucideIcons.square,
-            size: 14,
-            color: colors.textPrimary,
-          ),
-          extensionSet: md.ExtensionSet(
-            [
-              ...md.ExtensionSet.gitHubFlavored.blockSyntaxes,
-              LatexBlockSyntax(),
-            ],
-            [
-              ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
-              LatexInlineSyntax(),
-            ],
-          ),
-          styleSheet: MarkdownStyleSheet(
-            a: TextStyle(color: colors.accent, fontSize: 14),
-            p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
-            h1: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
-            h2: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-            h3: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-            h4: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-            h5: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-            h6: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-            code: TextStyle(
-              color: colors.textPrimary,
-              backgroundColor: colors.raised,
-              fontSize: 12,
-              fontFamily: WorkspaceMetrics.monospaceFontFamily,
-            ),
-            codeblockDecoration: BoxDecoration(
-              color: colors.raised,
-              borderRadius: BorderRadius.circular(AtlasRadii.surface),
-            ),
-            blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
-            blockquoteDecoration: BoxDecoration(
-              border: Border(left: BorderSide(color: colors.divider, width: 2)),
-            ),
-            blockquotePadding: const EdgeInsets.only(left: 12),
-            horizontalRuleDecoration: BoxDecoration(
-              border: Border(top: BorderSide(color: colors.divider)),
-            ),
-            listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
-            tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
-            checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
-          ),
+    return MarkdownBody(
+      data: text,
+      selectable: false,
+      softLineBreak: false,
+      builders: {
+        'pre': _CodeBlockBuilder(),
+        'code': _InlineCodeBuilder(),
+        'latex': LatexElementBuilder(
+          textStyle: TextStyle(color: colors.textPrimary),
         ),
+      },
+      checkboxBuilder: (bool checked) => Icon(
+        checked ? LucideIcons.squareCheckBig : LucideIcons.square,
+        size: 14,
+        color: colors.textPrimary,
+      ),
+      extensionSet: md.ExtensionSet(
+        [...md.ExtensionSet.gitHubFlavored.blockSyntaxes, LatexBlockSyntax()],
+        [...md.ExtensionSet.gitHubFlavored.inlineSyntaxes, LatexInlineSyntax()],
+      ),
+      styleSheet: MarkdownStyleSheet(
+        a: TextStyle(color: colors.accent, fontSize: 14),
+        p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
+        h1: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+        h2: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+        ),
+        h3: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+        h4: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        h5: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        h6: TextStyle(
+          color: colors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        code: TextStyle(
+          color: colors.textPrimary,
+          backgroundColor: colors.raised,
+          fontSize: 12,
+          fontFamily: WorkspaceMetrics.monospaceFontFamily,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: colors.raised,
+          borderRadius: BorderRadius.circular(AtlasRadii.surface),
+        ),
+        blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(left: BorderSide(color: colors.divider, width: 2)),
+        ),
+        blockquotePadding: const EdgeInsets.only(left: 12),
+        horizontalRuleDecoration: BoxDecoration(
+          border: Border(top: BorderSide(color: colors.divider)),
+        ),
+        listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
+        tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
+        checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
       ),
     );
   }
