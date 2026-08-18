@@ -53,13 +53,12 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView.separated(
+          child: ListView.builder(
             controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
             itemCount: messages.length,
             itemBuilder: (context, index) =>
                 _MessageView(message: messages[index]),
-            separatorBuilder: (_, _) => const SizedBox(height: 6),
           ),
         ),
       ),
@@ -355,35 +354,45 @@ class _ToolExpansionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.only(left: 6),
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        showTrailingIcon: false,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(icon, size: 14, color: colors.textSecondary),
-            const SizedBox(width: 8),
-            title,
-          ],
-        ),
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.only(left: 12),
-            decoration: BoxDecoration(
-              border: BoxBorder.fromLTRB(
-                left: BorderSide(color: colors.divider),
-              ),
-            ),
-            child: child,
+    return Material(
+      color: Colors.transparent,
+      child: ListTileTheme(
+        mouseCursor: WidgetStatePropertyAll(SystemMouseCursors.basic),
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            dividerColor: Colors.transparent,
+            hoverColor: Colors.transparent,
           ),
-        ],
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(left: 6),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            minTileHeight: 16,
+            showTrailingIcon: false,
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, size: 14, color: colors.textSecondary),
+                const SizedBox(width: 8),
+                title,
+              ],
+            ),
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.only(left: 12),
+                decoration: BoxDecoration(
+                  border: BoxBorder.fromLTRB(
+                    left: BorderSide(color: colors.divider),
+                  ),
+                ),
+                child: child,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -399,22 +408,9 @@ class _ReasoningMessage extends StatelessWidget {
     final colors = AtlasColors.of(context);
     return _ToolExpansionTile(
       icon: LucideIcons.sparkle,
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'Thinking',
-            style: TextStyle(color: colors.textSecondary, fontSize: 12),
-          ),
-          if (message.startedAt != null) ...[
-            const SizedBox(width: 4),
-            Text(
-              '(${_elapsedLabel(message.startedAt!)})',
-              style: TextStyle(color: colors.textSecondary, fontSize: 12),
-            ),
-          ],
-        ],
+      title: Text(
+        'Thinking',
+        style: TextStyle(color: colors.textSecondary, fontSize: 12),
       ),
       child: SelectableText(
         message.text,
@@ -436,82 +432,65 @@ class _ToolMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    final statusColor = message.isError ? colors.error : colors.textSecondary;
     final details = const JsonEncoder.withIndent(
       '  ',
     ).convert(message.arguments ?? {});
-    return Material(
-      color: colors.panel,
-      borderRadius: BorderRadius.circular(AtlasRadii.surface),
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          dense: true,
-          visualDensity: VisualDensity.compact,
-          leading: message.isRunning
-              ? SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    color: colors.accent,
-                  ),
-                )
-              : Icon(
-                  message.isError
-                      ? LucideIcons.circleAlert
-                      : LucideIcons.circleCheck,
-                  size: 16,
-                  color: statusColor,
-                ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  message.toolName ?? 'Tool',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+    final toolName = message.toolName ?? 'Tool';
+    final displayName = toolName.isEmpty
+        ? toolName
+        : toolName[0].toUpperCase() + toolName.substring(1);
+    return _ToolExpansionTile(
+      icon: _toolIcon(message.toolName),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (message.isRunning) ...[
+            SizedBox.square(
+              dimension: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: colors.textSecondary,
               ),
-              if (!message.isRunning && message.startedAt != null)
-                Text(
-                  _elapsedLabel(message.startedAt!),
-                  style: TextStyle(color: colors.textSecondary, fontSize: 10.5),
-                ),
-            ],
-          ),
-          subtitle: details == '{}'
-              ? null
-              : Text(
-                  _singleLineArguments(message.arguments ?? {}),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
-                ),
-          children: [
-            if (details != '{}') _CodeBlock(details),
-            if (details != '{}' && message.text.isNotEmpty)
-              const SizedBox(height: 8),
-            if (message.text.isNotEmpty) _CodeBlock(message.text),
+            ),
+            const SizedBox(width: 6),
           ],
-        ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: Text(
+              displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: message.isError ? colors.error : colors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (details != '{}') _CodeBlock(details),
+          if (details != '{}' && message.text.isNotEmpty)
+            const SizedBox(height: 8),
+          if (message.text.isNotEmpty) _CodeBlock(message.text),
+        ],
       ),
     );
   }
-
-  static String _singleLineArguments(Map<String, Object?> arguments) =>
-      arguments.entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join(', ')
-          .replaceAll('\n', ' ');
 }
+
+/// Maps a tool name to its display icon, falling back to a generic wrench.
+IconData _toolIcon(String? toolName) => switch (toolName) {
+  'shell' => LucideIcons.terminal,
+  'read' => LucideIcons.fileText,
+  'write' => LucideIcons.filePen,
+  'edit' => LucideIcons.pencil,
+  'plan' => LucideIcons.listChecks,
+  _ => LucideIcons.wrench,
+};
 
 class _CodeBlock extends StatelessWidget {
   const _CodeBlock(this.text);
@@ -570,12 +549,4 @@ class _ErrorMessage extends StatelessWidget {
       ),
     );
   }
-}
-
-String _elapsedLabel(DateTime startedAt) {
-  final seconds = DateTime.now().difference(startedAt).inSeconds;
-  if (seconds < 60) {
-    return 'Worked for ${seconds}s';
-  }
-  return 'Worked for ${seconds ~/ 60}m ${seconds % 60}s';
 }
