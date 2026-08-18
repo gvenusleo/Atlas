@@ -13,6 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   atlas_config: ^0.1.0
+  atlas_composition: ^0.1.0
   atlas_prompt: ^0.1.0
   atlas_provider: ^0.1.0
   atlas_runtime: ^0.1.0

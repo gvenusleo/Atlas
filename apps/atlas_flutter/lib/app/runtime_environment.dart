@@ -1,11 +1,9 @@
 import 'dart:io';
 
+import 'package:atlas_composition/atlas_composition.dart';
 import 'package:atlas_config/atlas_config.dart';
 import 'package:atlas_prompt/atlas_prompt.dart';
-import 'package:atlas_provider/atlas_provider.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
-import 'package:atlas_storage/atlas_storage.dart';
-import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Runtime services and catalogs injected into Flutter presentation code.
@@ -61,48 +59,11 @@ RuntimeBootstrap bootstrapRuntime({Map<String, String>? environment}) {
   final configFile = File('$home/.atlas/config.yaml');
   try {
     final config = loadConfig(configFile);
-    final tools = LocalToolRegistry([
-      ReadTool(),
-      WriteTool(),
-      EditTool(),
-      ShellTool(),
-      PlanTool(),
-    ]);
-    final providers = <ProviderId, ModelProvider>{};
-    final models = <ModelDescriptor>[];
-    for (final configured in config.providers) {
-      switch (configured) {
-        case ConfiguredOpenAI(:final configuration):
-          providers[configured.id] = OpenAICompatibleProvider([configuration]);
-          models.addAll(configuration.models.map((model) => model.descriptor));
-        case ConfiguredAnthropic(:final configuration):
-          providers[configured.id] = AnthropicProvider([configuration]);
-          models.addAll(configuration.models.map((model) => model.descriptor));
-      }
-    }
-
-    final runtime = AgentRuntime(
-      store: DriftSessionStore.openFile(File(config.session.dbPath)),
-      provider: CompositeModelProvider(providers),
-      tools: tools,
-      ids: SecureIdGenerator(),
-      defaultModel: config.defaultModel,
-      sessionContextBuilder: buildSessionContext,
-      maxSteps: config.agent.maxSteps,
-      temperature: config.agent.temperature,
-      compactionThreshold: config.agent.compaction.threshold,
-      systemPromptBuilder: (context) => buildSystemPrompt(
-        workingDirectory: context.workingDirectory,
-        tools: tools.descriptors,
-        instructions: context.instructions,
-        skills: context.skills.summaries,
-        now: DateTime.now(),
-      ),
-    );
+    final runtime = composeRuntime(config);
     return RuntimeBootstrap.ready(
       RuntimeEnvironment(
         runtime: runtime,
-        models: List.unmodifiable(models),
+        models: List.unmodifiable(composeModels(config)),
         skills: loadSkillCatalog(),
       ),
     );
