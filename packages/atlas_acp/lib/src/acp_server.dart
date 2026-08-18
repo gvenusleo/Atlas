@@ -317,12 +317,12 @@ final class AcpServer {
     }
     final cancellation = CancellationToken();
     (_activeTurns[sessionId] ??= <CancellationToken>[]).add(cancellation);
-    // The runtime serializes turns per session, so a prompt sent while
-    // another turn is running waits for it instead of failing.
-    final config = _sessionConfigs[sessionId] ?? await _configFor(session);
-    final mapper = TurnUpdateMapper(session, workingDirectory: config.cwd);
-    final skills = _matchedSkillNames(config.cwd, promptText);
     try {
+      // The runtime serializes turns per session, so a prompt sent while
+      // another turn is running waits for it instead of failing.
+      final config = _sessionConfigs[sessionId] ?? await _configFor(session);
+      final mapper = TurnUpdateMapper(session, workingDirectory: config.cwd);
+      final skills = _matchedSkillNames(config.cwd, promptText);
       String? stopReason;
       String? failureCode;
       String? failureMessage;

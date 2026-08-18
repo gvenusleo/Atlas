@@ -183,14 +183,26 @@ final class AgentRuntime {
   /// Deletes [sessionId] and all of its dependent records.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.
-  Future<void> deleteSession(SessionId sessionId) =>
-      store.deleteSession(sessionId);
+  Future<void> deleteSession(SessionId sessionId) async {
+    final release = await _acquireSessionLock(sessionId);
+    try {
+      await store.deleteSession(sessionId);
+    } finally {
+      release();
+    }
+  }
 
   /// Renames [sessionId]'s display title.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.
-  Future<void> renameSession(SessionId sessionId, String title) =>
-      store.renameSession(sessionId, title);
+  Future<void> renameSession(SessionId sessionId, String title) async {
+    final release = await _acquireSessionLock(sessionId);
+    try {
+      await store.renameSession(sessionId, title);
+    } finally {
+      release();
+    }
+  }
 
   /// The context window size of the default model, or 0 when unknown.
   Future<int> contextWindowSize() async {
