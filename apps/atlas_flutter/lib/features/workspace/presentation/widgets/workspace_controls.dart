@@ -72,11 +72,7 @@ class _WorkspaceResizeHandleState extends State<WorkspaceResizeHandle> {
                       color: widget.panelOnLeft ? colors.panel : colors.canvas,
                     ),
                   ),
-                  Expanded(
-                    child: ColoredBox(
-                      color: widget.panelOnLeft ? colors.canvas : colors.panel,
-                    ),
-                  ),
+                  Expanded(child: ColoredBox(color: colors.canvas)),
                 ],
               ),
               Positioned(

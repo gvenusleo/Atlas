@@ -17,29 +17,29 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
   });
 
   static const light = AtlasColors(
-    canvas: Color(0xFFF8F8F8),
-    panel: Color(0xFFF1F2F3),
-    raised: Color(0xFFE8E9EC),
-    divider: Color(0xFFD3D5DA),
-    textPrimary: Color(0xFF1F2733),
-    textSecondary: Color(0xFF626D7D),
-    accent: Color(0xFF1E66F5),
-    success: Color(0xFF237A47),
-    error: Color(0xFFB93845),
-    scrim: Color(0x520F172A),
+    canvas: Color(0xFFFCFCFC),
+    panel: Color(0xFFECECED),
+    raised: Color(0xFFDFE0E1),
+    divider: Color(0xFFCFD1D2),
+    textPrimary: Color(0xFF5C6166),
+    textSecondary: Color(0xFF8B8E92),
+    accent: Color(0xFF3B9EE5),
+    success: Color(0xFF85B304),
+    error: Color(0xFFEF7271),
+    scrim: Color(0x525C6166),
   );
 
   static const dark = AtlasColors(
-    canvas: Color(0xFF20232A),
-    panel: Color(0xFF282C34),
-    raised: Color(0xFF30353E),
-    divider: Color(0xFF3A404B),
-    textPrimary: Color(0xFFE6E9EF),
-    textSecondary: Color(0xFF9AA2B1),
-    accent: Color(0xFF89B4FA),
-    success: Color(0xFF7AD98B),
-    error: Color(0xFFFF8792),
-    scrim: Color(0x66000000),
+    canvas: Color(0xFF0D1016),
+    panel: Color(0xFF1F2127),
+    raised: Color(0xFF2D2F34),
+    divider: Color(0xFF3F4043),
+    textPrimary: Color(0xFFBFBDB6),
+    textSecondary: Color(0xFF8A8986),
+    accent: Color(0xFF5AC1FE),
+    success: Color(0xFFAAD84C),
+    error: Color(0xFFEF7177),
+    scrim: Color(0x66BFBDB6),
   );
 
   final Color canvas;

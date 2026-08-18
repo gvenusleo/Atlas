@@ -86,9 +86,9 @@ void main() {
           expect(calls.last.method, 'setBackgroundColor');
           expect(calls.last.arguments, {
             'backgroundColorA': 255,
-            'backgroundColorR': 32,
-            'backgroundColorG': 35,
-            'backgroundColorB': 42,
+            'backgroundColorR': 13,
+            'backgroundColorG': 16,
+            'backgroundColorB': 22,
           });
         }
       } finally {

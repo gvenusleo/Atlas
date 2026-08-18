@@ -577,6 +577,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
     return _SidePanel(
       semanticLabel: 'Workspace tools',
       compact: widget.onClose != null,
+      useCanvasColor: true,
       title: _ToolTabs(
         terminal: _terminal,
         onChanged: (terminal) => setState(() {
@@ -644,6 +645,7 @@ class _SidePanel extends StatelessWidget {
     this.compact = false,
     this.title,
     this.action,
+    this.useCanvasColor = false,
   });
 
   final String semanticLabel;
@@ -651,6 +653,7 @@ class _SidePanel extends StatelessWidget {
   final bool compact;
   final Widget? title;
   final Widget? action;
+  final bool useCanvasColor;
 
   @override
   Widget build(BuildContext context) {
@@ -659,7 +662,7 @@ class _SidePanel extends StatelessWidget {
       container: true,
       label: semanticLabel,
       child: ColoredBox(
-        color: colors.panel,
+        color: useCanvasColor ? colors.canvas : colors.panel,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
