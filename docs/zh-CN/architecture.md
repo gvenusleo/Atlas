@@ -4,10 +4,9 @@
 
 > **状态：** `atlas_runtime`、`atlas_storage`、`atlas_provider`
 > 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
-> prompt 构建、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器
-> （`atlas_acp`，由 `atlas acp` 提供）均**Available**。`atlas_cli`
-> `atlas_composition` 为 `atlas_cli` 与 `atlas_flutter` 提供共用的进程组装；
-> MCP 适配器与 WebSocket transport 为 **Planned**。
+> prompt 构建、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP
+> 服务端适配器（`atlas_acp`，由 `atlas acp` 提供）以及 Flutter 本地 runtime
+> 组装均**Available**。MCP 适配器与 WebSocket transport 为 **Planned**。
 
 ## 系统形态
 
@@ -17,28 +16,26 @@ transport 提供能力。展示层或协议适配器不得维护第二套 Agent 
 ```mermaid
 graph TD
     CLI[atlas_cli] --> TUI[atlas_tui]
-    CLI --> RT[atlas_runtime]
-    CLI --> WS[atlas_ws]
-    CLI --> PROMPT[atlas_prompt]
-    CLI --> CONFIG[atlas_config]
-    CLI --> PROVIDER[atlas_provider]
-    CLI --> TOOLS[atlas_tools]
-    CLI --> STORAGE[atlas_storage]
-    FL[atlas_flutter] --> RT
-    FL --> PROVIDER
-    FL --> CONFIG
-    FL --> TOOLS
-    FL --> STORAGE
+    CLI --> COMP[atlas_composition]
+    CLI --> ACP[atlas_acp]
+    CLI -.-> WS[atlas_ws]
+    FL[atlas_flutter] --> COMP
+    COMP --> CONFIG[atlas_config]
+    COMP --> PROMPT[atlas_prompt]
+    COMP --> PROVIDER[atlas_provider]
+    COMP --> TOOLS[atlas_tools]
+    COMP --> STORAGE[atlas_storage]
+    COMP --> RT[atlas_runtime]
     TUI --> RT
-    REMOTE[远程客户端] --> WS
-    WS --> RT
-    ACP[atlas_acp] --> RT[atlas_runtime]
-    MCP --> RT
+    ACP --> RT
+    REMOTE[远程客户端] -.-> WS
+    WS -.-> RT
+    MCP[atlas_mcp] -.-> RT
     PROVIDER --> RT
     TOOLS --> RT
     STORAGE --> RT
     ACP --> JRPC[json_rpc_2]
-    MCP --> JRPC
+    MCP -.-> JRPC
 ```
 
 图中 `atlas_ws` 与 MCP 为 **Planned** 组件或连线，仅用于展示目标形态，当前
@@ -68,7 +65,7 @@ stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）�
 | `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
 | `atlas_composition` | 共用的应用组装：构造 provider、工具、存储、提示词与唯一 runtime |
 | `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根；委托 `atlas_composition` 构造 runtime |
-| `atlas_flutter` | 桌面端与移动端应用外壳，已支持本地 runtime 组装；远程 WebSocket 仍规划中 |
+| `atlas_flutter` | 桌面端与移动端客户端，已支持本地 runtime 组装；远程 WebSocket 仍规划中 |
 
 ## 依赖规则
 

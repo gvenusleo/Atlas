@@ -9,18 +9,21 @@ Atlas is a local general-purpose AI agent being rebuilt as a unified Dart and Fl
 The repository currently contains:
 
 - a Pub workspace that defines runtime, protocol, client, and adapter boundaries;
-- an initial Flutter desktop and mobile application shell;
+- a Flutter desktop and mobile client with local runtime composition, sessions,
+  agent turns, a file browser, and an embedded terminal;
 - a working `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
 - an `atlas_provider` package with OpenAI-compatible Chat Completions and
   Responses adapters plus an Anthropic Messages adapter, and a composite
   provider for routing multiple providers to one runtime;
 - an `atlas_prompt` package that builds the system prompt and loads AGENTS.md
   instruction files;
-- an `atlas_cli` composition root that wires config, providers, tools, storage,
-  and the system prompt into one runtime;
+- an `atlas_composition` package that wires config, providers, tools, storage,
+  and the system prompt into one runtime for both `atlas_cli` and
+  `atlas_flutter`;
 - a Nocterm chat interface in `atlas_tui` that runs as the default `atlas`
   terminal entry point, with slash commands (`/model`, `/new`, `/resume`,
-  `/compact`, `/quit`) and skill injection;
+  `/compact`, `/quit`) and skill injection; `/compact` accepts an optional
+  instruction, and `/model` can then select a reasoning effort;
 - an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON
   stdio, covering session lifecycle, model and effort config, slash commands,
   turn streaming, agent plans, and Zed display enhancements (live shell
@@ -62,7 +65,7 @@ mise run deps
 mise run ci
 ```
 
-Run the existing Flutter shell on macOS:
+Run the Flutter client on macOS:
 
 ```sh
 mise run app-run --device macos
@@ -74,8 +77,8 @@ See [Development](docs/development.md) for workspace commands, [Architecture](do
 
 Atlas is designed to run tools with the permissions of its local process. It
 does not provide a sandbox, permission prompts, or an approval gate. The current
-runtime and storage implementation follows this boundary; provider, tool, and
-client integrations remain in development.
+runtime, tools, storage, TUI, ACP, and Flutter clients follow this boundary.
+WebSocket transport and MCP remain unimplemented.
 
 ## License
 

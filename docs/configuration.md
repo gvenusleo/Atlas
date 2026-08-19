@@ -3,9 +3,10 @@
 [中文](zh-CN/configuration.md)
 
 Atlas loads its application configuration from `~/.atlas/config.yaml` through
-the `atlas_config` package. The current `atlas_cli` composition root locates the
-file and passes it to `loadConfig`; Flutter runtime composition is `Planned`.
-The package parses, validates, and maps configuration onto provider objects.
+the `atlas_config` package. Both `atlas_cli` and `atlas_flutter` locate the
+file and pass it to `loadConfig`; `atlas_composition` then maps the result onto
+one runtime. The package parses, validates, and maps configuration onto
+provider objects.
 
 ## Example
 
@@ -55,10 +56,13 @@ session:
 
 - `default_model` is `"<provider>/<model>"` and must reference a configured
   provider and model.
-- Provider names must be unique; model ids must be unique within a provider.
+- `providers` must not be empty; each provider's `models` list must not be
+  empty. Provider names must be unique; model ids must be unique within a
+  provider.
 - `type` is `chat_completions`, `responses`, or `anthropic`. The first two
   select the OpenAI-compatible adapter with the matching API; `anthropic`
-  selects the Anthropic adapter.
+  selects the Anthropic adapter. Both OpenAI-compatible and Anthropic
+  providers accept an optional `user_agent`.
 - `base_url` must be an HTTP(S) URL without a query or fragment.
 - `api_key` supports `${ENV_VAR}` references; an undefined variable fails
   loading with the variable name in the message.
@@ -67,6 +71,7 @@ session:
 - Anthropic `thinking_budget_tokens` must be less than the effective
   `max_tokens`. When thinking is enabled, Atlas omits `agent.temperature` from
   Anthropic requests because that sampling option is incompatible.
+  `input_capabilities` and `reasoning_efforts` apply to every provider type.
 - `agent.compaction.threshold` must be greater than 0 and at most 1; it is the
   context window fraction that triggers automatic compaction after a turn.
 - Validation failures raise `ConfigLoadException` with a field path such as

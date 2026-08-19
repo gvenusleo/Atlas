@@ -4,7 +4,7 @@
 
 - Atlas is a local general-purpose agent. Its tools have the same filesystem and shell permissions as the Atlas process.
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
-- The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, and Nocterm TUI are implemented; the Flutter application shell exists; the WebSocket transport and MCP remain unimplemented.
+- The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, Nocterm TUI, and Flutter local client are implemented; the WebSocket transport and MCP remain unimplemented.
 - All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
 - Local Flutter and Nocterm entry points receive the runtime directly. Remote clients use the versioned WebSocket contract in `atlas_ws`.
 - Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.

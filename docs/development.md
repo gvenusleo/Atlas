@@ -4,21 +4,24 @@
 
 ## Current State
 
-The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, the `atlas_tui` Nocterm chat interface, and the ACP server adapter (`atlas_acp`) are executable packages with focused tests; the MCP adapter and WebSocket transport remain planned.
+The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, `atlas_composition`, the `atlas_tui` Nocterm chat interface, the ACP server adapter (`atlas_acp`), and local Flutter runtime composition are executable with focused tests; the MCP adapter and WebSocket transport remain planned.
 
 ## Workspace Layout
 
 ```text
-packages/atlas_runtime    Session/Turn domain, timeline, ports, and agent engine
-packages/atlas_storage    Drift persistence and runtime row mapping
-packages/atlas_provider   model provider adapters
-packages/atlas_tools      built-in tools
-packages/atlas_ws         versioned WebSocket protocol and transport
-packages/atlas_acp        ACP adapter
-packages/atlas_mcp        MCP adapter
-packages/atlas_tui        Nocterm presentation package
-apps/atlas_cli            atlas CLI, TUI, and other commands (planned `atlas server` subcommand)
-apps/atlas_flutter        Flutter desktop and mobile application
+packages/atlas_runtime       Session/Turn domain, timeline, ports, and agent engine
+packages/atlas_storage       Drift persistence and runtime row mapping
+packages/atlas_provider      model provider adapters
+packages/atlas_config        YAML config loading and validation
+packages/atlas_prompt        system prompt and skill catalog loading
+packages/atlas_composition   shared runtime composition for CLI and Flutter
+packages/atlas_tools         built-in tools
+packages/atlas_ws            versioned WebSocket protocol and transport (Planned)
+packages/atlas_acp           ACP adapter
+packages/atlas_mcp           MCP adapter (Planned)
+packages/atlas_tui           Nocterm presentation package
+apps/atlas_cli               atlas CLI, TUI, and other commands (planned `atlas server` subcommand)
+apps/atlas_flutter           Flutter desktop and mobile application
 ```
 
 The root Pub workspace owns the only `pubspec.lock`. Workspace members use `resolution: workspace` and must not add member lockfiles.
@@ -44,7 +47,7 @@ mise run test         # run available Dart and Flutter tests
 mise run ci           # complete repository verification
 ```
 
-Run the current Flutter shell with `mise run app-run --device macos`. Platform debug builds use the matching `mise run app-build-*` task.
+Run the Flutter client with `mise run app-run --device macos`. Platform debug builds use the matching `mise run app-build-*` task.
 
 Build the single-file CLI binary with `mise run build-cli`. Dart 3.13's
 `dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks
@@ -52,8 +55,8 @@ Build the single-file CLI binary with `mise run build-cli`. Dart 3.13's
 
 Install a locally built binary into `~/.local/bin` with `mise run install`.
 End users install a prebuilt release binary with
-`curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash`
-(macOS/Linux) or `irm .../download/latest/install.ps1 | iex` (Windows); the
+`curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash`
+(macOS/Linux) or `irm .../latest/download/install.ps1 | iex` (Windows); the
 scripts download the versioned artifact matching the platform and
 architecture and honor `ATLAS_INSTALL_DIR`.
 
@@ -74,7 +77,7 @@ no separate changelog file.
 - Runtime and protocol packages must not import Flutter.
 - Presentation packages must not import provider, tool, or storage implementations.
 - Application bootstrap code composes those adapters and injects the runtime.
-  It currently lives in `atlas_cli`; the Flutter bootstrap is planned.
+  `atlas_cli` and `atlas_flutter` both call `atlas_composition`.
 - `atlas_ws` owns WebSocket transport only and accepts an injected request handler.
 - Generated serialization files stay beside their source and are committed only when the selected generator requires it.
 - Add focused tests with behavior. Empty scaffold packages do not need placeholder tests.

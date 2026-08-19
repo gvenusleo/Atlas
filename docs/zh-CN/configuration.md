@@ -2,9 +2,10 @@
 
 [English](configuration.md)
 
-Atlas 通过 `atlas_config` 包从 `~/.atlas/config.yaml` 加载应用配置。当前由
-`atlas_cli` 组合根定位文件并交给 `loadConfig`；Flutter 运行时组合仍为
-`Planned`。该包负责解析、校验并映射到 provider 配置对象。
+Atlas 通过 `atlas_config` 包从 `~/.atlas/config.yaml` 加载应用配置。
+`atlas_cli` 与 `atlas_flutter` 都会定位该文件并交给 `loadConfig`；
+`atlas_composition` 再把结果组装成一个 runtime。该包负责解析、校验并映射到
+provider 配置对象。
 
 ## 示例
 
@@ -53,9 +54,11 @@ session:
 ## 规则
 
 - `default_model` 格式为 `"<provider>/<model>"`，必须引用已配置的 provider 与模型。
-- provider 名称必须唯一；provider 内模型 id 必须唯一。
+- `providers` 不能为空；每个 provider 的 `models` 列表也不能为空。provider
+  名称必须唯一；provider 内模型 id 必须唯一。
 - `type` 为 `chat_completions`、`responses` 或 `anthropic`。前两者选择
   OpenAI-compatible 适配器并使用对应的 API；`anthropic` 选择 Anthropic 适配器。
+  OpenAI-compatible 与 Anthropic provider 都支持可选的 `user_agent`。
 - `base_url` 必须是 HTTP(S) URL，且不含 query 与 fragment。
 - `api_key` 支持 `${ENV_VAR}` 引用；未定义的变量会导致加载失败，错误消息
   中带有变量名。
@@ -63,7 +66,8 @@ session:
   `max_steps` 必须大于 0。
 - Anthropic 的 `thinking_budget_tokens` 必须小于最终生效的 `max_tokens`。
   启用 thinking 时，Atlas 会省略 Anthropic 请求中的 `agent.temperature`，
-  因为该采样选项不兼容。
+  因为该采样选项不兼容。`input_capabilities` 与 `reasoning_efforts` 适用于
+  所有 provider 类型。
 - `agent.compaction.threshold` 必须大于 0 且不超过 1；它是触发 turn 结束后
   自动压缩的上下文窗口比例。
 - 校验失败抛出 `ConfigLoadException`，消息包含字段路径，例如

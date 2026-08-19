@@ -4,10 +4,10 @@
 
 > **Status:** `atlas_runtime`, `atlas_storage`, the `atlas_provider`
 > adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
-> prompt construction, the `atlas_tui` Nocterm chat interface, and the ACP
-> server adapter (`atlas_acp`, served by `atlas acp`) are **Available**.
-> `atlas_composition` provides shared process composition for `atlas_cli` and
-> `atlas_flutter`; the MCP adapter and WebSocket transport are **Planned**.
+> prompt construction, `atlas_composition`, the `atlas_tui` Nocterm chat
+> interface, the ACP server adapter (`atlas_acp`, served by `atlas acp`), and
+> local Flutter runtime composition are **Available**. The MCP adapter and
+> WebSocket transport are **Planned**.
 
 ## System Shape
 
@@ -18,28 +18,26 @@ a separate agent loop.
 ```mermaid
 graph TD
     CLI[atlas_cli] --> TUI[atlas_tui]
-    CLI --> RT[atlas_runtime]
-    CLI --> WS[atlas_ws]
-    CLI --> PROMPT[atlas_prompt]
-    CLI --> CONFIG[atlas_config]
-    CLI --> PROVIDER[atlas_provider]
-    CLI --> TOOLS[atlas_tools]
-    CLI --> STORAGE[atlas_storage]
-    FL[atlas_flutter] --> RT
-    FL --> PROVIDER
-    FL --> TOOLS
-    FL --> STORAGE
-    FL --> CONFIG
+    CLI --> COMP[atlas_composition]
+    CLI --> ACP[atlas_acp]
+    CLI -.-> WS[atlas_ws]
+    FL[atlas_flutter] --> COMP
+    COMP --> CONFIG[atlas_config]
+    COMP --> PROMPT[atlas_prompt]
+    COMP --> PROVIDER[atlas_provider]
+    COMP --> TOOLS[atlas_tools]
+    COMP --> STORAGE[atlas_storage]
+    COMP --> RT[atlas_runtime]
     TUI --> RT
-    REMOTE[Remote client] --> WS
-    WS --> RT
-    ACP[atlas_acp] --> RT[atlas_runtime]
-    MCP --> RT
+    ACP --> RT
+    REMOTE[Remote client] -.-> WS
+    WS -.-> RT
+    MCP[atlas_mcp] -.-> RT
     PROVIDER --> RT
     TOOLS --> RT
     STORAGE --> RT
     ACP --> JRPC[json_rpc_2]
-    MCP --> JRPC
+    MCP -.-> JRPC
 ```
 
 Planned components and edges (`atlas_ws` and MCP) appear above for target-state
@@ -71,7 +69,7 @@ the same runtime; MCP primarily connects external tools to the tool layer.
 | `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
 | `atlas_composition` | Shared application composition for configured providers, tools, storage, prompts, and the single runtime |
 | `atlas_cli` | Composition root for the default TUI and other CLI commands; delegates runtime construction to `atlas_composition` |
-| `atlas_flutter` | Desktop and mobile application shell with local runtime composition; remote WebSocket mode is planned |
+| `atlas_flutter` | Desktop and mobile client with local runtime composition; remote WebSocket mode is planned |
 
 ## Dependency Rules
 

@@ -4,21 +4,24 @@
 
 ## 当前状态
 
-仓库目前是 Dart 与 Flutter workspace。`atlas_runtime`、`atlas_storage`、Provider 适配器、`atlas_config`、`atlas_tools`、`atlas_prompt`、`atlas_tui` Nocterm 聊天界面与 ACP 服务端适配器（`atlas_acp`）已是带聚焦测试的可执行 package；MCP 适配器与 WebSocket transport 仍处于规划阶段。
+仓库目前是 Dart 与 Flutter workspace。`atlas_runtime`、`atlas_storage`、Provider 适配器、`atlas_config`、`atlas_tools`、`atlas_prompt`、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP 服务端适配器（`atlas_acp`）以及 Flutter 本地 runtime 组装已是带聚焦测试的可执行实现；MCP 适配器与 WebSocket transport 仍处于规划阶段。
 
 ## Workspace 结构
 
 ```text
-packages/atlas_runtime    Session/Turn 领域、timeline、ports 与 Agent engine
-packages/atlas_storage    Drift 持久化与 runtime 行映射
-packages/atlas_provider   模型 Provider 适配器
-packages/atlas_tools      内置工具
-packages/atlas_ws         版本化 WebSocket 协议与 transport
-packages/atlas_acp        ACP 适配器
-packages/atlas_mcp        MCP 适配器
-packages/atlas_tui        Nocterm 展示 package
-apps/atlas_cli            atlas CLI、TUI 与其他命令（规划的 `atlas server` 子命令）
-apps/atlas_flutter        Flutter 桌面端与移动端应用
+packages/atlas_runtime       Session/Turn 领域、timeline、ports 与 Agent engine
+packages/atlas_storage       Drift 持久化与 runtime 行映射
+packages/atlas_provider      模型 Provider 适配器
+packages/atlas_config        YAML 配置加载与校验
+packages/atlas_prompt        系统提示词与 skill catalog 加载
+packages/atlas_composition   CLI 与 Flutter 共用的 runtime 组装
+packages/atlas_tools         内置工具
+packages/atlas_ws            版本化 WebSocket 协议与 transport（Planned）
+packages/atlas_acp           ACP 适配器
+packages/atlas_mcp           MCP 适配器（Planned）
+packages/atlas_tui           Nocterm 展示 package
+apps/atlas_cli               atlas CLI、TUI 与其他命令（规划的 `atlas server` 子命令）
+apps/atlas_flutter           Flutter 桌面端与移动端应用
 ```
 
 根 Pub workspace 维护唯一的 `pubspec.lock`。所有成员使用 `resolution: workspace`，不得增加成员级 lockfile。
@@ -44,7 +47,7 @@ mise run test         # 运行已有 Dart 与 Flutter 测试
 mise run ci           # 完整仓库验证
 ```
 
-使用 `mise run app-run --device macos` 运行当前 Flutter 外壳。各平台 debug 构建使用对应的 `mise run app-build-*` 任务。
+使用 `mise run app-run --device macos` 运行 Flutter 客户端。各平台 debug 构建使用对应的 `mise run app-build-*` 任务。
 
 使用 `mise run build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
 `dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
@@ -52,8 +55,8 @@ mise run ci           # 完整仓库验证
 
 使用 `mise run install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
 预编译 release 二进制：macOS/Linux 运行
-`curl -fsSL https://github.com/gvenusleo/atlas/releases/download/latest/install.sh | bash`，
-Windows 运行 `irm .../download/latest/install.ps1 | iex`；脚本会下载与当前
+`curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash`，
+Windows 运行 `irm .../latest/download/install.ps1 | iex`；脚本会下载与当前
 平台和架构匹配的带版本归档，并支持 `ATLAS_INSTALL_DIR` 覆盖安装目录。
 
 推送 `v*.*.*` tag 即可发布新版本：`.github/workflows/release.yml` 使用
@@ -70,8 +73,8 @@ notes 在 GitHub Release 页自动生成，仓库不维护单独的 changelog �
 - 公共 Dart API 必须有简明文档注释。
 - Runtime 与协议 package 不得导入 Flutter。
 - 展示 package 不得导入 Provider、工具或存储实现。
-- 应用 bootstrap 负责组装这些适配器并注入 runtime。当前实现位于
-  `atlas_cli`，Flutter bootstrap 仍在规划中。
+- 应用 bootstrap 负责组装这些适配器并注入 runtime。`atlas_cli` 与
+  `atlas_flutter` 都通过 `atlas_composition` 完成组装。
 - `atlas_ws` 只负责 WebSocket transport，并接收注入的 request handler。
 - 生成的序列化文件与源文件放在一起，仅在所选生成器要求时提交。
 - 行为实现必须添加聚焦测试；空骨架 package 不需要占位测试。

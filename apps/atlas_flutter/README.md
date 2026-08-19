@@ -5,8 +5,9 @@ The desktop and mobile client for Atlas.
 ## Status
 
 The current implementation provides a responsive workspace shell, resizable
-desktop sidebars, compact mobile drawers, system light and dark themes, and a
-local runtime bootstrap with sessions and agent turns. Remote WebSocket mode is
+desktop sidebars, compact mobile drawers, Ayu light and dark palettes that
+follow the system theme, a local runtime bootstrap with sessions and agent
+turns, a file browser, and an embedded terminal. Remote WebSocket mode is
 not implemented yet.
 
 ## Responsibility
@@ -19,9 +20,12 @@ not implemented yet.
 
 ## Allowed dependencies
 
-- Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`, and the
-  `material_ui` / `cupertino_ui` design libraries.
+- Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`,
+  `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`,
+  `file_selector`, `pty2`, and `terminal_view`.
 - `atlas_composition` for process-level runtime construction.
+- `atlas_config`, `atlas_prompt`, and `atlas_storage` from application
+  bootstrap only. Tests may also import `atlas_tools`.
 - `atlas_runtime` public types for the injected runtime interface.
 
 ## Prohibited ownership
@@ -31,15 +35,17 @@ not implemented yet.
   adapters.
 - No remote client protocol logic; `atlas_ws`, `atlas_acp`, and `atlas_mcp`
   are not owned here.
-- No terminal rendering logic; the Nocterm UI belongs to `atlas_tui`.
+- No Nocterm rendering logic; the terminal TUI belongs to `atlas_tui`.
 
 ## Structure
 
 ```text
-lib/main.dart                         bootstrap and ProviderScope
-lib/app                               application root, routing, platform window
-lib/features/<feature>/presentation  feature pages, layouts, and widgets
-lib/shared                            application-wide theme and shared UI
+lib/main.dart                            bootstrap and ProviderScope
+lib/app                                  application root, routing, platform window, runtime bootstrap
+lib/features/<feature>/application       feature controllers and state
+lib/features/<feature>/data              local filesystem and terminal access
+lib/features/<feature>/presentation      feature pages, layouts, and widgets
+lib/shared                               application-wide theme and shared UI
 ```
 
 ## Run and Verify

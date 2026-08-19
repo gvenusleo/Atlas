@@ -9,7 +9,7 @@ Built-in Atlas tool implementations: `read`, `write`, `edit`, `shell`, and
   JSON arguments and results.
 - File tools resolve relative paths against the session working directory.
 - `shell` executes commands with the platform default shell, bounded output,
-  timeout, and cancellation support.
+  timeout, optional `cwd` override, and cancellation support.
 - `plan` replaces the complete task plan for multi-step work, tracking each
   step as `pending`, `in_progress`, or `completed`.
 

@@ -4,10 +4,9 @@ The command-line and Nocterm entry point for Atlas.
 
 ## Responsibility
 
-- Owns the process composition root: `composeRuntime` loads `atlas_config`,
-  constructs provider, tool, and storage adapters, and injects the
-  `atlas_prompt` system prompt builder into one `atlas_runtime` `AgentRuntime`
-  instance.
+- Owns the process entry point: loads `~/.atlas/config.yaml` and calls
+  `atlas_composition` `composeRuntime` to obtain one `atlas_runtime`
+  `AgentRuntime` instance.
 - Starts the Nocterm TUI by default (`atlas`); `atlas acp` serves the same
   runtime to ACP clients over NDJSON stdio. The planned `atlas server`
   subcommand will expose the composed runtime through `atlas_ws`. Other
@@ -16,8 +15,12 @@ The command-line and Nocterm entry point for Atlas.
 
 ## Allowed dependencies
 
-- `atlas_config`, `atlas_prompt`, `atlas_provider`, `atlas_storage`,
-  `atlas_tools`, and `atlas_runtime` for composition.
+- `atlas_composition` for runtime construction.
+- `atlas_config` to load the configuration file.
+- `atlas_prompt` for `loadSkillCatalog` at the TUI entry.
+- `atlas_tui` for the default chat interface.
+- `atlas_acp` for the `atlas acp` server.
+- `atlas_runtime` public types.
 - `dart:io` for file, process, and entry-point access.
 
 ## Prohibited ownership
@@ -25,7 +28,8 @@ The command-line and Nocterm entry point for Atlas.
 - No re-implementation of the agent loop; every client uses the single
   `atlas_runtime` engine.
 - No rendering logic; the Nocterm UI belongs to `atlas_tui`.
-- No protocol logic: `atlas_ws`, `atlas_acp`, and `atlas_mcp` adapters are not
-  owned here.
+- No protocol logic: `atlas_ws` and `atlas_mcp` adapters are not owned here;
+  `atlas_acp` is started from this process but implemented in its own package.
 - No provider-specific request fields, persistence schemas, or tool
-  implementations; those belong to their owning packages.
+  implementations; those belong to their owning packages. Composition of
+  those adapters belongs to `atlas_composition`.

@@ -11,6 +11,7 @@ System prompt construction for Atlas.
   `loadInstructionFiles` and renders them into the prompt.
 - Loads skills from `~/.atlas/skills`, `~/.agents/skills`, and the project
   `.atlas/skills` / `.agents/skills` directories through `loadSkillCatalog`
+  (pass `workingDirectory` so project skills resolve against the session cwd)
   and exposes them as a `SkillCatalog`.
 
 ## Allowed dependencies
