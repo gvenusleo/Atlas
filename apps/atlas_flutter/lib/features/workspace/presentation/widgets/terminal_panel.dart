@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:terminal_view/terminal_view.dart';
 
-import '../../../../shared/theme/atlas_theme.dart';
 import '../../data/terminal_session.dart';
 import '../workspace_metrics.dart';
 
@@ -94,7 +93,9 @@ class _TerminalPanelState extends State<TerminalPanel> {
       autofocus: true,
       cursorType: TerminalCursorType.verticalBar,
       padding: const EdgeInsets.only(bottom: 8),
-      theme: _terminalTheme(context),
+      theme: Theme.of(context).brightness == Brightness.dark
+          ? _ayuDarkTerminalTheme
+          : _ayuLightTerminalTheme,
       textStyle: TerminalStyle(
         fontSize: 13,
         fontFamily: WorkspaceMetrics.monospaceFontFamily,
@@ -104,33 +105,61 @@ class _TerminalPanelState extends State<TerminalPanel> {
   }
 }
 
-/// Builds a terminal palette that follows the active Atlas theme.
-TerminalTheme _terminalTheme(BuildContext context) {
-  final colors = AtlasColors.of(context);
-  final dark = Theme.of(context).brightness == Brightness.dark;
-  return TerminalTheme(
-    cursor: colors.accent,
-    selection: colors.accent.withValues(alpha: 0.35),
-    foreground: colors.textPrimary,
-    background: colors.canvas,
-    black: dark ? const Color(0xFF0D1016) : const Color(0xFF5C6166),
-    red: colors.error,
-    green: colors.success,
-    yellow: dark ? const Color(0xFFFEB454) : const Color(0xFFF1AD49),
-    blue: colors.accent,
-    magenta: dark ? const Color(0xFF39BAE5) : const Color(0xFF55B4D3),
-    cyan: dark ? const Color(0xFF95E5CB) : const Color(0xFF4DBF99),
-    white: colors.textPrimary,
-    brightBlack: dark ? const Color(0xFF545557) : const Color(0xFF3B9EE5),
-    brightRed: dark ? const Color(0xFF83353B) : const Color(0xFFFEBAB6),
-    brightGreen: dark ? const Color(0xFF567627) : const Color(0xFFC7D98F),
-    brightYellow: dark ? const Color(0xFF92582B) : const Color(0xFFFED5A3),
-    brightBlue: dark ? const Color(0xFF27618C) : const Color(0xFFABCDF2),
-    brightMagenta: dark ? const Color(0xFF205A78) : const Color(0xFFB1D8E8),
-    brightCyan: dark ? const Color(0xFF4C806F) : const Color(0xFFACE0CB),
-    brightWhite: dark ? const Color(0xFFFAFAFA) : const Color(0xFFFFFFFF),
-    searchHitBackground: colors.raised,
-    searchHitBackgroundCurrent: colors.accent,
-    searchHitForeground: colors.canvas,
-  );
-}
+/// Ayu Light ANSI palette from Zed's `ayu.json`.
+///
+/// Bold is not remapped onto the bright slots: those colors are pastel
+/// variants in Ayu, and `ls` / starship use bold + a normal ANSI color.
+const _ayuLightTerminalTheme = TerminalTheme(
+  cursor: Color(0xFF3B9EE5),
+  selection: Color(0x3D3B9EE5),
+  foreground: Color(0xFF5C6166),
+  background: Color(0xFFFCFCFC),
+  black: Color(0xFF5C6166),
+  red: Color(0xFFEF7271),
+  green: Color(0xFF85B304),
+  yellow: Color(0xFFF1AD49),
+  blue: Color(0xFF3B9EE5),
+  magenta: Color(0xFF55B4D3),
+  cyan: Color(0xFF4DBF99),
+  white: Color(0xFFFCFCFC),
+  brightBlack: Color(0xFF3B9EE5),
+  brightRed: Color(0xFFFEBAB6),
+  brightGreen: Color(0xFFC7D98F),
+  brightYellow: Color(0xFFFED5A3),
+  brightBlue: Color(0xFFABCDF2),
+  brightMagenta: Color(0xFFB1D8E8),
+  brightCyan: Color(0xFFACE0CB),
+  brightWhite: Color(0xFFFFFFFF),
+  searchHitBackground: Color(0x663B9EE5),
+  searchHitBackgroundCurrent: Color(0x66F88B36),
+  searchHitForeground: Color(0xFF5C6166),
+  drawBoldTextInBrightColors: false,
+);
+
+/// Ayu Dark ANSI palette from Zed's `ayu.json`.
+const _ayuDarkTerminalTheme = TerminalTheme(
+  cursor: Color(0xFF5AC1FE),
+  selection: Color(0x3D5AC1FE),
+  foreground: Color(0xFFBFBDB6),
+  background: Color(0xFF0D1016),
+  black: Color(0xFF0D1016),
+  red: Color(0xFFEF7177),
+  green: Color(0xFFAAD84C),
+  yellow: Color(0xFFFEB454),
+  blue: Color(0xFF5AC1FE),
+  magenta: Color(0xFF39BAE5),
+  cyan: Color(0xFF95E5CB),
+  white: Color(0xFFBFBDB6),
+  brightBlack: Color(0xFF545557),
+  brightRed: Color(0xFF83353B),
+  brightGreen: Color(0xFF567627),
+  brightYellow: Color(0xFF92582B),
+  brightBlue: Color(0xFF27618C),
+  brightMagenta: Color(0xFF205A78),
+  brightCyan: Color(0xFF4C806F),
+  brightWhite: Color(0xFFFAFAFA),
+  searchHitBackground: Color(0x665AC2FE),
+  searchHitBackgroundCurrent: Color(0x66EA5701),
+  searchHitForeground: Color(0xFFBFBDB6),
+  drawBoldTextInBrightColors: false,
+);
