@@ -99,6 +99,21 @@ void main() {
     expect(find.text('hello world'), findsNothing);
   });
 
+  testWidgets('preview toolbar shows the path relative to the root', (
+    tester,
+  ) async {
+    final sub = Directory('${tempDir.path}/sub')..createSync();
+    File('${sub.path}/a.txt').writeAsStringSync('hello');
+
+    await pumpBrowser(tester);
+    await tester.tap(find.text('sub'));
+    await settle(tester);
+    await tester.tap(find.text('a.txt'));
+    await settle(tester);
+
+    expect(find.text('sub${Platform.pathSeparator}a.txt'), findsOneWidget);
+  });
+
   testWidgets('rejects oversized files', (tester) async {
     File(
       '${tempDir.path}/big.txt',

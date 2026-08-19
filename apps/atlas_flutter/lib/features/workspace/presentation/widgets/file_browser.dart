@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -76,7 +77,18 @@ class _FileBrowserState extends State<FileBrowser> {
               ? _buildToolbar(colors)
               : _buildPreviewToolbar(colors),
         ),
-        const Divider(),
+        Stack(
+          children: [
+            Transform.translate(
+              offset: const Offset(-4, 0),
+              child: const Divider(),
+            ),
+            Positioned(
+              right: 0,
+              child: Container(height: 1, width: 4, color: colors.divider),
+            ),
+          ],
+        ),
         Expanded(child: _buildContent(colors)),
       ],
     );
@@ -89,35 +101,32 @@ class _FileBrowserState extends State<FileBrowser> {
           child: Padding(
             padding: const EdgeInsets.only(left: 10),
             child: Text(
-              _root.path,
+              '../${_root.path.split(Platform.pathSeparator).last}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
             ),
           ),
         ),
-        _FileAction(
+        WorkspaceToolbarButton(
           icon: LucideIcons.refreshCw,
           tooltip: 'Refresh files',
           onPressed: _refresh,
         ),
+        const SizedBox(width: 6),
       ],
     );
   }
 
   Widget _buildPreviewToolbar(AtlasColors colors) {
+    final selected = _selectedFile;
     return Row(
       children: [
-        _FileAction(
-          icon: LucideIcons.arrowLeft,
-          tooltip: 'Back to files',
-          onPressed: _closePreview,
-        ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(left: 4),
             child: Text(
-              _selectedFile?.path.split(Platform.pathSeparator).last ?? '',
+              selected == null ? '' : _relativePath(selected.path),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -128,6 +137,12 @@ class _FileBrowserState extends State<FileBrowser> {
             ),
           ),
         ),
+        WorkspaceToolbarButton(
+          icon: LucideIcons.x,
+          tooltip: 'Back to files',
+          onPressed: _closePreview,
+        ),
+        const SizedBox(width: 6),
       ],
     );
   }
@@ -144,7 +159,7 @@ class _FileBrowserState extends State<FileBrowser> {
         );
       }
       return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
+        padding: const EdgeInsets.fromLTRB(6, 6, 6, 12),
         child: SelectableText(
           _preview ?? '',
           style: TextStyle(
@@ -217,7 +232,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 isDirectory
                     ? (node.expanded
                           ? LucideIcons.folderOpen
-                          : LucideIcons.folderClosed)
+                          : LucideIcons.folder)
                     : LucideIcons.file,
                 size: 15,
                 color: colors.textPrimary,
@@ -253,6 +268,23 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       ),
     );
+  }
+
+  /// Returns [path] relative to the browser root directory for display.
+  String _relativePath(String path) {
+    final rootSegments = _root.path.split(Platform.pathSeparator);
+    final pathSegments = path.split(Platform.pathSeparator);
+    var common = 0;
+    while (common < rootSegments.length &&
+        common < pathSegments.length &&
+        rootSegments[common] == pathSegments[common]) {
+      common++;
+    }
+    final up = List.filled(rootSegments.length - common, '..');
+    return [
+      ...up,
+      ...pathSegments.sublist(common),
+    ].join(Platform.pathSeparator);
   }
 
   void _resetRoot() {
@@ -403,30 +435,4 @@ class _GuideLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GuideLinePainter oldDelegate) =>
       oldDelegate.color != color;
-}
-
-class _FileAction extends StatelessWidget {
-  const _FileAction({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = AtlasColors.of(context);
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 38, height: 38),
-        onPressed: onPressed,
-        icon: Icon(icon, size: 15, color: colors.textSecondary),
-      ),
-    );
-  }
 }
