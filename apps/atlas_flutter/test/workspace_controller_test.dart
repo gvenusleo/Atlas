@@ -286,6 +286,138 @@ void main() {
     expect(state.sessionId, isNull);
     expect(state.messages, isEmpty);
   });
+
+  test(
+    'selectModel warns when history has images and the model cannot accept them',
+    () async {
+      final visionModel = ModelDescriptor(
+        ref: ModelRef(
+          providerId: ProviderId('test'),
+          modelId: ModelId('vision'),
+        ),
+        name: 'Vision model',
+        inputCapabilities: const {
+          ModelInputCapability.text,
+          ModelInputCapability.image,
+        },
+      );
+      final textModel = ModelDescriptor(
+        ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('text')),
+        name: 'Text only',
+      );
+      final store = DriftSessionStore.inMemory();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: _FakeProvider(visionModel.ref),
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: visionModel.ref,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWithValue(
+            RuntimeEnvironment(
+              runtime: runtime,
+              models: [visionModel, textModel],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(store.close);
+      addTearDown(container.dispose);
+
+      final session = await runtime.createSession(workingDirectory: '/tmp');
+      await runtime
+          .run(
+            TurnRequest(
+              sessionId: session.id,
+              content: const [
+                TextContent('describe this'),
+                ImageContent(source: 'data:image/png;base64,AAAA'),
+              ],
+              workingDirectory: '/tmp',
+              model: visionModel.ref,
+            ),
+          )
+          .toList();
+
+      final controller = container.read(workspaceProvider.notifier);
+      await controller.resume(session.id);
+      expect(container.read(workspaceProvider).hasImages, isTrue);
+
+      controller.selectModel(textModel);
+
+      final state = container.read(workspaceProvider);
+      expect(state.activeModel.ref, textModel.ref);
+      expect(state.messages.last.kind, WorkspaceMessageKind.notice);
+      expect(state.messages.last.text, contains('does not support images'));
+    },
+  );
+
+  test('selectModel stays quiet for text-only history', () async {
+    final visionModel = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('vision')),
+      name: 'Vision model',
+      inputCapabilities: const {
+        ModelInputCapability.text,
+        ModelInputCapability.image,
+      },
+    );
+    final textModel = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('text')),
+      name: 'Text only',
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(visionModel.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: visionModel.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [visionModel, textModel],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final session = await runtime.createSession(workingDirectory: '/tmp');
+    await runtime
+        .run(
+          TurnRequest(
+            sessionId: session.id,
+            content: const [TextContent('plain text')],
+            workingDirectory: '/tmp',
+            model: visionModel.ref,
+          ),
+        )
+        .toList();
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.resume(session.id);
+    expect(container.read(workspaceProvider).hasImages, isFalse);
+
+    controller.selectModel(textModel);
+
+    final state = container.read(workspaceProvider);
+    expect(state.activeModel.ref, textModel.ref);
+    expect(state.messages.last.kind, isNot(WorkspaceMessageKind.notice));
+  });
 }
 
 /// Working directory fixed for tests.

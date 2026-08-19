@@ -113,6 +113,134 @@ void main() {
     expect(store.turns.single.status, TurnStatus.completed);
   });
 
+  test('omits images when the model cannot accept them', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider(
+      const [
+        ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+      inputCapabilities: const {ModelInputCapability.text},
+    );
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _ThrowingTools(),
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    await runtime
+        .run(
+          const TurnRequest(
+            content: [
+              TextContent('Describe this'),
+              ImageContent(source: 'data:image/png;base64,AAAA'),
+            ],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    final user = provider.requests.single.messages.firstWhere(
+      (message) => message.role == ModelMessageRole.user,
+    );
+    expect(user.content, const [
+      TextContent('Describe this'),
+      TextContent(
+        '[image omitted: current model does not support image input]',
+      ),
+    ]);
+    // The persisted timeline keeps the original image content.
+    final userItem = store.timeline.firstWhere(
+      (item) => item is UserMessageItem,
+    );
+    expect(
+      (userItem as UserMessageItem).content.whereType<ImageContent>(),
+      hasLength(1),
+    );
+    expect(store.turns.single.status, TurnStatus.completed);
+  });
+
+  test('keeps images when the model supports image input', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider(
+      const [
+        ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+      inputCapabilities: const {
+        ModelInputCapability.text,
+        ModelInputCapability.image,
+      },
+    );
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _ThrowingTools(),
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    await runtime
+        .run(
+          const TurnRequest(
+            content: [
+              TextContent('Describe this'),
+              ImageContent(source: 'data:image/png;base64,AAAA'),
+            ],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    final user = provider.requests.single.messages.firstWhere(
+      (message) => message.role == ModelMessageRole.user,
+    );
+    expect(user.content.whereType<ImageContent>(), hasLength(1));
+    expect(store.turns.single.status, TurnStatus.completed);
+  });
+
+  test('keeps images when the provider cannot describe the model', () async {
+    final store = _MemorySessionStore();
+    final provider = _DescribeFailingProvider(const [
+      ModelResponse(
+        content: [TextContent('Done.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _ThrowingTools(),
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    await runtime
+        .run(
+          const TurnRequest(
+            content: [
+              TextContent('Describe this'),
+              ImageContent(source: 'data:image/png;base64,AAAA'),
+            ],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    // Unknown capabilities keep the request unchanged; provider-side
+    // validation remains the fallback.
+    expect(
+      provider.requests.single.messages.first.content.whereType<ImageContent>(),
+      hasLength(1),
+    );
+  });
+
   test('writes a paired error result when a tool throws', () async {
     final store = _MemorySessionStore();
     final runtime = AgentRuntime(
@@ -1153,16 +1281,26 @@ final class _Ids implements IdGenerator {
 }
 
 final class _ScriptedProvider implements ModelProvider {
-  _ScriptedProvider(this.responses, {this.contextWindow = 0});
+  _ScriptedProvider(
+    this.responses, {
+    this.contextWindow = 0,
+    this.inputCapabilities = const <ModelInputCapability>{
+      ModelInputCapability.text,
+    },
+  });
 
   final List<ModelResponse> responses;
   final int contextWindow;
+  final Set<ModelInputCapability> inputCapabilities;
   final requests = <ModelRequest>[];
   var _index = 0;
 
   @override
-  Future<ModelDescriptor> describe(ModelRef model) async =>
-      ModelDescriptor(ref: model, contextWindow: contextWindow);
+  Future<ModelDescriptor> describe(ModelRef model) async => ModelDescriptor(
+    ref: model,
+    contextWindow: contextWindow,
+    inputCapabilities: inputCapabilities,
+  );
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
@@ -1209,6 +1347,7 @@ final class _DescribeFailingProvider implements ModelProvider {
   _DescribeFailingProvider(this.responses);
 
   final List<ModelResponse> responses;
+  final requests = <ModelRequest>[];
   var _index = 0;
 
   @override
@@ -1217,6 +1356,7 @@ final class _DescribeFailingProvider implements ModelProvider {
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    requests.add(request);
     yield const TextDeltaEvent('delta');
     yield ModelCompletedEvent(responses[_index++]);
   }

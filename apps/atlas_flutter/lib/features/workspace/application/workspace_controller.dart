@@ -88,6 +88,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       messages: const [],
       sessionId: null,
       contextTokens: 0,
+      hasImages: false,
     );
   }
 
@@ -104,6 +105,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         sessionId: snapshot.session.id,
         workingDirectory: snapshot.session.workingDirectory,
         contextTokens: snapshot.session.lastUsage.totalTokens,
+        hasImages: _timelineHasImages(snapshot.timeline),
       );
     } catch (error) {
       _append(WorkspaceMessageKind.error, 'Cannot resume session: $error');
@@ -129,6 +131,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           messages: const [],
           sessionId: null,
           contextTokens: 0,
+          hasImages: false,
         );
       }
       await refreshSessions();
@@ -143,6 +146,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       activeModel: model,
       reasoningEffort: model.reasoningEfforts.firstOrNull?.value,
     );
+    if (state.hasImages &&
+        !model.inputCapabilities.contains(ModelInputCapability.image)) {
+      final label = model.name.isEmpty ? model.ref.modelId.value : model.name;
+      _append(
+        WorkspaceMessageKind.notice,
+        '$label does not support images; images in this conversation will be omitted.',
+      );
+    }
   }
 
   /// Changes the provider-local reasoning effort for subsequent turns.
@@ -394,6 +405,21 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       }
     }
     return selected;
+  }
+
+  /// Whether any timeline message carries image content.
+  static bool _timelineHasImages(List<TimelineItem> timeline) {
+    for (final item in timeline) {
+      final content = switch (item) {
+        UserMessageItem(:final content) => content,
+        AssistantMessageItem(:final content) => content,
+        _ => null,
+      };
+      if (content != null && content.any((part) => part is ImageContent)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   List<WorkspaceMessage> _messagesFromTimeline(List<TimelineItem> timeline) {

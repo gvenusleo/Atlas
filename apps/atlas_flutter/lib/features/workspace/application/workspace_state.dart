@@ -15,6 +15,7 @@ final class WorkspaceState {
     this.busy = false,
     this.loadingSessions = false,
     this.contextTokens = 0,
+    this.hasImages = false,
   }) : messages = List.unmodifiable(messages),
        sessions = List.unmodifiable(sessions);
 
@@ -45,6 +46,9 @@ final class WorkspaceState {
   /// Token usage reported by the most recently completed turn.
   final int contextTokens;
 
+  /// Whether the loaded conversation contains image content.
+  final bool hasImages;
+
   /// Display title for the central workspace.
   String get sessionTitle {
     final active = sessionId;
@@ -73,6 +77,7 @@ final class WorkspaceState {
     bool? busy,
     bool? loadingSessions,
     int? contextTokens,
+    bool? hasImages,
   }) => WorkspaceState(
     messages: messages ?? this.messages,
     sessions: sessions ?? this.sessions,
@@ -87,5 +92,6 @@ final class WorkspaceState {
     busy: busy ?? this.busy,
     loadingSessions: loadingSessions ?? this.loadingSessions,
     contextTokens: contextTokens ?? this.contextTokens,
+    hasImages: hasImages ?? this.hasImages,
   );
 }

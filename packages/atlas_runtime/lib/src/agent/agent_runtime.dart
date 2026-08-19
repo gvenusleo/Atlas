@@ -264,6 +264,10 @@ final class AgentRuntime {
         request.skills,
         context.skills,
       );
+      // Resolved once per turn so historical images can be omitted for
+      // models that cannot accept them; null falls back to provider-side
+      // request validation.
+      final capabilities = await _modelCapabilities(model);
       for (var step = 0; step < maxSteps; step++) {
         cancellation.throwIfCancelled();
         ModelResponse? response;
@@ -271,14 +275,14 @@ final class AgentRuntime {
           sessionId: session.id,
           turnId: turn.id,
           model: model,
-          messages: [
+          messages: _applyInputCapabilities([
             ...selectedSkillMessages,
             ..._projectTimeline(
               timeline,
               modelCheckpoints,
               compaction: session.compaction,
             ),
-          ],
+          ], capabilities),
           systemPrompt: _systemPrompt(session, context),
           tools: tools.descriptors,
           reasoningEffort: request.reasoningEffort,
@@ -892,6 +896,63 @@ final class AgentRuntime {
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;');
+
+  /// Resolves the model descriptor for input-capability filtering.
+  ///
+  /// Returns null when the provider cannot describe the model; the provider's
+  /// own request validation then rejects unsupported content.
+  Future<ModelDescriptor?> _modelCapabilities(ModelRef model) async {
+    try {
+      return await provider.describe(model);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Replaces image content with a placeholder when the active model cannot
+  /// accept images, keeping the conversation usable after a model switch.
+  ///
+  /// Returns the original list when no filtering is needed.
+  static List<ModelMessage> _applyInputCapabilities(
+    List<ModelMessage> messages,
+    ModelDescriptor? descriptor,
+  ) {
+    if (descriptor == null ||
+        descriptor.inputCapabilities.contains(ModelInputCapability.image)) {
+      return messages;
+    }
+    final filtered = <ModelMessage>[];
+    var changed = false;
+    for (final message in messages) {
+      if (!message.content.any((part) => part is ImageContent)) {
+        filtered.add(message);
+        continue;
+      }
+      changed = true;
+      filtered.add(
+        ModelMessage(
+          role: message.role,
+          content: [
+            for (final part in message.content)
+              if (part is ImageContent)
+                const TextContent(_omittedImagePlaceholder)
+              else
+                part,
+          ],
+          toolCalls: message.toolCalls,
+          toolCallId: message.toolCallId,
+          toolOutput: message.toolOutput,
+          continuation: message.continuation,
+        ),
+      );
+    }
+    return changed ? filtered : messages;
+  }
+
+  /// Placeholder text replacing image content when the active model cannot
+  /// accept images.
+  static const _omittedImagePlaceholder =
+      '[image omitted: current model does not support image input]';
 
   static List<ModelMessage> _projectTimeline(
     List<TimelineItem> items,
