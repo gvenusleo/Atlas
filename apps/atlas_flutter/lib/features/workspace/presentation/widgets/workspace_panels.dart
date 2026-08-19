@@ -522,7 +522,7 @@ class _SessionTileState extends State<_SessionTile> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.busy ? null : widget.onTap,
-          onSecondaryTapDown: (details) {
+          onSecondaryTapUp: (details) {
             _menuController.open(position: details.localPosition);
           },
           child: Container(
