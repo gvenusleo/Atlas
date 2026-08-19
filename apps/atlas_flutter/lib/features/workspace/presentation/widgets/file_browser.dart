@@ -99,7 +99,7 @@ class _FileBrowserState extends State<FileBrowser> {
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.only(left: 10),
+            padding: const EdgeInsets.only(left: 4),
             child: Text(
               '../${_root.path.split(Platform.pathSeparator).last}',
               maxLines: 1,
