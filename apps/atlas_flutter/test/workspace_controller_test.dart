@@ -52,6 +52,7 @@ void main() {
       WorkspaceMessageKind.assistant,
     ]);
     expect(state.messages[1].text, 'first thought');
+    expect(state.messages[1].isRunning, isFalse);
     expect(state.messages[2].text, 'Hello from Atlas.');
     expect(state.sessionId, isNotNull);
     await controller.refreshSessions();

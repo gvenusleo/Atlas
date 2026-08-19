@@ -2,6 +2,7 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -62,10 +63,12 @@ void main() {
     expect(tool.startedAt, isNotNull);
     expect(tool.isRunning, isFalse);
 
-    expect(find.text('Fake_tool'), findsOneWidget);
-    await tester.tap(find.text('Fake_tool'));
+    expect(find.textContaining('Fake_tool'), findsOneWidget);
+    expect(find.text('file list'), findsNothing);
+    await tester.tap(find.textContaining('Fake_tool'));
     await tester.pumpAndSettle();
     expect(find.text('file list'), findsOneWidget);
+    expect(find.textContaining('"path"'), findsNothing);
   });
 
   testWidgets('tool title keeps the arrow cursor on hover', (tester) async {
@@ -113,13 +116,11 @@ void main() {
     await gesture.addPointer(location: Offset.zero);
     addTearDown(gesture.removePointer);
     await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.text('Fake_tool')));
+    await gesture.moveTo(tester.getCenter(find.textContaining('Fake_tool')));
     await tester.pump();
 
-    final context = tester.element(find.text('Fake_tool'));
-    final data = ListTileTheme.of(context);
     expect(
-      data.mouseCursor?.resolve(<WidgetState>{}),
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
       SystemMouseCursors.basic,
     );
   });
@@ -170,6 +171,116 @@ void main() {
     expect(find.byIcon(LucideIcons.squareCheckBig), findsOneWidget);
     expect(find.text('done'), findsOneWidget);
   });
+
+  testWidgets('read title shows a relative path and hides arguments', (
+    tester,
+  ) async {
+    await _pumpToolConversation(
+      tester,
+      toolName: 'read',
+      arguments: {'path': '/tmp/src/main.dart'},
+      result: 'void main() {}',
+    );
+
+    expect(find.textContaining('Read'), findsOneWidget);
+    expect(find.textContaining('src/main.dart'), findsOneWidget);
+    expect(find.text('void main() {}'), findsNothing);
+    await tester.tap(find.textContaining('src/main.dart'));
+    await tester.pumpAndSettle();
+    expect(find.text('void main() {}'), findsOneWidget);
+    expect(find.textContaining('"path"'), findsNothing);
+  });
+
+  testWidgets('shell title shows the command and hides arguments', (
+    tester,
+  ) async {
+    await _pumpToolConversation(
+      tester,
+      toolName: 'shell',
+      arguments: {'command': 'ls -la'},
+      result: 'AGENTS.md',
+    );
+
+    expect(find.textContaining('Shell'), findsOneWidget);
+    expect(find.textContaining('ls -la'), findsOneWidget);
+    await tester.tap(find.textContaining('ls -la'));
+    await tester.pumpAndSettle();
+    expect(find.text('AGENTS.md'), findsOneWidget);
+    expect(find.textContaining('"command"'), findsNothing);
+  });
+
+  testWidgets('plan title shows completed counts and lists steps', (
+    tester,
+  ) async {
+    await _pumpToolConversation(
+      tester,
+      toolName: 'plan',
+      arguments: {
+        'plan': [
+          {'step': 'Inspect files', 'status': 'completed'},
+          {'step': 'Write tests', 'status': 'in_progress'},
+          {'step': 'Ship it', 'status': 'pending'},
+        ],
+      },
+      result: 'Plan updated',
+    );
+
+    expect(find.textContaining('Plan'), findsWidgets);
+    expect(find.textContaining('1/3 completed'), findsOneWidget);
+    expect(find.text('Plan updated'), findsNothing);
+    await tester.tap(find.textContaining('1/3 completed'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inspect files'), findsOneWidget);
+    expect(find.text('Write tests'), findsOneWidget);
+    expect(find.text('Ship it'), findsOneWidget);
+    expect(find.text('Plan updated'), findsNothing);
+  });
+}
+
+Future<void> _pumpToolConversation(
+  WidgetTester tester, {
+  required String toolName,
+  required JsonObject arguments,
+  required String result,
+}) async {
+  final model = ModelDescriptor(
+    ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('m')),
+  );
+  final store = DriftSessionStore.inMemory();
+  final runtime = AgentRuntime(
+    store: store,
+    provider: _NamedToolFakeProvider(model.ref, toolName, arguments),
+    tools: LocalToolRegistry([_NamedFakeTool(toolName, result)]),
+    ids: SecureIdGenerator(),
+    defaultModel: model.ref,
+  );
+  final container = ProviderContainer(
+    overrides: [
+      runtimeEnvironmentProvider.overrideWithValue(
+        RuntimeEnvironment(
+          runtime: runtime,
+          models: [model],
+          skills: _EmptySkillCatalog(),
+        ),
+      ),
+      workspaceWorkingDirectoryProvider.overrideWith(
+        () => _FixedWorkingDirectory('/tmp'),
+      ),
+    ],
+  );
+  addTearDown(store.close);
+  addTearDown(container.dispose);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        theme: buildAtlasTheme(Brightness.light),
+        home: const Scaffold(body: ConversationView()),
+      ),
+    ),
+  );
+  await container.read(workspaceProvider.notifier).send('run a tool');
+  await tester.pumpAndSettle();
 }
 
 final class _CheckboxFakeProvider implements ModelProvider {
@@ -243,6 +354,64 @@ final class _FakeTool implements Tool {
   @override
   Future<ToolResult> execute(ToolContext context, JsonObject arguments) async =>
       const ToolResult(content: 'file list');
+}
+
+final class _NamedToolFakeProvider implements ModelProvider {
+  _NamedToolFakeProvider(this.model, this.toolName, this.arguments);
+
+  final ModelRef model;
+  final String toolName;
+  final JsonObject arguments;
+  var _calls = 0;
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef requested) async =>
+      ModelDescriptor(ref: requested);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    expect(request.model, model);
+    _calls++;
+    if (_calls == 1) {
+      yield ModelCompletedEvent(
+        ModelResponse(
+          toolCalls: [
+            ToolCall(
+              id: ToolCallId('call-1'),
+              name: toolName,
+              arguments: arguments,
+            ),
+          ],
+          stopReason: StopReason.toolUse,
+        ),
+      );
+      return;
+    }
+    yield const ModelCompletedEvent(
+      ModelResponse(
+        content: [TextContent('done')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+  }
+}
+
+final class _NamedFakeTool implements Tool {
+  _NamedFakeTool(this.name, this.result);
+
+  final String name;
+  final String result;
+
+  @override
+  ToolDescriptor get descriptor => ToolDescriptor(
+    name: name,
+    description: 'A fake $name tool',
+    inputSchema: const <String, Object?>{},
+  );
+
+  @override
+  Future<ToolResult> execute(ToolContext context, JsonObject arguments) async =>
+      ToolResult(content: result);
 }
 
 final class _EmptySkillCatalog implements SkillCatalog {

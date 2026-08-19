@@ -257,10 +257,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       case TurnStarted():
         state = state.copyWith(sessionId: event.sessionId);
       case ModelTextDelta(:final delta):
+        _finishRunningReasoning();
         _appendDelta(WorkspaceMessageKind.assistant, delta);
       case ModelReasoningDelta(:final delta):
         _appendDelta(WorkspaceMessageKind.reasoning, delta);
       case ToolStarted(:final call):
+        _finishRunningReasoning();
         _streamOpen = false;
         state = state.copyWith(
           messages: [
@@ -292,6 +294,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         }
         _streamOpen = false;
       case TurnFinished(:final outcome):
+        _finishRunningReasoning();
         _streamOpen = false;
         if (outcome.status == TurnStatus.cancelled) {
           _append(WorkspaceMessageKind.notice, 'Turn cancelled');
@@ -333,6 +336,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
             startedAt: kind == WorkspaceMessageKind.reasoning
                 ? DateTime.now()
                 : null,
+            isRunning: kind == WorkspaceMessageKind.reasoning,
           ),
         ],
       );
@@ -348,6 +352,20 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         WorkspaceMessage(id: _nextId(), kind: kind, text: text),
       ],
     );
+  }
+
+  /// Marks the latest streaming reasoning item complete.
+  void _finishRunningReasoning() {
+    final index = state.messages.lastIndexWhere(
+      (message) =>
+          message.kind == WorkspaceMessageKind.reasoning && message.isRunning,
+    );
+    if (index < 0) {
+      return;
+    }
+    final messages = [...state.messages];
+    messages[index] = messages[index].copyWith(isRunning: false);
+    state = state.copyWith(messages: messages);
   }
 
   String _nextId() => 'local-${_localId++}';

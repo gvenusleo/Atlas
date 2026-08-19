@@ -1,5 +1,4 @@
-import 'dart:convert';
-
+import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_markdown_plus_latex/flutter_markdown_plus_latex.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -133,20 +132,19 @@ class _UserMessage extends StatelessWidget {
     final colors = AtlasColors.of(context);
     return Align(
       alignment: Alignment.centerRight,
-      child: DecoratedBox(
+      child: Container(
         decoration: BoxDecoration(
           color: colors.panel,
           borderRadius: BorderRadius.circular(AtlasRadii.surface),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: SelectableText(
-            text,
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 14,
-              height: 1.5,
-            ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        child: SelectableText(
+          text,
+          style: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 14,
+            height: 1.5,
           ),
         ),
       ),
@@ -162,134 +160,231 @@ class _AssistantMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return MarkdownBody(
-      data: text,
-      selectable: false,
-      softLineBreak: false,
-      builders: {
-        'latex': LatexElementBuilder(
-          textStyle: TextStyle(color: colors.textPrimary),
-        ),
-      },
-      checkboxBuilder: (bool checked) => Icon(
-        checked ? LucideIcons.squareCheckBig : LucideIcons.square,
-        size: 14,
-        color: colors.textPrimary,
-      ),
-      extensionSet: md.ExtensionSet(
-        [...md.ExtensionSet.gitHubFlavored.blockSyntaxes, LatexBlockSyntax()],
-        [...md.ExtensionSet.gitHubFlavored.inlineSyntaxes, LatexInlineSyntax()],
-      ),
-      styleSheet: MarkdownStyleSheet(
-        a: TextStyle(color: colors.accent, fontSize: 14),
-        p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
-        h1: TextStyle(
+    return Padding(
+      padding: const EdgeInsetsGeometry.symmetric(vertical: 6),
+      child: MarkdownBody(
+        data: text,
+        selectable: false,
+        softLineBreak: false,
+        builders: {
+          'latex': LatexElementBuilder(
+            textStyle: TextStyle(color: colors.textPrimary),
+          ),
+        },
+        checkboxBuilder: (bool checked) => Icon(
+          checked ? LucideIcons.squareCheckBig : LucideIcons.square,
+          size: 14,
           color: colors.textPrimary,
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
         ),
-        h2: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
+        extensionSet: md.ExtensionSet(
+          [...md.ExtensionSet.gitHubFlavored.blockSyntaxes, LatexBlockSyntax()],
+          [
+            ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+            LatexInlineSyntax(),
+          ],
         ),
-        h3: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
+        styleSheet: MarkdownStyleSheet(
+          a: TextStyle(color: colors.accent, fontSize: 14),
+          p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
+          h1: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+          h2: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+          h3: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          h4: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          h5: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          h6: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          code: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 14,
+            fontFamily: WorkspaceMetrics.monospaceFontFamily,
+          ),
+          codeblockDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AtlasRadii.surface),
+          ),
+          blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
+          blockquoteDecoration: BoxDecoration(
+            border: Border(left: BorderSide(color: colors.divider, width: 2)),
+          ),
+          blockquotePadding: const EdgeInsets.only(left: 12),
+          horizontalRuleDecoration: BoxDecoration(
+            border: Border(top: BorderSide(color: colors.divider)),
+          ),
+          listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
+          tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
+          checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
         ),
-        h4: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-        h5: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-        h6: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-        code: TextStyle(
-          color: colors.textPrimary,
-          fontSize: 14,
-          fontFamily: WorkspaceMetrics.monospaceFontFamily,
-        ),
-        codeblockDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AtlasRadii.surface),
-        ),
-        blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
-        blockquoteDecoration: BoxDecoration(
-          border: Border(left: BorderSide(color: colors.divider, width: 2)),
-        ),
-        blockquotePadding: const EdgeInsets.only(left: 12),
-        horizontalRuleDecoration: BoxDecoration(
-          border: Border(top: BorderSide(color: colors.divider)),
-        ),
-        listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
-        tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
-        checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
       ),
     );
   }
 }
 
-class _ToolExpansionTile extends StatelessWidget {
-  const _ToolExpansionTile({
+/// Collapsed activity row for reasoning and tool results.
+class _ActivityDisclosure extends StatefulWidget {
+  const _ActivityDisclosure({
     required this.icon,
     required this.title,
     required this.child,
+    this.isRunning = false,
+    this.isError = false,
   });
 
   final IconData icon;
   final Widget title;
   final Widget child;
+  final bool isRunning;
+  final bool isError;
+
+  @override
+  State<_ActivityDisclosure> createState() => _ActivityDisclosureState();
+}
+
+class _ActivityDisclosureState extends State<_ActivityDisclosure>
+    with TickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final AnimationController _expand;
+  var _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _expand =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 180),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.dismissed && mounted) {
+            setState(() {});
+          }
+        });
+    _syncPulse();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActivityDisclosure oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isRunning != widget.isRunning) {
+      _syncPulse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    _expand.dispose();
+    super.dispose();
+  }
+
+  void _syncPulse() {
+    if (widget.isRunning) {
+      _pulse.repeat(reverse: true);
+    } else {
+      _pulse.stop();
+      _pulse.value = 1;
+    }
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _expand.forward();
+    } else {
+      _expand.reverse();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: ListTileTheme(
-        mouseCursor: WidgetStatePropertyAll(SystemMouseCursors.basic),
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            dividerColor: Colors.transparent,
-            hoverColor: Colors.transparent,
-          ),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(left: 6),
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            minTileHeight: 16,
-            showTrailingIcon: false,
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Icon(icon, size: 14, color: colors.textSecondary),
-                const SizedBox(width: 8),
-                title,
-              ],
-            ),
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.only(left: 12),
-                decoration: BoxDecoration(
-                  border: BoxBorder.fromLTRB(
-                    left: BorderSide(color: colors.divider),
-                  ),
+    final titleColor = widget.isError ? colors.error : colors.textSecondary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectionContainer.disabled(
+            child: TextButton(
+              style: ButtonStyle(
+                padding: WidgetStatePropertyAll(
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 ),
-                child: child,
+                foregroundColor: WidgetStatePropertyAll(titleColor),
+                overlayColor: WidgetStatePropertyAll(colors.raised),
+                mouseCursor: WidgetStatePropertyAll(SystemMouseCursors.basic),
               ),
-            ],
+              onPressed: _toggle,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FadeTransition(
+                    opacity: widget.isRunning
+                        ? Tween<double>(begin: 0.35, end: 1).animate(
+                            CurvedAnimation(
+                              parent: _pulse,
+                              curve: Curves.easeInOut,
+                            ),
+                          )
+                        : const AlwaysStoppedAnimation(1),
+                    child: Icon(
+                      _expanded ? LucideIcons.chevronDown : widget.icon,
+                      size: 14,
+                      color: titleColor,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(child: widget.title),
+                ],
+              ),
+            ),
           ),
-        ),
+          SizeTransition(
+            sizeFactor: CurvedAnimation(
+              parent: _expand,
+              curve: Curves.easeOutCubic,
+            ),
+            alignment: Alignment.topLeft,
+            child: _expanded || _expand.isAnimating
+                ? Padding(
+                    padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border(left: BorderSide(color: colors.divider)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: widget.child,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -303,12 +398,15 @@ class _ReasoningMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return _ToolExpansionTile(
+    return _ActivityDisclosure(
       icon: LucideIcons.sparkle,
       title: Text(
         'Thinking',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(color: colors.textSecondary, fontSize: 12),
       ),
+      isRunning: message.isRunning,
       child: SelectableText(
         message.text,
         style: TextStyle(
@@ -321,63 +419,124 @@ class _ReasoningMessage extends StatelessWidget {
   }
 }
 
-class _ToolMessage extends StatelessWidget {
+class _ToolMessage extends ConsumerWidget {
   const _ToolMessage(this.message);
 
   final WorkspaceMessage message;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = AtlasColors.of(context);
-    final details = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(message.arguments ?? {});
-    final toolName = message.toolName ?? 'Tool';
-    final displayName = toolName.isEmpty
-        ? toolName
-        : toolName[0].toUpperCase() + toolName.substring(1);
-    return _ToolExpansionTile(
+    final workingDirectory = ref.watch(
+      workspaceProvider.select((s) => s.workingDirectory),
+    );
+    return _ActivityDisclosure(
       icon: _toolIcon(message.toolName),
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (message.isRunning) ...[
-            SizedBox.square(
-              dimension: 12,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: colors.textSecondary,
-              ),
-            ),
-            const SizedBox(width: 6),
-          ],
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 200),
-            child: Text(
-              displayName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: message.isError ? colors.error : colors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
+      title: _ToolTitle(
+        name: _displayToolName(message.toolName),
+        detail: _toolDetail(message, workingDirectory),
+        isError: message.isError,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (details != '{}') _CodeBlock(details),
-          if (details != '{}' && message.text.isNotEmpty)
-            const SizedBox(height: 8),
-          if (message.text.isNotEmpty) _CodeBlock(message.text),
-        ],
+      isRunning: message.isRunning,
+      isError: message.isError,
+      child: _toolBody(context, colors),
+    );
+  }
+
+  Widget _toolBody(BuildContext context, AtlasColors colors) {
+    if (message.toolName == 'plan') {
+      return _PlanResult(arguments: message.arguments);
+    }
+    if (message.text.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return SelectableText(
+      message.text,
+      style: TextStyle(
+        color: colors.textSecondary,
+        fontFamily: WorkspaceMetrics.monospaceFontFamily,
+        fontSize: 12,
+        height: 1.45,
       ),
     );
   }
 }
+
+class _PlanResult extends StatelessWidget {
+  const _PlanResult({required this.arguments});
+
+  final JsonObject? arguments;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final steps = _planSteps(arguments);
+    if (steps.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final step in steps)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    _planStatusIcon(step.status),
+                    size: 12,
+                    color: colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    step.step,
+                    style: TextStyle(
+                      color: colors.textSecondary,
+                      fontSize: 12,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+final class _PlanStep {
+  const _PlanStep({required this.step, required this.status});
+
+  final String step;
+  final String status;
+}
+
+List<_PlanStep> _planSteps(JsonObject? arguments) {
+  final raw = arguments?['plan'];
+  if (raw is! List) {
+    return const [];
+  }
+  return [
+    for (final item in raw)
+      if (item is Map && item['step'] is String)
+        _PlanStep(
+          step: item['step'] as String,
+          status: item['status'] is String ? item['status'] as String : '',
+        ),
+  ];
+}
+
+IconData _planStatusIcon(String status) => switch (status) {
+  'completed' => LucideIcons.check,
+  'in_progress' => LucideIcons.circleDot,
+  _ => LucideIcons.circle,
+};
 
 /// Maps a tool name to its display icon, falling back to a generic wrench.
 IconData _toolIcon(String? toolName) => switch (toolName) {
@@ -389,27 +548,93 @@ IconData _toolIcon(String? toolName) => switch (toolName) {
   _ => LucideIcons.wrench,
 };
 
-class _CodeBlock extends StatelessWidget {
-  const _CodeBlock(this.text);
+class _ToolTitle extends StatelessWidget {
+  const _ToolTitle({
+    required this.name,
+    required this.detail,
+    required this.isError,
+  });
 
-  final String text;
+  final String name;
+  final String? detail;
+  final bool isError;
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SelectableText(
-        text,
-        style: TextStyle(
-          color: colors.textSecondary,
-          fontFamily: WorkspaceMetrics.monospaceFontFamily,
-          fontSize: 12,
-          height: 1.45,
-        ),
+    final color = isError ? colors.error : colors.textSecondary;
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: name,
+            style: TextStyle(color: color, fontSize: 12),
+          ),
+          if (detail != null && detail!.isNotEmpty)
+            TextSpan(
+              text: ' ($detail)',
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontFamily: WorkspaceMetrics.monospaceFontFamily,
+              ),
+            ),
+        ],
       ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
+}
+
+String? _toolDetail(WorkspaceMessage message, String workingDirectory) {
+  final arguments = message.arguments ?? const <String, Object?>{};
+  switch (message.toolName) {
+    case 'read':
+    case 'write':
+    case 'edit':
+      final path = arguments['path'];
+      if (path is String && path.isNotEmpty) {
+        return _relativePath(path, workingDirectory);
+      }
+    case 'shell':
+      final command = arguments['command'];
+      if (command is String && command.isNotEmpty) {
+        return command.replaceAll(RegExp(r'\s+'), ' ');
+      }
+    case 'plan':
+      final steps = _planSteps(message.arguments);
+      if (steps.isNotEmpty) {
+        final completed = steps
+            .where((step) => step.status == 'completed')
+            .length;
+        return '$completed/${steps.length} completed';
+      }
+  }
+  return null;
+}
+
+String _displayToolName(String? toolName) {
+  final name = toolName ?? 'Tool';
+  if (name.isEmpty) {
+    return 'Tool';
+  }
+  return name[0].toUpperCase() + name.substring(1);
+}
+
+String _relativePath(String path, String workingDirectory) {
+  final normalizedPath = path.replaceAll('\\', '/');
+  final normalizedRoot = workingDirectory.replaceAll('\\', '/');
+  final root = normalizedRoot.endsWith('/')
+      ? normalizedRoot
+      : '$normalizedRoot/';
+  if (normalizedPath == normalizedRoot) {
+    return WorkspaceMetrics.directoryLabel(normalizedPath);
+  }
+  if (normalizedPath.startsWith(root)) {
+    return normalizedPath.substring(root.length);
+  }
+  return path;
 }
 
 class _NoticeMessage extends StatelessWidget {
