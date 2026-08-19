@@ -138,7 +138,7 @@ class _UserMessage extends StatelessWidget {
           borderRadius: BorderRadius.circular(AtlasRadii.surface),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        margin: const EdgeInsets.symmetric(vertical: 6),
+        margin: const EdgeInsets.symmetric(vertical: 12),
         child: SelectableText(
           text,
           style: TextStyle(
