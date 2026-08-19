@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -112,6 +113,36 @@ void main() {
     await settle(tester);
 
     expect(find.text('sub${Platform.pathSeparator}a.txt'), findsOneWidget);
+  });
+
+  testWidgets('file rows highlight with the raised color on hover', (
+    tester,
+  ) async {
+    File('${tempDir.path}/a.txt').writeAsStringSync('hello');
+
+    await pumpBrowser(tester);
+
+    AnimatedContainer rowSurface() => tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('a.txt'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    expect((rowSurface().decoration as BoxDecoration?)?.color, isNull);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.text('a.txt')));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      (rowSurface().decoration as BoxDecoration?)?.color,
+      AtlasColors.light.raised,
+    );
   });
 
   testWidgets('rejects oversized files', (tester) async {

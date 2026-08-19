@@ -200,7 +200,7 @@ class _FileBrowserState extends State<FileBrowser> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
       itemCount: _visibleNodes.length,
       itemBuilder: (context, index) => _buildRow(_visibleNodes[index], colors),
     );
@@ -208,62 +208,66 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Widget _buildRow(_TreeNode node, AtlasColors colors) {
     final isDirectory = node.entity is Directory;
-    return InkWell(
-      onTap: () =>
-          isDirectory ? _toggleNode(node) : _openFile(node.entity as File),
-      child: SizedBox(
-        height: 26,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 6, right: 8),
-          child: Row(
-            children: [
-              // One guide line per ancestor level, running the full row.
-              for (var depth = 0; depth < node.depth; depth++)
-                SizedBox(
-                  width: 12,
-                  height: double.infinity,
-                  child: CustomPaint(
-                    painter: _GuideLinePainter(
-                      color: colors.textSecondary.withValues(alpha: 0.45),
+    return WorkspaceHoverSurface(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () =>
+            isDirectory ? _toggleNode(node) : _openFile(node.entity as File),
+        child: SizedBox(
+          height: 26,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 6, right: 8),
+            child: Row(
+              children: [
+                // One guide line per ancestor level, running the full row.
+                for (var depth = 0; depth < node.depth; depth++)
+                  SizedBox(
+                    width: 12,
+                    height: double.infinity,
+                    child: CustomPaint(
+                      painter: _GuideLinePainter(
+                        color: colors.textSecondary.withValues(alpha: 0.45),
+                      ),
                     ),
                   ),
+                Icon(
+                  isDirectory
+                      ? (node.expanded
+                            ? LucideIcons.folderOpen
+                            : LucideIcons.folder)
+                      : LucideIcons.file,
+                  size: 15,
+                  color: colors.textPrimary,
                 ),
-              Icon(
-                isDirectory
-                    ? (node.expanded
-                          ? LucideIcons.folderOpen
-                          : LucideIcons.folder)
-                    : LucideIcons.file,
-                size: 15,
-                color: colors.textPrimary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  node.entity.path.split(Platform.pathSeparator).last,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: colors.textPrimary, fontSize: 12),
-                ),
-              ),
-              if (node.loading)
-                SizedBox.square(
-                  dimension: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    color: colors.accent,
-                  ),
-                )
-              else if (node.error != null)
-                Tooltip(
-                  message: node.error!,
-                  child: Icon(
-                    LucideIcons.triangleAlert,
-                    size: 14,
-                    color: colors.error,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    node.entity.path.split(Platform.pathSeparator).last,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: colors.textPrimary, fontSize: 12),
                   ),
                 ),
-            ],
+                if (node.loading)
+                  SizedBox.square(
+                    dimension: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: colors.accent,
+                    ),
+                  )
+                else if (node.error != null)
+                  Tooltip(
+                    message: node.error!,
+                    child: Icon(
+                      LucideIcons.triangleAlert,
+                      size: 14,
+                      color: colors.error,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

@@ -162,6 +162,37 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pump();
   });
+
+  testWidgets('send button shifts to the accent color on hover', (
+    tester,
+  ) async {
+    await _pumpComposer(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'hello',
+    );
+    await tester.pump();
+
+    AnimatedContainer surface() => tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: find.byKey(const ValueKey('atlas-send-button')),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    BoxDecoration? decoration() => surface().decoration as BoxDecoration?;
+    expect(decoration()?.color, AtlasColors.dark.textPrimary);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('atlas-send-button'))),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(decoration()?.color, AtlasColors.dark.accent);
+  });
 }
 
 /// Pumps the composer anchored at the bottom of the screen, as in the app.

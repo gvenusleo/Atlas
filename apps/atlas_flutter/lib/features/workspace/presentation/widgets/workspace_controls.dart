@@ -102,6 +102,69 @@ class _WorkspaceResizeHandleState extends State<WorkspaceResizeHandle> {
   }
 }
 
+/// Paints the workspace hover highlight behind its child.
+///
+/// While the pointer is over the child, [hoveredColor] (defaults to the
+/// raised surface color) fades in as a rounded background behind the child,
+/// matching the shared button hover interaction.
+class WorkspaceHoverSurface extends StatefulWidget {
+  /// Creates a hover-highlighted surface.
+  const WorkspaceHoverSurface({
+    super.key,
+    required this.child,
+    this.color,
+    this.hoveredColor,
+    this.borderRadius = const BorderRadius.all(
+      Radius.circular(AtlasRadii.control),
+    ),
+    this.enabled = true,
+  });
+
+  /// Background color while not hovered.
+  final Color? color;
+
+  /// Background color while hovered; defaults to the raised surface color.
+  final Color? hoveredColor;
+
+  /// Corner radius of the hover background.
+  final BorderRadiusGeometry borderRadius;
+
+  /// Whether hover tracking is active.
+  final bool enabled;
+
+  /// The child painted above the hover background.
+  final Widget child;
+
+  @override
+  State<WorkspaceHoverSurface> createState() => _WorkspaceHoverSurfaceState();
+}
+
+class _WorkspaceHoverSurfaceState extends State<WorkspaceHoverSurface> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return MouseRegion(
+      onEnter: widget.enabled ? (_) => setState(() => _hovered = true) : null,
+      onExit: widget.enabled ? (_) => setState(() => _hovered = false) : null,
+      child: AnimatedContainer(
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: _hovered
+              ? (widget.hoveredColor ?? colors.raised)
+              : widget.color,
+          borderRadius: widget.borderRadius,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 /// Cupertino toolbar action with Atlas hover and tooltip styling.
 class WorkspaceToolbarButton extends StatefulWidget {
   const WorkspaceToolbarButton({
@@ -126,49 +189,36 @@ class WorkspaceToolbarButton extends StatefulWidget {
 }
 
 class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
-  bool _hovered = false;
-
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final colors = AtlasColors.of(context);
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        duration: reduceMotion
-            ? Duration.zero
-            : const Duration(milliseconds: 120),
-        width: widget.size,
-        height: widget.size,
-        decoration: BoxDecoration(
-          color: widget.active || _hovered ? colors.raised : null,
-          borderRadius: BorderRadius.circular(AtlasRadii.control),
-        ),
-        child: Tooltip(
-          message: widget.tooltip,
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            constraints: BoxConstraints.tightFor(
-              width: widget.size,
-              height: widget.size,
+    return WorkspaceHoverSurface(
+      // Active buttons keep the highlight while not hovered.
+      color: widget.active ? colors.raised : null,
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(
+            width: widget.size,
+            height: widget.size,
+          ),
+          style: IconButton.styleFrom(
+            // The outer surface paints the hover/active background as a
+            // rounded rectangle; keep the button's own overlay transparent
+            // so it never draws a circular highlight on top.
+            overlayColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
             ),
-            style: IconButton.styleFrom(
-              // The outer container paints the hover/active background as a
-              // rounded rectangle; keep the button's own overlay transparent
-              // so it never draws a circular highlight on top.
-              overlayColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AtlasRadii.control),
-              ),
-            ),
-            onPressed: widget.onPressed,
-            icon: Icon(
-              widget.icon,
-              color: widget.active ? colors.textPrimary : colors.textSecondary,
-              size: 16,
-            ),
+          ),
+          onPressed: widget.onPressed,
+          icon: Icon(
+            widget.icon,
+            color: widget.active ? colors.textPrimary : colors.textSecondary,
+            size: 16,
           ),
         ),
       ),

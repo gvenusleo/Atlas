@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
+import 'workspace_controls.dart';
 import '../workspace_metrics.dart';
 
 /// Scrollable conversation transcript with streaming Markdown and disclosures.
@@ -345,37 +346,41 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SelectionContainer.disabled(
-            child: TextButton(
-              style: ButtonStyle(
-                padding: WidgetStatePropertyAll(
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                ),
-                foregroundColor: WidgetStatePropertyAll(titleColor),
-                overlayColor: WidgetStatePropertyAll(colors.raised),
-                mouseCursor: WidgetStatePropertyAll(SystemMouseCursors.basic),
-              ),
-              onPressed: _toggle,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FadeTransition(
-                    opacity: widget.isRunning
-                        ? Tween<double>(begin: 0.35, end: 1).animate(
-                            CurvedAnimation(
-                              parent: _pulse,
-                              curve: Curves.easeInOut,
-                            ),
-                          )
-                        : const AlwaysStoppedAnimation(1),
-                    child: Icon(
-                      _expanded ? LucideIcons.chevronDown : widget.icon,
-                      size: 14,
-                      color: titleColor,
-                    ),
+            child: WorkspaceHoverSurface(
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
+              child: TextButton(
+                style: ButtonStyle(
+                  padding: WidgetStatePropertyAll(
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(child: widget.title),
-                ],
+                  foregroundColor: WidgetStatePropertyAll(titleColor),
+                  overlayColor: const WidgetStatePropertyAll(
+                    Colors.transparent,
+                  ),
+                  mouseCursor: WidgetStatePropertyAll(SystemMouseCursors.basic),
+                ),
+                onPressed: _toggle,
+                child: Row(
+                  children: [
+                    FadeTransition(
+                      opacity: widget.isRunning
+                          ? Tween<double>(begin: 0.35, end: 1).animate(
+                              CurvedAnimation(
+                                parent: _pulse,
+                                curve: Curves.easeInOut,
+                              ),
+                            )
+                          : const AlwaysStoppedAnimation(1),
+                      child: Icon(
+                        _expanded ? LucideIcons.chevronDown : widget.icon,
+                        size: 14,
+                        color: titleColor,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(child: widget.title),
+                  ],
+                ),
               ),
             ),
           ),

@@ -10,6 +10,7 @@ import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
+import 'workspace_controls.dart';
 
 const _builtInCommands = <(String, String)>[
   ('compact', 'Compact the conversation'),
@@ -167,23 +168,21 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                               ),
                             Tooltip(
                               message: busy ? 'Stop' : 'Send',
-                              child: IconButton(
+                              child: WorkspaceHoverSurface(
                                 key: const ValueKey('atlas-send-button'),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 28,
-                                  height: 28,
+                                // Sending shifts to the accent color on hover.
+                                color: _canSend
+                                    ? colors.textPrimary
+                                    : colors.divider,
+                                hoveredColor: _canSend
+                                    ? colors.accent
+                                    : colors.divider,
+                                borderRadius: BorderRadius.circular(
+                                  AtlasRadii.control,
                                 ),
-                                onPressed: busy ? controller.cancel : _submit,
-                                icon: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: _canSend
-                                        ? colors.textPrimary
-                                        : colors.divider,
-                                    borderRadius: BorderRadius.circular(
-                                      AtlasRadii.control,
-                                    ),
-                                  ),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: busy ? controller.cancel : _submit,
                                   child: SizedBox.square(
                                     dimension: 28,
                                     child: Icon(
@@ -662,26 +661,30 @@ class _ModelMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return TextButton(
-      style: ButtonStyle(
-        padding: WidgetStatePropertyAll(
-          const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        ),
-      ),
-      onPressed: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.package, size: 12, color: colors.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            activeModel.name.isEmpty
-                ? activeModel.ref.modelId.value
-                : activeModel.name,
-            style: TextStyle(color: colors.textSecondary, fontSize: 12),
+    return WorkspaceHoverSurface(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: TextButton(
+        style: ButtonStyle(
+          padding: WidgetStatePropertyAll(
+            const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           ),
-        ],
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+        onPressed: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.package, size: 12, color: colors.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              activeModel.name.isEmpty
+                  ? activeModel.ref.modelId.value
+                  : activeModel.name,
+              style: TextStyle(color: colors.textSecondary, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -764,28 +767,32 @@ class _EffortMenu extends StatelessWidget {
         .where((effort) => effort.value == current)
         .map((effort) => effort.name.isEmpty ? effort.value : effort.name)
         .firstOrNull;
-    return TextButton(
-      style: ButtonStyle(
-        padding: WidgetStatePropertyAll(
-          const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        ),
-      ),
-      onPressed: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.brain, size: 12, color: colors.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            label ?? current,
-            style: TextStyle(
-              color: colors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+    return WorkspaceHoverSurface(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: TextButton(
+        style: ButtonStyle(
+          padding: WidgetStatePropertyAll(
+            const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           ),
-        ],
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+        onPressed: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.brain, size: 12, color: colors.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              label ?? current,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
