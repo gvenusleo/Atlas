@@ -41,6 +41,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   var _effortHighlighted = 0;
   var _modelOpen = false;
   var _effortOpen = false;
+  var _composing = false;
+  var _imeCommitPending = false;
 
   @override
   void initState() {
@@ -470,6 +472,16 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     }
     if (event.logicalKey == LogicalKeyboardKey.enter &&
         !HardwareKeyboard.instance.isShiftPressed) {
+      // IME confirmation uses Enter. Ignore it while composing so the engine
+      // can commit the candidate, and skip the key that follows compositionend
+      // on macOS in the same frame (composing is already false by then).
+      if (_composing) {
+        return KeyEventResult.ignored;
+      }
+      if (_imeCommitPending) {
+        _imeCommitPending = false;
+        return KeyEventResult.handled;
+      }
       _submit();
       return KeyEventResult.handled;
     }
@@ -503,6 +515,16 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   }
 
   void _onTextChanged() {
+    final composing = _textController.value.composing.isValid;
+    if (_composing && !composing) {
+      _imeCommitPending = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _imeCommitPending = false;
+        }
+      });
+    }
+    _composing = composing;
     setState(() {
       if (_selectedSuggestion != 0 || _suggestions.isNotEmpty) {
         _selectedSuggestion = 0;

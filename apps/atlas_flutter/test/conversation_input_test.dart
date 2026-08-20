@@ -9,6 +9,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:atlas_flutter/app/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
@@ -193,6 +195,90 @@ void main() {
 
     expect(decoration()?.color, AtlasColors.dark.accent);
   });
+
+  testWidgets('enter sends the prompt when the IME is idle', (tester) async {
+    await _pumpComposer(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'hello',
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final user = _workspaceOf(
+      tester,
+    ).messages.where((message) => message.kind == WorkspaceMessageKind.user);
+    expect(user, hasLength(1));
+    expect(user.first.text, 'hello');
+  });
+
+  testWidgets('enter does not send while the IME is composing', (tester) async {
+    await _pumpComposer(tester);
+    await tester.tap(find.byKey(const ValueKey('atlas-prompt-input')));
+    await tester.pump();
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+    );
+    field.controller!.value = const TextEditingValue(
+      text: 'nihao',
+      selection: TextSelection.collapsed(offset: 5),
+      composing: TextRange(start: 0, end: 5),
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(
+      _workspaceOf(
+        tester,
+      ).messages.where((message) => message.kind == WorkspaceMessageKind.user),
+      isEmpty,
+    );
+    expect(field.controller!.text, 'nihao');
+  });
+
+  testWidgets('enter after IME commit does not send in the same frame', (
+    tester,
+  ) async {
+    await _pumpComposer(tester);
+    await tester.tap(find.byKey(const ValueKey('atlas-prompt-input')));
+    await tester.pump();
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+    );
+    field.controller!.value = const TextEditingValue(
+      text: '你好',
+      selection: TextSelection.collapsed(offset: 2),
+      composing: TextRange(start: 0, end: 2),
+    );
+    await tester.pump();
+
+    // compositionend clears the composing range, then Enter arrives.
+    field.controller!.value = const TextEditingValue(
+      text: '你好',
+      selection: TextSelection.collapsed(offset: 2),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(
+      _workspaceOf(
+        tester,
+      ).messages.where((message) => message.kind == WorkspaceMessageKind.user),
+      isEmpty,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_workspaceOf(tester).messages.first.text, '你好');
+  });
+}
+
+WorkspaceState _workspaceOf(WidgetTester tester) {
+  return ProviderScope.containerOf(
+    tester.element(find.byType(ConversationInput)),
+  ).read(workspaceProvider);
 }
 
 /// Pumps the composer anchored at the bottom of the screen, as in the app.
