@@ -60,6 +60,64 @@ void main() {
     expect(response.toolCalls.single.arguments, isEmpty);
   });
 
+  test('pairs relay tool call arguments with the most recent call', () async {
+    // Some relays number id/name chunks and arguments chunks with unrelated
+    // indexes, so the arguments chunk must pair with the call whose identity
+    // chunk arrived most recently instead of opening a new slot.
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":""}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"q\\":\\"x\\"}"}}]}}]}',
+        '{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        '[DONE]',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.chatCompletions,
+    ).stream(_request()).toList();
+
+    final response = (events.last as ModelCompletedEvent).response;
+    expect(response.stopReason, StopReason.toolUse);
+    final call = response.toolCalls.single;
+    expect(call.id.value, 'call-1');
+    expect(call.name, 'lookup');
+    expect(call.arguments['q'], 'x');
+  });
+
+  test('pairs parallel relay tool calls with interleaved indexes', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":""}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"q\\":\\"a\\"}"}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":2,"id":"call-2","function":{"name":"inspect","arguments":""}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"path\\":\\".\\"}"}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":3,"id":"call-3","function":{"name":"lookup","arguments":""}}]}}]}',
+        '{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"q\\":\\"b\\"}"}}]}}]}',
+        '{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        '[DONE]',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.chatCompletions,
+    ).stream(_request()).toList();
+
+    final response = (events.last as ModelCompletedEvent).response;
+    expect(response.stopReason, StopReason.toolUse);
+    expect(response.toolCalls, hasLength(3));
+    expect(response.toolCalls[0].name, 'lookup');
+    expect(response.toolCalls[0].arguments['q'], 'a');
+    expect(response.toolCalls[1].name, 'inspect');
+    expect(response.toolCalls[1].arguments['path'], '.');
+    expect(response.toolCalls[2].name, 'lookup');
+    expect(response.toolCalls[2].arguments['q'], 'b');
+  });
+
   test(
     'reports malformed Chat Completions tool arguments as a provider error',
     () async {

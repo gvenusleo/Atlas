@@ -17,6 +17,7 @@ final class ChatParser implements StreamParser {
   final _reasoning = StringBuffer();
   final _content = StringBuffer();
   final _tools = <int, _ToolAccumulator>{};
+  _ToolAccumulator? _lastTool;
   TokenUsage _usage = const TokenUsage();
   String? _finishReason;
   bool _sawEvent = false;
@@ -52,12 +53,28 @@ final class ChatParser implements StreamParser {
         final call = asJsonMap(raw);
         final index = call['index'] as int? ?? 0;
         final function = asJsonMap(call['function']);
-        final accumulator = _tools.putIfAbsent(index, _ToolAccumulator.new);
         final id = call['id'];
-        if (id is String && id.isNotEmpty) accumulator.id = id;
         final name = function['name'];
+        var accumulator = _tools[index];
+        if (accumulator == null) {
+          // Some relays number id/name chunks and arguments chunks with
+          // unrelated indexes, so an arguments-only chunk may not match
+          // the slot of its call. Pair it with the most recently started
+          // call instead of opening a new slot.
+          final startsCall =
+              id is String && id.isNotEmpty ||
+              name is String && name.isNotEmpty;
+          if (startsCall || _lastTool == null) {
+            accumulator = _ToolAccumulator();
+            _tools[index] = accumulator;
+          } else {
+            accumulator = _lastTool!;
+          }
+        }
+        if (id is String && id.isNotEmpty) accumulator.id = id;
         if (name is String && name.isNotEmpty) accumulator.name = name;
         accumulator.arguments.write(function['arguments'] as String? ?? '');
+        _lastTool = accumulator;
       }
     }
     final finish = choice['finish_reason'];
@@ -80,7 +97,11 @@ final class ChatParser implements StreamParser {
       if (id == null || name == null) {
         throw OpenAIProviderException(
           providerId: providerId,
-          message: 'chat stream returned an incomplete tool call',
+          message:
+              'chat stream returned an incomplete tool call: '
+              'index ${entry.key} is missing '
+              '${[if (id == null) 'id', if (name == null) 'name'].join(' and ')}'
+              ' (${call.arguments.length} argument characters received)',
         );
       }
       final argumentsText = call.arguments.toString();
