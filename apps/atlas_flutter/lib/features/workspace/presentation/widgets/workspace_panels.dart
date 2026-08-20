@@ -138,9 +138,8 @@ class _SessionListState extends ConsumerState<_SessionList> {
     if (directory == null || !mounted) {
       return;
     }
-    ref.read(workspaceWorkingDirectoryProvider.notifier).set(directory);
     final controller = ref.read(workspaceProvider.notifier);
-    controller.newSession();
+    controller.newSession(workingDirectory: directory);
     unawaited(controller.refreshSessions());
   }
 
@@ -245,7 +244,12 @@ class _SessionListState extends ConsumerState<_SessionList> {
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final sessions = ref.watch(workspaceProvider.select((s) => s.sessions));
-    final busy = ref.watch(workspaceProvider.select((s) => s.busy));
+    final runningIds = ref.watch(
+      workspaceProvider.select((s) => s.runningSessionIds),
+    );
+    final completedIds = ref.watch(
+      workspaceProvider.select((s) => s.completedSessionIds),
+    );
     final loading = ref.watch(
       workspaceProvider.select((s) => s.loadingSessions),
     );
@@ -352,7 +356,10 @@ class _SessionListState extends ConsumerState<_SessionList> {
                             _SessionTile(
                               session: session,
                               selected: session.id == sessionId,
-                              busy: busy,
+                              running: runningIds.contains(session.id),
+                              completed:
+                                  session.id != sessionId &&
+                                  completedIds.contains(session.id),
                               onTap: () async {
                                 await controller.resume(session.id);
                                 widget.onClose?.call();
@@ -441,7 +448,8 @@ class _SessionTile extends StatefulWidget {
   const _SessionTile({
     required this.session,
     required this.selected,
-    required this.busy,
+    required this.running,
+    required this.completed,
     required this.onTap,
     required this.onRename,
     required this.onDelete,
@@ -449,7 +457,8 @@ class _SessionTile extends StatefulWidget {
 
   final SessionSummary session;
   final bool selected;
-  final bool busy;
+  final bool running;
+  final bool completed;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
@@ -521,7 +530,7 @@ class _SessionTileState extends State<_SessionTile> {
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: widget.busy ? null : widget.onTap,
+          onTap: widget.onTap,
           onSecondaryTapUp: (details) {
             _menuController.open(position: details.localPosition);
           },
@@ -532,15 +541,30 @@ class _SessionTileState extends State<_SessionTile> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  session.title.isEmpty ? 'Untitled session' : session.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        session.title.isEmpty
+                            ? 'Untitled session'
+                            : session.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (widget.running || widget.completed) ...[
+                      const SizedBox(width: 6),
+                      _SessionStatusMark(
+                        sessionId: session.id,
+                        running: widget.running,
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -601,6 +625,39 @@ class _SessionTileState extends State<_SessionTile> {
   }
 }
 
+/// Quiet status mark to the right of a session title.
+class _SessionStatusMark extends StatelessWidget {
+  const _SessionStatusMark({required this.sessionId, required this.running});
+
+  final SessionId sessionId;
+  final bool running;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return SizedBox.square(
+      dimension: 10,
+      child: running
+          ? CircularProgressIndicator(
+              key: ValueKey('session-running-${sessionId.value}'),
+              strokeWidth: 1.5,
+              color: colors.textSecondary,
+            )
+          : Center(
+              child: Container(
+                key: ValueKey('session-completed-${sessionId.value}'),
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: colors.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+    );
+  }
+}
+
 /// Files and terminal sidebar used by desktop panels and compact drawers.
 class DetailsPanel extends ConsumerStatefulWidget {
   /// Creates workspace tools.
@@ -641,6 +698,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
     final workingDirectory = ref.watch(
       workspaceProvider.select((s) => s.workingDirectory),
     );
+    final sessionKey = ref.watch(workspaceProvider.select((s) => s.activeKey));
     return _SidePanel(
       semanticLabel: 'Workspace tools',
       compact: widget.onClose != null,
@@ -665,9 +723,15 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       child: IndexedStack(
         index: _terminal ? 1 : 0,
         children: [
-          FileBrowser(workingDirectory: workingDirectory),
+          FileBrowserHost(
+            sessionKey: sessionKey,
+            workingDirectory: workingDirectory,
+          ),
           if (_terminalCreated)
-            TerminalPanel(workingDirectory: workingDirectory)
+            TerminalHost(
+              sessionKey: sessionKey,
+              workingDirectory: workingDirectory,
+            )
           else
             const SizedBox.shrink(),
         ],
@@ -888,10 +952,18 @@ class _WorkspaceBody extends ConsumerWidget {
         message: error ?? 'Atlas runtime is not configured.',
       );
     }
-    return const Column(
+    final sessionKey = ref.watch(
+      workspaceProvider.select((state) => state.activeKey),
+    );
+    return Column(
       children: [
-        Expanded(child: ConversationView()),
-        Align(alignment: Alignment.center, child: ConversationInput()),
+        Expanded(
+          child: ConversationView(key: ValueKey('transcript-$sessionKey')),
+        ),
+        Align(
+          alignment: Alignment.center,
+          child: ConversationInput(key: ValueKey('composer-$sessionKey')),
+        ),
       ],
     );
   }

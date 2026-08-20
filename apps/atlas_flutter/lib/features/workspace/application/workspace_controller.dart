@@ -25,9 +25,14 @@ class WorkspaceWorkingDirectory extends Notifier<String> {
 
 /// Coordinates one Flutter workspace with the injected shared runtime.
 final class WorkspaceController extends Notifier<WorkspaceState> {
-  CancellationToken? _cancellation;
-  int _localId = 0;
-  bool _streamOpen = false;
+  final _cancellations = <String, CancellationToken>{};
+  final _streamOpen = <String, bool>{};
+  final _recentKeys = <String>[];
+  var _localId = 0;
+  var _draftSerial = 0;
+
+  /// Idle session caches kept besides the focused and running ones.
+  static const _maxIdleWorkspaces = 8;
 
   /// Runtime services supplied by the application composition root.
   RuntimeEnvironment get _environment =>
@@ -45,21 +50,27 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     if (environment == null) {
       throw StateError('workspaceProvider requires a composed runtime');
     }
-    final workingDirectory = ref.watch(workspaceWorkingDirectoryProvider);
     final activeModel = _descriptorFor(environment.runtime.defaultModel);
-    ref.onDispose(() => _cancellation?.cancel());
+    ref.onDispose(_cancelAll);
+    final draftKey = _nextDraftKey();
     return WorkspaceState(
-      messages: const [],
+      activeKey: draftKey,
+      workspaces: {
+        draftKey: SessionWorkspace(
+          workingDirectory: ref.read(workspaceWorkingDirectoryProvider),
+        ),
+      },
       sessions: const [],
       activeModel: activeModel,
-      workingDirectory: workingDirectory,
       reasoningEffort: activeModel.reasoningEfforts.firstOrNull?.value,
     );
   }
 
   /// Loads every persisted session across all directories, newest first.
-  Future<void> refreshSessions() async {
-    state = state.copyWith(loadingSessions: true);
+  Future<void> refreshSessions({bool showLoading = true}) async {
+    if (showLoading) {
+      state = state.copyWith(loadingSessions: true);
+    }
     try {
       final sessions = <SessionSummary>[];
       String? cursor;
@@ -73,42 +84,73 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       } while (cursor != null && sessions.length < 500);
       state = state.copyWith(sessions: sessions, loadingSessions: false);
     } catch (error) {
-      _append(WorkspaceMessageKind.error, 'Cannot load sessions: $error');
+      _append(
+        state.activeKey,
+        WorkspaceMessageKind.error,
+        'Cannot load sessions: $error',
+      );
       state = state.copyWith(loadingSessions: false);
     }
   }
 
-  /// Clears the transcript so the next prompt creates a new session.
-  void newSession() {
-    if (state.busy) {
+  /// Focuses a new draft so the next prompt creates a new session.
+  ///
+  /// Running sessions keep their cached transcripts and continue in the
+  /// background. [workingDirectory] defaults to the focused session's directory.
+  void newSession({String? workingDirectory}) {
+    final directory = workingDirectory ?? state.workingDirectory;
+    if (state.sessionId == null &&
+        state.messages.isEmpty &&
+        state.active.draft.isEmpty &&
+        !state.busy &&
+        state.workingDirectory == directory) {
       return;
     }
-    _streamOpen = false;
-    state = state.copyWith(
-      messages: const [],
-      sessionId: null,
-      contextTokens: 0,
-      hasImages: false,
-    );
+    if (workingDirectory != null) {
+      ref.read(workspaceWorkingDirectoryProvider.notifier).set(directory);
+    }
+    final draftKey = _nextDraftKey();
+    final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
+    _dropEmptyActiveDraft(workspaces);
+    workspaces[draftKey] = SessionWorkspace(workingDirectory: directory);
+    _touch(draftKey);
+    _evictIdle(workspaces, keepKey: draftKey);
+    state = state.copyWith(activeKey: draftKey, workspaces: workspaces);
   }
 
-  /// Loads a persisted session and reconstructs its ordered timeline.
+  /// Loads a persisted session, or focuses it when its cache is already warm.
   Future<void> resume(SessionId id) async {
-    if (state.busy || id == state.sessionId) {
+    final cachedKey = _keyForSession(id);
+    if (cachedKey != null) {
+      final cached = state.workspaces[cachedKey]!;
+      _focus(cachedKey, cached.workingDirectory);
       return;
     }
     try {
       final snapshot = await _environment.runtime.loadSession(id);
-      _streamOpen = false;
-      state = state.copyWith(
-        messages: _messagesFromTimeline(snapshot.timeline),
+      final workspace = SessionWorkspace(
         sessionId: snapshot.session.id,
         workingDirectory: snapshot.session.workingDirectory,
+        messages: _messagesFromTimeline(snapshot.timeline),
         contextTokens: snapshot.session.lastUsage.totalTokens,
         hasImages: _timelineHasImages(snapshot.timeline),
       );
+      final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
+      workspaces[id.value] = workspace;
+      _dropEmptyActiveDraft(workspaces);
+      _streamOpen[id.value] = false;
+      _touch(id.value);
+      _evictIdle(workspaces, keepKey: id.value);
+      state = state.copyWith(activeKey: id.value, workspaces: workspaces);
+      ref
+          .read(workspaceWorkingDirectoryProvider.notifier)
+          .set(snapshot.session.workingDirectory);
     } catch (error) {
-      _append(WorkspaceMessageKind.error, 'Cannot resume session: $error');
+      _append(
+        state.activeKey,
+        WorkspaceMessageKind.error,
+        'Cannot resume session: $error',
+      );
     }
   }
 
@@ -118,25 +160,36 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       await _environment.runtime.renameSession(id, title);
       await refreshSessions();
     } catch (error) {
-      _append(WorkspaceMessageKind.error, 'Cannot rename session: $error');
+      _append(
+        state.activeKey,
+        WorkspaceMessageKind.error,
+        'Cannot rename session: $error',
+      );
     }
   }
 
-  /// Deletes a persisted session and resets the workspace if it was active.
+  /// Deletes a persisted session, cancelling it when a turn is in flight.
   Future<void> deleteSession(SessionId id) async {
+    final key = _keyForSession(id) ?? id.value;
+    _cancellations.remove(key)?.cancel();
+    _streamOpen.remove(key);
+    _recentKeys.remove(key);
     try {
       await _environment.runtime.deleteSession(id);
-      if (state.sessionId == id) {
-        state = state.copyWith(
-          messages: const [],
-          sessionId: null,
-          contextTokens: 0,
-          hasImages: false,
-        );
+      final workspaces = Map<String, SessionWorkspace>.from(state.workspaces)
+        ..remove(key);
+      var activeKey = state.activeKey;
+      if (activeKey == key) {
+        activeKey = _ensureDraft(workspaces, state.workingDirectory);
       }
+      state = state.copyWith(activeKey: activeKey, workspaces: workspaces);
       await refreshSessions();
     } catch (error) {
-      _append(WorkspaceMessageKind.error, 'Cannot delete session: $error');
+      _append(
+        state.activeKey,
+        WorkspaceMessageKind.error,
+        'Cannot delete session: $error',
+      );
     }
   }
 
@@ -150,6 +203,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         !model.inputCapabilities.contains(ModelInputCapability.image)) {
       final label = model.name.isEmpty ? model.ref.modelId.value : model.name;
       _append(
+        state.activeKey,
         WorkspaceMessageKind.notice,
         '$label does not support images; images in this conversation will be omitted.',
       );
@@ -159,6 +213,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   /// Changes the provider-local reasoning effort for subsequent turns.
   void selectReasoningEffort(String? effort) {
     state = state.copyWith(reasoningEffort: effort);
+  }
+
+  /// Stores unsent composer text on the focused session.
+  void setDraft(String text) {
+    _patch(state.activeKey, (workspace) => workspace.copyWith(draft: text));
   }
 
   /// Submits a prompt or executes a TUI-compatible slash command.
@@ -171,39 +230,47 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       return;
     }
 
+    var key = state.activeKey;
     final cancellation = CancellationToken();
-    _cancellation = cancellation;
-    _streamOpen = false;
-    state = state.copyWith(busy: true);
-    _append(WorkspaceMessageKind.user, text);
+    _cancellations[key] = cancellation;
+    _streamOpen[key] = false;
+    _patch(key, (workspace) => workspace.copyWith(busy: true, draft: ''));
+    _append(key, WorkspaceMessageKind.user, text);
     try {
       await for (final event in _environment.runtime.run(
         TurnRequest(
           content: [TextContent(text)],
-          sessionId: state.sessionId,
-          workingDirectory: state.workingDirectory,
+          sessionId: state.workspaces[key]?.sessionId,
+          workingDirectory:
+              state.workspaces[key]?.workingDirectory ?? state.workingDirectory,
           model: state.activeModel.ref,
           reasoningEffort: state.reasoningEffort,
           skills: _selectedSkills(text),
           cancellation: cancellation,
         ),
       )) {
-        _handleEvent(event);
+        key = _applyEvent(key, event);
       }
     } on TurnCancelledException {
-      _append(WorkspaceMessageKind.notice, 'Turn cancelled');
+      _append(key, WorkspaceMessageKind.notice, 'Turn cancelled');
     } catch (error) {
-      _append(WorkspaceMessageKind.error, 'Turn failed: $error');
+      _append(key, WorkspaceMessageKind.error, 'Turn failed: $error');
     } finally {
-      _cancellation = null;
-      _streamOpen = false;
-      state = state.copyWith(busy: false);
-      await refreshSessions();
+      _cancellations.remove(key);
+      _streamOpen[key] = false;
+      _patch(
+        key,
+        (workspace) => workspace.copyWith(
+          busy: false,
+          hasCompletedTurn: state.activeKey != key,
+        ),
+      );
+      await refreshSessions(showLoading: false);
     }
   }
 
-  /// Cancels the active runtime operation.
-  void cancel() => _cancellation?.cancel();
+  /// Cancels the focused session's runtime operation.
+  void cancel() => _cancellations[state.activeKey]?.cancel();
 
   Future<bool> _handleSlashCommand(String text) async {
     final parts = text.split(RegExp(r'\s+'));
@@ -220,6 +287,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       case '/resume':
         if (parts.length < 2) {
           _append(
+            state.activeKey,
             WorkspaceMessageKind.notice,
             'Select a session from the sidebar or provide its id.',
           );
@@ -229,6 +297,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         return true;
       case '/model':
         _append(
+          state.activeKey,
           WorkspaceMessageKind.notice,
           'Choose a model from the input toolbar.',
         );
@@ -241,103 +310,141 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   Future<void> _compact(String instruction) async {
     final id = state.sessionId;
     if (id == null || state.busy) {
-      _append(WorkspaceMessageKind.notice, 'No session to compact.');
+      _append(
+        state.activeKey,
+        WorkspaceMessageKind.notice,
+        'No session to compact.',
+      );
       return;
     }
+    var key = state.activeKey;
     final cancellation = CancellationToken();
-    _cancellation = cancellation;
-    state = state.copyWith(busy: true);
+    _cancellations[key] = cancellation;
+    _patch(key, (workspace) => workspace.copyWith(busy: true));
     try {
       await for (final event in _environment.runtime.compact(
         id,
         instruction: instruction.isEmpty ? null : instruction,
         cancellation: cancellation,
       )) {
-        _handleEvent(event);
+        key = _applyEvent(key, event);
       }
     } catch (error) {
-      _append(WorkspaceMessageKind.error, 'Compaction failed: $error');
+      _append(key, WorkspaceMessageKind.error, 'Compaction failed: $error');
     } finally {
-      _cancellation = null;
-      state = state.copyWith(busy: false);
+      _cancellations.remove(key);
+      _patch(
+        key,
+        (workspace) => workspace.copyWith(
+          busy: false,
+          hasCompletedTurn: state.activeKey != key,
+        ),
+      );
     }
   }
 
-  void _handleEvent(AgentEvent event) {
+  String _applyEvent(String key, AgentEvent event) {
+    var target = _keyForSession(event.sessionId) ?? key;
+    if (event is TurnStarted) {
+      unawaited(refreshSessions(showLoading: false));
+    }
     switch (event) {
       case TurnStarted():
-        state = state.copyWith(sessionId: event.sessionId);
+        _patch(
+          target,
+          (workspace) => workspace.copyWith(sessionId: event.sessionId),
+        );
       case ModelTextDelta(:final delta):
-        _finishRunningReasoning();
-        _appendDelta(WorkspaceMessageKind.assistant, delta);
+        _finishRunningReasoning(target);
+        _appendDelta(target, WorkspaceMessageKind.assistant, delta);
       case ModelReasoningDelta(:final delta):
-        _appendDelta(WorkspaceMessageKind.reasoning, delta);
+        _appendDelta(target, WorkspaceMessageKind.reasoning, delta);
       case ToolStarted(:final call):
-        _finishRunningReasoning();
-        _streamOpen = false;
-        state = state.copyWith(
-          messages: [
-            ...state.messages,
-            WorkspaceMessage(
-              id: call.call.id.value,
-              kind: WorkspaceMessageKind.tool,
-              text: '',
-              toolName: call.call.name,
-              arguments: call.call.arguments,
-              startedAt: DateTime.now(),
-              isRunning: true,
-            ),
-          ],
-        );
+        _finishRunningReasoning(target);
+        _streamOpen[target] = false;
+        _patch(target, (workspace) {
+          return workspace.copyWith(
+            messages: [
+              ...workspace.messages,
+              WorkspaceMessage(
+                id: call.call.id.value,
+                kind: WorkspaceMessageKind.tool,
+                text: '',
+                toolName: call.call.name,
+                arguments: call.call.arguments,
+                startedAt: DateTime.now(),
+                isRunning: true,
+              ),
+            ],
+          );
+        });
       case ToolFinished(:final result):
-        final index = state.messages.lastIndexWhere(
-          (message) =>
-              message.kind == WorkspaceMessageKind.tool && message.isRunning,
-        );
-        if (index >= 0) {
-          final messages = [...state.messages];
+        _streamOpen[target] = false;
+        _patch(target, (workspace) {
+          final index = workspace.messages.lastIndexWhere(
+            (message) =>
+                message.kind == WorkspaceMessageKind.tool && message.isRunning,
+          );
+          if (index < 0) {
+            return workspace;
+          }
+          final messages = [...workspace.messages];
           messages[index] = messages[index].copyWith(
             text: result.content,
             isError: result.isError,
             isRunning: false,
           );
-          state = state.copyWith(messages: messages);
-        }
-        _streamOpen = false;
+          return workspace.copyWith(messages: messages);
+        });
       case TurnFinished(:final outcome):
-        _finishRunningReasoning();
-        _streamOpen = false;
+        _finishRunningReasoning(target);
+        _streamOpen[target] = false;
         if (outcome.status == TurnStatus.cancelled) {
-          _append(WorkspaceMessageKind.notice, 'Turn cancelled');
+          _append(target, WorkspaceMessageKind.notice, 'Turn cancelled');
         } else if (outcome.failure != null) {
-          _append(WorkspaceMessageKind.error, outcome.failure!.message);
+          _append(target, WorkspaceMessageKind.error, outcome.failure!.message);
         }
-        state = state.copyWith(contextTokens: outcome.usage.totalTokens);
+        _patch(
+          target,
+          (workspace) =>
+              workspace.copyWith(contextTokens: outcome.usage.totalTokens),
+        );
       case CompactionFinished(:final checkpoint):
-        state = state.copyWith(contextTokens: checkpoint.inputTokensAfter);
+        _patch(
+          target,
+          (workspace) =>
+              workspace.copyWith(contextTokens: checkpoint.inputTokensAfter),
+        );
         _append(
+          target,
           WorkspaceMessageKind.notice,
           'Context compacted, kept ${checkpoint.keptRecentMessages} recent messages.',
         );
       case CompactionFailed(:final message):
-        _append(WorkspaceMessageKind.error, 'Compaction failed: $message');
+        _append(
+          target,
+          WorkspaceMessageKind.error,
+          'Compaction failed: $message',
+        );
       default:
         break;
     }
+    return target;
   }
 
-  void _appendDelta(WorkspaceMessageKind kind, String delta) {
-    final messages = state.messages;
-    final last = messages.lastOrNull;
-    if (_streamOpen && last?.kind == kind) {
-      state = state.copyWith(
-        messages: [
-          ...messages.sublist(0, messages.length - 1),
-          last!.copyWith(text: last.text + delta),
-        ],
-      );
-    } else {
-      state = state.copyWith(
+  void _appendDelta(String key, WorkspaceMessageKind kind, String delta) {
+    _patch(key, (workspace) {
+      final messages = workspace.messages;
+      final last = messages.lastOrNull;
+      if ((_streamOpen[key] ?? false) && last?.kind == kind) {
+        return workspace.copyWith(
+          messages: [
+            ...messages.sublist(0, messages.length - 1),
+            last!.copyWith(text: last.text + delta),
+          ],
+        );
+      }
+      return workspace.copyWith(
         messages: [
           ...messages,
           WorkspaceMessage(
@@ -351,33 +458,123 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           ),
         ],
       );
-    }
-    _streamOpen = true;
+    });
+    _streamOpen[key] = true;
   }
 
-  void _append(WorkspaceMessageKind kind, String text) {
-    _streamOpen = false;
-    state = state.copyWith(
-      messages: [
-        ...state.messages,
-        WorkspaceMessage(id: _nextId(), kind: kind, text: text),
-      ],
-    );
+  void _append(String key, WorkspaceMessageKind kind, String text) {
+    _streamOpen[key] = false;
+    _patch(key, (workspace) {
+      return workspace.copyWith(
+        messages: [
+          ...workspace.messages,
+          WorkspaceMessage(id: _nextId(), kind: kind, text: text),
+        ],
+      );
+    });
   }
 
   /// Marks the latest streaming reasoning item complete.
-  void _finishRunningReasoning() {
-    final index = state.messages.lastIndexWhere(
-      (message) =>
-          message.kind == WorkspaceMessageKind.reasoning && message.isRunning,
-    );
-    if (index < 0) {
+  void _finishRunningReasoning(String key) {
+    _patch(key, (workspace) {
+      final index = workspace.messages.lastIndexWhere(
+        (message) =>
+            message.kind == WorkspaceMessageKind.reasoning && message.isRunning,
+      );
+      if (index < 0) {
+        return workspace;
+      }
+      final messages = [...workspace.messages];
+      messages[index] = messages[index].copyWith(isRunning: false);
+      return workspace.copyWith(messages: messages);
+    });
+  }
+
+  void _patch(
+    String key,
+    SessionWorkspace Function(SessionWorkspace workspace) update,
+  ) {
+    final current = state.workspaces[key];
+    if (current == null) {
       return;
     }
-    final messages = [...state.messages];
-    messages[index] = messages[index].copyWith(isRunning: false);
-    state = state.copyWith(messages: messages);
+    final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
+    workspaces[key] = update(current);
+    state = state.copyWith(workspaces: workspaces);
   }
+
+  String? _keyForSession(SessionId id) {
+    for (final entry in state.workspaces.entries) {
+      if (entry.value.sessionId == id || entry.key == id.value) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  void _focus(String key, String workingDirectory) {
+    _patch(key, (workspace) => workspace.copyWith(hasCompletedTurn: false));
+    _touch(key);
+    final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
+    _evictIdle(workspaces, keepKey: key);
+    state = state.copyWith(activeKey: key, workspaces: workspaces);
+    ref.read(workspaceWorkingDirectoryProvider.notifier).set(workingDirectory);
+  }
+
+  void _dropEmptyActiveDraft(Map<String, SessionWorkspace> workspaces) {
+    final active = workspaces[state.activeKey];
+    if (active != null &&
+        active.sessionId == null &&
+        active.messages.isEmpty &&
+        active.draft.isEmpty &&
+        !active.busy) {
+      workspaces.remove(state.activeKey);
+      _recentKeys.remove(state.activeKey);
+    }
+  }
+
+  void _touch(String key) {
+    _recentKeys.remove(key);
+    _recentKeys.add(key);
+  }
+
+  void _evictIdle(
+    Map<String, SessionWorkspace> workspaces, {
+    required String keepKey,
+  }) {
+    final idle = [
+      for (final key in _recentKeys)
+        if (key != keepKey &&
+            workspaces[key] != null &&
+            !(workspaces[key]!.busy) &&
+            workspaces[key]!.draft.isEmpty)
+          key,
+    ];
+    while (idle.length > _maxIdleWorkspaces) {
+      final evicted = idle.removeAt(0);
+      workspaces.remove(evicted);
+      _recentKeys.remove(evicted);
+      _streamOpen.remove(evicted);
+    }
+  }
+
+  String _ensureDraft(
+    Map<String, SessionWorkspace> workspaces,
+    String workingDirectory,
+  ) {
+    final draftKey = _nextDraftKey();
+    workspaces[draftKey] = SessionWorkspace(workingDirectory: workingDirectory);
+    return draftKey;
+  }
+
+  void _cancelAll() {
+    for (final token in _cancellations.values) {
+      token.cancel();
+    }
+    _cancellations.clear();
+  }
+
+  String _nextDraftKey() => 'draft-${_draftSerial++}';
 
   String _nextId() => 'local-${_localId++}';
 

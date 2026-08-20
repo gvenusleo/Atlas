@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:atlas_flutter/app/atlas_app.dart';
 import 'package:atlas_flutter/app/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
@@ -106,7 +108,7 @@ void main() {
 
       final controller = container.read(workspaceProvider.notifier);
       await controller.send('first session');
-      container.read(workspaceWorkingDirectoryProvider.notifier).set('/tmp2');
+      controller.newSession(workingDirectory: '/tmp2');
       await controller.send('second session');
       await controller.refreshSessions();
 
@@ -310,6 +312,105 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     }
   });
+
+  testWidgets(
+    'session tile shows a running indicator while a turn is in flight',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1200, 760);
+        addTearDown(tester.view.reset);
+
+        final model = ModelDescriptor(
+          ref: ModelRef(
+            providerId: ProviderId('test'),
+            modelId: ModelId('streaming'),
+          ),
+          name: 'Streaming test model',
+          reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+        );
+        final store = DriftSessionStore.inMemory();
+        final provider = _BlockingProvider(model.ref);
+        final runtime = AgentRuntime(
+          store: store,
+          provider: provider,
+          tools: LocalToolRegistry(const []),
+          ids: SecureIdGenerator(),
+          defaultModel: model.ref,
+        );
+        final container = ProviderContainer(
+          overrides: [
+            runtimeEnvironmentProvider.overrideWithValue(
+              RuntimeEnvironment(
+                runtime: runtime,
+                models: [model],
+                skills: _EmptySkillCatalog(),
+              ),
+            ),
+            workspaceWorkingDirectoryProvider.overrideWith(
+              () => _FixedWorkingDirectory('/tmp'),
+            ),
+          ],
+        );
+        addTearDown(store.close);
+        addTearDown(container.dispose);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: buildAtlasTheme(Brightness.light),
+              home: const Scaffold(body: SessionsPanel()),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final controller = container.read(workspaceProvider.notifier);
+        final turn = controller.send('first session');
+        await provider.firstStarted.future;
+        await tester.pump();
+        final sessionId = container.read(workspaceProvider).sessionId!;
+        expect(
+          find.byKey(ValueKey('session-running-${sessionId.value}')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(ValueKey('session-completed-${sessionId.value}')),
+          findsNothing,
+        );
+
+        controller.newSession();
+        await tester.pump();
+        expect(
+          find.byKey(ValueKey('session-running-${sessionId.value}')),
+          findsOneWidget,
+        );
+
+        provider.releaseFirst.complete();
+        await turn;
+        await tester.pump();
+        expect(
+          find.byKey(ValueKey('session-running-${sessionId.value}')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(ValueKey('session-completed-${sessionId.value}')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('first session'));
+        await tester.pump();
+        expect(
+          find.byKey(ValueKey('session-completed-${sessionId.value}')),
+          findsNothing,
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 }
 
 /// Working directory fixed for tests.
@@ -348,4 +449,30 @@ final class _EmptySkillCatalog implements SkillCatalog {
 
   @override
   List<SkillSummary> get summaries => const [];
+}
+
+final class _BlockingProvider implements ModelProvider {
+  _BlockingProvider(this.model);
+
+  final ModelRef model;
+  final firstStarted = Completer<void>();
+  final releaseFirst = Completer<void>();
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef requested) async =>
+      ModelDescriptor(ref: requested);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    if (!firstStarted.isCompleted) {
+      firstStarted.complete();
+      await releaseFirst.future;
+    }
+    yield const ModelCompletedEvent(
+      ModelResponse(
+        content: [TextContent('ok')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+  }
 }

@@ -1,10 +1,76 @@
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:terminal_view/terminal_view.dart';
 
+import '../../application/workspace_controller.dart';
 import '../../data/terminal_session.dart';
 import '../workspace_metrics.dart';
+
+/// Maximum number of live shells kept when switching sessions.
+const _maxLiveTerminals = 4;
+
+/// Keeps one [TerminalPanel] per recent session and recycles idle shells.
+class TerminalHost extends ConsumerStatefulWidget {
+  /// Creates a host for the focused session's terminal.
+  const TerminalHost({
+    super.key,
+    required this.sessionKey,
+    required this.workingDirectory,
+  });
+
+  /// Cache key of the focused session or draft.
+  final String sessionKey;
+
+  /// Working directory of the focused session.
+  final String workingDirectory;
+
+  @override
+  ConsumerState<TerminalHost> createState() => _TerminalHostState();
+}
+
+class _TerminalHostState extends ConsumerState<TerminalHost> {
+  final _order = <String>[];
+  final _directories = <String, String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final liveKeys = ref.watch(
+      workspaceProvider.select((state) => state.workspaces.keys.toSet()),
+    );
+    final order = [
+      for (final key in _order)
+        if (liveKeys.contains(key) && key != widget.sessionKey) key,
+      widget.sessionKey,
+    ];
+    while (order.length > _maxLiveTerminals) {
+      order.removeAt(0);
+    }
+    final directories = {
+      for (final key in order)
+        key: key == widget.sessionKey
+            ? widget.workingDirectory
+            : _directories[key] ?? widget.workingDirectory,
+    };
+    _order
+      ..clear()
+      ..addAll(order);
+    _directories
+      ..clear()
+      ..addAll(directories);
+    return IndexedStack(
+      index: order.indexOf(widget.sessionKey),
+      children: [
+        for (final key in order)
+          TerminalPanel(
+            key: ValueKey('term-$key'),
+            workingDirectory: directories[key]!,
+          ),
+      ],
+    );
+  }
+}
 
 /// Interactive shell backed by a pseudo-terminal and a terminal emulator.
 class TerminalPanel extends StatefulWidget {

@@ -2,12 +2,68 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../application/workspace_controller.dart';
 import '../../data/file_browser_service.dart';
 import '../workspace_metrics.dart';
+
+/// Keeps one [FileBrowser] per session so expand/preview state survives focus changes.
+class FileBrowserHost extends ConsumerStatefulWidget {
+  /// Creates a host for the focused session's file tree.
+  const FileBrowserHost({
+    super.key,
+    required this.sessionKey,
+    required this.workingDirectory,
+    this.service = const FileBrowserService(),
+  });
+
+  /// Cache key of the focused session or draft.
+  final String sessionKey;
+
+  /// Working directory of the focused session.
+  final String workingDirectory;
+
+  /// Filesystem adapter used by each browser.
+  final FileBrowserService service;
+
+  @override
+  ConsumerState<FileBrowserHost> createState() => _FileBrowserHostState();
+}
+
+class _FileBrowserHostState extends ConsumerState<FileBrowserHost> {
+  final _directories = <String, String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final liveKeys = ref.watch(
+      workspaceProvider.select((state) => state.workspaces.keys.toSet()),
+    );
+    final directories = <String, String>{
+      for (final entry in _directories.entries)
+        if (liveKeys.contains(entry.key)) entry.key: entry.value,
+      widget.sessionKey: widget.workingDirectory,
+    };
+    _directories
+      ..clear()
+      ..addAll(directories);
+    final keys = directories.keys.toList();
+    return IndexedStack(
+      index: keys.indexOf(widget.sessionKey),
+      children: [
+        for (final key in keys)
+          FileBrowser(
+            key: ValueKey('files-$key'),
+            workingDirectory: directories[key]!,
+            service: widget.service,
+          ),
+      ],
+    );
+  }
+}
 
 /// Browses a working directory as a lazy-loading file tree and previews
 /// UTF-8 text files.

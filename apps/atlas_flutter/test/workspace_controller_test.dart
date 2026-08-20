@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
@@ -109,7 +111,7 @@ void main() {
     expect(state.messages[2].text, 'Hello from Atlas.');
   });
 
-  test('switching the working directory resets the workspace', () async {
+  test('switching the working directory starts a new draft', () async {
     final model = ModelDescriptor(
       ref: ModelRef(
         providerId: ProviderId('test'),
@@ -143,12 +145,22 @@ void main() {
     addTearDown(store.close);
     addTearDown(container.dispose);
 
-    container.read(workspaceWorkingDirectoryProvider.notifier).set('/tmp2');
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('keep this session');
+    final firstId = container.read(workspaceProvider).sessionId;
+    controller.newSession(workingDirectory: '/tmp2');
 
     final state = container.read(workspaceProvider);
     expect(state.workingDirectory, '/tmp2');
     expect(state.messages, isEmpty);
     expect(state.sessionId, isNull);
+    expect(firstId, isNotNull);
+    expect(
+      state.workspaces.values.any(
+        (workspace) => workspace.sessionId == firstId,
+      ),
+      isTrue,
+    );
   });
 
   test('refreshSessions loads sessions across all directories', () async {
@@ -187,7 +199,7 @@ void main() {
 
     final controller = container.read(workspaceProvider.notifier);
     await controller.send('first session');
-    container.read(workspaceWorkingDirectoryProvider.notifier).set('/tmp2');
+    controller.newSession(workingDirectory: '/tmp2');
     await controller.send('second session');
 
     await controller.refreshSessions();
@@ -418,6 +430,120 @@ void main() {
     expect(state.activeModel.ref, textModel.ref);
     expect(state.messages.last.kind, isNot(WorkspaceMessageKind.notice));
   });
+
+  test(
+    'a running session stays cached while another session is focused',
+    () async {
+      final model = ModelDescriptor(
+        ref: ModelRef(
+          providerId: ProviderId('test'),
+          modelId: ModelId('streaming'),
+        ),
+        name: 'Streaming test model',
+        reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+      );
+      final store = DriftSessionStore.inMemory();
+      final provider = _BlockingProvider(model.ref);
+      final runtime = AgentRuntime(
+        store: store,
+        provider: provider,
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: model.ref,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWithValue(
+            RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(store.close);
+      addTearDown(container.dispose);
+
+      final controller = container.read(workspaceProvider.notifier);
+      final firstTurn = controller.send('first session');
+      await provider.firstStarted.future;
+      final firstId = container.read(workspaceProvider).sessionId;
+      expect(container.read(workspaceProvider).busy, isTrue);
+      expect(container.read(workspaceProvider).runningSessionIds, {firstId});
+
+      controller.newSession();
+      expect(container.read(workspaceProvider).busy, isFalse);
+      expect(container.read(workspaceProvider).messages, isEmpty);
+      expect(container.read(workspaceProvider).runningSessionIds, {firstId});
+
+      provider.releaseFirst.complete();
+      await firstTurn;
+      expect(container.read(workspaceProvider).runningSessionIds, isEmpty);
+      expect(container.read(workspaceProvider).completedSessionIds, {firstId});
+      await controller.resume(firstId!);
+      expect(container.read(workspaceProvider).completedSessionIds, isEmpty);
+      expect(
+        container
+            .read(workspaceProvider)
+            .messages
+            .map((message) => message.kind),
+        [WorkspaceMessageKind.user, WorkspaceMessageKind.assistant],
+      );
+      expect(
+        container.read(workspaceProvider).messages.last.text,
+        'Hello from Atlas.',
+      );
+    },
+  );
+
+  test('composer draft stays with its session after switching', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    final firstId = container.read(workspaceProvider).sessionId!;
+    controller.setDraft('keep this');
+    controller.newSession();
+    expect(container.read(workspaceProvider).draft, isEmpty);
+    controller.setDraft('other draft');
+    await controller.resume(firstId);
+    expect(container.read(workspaceProvider).draft, 'keep this');
+  });
 }
 
 /// Working directory fixed for tests.
@@ -461,4 +587,31 @@ final class _EmptySkillCatalog implements SkillCatalog {
 
   @override
   List<SkillSummary> get summaries => const [];
+}
+
+final class _BlockingProvider implements ModelProvider {
+  _BlockingProvider(this.model);
+
+  final ModelRef model;
+  final firstStarted = Completer<void>();
+  final releaseFirst = Completer<void>();
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef requested) async =>
+      ModelDescriptor(ref: requested);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    if (!firstStarted.isCompleted) {
+      firstStarted.complete();
+      await releaseFirst.future;
+    }
+    yield const TextDeltaEvent('Hello from Atlas.');
+    yield const ModelCompletedEvent(
+      ModelResponse(
+        content: [TextContent('Hello from Atlas.')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+  }
 }

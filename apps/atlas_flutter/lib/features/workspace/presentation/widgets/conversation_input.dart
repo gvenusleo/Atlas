@@ -49,6 +49,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   @override
   void initState() {
     super.initState();
+    _textController.text = ref.read(workspaceProvider).draft;
     _textController.addListener(_onTextChanged);
   }
 
@@ -63,6 +64,18 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(workspaceProvider.select((s) => s.activeKey), (previous, next) {
+      if (previous == next) {
+        return;
+      }
+      final draft = ref.read(workspaceProvider).draft;
+      if (_textController.text != draft) {
+        _textController.value = TextEditingValue(
+          text: draft,
+          selection: TextSelection.collapsed(offset: draft.length),
+        );
+      }
+    });
     final colors = AtlasColors.of(context);
     final suggestions = _suggestions;
     final busy = ref.watch(workspaceProvider.select((s) => s.busy));
@@ -524,6 +537,10 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       });
     }
     _composing = composing;
+    final draft = _textController.text;
+    if (ref.read(workspaceProvider).draft != draft) {
+      ref.read(workspaceProvider.notifier).setDraft(draft);
+    }
     setState(() {
       if (_selectedSuggestion != 0 || _suggestions.isNotEmpty) {
         _selectedSuggestion = 0;

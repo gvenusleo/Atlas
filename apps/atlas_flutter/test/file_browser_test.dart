@@ -1,8 +1,14 @@
 import 'dart:io';
 
+import 'package:atlas_flutter/app/runtime_environment.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:atlas_storage/atlas_storage.dart';
+import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -182,4 +188,110 @@ void main() {
     await settle(tester);
     expect(find.text('new.txt'), findsOneWidget);
   });
+
+  testWidgets('FileBrowserHost keeps expand state when switching sessions', (
+    tester,
+  ) async {
+    final sub = Directory('${tempDir.path}/sub')..createSync();
+    File('${sub.path}/a.txt').writeAsStringSync('hello');
+    final model = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('m')),
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _EmptyProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory(tempDir.path),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildAtlasTheme(Brightness.light),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) {
+                final workspace = ref.watch(workspaceProvider);
+                return FileBrowserHost(
+                  sessionKey: workspace.activeKey,
+                  workingDirectory: tempDir.path,
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+    await tester.tap(find.text('sub'));
+    await settle(tester);
+    expect(find.text('a.txt'), findsOneWidget);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    final firstId = container.read(workspaceProvider).sessionId!;
+    controller.newSession();
+    await settle(tester);
+    expect(find.text('a.txt'), findsNothing);
+
+    await controller.resume(firstId);
+    await settle(tester);
+    expect(find.text('a.txt'), findsOneWidget);
+  });
+}
+
+class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
+  _FixedWorkingDirectory(this.path);
+
+  final String path;
+
+  @override
+  String build() => path;
+}
+
+final class _EmptyProvider implements ModelProvider {
+  _EmptyProvider(this.model);
+
+  final ModelRef model;
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef requested) async =>
+      ModelDescriptor(ref: requested);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    yield const ModelCompletedEvent(
+      ModelResponse(
+        content: [TextContent('ok')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+  }
+}
+
+final class _EmptySkillCatalog implements SkillCatalog {
+  @override
+  Skill? lookup(String name) => null;
+
+  @override
+  List<SkillSummary> get summaries => const [];
 }

@@ -317,6 +317,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('25% · 128k/512k'), findsOneWidget);
   });
+
+  testWidgets('composer draft stays with its session after switching', (
+    tester,
+  ) async {
+    await _pumpComposer(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'draft for first',
+    );
+    await tester.pump();
+    expect(_workspaceOf(tester).draft, 'draft for first');
+
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(ConversationInput)),
+    ).read(workspaceProvider.notifier);
+    controller.newSession();
+    await tester.pump();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('atlas-prompt-input')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'draft for second',
+    );
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_workspaceOf(tester).messages.first.text, 'draft for second');
+  });
 }
 
 WorkspaceState _workspaceOf(WidgetTester tester) {
