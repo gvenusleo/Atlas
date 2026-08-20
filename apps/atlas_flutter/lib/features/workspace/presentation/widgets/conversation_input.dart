@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
@@ -160,12 +162,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                             if (contextTokens > 0)
                               Padding(
                                 padding: const EdgeInsets.only(right: 8),
-                                child: Text(
-                                  '$contextTokens tokens',
-                                  style: TextStyle(
-                                    color: colors.textSecondary,
-                                    fontSize: 11,
-                                  ),
+                                child: _ContextUsageRing(
+                                  usedTokens: contextTokens,
+                                  contextWindow: activeModel.contextWindow,
                                 ),
                               ),
                             Tooltip(
@@ -876,5 +875,118 @@ class _EffortMenuCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Formats a token count for compact hover labels such as `128k`.
+String compactTokenCount(int tokens) {
+  final value = tokens < 0 ? 0 : tokens;
+  if (value < 1000) {
+    return '$value';
+  }
+  if (value % 1000 == 0) {
+    return '${value ~/ 1000}k';
+  }
+  final tenths = (value / 100).round() / 10;
+  if (tenths == tenths.truncateToDouble()) {
+    return '${tenths.toInt()}k';
+  }
+  return '${tenths}k';
+}
+
+/// Formats context usage as `10% · 10k/100k`.
+String contextUsageLabel(int usedTokens, int contextWindow) {
+  final used = compactTokenCount(usedTokens);
+  if (contextWindow <= 0) {
+    return used;
+  }
+  final percent = usedTokens <= 0
+      ? 0
+      : (usedTokens * 100 / contextWindow).clamp(0, 100).round();
+  return '$percent% · $used/${compactTokenCount(contextWindow)}';
+}
+
+/// Quiet context-usage ring shown beside the send control.
+class _ContextUsageRing extends StatelessWidget {
+  const _ContextUsageRing({
+    required this.usedTokens,
+    required this.contextWindow,
+  });
+
+  final int usedTokens;
+  final int contextWindow;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final progress = contextWindow <= 0
+        ? 0.0
+        : (usedTokens / contextWindow).clamp(0.0, 1.0);
+    final fill = progress >= 0.95
+        ? colors.error
+        : progress >= 0.8
+        ? colors.accent
+        : colors.textSecondary;
+    final label = contextUsageLabel(usedTokens, contextWindow);
+    return Tooltip(
+      message: label,
+      child: SizedBox.square(
+        key: const ValueKey('atlas-context-usage'),
+        dimension: 18,
+        child: CustomPaint(
+          painter: _ContextUsageRingPainter(
+            progress: progress,
+            trackColor: colors.divider,
+            fillColor: fill,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContextUsageRingPainter extends CustomPainter {
+  _ContextUsageRingPainter({
+    required this.progress,
+    required this.trackColor,
+    required this.fillColor,
+  });
+
+  final double progress;
+  final Color trackColor;
+  final Color fillColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    const stroke = 2.0;
+    final radius = (math.min(size.width, size.height) - stroke) / 2;
+    final track = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    canvas.drawCircle(center, radius, track);
+    if (progress <= 0) {
+      return;
+    }
+    final fill = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      2 * math.pi * progress,
+      false,
+      fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ContextUsageRingPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.trackColor != trackColor ||
+        oldDelegate.fillColor != fillColor;
   }
 }

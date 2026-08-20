@@ -273,6 +273,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(_workspaceOf(tester).messages.first.text, '你好');
   });
+
+  test('compactTokenCount always uses the k suffix', () {
+    expect(compactTokenCount(0), '0');
+    expect(compactTokenCount(128), '128');
+    expect(compactTokenCount(128000), '128k');
+    expect(compactTokenCount(512000), '512k');
+    expect(compactTokenCount(1024000), '1024k');
+    expect(compactTokenCount(1500), '1.5k');
+  });
+
+  test('contextUsageLabel includes percent and compact used/window', () {
+    expect(contextUsageLabel(10000, 100000), '10% · 10k/100k');
+    expect(contextUsageLabel(128000, 512000), '25% · 128k/512k');
+    expect(contextUsageLabel(128, 0), '128');
+  });
+
+  testWidgets('context usage ring shows compact used/window on hover', (
+    tester,
+  ) async {
+    await _pumpComposer(
+      tester,
+      contextWindow: 512000,
+      usage: const TokenUsage(totalTokens: 128000),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'hello',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final ring = find.byKey(const ValueKey('atlas-context-usage'));
+    expect(ring, findsOneWidget);
+    expect(find.textContaining('tokens'), findsNothing);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(ring));
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+    expect(find.text('25% · 128k/512k'), findsOneWidget);
+  });
 }
 
 WorkspaceState _workspaceOf(WidgetTester tester) {
@@ -285,22 +329,26 @@ WorkspaceState _workspaceOf(WidgetTester tester) {
 Future<void> _pumpComposer(
   WidgetTester tester, {
   List<ModelDescriptor>? models,
+  int contextWindow = 0,
+  TokenUsage usage = const TokenUsage(),
 }) async {
   final modelA = ModelDescriptor(
     ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('model-a')),
     name: 'Model A',
+    contextWindow: contextWindow,
     reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
   );
   final modelB = ModelDescriptor(
     ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('model-b')),
     name: 'Model B',
+    contextWindow: contextWindow,
     reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
   );
   final allModels = models ?? [modelA, modelB];
   final store = DriftSessionStore.inMemory();
   final runtime = AgentRuntime(
     store: store,
-    provider: _FakeProvider(modelA.ref),
+    provider: _FakeProvider(modelA.ref, usage: usage),
     tools: LocalToolRegistry(const []),
     ids: SecureIdGenerator(),
     defaultModel: modelA.ref,
@@ -346,20 +394,22 @@ final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
 }
 
 final class _FakeProvider implements ModelProvider {
-  _FakeProvider(this.model);
+  _FakeProvider(this.model, {this.usage = const TokenUsage()});
 
   final ModelRef model;
+  final TokenUsage usage;
 
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
-      ModelDescriptor(ref: requested);
+      ModelDescriptor(ref: requested, contextWindow: 512000);
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
-    yield const ModelCompletedEvent(
+    yield ModelCompletedEvent(
       ModelResponse(
-        content: [TextContent('ok')],
+        content: const [TextContent('ok')],
         stopReason: StopReason.endTurn,
+        usage: usage,
       ),
     );
   }
