@@ -188,10 +188,9 @@ class _AssistantMessage extends StatelessWidget {
         styleSheet: MarkdownStyleSheet(
           a: TextStyle(color: colors.accent, fontSize: 14),
           p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
-          pPadding: const EdgeInsets.symmetric(vertical: 4),
           code: TextStyle(
             color: colors.textPrimary,
-            fontSize: 14,
+            fontSize: 13,
             fontFamily: WorkspaceMetrics.monospaceFontFamily,
           ),
           h1: TextStyle(
@@ -199,37 +198,31 @@ class _AssistantMessage extends StatelessWidget {
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
-          h1Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h2: TextStyle(
             color: colors.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
-          h2Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h3: TextStyle(
             color: colors.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
-          h3Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h4: TextStyle(
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
-          h4Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h5: TextStyle(
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
-          h5Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h6: TextStyle(
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
-          h6Padding: const EdgeInsets.only(top: 12, bottom: 6),
           codeblockDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AtlasRadii.surface),
             color: colors.panel,
@@ -238,11 +231,9 @@ class _AssistantMessage extends StatelessWidget {
           blockquoteDecoration: BoxDecoration(
             border: Border(left: BorderSide(color: colors.divider, width: 2)),
           ),
-          blockquotePadding: const EdgeInsets.only(left: 12),
           horizontalRuleDecoration: BoxDecoration(
             border: Border(top: BorderSide(color: colors.divider)),
           ),
-          blockSpacing: 0,
           listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
           tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
           checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
@@ -255,7 +246,7 @@ class _AssistantMessage extends StatelessWidget {
 /// Vertical padding around Markdown horizontal rules.
 class _HrPaddingBuilder extends MarkdownPaddingBuilder {
   @override
-  EdgeInsets getPadding() => const EdgeInsets.symmetric(vertical: 12);
+  EdgeInsets getPadding() => const EdgeInsets.symmetric(vertical: 6);
 }
 
 /// Collapsed activity row for reasoning and tool results.
