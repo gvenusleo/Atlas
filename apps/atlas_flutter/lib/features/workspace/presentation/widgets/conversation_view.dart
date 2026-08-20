@@ -9,13 +9,76 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
+import 'conversation_input.dart';
 import 'workspace_controls.dart';
 import '../workspace_metrics.dart';
 
+/// Keeps one conversation pane per session so transcript and composer state
+/// survive focus changes.
+class SessionPaneHost extends ConsumerWidget {
+  /// Creates a host for the focused session's transcript and composer.
+  const SessionPaneHost({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final activeKey = ref.watch(
+      workspaceProvider.select((state) => state.activeKey),
+    );
+    final keys = ref.watch(
+      workspaceProvider.select((state) => [...state.workspaces.keys]),
+    );
+    final index = keys.indexOf(activeKey);
+    return IndexedStack(
+      index: index < 0 ? 0 : index,
+      children: [
+        for (final key in keys)
+          _SessionPane(
+            key: ValueKey('session-pane-$key'),
+            sessionKey: key,
+            active: key == activeKey,
+          ),
+      ],
+    );
+  }
+}
+
+class _SessionPane extends StatelessWidget {
+  const _SessionPane({
+    super.key,
+    required this.sessionKey,
+    required this.active,
+  });
+
+  final String sessionKey;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeFocus(
+      excluding: !active,
+      child: IgnorePointer(
+        ignoring: !active,
+        child: Column(
+          children: [
+            Expanded(child: ConversationView(sessionKey: sessionKey)),
+            Align(
+              alignment: Alignment.center,
+              child: ConversationInput(sessionKey: sessionKey, active: active),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Scrollable conversation transcript with streaming Markdown and disclosures.
 class ConversationView extends ConsumerStatefulWidget {
-  /// Creates a transcript bound to the workspace state.
-  const ConversationView({super.key});
+  /// Creates a transcript bound to [sessionKey], or the focused session.
+  const ConversationView({super.key, this.sessionKey});
+
+  /// Cache key of the session to render. Null follows the focused session.
+  final String? sessionKey;
 
   @override
   ConsumerState<ConversationView> createState() => _ConversationViewState();
@@ -34,7 +97,14 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = ref.watch(workspaceProvider.select((s) => s.messages));
+    final sessionKey = widget.sessionKey;
+    final messages = ref.watch(
+      workspaceProvider.select(
+        (s) => sessionKey == null
+            ? s.messages
+            : s.workspaces[sessionKey]?.messages ?? const <WorkspaceMessage>[],
+      ),
+    );
     final textLength = messages.fold<int>(
       0,
       (length, message) => length + message.text.length,

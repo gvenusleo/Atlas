@@ -11,6 +11,7 @@ import '../../../../app/platform_window.dart';
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
+import '../../application/workspace_state.dart';
 import '../workspace_metrics.dart';
 import 'workspace_controls.dart';
 
@@ -24,8 +25,14 @@ const _builtInCommands = <(String, String)>[
 
 /// Composer with model, reasoning effort, slash completion, send, and cancel.
 class ConversationInput extends ConsumerStatefulWidget {
-  /// Creates a composer bound to the workspace state.
-  const ConversationInput({super.key});
+  /// Creates a composer bound to [sessionKey], or the focused session.
+  const ConversationInput({super.key, this.sessionKey, this.active = true});
+
+  /// Cache key of the session to compose. Null follows the focused session.
+  final String? sessionKey;
+
+  /// Whether this composer is the focused session's input.
+  final bool active;
 
   @override
   ConsumerState<ConversationInput> createState() => _ConversationInputState();
@@ -49,7 +56,6 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   @override
   void initState() {
     super.initState();
-    _textController.text = ref.read(workspaceProvider).draft;
     _textController.addListener(_onTextChanged);
   }
 
@@ -62,31 +68,65 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     super.dispose();
   }
 
+  SessionWorkspace get _workspace {
+    final state = ref.read(workspaceProvider);
+    final key = widget.sessionKey;
+    return key == null ? state.active : state.workspaces[key] ?? state.active;
+  }
+
+  @override
+  void didUpdateWidget(covariant ConversationInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active && !widget.active) {
+      _closeMenus();
+    } else if (!oldWidget.active && widget.active) {
+      _focusNode.requestFocus();
+    }
+  }
+
+  void _closeMenus() {
+    if (!_modelOpen && !_effortOpen) {
+      return;
+    }
+    setState(() {
+      _modelOpen = false;
+      _effortOpen = false;
+    });
+    _overlayPortalController.hide();
+  }
+
   @override
   Widget build(BuildContext context) {
-    ref.listen(workspaceProvider.select((s) => s.activeKey), (previous, next) {
-      if (previous == next) {
-        return;
-      }
-      final draft = ref.read(workspaceProvider).draft;
-      if (_textController.text != draft) {
-        _textController.value = TextEditingValue(
-          text: draft,
-          selection: TextSelection.collapsed(offset: draft.length),
-        );
-      }
-    });
+    final sessionKey = widget.sessionKey;
     final colors = AtlasColors.of(context);
     final suggestions = _suggestions;
-    final busy = ref.watch(workspaceProvider.select((s) => s.busy));
+    final busy = ref.watch(
+      workspaceProvider.select(
+        (s) => sessionKey == null
+            ? s.busy
+            : s.workspaces[sessionKey]?.busy ?? false,
+      ),
+    );
     final activeModel = ref.watch(
-      workspaceProvider.select((s) => s.activeModel),
+      workspaceProvider.select(
+        (s) => sessionKey == null
+            ? s.activeModel
+            : s.workspaces[sessionKey]?.activeModel ?? s.activeModel,
+      ),
     );
     final reasoningEffort = ref.watch(
-      workspaceProvider.select((s) => s.reasoningEffort),
+      workspaceProvider.select(
+        (s) => sessionKey == null
+            ? s.reasoningEffort
+            : s.workspaces[sessionKey]?.reasoningEffort,
+      ),
     );
     final contextTokens = ref.watch(
-      workspaceProvider.select((s) => s.contextTokens),
+      workspaceProvider.select(
+        (s) => sessionKey == null
+            ? s.contextTokens
+            : s.workspaces[sessionKey]?.contextTokens ?? 0,
+      ),
     );
     final controller = ref.read(workspaceProvider.notifier);
     final environment = ref.watch(runtimeEnvironmentProvider)!;
@@ -196,7 +236,11 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                 ),
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: busy ? controller.cancel : _submit,
+                                  onTap: busy
+                                      ? () => controller.cancel(
+                                          sessionKey: widget.sessionKey,
+                                        )
+                                      : _submit,
                                   child: SizedBox.square(
                                     dimension: 28,
                                     child: Icon(
@@ -255,7 +299,10 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                           onSelected: (model) {
                             setState(() => _modelOpen = false);
                             _overlayPortalController.hide();
-                            controller.selectModel(model);
+                            controller.selectModel(
+                              model,
+                              sessionKey: widget.sessionKey,
+                            );
                           },
                         ),
                       ),
@@ -283,7 +330,10 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                           onSelected: (effort) {
                             setState(() => _effortOpen = false);
                             _overlayPortalController.hide();
-                            controller.selectReasoningEffort(effort.value);
+                            controller.selectReasoningEffort(
+                              effort.value,
+                              sessionKey: widget.sessionKey,
+                            );
                           },
                         ),
                       ),
@@ -326,7 +376,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   /// Opens or closes the model picker.
   void _toggleModel() {
     final environment = ref.read(runtimeEnvironmentProvider)!;
-    final activeModel = ref.read(workspaceProvider).activeModel;
+    final activeModel = _workspace.activeModel;
     setState(() {
       _modelOpen = !_modelOpen;
       _effortOpen = false;
@@ -349,8 +399,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Opens or closes the reasoning-effort picker.
   void _toggleEffort() {
-    final activeModel = ref.read(workspaceProvider).activeModel;
-    final current = ref.read(workspaceProvider).reasoningEffort;
+    final workspace = _workspace;
+    final activeModel = workspace.activeModel;
+    final current = workspace.reasoningEffort;
     setState(() {
       _effortOpen = !_effortOpen;
       _modelOpen = false;
@@ -520,7 +571,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       return;
     }
     _textController.clear();
-    await ref.read(workspaceProvider.notifier).send(text);
+    await ref
+        .read(workspaceProvider.notifier)
+        .send(text, sessionKey: widget.sessionKey);
     if (mounted) {
       _focusNode.requestFocus();
     }
@@ -537,10 +590,6 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       });
     }
     _composing = composing;
-    final draft = _textController.text;
-    if (ref.read(workspaceProvider).draft != draft) {
-      ref.read(workspaceProvider.notifier).setDraft(draft);
-    }
     setState(() {
       if (_selectedSuggestion != 0 || _suggestions.isNotEmpty) {
         _selectedSuggestion = 0;

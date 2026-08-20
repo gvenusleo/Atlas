@@ -8,10 +8,7 @@ import '../../application/workspace_controller.dart';
 import '../../data/terminal_session.dart';
 import '../workspace_metrics.dart';
 
-/// Maximum number of live shells kept when switching sessions.
-const _maxLiveTerminals = 4;
-
-/// Keeps one [TerminalPanel] per recent session and recycles idle shells.
+/// Keeps one [TerminalPanel] per session so the shell survives focus changes.
 class TerminalHost extends ConsumerStatefulWidget {
   /// Creates a host for the focused session's terminal.
   const TerminalHost({
@@ -31,40 +28,30 @@ class TerminalHost extends ConsumerStatefulWidget {
 }
 
 class _TerminalHostState extends ConsumerState<TerminalHost> {
-  final _order = <String>[];
   final _directories = <String, String>{};
+  final _panelKeys = <String, GlobalKey>{};
 
   @override
   Widget build(BuildContext context) {
     final liveKeys = ref.watch(
       workspaceProvider.select((state) => state.workspaces.keys.toSet()),
     );
-    final order = [
-      for (final key in _order)
-        if (liveKeys.contains(key) && key != widget.sessionKey) key,
-      widget.sessionKey,
-    ];
-    while (order.length > _maxLiveTerminals) {
-      order.removeAt(0);
-    }
-    final directories = {
-      for (final key in order)
-        key: key == widget.sessionKey
-            ? widget.workingDirectory
-            : _directories[key] ?? widget.workingDirectory,
+    final directories = <String, String>{
+      for (final entry in _directories.entries)
+        if (liveKeys.contains(entry.key)) entry.key: entry.value,
+      widget.sessionKey: widget.workingDirectory,
     };
-    _order
-      ..clear()
-      ..addAll(order);
     _directories
       ..clear()
       ..addAll(directories);
+    _panelKeys.removeWhere((key, _) => !directories.containsKey(key));
+    final keys = directories.keys.toList();
     return IndexedStack(
-      index: order.indexOf(widget.sessionKey),
+      index: keys.indexOf(widget.sessionKey),
       children: [
-        for (final key in order)
+        for (final key in keys)
           TerminalPanel(
-            key: ValueKey('term-$key'),
+            key: _panelKeys.putIfAbsent(key, GlobalKey.new),
             workingDirectory: directories[key]!,
           ),
       ],

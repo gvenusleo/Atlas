@@ -10,7 +10,6 @@ import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
-import 'conversation_input.dart';
 import 'conversation_view.dart';
 import 'file_browser.dart';
 import 'terminal_panel.dart';
@@ -671,7 +670,6 @@ class DetailsPanel extends ConsumerStatefulWidget {
 }
 
 class _DetailsPanelState extends ConsumerState<DetailsPanel> {
-  var _terminal = false;
   var _terminalCreated = false;
 
   @override
@@ -699,19 +697,19 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       workspaceProvider.select((s) => s.workingDirectory),
     );
     final sessionKey = ref.watch(workspaceProvider.select((s) => s.activeKey));
+    final terminal = ref.watch(workspaceProvider.select((s) => s.showTerminal));
+    if (terminal && !_terminalCreated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_terminalCreated) {
+          setState(() => _terminalCreated = true);
+        }
+      });
+    }
     return _SidePanel(
       semanticLabel: 'Workspace tools',
       compact: widget.onClose != null,
       useCanvasColor: true,
-      title: _ToolTabs(
-        terminal: _terminal,
-        onChanged: (terminal) => setState(() {
-          _terminal = terminal;
-          if (terminal) {
-            _terminalCreated = true;
-          }
-        }),
-      ),
+      title: _ToolTabs(terminal: terminal, onChanged: _onToolTabChanged),
       action: widget.onClose != null
           ? WorkspaceToolbarButton(
               icon: LucideIcons.x,
@@ -721,13 +719,13 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
             )
           : const SizedBox(width: 40),
       child: IndexedStack(
-        index: _terminal ? 1 : 0,
+        index: terminal ? 1 : 0,
         children: [
           FileBrowserHost(
             sessionKey: sessionKey,
             workingDirectory: workingDirectory,
           ),
-          if (_terminalCreated)
+          if (_terminalCreated || terminal)
             TerminalHost(
               sessionKey: sessionKey,
               workingDirectory: workingDirectory,
@@ -737,6 +735,13 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
         ],
       ),
     );
+  }
+
+  void _onToolTabChanged(bool showTerminal) {
+    if (showTerminal && !_terminalCreated) {
+      setState(() => _terminalCreated = true);
+    }
+    ref.read(workspaceProvider.notifier).setShowTerminal(showTerminal);
   }
 }
 
@@ -952,20 +957,7 @@ class _WorkspaceBody extends ConsumerWidget {
         message: error ?? 'Atlas runtime is not configured.',
       );
     }
-    final sessionKey = ref.watch(
-      workspaceProvider.select((state) => state.activeKey),
-    );
-    return Column(
-      children: [
-        Expanded(
-          child: ConversationView(key: ValueKey('transcript-$sessionKey')),
-        ),
-        Align(
-          alignment: Alignment.center,
-          child: ConversationInput(key: ValueKey('composer-$sessionKey')),
-        ),
-      ],
-    );
+    return const SessionPaneHost();
   }
 }
 

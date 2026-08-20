@@ -163,6 +163,50 @@ void main() {
     );
   });
 
+  test(
+    'newSession is a no-op on an empty draft in the same directory',
+    () async {
+      final model = ModelDescriptor(
+        ref: ModelRef(
+          providerId: ProviderId('test'),
+          modelId: ModelId('streaming'),
+        ),
+        name: 'Streaming test model',
+        reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+      );
+      final store = DriftSessionStore.inMemory();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: _FakeProvider(model.ref),
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: model.ref,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWithValue(
+            RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(store.close);
+      addTearDown(container.dispose);
+
+      final controller = container.read(workspaceProvider.notifier);
+      final firstKey = container.read(workspaceProvider).activeKey;
+      controller.newSession();
+      expect(container.read(workspaceProvider).activeKey, firstKey);
+      expect(container.read(workspaceProvider).workspaces, hasLength(1));
+    },
+  );
+
   test('refreshSessions loads sessions across all directories', () async {
     final model = ModelDescriptor(
       ref: ModelRef(
@@ -500,51 +544,6 @@ void main() {
     },
   );
 
-  test('composer draft stays with its session after switching', () async {
-    final model = ModelDescriptor(
-      ref: ModelRef(
-        providerId: ProviderId('test'),
-        modelId: ModelId('streaming'),
-      ),
-      name: 'Streaming test model',
-      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
-    );
-    final store = DriftSessionStore.inMemory();
-    final runtime = AgentRuntime(
-      store: store,
-      provider: _FakeProvider(model.ref),
-      tools: LocalToolRegistry(const []),
-      ids: SecureIdGenerator(),
-      defaultModel: model.ref,
-    );
-    final container = ProviderContainer(
-      overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
-          ),
-        ),
-        workspaceWorkingDirectoryProvider.overrideWith(
-          () => _FixedWorkingDirectory('/tmp'),
-        ),
-      ],
-    );
-    addTearDown(store.close);
-    addTearDown(container.dispose);
-
-    final controller = container.read(workspaceProvider.notifier);
-    await controller.send('first session');
-    final firstId = container.read(workspaceProvider).sessionId!;
-    controller.setDraft('keep this');
-    controller.newSession();
-    expect(container.read(workspaceProvider).draft, isEmpty);
-    controller.setDraft('other draft');
-    await controller.resume(firstId);
-    expect(container.read(workspaceProvider).draft, 'keep this');
-  });
-
   test('model and reasoning effort stay with their session', () async {
     final modelA = ModelDescriptor(
       ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('a')),
@@ -607,6 +606,52 @@ void main() {
     await controller.send('first again');
     expect(provider.models.last, modelA.ref);
     expect(provider.efforts.last, 'high');
+  });
+
+  test('tools sidebar tab stays with its session', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    final firstId = container.read(workspaceProvider).sessionId!;
+    controller.setShowTerminal(true);
+    expect(container.read(workspaceProvider).showTerminal, isTrue);
+
+    controller.newSession();
+    expect(container.read(workspaceProvider).showTerminal, isFalse);
+    await controller.resume(firstId);
+    expect(container.read(workspaceProvider).showTerminal, isTrue);
   });
 
   test(

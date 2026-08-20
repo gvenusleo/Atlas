@@ -14,7 +14,7 @@ final class SessionWorkspace {
     this.hasCompletedTurn = false,
     this.contextTokens = 0,
     this.hasImages = false,
-    this.draft = '',
+    this.showTerminal = false,
     this.reasoningEffort,
   }) : messages = List.unmodifiable(messages);
 
@@ -39,8 +39,8 @@ final class SessionWorkspace {
   /// Whether the loaded conversation contains image content.
   final bool hasImages;
 
-  /// Unsent composer text for this session or draft.
-  final String draft;
+  /// Whether the workspace tools sidebar shows the terminal for this session.
+  final bool showTerminal;
 
   /// Model used by subsequent turns on this session.
   final ModelDescriptor activeModel;
@@ -57,7 +57,7 @@ final class SessionWorkspace {
     bool? hasCompletedTurn,
     int? contextTokens,
     bool? hasImages,
-    String? draft,
+    bool? showTerminal,
     ModelDescriptor? activeModel,
     Object? reasoningEffort = _unset,
   }) => SessionWorkspace(
@@ -68,7 +68,7 @@ final class SessionWorkspace {
     hasCompletedTurn: hasCompletedTurn ?? this.hasCompletedTurn,
     contextTokens: contextTokens ?? this.contextTokens,
     hasImages: hasImages ?? this.hasImages,
-    draft: draft ?? this.draft,
+    showTerminal: showTerminal ?? this.showTerminal,
     activeModel: activeModel ?? this.activeModel,
     reasoningEffort: identical(reasoningEffort, _unset)
         ? this.reasoningEffort
@@ -128,8 +128,8 @@ final class WorkspaceState {
   /// Whether the focused conversation contains image content.
   bool get hasImages => active.hasImages;
 
-  /// Unsent composer text of the focused session.
-  String get draft => active.draft;
+  /// Whether the focused session's tools sidebar shows the terminal.
+  bool get showTerminal => active.showTerminal;
 
   /// Model of the focused session.
   ModelDescriptor get activeModel => active.activeModel;

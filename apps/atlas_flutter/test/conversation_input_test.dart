@@ -12,6 +12,7 @@ import 'package:atlas_flutter/features/workspace/application/workspace_controlle
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 void main() {
@@ -318,68 +319,65 @@ void main() {
     expect(find.text('25% · 128k/512k'), findsOneWidget);
   });
 
-  testWidgets('composer draft stays with its session after switching', (
+  testWidgets('session pane keeps composer text after switching', (
     tester,
   ) async {
-    await _pumpComposer(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey('atlas-prompt-input')),
-      'draft for first',
-    );
-    await tester.pump();
-    expect(_workspaceOf(tester).draft, 'draft for first');
-
+    await _pumpSessionPanes(tester);
+    final prompt = find.byKey(const ValueKey('atlas-prompt-input'));
     final controller = ProviderScope.containerOf(
-      tester.element(find.byType(ConversationInput)),
+      tester.element(prompt.hitTestable()),
     ).read(workspaceProvider.notifier);
+    await controller.send('first session');
+    await tester.pumpAndSettle();
+    await tester.enterText(prompt.hitTestable(), 'draft for first');
+    await tester.pump();
     controller.newSession();
     await tester.pump();
     expect(
-      tester
-          .widget<TextField>(find.byKey(const ValueKey('atlas-prompt-input')))
-          .controller!
-          .text,
+      tester.widget<TextField>(prompt.hitTestable()).controller!.text,
       isEmpty,
     );
-
-    await tester.enterText(
-      find.byKey(const ValueKey('atlas-prompt-input')),
-      'draft for second',
+    expect(
+      tester
+          .widgetList<TextField>(
+            find.byKey(
+              const ValueKey('atlas-prompt-input'),
+              skipOffstage: false,
+            ),
+          )
+          .map((field) => field.controller!.text),
+      contains('draft for first'),
     );
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(_workspaceOf(tester).messages.first.text, 'draft for second');
   });
 
   testWidgets('composer model follows the focused session', (tester) async {
-    await _pumpComposer(tester);
+    await _pumpSessionPanes(tester);
     final controller = ProviderScope.containerOf(
       tester.element(find.byType(ConversationInput)),
     ).read(workspaceProvider.notifier);
     await tester.tap(find.text('Model A'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model B'));
+    await tester.tap(find.text('Model B').hitTestable());
     await tester.pumpAndSettle();
-    expect(find.text('Model B'), findsOneWidget);
-    expect(find.text('Model A'), findsNothing);
+    expect(find.text('Model B').hitTestable(), findsOneWidget);
+    expect(find.text('Model A').hitTestable(), findsNothing);
 
     await controller.send('first session');
     final firstId = _workspaceOf(tester).sessionId!;
     controller.newSession();
     await tester.pump();
-    expect(find.text('Model B'), findsOneWidget);
+    expect(find.text('Model B').hitTestable(), findsOneWidget);
 
     controller.selectModel(
       controller.models.firstWhere((model) => model.name == 'Model A'),
     );
     await tester.pump();
-    expect(find.text('Model A'), findsOneWidget);
+    expect(find.text('Model A').hitTestable(), findsOneWidget);
 
     await controller.resume(firstId);
     await tester.pump();
-    expect(find.text('Model B'), findsOneWidget);
-    expect(find.text('Model A'), findsNothing);
+    expect(find.text('Model B').hitTestable(), findsOneWidget);
+    expect(find.text('Model A').hitTestable(), findsNothing);
   });
 }
 
@@ -392,6 +390,29 @@ WorkspaceState _workspaceOf(WidgetTester tester) {
 /// Pumps the composer anchored at the bottom of the screen, as in the app.
 Future<void> _pumpComposer(
   WidgetTester tester, {
+  List<ModelDescriptor>? models,
+  int contextWindow = 0,
+  TokenUsage usage = const TokenUsage(),
+}) async {
+  await _pumpWorkspace(
+    tester,
+    models: models,
+    contextWindow: contextWindow,
+    usage: usage,
+    child: const Align(
+      alignment: Alignment.bottomCenter,
+      child: ConversationInput(),
+    ),
+  );
+}
+
+Future<void> _pumpSessionPanes(WidgetTester tester) async {
+  await _pumpWorkspace(tester, child: const SessionPaneHost());
+}
+
+Future<void> _pumpWorkspace(
+  WidgetTester tester, {
+  required Widget child,
   List<ModelDescriptor>? models,
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
@@ -435,12 +456,7 @@ Future<void> _pumpComposer(
       ],
       child: MaterialApp(
         theme: buildAtlasTheme(Brightness.dark),
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.bottomCenter,
-            child: ConversationInput(),
-          ),
-        ),
+        home: Scaffold(body: child),
       ),
     ),
   );

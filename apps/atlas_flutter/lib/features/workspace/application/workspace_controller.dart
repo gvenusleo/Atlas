@@ -52,6 +52,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
     ref.onDispose(_cancelAll);
     final draftKey = _nextDraftKey();
+    _touch(draftKey);
     return WorkspaceState(
       activeKey: draftKey,
       workspaces: {
@@ -96,7 +97,6 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     final directory = workingDirectory ?? state.workingDirectory;
     if (state.sessionId == null &&
         state.messages.isEmpty &&
-        state.active.draft.isEmpty &&
         !state.busy &&
         state.workingDirectory == directory) {
       return;
@@ -106,7 +106,6 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
     final draftKey = _nextDraftKey();
     final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
-    _dropEmptyActiveDraft(workspaces);
     workspaces[draftKey] = _draftWorkspace(
       directory,
       model: state.activeModel,
@@ -139,7 +138,6 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       );
       final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
       workspaces[id.value] = workspace;
-      _dropEmptyActiveDraft(workspaces);
       _streamOpen[id.value] = false;
       _touch(id.value);
       _evictIdle(workspaces, keepKey: id.value);
@@ -195,54 +193,66 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
   }
 
-  /// Changes the focused session's model and resets reasoning effort.
-  void selectModel(ModelDescriptor model) {
+  /// Changes a session's model and resets reasoning effort.
+  ///
+  /// Defaults to the focused session when [sessionKey] is omitted.
+  void selectModel(ModelDescriptor model, {String? sessionKey}) {
+    final key = sessionKey ?? state.activeKey;
     _patch(
-      state.activeKey,
+      key,
       (workspace) => workspace.copyWith(
         activeModel: model,
         reasoningEffort: model.reasoningEfforts.firstOrNull?.value,
       ),
     );
-    if (state.hasImages &&
+    final workspace = state.workspaces[key];
+    if (workspace != null &&
+        workspace.hasImages &&
         !model.inputCapabilities.contains(ModelInputCapability.image)) {
       final label = model.name.isEmpty ? model.ref.modelId.value : model.name;
       _append(
-        state.activeKey,
+        key,
         WorkspaceMessageKind.notice,
         '$label does not support images; images in this conversation will be omitted.',
       );
     }
   }
 
-  /// Changes the focused session's reasoning effort for subsequent turns.
-  void selectReasoningEffort(String? effort) {
+  /// Changes a session's reasoning effort for subsequent turns.
+  ///
+  /// Defaults to the focused session when [sessionKey] is omitted.
+  void selectReasoningEffort(String? effort, {String? sessionKey}) {
     _patch(
-      state.activeKey,
+      sessionKey ?? state.activeKey,
       (workspace) => workspace.copyWith(reasoningEffort: effort),
     );
   }
 
-  /// Stores unsent composer text on the focused session.
-  void setDraft(String text) {
-    _patch(state.activeKey, (workspace) => workspace.copyWith(draft: text));
+  /// Shows the terminal or file browser for the focused session.
+  void setShowTerminal(bool showTerminal) {
+    _patch(
+      state.activeKey,
+      (workspace) => workspace.copyWith(showTerminal: showTerminal),
+    );
   }
 
   /// Submits a prompt or executes a TUI-compatible slash command.
-  Future<void> send(String rawText) async {
+  ///
+  /// Defaults to the focused session when [sessionKey] is omitted.
+  Future<void> send(String rawText, {String? sessionKey}) async {
+    var key = sessionKey ?? state.activeKey;
+    final workspace = state.workspaces[key];
     final text = rawText.trim();
-    if (text.isEmpty || state.busy) {
+    if (text.isEmpty || workspace == null || workspace.busy) {
       return;
     }
-    if (await _handleSlashCommand(text)) {
+    if (await _handleSlashCommand(text, sessionKey: key)) {
       return;
     }
-
-    var key = state.activeKey;
     final cancellation = CancellationToken();
     _cancellations[key] = cancellation;
     _streamOpen[key] = false;
-    _patch(key, (workspace) => workspace.copyWith(busy: true, draft: ''));
+    _patch(key, (workspace) => workspace.copyWith(busy: true));
     _append(key, WorkspaceMessageKind.user, text);
     try {
       await for (final event in _environment.runtime.run(
@@ -278,10 +288,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
   }
 
-  /// Cancels the focused session's runtime operation.
-  void cancel() => _cancellations[state.activeKey]?.cancel();
+  /// Cancels a session's runtime operation.
+  ///
+  /// Defaults to the focused session when [sessionKey] is omitted.
+  void cancel({String? sessionKey}) =>
+      _cancellations[sessionKey ?? state.activeKey]?.cancel();
 
-  Future<bool> _handleSlashCommand(String text) async {
+  Future<bool> _handleSlashCommand(String text, {String? sessionKey}) async {
+    final key = sessionKey ?? state.activeKey;
     final parts = text.split(RegExp(r'\s+'));
     switch (parts.first) {
       case '/new':
@@ -291,12 +305,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         newSession();
         return true;
       case '/compact':
-        await _compact(parts.skip(1).join(' '));
+        await _compact(parts.skip(1).join(' '), sessionKey: key);
         return true;
       case '/resume':
         if (parts.length < 2) {
           _append(
-            state.activeKey,
+            key,
             WorkspaceMessageKind.notice,
             'Select a session from the sidebar or provide its id.',
           );
@@ -306,7 +320,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         return true;
       case '/model':
         _append(
-          state.activeKey,
+          key,
           WorkspaceMessageKind.notice,
           'Choose a model from the input toolbar.',
         );
@@ -316,17 +330,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
   }
 
-  Future<void> _compact(String instruction) async {
-    final id = state.sessionId;
-    if (id == null || state.busy) {
-      _append(
-        state.activeKey,
-        WorkspaceMessageKind.notice,
-        'No session to compact.',
-      );
+  Future<void> _compact(String instruction, {String? sessionKey}) async {
+    var key = sessionKey ?? state.activeKey;
+    final workspace = state.workspaces[key];
+    final id = workspace?.sessionId;
+    if (id == null || workspace == null || workspace.busy) {
+      _append(key, WorkspaceMessageKind.notice, 'No session to compact.');
       return;
     }
-    var key = state.activeKey;
     final cancellation = CancellationToken();
     _cancellations[key] = cancellation;
     _patch(key, (workspace) => workspace.copyWith(busy: true));
@@ -530,18 +541,6 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     ref.read(workspaceWorkingDirectoryProvider.notifier).set(workingDirectory);
   }
 
-  void _dropEmptyActiveDraft(Map<String, SessionWorkspace> workspaces) {
-    final active = workspaces[state.activeKey];
-    if (active != null &&
-        active.sessionId == null &&
-        active.messages.isEmpty &&
-        active.draft.isEmpty &&
-        !active.busy) {
-      workspaces.remove(state.activeKey);
-      _recentKeys.remove(state.activeKey);
-    }
-  }
-
   void _touch(String key) {
     _recentKeys.remove(key);
     _recentKeys.add(key);
@@ -551,14 +550,23 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     Map<String, SessionWorkspace> workspaces, {
     required String keepKey,
   }) {
+    final seen = <String>{};
     final idle = [
-      for (final key in _recentKeys)
-        if (key != keepKey &&
+      for (final key in [..._recentKeys, ...workspaces.keys])
+        if (seen.add(key) &&
+            key != keepKey &&
             workspaces[key] != null &&
-            !(workspaces[key]!.busy) &&
-            workspaces[key]!.draft.isEmpty)
+            !(workspaces[key]!.busy))
           key,
     ];
+    idle.sort((a, b) {
+      final emptyA = _isEmptyDraft(workspaces[a]!);
+      final emptyB = _isEmptyDraft(workspaces[b]!);
+      if (emptyA != emptyB) {
+        return emptyA ? -1 : 1;
+      }
+      return 0;
+    });
     while (idle.length > _maxIdleWorkspaces) {
       final evicted = idle.removeAt(0);
       workspaces.remove(evicted);
@@ -575,6 +583,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     workspaces[draftKey] = _draftWorkspace(workingDirectory);
     return draftKey;
   }
+
+  bool _isEmptyDraft(SessionWorkspace workspace) =>
+      workspace.sessionId == null &&
+      workspace.messages.isEmpty &&
+      !workspace.busy;
 
   SessionWorkspace _draftWorkspace(
     String workingDirectory, {
