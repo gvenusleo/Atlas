@@ -544,6 +544,141 @@ void main() {
     await controller.resume(firstId);
     expect(container.read(workspaceProvider).draft, 'keep this');
   });
+
+  test('model and reasoning effort stay with their session', () async {
+    final modelA = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('a')),
+      name: 'Model A',
+      reasoningEfforts: const [
+        ReasoningEffortOption(value: 'low'),
+        ReasoningEffortOption(value: 'high'),
+      ],
+    );
+    final modelB = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('b')),
+      name: 'Model B',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final provider = _RecordingProvider();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: modelA.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [modelA, modelB],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    controller.selectReasoningEffort('high');
+    await controller.send('first session');
+    final firstId = container.read(workspaceProvider).sessionId!;
+    expect(provider.models, [modelA.ref]);
+    expect(provider.efforts, ['high']);
+
+    controller.newSession();
+    expect(container.read(workspaceProvider).activeModel.ref, modelA.ref);
+    expect(container.read(workspaceProvider).reasoningEffort, 'high');
+    controller.selectModel(modelB);
+    expect(container.read(workspaceProvider).reasoningEffort, 'balanced');
+    await controller.send('second session');
+    expect(provider.models, [modelA.ref, modelB.ref]);
+    expect(provider.efforts, ['high', 'balanced']);
+
+    await controller.resume(firstId);
+    expect(container.read(workspaceProvider).activeModel.ref, modelA.ref);
+    expect(container.read(workspaceProvider).reasoningEffort, 'high');
+    await controller.send('first again');
+    expect(provider.models.last, modelA.ref);
+    expect(provider.efforts.last, 'high');
+  });
+
+  test(
+    'resume falls back to the default model when the last model is gone',
+    () async {
+      final modelA = ModelDescriptor(
+        ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('a')),
+        name: 'Model A',
+        reasoningEfforts: const [ReasoningEffortOption(value: 'low')],
+      );
+      final modelB = ModelDescriptor(
+        ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('b')),
+        name: 'Model B',
+        reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+      );
+      final store = DriftSessionStore.inMemory();
+      addTearDown(store.close);
+
+      final firstRuntime = AgentRuntime(
+        store: store,
+        provider: _RecordingProvider(),
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: modelA.ref,
+      );
+      final first = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWithValue(
+            RuntimeEnvironment(
+              runtime: firstRuntime,
+              models: [modelA, modelB],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(first.dispose);
+      final firstController = first.read(workspaceProvider.notifier);
+      firstController.selectModel(modelB);
+      await firstController.send('keep this session');
+      final sessionId = first.read(workspaceProvider).sessionId!;
+
+      final secondRuntime = AgentRuntime(
+        store: store,
+        provider: _RecordingProvider(),
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: modelA.ref,
+      );
+      final second = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWithValue(
+            RuntimeEnvironment(
+              runtime: secondRuntime,
+              models: [modelA],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(second.dispose);
+      await second.read(workspaceProvider.notifier).resume(sessionId);
+      expect(second.read(workspaceProvider).activeModel.ref, modelA.ref);
+      expect(second.read(workspaceProvider).reasoningEffort, 'low');
+    },
+  );
 }
 
 /// Working directory fixed for tests.
@@ -587,6 +722,28 @@ final class _EmptySkillCatalog implements SkillCatalog {
 
   @override
   List<SkillSummary> get summaries => const [];
+}
+
+final class _RecordingProvider implements ModelProvider {
+  final models = <ModelRef>[];
+  final efforts = <String?>[];
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef requested) async =>
+      ModelDescriptor(ref: requested);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    models.add(request.model);
+    efforts.add(request.reasoningEffort);
+    yield const TextDeltaEvent('ok');
+    yield const ModelCompletedEvent(
+      ModelResponse(
+        content: [TextContent('ok')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+  }
 }
 
 final class _BlockingProvider implements ModelProvider {

@@ -351,6 +351,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(_workspaceOf(tester).messages.first.text, 'draft for second');
   });
+
+  testWidgets('composer model follows the focused session', (tester) async {
+    await _pumpComposer(tester);
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(ConversationInput)),
+    ).read(workspaceProvider.notifier);
+    await tester.tap(find.text('Model A'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Model B'));
+    await tester.pumpAndSettle();
+    expect(find.text('Model B'), findsOneWidget);
+    expect(find.text('Model A'), findsNothing);
+
+    await controller.send('first session');
+    final firstId = _workspaceOf(tester).sessionId!;
+    controller.newSession();
+    await tester.pump();
+    expect(find.text('Model B'), findsOneWidget);
+
+    controller.selectModel(
+      controller.models.firstWhere((model) => model.name == 'Model A'),
+    );
+    await tester.pump();
+    expect(find.text('Model A'), findsOneWidget);
+
+    await controller.resume(firstId);
+    await tester.pump();
+    expect(find.text('Model B'), findsOneWidget);
+    expect(find.text('Model A'), findsNothing);
+  });
 }
 
 WorkspaceState _workspaceOf(WidgetTester tester) {

@@ -7,6 +7,7 @@ final class SessionWorkspace {
   /// Creates a session workspace cache.
   SessionWorkspace({
     required this.workingDirectory,
+    required this.activeModel,
     List<WorkspaceMessage> messages = const [],
     this.sessionId,
     this.busy = false,
@@ -14,6 +15,7 @@ final class SessionWorkspace {
     this.contextTokens = 0,
     this.hasImages = false,
     this.draft = '',
+    this.reasoningEffort,
   }) : messages = List.unmodifiable(messages);
 
   /// Persisted session id, or null for a draft that has not started a turn.
@@ -40,6 +42,12 @@ final class SessionWorkspace {
   /// Unsent composer text for this session or draft.
   final String draft;
 
+  /// Model used by subsequent turns on this session.
+  final ModelDescriptor activeModel;
+
+  /// Provider-local reasoning effort for subsequent turns on this session.
+  final String? reasoningEffort;
+
   /// Returns a copy with the given fields replaced.
   SessionWorkspace copyWith({
     SessionId? sessionId,
@@ -50,6 +58,8 @@ final class SessionWorkspace {
     int? contextTokens,
     bool? hasImages,
     String? draft,
+    ModelDescriptor? activeModel,
+    Object? reasoningEffort = _unset,
   }) => SessionWorkspace(
     sessionId: sessionId ?? this.sessionId,
     workingDirectory: workingDirectory ?? this.workingDirectory,
@@ -59,7 +69,13 @@ final class SessionWorkspace {
     contextTokens: contextTokens ?? this.contextTokens,
     hasImages: hasImages ?? this.hasImages,
     draft: draft ?? this.draft,
+    activeModel: activeModel ?? this.activeModel,
+    reasoningEffort: identical(reasoningEffort, _unset)
+        ? this.reasoningEffort
+        : reasoningEffort as String?,
   );
+
+  static const _unset = Object();
 }
 
 /// Immutable state of one Flutter workspace, exposed by [WorkspaceController].
@@ -69,8 +85,6 @@ final class WorkspaceState {
     required this.activeKey,
     required Map<String, SessionWorkspace> workspaces,
     required List<SessionSummary> sessions,
-    required this.activeModel,
-    this.reasoningEffort,
     this.loadingSessions = false,
   }) : workspaces = Map<String, SessionWorkspace>.unmodifiable(workspaces),
        sessions = List.unmodifiable(sessions);
@@ -83,12 +97,6 @@ final class WorkspaceState {
 
   /// Sessions for the sidebar, newest first.
   final List<SessionSummary> sessions;
-
-  /// The model used by subsequent turns.
-  final ModelDescriptor activeModel;
-
-  /// The provider-local reasoning effort used by subsequent turns.
-  final String? reasoningEffort;
 
   /// Whether the session sidebar is refreshing.
   final bool loadingSessions;
@@ -123,6 +131,12 @@ final class WorkspaceState {
   /// Unsent composer text of the focused session.
   String get draft => active.draft;
 
+  /// Model of the focused session.
+  ModelDescriptor get activeModel => active.activeModel;
+
+  /// Reasoning effort of the focused session.
+  String? get reasoningEffort => active.reasoningEffort;
+
   /// Persisted sessions that currently have a turn or compaction in flight.
   Set<SessionId> get runningSessionIds => {
     for (final workspace in workspaces.values)
@@ -152,25 +166,16 @@ final class WorkspaceState {
     return 'Session';
   }
 
-  /// Sentinel distinguishing an unset optional field from an explicit null.
-  static const _unset = Object();
-
   /// Returns a copy with the given fields replaced.
   WorkspaceState copyWith({
     String? activeKey,
     Map<String, SessionWorkspace>? workspaces,
     List<SessionSummary>? sessions,
-    ModelDescriptor? activeModel,
-    Object? reasoningEffort = _unset,
     bool? loadingSessions,
   }) => WorkspaceState(
     activeKey: activeKey ?? this.activeKey,
     workspaces: workspaces ?? this.workspaces,
     sessions: sessions ?? this.sessions,
-    activeModel: activeModel ?? this.activeModel,
-    reasoningEffort: identical(reasoningEffort, _unset)
-        ? this.reasoningEffort
-        : reasoningEffort as String?,
     loadingSessions: loadingSessions ?? this.loadingSessions,
   );
 }

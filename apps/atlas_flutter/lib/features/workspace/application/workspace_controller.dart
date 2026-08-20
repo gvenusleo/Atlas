@@ -50,19 +50,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     if (environment == null) {
       throw StateError('workspaceProvider requires a composed runtime');
     }
-    final activeModel = _descriptorFor(environment.runtime.defaultModel);
     ref.onDispose(_cancelAll);
     final draftKey = _nextDraftKey();
     return WorkspaceState(
       activeKey: draftKey,
       workspaces: {
-        draftKey: SessionWorkspace(
-          workingDirectory: ref.read(workspaceWorkingDirectoryProvider),
-        ),
+        draftKey: _draftWorkspace(ref.read(workspaceWorkingDirectoryProvider)),
       },
       sessions: const [],
-      activeModel: activeModel,
-      reasoningEffort: activeModel.reasoningEfforts.firstOrNull?.value,
     );
   }
 
@@ -112,7 +107,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     final draftKey = _nextDraftKey();
     final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
     _dropEmptyActiveDraft(workspaces);
-    workspaces[draftKey] = SessionWorkspace(workingDirectory: directory);
+    workspaces[draftKey] = _draftWorkspace(
+      directory,
+      model: state.activeModel,
+      reasoningEffort: state.reasoningEffort,
+    );
     _touch(draftKey);
     _evictIdle(workspaces, keepKey: draftKey);
     state = state.copyWith(activeKey: draftKey, workspaces: workspaces);
@@ -128,12 +127,15 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
     try {
       final snapshot = await _environment.runtime.loadSession(id);
+      final selection = _selectionFromTurns(snapshot.turns);
       final workspace = SessionWorkspace(
         sessionId: snapshot.session.id,
         workingDirectory: snapshot.session.workingDirectory,
         messages: _messagesFromTimeline(snapshot.timeline),
         contextTokens: snapshot.session.lastUsage.totalTokens,
         hasImages: _timelineHasImages(snapshot.timeline),
+        activeModel: selection.model,
+        reasoningEffort: selection.effort,
       );
       final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
       workspaces[id.value] = workspace;
@@ -193,11 +195,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
   }
 
-  /// Changes the model and resets reasoning effort to its first option.
+  /// Changes the focused session's model and resets reasoning effort.
   void selectModel(ModelDescriptor model) {
-    state = state.copyWith(
-      activeModel: model,
-      reasoningEffort: model.reasoningEfforts.firstOrNull?.value,
+    _patch(
+      state.activeKey,
+      (workspace) => workspace.copyWith(
+        activeModel: model,
+        reasoningEffort: model.reasoningEfforts.firstOrNull?.value,
+      ),
     );
     if (state.hasImages &&
         !model.inputCapabilities.contains(ModelInputCapability.image)) {
@@ -210,9 +215,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
   }
 
-  /// Changes the provider-local reasoning effort for subsequent turns.
+  /// Changes the focused session's reasoning effort for subsequent turns.
   void selectReasoningEffort(String? effort) {
-    state = state.copyWith(reasoningEffort: effort);
+    _patch(
+      state.activeKey,
+      (workspace) => workspace.copyWith(reasoningEffort: effort),
+    );
   }
 
   /// Stores unsent composer text on the focused session.
@@ -243,8 +251,9 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           sessionId: state.workspaces[key]?.sessionId,
           workingDirectory:
               state.workspaces[key]?.workingDirectory ?? state.workingDirectory,
-          model: state.activeModel.ref,
-          reasoningEffort: state.reasoningEffort,
+          model: (state.workspaces[key] ?? state.active).activeModel.ref,
+          reasoningEffort:
+              (state.workspaces[key] ?? state.active).reasoningEffort,
           skills: _selectedSkills(text),
           cancellation: cancellation,
         ),
@@ -563,8 +572,60 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     String workingDirectory,
   ) {
     final draftKey = _nextDraftKey();
-    workspaces[draftKey] = SessionWorkspace(workingDirectory: workingDirectory);
+    workspaces[draftKey] = _draftWorkspace(workingDirectory);
     return draftKey;
+  }
+
+  SessionWorkspace _draftWorkspace(
+    String workingDirectory, {
+    ModelDescriptor? model,
+    String? reasoningEffort,
+  }) {
+    final selected = model ?? _defaultModel();
+    return SessionWorkspace(
+      workingDirectory: workingDirectory,
+      activeModel: selected,
+      reasoningEffort:
+          reasoningEffort ?? selected.reasoningEfforts.firstOrNull?.value,
+    );
+  }
+
+  ({ModelDescriptor model, String? effort}) _selectionFromTurns(
+    List<Turn> turns,
+  ) {
+    for (final turn in turns.reversed) {
+      final model = turn.model;
+      if (model == null) {
+        continue;
+      }
+      final descriptor = _catalogDescriptor(model);
+      if (descriptor == null) {
+        break;
+      }
+      final effort = turn.reasoningEffort;
+      final validEffort =
+          effort != null &&
+              descriptor.reasoningEfforts.any(
+                (option) => option.value == effort,
+              )
+          ? effort
+          : descriptor.reasoningEfforts.firstOrNull?.value;
+      return (model: descriptor, effort: validEffort);
+    }
+    final model = _defaultModel();
+    return (model: model, effort: model.reasoningEfforts.firstOrNull?.value);
+  }
+
+  ModelDescriptor _defaultModel() =>
+      _descriptorFor(_environment.runtime.defaultModel);
+
+  ModelDescriptor? _catalogDescriptor(ModelRef ref) {
+    for (final model in _environment.models) {
+      if (model.ref == ref) {
+        return model;
+      }
+    }
+    return null;
   }
 
   void _cancelAll() {
@@ -578,14 +639,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
 
   String _nextId() => 'local-${_localId++}';
 
-  ModelDescriptor _descriptorFor(ModelRef ref) {
-    for (final model in _environment.models) {
-      if (model.ref == ref) {
-        return model;
-      }
-    }
-    return ModelDescriptor(ref: ref);
-  }
+  ModelDescriptor _descriptorFor(ModelRef ref) =>
+      _catalogDescriptor(ref) ?? ModelDescriptor(ref: ref);
 
   List<String> _selectedSkills(String text) {
     final available = {
