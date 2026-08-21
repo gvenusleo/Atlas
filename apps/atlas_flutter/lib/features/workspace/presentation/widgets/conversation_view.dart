@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
+import '../../data/image_attachment.dart';
 import 'conversation_input.dart';
 import 'workspace_controls.dart';
 import '../workspace_metrics.dart';
@@ -183,7 +184,7 @@ class _MessageView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (message.kind) {
-      WorkspaceMessageKind.user => _UserMessage(message.text),
+      WorkspaceMessageKind.user => _UserMessage(message),
       WorkspaceMessageKind.assistant => _AssistantMessage(message.text),
       WorkspaceMessageKind.reasoning => _ReasoningMessage(message),
       WorkspaceMessageKind.tool => _ToolMessage(message),
@@ -194,13 +195,15 @@ class _MessageView extends StatelessWidget {
 }
 
 class _UserMessage extends StatelessWidget {
-  const _UserMessage(this.text);
+  const _UserMessage(this.message);
 
-  final String text;
+  final WorkspaceMessage message;
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
+    final text = message.text;
+    final images = message.imageSources;
     return Align(
       alignment: Alignment.centerRight,
       child: Container(
@@ -210,14 +213,56 @@ class _UserMessage extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         margin: const EdgeInsets.symmetric(vertical: 12),
-        child: SelectableText(
-          text,
-          style: TextStyle(
-            color: colors.textPrimary,
-            fontSize: 14,
-            height: 1.5,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (images.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  for (final source in images) _UserImageThumb(source: source),
+                ],
+              ),
+            if (text.isNotEmpty && images.isNotEmpty) const SizedBox(height: 8),
+            if (text.isNotEmpty)
+              SelectableText(
+                text,
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _UserImageThumb extends StatelessWidget {
+  const _UserImageThumb({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = bytesFromImageSource(source);
+    final image = bytes != null
+        ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
+        : source.startsWith('http')
+        ? Image.network(source, fit: BoxFit.cover)
+        : null;
+    if (image == null) {
+      return const SizedBox.shrink();
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220, maxHeight: 160),
+        child: image,
       ),
     );
   }
@@ -258,6 +303,7 @@ class _AssistantMessage extends StatelessWidget {
         styleSheet: MarkdownStyleSheet(
           a: TextStyle(color: colors.accent, fontSize: 14),
           p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
+          pPadding: const EdgeInsets.symmetric(vertical: 2),
           code: TextStyle(
             color: colors.textPrimary,
             fontSize: 13,
@@ -268,31 +314,37 @@ class _AssistantMessage extends StatelessWidget {
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
+          h1Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h2: TextStyle(
             color: colors.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
+          h2Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h3: TextStyle(
             color: colors.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
+          h3Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h4: TextStyle(
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
+          h4Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h5: TextStyle(
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
+          h5Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h6: TextStyle(
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
+          h6Padding: const EdgeInsets.only(top: 12, bottom: 6),
           codeblockDecoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AtlasRadii.surface),
             color: colors.panel,
