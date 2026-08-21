@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +14,7 @@ import 'package:atlas_flutter/app/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
+import 'package:atlas_flutter/features/workspace/data/image_attachment.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
@@ -379,6 +383,56 @@ void main() {
     expect(find.text('Model B').hitTestable(), findsOneWidget);
     expect(find.text('Model A').hitTestable(), findsNothing);
   });
+
+  testWidgets('attaching an image enables send without text', (tester) async {
+    await _pumpSessionPanes(
+      tester,
+      models: [_visionModel()],
+      onPickImages: () async => [_pngImage()],
+    );
+    await tester.tap(find.byKey(const ValueKey('atlas-attach-image')));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Remove image'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('atlas-send-button')));
+    await tester.pumpAndSettle();
+    final user = _workspaceOf(
+      tester,
+    ).messages.where((message) => message.kind == WorkspaceMessageKind.user);
+    expect(user, hasLength(1));
+    expect(user.first.text, isEmpty);
+    expect(user.first.imageSources, hasLength(1));
+    expect(find.byTooltip('Remove image'), findsNothing);
+    expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('pasting an image attaches it to the composer', (tester) async {
+    await _pumpComposer(
+      tester,
+      models: [_visionModel()],
+      onPasteImages: () async => [_pngImage()],
+    );
+    await tester.tap(find.byKey(const ValueKey('atlas-prompt-input')));
+    await tester.pump();
+    final modifier = defaultTargetPlatform == TargetPlatform.macOS
+        ? LogicalKeyboardKey.meta
+        : LogicalKeyboardKey.control;
+    await tester.sendKeyDownEvent(modifier);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(modifier);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Remove image'), findsOneWidget);
+  });
+
+  testWidgets('attach is disabled when the model cannot accept images', (
+    tester,
+  ) async {
+    await _pumpComposer(tester);
+    final button = tester.widget<IconButton>(
+      find.byKey(const ValueKey('atlas-attach-image')),
+    );
+    expect(button.onPressed, isNull);
+  });
 }
 
 WorkspaceState _workspaceOf(WidgetTester tester) {
@@ -393,12 +447,16 @@ Future<void> _pumpComposer(
   List<ModelDescriptor>? models,
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
+  Future<List<PendingImage>> Function()? onPickImages,
+  Future<List<PendingImage>> Function()? onPasteImages,
 }) async {
   await _pumpWorkspace(
     tester,
     models: models,
     contextWindow: contextWindow,
     usage: usage,
+    onPickImages: onPickImages,
+    onPasteImages: onPasteImages,
     child: const Align(
       alignment: Alignment.bottomCenter,
       child: ConversationInput(),
@@ -406,8 +464,19 @@ Future<void> _pumpComposer(
   );
 }
 
-Future<void> _pumpSessionPanes(WidgetTester tester) async {
-  await _pumpWorkspace(tester, child: const SessionPaneHost());
+Future<void> _pumpSessionPanes(
+  WidgetTester tester, {
+  List<ModelDescriptor>? models,
+  Future<List<PendingImage>> Function()? onPickImages,
+  Future<List<PendingImage>> Function()? onPasteImages,
+}) async {
+  await _pumpWorkspace(
+    tester,
+    models: models,
+    onPickImages: onPickImages,
+    onPasteImages: onPasteImages,
+    child: const SessionPaneHost(),
+  );
 }
 
 Future<void> _pumpWorkspace(
@@ -416,6 +485,8 @@ Future<void> _pumpWorkspace(
   List<ModelDescriptor>? models,
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
+  Future<List<PendingImage>> Function()? onPickImages,
+  Future<List<PendingImage>> Function()? onPasteImages,
 }) async {
   final modelA = ModelDescriptor(
     ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('model-a')),
@@ -430,13 +501,14 @@ Future<void> _pumpWorkspace(
     reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
   );
   final allModels = models ?? [modelA, modelB];
+  final defaultModel = allModels.firstOrNull ?? modelA;
   final store = DriftSessionStore.inMemory();
   final runtime = AgentRuntime(
     store: store,
-    provider: _FakeProvider(modelA.ref, usage: usage),
+    provider: _FakeProvider(defaultModel.ref, usage: usage),
     tools: LocalToolRegistry(const []),
     ids: SecureIdGenerator(),
-    defaultModel: modelA.ref,
+    defaultModel: defaultModel.ref,
   );
   addTearDown(store.close);
 
@@ -453,6 +525,10 @@ Future<void> _pumpWorkspace(
         workspaceWorkingDirectoryProvider.overrideWith(
           () => _FixedWorkingDirectory('/tmp'),
         ),
+        if (onPickImages != null)
+          imagePickerProvider.overrideWithValue(onPickImages),
+        if (onPasteImages != null)
+          imageClipboardProvider.overrideWithValue(onPasteImages),
       ],
       child: MaterialApp(
         theme: buildAtlasTheme(Brightness.dark),
@@ -502,3 +578,22 @@ final class _EmptySkillCatalog implements SkillCatalog {
   @override
   List<SkillSummary> get summaries => const [];
 }
+
+ModelDescriptor _visionModel() => ModelDescriptor(
+  ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('vision')),
+  name: 'Vision',
+  inputCapabilities: const {
+    ModelInputCapability.text,
+    ModelInputCapability.image,
+  },
+);
+
+PendingImage _pngImage() => PendingImage(
+  bytes: Uint8List.fromList(
+    base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ),
+  ),
+  mimeType: 'image/png',
+  name: 'dot.png',
+);

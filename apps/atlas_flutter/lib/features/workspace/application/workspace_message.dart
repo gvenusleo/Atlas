@@ -28,6 +28,7 @@ final class WorkspaceMessage {
     required this.id,
     required this.kind,
     required this.text,
+    this.imageSources = const [],
     this.toolName,
     this.arguments,
     this.startedAt,
@@ -43,6 +44,9 @@ final class WorkspaceMessage {
 
   /// Markdown text or tool output.
   final String text;
+
+  /// Data URLs or remote URIs for user-attached images.
+  final List<String> imageSources;
 
   /// Tool name for tool items.
   final String? toolName;
@@ -65,6 +69,7 @@ final class WorkspaceMessage {
         id: id,
         kind: kind,
         text: text ?? this.text,
+        imageSources: imageSources,
         toolName: toolName,
         arguments: arguments,
         startedAt: startedAt,

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -12,6 +14,7 @@ import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_state.dart';
+import '../../data/image_attachment.dart';
 import '../workspace_metrics.dart';
 import 'workspace_controls.dart';
 
@@ -52,15 +55,19 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   var _effortOpen = false;
   var _composing = false;
   var _imeCommitPending = false;
+  var _attaching = false;
+  final _images = <PendingImage>[];
 
   @override
   void initState() {
     super.initState();
     _textController.addListener(_onTextChanged);
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _textController
       ..removeListener(_onTextChanged)
       ..dispose();
@@ -166,6 +173,11 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                     padding: const EdgeInsets.all(8),
                     child: Column(
                       children: [
+                        if (_images.isNotEmpty)
+                          _PendingImageStrip(
+                            images: _images,
+                            onRemove: _removeImage,
+                          ),
                         Focus(
                           onKeyEvent: _handleKey,
                           child: TextField(
@@ -183,7 +195,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                               height: 1.4,
                             ),
                             decoration: InputDecoration(
-                              hintText: 'Message Atlas',
+                              hintText: _images.isEmpty
+                                  ? 'Message Atlas'
+                                  : 'Add a caption, or send the image',
                               hintStyle: TextStyle(color: colors.textSecondary),
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
@@ -199,6 +213,12 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                         ),
                         Row(
                           children: [
+                            _AttachImageButton(
+                              enabled: !busy && _canAttachImages(activeModel),
+                              attaching: _attaching,
+                              onPressed: _pickImages,
+                            ),
+                            const SizedBox(width: 4),
                             _ModelMenu(
                               models: environment.models,
                               activeModel: activeModel,
@@ -348,8 +368,12 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     );
   }
 
-  /// Whether the composer has text to send.
-  bool get _canSend => _textController.text.trim().isNotEmpty;
+  /// Whether the composer has text or images to send.
+  bool get _canSend =>
+      _textController.text.trim().isNotEmpty || _images.isNotEmpty;
+
+  bool _canAttachImages(ModelDescriptor model) =>
+      model.inputCapabilities.contains(ModelInputCapability.image);
 
   /// Closes the floating menus when a pointer lands outside them.
   void _handleOverlayPointerDown(PointerDownEvent event) {
@@ -563,20 +587,127 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   Future<void> _submit() async {
     final text = _textController.text.trim();
-    if (text.isEmpty) {
+    if (text.isEmpty && _images.isEmpty) {
       return;
     }
     if (text == '/quit' && usesManagedDesktopWindow) {
       await windowManager.close();
       return;
     }
+    final images = List<PendingImage>.from(_images);
     _textController.clear();
-    await ref
+    setState(_images.clear);
+    final sent = await ref
         .read(workspaceProvider.notifier)
-        .send(text, sessionKey: widget.sessionKey);
-    if (mounted) {
-      _focusNode.requestFocus();
+        .send(
+          text,
+          sessionKey: widget.sessionKey,
+          images: [for (final image in images) image.toContent()],
+        );
+    if (!mounted) {
+      return;
     }
+    if (!sent) {
+      _textController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      setState(() => _images.addAll(images));
+    }
+    _focusNode.requestFocus();
+  }
+
+  void _removeImage(int index) {
+    setState(() => _images.removeAt(index));
+  }
+
+  Future<void> _pickImages() async {
+    if (_attaching || !_canAttachImages(_workspace.activeModel)) {
+      return;
+    }
+    setState(() => _attaching = true);
+    try {
+      final images = await ref.read(imagePickerProvider)();
+      if (!mounted) {
+        return;
+      }
+      _addImages(images);
+    } finally {
+      if (mounted) {
+        setState(() => _attaching = false);
+      }
+    }
+  }
+
+  Future<void> _pasteImages() async {
+    if (!_canAttachImages(_workspace.activeModel)) {
+      return;
+    }
+    final images = await ref.read(imageClipboardProvider)();
+    if (!mounted || images.isEmpty) {
+      return;
+    }
+    _addImages(images);
+  }
+
+  void _addImages(List<PendingImage> images) {
+    if (images.isEmpty) {
+      return;
+    }
+    final controller = ref.read(workspaceProvider.notifier);
+    final remaining = ImageAttachmentLimits.maxCount - _images.length;
+    if (remaining <= 0) {
+      controller.notify(
+        'You can attach up to ${ImageAttachmentLimits.maxCount} images.',
+        sessionKey: widget.sessionKey,
+      );
+      return;
+    }
+    final accepted = <PendingImage>[];
+    var skippedLarge = false;
+    var skippedCount = false;
+    for (final image in images) {
+      if (accepted.length >= remaining) {
+        skippedCount = true;
+        continue;
+      }
+      if (image.bytes.length > ImageAttachmentLimits.maxBytes) {
+        skippedLarge = true;
+        continue;
+      }
+      accepted.add(image);
+    }
+    if (accepted.isNotEmpty) {
+      setState(() => _images.addAll(accepted));
+    }
+    if (skippedCount) {
+      controller.notify(
+        'You can attach up to ${ImageAttachmentLimits.maxCount} images.',
+        sessionKey: widget.sessionKey,
+      );
+    } else if (skippedLarge) {
+      controller.notify(
+        'Images larger than 10 MB were skipped.',
+        sessionKey: widget.sessionKey,
+      );
+    }
+  }
+
+  bool _onHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        !_focusNode.hasFocus ||
+        event.logicalKey != LogicalKeyboardKey.keyV) {
+      return false;
+    }
+    final paste =
+        HardwareKeyboard.instance.isMetaPressed ||
+        (HardwareKeyboard.instance.isControlPressed &&
+            defaultTargetPlatform != TargetPlatform.macOS);
+    if (!paste) {
+      return false;
+    }
+    unawaited(_pasteImages());
+    return false;
   }
 
   void _onTextChanged() {
@@ -595,6 +726,123 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
         _selectedSuggestion = 0;
       }
     });
+  }
+}
+
+class _AttachImageButton extends StatelessWidget {
+  const _AttachImageButton({
+    required this.enabled,
+    required this.attaching,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final bool attaching;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Tooltip(
+      message: enabled
+          ? 'Attach image'
+          : 'Current model does not support images',
+      child: WorkspaceHoverSurface(
+        enabled: enabled && !attaching,
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        child: IconButton(
+          key: const ValueKey('atlas-attach-image'),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+          style: IconButton.styleFrom(overlayColor: Colors.transparent),
+          onPressed: enabled && !attaching ? onPressed : null,
+          icon: Icon(
+            LucideIcons.paperclip,
+            size: 14,
+            color: enabled ? colors.textSecondary : colors.divider,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingImageStrip extends StatelessWidget {
+  const _PendingImageStrip({required this.images, required this.onRemove});
+
+  final List<PendingImage> images;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (index, image) in images.indexed)
+              _PendingImageChip(image: image, onRemove: () => onRemove(index)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingImageChip extends StatelessWidget {
+  const _PendingImageChip({required this.image, required this.onRemove});
+
+  final PendingImage image;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
+              child: Image.memory(
+                image.bytes,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            ),
+          ),
+          Positioned(
+            top: -4,
+            right: -4,
+            child: Tooltip(
+              message: 'Remove image',
+              child: Material(
+                color: colors.canvas,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onRemove,
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: Icon(
+                      LucideIcons.x,
+                      size: 11,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

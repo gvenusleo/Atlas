@@ -475,6 +475,207 @@ void main() {
     expect(state.messages.last.kind, isNot(WorkspaceMessageKind.notice));
   });
 
+  test('send attaches images to the user turn', () async {
+    final visionModel = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('vision')),
+      name: 'Vision model',
+      inputCapabilities: const {
+        ModelInputCapability.text,
+        ModelInputCapability.image,
+      },
+    );
+    final store = DriftSessionStore.inMemory();
+    final provider = _RecordingProvider();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: visionModel.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [visionModel],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    const image = ImageContent(
+      source: 'data:image/png;base64,AAAA',
+      mimeType: 'image/png',
+    );
+    final controller = container.read(workspaceProvider.notifier);
+    final sent = await controller.send('describe this', images: const [image]);
+    expect(sent, isTrue);
+
+    final state = container.read(workspaceProvider);
+    expect(state.hasImages, isTrue);
+    expect(state.messages.first.kind, WorkspaceMessageKind.user);
+    expect(state.messages.first.text, 'describe this');
+    expect(state.messages.first.imageSources, [image.source]);
+    expect(
+      provider.contents.first.whereType<ImageContent>().single.source,
+      image.source,
+    );
+  });
+
+  test('send rejects images for slash commands', () async {
+    final visionModel = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('vision')),
+      name: 'Vision model',
+      inputCapabilities: const {
+        ModelInputCapability.text,
+        ModelInputCapability.image,
+      },
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(visionModel.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: visionModel.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [visionModel],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    final sent = await controller.send(
+      '/compact',
+      images: const [ImageContent(source: 'data:image/png;base64,AAAA')],
+    );
+    expect(sent, isFalse);
+    final state = container.read(workspaceProvider);
+    expect(state.busy, isFalse);
+    expect(state.messages.single.kind, WorkspaceMessageKind.notice);
+    expect(state.messages.single.text, contains('do not support images'));
+  });
+
+  test('send rejects images when the model cannot accept them', () async {
+    final textModel = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('text')),
+      name: 'Text only',
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(textModel.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: textModel.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [textModel],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    final sent = await controller.send(
+      'look',
+      images: const [ImageContent(source: 'data:image/png;base64,AAAA')],
+    );
+    expect(sent, isFalse);
+    expect(
+      container.read(workspaceProvider).messages.single.text,
+      contains('does not support image input'),
+    );
+  });
+
+  test('resume restores user image thumbnails', () async {
+    final visionModel = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('vision')),
+      name: 'Vision model',
+      inputCapabilities: const {
+        ModelInputCapability.text,
+        ModelInputCapability.image,
+      },
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(visionModel.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: visionModel.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [visionModel],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    const image = ImageContent(
+      source: 'data:image/png;base64,AAAA',
+      mimeType: 'image/png',
+    );
+    final session = await runtime.createSession(workingDirectory: '/tmp');
+    await runtime
+        .run(
+          TurnRequest(
+            sessionId: session.id,
+            content: const [TextContent('describe this'), image],
+            workingDirectory: '/tmp',
+            model: visionModel.ref,
+          ),
+        )
+        .toList();
+
+    await container.read(workspaceProvider.notifier).resume(session.id);
+    final user = container
+        .read(workspaceProvider)
+        .messages
+        .firstWhere((message) => message.kind == WorkspaceMessageKind.user);
+    expect(user.text, 'describe this');
+    expect(user.imageSources, [image.source]);
+  });
+
   test(
     'a running session stays cached while another session is focused',
     () async {
@@ -772,15 +973,22 @@ final class _EmptySkillCatalog implements SkillCatalog {
 final class _RecordingProvider implements ModelProvider {
   final models = <ModelRef>[];
   final efforts = <String?>[];
+  final contents = <List<ContentPart>>[];
 
   @override
-  Future<ModelDescriptor> describe(ModelRef requested) async =>
-      ModelDescriptor(ref: requested);
+  Future<ModelDescriptor> describe(ModelRef requested) async => ModelDescriptor(
+    ref: requested,
+    inputCapabilities: const {
+      ModelInputCapability.text,
+      ModelInputCapability.image,
+    },
+  );
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
     models.add(request.model);
     efforts.add(request.reasoningEffort);
+    contents.add(request.messages.first.content);
     yield const TextDeltaEvent('ok');
     yield const ModelCompletedEvent(
       ModelResponse(

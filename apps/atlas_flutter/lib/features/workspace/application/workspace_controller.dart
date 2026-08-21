@@ -228,6 +228,13 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     );
   }
 
+  /// Appends a local notice to a session transcript.
+  ///
+  /// Defaults to the focused session when [sessionKey] is omitted.
+  void notify(String text, {String? sessionKey}) {
+    _append(sessionKey ?? state.activeKey, WorkspaceMessageKind.notice, text);
+  }
+
   /// Shows the terminal or file browser for the focused session.
   void setShowTerminal(bool showTerminal) {
     _patch(
@@ -239,25 +246,72 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   /// Submits a prompt or executes a TUI-compatible slash command.
   ///
   /// Defaults to the focused session when [sessionKey] is omitted.
-  Future<void> send(String rawText, {String? sessionKey}) async {
+  /// Returns false when the prompt is empty, the session is busy, or the
+  /// prompt is rejected before a turn starts.
+  Future<bool> send(
+    String rawText, {
+    String? sessionKey,
+    List<ImageContent> images = const [],
+  }) async {
     var key = sessionKey ?? state.activeKey;
     final workspace = state.workspaces[key];
     final text = rawText.trim();
-    if (text.isEmpty || workspace == null || workspace.busy) {
-      return;
+    if ((text.isEmpty && images.isEmpty) ||
+        workspace == null ||
+        workspace.busy) {
+      return false;
     }
-    if (await _handleSlashCommand(text, sessionKey: key)) {
-      return;
+    if (text.startsWith('/')) {
+      if (images.isNotEmpty) {
+        _append(
+          key,
+          WorkspaceMessageKind.notice,
+          'Slash commands do not support images.',
+        );
+        return false;
+      }
+      if (await _handleSlashCommand(text, sessionKey: key)) {
+        return true;
+      }
     }
+    if (images.isNotEmpty &&
+        !workspace.activeModel.inputCapabilities.contains(
+          ModelInputCapability.image,
+        )) {
+      final label = workspace.activeModel.name.isEmpty
+          ? workspace.activeModel.ref.modelId.value
+          : workspace.activeModel.name;
+      _append(
+        key,
+        WorkspaceMessageKind.notice,
+        '$label does not support image input.',
+      );
+      return false;
+    }
+    final content = <ContentPart>[
+      if (text.isNotEmpty) TextContent(text),
+      ...images,
+    ];
     final cancellation = CancellationToken();
     _cancellations[key] = cancellation;
     _streamOpen[key] = false;
-    _patch(key, (workspace) => workspace.copyWith(busy: true));
-    _append(key, WorkspaceMessageKind.user, text);
+    _patch(
+      key,
+      (workspace) => workspace.copyWith(
+        busy: true,
+        hasImages: workspace.hasImages || images.isNotEmpty,
+      ),
+    );
+    _append(
+      key,
+      WorkspaceMessageKind.user,
+      text,
+      imageSources: [for (final image in images) image.source],
+    );
     try {
       await for (final event in _environment.runtime.run(
         TurnRequest(
-          content: [TextContent(text)],
+          content: content,
           sessionId: state.workspaces[key]?.sessionId,
           workingDirectory:
               state.workspaces[key]?.workingDirectory ?? state.workingDirectory,
@@ -286,6 +340,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       );
       await refreshSessions(showLoading: false);
     }
+    return true;
   }
 
   /// Cancels a session's runtime operation.
@@ -482,13 +537,23 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     _streamOpen[key] = true;
   }
 
-  void _append(String key, WorkspaceMessageKind kind, String text) {
+  void _append(
+    String key,
+    WorkspaceMessageKind kind,
+    String text, {
+    List<String> imageSources = const [],
+  }) {
     _streamOpen[key] = false;
     _patch(key, (workspace) {
       return workspace.copyWith(
         messages: [
           ...workspace.messages,
-          WorkspaceMessage(id: _nextId(), kind: kind, text: text),
+          WorkspaceMessage(
+            id: _nextId(),
+            kind: kind,
+            text: text,
+            imageSources: imageSources,
+          ),
         ],
       );
     });
@@ -694,12 +759,17 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       switch (item) {
         case UserMessageItem(:final content):
           final text = textFromContent(content);
-          if (text.isNotEmpty) {
+          final imageSources = [
+            for (final part in content)
+              if (part is ImageContent) part.source,
+          ];
+          if (text.isNotEmpty || imageSources.isNotEmpty) {
             messages.add(
               WorkspaceMessage(
                 id: item.id.value,
                 kind: WorkspaceMessageKind.user,
                 text: text,
+                imageSources: imageSources,
               ),
             );
           }
