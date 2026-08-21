@@ -14,10 +14,10 @@ Polygon = list[Point]
 
 SIZE = 512
 SUPERSAMPLE = 4
-# Keep about 20% padding around the stroked mark so launcher masks
+# Keep about 15% padding around the stroked mark so launcher masks
 # do not clip the apex or base corners.
-SIDE = 248.0
-HALF_STROKE = 18.6
+SIDE = 280.0
+HALF_STROKE = 21.0
 
 
 def cross(a: Point, b: Point) -> float:
