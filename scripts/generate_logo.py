@@ -14,9 +14,10 @@ Polygon = list[Point]
 
 SIZE = 512
 SUPERSAMPLE = 4
-SIDE = 320.0
-APEX_Y = 104.0
-HALF_STROKE = 24.0
+# Keep about 20% padding around the stroked mark so launcher masks
+# do not clip the apex or base corners.
+SIDE = 248.0
+HALF_STROKE = 18.6
 
 
 def cross(a: Point, b: Point) -> float:
@@ -124,9 +125,10 @@ def inset_triangle(triangle: tuple[Point, Point, Point], distance: float) -> Pol
 def logo_geometry() -> tuple[tuple[Point, Point, Point], list[Polygon], list[Polygon]]:
     """Construct aligned main-mountain bands and the folded mountain ring."""
     height = SIDE * math.sqrt(3.0) / 2.0
-    apex = (SIZE / 2.0, APEX_Y)
-    left = ((SIZE - SIDE) / 2.0, APEX_Y + height)
-    right = ((SIZE + SIDE) / 2.0, APEX_Y + height)
+    apex_y = (SIZE - height) / 2.0
+    apex = (SIZE / 2.0, apex_y)
+    left = ((SIZE - SIDE) / 2.0, apex_y + height)
+    right = ((SIZE + SIDE) / 2.0, apex_y + height)
     break_point = midpoint(apex, right)
     base_midpoint = midpoint(left, right)
 
@@ -207,17 +209,15 @@ def validate_geometry(
                 raise ValueError(f"edge angle {edge_angle} is outside the triangular grid")
 
 
-def fill_polygon(mask: bytearray, polygon: Polygon, scale: int, value: int) -> None:
+def fill_polygon(mask: bytearray, polygon: Polygon, canvas_size: int, value: int) -> None:
     """Rasterize a polygon into the supersampled mask using even-odd filling."""
-    scaled = [(x * scale, y * scale) for x, y in polygon]
-    canvas_size = SIZE * scale
-    min_y = max(0, int(math.floor(min(y for _, y in scaled))))
-    max_y = min(canvas_size - 1, int(math.ceil(max(y for _, y in scaled))))
+    min_y = max(0, int(math.floor(min(y for _, y in polygon))))
+    max_y = min(canvas_size - 1, int(math.ceil(max(y for _, y in polygon))))
 
     for y in range(min_y, max_y + 1):
         scan_y = y + 0.5
         intersections: list[float] = []
-        for start, end in zip(scaled, scaled[1:] + scaled[:1]):
+        for start, end in zip(polygon, polygon[1:] + polygon[:1]):
             if (start[1] <= scan_y < end[1]) or (end[1] <= scan_y < start[1]):
                 ratio = (scan_y - start[1]) / (end[1] - start[1])
                 intersections.append(start[0] + ratio * (end[0] - start[0]))
@@ -231,24 +231,8 @@ def fill_polygon(mask: bytearray, polygon: Polygon, scale: int, value: int) -> N
             mask[row_start + x_start : row_start + x_end] = bytes((value,)) * (x_end - x_start)
 
 
-def blend(base: tuple[float, float, float], color: tuple[float, float, float], alpha: float) -> tuple[float, float, float]:
-    """Alpha-blend one RGB color over another."""
-    return tuple(channel * (1.0 - alpha) + overlay * alpha for channel, overlay in zip(base, color))
-
-
-def background_color(x: int, y: int) -> tuple[int, int, int]:
-    """Return a light periwinkle, cyan, and lavender gradient color."""
-    vertical = y / (SIZE - 1)
-    horizontal = x / (SIZE - 1)
-    top = blend((181.0, 196.0, 248.0), (142.0, 211.0, 246.0), horizontal)
-    bottom = blend((111.0, 102.0, 220.0), (103.0, 127.0, 222.0), horizontal)
-    smooth_vertical = vertical * vertical * (3.0 - 2.0 * vertical)
-    color = blend(top, bottom, smooth_vertical)
-
-    lavender_distance = ((horizontal - 0.48) / 0.44) ** 2 + ((vertical + 0.04) / 0.42) ** 2
-    lavender_alpha = 0.24 * math.exp(-lavender_distance / 2.0)
-    color = blend(color, (205.0, 186.0, 248.0), lavender_alpha)
-    return tuple(max(0, min(255, round(channel))) for channel in color)
+# Ayu Dark editor background from Zed's `ayu.json` / Atlas Flutter canvas.
+AYU_DARK_BACKGROUND = (13, 16, 22)
 
 
 def png_chunk(kind: bytes, data: bytes) -> bytes:
@@ -258,49 +242,232 @@ def png_chunk(kind: bytes, data: bytes) -> bytes:
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", checksum & 0xFFFFFFFF)
 
 
-def write_png(output: Path, filled: list[Polygon], holes: list[Polygon]) -> None:
-    """Render the gradient and antialiased white mark to an RGB PNG."""
-    sample_size = SIZE * SUPERSAMPLE
+def encode_png(filled: list[Polygon], holes: list[Polygon], size: int) -> bytes:
+    """Render the Ayu Dark background and antialiased white mark to PNG bytes."""
+    sample_size = size * SUPERSAMPLE
+    factor = sample_size / SIZE
     mask = bytearray(sample_size * sample_size)
     for polygon in filled:
-        fill_polygon(mask, polygon, SUPERSAMPLE, 255)
+        fill_polygon(
+            mask,
+            [(x * factor, y * factor) for x, y in polygon],
+            sample_size,
+            255,
+        )
     for polygon in holes:
-        fill_polygon(mask, polygon, SUPERSAMPLE, 0)
+        fill_polygon(
+            mask,
+            [(x * factor, y * factor) for x, y in polygon],
+            sample_size,
+            0,
+        )
 
     rows = bytearray()
     sample_count = SUPERSAMPLE * SUPERSAMPLE
-    for y in range(SIZE):
+    for y in range(size):
         rows.append(0)
-        for x in range(SIZE):
+        for x in range(size):
             coverage = 0
             for offset_y in range(SUPERSAMPLE):
                 row = (y * SUPERSAMPLE + offset_y) * sample_size
                 start = row + x * SUPERSAMPLE
                 coverage += sum(mask[start : start + SUPERSAMPLE])
             alpha = coverage / (255.0 * sample_count)
-            background = background_color(x, y)
-            rows.extend(round(channel * (1.0 - alpha) + 255.0 * alpha) for channel in background)
+            rows.extend(
+                round(channel * (1.0 - alpha) + 255.0 * alpha)
+                for channel in AYU_DARK_BACKGROUND
+            )
 
-    header = struct.pack(">IIBBBBB", SIZE, SIZE, 8, 2, 0, 0, 0)
+    header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
     png = b"\x89PNG\r\n\x1a\n"
     png += png_chunk(b"IHDR", header)
     png += png_chunk(b"IDAT", zlib.compress(bytes(rows), level=9))
     png += png_chunk(b"IEND", b"")
+    return png
+
+
+def write_png(output: Path, filled: list[Polygon], holes: list[Polygon], size: int = SIZE) -> None:
+    """Write one square PNG of [size] pixels."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(png)
+    output.write_bytes(encode_png(filled, holes, size))
+
+
+def write_ico(output: Path, images: list[tuple[int, bytes]]) -> None:
+    """Write a Windows ICO containing PNG-compressed square images."""
+    offset = 6 + 16 * len(images)
+    header = struct.pack("<HHH", 0, 1, len(images))
+    entries = bytearray()
+    payloads = bytearray()
+    for size, png in images:
+        width = 0 if size >= 256 else size
+        height = 0 if size >= 256 else size
+        entries += struct.pack("<BBBBHHII", width, height, 0, 0, 1, 32, len(png), offset)
+        payloads += png
+        offset += len(png)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(header + entries + payloads)
+
+
+def write_app_icons(root: Path, filled: list[Polygon], holes: list[Polygon]) -> list[Path]:
+    """Rasterize launcher icons for every Flutter platform."""
+    cache: dict[int, bytes] = {}
+
+    def png_at(size: int) -> bytes:
+        if size not in cache:
+            cache[size] = encode_png(filled, holes, size)
+        return cache[size]
+
+    def write_at(path: Path, size: int) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(png_at(size))
+        return path
+
+    written = [
+        write_at(root / "docs/assets/atlas-logo-512.png", 512),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_16.png",
+            16,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_32.png",
+            32,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_64.png",
+            64,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png",
+            128,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png",
+            256,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png",
+            512,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png",
+            1024,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png",
+            20,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png",
+            40,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png",
+            60,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png",
+            29,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png",
+            58,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png",
+            87,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png",
+            40,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png",
+            80,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png",
+            120,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png",
+            120,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png",
+            180,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png",
+            76,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png",
+            152,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png",
+            167,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+            1024,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+            48,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+            72,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+            96,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+            144,
+        ),
+        write_at(
+            root / "apps/atlas_flutter/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+            192,
+        ),
+        write_at(root / "apps/atlas_flutter/linux/runner/resources/app_icon.png", 512),
+    ]
+    ico = root / "apps/atlas_flutter/windows/runner/resources/app_icon.ico"
+    write_ico(
+        ico,
+        [(size, png_at(size)) for size in (16, 32, 48, 256)],
+    )
+    written.append(ico)
+    return written
 
 
 def main() -> None:
-    """Generate and validate the project logo."""
-    default_output = Path(__file__).resolve().parent.parent / "docs/assets/atlas-logo-512.png"
+    """Generate and validate the project logo and app launcher icons."""
+    root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=default_output)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write only this PNG instead of the docs asset and app icons",
+    )
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=SIZE,
+        help="Pixel size used with --output (default: 512)",
+    )
     args = parser.parse_args()
 
     triangle, filled, holes = logo_geometry()
     validate_geometry(triangle, filled, holes)
-    write_png(args.output, filled, holes)
-    print(f"Generated {args.output} with exact 60-degree geometry")
+    if args.output is not None:
+        write_png(args.output, filled, holes, args.size)
+        print(f"Generated {args.output} with exact 60-degree geometry")
+        return
+    written = write_app_icons(root, filled, holes)
+    print(f"Generated {len(written)} logo and launcher icon files")
 
 
 if __name__ == "__main__":
