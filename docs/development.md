@@ -47,7 +47,7 @@ mise run test         # run available Dart and Flutter tests
 mise run ci           # complete repository verification
 ```
 
-Run the Flutter client with `mise run app-run --device macos`. Platform debug builds use the matching `mise run app-build-*` task.
+Run the Flutter client with `mise run app-run --device macos`. Platform release builds use the matching `mise run app-build-*` task. Install a locally built macOS app into `/Applications` with `mise run app-install-macos` (override the destination with `APP_INSTALL_DIR`).
 
 Build the single-file CLI binary with `mise run build-cli`. Dart 3.13's
 `dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks

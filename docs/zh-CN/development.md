@@ -47,7 +47,7 @@ mise run test         # 运行已有 Dart 与 Flutter 测试
 mise run ci           # 完整仓库验证
 ```
 
-使用 `mise run app-run --device macos` 运行 Flutter 客户端。各平台 debug 构建使用对应的 `mise run app-build-*` 任务。
+使用 `mise run app-run --device macos` 运行 Flutter 客户端。各平台 release 构建使用对应的 `mise run app-build-*` 任务。使用 `mise run app-install-macos` 将本地构建的 macOS 应用安装到 `/Applications`（可用 `APP_INSTALL_DIR` 覆盖安装目录）。
 
 使用 `mise run build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
 `dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package

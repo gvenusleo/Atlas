@@ -4,6 +4,8 @@ flutter = { version = "3.47.0", checksum_expr = '"sha256:" + filter(fromJSON(bod
 [vars]
 # Directory the CLI binary is installed into by `mise run install`.
 INSTALL_DIR = "$HOME/.local/bin"
+# Directory the macOS app is installed into by `mise run app-install-macos`.
+APP_INSTALL_DIR = "/Applications"
 
 [tasks.default]
 description = "List all tasks"
@@ -88,31 +90,41 @@ run = "flutter run --no-pub -d {{ usage.device }}"
 description = "Build the Flutter app for Linux"
 dir = "apps/atlas_flutter"
 depends = ["deps"]
-run = "flutter build linux --debug --no-pub"
+run = "flutter build linux --release --no-pub"
 
 [tasks.app-build-macos]
 description = "Build the Flutter app for macOS"
 dir = "apps/atlas_flutter"
 depends = ["deps"]
-run = "flutter build macos --debug --no-pub"
+run = "flutter build macos --release --no-pub"
+
+[tasks.app-install-macos]
+description = "Install the macOS app into /Applications (override with APP_INSTALL_DIR)"
+depends = ["app-build-macos"]
+run = [
+  "mkdir -p {{ vars.APP_INSTALL_DIR }}",
+  "rm -rf '{{ vars.APP_INSTALL_DIR }}/Atlas.app'",
+  "cp -R apps/atlas_flutter/build/macos/Build/Products/Release/Atlas.app '{{ vars.APP_INSTALL_DIR }}/Atlas.app'",
+  "echo \"Installed Atlas.app to {{ vars.APP_INSTALL_DIR }}/Atlas.app\"",
+]
 
 [tasks.app-build-windows]
 description = "Build the Flutter app for Windows"
 dir = "apps/atlas_flutter"
 depends = ["deps"]
-run = "flutter build windows --debug --no-pub"
+run = "flutter build windows --release --no-pub"
 
 [tasks.app-build-android]
 description = "Build the Flutter app for Android"
 dir = "apps/atlas_flutter"
 depends = ["deps"]
-run = "flutter build apk --debug --no-pub"
+run = "flutter build apk --release --no-pub"
 
 [tasks.app-build-ios]
 description = "Build the Flutter app for iOS"
 dir = "apps/atlas_flutter"
 depends = ["deps"]
-run = "flutter build ios --debug --no-codesign --no-pub"
+run = "flutter build ios --release --no-codesign --no-pub"
 
 [tasks.clean]
 description = "Clean Flutter build artifacts"

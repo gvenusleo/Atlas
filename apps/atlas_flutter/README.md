@@ -57,4 +57,4 @@ mise run app-run --device macos
 mise run ci
 ```
 
-Platform debug builds remain available through the `mise run app-build-*` tasks.
+Platform release builds remain available through the `mise run app-build-*` tasks. Install a locally built macOS app with `mise run app-install-macos`.
