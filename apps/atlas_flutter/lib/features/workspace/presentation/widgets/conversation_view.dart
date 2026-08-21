@@ -542,7 +542,7 @@ class _ReasoningMessage extends StatelessWidget {
       ),
       isRunning: message.isRunning,
       child: SelectableText(
-        message.text,
+        message.text.trim(),
         style: TextStyle(
           color: colors.textSecondary,
           fontSize: 12,
