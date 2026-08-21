@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:morphnext/morphnext.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../../app/platform_window.dart';
@@ -263,8 +264,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                       : _submit,
                                   child: SizedBox.square(
                                     dimension: 28,
-                                    child: Icon(
-                                      busy
+                                    child: AnimatedMorphIcon(
+                                      icon: busy
                                           ? LucideIcons.square
                                           : LucideIcons.arrowUp,
                                       size: 14,

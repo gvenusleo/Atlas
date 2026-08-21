@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
+import 'package:morphnext/morphnext.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
@@ -484,8 +485,8 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
                               ),
                             )
                           : const AlwaysStoppedAnimation(1),
-                      child: Icon(
-                        _expanded ? LucideIcons.chevronDown : widget.icon,
+                      child: AnimatedMorphIcon(
+                        icon: _expanded ? LucideIcons.chevronDown : widget.icon,
                         size: 14,
                         color: titleColor,
                       ),
