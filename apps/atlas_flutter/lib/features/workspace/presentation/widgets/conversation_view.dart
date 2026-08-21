@@ -114,7 +114,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     if (messages.length != _lastMessageCount || textLength != _lastTextLength) {
       _lastMessageCount = messages.length;
       _lastTextLength = textLength;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _keepAtLatest());
     }
 
     if (messages.isEmpty) {
@@ -122,26 +122,34 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     }
     // One SelectionArea per message: a list-wide delegate would keep sorting
     // selectables whose render objects were recycled by the lazy list.
+    // The reversed list anchors offset zero at the newest message, so
+    // streaming growth and fresh sessions stay pinned to the latest text.
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
         child: ListView.builder(
           controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          reverse: true,
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
           itemCount: messages.length,
           itemBuilder: (context, index) =>
-              _MessageView(message: messages[index]),
+              _MessageView(message: messages[messages.length - 1 - index]),
         ),
       ),
     );
   }
 
-  void _scrollToEnd() {
+  /// Keeps the viewport on the newest message unless the user is reading
+  /// history. In a reversed list, offset zero is the newest end.
+  void _keepAtLatest() {
     if (!mounted || !_scrollController.hasClients) {
       return;
     }
-    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    if (_scrollController.offset > 32) {
+      return;
+    }
+    _scrollController.jumpTo(0);
   }
 }
 
