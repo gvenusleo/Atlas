@@ -49,11 +49,11 @@ mise run ci           # complete repository verification
 
 Run the Flutter client with `mise run app-run --device macos`. Platform release builds use the matching `mise run app-build-*` task. Install a locally built macOS app into `/Applications` with `mise run app-install-macos` (override the destination with `APP_INSTALL_DIR`).
 
-Build the single-file CLI binary with `mise run build-cli`. Dart 3.13's
+Build the single-file CLI binary with `mise run cli-build`. Dart 3.13's
 `dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks
 (sqlite3) cannot use `dart compile exe`.
 
-Install a locally built binary into `~/.local/bin` with `mise run install`.
+Install a locally built binary into `~/.local/bin` with `mise run cli-install`.
 End users install a prebuilt release binary with
 `curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash`
 (macOS/Linux) or `irm .../latest/download/install.ps1 | iex` (Windows); the

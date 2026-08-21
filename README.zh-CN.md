@@ -27,7 +27,7 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   follow-along 位置）；
 - Dart 实现需要遵守的架构与开发规范。
 
-WebSocket transport 与 MCP 集成尚未实现。CLI 可通过 `mise run build-cli`
+WebSocket transport 与 MCP 集成尚未实现。CLI 可通过 `mise run cli-build`
 构建为单文件可执行程序（`build/bundle/bin/atlas`）。
 
 ## 安装
@@ -47,8 +47,8 @@ irm https://github.com/gvenusleo/atlas/releases/latest/download/install.ps1 | ie
 或从源码构建并安装：
 
 ```sh
-mise run build-cli    # build/bundle/bin/atlas
-mise run install      # 安装到 ~/.local/bin
+mise run cli-build    # build/bundle/bin/atlas
+mise run cli-install  # 安装到 ~/.local/bin
 ```
 
 ## 开发

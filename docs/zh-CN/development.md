@@ -49,11 +49,11 @@ mise run ci           # 完整仓库验证
 
 使用 `mise run app-run --device macos` 运行 Flutter 客户端。各平台 release 构建使用对应的 `mise run app-build-*` 任务。使用 `mise run app-install-macos` 将本地构建的 macOS 应用安装到 `/Applications`（可用 `APP_INSTALL_DIR` 覆盖安装目录）。
 
-使用 `mise run build-cli` 构建单文件 CLI 可执行程序。Dart 3.13 的
+使用 `mise run cli-build` 构建单文件 CLI 可执行程序。Dart 3.13 的
 `dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
 （sqlite3）不能使用 `dart compile exe`。
 
-使用 `mise run install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
+使用 `mise run cli-install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
 预编译 release 二进制：macOS/Linux 运行
 `curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash`，
 Windows 运行 `irm .../latest/download/install.ps1 | iex`；脚本会下载与当前

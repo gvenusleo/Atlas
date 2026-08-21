@@ -31,7 +31,7 @@ The repository currently contains:
 - architecture and development contracts for the Dart implementation.
 
 WebSocket transport and MCP integrations are not implemented yet. The CLI
-builds as a single executable with `mise run build-cli`
+builds as a single executable with `mise run cli-build`
 (`build/bundle/bin/atlas`).
 
 ## Installation
@@ -51,8 +51,8 @@ irm https://github.com/gvenusleo/atlas/releases/latest/download/install.ps1 | ie
 Or build and install from source:
 
 ```sh
-mise run build-cli    # build/bundle/bin/atlas
-mise run install      # install into ~/.local/bin
+mise run cli-build    # build/bundle/bin/atlas
+mise run cli-install  # install into ~/.local/bin
 ```
 
 ## Development

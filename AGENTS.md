@@ -55,5 +55,5 @@
 - Run focused tests for changed behavior first.
 - Run `mise run ci` before delivery. It resolves the locked workspace, checks formatting, analyzes Dart and Flutter code, and runs available tests.
 - For Flutter platform integration changes, also run the matching `mise run app-build-*` task.
-- Build the CLI with `mise run build-cli` (`dart build cli`, required for packages with build hooks like sqlite3; `dart compile exe` cannot link them). The binary lands at `build/bundle/bin/atlas`; do not recreate a `build/atlas` symlink.
+- Build the CLI with `mise run cli-build` (`dart build cli`, required for packages with build hooks like sqlite3; `dart compile exe` cannot link them). The binary lands at `build/bundle/bin/atlas`; do not recreate a `build/atlas` symlink.
 - Report commands that passed and remaining risk. Command completion alone is not proof; verify the observable file or behavior change.

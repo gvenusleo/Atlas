@@ -2,7 +2,7 @@
 flutter = { version = "3.47.0", checksum_expr = '"sha256:" + filter(fromJSON(body).releases, { #.archive endsWith filename })[0].sha256', platforms = { linux-x64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version }}-stable.tar.xz" }, macos-arm64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version }}-stable.zip" }, macos-x64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{{ version }}-stable.zip" }, windows-x64 = { checksum_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_windows.json", url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version }}-stable.zip" } }, version_expr = 'fromJSON(body).releases | filter({ #.channel == "stable" }) | map({ replace(#.version, "-stable", "") }) | sortVersions()', version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json" }
 
 [vars]
-# Directory the CLI binary is installed into by `mise run install`.
+# Directory the CLI binary is installed into by `mise run cli-install`.
 INSTALL_DIR = "$HOME/.local/bin"
 # Directory the macOS app is installed into by `mise run app-install-macos`.
 APP_INSTALL_DIR = "/Applications"
@@ -58,18 +58,18 @@ depends = ["dart-test", "app-test"]
 description = "Complete repository verification (fmt-check + analyze + test)"
 depends = ["fmt-check", "analyze", "test"]
 
-[tasks.tui-debug]
+[tasks.cli-debug]
 description = "Run the TUI with the Dart VM service enabled for debugging"
 run = "dart --enable-vm-service apps/atlas_cli/bin/atlas.dart"
 
-[tasks.build-cli]
+[tasks.cli-build]
 description = "Build the native atlas executable (output lands under build/bundle/)"
 depends = ["deps"]
 run = "dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/"
 
-[tasks.install]
+[tasks.cli-install]
 description = "Install the built CLI binary into ~/.local/bin (override with INSTALL_DIR)"
-depends = ["build-cli"]
+depends = ["cli-build"]
 run = [
   "mkdir -p {{ vars.INSTALL_DIR }}",
   "mv -f build/bundle/bin/atlas {{ vars.INSTALL_DIR }}/atlas",
