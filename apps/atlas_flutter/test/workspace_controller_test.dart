@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
@@ -11,6 +12,17 @@ import 'package:atlas_flutter/features/workspace/application/workspace_controlle
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 
 void main() {
+  test('defaults the workspace directory to the home directory', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    expect(
+      container.read(workspaceWorkingDirectoryProvider),
+      home == null || home.isEmpty ? Directory.current.path : home,
+    );
+  });
+
   test('streams a runtime turn into persisted workspace messages', () async {
     final model = ModelDescriptor(
       ref: ModelRef(

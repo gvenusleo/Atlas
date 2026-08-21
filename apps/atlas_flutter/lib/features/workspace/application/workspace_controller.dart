@@ -15,12 +15,24 @@ final workspaceWorkingDirectoryProvider =
     );
 
 /// Holds the workspace working directory.
+///
+/// Cold start uses the user home directory so a packaged app does not inherit
+/// the process current directory (`/` when launched from Finder).
 class WorkspaceWorkingDirectory extends Notifier<String> {
   @override
-  String build() => Directory.current.path;
+  String build() => _homeDirectory() ?? Directory.current.path;
 
   /// Switches the working directory for subsequent sessions.
   void set(String directory) => state = directory;
+}
+
+String? _homeDirectory() {
+  final home =
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+  if (home == null || home.isEmpty) {
+    return null;
+  }
+  return home;
 }
 
 /// Coordinates one Flutter workspace with the injected shared runtime.
