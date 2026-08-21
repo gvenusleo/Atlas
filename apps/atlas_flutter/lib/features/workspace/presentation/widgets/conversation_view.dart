@@ -120,18 +120,18 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     if (messages.isEmpty) {
       return const _ConversationEmptyState();
     }
-    return SelectionArea(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-            itemCount: messages.length,
-            itemBuilder: (context, index) =>
-                _MessageView(message: messages[index]),
-          ),
+    // One SelectionArea per message: a list-wide delegate would keep sorting
+    // selectables whose render objects were recycled by the lazy list.
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          itemCount: messages.length,
+          itemBuilder: (context, index) =>
+              _MessageView(message: messages[index]),
         ),
       ),
     );
@@ -184,14 +184,16 @@ class _MessageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return switch (message.kind) {
-      WorkspaceMessageKind.user => _UserMessage(message),
-      WorkspaceMessageKind.assistant => _AssistantMessage(message.text),
-      WorkspaceMessageKind.reasoning => _ReasoningMessage(message),
-      WorkspaceMessageKind.tool => _ToolMessage(message),
-      WorkspaceMessageKind.notice => _NoticeMessage(message.text),
-      WorkspaceMessageKind.error => _ErrorMessage(message.text),
-    };
+    return SelectionArea(
+      child: switch (message.kind) {
+        WorkspaceMessageKind.user => _UserMessage(message),
+        WorkspaceMessageKind.assistant => _AssistantMessage(message.text),
+        WorkspaceMessageKind.reasoning => _ReasoningMessage(message),
+        WorkspaceMessageKind.tool => _ToolMessage(message),
+        WorkspaceMessageKind.notice => _NoticeMessage(message.text),
+        WorkspaceMessageKind.error => _ErrorMessage(message.text),
+      },
+    );
   }
 }
 
