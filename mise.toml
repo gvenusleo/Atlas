@@ -21,11 +21,11 @@ run = "flutter pub get"
 
 [tasks.fmt]
 description = "Format Dart sources"
-run = "dart format packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test"
+run = "dart format packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test scripts"
 
 [tasks.fmt-check]
 description = "Check formatting without rewriting"
-run = "dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test"
+run = "dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test scripts"
 
 [tasks.analyze]
 description = "Analyze the workspace"
