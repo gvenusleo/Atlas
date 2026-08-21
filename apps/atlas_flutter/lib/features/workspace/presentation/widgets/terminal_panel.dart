@@ -153,6 +153,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
         fontSize: 13,
         fontFamily: WorkspaceMetrics.monospaceFontFamily,
         fontFamilyFallback: const ['SF Mono', 'Monaco', 'monospace'],
+        height: 1.2,
       ),
     );
   }
