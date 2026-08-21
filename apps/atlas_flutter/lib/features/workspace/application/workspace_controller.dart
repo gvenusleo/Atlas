@@ -365,32 +365,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     final key = sessionKey ?? state.activeKey;
     final parts = text.split(RegExp(r'\s+'));
     switch (parts.first) {
-      case '/new':
-        if (parts.length != 1) {
-          return false;
-        }
-        newSession();
-        return true;
       case '/compact':
         await _compact(parts.skip(1).join(' '), sessionKey: key);
-        return true;
-      case '/resume':
-        if (parts.length < 2) {
-          _append(
-            key,
-            WorkspaceMessageKind.notice,
-            'Select a session from the sidebar or provide its id.',
-          );
-          return true;
-        }
-        await resume(SessionId(parts[1]));
-        return true;
-      case '/model':
-        _append(
-          key,
-          WorkspaceMessageKind.notice,
-          'Choose a model from the input toolbar.',
-        );
         return true;
       default:
         return false;

@@ -74,7 +74,7 @@ RuntimeBootstrap bootstrapRuntime({Map<String, String>? environment}) {
       RuntimeEnvironment(
         runtime: runtime,
         models: List.unmodifiable(composeModels(config)),
-        skills: loadSkillCatalog(),
+        skills: loadSkillCatalog(homeDirectory: home),
         onClose: store.close,
       ),
     );

@@ -66,22 +66,32 @@ void main() {
   });
 
   testWidgets('slash suggestions highlight follows the mouse', (tester) async {
-    await _pumpComposer(tester);
+    await _pumpComposer(
+      tester,
+      skills: const [
+        SkillSummary(
+          name: 'hunt',
+          path: '/tmp/skills/hunt/SKILL.md',
+          description: 'Finds root causes',
+        ),
+      ],
+    );
 
-    // Type a slash to open the command picker.
+    // Type a slash to open the command picker: built-in first, then skills.
     await tester.enterText(
       find.byKey(const ValueKey('atlas-prompt-input')),
       '/',
     );
     await tester.pumpAndSettle();
     expect(find.text('/compact'), findsOneWidget);
+    expect(find.text('/hunt'), findsOneWidget);
 
     // Hover the second row with a real mouse pointer.
     final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await gesture.addPointer(location: Offset.zero);
     addTearDown(gesture.removePointer);
     await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.text('/model')));
+    await gesture.moveTo(tester.getCenter(find.text('/hunt')));
     await tester.pump();
 
     AnimatedPositioned highlight() =>
@@ -137,21 +147,30 @@ void main() {
     expect(find.text('Model B'), findsNothing);
   });
 
-  testWidgets('escape clears the slash suggestions', (tester) async {
+  testWidgets('escape dismisses the slash suggestions without clearing', (
+    tester,
+  ) async {
     await _pumpComposer(tester);
 
     // Type a slash to open the command picker.
     await tester.enterText(
       find.byKey(const ValueKey('atlas-prompt-input')),
-      '/',
+      '/compact',
     );
     await tester.pumpAndSettle();
-    expect(find.text('/compact'), findsOneWidget);
+    expect(find.textContaining('Compact the conversation'), findsOneWidget);
 
-    // Escape clears the input and closes the picker.
+    // Escape dismisses the popup but keeps the draft text.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.text('/compact'), findsNothing);
+    expect(find.byType(AnimatedPositioned), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('atlas-prompt-input')))
+          .controller!
+          .text,
+      '/compact',
+    );
   });
 
   testWidgets('model picker keyboard does not crash with no models', (
@@ -168,6 +187,147 @@ void main() {
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pump();
+  });
+
+  testWidgets('skill suggestions carry a [Skill] tag', (tester) async {
+    await _pumpComposer(
+      tester,
+      skills: const [
+        SkillSummary(
+          name: 'hunt',
+          path: '/tmp/skills/hunt/SKILL.md',
+          description: 'Finds root causes',
+        ),
+      ],
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/h',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('[Skill]'), findsOneWidget);
+    expect(find.textContaining('Finds root causes'), findsOneWidget);
+  });
+
+  testWidgets('mid-text slash tokens complete skills only', (tester) async {
+    await _pumpComposer(
+      tester,
+      skills: const [
+        SkillSummary(
+          name: 'hunt',
+          path: '/tmp/skills/hunt/SKILL.md',
+          description: 'Finds root causes',
+        ),
+      ],
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'explain this /hu',
+    );
+    await tester.pumpAndSettle();
+
+    // Only the skill matches: built-ins are whole-line commands.
+    expect(find.text('/compact'), findsNothing);
+    expect(find.text('/hunt'), findsOneWidget);
+
+    // Enter applies the skill token and preserves the draft before it.
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+    );
+    expect(field.controller!.text, 'explain this /hunt ');
+  });
+
+  testWidgets('slash popup windows more than five matches', (tester) async {
+    await _pumpComposer(
+      tester,
+      skills: [
+        for (var i = 1; i <= 6; i++)
+          SkillSummary(
+            name: 'skill-$i',
+            path: '/tmp/skills/skill-$i/SKILL.md',
+            description: 'Skill $i',
+          ),
+      ],
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('/compact'), findsOneWidget);
+    expect(find.text('/skill-1'), findsOneWidget);
+    expect(find.text('/skill-4'), findsOneWidget);
+    expect(find.text('/skill-5'), findsNothing);
+    expect(find.text('/skill-6'), findsNothing);
+
+    for (var i = 0; i < 5; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+
+    expect(find.text('/compact'), findsNothing);
+    expect(find.text('/skill-3'), findsOneWidget);
+    expect(find.text('/skill-6'), findsOneWidget);
+    AnimatedPositioned highlight() =>
+        tester.widget<AnimatedPositioned>(find.byType(AnimatedPositioned));
+    expect(highlight().top, 90);
+  });
+
+  testWidgets('uppercase and dotted skill names still complete', (
+    tester,
+  ) async {
+    await _pumpComposer(
+      tester,
+      skills: const [
+        SkillSummary(
+          name: 'My.Skill_v2',
+          path: '/tmp/skills/My.Skill_v2/SKILL.md',
+          description: 'Dotted skill',
+        ),
+      ],
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/My.Sk',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('/My.Skill_v2'), findsOneWidget);
+  });
+
+  testWidgets('escape keeps the popup closed until the draft changes', (
+    tester,
+  ) async {
+    await _pumpComposer(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/compact',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Compact the conversation'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(AnimatedPositioned), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(find.byType(AnimatedPositioned), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      '/compac',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Compact the conversation'), findsOneWidget);
   });
 
   testWidgets('send button shifts to the accent color on hover', (
@@ -445,6 +605,7 @@ WorkspaceState _workspaceOf(WidgetTester tester) {
 Future<void> _pumpComposer(
   WidgetTester tester, {
   List<ModelDescriptor>? models,
+  List<SkillSummary> skills = const [],
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
   Future<List<PendingImage>> Function()? onPickImages,
@@ -453,6 +614,7 @@ Future<void> _pumpComposer(
   await _pumpWorkspace(
     tester,
     models: models,
+    skills: skills,
     contextWindow: contextWindow,
     usage: usage,
     onPickImages: onPickImages,
@@ -483,6 +645,7 @@ Future<void> _pumpWorkspace(
   WidgetTester tester, {
   required Widget child,
   List<ModelDescriptor>? models,
+  List<SkillSummary> skills = const [],
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
   Future<List<PendingImage>> Function()? onPickImages,
@@ -519,7 +682,9 @@ Future<void> _pumpWorkspace(
           RuntimeEnvironment(
             runtime: runtime,
             models: allModels,
-            skills: _EmptySkillCatalog(),
+            skills: skills.isEmpty
+                ? _EmptySkillCatalog()
+                : _FakeSkillCatalog(skills),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -577,6 +742,29 @@ final class _EmptySkillCatalog implements SkillCatalog {
 
   @override
   List<SkillSummary> get summaries => const [];
+}
+
+final class _FakeSkillCatalog implements SkillCatalog {
+  _FakeSkillCatalog(this.summaries);
+
+  @override
+  final List<SkillSummary> summaries;
+
+  @override
+  Skill? lookup(String name) {
+    for (final summary in summaries) {
+      if (summary.name == name) {
+        return Skill(
+          name: summary.name,
+          path: summary.path,
+          dir: summary.path,
+          description: summary.description,
+          content: '',
+        );
+      }
+    }
+    return null;
+  }
 }
 
 ModelDescriptor _visionModel() => ModelDescriptor(

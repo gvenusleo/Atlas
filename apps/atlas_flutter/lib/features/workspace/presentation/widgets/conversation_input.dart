@@ -8,9 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
-import 'package:window_manager/window_manager.dart';
 
-import '../../../../app/platform_window.dart';
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
@@ -21,11 +19,10 @@ import 'workspace_controls.dart';
 
 const _builtInCommands = <(String, String)>[
   ('compact', 'Compact the conversation'),
-  ('model', 'Choose a model'),
-  ('new', 'Start a new session'),
-  ('quit', 'Quit Atlas'),
-  ('resume', 'Resume a previous session'),
 ];
+
+/// Maximum slash suggestion rows shown before the popup scrolls.
+const _maxSlashPopupRows = 5;
 
 /// Composer with model, reasoning effort, slash completion, send, and cancel.
 class ConversationInput extends ConsumerStatefulWidget {
@@ -57,6 +54,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   var _composing = false;
   var _imeCommitPending = false;
   var _attaching = false;
+  String? _dismissedText;
+  var _lastText = '';
   final _images = <PendingImage>[];
 
   @override
@@ -448,20 +447,30 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   }
 
   List<(String, String)> get _suggestions {
-    final value = _textController.text;
-    if (!value.startsWith('/') || value.contains(RegExp(r'\s'))) {
+    final value = _textController.value;
+    if (_dismissedText == value.text) {
       return const [];
     }
-    final query = value.substring(1).toLowerCase();
+    final token = _slashTokenAt(value.text, value.selection.baseOffset);
+    if (token == null) {
+      return const [];
+    }
     final skills = ref.read(runtimeEnvironmentProvider)!.skills.summaries;
-    final commands = <(String, String)>[
-      ..._builtInCommands,
-      for (final skill in skills) (skill.name, skill.description),
+    final commands = <(String, String, bool)>[
+      for (final command in _builtInCommands) (command.$1, command.$2, false),
+      for (final skill in skills)
+        (skill.name, '[Skill] ${skill.description}', true),
     ];
-    return commands
-        .where((command) => command.$1.toLowerCase().startsWith(query))
-        .take(5)
-        .toList();
+    final candidates = token.skillsOnly
+        ? [
+            for (final command in commands)
+              if (command.$3) command,
+          ]
+        : commands;
+    return [
+      for (final (name, description, _) in _rank(token.query, candidates))
+        (name, description),
+    ];
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
@@ -477,7 +486,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
         });
         _overlayPortalController.hide();
         if (suggestions.isNotEmpty) {
-          _textController.clear();
+          // Dismiss the popup without clearing the draft; typing again
+          // reopens it, matching the TUI behavior.
+          _dismissedText = _textController.value.text;
         }
         return KeyEventResult.handled;
       }
@@ -577,11 +588,32 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   }
 
   void _applySuggestion((String, String) suggestion) {
-    final takesArgument =
-        suggestion.$1 == 'compact' || suggestion.$1 == 'resume';
-    _textController.text = '/${suggestion.$1}${takesArgument ? ' ' : ''}';
-    _textController.selection = TextSelection.collapsed(
-      offset: _textController.text.length,
+    final value = _textController.value;
+    final token = _slashTokenAt(value.text, value.selection.baseOffset);
+    if (token == null) {
+      return;
+    }
+    // Replace only the active `/token`, preserving the rest of the draft,
+    // and insert a trailing space so arguments can follow (like the TUI).
+    final replacement = '/${suggestion.$1}';
+    var newText =
+        value.text.substring(0, token.start) +
+        replacement +
+        value.text.substring(token.end);
+    var newOffset = token.start + replacement.length;
+    if (newOffset >= newText.length) {
+      newText = '$newText ';
+      newOffset = newText.length;
+    } else if (newText[newOffset] == ' ') {
+      newOffset += 1;
+    } else {
+      newText =
+          '${newText.substring(0, newOffset)} ${newText.substring(newOffset)}';
+      newOffset += 1;
+    }
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newOffset),
     );
     _focusNode.requestFocus();
   }
@@ -589,10 +621,6 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   Future<void> _submit() async {
     final text = _textController.text.trim();
     if (text.isEmpty && _images.isEmpty) {
-      return;
-    }
-    if (text == '/quit' && usesManagedDesktopWindow) {
-      await windowManager.close();
       return;
     }
     final images = List<PendingImage>.from(_images);
@@ -722,12 +750,109 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       });
     }
     _composing = composing;
+    final text = _textController.value.text;
+    if (text != _lastText) {
+      _lastText = text;
+      _dismissedText = null;
+    }
     setState(() {
       if (_selectedSuggestion != 0 || _suggestions.isNotEmpty) {
         _selectedSuggestion = 0;
       }
     });
   }
+}
+
+/// The slash token under [offset], or null when the cursor is not inside a
+/// `/name` token.
+///
+/// Mirrors the TUI completer: a token whose surroundings are not all
+/// whitespace only completes skills, so built-ins stay whole-line commands.
+({int start, int end, String query, bool skillsOnly})? _slashTokenAt(
+  String text,
+  int offset,
+) {
+  if (text.isEmpty) {
+    return null;
+  }
+  final column = offset.clamp(0, text.length);
+  if (column > 0 && _isWhitespace(text[column - 1])) {
+    return null;
+  }
+  var start = column;
+  while (start > 0 && !_isWhitespace(text[start - 1])) {
+    start--;
+  }
+  var end = column;
+  while (end < text.length && !_isWhitespace(text[end])) {
+    end++;
+  }
+  if (start >= end || text[start] != '/') {
+    return null;
+  }
+  final query = text.substring(start + 1, end);
+  if (query.isNotEmpty && !_validSlashCommandName(query)) {
+    return null;
+  }
+  final skillsOnly = '${text.substring(0, start)}${text.substring(end)}'
+      .trim()
+      .isNotEmpty;
+  return (start: start, end: end, query: query, skillsOnly: skillsOnly);
+}
+
+/// Ranks commands: exact name first, then prefix, then substring.
+List<(String, String, bool)> _rank(
+  String query,
+  List<(String, String, bool)> commands,
+) {
+  if (query.isEmpty) {
+    return List.of(commands);
+  }
+  final exact = <(String, String, bool)>[];
+  final prefix = <(String, String, bool)>[];
+  final contains = <(String, String, bool)>[];
+  final lower = query.toLowerCase();
+  for (final command in commands) {
+    final name = command.$1.toLowerCase();
+    if (name == lower) {
+      exact.add(command);
+    } else if (name.startsWith(lower)) {
+      prefix.add(command);
+    } else if (name.contains(lower)) {
+      contains.add(command);
+    }
+  }
+  return [...exact, ...prefix, ...contains];
+}
+
+/// Whether [char] is a whitespace separator delimiting slash tokens.
+bool _isWhitespace(String char) =>
+    char == ' ' || char == '\t' || char == '\n' || char == '\r';
+
+/// Whether [name] is a valid slash token, matching the TUI character set.
+bool _validSlashCommandName(String name) {
+  if (name.isEmpty) {
+    return false;
+  }
+  for (final code in name.codeUnits) {
+    final isLetter =
+        (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A);
+    final isDigit = code >= 0x30 && code <= 0x39;
+    if (!isLetter && !isDigit && code != 0x5F && code != 0x2D && code != 0x2E) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// First visible row of a scrolling popup window that keeps the highlight
+/// centered, mirroring the TUI slash popup.
+int _windowStart(int selected, int count, int maxRows) {
+  if (count <= maxRows) {
+    return 0;
+  }
+  final top = selected - (maxRows - 1) ~/ 2;
+  return top.clamp(0, count - maxRows);
 }
 
 class _AttachImageButton extends StatelessWidget {
@@ -859,6 +984,7 @@ class _FloatingMenuCard<T> extends StatelessWidget {
     required this.rowHeight,
     required this.cardPadding,
     required this.itemBuilder,
+    this.maxVisibleRows,
   });
 
   final List<T> items;
@@ -870,9 +996,21 @@ class _FloatingMenuCard<T> extends StatelessWidget {
   final double cardPadding;
   final Widget Function(BuildContext context, T item, int index) itemBuilder;
 
+  /// Maximum rows rendered at once; the window follows the highlight.
+  final int? maxVisibleRows;
+
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
+    final rows = maxVisibleRows == null
+        ? items.length
+        : math.min(maxVisibleRows!, items.length);
+    final windowStart = maxVisibleRows == null
+        ? 0
+        : _windowStart(highlighted, items.length, maxVisibleRows!);
+    final visible = maxVisibleRows == null
+        ? items
+        : items.sublist(windowStart, windowStart + rows);
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -896,7 +1034,7 @@ class _FloatingMenuCard<T> extends StatelessWidget {
               curve: Curves.easeOutCubic,
               left: 0,
               right: 0,
-              top: highlighted * rowHeight,
+              top: (highlighted - windowStart) * rowHeight,
               height: rowHeight,
               child: Container(
                 decoration: BoxDecoration(
@@ -908,15 +1046,16 @@ class _FloatingMenuCard<T> extends StatelessWidget {
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final (index, item) in items.indexed)
+                for (final (index, item) in visible.indexed)
                   InkWell(
-                    onHover: (hovered) =>
-                        onHighlighted(hovered ? index : selectedIndex),
+                    onHover: (hovered) => onHighlighted(
+                      hovered ? windowStart + index : selectedIndex,
+                    ),
                     onTap: () => onSelected(item),
                     child: Container(
                       height: rowHeight,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: itemBuilder(context, item, index),
+                      child: itemBuilder(context, item, windowStart + index),
                     ),
                   ),
               ],
@@ -956,6 +1095,7 @@ class _SlashSuggestions extends StatelessWidget {
         onSelected: onSelected,
         rowHeight: _rowHeight,
         cardPadding: 8,
+        maxVisibleRows: _maxSlashPopupRows,
         itemBuilder: (context, suggestion, index) => Row(
           children: [
             Text(
