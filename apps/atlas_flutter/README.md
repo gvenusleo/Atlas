@@ -22,7 +22,7 @@ not implemented yet.
 
 - Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`,
   `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`,
-  `file_selector`, `super_clipboard`, `pty2`, and `terminal_view`.
+  `file_selector`, `clipboard`, `pty2`, and `terminal_view`.
 - `atlas_composition` for process-level runtime construction.
 - `atlas_config`, `atlas_prompt`, and `atlas_storage` from application
   bootstrap only. Tests may also import `atlas_tools`.

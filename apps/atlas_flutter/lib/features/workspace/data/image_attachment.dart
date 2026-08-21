@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:clipboard/clipboard.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 
 /// Limits applied to images attached to a prompt.
 abstract final class ImageAttachmentLimits {
@@ -77,22 +76,21 @@ Future<List<PendingImage>> pickImageFiles() async {
   return images;
 }
 
-/// Reads PNG, JPEG, WebP, and GIF images from the system clipboard.
+/// Reads an image from the system clipboard.
+///
+/// The clipboard package exposes a single image without a MIME type, so the
+/// format is sniffed from magic bytes before the image is accepted.
 Future<List<PendingImage>> readClipboardImages() async {
-  final clipboard = SystemClipboard.instance;
-  if (clipboard == null) {
-    return const [];
-  }
   try {
-    final reader = await clipboard.read();
-    final images = <PendingImage>[];
-    for (final item in reader.items) {
-      final image = await _imageFromClipboardItem(item);
-      if (image != null) {
-        images.add(image);
-      }
+    final bytes = await FlutterClipboard.pasteImage();
+    if (bytes == null || bytes.isEmpty) {
+      return const [];
     }
-    return images;
+    final mimeType = imageMimeType(bytes: bytes);
+    if (mimeType == null) {
+      return const [];
+    }
+    return [PendingImage(bytes: bytes, mimeType: mimeType)];
   } catch (_) {
     return const [];
   }
@@ -140,55 +138,4 @@ Uint8List? bytesFromImageSource(String source) {
   } on FormatException {
     return null;
   }
-}
-
-const _clipboardFormats = <(FileFormat, String)>[
-  (Formats.png, 'image/png'),
-  (Formats.jpeg, 'image/jpeg'),
-  (Formats.webp, 'image/webp'),
-  (Formats.gif, 'image/gif'),
-];
-
-Future<PendingImage?> _imageFromClipboardItem(ClipboardDataReader item) async {
-  for (final (format, mimeType) in _clipboardFormats) {
-    if (!item.canProvide(format)) {
-      continue;
-    }
-    final bytes = await _readClipboardFile(item, format);
-    if (bytes == null || bytes.isEmpty) {
-      continue;
-    }
-    return PendingImage(
-      bytes: bytes,
-      mimeType: mimeType,
-      name: await item.getSuggestedName(),
-    );
-  }
-  return null;
-}
-
-Future<Uint8List?> _readClipboardFile(
-  ClipboardDataReader item,
-  FileFormat format,
-) {
-  final completer = Completer<Uint8List?>();
-  final progress = item.getFile(
-    format,
-    (file) async {
-      try {
-        completer.complete(await file.readAll());
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      }
-    },
-    onError: (error) {
-      if (!completer.isCompleted) {
-        completer.completeError(error);
-      }
-    },
-  );
-  if (progress == null && !completer.isCompleted) {
-    completer.complete(null);
-  }
-  return completer.future;
 }
