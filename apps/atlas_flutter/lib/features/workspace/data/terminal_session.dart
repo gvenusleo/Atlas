@@ -11,18 +11,27 @@ final class TerminalSession {
   /// Whether a shell process is currently attached.
   bool get isRunning => _pty != null;
 
+  /// Shell executable started in the workspace terminal.
+  static String get executable => Platform.isWindows
+      ? 'cmd.exe'
+      : Platform.environment['SHELL'] ?? '/bin/sh';
+
+  /// Login-shell arguments so macOS `path_helper` and profile scripts run.
+  ///
+  /// Finder-launched apps inherit a minimal PATH. A login shell loads
+  /// `/etc/zprofile`, which prepends Homebrew and other `/etc/paths.d` entries.
+  static List<String> get arguments =>
+      Platform.isWindows ? const <String>[] : const ['-l'];
+
   /// Starts a shell and forwards output and exit status to the callbacks.
   Future<void> start({
     required String workingDirectory,
     required void Function(String) onOutput,
     required void Function(int) onExit,
   }) async {
-    final executable = Platform.isWindows
-        ? 'cmd.exe'
-        : Platform.environment['SHELL'] ?? '/bin/sh';
     final pty = PseudoTerminal.start(
       executable,
-      const [],
+      arguments,
       workingDirectory: workingDirectory,
       environment: const {'TERM': 'xterm-256color'},
     );
