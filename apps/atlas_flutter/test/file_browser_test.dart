@@ -5,6 +5,7 @@ import 'package:atlas_flutter/features/workspace/application/workspace_controlle
 import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/gestures.dart';
@@ -104,6 +105,45 @@ void main() {
     await settle(tester);
     expect(find.text('b.txt'), findsOneWidget);
     expect(find.text('hello world'), findsNothing);
+  });
+
+  testWidgets('markdown files toggle between source and preview', (
+    tester,
+  ) async {
+    File('${tempDir.path}/readme.md').writeAsStringSync('# Title\n\nbody');
+
+    await pumpBrowser(tester);
+
+    await tester.tap(find.text('readme.md'));
+    await settle(tester);
+
+    // Source mode by default; the toggle sits left of the close button.
+    expect(find.textContaining('# Title'), findsOneWidget);
+    expect(find.byType(MarkdownBody), findsNothing);
+    expect(find.byTooltip('Toggle markdown preview'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Toggle markdown preview'));
+    await settle(tester);
+    expect(find.byType(MarkdownBody), findsOneWidget);
+    expect(find.text('Title'), findsOneWidget);
+    expect(find.textContaining('# Title'), findsNothing);
+
+    // Toggling again returns to the raw source.
+    await tester.tap(find.byTooltip('Toggle markdown preview'));
+    await settle(tester);
+    expect(find.byType(MarkdownBody), findsNothing);
+    expect(find.textContaining('# Title'), findsOneWidget);
+  });
+
+  testWidgets('non-markdown files offer no preview toggle', (tester) async {
+    File('${tempDir.path}/notes.txt').writeAsStringSync('plain');
+
+    await pumpBrowser(tester);
+
+    await tester.tap(find.text('notes.txt'));
+    await settle(tester);
+    expect(find.text('plain'), findsOneWidget);
+    expect(find.byTooltip('Toggle markdown preview'), findsNothing);
   });
 
   testWidgets('preview toolbar shows the path relative to the root', (

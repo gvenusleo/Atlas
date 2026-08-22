@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../../shared/markdown/atlas_markdown.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../data/file_browser_service.dart';
@@ -106,6 +107,7 @@ class _FileBrowserState extends State<FileBrowser> {
   File? _selectedFile;
   String? _preview;
   String? _error;
+  var _markdownPreview = false;
 
   @override
   void initState() {
@@ -176,6 +178,7 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Widget _buildPreviewToolbar(AtlasColors colors) {
     final selected = _selectedFile;
+    final markdown = selected != null && _isMarkdownFile(selected);
     return Row(
       children: [
         Expanded(
@@ -193,6 +196,19 @@ class _FileBrowserState extends State<FileBrowser> {
             ),
           ),
         ),
+        if (markdown) ...[
+          WorkspaceToolbarButton(
+            icon: LucideIcons.eye,
+            tooltip: 'Toggle markdown preview',
+            onPressed: () {
+              if (_preview == null) {
+                return;
+              }
+              setState(() => _markdownPreview = !_markdownPreview);
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
         WorkspaceToolbarButton(
           icon: LucideIcons.x,
           tooltip: 'Back to files',
@@ -214,6 +230,17 @@ class _FileBrowserState extends State<FileBrowser> {
           ),
         );
       }
+      if (_markdownPreview && _isMarkdownFile(_selectedFile!)) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(6, 6, 6, 12),
+          child: SelectionArea(
+            child: AtlasMarkdown(
+              data: _preview ?? '',
+              fontFamily: WorkspaceMetrics.monospaceFontFamily,
+            ),
+          ),
+        );
+      }
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(6, 6, 6, 12),
         child: SelectableText(
@@ -221,7 +248,7 @@ class _FileBrowserState extends State<FileBrowser> {
           style: TextStyle(
             color: colors.textPrimary,
             fontFamily: WorkspaceMetrics.monospaceFontFamily,
-            fontSize: 11.5,
+            fontSize: 14,
             height: 1.45,
           ),
         ),
@@ -440,6 +467,7 @@ class _FileBrowserState extends State<FileBrowser> {
       _selectedFile = file;
       _preview = null;
       _error = null;
+      _markdownPreview = false;
     });
     _loadPreview();
   }
@@ -449,6 +477,7 @@ class _FileBrowserState extends State<FileBrowser> {
       _selectedFile = null;
       _preview = null;
       _error = null;
+      _markdownPreview = false;
     });
   }
 
@@ -475,6 +504,12 @@ class _FileBrowserState extends State<FileBrowser> {
       }
     }
   }
+}
+
+/// Whether [file] is a Markdown document that can be previewed.
+bool _isMarkdownFile(File file) {
+  final extension = file.path.split('.').last.toLowerCase();
+  return extension == 'md' || extension == 'markdown';
 }
 
 /// Paints a vertical tree guide line spanning the full row height.
