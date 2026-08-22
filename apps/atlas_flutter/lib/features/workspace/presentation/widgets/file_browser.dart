@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
+import 'package:clipboard/clipboard.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -11,6 +12,7 @@ import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../data/file_browser_service.dart';
 import '../workspace_metrics.dart';
+import 'file_browser_menu.dart';
 
 /// Keeps one [FileBrowser] per session so expand/preview state survives focus changes.
 class FileBrowserHost extends ConsumerStatefulWidget {
@@ -108,6 +110,20 @@ class _FileBrowserState extends State<FileBrowser> {
   String? _preview;
   String? _error;
   var _markdownPreview = false;
+  FileClipboard? _clipboard;
+  final _rootMenu = MenuController();
+  final _rowMenus = <MenuController>[];
+
+  void _dismissMenus() {
+    if (_rootMenu.isOpen) {
+      _rootMenu.close();
+    }
+    for (final menu in _rowMenus) {
+      if (menu.isOpen) {
+        menu.close();
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -276,82 +292,120 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       );
     }
-    if (_rootNode.children?.isEmpty ?? false) {
-      return Center(
-        child: Text(
-          'Empty folder',
-          style: TextStyle(color: colors.textSecondary, fontSize: 12),
+    final empty = _rootNode.children?.isEmpty ?? false;
+    return Stack(
+      children: [
+        MenuAnchor(
+          controller: _rootMenu,
+          consumeOutsideTap: true,
+          menuChildren: _rootMenuItems(colors),
+          child: const SizedBox.shrink(),
         ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
-      itemCount: _visibleNodes.length,
-      itemBuilder: (context, index) => _buildRow(_visibleNodes[index], colors),
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onSecondaryTapUp: (details) {
+              _dismissMenus();
+              _rootMenu.open(position: details.localPosition);
+            },
+            child: empty
+                ? Center(
+                    child: Text(
+                      'Empty folder',
+                      style: TextStyle(
+                        color: colors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+        ),
+        if (!empty)
+          ListView.builder(
+            padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
+            itemCount: _visibleNodes.length,
+            itemBuilder: (context, index) =>
+                _buildRow(_visibleNodes[index], colors),
+          ),
+      ],
     );
   }
 
   Widget _buildRow(_TreeNode node, AtlasColors colors) {
     final isDirectory = node.entity is Directory;
-    return WorkspaceHoverSurface(
-      borderRadius: BorderRadius.circular(AtlasRadii.control),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () =>
-            isDirectory ? _toggleNode(node) : _openFile(node.entity as File),
-        child: SizedBox(
-          height: 26,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 6, right: 8),
-            child: Row(
-              children: [
-                // One guide line per ancestor level, running the full row.
-                for (var depth = 0; depth < node.depth; depth++)
-                  SizedBox(
-                    width: 12,
-                    height: double.infinity,
-                    child: CustomPaint(
-                      painter: _GuideLinePainter(
-                        color: colors.textSecondary.withValues(alpha: 0.45),
+    return FileRowMenu(
+      registry: _rowMenus,
+      onOpen: _dismissMenus,
+      items: isDirectory
+          ? _folderMenuItems(node, colors)
+          : _fileMenuItems(node, colors),
+      child: WorkspaceHoverSurface(
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            _dismissMenus();
+            if (isDirectory) {
+              _toggleNode(node);
+            } else {
+              _openFile(node.entity as File);
+            }
+          },
+          child: SizedBox(
+            height: 26,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 6, right: 8),
+              child: Row(
+                children: [
+                  // One guide line per ancestor level, running the full row.
+                  for (var depth = 0; depth < node.depth; depth++)
+                    SizedBox(
+                      width: 12,
+                      height: double.infinity,
+                      child: CustomPaint(
+                        painter: _GuideLinePainter(
+                          color: colors.textSecondary.withValues(alpha: 0.45),
+                        ),
                       ),
                     ),
+                  Icon(
+                    isDirectory
+                        ? (node.expanded
+                              ? LucideIcons.folderOpen
+                              : LucideIcons.folder)
+                        : LucideIcons.file,
+                    size: 15,
+                    color: colors.textPrimary,
                   ),
-                Icon(
-                  isDirectory
-                      ? (node.expanded
-                            ? LucideIcons.folderOpen
-                            : LucideIcons.folder)
-                      : LucideIcons.file,
-                  size: 15,
-                  color: colors.textPrimary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    node.entity.path.split(Platform.pathSeparator).last,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: colors.textPrimary, fontSize: 12),
-                  ),
-                ),
-                if (node.loading)
-                  SizedBox.square(
-                    dimension: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: colors.accent,
-                    ),
-                  )
-                else if (node.error != null)
-                  Tooltip(
-                    message: node.error!,
-                    child: Icon(
-                      LucideIcons.triangleAlert,
-                      size: 14,
-                      color: colors.error,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      node.entity.path.split(Platform.pathSeparator).last,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: colors.textPrimary, fontSize: 12),
                     ),
                   ),
-              ],
+                  if (node.loading)
+                    SizedBox.square(
+                      dimension: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: colors.accent,
+                      ),
+                    )
+                  else if (node.error != null)
+                    Tooltip(
+                      message: node.error!,
+                      child: Icon(
+                        LucideIcons.triangleAlert,
+                        size: 14,
+                        color: colors.error,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -505,6 +559,275 @@ class _FileBrowserState extends State<FileBrowser> {
         setState(() => _error = error.message);
       }
     }
+  }
+
+  List<Widget> _rootMenuItems(AtlasColors colors) => fileBrowserRootMenu(
+    colors: colors,
+    canPaste: _clipboard != null,
+    actions: _menuActions(directory: _root),
+  );
+
+  List<Widget> _fileMenuItems(_TreeNode node, AtlasColors colors) =>
+      fileBrowserFileMenu(
+        colors: colors,
+        actions: _menuActions(entity: node.entity, node: node),
+      );
+
+  List<Widget> _folderMenuItems(_TreeNode node, AtlasColors colors) =>
+      fileBrowserFolderMenu(
+        colors: colors,
+        canPaste: _clipboard != null,
+        actions: _menuActions(
+          entity: node.entity,
+          node: node,
+          directory: node.entity as Directory,
+        ),
+      );
+
+  FileBrowserMenuActions _menuActions({
+    FileSystemEntity? entity,
+    _TreeNode? node,
+    Directory? directory,
+  }) {
+    final target = directory ?? _root;
+    return FileBrowserMenuActions(
+      onNewFile: () => unawaited(_createFile(target, parent: node)),
+      onNewFolder: () => unawaited(_createFolder(target, parent: node)),
+      onCopy: () {
+        if (entity != null) {
+          _copy(entity, cut: false);
+        }
+      },
+      onCut: () {
+        if (entity != null) {
+          _copy(entity, cut: true);
+        }
+      },
+      onPaste: () => unawaited(_pasteInto(target, parent: node)),
+      onCopyPath: () {
+        if (entity != null) {
+          unawaited(_copyPath(entity.path));
+        }
+      },
+      onCopyRelativePath: () {
+        if (entity != null) {
+          unawaited(_copyPath(_relativePath(entity.path)));
+        }
+      },
+      onRename: () {
+        if (node != null) {
+          unawaited(_rename(node));
+        }
+      },
+      onReveal: () {
+        if (entity != null) {
+          unawaited(_reveal(entity.path));
+        }
+      },
+      onTrash: () {
+        if (node != null) {
+          unawaited(_trash(node));
+        }
+      },
+    );
+  }
+
+  void _copy(FileSystemEntity entity, {required bool cut}) {
+    setState(() => _clipboard = FileClipboard(path: entity.path, cut: cut));
+  }
+
+  Future<void> _copyPath(String path) async {
+    await FlutterClipboard.copy(path);
+  }
+
+  Future<void> _pasteInto(Directory directory, {_TreeNode? parent}) async {
+    final clip = _clipboard;
+    if (clip == null) {
+      return;
+    }
+    final source =
+        FileSystemEntity.typeSync(clip.path) == FileSystemEntityType.directory
+        ? Directory(clip.path)
+        : File(clip.path);
+    try {
+      if (clip.cut) {
+        await widget.service.moveInto(
+          source: source,
+          directory: directory,
+          root: _root.path,
+        );
+        if (mounted) {
+          setState(() => _clipboard = null);
+        }
+      } else {
+        await widget.service.copyInto(
+          source: source,
+          directory: directory,
+          root: _root.path,
+        );
+      }
+      await _reloadAfterWrite(parent);
+    } on FileSystemException catch (error) {
+      _showNotice(error.message);
+    }
+  }
+
+  Future<void> _createFile(Directory directory, {_TreeNode? parent}) async {
+    final name = await promptFileName(
+      context,
+      title: 'New File',
+      hint: 'Name',
+      initial: 'untitled.md',
+    );
+    if (name == null) {
+      return;
+    }
+    try {
+      final file = await widget.service.createFile(
+        directory: directory,
+        name: name,
+        root: _root.path,
+      );
+      await _reloadAfterWrite(parent);
+      if (mounted) {
+        _openFile(file);
+      }
+    } on FileSystemException catch (error) {
+      _showNotice(error.message);
+    }
+  }
+
+  Future<void> _createFolder(Directory directory, {_TreeNode? parent}) async {
+    final name = await promptFileName(
+      context,
+      title: 'New Folder',
+      hint: 'Name',
+      initial: 'untitled',
+    );
+    if (name == null) {
+      return;
+    }
+    try {
+      await widget.service.createDirectory(
+        directory: directory,
+        name: name,
+        root: _root.path,
+      );
+      await _reloadAfterWrite(parent);
+    } on FileSystemException catch (error) {
+      _showNotice(error.message);
+    }
+  }
+
+  Future<void> _rename(_TreeNode node) async {
+    final current = node.entity.path.split(Platform.pathSeparator).last;
+    final name = await promptFileName(
+      context,
+      title: 'Rename',
+      hint: 'Name',
+      initial: current,
+    );
+    if (name == null || name == current) {
+      return;
+    }
+    try {
+      final renamed = await widget.service.rename(
+        entity: node.entity,
+        name: name,
+        root: _root.path,
+      );
+      if (_selectedFile?.path == node.entity.path) {
+        if (renamed is File) {
+          _openFile(renamed);
+        } else {
+          _closePreview();
+        }
+      }
+      await _reloadParent(node);
+    } on FileSystemException catch (error) {
+      _showNotice(error.message);
+    }
+  }
+
+  Future<void> _trash(_TreeNode node) async {
+    final name = node.entity.path.split(Platform.pathSeparator).last;
+    final confirmed = await confirmMoveToTrash(context, name);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await widget.service.trashPath(node.entity.path, _root.path);
+      if (_selectedFile?.path == node.entity.path ||
+          (_selectedFile != null &&
+              _selectedFile!.path.startsWith(
+                '${node.entity.path}${Platform.pathSeparator}',
+              ))) {
+        _closePreview();
+      }
+      if (_clipboard?.path == node.entity.path) {
+        setState(() => _clipboard = null);
+      }
+      await _reloadParent(node);
+    } on FileSystemException catch (error) {
+      _showNotice(error.message);
+    }
+  }
+
+  Future<void> _reveal(String path) async {
+    try {
+      await widget.service.revealPath(path, _root.path);
+    } on FileSystemException catch (error) {
+      _showNotice(error.message);
+    }
+  }
+
+  Future<void> _reloadAfterWrite(_TreeNode? parent) async {
+    if (parent == null) {
+      await _loadChildren(_rootNode);
+      return;
+    }
+    parent.expanded = true;
+    await _loadChildren(parent);
+  }
+
+  Future<void> _reloadParent(_TreeNode node) async {
+    final parentPath = node.entity.parent.path;
+    if (parentPath == _root.path) {
+      await _loadChildren(_rootNode);
+      return;
+    }
+    final parent = _findNode(parentPath);
+    if (parent != null) {
+      await _loadChildren(parent);
+    } else {
+      await _refresh();
+    }
+  }
+
+  _TreeNode? _findNode(String path) {
+    _TreeNode? visit(_TreeNode node) {
+      if (node.entity.path == path) {
+        return node;
+      }
+      for (final child in node.children ?? const <_TreeNode>[]) {
+        final match = visit(child);
+        if (match != null) {
+          return match;
+        }
+      }
+      return null;
+    }
+
+    return visit(_rootNode);
+  }
+
+  void _showNotice(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

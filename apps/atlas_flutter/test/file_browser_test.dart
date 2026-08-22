@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:atlas_flutter/app/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/data/file_browser_service.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
@@ -38,11 +39,19 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> pumpBrowser(WidgetTester tester) async {
+  Future<void> pumpBrowser(
+    WidgetTester tester, {
+    FileBrowserService? service,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildAtlasTheme(Brightness.light),
-        home: Scaffold(body: FileBrowser(workingDirectory: tempDir.path)),
+        home: Scaffold(
+          body: FileBrowser(
+            workingDirectory: tempDir.path,
+            service: service ?? const FileBrowserService(),
+          ),
+        ),
       ),
     );
     await settle(tester);
@@ -211,6 +220,109 @@ void main() {
     await tester.tap(find.text('bin.dat'));
     await settle(tester);
     expect(find.textContaining('Binary files'), findsOneWidget);
+  });
+
+  testWidgets('creates a file from the empty-folder menu', (tester) async {
+    await pumpBrowser(tester);
+    await tester.tapAt(
+      tester.getCenter(find.text('Empty folder')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New File'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'notes.md');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await settle(tester);
+    expect(File('${tempDir.path}/notes.md').existsSync(), isTrue);
+    expect(find.textContaining('notes.md'), findsWidgets);
+  });
+
+  testWidgets('left click dismisses an open file menu', (tester) async {
+    Directory('${tempDir.path}/aaa').createSync();
+    Directory('${tempDir.path}/zzz').createSync();
+    await pumpBrowser(tester);
+    await tester.tapAt(
+      tester.getCenter(find.text('zzz')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Rename'), findsOneWidget);
+    await tester.tap(find.text('aaa'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rename'), findsNothing);
+  });
+
+  testWidgets('renames a file from the row menu', (tester) async {
+    File('${tempDir.path}/a.txt').writeAsStringSync('hello');
+    await pumpBrowser(tester);
+    await tester.tapAt(
+      tester.getCenter(find.text('a.txt')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'b.txt');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await settle(tester);
+    expect(File('${tempDir.path}/a.txt').existsSync(), isFalse);
+    expect(File('${tempDir.path}/b.txt').existsSync(), isTrue);
+    expect(find.text('b.txt'), findsOneWidget);
+  });
+
+  testWidgets('moves a file to trash after confirmation', (tester) async {
+    File('${tempDir.path}/gone.txt').writeAsStringSync('bye');
+    final trashed = <String>[];
+    await pumpBrowser(
+      tester,
+      service: FileBrowserService(
+        trash: (path) async {
+          trashed.add(path);
+          File(path).deleteSync();
+        },
+      ),
+    );
+    await tester.tapAt(
+      tester.getCenter(find.text('gone.txt')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to Trash'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Move to Trash'));
+    await settle(tester);
+    expect(trashed, ['${tempDir.path}/gone.txt']);
+    expect(find.text('gone.txt'), findsNothing);
+  });
+
+  testWidgets('copies and pastes a file inside the same browser', (
+    tester,
+  ) async {
+    File('${tempDir.path}/src.txt').writeAsStringSync('payload');
+    Directory('${tempDir.path}/dest').createSync();
+    await pumpBrowser(tester);
+    await tester.tapAt(
+      tester.getCenter(find.text('src.txt')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      tester.getCenter(find.text('dest')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste'));
+    await settle(tester);
+    expect(File('${tempDir.path}/src.txt').existsSync(), isTrue);
+    expect(File('${tempDir.path}/dest/src.txt').existsSync(), isTrue);
+    await tester.tap(find.text('dest'));
+    await settle(tester);
+    expect(find.text('src.txt'), findsWidgets);
   });
 
   testWidgets('refresh reloads expanded folders', (tester) async {
