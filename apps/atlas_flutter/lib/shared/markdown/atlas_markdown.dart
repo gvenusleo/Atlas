@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_markdown_plus_latex/flutter_markdown_plus_latex.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -9,6 +11,20 @@ import '../theme/atlas_theme.dart';
 
 /// Schemes the Markdown renderer will hand to the platform URL handler.
 const _openableMarkdownSchemes = {'http', 'https', 'mailto'};
+
+/// System UI font used for Markdown body text.
+///
+/// Chinese and Latin runs share one font so their vertical metrics match,
+/// keeping selection highlights aligned across a mixed line.
+String get markdownBodyFontFamily {
+  if (Platform.isMacOS) {
+    return 'PingFang SC';
+  }
+  if (Platform.isWindows) {
+    return 'Microsoft YaHei';
+  }
+  return 'Noto Sans CJK SC';
+}
 
 /// Parses [href] into a URI the Markdown renderer is allowed to open.
 Uri? parseMarkdownLink(String? href) {
@@ -60,6 +76,7 @@ class AtlasMarkdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final codeFont = fontFamily ?? 'monospace';
+    final bodyFont = markdownBodyFontFamily;
     final launch = launchLink ?? launchMarkdownLink;
     // Force the intrinsic Column to full width so block elements like code
     // fences fill the available space inside scrollable parents.
@@ -100,8 +117,17 @@ class AtlasMarkdown extends StatelessWidget {
           ],
         ),
         styleSheet: MarkdownStyleSheet(
-          a: TextStyle(color: colors.accent, fontSize: 14),
-          p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.5),
+          a: TextStyle(
+            fontFamily: bodyFont,
+            color: colors.accent,
+            fontSize: 14,
+          ),
+          p: TextStyle(
+            fontFamily: bodyFont,
+            color: colors.textPrimary,
+            fontSize: 14,
+            height: 1.5,
+          ),
           pPadding: const EdgeInsets.symmetric(vertical: 2),
           code: TextStyle(
             color: colors.textPrimary,
@@ -109,36 +135,42 @@ class AtlasMarkdown extends StatelessWidget {
             fontFamily: codeFont,
           ),
           h1: TextStyle(
+            fontFamily: bodyFont,
             color: colors.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w600,
           ),
           h1Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h2: TextStyle(
+            fontFamily: bodyFont,
             color: colors.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
           h2Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h3: TextStyle(
+            fontFamily: bodyFont,
             color: colors.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
           h3Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h4: TextStyle(
+            fontFamily: bodyFont,
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
           h4Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h5: TextStyle(
+            fontFamily: bodyFont,
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
           h5Padding: const EdgeInsets.only(top: 12, bottom: 6),
           h6: TextStyle(
+            fontFamily: bodyFont,
             color: colors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -148,16 +180,32 @@ class AtlasMarkdown extends StatelessWidget {
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             color: colors.panel,
           ),
-          blockquote: TextStyle(color: colors.textPrimary, fontSize: 14),
+          blockquote: TextStyle(
+            fontFamily: bodyFont,
+            color: colors.textPrimary,
+            fontSize: 14,
+          ),
           blockquoteDecoration: BoxDecoration(
             border: Border(left: BorderSide(color: colors.divider, width: 2)),
           ),
           horizontalRuleDecoration: BoxDecoration(
             border: Border(top: BorderSide(color: colors.divider)),
           ),
-          listBullet: TextStyle(color: colors.textSecondary, fontSize: 14),
-          tableBody: TextStyle(color: colors.textPrimary, fontSize: 14),
-          checkbox: TextStyle(color: colors.textPrimary, fontSize: 14),
+          listBullet: TextStyle(
+            fontFamily: bodyFont,
+            color: colors.textSecondary,
+            fontSize: 14,
+          ),
+          tableBody: TextStyle(
+            fontFamily: bodyFont,
+            color: colors.textPrimary,
+            fontSize: 14,
+          ),
+          checkbox: TextStyle(
+            fontFamily: bodyFont,
+            color: colors.textPrimary,
+            fontSize: 14,
+          ),
           tableBorder: TableBorder.all(color: colors.divider),
           tableCellsPadding: const EdgeInsets.all(8),
         ),

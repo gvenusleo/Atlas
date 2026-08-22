@@ -127,6 +127,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('body text uses the system font while code keeps its own', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAtlasTheme(Brightness.light),
+        home: AtlasMarkdown(data: 'Hello 世界', fontFamily: 'MonoTest'),
+      ),
+    );
+    await tester.pump();
+
+    final body = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+    expect(body.styleSheet!.p!.fontFamily, markdownBodyFontFamily);
+    expect(body.styleSheet!.a!.fontFamily, markdownBodyFontFamily);
+    expect(body.styleSheet!.code!.fontFamily, 'MonoTest');
+  });
+
   testWidgets('block elements fill the width inside scrollable parents', (
     tester,
   ) async {
