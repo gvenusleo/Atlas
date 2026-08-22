@@ -411,6 +411,7 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
                         icon: _expanded ? LucideIcons.chevronDown : widget.icon,
                         size: 14,
                         color: titleColor,
+                        semanticLabel: 'Toggle activity details',
                       ),
                     ),
                     const SizedBox(width: 8),

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:morphnext/morphnext.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
@@ -215,10 +216,11 @@ class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
             ),
           ),
           onPressed: widget.onPressed,
-          icon: Icon(
-            widget.icon,
+          icon: AnimatedMorphIcon(
+            icon: widget.icon,
             color: widget.active ? colors.textPrimary : colors.textSecondary,
             size: 16,
+            semanticLabel: widget.tooltip,
           ),
         ),
       ),

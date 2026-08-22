@@ -198,7 +198,9 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
         if (markdown) ...[
           WorkspaceToolbarButton(
-            icon: LucideIcons.eye,
+            icon: _markdownPreview
+                ? LucideIcons.fileText
+                : LucideIcons.bookOpenText,
             tooltip: 'Toggle markdown preview',
             onPressed: () {
               if (_preview == null) {

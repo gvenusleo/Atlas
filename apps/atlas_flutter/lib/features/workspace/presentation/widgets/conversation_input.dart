@@ -271,6 +271,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                       color: _canSend
                                           ? colors.canvas
                                           : colors.textSecondary,
+                                      semanticLabel: busy ? 'Stop' : 'Send',
                                     ),
                                   ),
                                 ),

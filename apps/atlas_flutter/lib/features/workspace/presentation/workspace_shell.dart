@@ -157,7 +157,9 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
               left: closedLeftButtonX,
               child: WorkspaceToolbarButton(
                 key: const ValueKey('atlas-left-toggle'),
-                icon: LucideIcons.panelLeft,
+                icon: _leftVisible
+                    ? LucideIcons.panelLeft
+                    : LucideIcons.panelLeftOpen,
                 tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
                 onPressed: () => _setLeftVisible(!_leftVisible, leftPanelWidth),
               ),
@@ -168,7 +170,9 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
               right: 6,
               child: WorkspaceToolbarButton(
                 key: const ValueKey('atlas-right-toggle'),
-                icon: LucideIcons.panelRight,
+                icon: _rightVisible
+                    ? LucideIcons.panelRight
+                    : LucideIcons.panelRightOpen,
                 tooltip: _rightVisible ? 'Hide details' : 'Show details',
                 onPressed: () =>
                     _setRightVisible(!_rightVisible, rightPanelWidth),
