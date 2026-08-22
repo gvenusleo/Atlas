@@ -3,8 +3,36 @@ import 'package:flutter_markdown_plus_latex/flutter_markdown_plus_latex.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/atlas_theme.dart';
+
+/// Schemes the Markdown renderer will hand to the platform URL handler.
+const _openableMarkdownSchemes = {'http', 'https', 'mailto'};
+
+/// Parses [href] into a URI the Markdown renderer is allowed to open.
+Uri? parseMarkdownLink(String? href) {
+  if (href == null) {
+    return null;
+  }
+  final trimmed = href.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme) {
+    return null;
+  }
+  if (!_openableMarkdownSchemes.contains(uri.scheme.toLowerCase())) {
+    return null;
+  }
+  return uri;
+}
+
+/// Opens [url] in the platform's default handler.
+Future<bool> launchMarkdownLink(Uri url) {
+  return launchUrl(url, mode: LaunchMode.externalApplication);
+}
 
 /// Renders Markdown with the Atlas conversation styling.
 ///
@@ -12,7 +40,12 @@ import '../theme/atlas_theme.dart';
 /// how assistant messages are rendered in the transcript.
 class AtlasMarkdown extends StatelessWidget {
   /// Creates a Markdown renderer for [data].
-  const AtlasMarkdown({super.key, required this.data, this.fontFamily});
+  const AtlasMarkdown({
+    super.key,
+    required this.data,
+    this.fontFamily,
+    this.launchLink,
+  });
 
   /// Markdown source to render.
   final String data;
@@ -20,10 +53,14 @@ class AtlasMarkdown extends StatelessWidget {
   /// Monospace font family used for code; falls back to `monospace`.
   final String? fontFamily;
 
+  /// Opens a parsed Markdown link. Defaults to [launchMarkdownLink].
+  final Future<bool> Function(Uri url)? launchLink;
+
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final codeFont = fontFamily ?? 'monospace';
+    final launch = launchLink ?? launchMarkdownLink;
     // Force the intrinsic Column to full width so block elements like code
     // fences fill the available space inside scrollable parents.
     return SizedBox(
@@ -33,6 +70,17 @@ class AtlasMarkdown extends StatelessWidget {
         selectable: false,
         softLineBreak: false,
         fitContent: false,
+        onTapLink: (text, href, title) async {
+          final uri = parseMarkdownLink(href);
+          if (uri == null) {
+            return;
+          }
+          try {
+            await launch(uri);
+          } catch (_) {
+            // No handler available for the scheme; ignore the failure.
+          }
+        },
         builders: {
           'latex': LatexElementBuilder(
             textStyle: TextStyle(color: colors.textPrimary),
