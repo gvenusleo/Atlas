@@ -234,7 +234,7 @@ class _FileBrowserState extends State<FileBrowser> {
       }
       if (_markdownPreview && _isMarkdownFile(_selectedFile!)) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(6, 6, 6, 12),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
           child: SelectionArea(
             child: AtlasMarkdown(
               data: _preview ?? '',
@@ -244,7 +244,7 @@ class _FileBrowserState extends State<FileBrowser> {
         );
       }
       return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(6, 6, 6, 12),
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
         child: SelectableText(
           _preview ?? '',
           style: TextStyle(
