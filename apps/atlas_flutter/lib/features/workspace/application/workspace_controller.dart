@@ -311,6 +311,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       key,
       (workspace) => workspace.copyWith(
         busy: true,
+        turnPhase: TurnPhase.working,
+        turnStartedAt: DateTime.now(),
         hasImages: workspace.hasImages || images.isNotEmpty,
       ),
     );
@@ -347,6 +349,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         key,
         (workspace) => workspace.copyWith(
           busy: false,
+          turnPhase: TurnPhase.idle,
+          turnStartedAt: null,
           hasCompletedTurn: state.activeKey != key,
         ),
       );
@@ -383,7 +387,14 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
     final cancellation = CancellationToken();
     _cancellations[key] = cancellation;
-    _patch(key, (workspace) => workspace.copyWith(busy: true));
+    _patch(
+      key,
+      (workspace) => workspace.copyWith(
+        busy: true,
+        turnPhase: TurnPhase.compacting,
+        turnStartedAt: DateTime.now(),
+      ),
+    );
     try {
       await for (final event in _environment.runtime.compact(
         id,
@@ -400,6 +411,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         key,
         (workspace) => workspace.copyWith(
           busy: false,
+          turnPhase: TurnPhase.idle,
+          turnStartedAt: null,
           hasCompletedTurn: state.activeKey != key,
         ),
       );
@@ -415,18 +428,31 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       case TurnStarted():
         _patch(
           target,
-          (workspace) => workspace.copyWith(sessionId: event.sessionId),
+          (workspace) => workspace.copyWith(
+            sessionId: event.sessionId,
+            turnPhase: TurnPhase.working,
+            turnStartedAt: workspace.turnStartedAt ?? DateTime.now(),
+          ),
         );
       case ModelTextDelta(:final delta):
         _finishRunningReasoning(target);
         _appendDelta(target, WorkspaceMessageKind.assistant, delta);
+        _patch(
+          target,
+          (workspace) => workspace.copyWith(turnPhase: TurnPhase.working),
+        );
       case ModelReasoningDelta(:final delta):
         _appendDelta(target, WorkspaceMessageKind.reasoning, delta);
+        _patch(
+          target,
+          (workspace) => workspace.copyWith(turnPhase: TurnPhase.thinking),
+        );
       case ToolStarted(:final call):
         _finishRunningReasoning(target);
         _streamOpen[target] = false;
         _patch(target, (workspace) {
           return workspace.copyWith(
+            turnPhase: TurnPhase.working,
             messages: [
               ...workspace.messages,
               WorkspaceMessage(
@@ -449,7 +475,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
                 message.kind == WorkspaceMessageKind.tool && message.isRunning,
           );
           if (index < 0) {
-            return workspace;
+            return workspace.copyWith(turnPhase: TurnPhase.working);
           }
           final messages = [...workspace.messages];
           messages[index] = messages[index].copyWith(
@@ -457,7 +483,10 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
             isError: result.isError,
             isRunning: false,
           );
-          return workspace.copyWith(messages: messages);
+          return workspace.copyWith(
+            turnPhase: TurnPhase.working,
+            messages: messages,
+          );
         });
       case TurnFinished(:final outcome):
         _finishRunningReasoning(target);
@@ -469,14 +498,26 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         }
         _patch(
           target,
-          (workspace) =>
-              workspace.copyWith(contextTokens: outcome.usage.totalTokens),
+          (workspace) => workspace.copyWith(
+            turnPhase: TurnPhase.idle,
+            contextTokens: outcome.usage.totalTokens,
+          ),
+        );
+      case CompactionStarted():
+        _patch(
+          target,
+          (workspace) => workspace.copyWith(
+            turnPhase: TurnPhase.compacting,
+            turnStartedAt: workspace.turnStartedAt ?? DateTime.now(),
+          ),
         );
       case CompactionFinished(:final checkpoint):
         _patch(
           target,
-          (workspace) =>
-              workspace.copyWith(contextTokens: checkpoint.inputTokensAfter),
+          (workspace) => workspace.copyWith(
+            turnPhase: TurnPhase.idle,
+            contextTokens: checkpoint.inputTokensAfter,
+          ),
         );
         _append(
           target,
@@ -484,6 +525,10 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           'Context compacted, kept ${checkpoint.keptRecentMessages} recent messages.',
         );
       case CompactionFailed(:final message):
+        _patch(
+          target,
+          (workspace) => workspace.copyWith(turnPhase: TurnPhase.idle),
+        );
         _append(
           target,
           WorkspaceMessageKind.error,

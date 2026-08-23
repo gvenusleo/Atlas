@@ -10,6 +10,7 @@ import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
 import '../../data/image_attachment.dart';
 import 'conversation_input.dart';
+import 'turn_status_banner.dart';
 import 'workspace_controls.dart';
 import '../workspace_metrics.dart';
 
@@ -42,7 +43,7 @@ class SessionPaneHost extends ConsumerWidget {
   }
 }
 
-class _SessionPane extends StatelessWidget {
+class _SessionPane extends ConsumerWidget {
   const _SessionPane({
     super.key,
     required this.sessionKey,
@@ -53,7 +54,10 @@ class _SessionPane extends StatelessWidget {
   final bool active;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workspace = ref.watch(
+      workspaceProvider.select((s) => s.workspaces[sessionKey] ?? s.active),
+    );
     return ExcludeFocus(
       excluding: !active,
       child: IgnorePointer(
@@ -63,7 +67,23 @@ class _SessionPane extends StatelessWidget {
             Expanded(child: ConversationView(sessionKey: sessionKey)),
             Align(
               alignment: Alignment.center,
-              child: ConversationInput(sessionKey: sessionKey, active: active),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (active && workspace.busy)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+                        child: TurnStatusBanner(
+                          phase: workspace.turnPhase,
+                          startedAt: workspace.turnStartedAt,
+                        ),
+                      ),
+                    ConversationInput(sessionKey: sessionKey, active: active),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -98,13 +118,14 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
   @override
   Widget build(BuildContext context) {
     final sessionKey = widget.sessionKey;
-    final messages = ref.watch(
+    final workspace = ref.watch(
       workspaceProvider.select(
         (s) => sessionKey == null
-            ? s.messages
-            : s.workspaces[sessionKey]?.messages ?? const <WorkspaceMessage>[],
+            ? s.active
+            : s.workspaces[sessionKey] ?? s.active,
       ),
     );
+    final messages = workspace.messages;
     final textLength = messages.fold<int>(
       0,
       (length, message) => length + message.text.length,

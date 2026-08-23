@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:atlas_flutter/app/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
 
 void main() {
   test('defaults the workspace directory to the home directory', () {
@@ -69,8 +70,68 @@ void main() {
     expect(state.messages[1].isRunning, isFalse);
     expect(state.messages[2].text, 'Hello from Atlas.');
     expect(state.sessionId, isNotNull);
+    // The turn finished: status fields are reset.  [turnStartedAt]
+    expect(state.active.turnPhase, TurnPhase.idle);
+    expect(state.active.turnStartedAt, isNull);
+    expect(state.active.busy, isFalse);
     await controller.refreshSessions();
     expect(container.read(workspaceProvider).sessions, hasLength(1));
+  });
+
+  test('turn phase follows the model stream and resets on finish', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('gated')),
+    );
+    final provider = _GatedFakeProvider(model.ref);
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWithValue(
+          RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+    final controller = container.read(workspaceProvider.notifier);
+    // Keep a listener so Riverpod does not reset the notifier state while
+    // the turn is in flight without any widget subscribing to it.
+    container.listen(workspaceProvider, (_, _) {});
+    final turn = controller.send('hello');
+    await pumpEventQueue();
+    expect(container.read(workspaceProvider).active.busy, isTrue);
+    expect(
+      container.read(workspaceProvider).active.turnPhase,
+      TurnPhase.thinking,
+    );
+    expect(container.read(workspaceProvider).active.turnStartedAt, isNotNull);
+
+    provider.reasoningGate.complete();
+    await pumpEventQueue();
+    expect(
+      container.read(workspaceProvider).active.turnPhase,
+      TurnPhase.working,
+    );
+
+    provider.textGate.complete();
+    await turn;
+    expect(container.read(workspaceProvider).active.busy, isFalse);
+    expect(container.read(workspaceProvider).active.turnPhase, TurnPhase.idle);
+    expect(container.read(workspaceProvider).active.turnStartedAt, isNull);
   });
 
   test('resume restores persisted reasoning messages', () async {
@@ -947,6 +1008,33 @@ final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
 
   @override
   String build() => path;
+}
+
+final class _GatedFakeProvider implements ModelProvider {
+  _GatedFakeProvider(this.model);
+
+  final ModelRef model;
+  final reasoningGate = Completer<void>();
+  final textGate = Completer<void>();
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef requested) async =>
+      ModelDescriptor(ref: requested);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    expect(request.model, model);
+    yield const ReasoningDeltaEvent('first thought');
+    await reasoningGate.future;
+    yield const TextDeltaEvent('Hello from Atlas.');
+    await textGate.future;
+    yield const ModelCompletedEvent(
+      ModelResponse(
+        content: [TextContent('Hello from Atlas.')],
+        stopReason: StopReason.endTurn,
+      ),
+    );
+  }
 }
 
 final class _FakeProvider implements ModelProvider {

@@ -2,6 +2,21 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 
 import 'workspace_message.dart';
 
+/// Activity phase of a turn, mirroring the TUI status line.
+enum TurnPhase {
+  /// No turn is active.
+  idle,
+
+  /// The model is producing output or running tools.
+  working,
+
+  /// The model is producing reasoning text.
+  thinking,
+
+  /// The runtime is compacting context.
+  compacting,
+}
+
 /// Cached transcript and turn status for one workspace session or draft.
 final class SessionWorkspace {
   /// Creates a session workspace cache.
@@ -11,6 +26,8 @@ final class SessionWorkspace {
     List<WorkspaceMessage> messages = const [],
     this.sessionId,
     this.busy = false,
+    this.turnPhase = TurnPhase.idle,
+    this.turnStartedAt,
     this.hasCompletedTurn = false,
     this.contextTokens = 0,
     this.hasImages = false,
@@ -29,6 +46,12 @@ final class SessionWorkspace {
 
   /// Whether a turn or compaction is active on this session.
   final bool busy;
+
+  /// Activity phase of the active turn or compaction.
+  final TurnPhase turnPhase;
+
+  /// When the active turn or compaction started, used for elapsed time.
+  final DateTime? turnStartedAt;
 
   /// Whether this session finished a turn in the current app session.
   final bool hasCompletedTurn;
@@ -54,6 +77,8 @@ final class SessionWorkspace {
     String? workingDirectory,
     List<WorkspaceMessage>? messages,
     bool? busy,
+    TurnPhase? turnPhase,
+    Object? turnStartedAt = _unset,
     bool? hasCompletedTurn,
     int? contextTokens,
     bool? hasImages,
@@ -65,6 +90,10 @@ final class SessionWorkspace {
     workingDirectory: workingDirectory ?? this.workingDirectory,
     messages: messages ?? this.messages,
     busy: busy ?? this.busy,
+    turnPhase: turnPhase ?? this.turnPhase,
+    turnStartedAt: identical(turnStartedAt, _unset)
+        ? this.turnStartedAt
+        : turnStartedAt as DateTime?,
     hasCompletedTurn: hasCompletedTurn ?? this.hasCompletedTurn,
     contextTokens: contextTokens ?? this.contextTokens,
     hasImages: hasImages ?? this.hasImages,
