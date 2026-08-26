@@ -217,6 +217,7 @@ class _MessageView extends StatelessWidget {
         WorkspaceMessageKind.assistant => _AssistantMessage(message.text),
         WorkspaceMessageKind.reasoning => _ReasoningMessage(message),
         WorkspaceMessageKind.tool => _ToolMessage(message),
+        WorkspaceMessageKind.plan => _PlanMessage(message.text),
         WorkspaceMessageKind.notice => _NoticeMessage(message.text),
         WorkspaceMessageKind.error => _ErrorMessage(message.text),
       },
@@ -729,6 +730,35 @@ class _NoticeMessage extends StatelessWidget {
         text,
         textAlign: TextAlign.center,
         style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
+      ),
+    );
+  }
+}
+
+class _PlanMessage extends StatelessWidget {
+  const _PlanMessage(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colors.raised,
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        border: Border.all(color: colors.divider),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: colors.textSecondary,
+          fontSize: 12,
+          height: 1.5,
+          fontFamily: 'monospace',
+        ),
       ),
     );
   }

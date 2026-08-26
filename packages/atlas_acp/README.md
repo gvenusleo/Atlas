@@ -8,9 +8,11 @@ as a subprocess and drive sessions through JSON-RPC.
 
 ## Responsibility
 
-- Owns the ACP JSON-RPC lifecycle and uses `json_rpc_2` directly instead of
-  a shared Atlas RPC wrapper.
+- Owns the ACP JSON-RPC lifecycle through `acpd` (`AgentRole` / `ClientRole`)
+  instead of a shared Atlas RPC wrapper.
 - stdout carries only protocol messages; logging goes to stderr.
+- Also exposes an in-process `AcpClient` so Flutter can consume a local
+  `AcpServer` over an in-memory transport without spawning `atlas acp`.
 
 ## Implemented
 
@@ -20,6 +22,8 @@ as a subprocess and drive sessions through JSON-RPC.
   `embeddedContext`)
 - `session/new`, `session/load` (with timeline replay), `session/resume`,
   `session/list`, `session/close`, `session/delete`
+- Atlas extension `session/set_title` for renaming a session; third-party
+  agents that do not implement it keep a local title overlay in `AcpClient`
 - Session `configOptions` (model and reasoning effort selectors returned by
   new/load/resume, `category: "model"` and `category: "thought_level"`) with
   `session/set_config_option` applying them to subsequent turns
@@ -53,8 +57,8 @@ as a subprocess and drive sessions through JSON-RPC.
 
 ## Allowed dependencies
 
-- `atlas_runtime` public types, `json_rpc_2`, and `stream_channel` for the
-  stdio channel.
+- `atlas_runtime` public types, `acpd`, `acpd_io`, and `stream_channel` for
+  the stdio and in-memory transports.
 
 ## Prohibited ownership
 
@@ -66,6 +70,7 @@ as a subprocess and drive sessions through JSON-RPC.
 ## Not implemented
 
 MCP server connections, filesystem **write** and terminal client methods,
-permission requests, elicitation, session modes (superseded by
-`configOptions`), and HTTP/WebSocket transports. These capabilities are not
-advertised during initialization.
+elicitation, and HTTP/WebSocket transports. These capabilities are not
+advertised during initialization. Permission requests are handled on the
+client side (`session/request_permission`) and surfaced through
+`PermissionPort`.

@@ -40,6 +40,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   final _cancellations = <String, CancellationToken>{};
   final _streamOpen = <String, bool>{};
   final _recentKeys = <String>[];
+  StreamSubscription<PermissionRequest>? _permissionSub;
   var _localId = 0;
   var _draftSerial = 0;
 
@@ -48,21 +49,34 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
 
   /// Runtime services supplied by the application composition root.
   RuntimeEnvironment get _environment =>
-      ref.read(runtimeEnvironmentProvider) ??
-      (throw StateError(
-        'workspaceProvider requires runtimeEnvironmentProvider override',
-      ));
+      _environmentCache ??
+      (throw StateError('workspaceProvider requires a composed runtime'));
+
+  RuntimeEnvironment? _environmentCache;
 
   /// Models available in the current configuration.
   List<ModelDescriptor> get models => _environment.models;
 
   @override
   WorkspaceState build() {
-    final environment = ref.watch(runtimeEnvironmentProvider);
-    if (environment == null) {
+    // Read once instead of watching: a runtime switch must reset session
+    // caches through the listen callback, not rebuild the controller (which
+    // would lose the callback registration).
+    final runtimeState = ref.read(runtimeEnvironmentProvider);
+    _environmentCache = runtimeState.environment;
+    if (_environmentCache == null) {
       throw StateError('workspaceProvider requires a composed runtime');
     }
     ref.onDispose(_cancelAll);
+    // A runtime switch (ACP activation) replaces sessions and caches: the
+    // new runtime owns a different session list.
+    ref.listen(runtimeEnvironmentProvider, (previous, next) {
+      _environmentCache = next.environment;
+      if (_environmentCache != null) {
+        _resetForRuntime();
+      }
+    });
+    _subscribePermissions();
     final draftKey = _nextDraftKey();
     _touch(draftKey);
     return WorkspaceState(
@@ -71,6 +85,63 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         draftKey: _draftWorkspace(ref.read(workspaceWorkingDirectoryProvider)),
       },
       sessions: const [],
+    );
+  }
+
+  /// Discards session caches and starts a fresh draft after a runtime switch.
+  void _resetForRuntime() {
+    _cancellations.clear();
+    _streamOpen.clear();
+    _recentKeys.clear();
+    _subscribePermissions();
+    final draftKey = _nextDraftKey();
+    _touch(draftKey);
+    state = WorkspaceState(
+      activeKey: draftKey,
+      workspaces: {
+        draftKey: _draftWorkspace(ref.read(workspaceWorkingDirectoryProvider)),
+      },
+      sessions: const [],
+    );
+    unawaited(refreshSessions(showLoading: false));
+  }
+
+  /// Subscribes to permission requests from the current runtime.
+  ///
+  /// Local runtimes execute tools directly and expose no permission port;
+  /// remote agents surface requests that must be answered by the user.
+  void _subscribePermissions() {
+    _permissionSub?.cancel();
+    _permissionSub = null;
+    final runtime = _environment.runtime;
+    if (runtime is! PermissionPort) {
+      return;
+    }
+    final port = runtime as PermissionPort;
+    _permissionSub = port.permissionRequests.listen((request) {
+      final pending = state.pendingPermissions;
+      if (pending.any((item) => item.requestId == request.requestId)) {
+        return;
+      }
+      state = state.copyWith(pendingPermissions: [...pending, request]);
+    });
+  }
+
+  /// Replies to a pending permission request with the user's decision.
+  Future<void> respondPermission(
+    Object requestId,
+    PermissionReply reply,
+  ) async {
+    final runtime = _environment.runtime;
+    if (runtime is! PermissionPort) {
+      return;
+    }
+    final port = runtime as PermissionPort;
+    await port.respondPermission(requestId, reply);
+    state = state.copyWith(
+      pendingPermissions: state.pendingPermissions
+          .where((request) => request.requestId != requestId)
+          .toList(),
     );
   }
 
@@ -90,6 +161,19 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         sessions.addAll(page.items);
         cursor = page.nextCursor;
       } while (cursor != null && sessions.length < 500);
+      // Merge titles reported by the agent through session_info_update.
+      final runtime = _environment.runtime;
+      for (var i = 0; i < sessions.length; i++) {
+        final title = runtime.titleFor(sessions[i].id);
+        if (title != null && title.isNotEmpty) {
+          sessions[i] = SessionSummary(
+            id: sessions[i].id,
+            title: title,
+            workingDirectory: sessions[i].workingDirectory,
+            updatedAt: sessions[i].updatedAt,
+          );
+        }
+      }
       state = state.copyWith(sessions: sessions, loadingSessions: false);
     } catch (error) {
       _append(
@@ -147,6 +231,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         hasImages: _timelineHasImages(snapshot.timeline),
         activeModel: selection.model,
         reasoningEffort: selection.effort,
+        mode: _environment.runtime.modeFor(id),
       );
       final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
       workspaces[id.value] = workspace;
@@ -238,6 +323,24 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       sessionKey ?? state.activeKey,
       (workspace) => workspace.copyWith(reasoningEffort: effort),
     );
+  }
+
+  /// Changes a session's agent mode for subsequent turns.
+  ///
+  /// Applies immediately when the session already exists; drafts carry the
+  /// selection until the first turn creates the session. Defaults to the
+  /// focused session when [sessionKey] is omitted.
+  Future<void> selectMode(String mode, {String? sessionKey}) async {
+    final key = sessionKey ?? state.activeKey;
+    _patch(key, (workspace) => workspace.copyWith(mode: mode));
+    final sessionId = state.workspaces[key]?.sessionId;
+    if (sessionId != null) {
+      try {
+        await _environment.runtime.setMode(sessionId, mode);
+      } catch (error) {
+        _append(key, WorkspaceMessageKind.error, 'Cannot set mode: $error');
+      }
+    }
   }
 
   /// Appends a local notice to a session transcript.
@@ -332,6 +435,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           model: (state.workspaces[key] ?? state.active).activeModel.ref,
           reasoningEffort:
               (state.workspaces[key] ?? state.active).reasoningEffort,
+          mode: (state.workspaces[key] ?? state.active).mode,
           skills: _selectedSkills(text),
           cancellation: cancellation,
         ),
@@ -447,6 +551,32 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           target,
           (workspace) => workspace.copyWith(turnPhase: TurnPhase.thinking),
         );
+      case PlanUpdated(:final entries):
+        _finishRunningReasoning(target);
+        _patch(target, (workspace) {
+          final planText = entries
+              .map((entry) => '${_planMarker(entry.status)} ${entry.content}')
+              .join('\n');
+          final index = workspace.messages.lastIndexWhere(
+            (message) => message.kind == WorkspaceMessageKind.plan,
+          );
+          final messages = [...workspace.messages];
+          if (index < 0) {
+            messages.add(
+              WorkspaceMessage(
+                id: 'plan-${event.turnId.value}',
+                kind: WorkspaceMessageKind.plan,
+                text: planText,
+              ),
+            );
+          } else {
+            messages[index] = messages[index].copyWith(text: planText);
+          }
+          return workspace.copyWith(
+            turnPhase: TurnPhase.working,
+            messages: messages,
+          );
+        });
       case ToolStarted(:final call):
         _finishRunningReasoning(target);
         _streamOpen[target] = false;
@@ -744,11 +874,21 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       token.cancel();
     }
     _cancellations.clear();
+    _permissionSub?.cancel();
+    _permissionSub = null;
   }
 
   String _nextDraftKey() => 'draft-${_draftSerial++}';
 
   String _nextId() => 'local-${_localId++}';
+
+  /// The plan marker for [status]: a check for completed steps, a dot for
+  /// pending ones, and a bullet for in-progress steps.
+  static String _planMarker(String status) => switch (status) {
+    'completed' => '✓',
+    'in_progress' => '●',
+    _ => '○',
+  };
 
   ModelDescriptor _descriptorFor(ModelRef ref) =>
       _catalogDescriptor(ref) ?? ModelDescriptor(ref: ref);

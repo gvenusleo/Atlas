@@ -29,11 +29,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -85,11 +87,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -141,11 +145,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -256,11 +262,13 @@ Future<void> _pumpToolConversation(
   );
   final container = ProviderContainer(
     overrides: [
-      runtimeEnvironmentProvider.overrideWithValue(
-        RuntimeEnvironment(
-          runtime: runtime,
-          models: [model],
-          skills: _EmptySkillCatalog(),
+      runtimeEnvironmentProvider.overrideWith(
+        () => RuntimeEnvironmentController(
+          local: RuntimeEnvironment(
+            runtime: runtime,
+            models: [model],
+            skills: _EmptySkillCatalog(),
+          ),
         ),
       ),
       workspaceWorkingDirectoryProvider.overrideWith(

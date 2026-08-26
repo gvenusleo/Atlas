@@ -2,6 +2,7 @@
 library;
 
 export 'src/agent/agent_runtime.dart';
+export 'src/agent/runtime_service.dart';
 export 'src/domain/content.dart';
 export 'src/domain/events.dart';
 export 'src/domain/ids.dart';
@@ -16,6 +17,7 @@ export 'src/ports/id_generator.dart';
 export 'src/ports/cancellation.dart';
 export 'src/ports/failures.dart';
 export 'src/ports/model_provider.dart';
+export 'src/ports/permission_port.dart';
 export 'src/ports/session_store.dart';
 export 'src/ports/tool_registry.dart';
 export 'src/skills/skill.dart';

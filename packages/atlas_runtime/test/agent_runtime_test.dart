@@ -285,6 +285,94 @@ void main() {
     expect(store.turns.single.status, TurnStatus.failed);
   });
 
+  test('drops orphan tool calls when resuming a session', () async {
+    final store = _MemorySessionStore();
+    final sessionId = SessionId('session-1');
+    final turnId = TurnId('turn-1');
+    final now = DateTime.now().toUtc();
+    store.session = Session(
+      id: sessionId,
+      workingDirectory: '/tmp',
+      createdAt: now,
+      updatedAt: now,
+    );
+    store.turns.add(
+      Turn(
+        id: turnId,
+        sessionId: sessionId,
+        status: TurnStatus.completed,
+        startedAt: now,
+        completedAt: now,
+        model: _model,
+      ),
+    );
+    // A cancelled turn left a tool call without its result in the timeline.
+    store.timeline.addAll([
+      UserMessageItem(
+        id: TimelineItemId('item-1'),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 1,
+        occurredAt: now,
+        content: const [TextContent('hello')],
+      ),
+      AssistantMessageItem(
+        id: TimelineItemId('item-2'),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 2,
+        occurredAt: now,
+        content: const [],
+        model: _model,
+        stopReason: StopReason.toolUse,
+      ),
+      ToolCallItem(
+        id: TimelineItemId('item-3'),
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: 3,
+        occurredAt: now,
+        call: ToolCall(
+          id: ToolCallId('call-orphan'),
+          name: 'inspect',
+          arguments: const <String, Object?>{},
+        ),
+      ),
+    ]);
+
+    final provider = _ScriptedProvider(const [
+      ModelResponse(
+        content: [TextContent('done')],
+        stopReason: StopReason.endTurn,
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: _MemoryTools(result: const ToolResult(content: 'ok')),
+      ids: _Ids(),
+      defaultModel: _model,
+    );
+
+    await runtime
+        .run(
+          TurnRequest(
+            content: const [TextContent('continue')],
+            sessionId: sessionId,
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    final messages = provider.requests.single.messages;
+    final orphan = messages.where(
+      (message) =>
+          message.role == ModelMessageRole.assistant &&
+          message.toolCalls.isNotEmpty,
+    );
+    expect(orphan, isEmpty);
+  });
+
   test('pairs every persisted tool call when cancellation arrives', () async {
     final store = _MemorySessionStore();
     final tools = _CancellingTools();

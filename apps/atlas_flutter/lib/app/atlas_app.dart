@@ -25,7 +25,7 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _runtimeEnvironment = ref.read(runtimeEnvironmentProvider);
+    _runtimeEnvironment = ref.read(runtimeEnvironmentProvider).environment;
   }
 
   @override

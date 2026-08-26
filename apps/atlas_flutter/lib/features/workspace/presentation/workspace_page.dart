@@ -10,7 +10,7 @@ class WorkspacePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => WorkspaceShell(
-    environment: ref.watch(runtimeEnvironmentProvider),
+    environment: ref.watch(runtimeEnvironmentProvider).environment,
     startupError: ref.watch(runtimeStartupErrorProvider),
   );
 }

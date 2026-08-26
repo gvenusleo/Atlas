@@ -2,6 +2,44 @@ import 'content.dart';
 import 'ids.dart';
 import 'usage.dart';
 
+/// An agent operating mode offered by a server.
+final class ModeOption {
+  /// Creates a mode option.
+  const ModeOption({
+    required this.id,
+    required this.name,
+    this.description = '',
+  });
+
+  /// The mode identifier sent with a request.
+  final String id;
+
+  /// Display name.
+  final String name;
+
+  /// Display description.
+  final String description;
+}
+
+/// An authentication method advertised by an agent.
+final class AuthMethod {
+  /// Creates an auth method.
+  const AuthMethod({
+    required this.id,
+    required this.name,
+    this.description = '',
+  });
+
+  /// The method identifier sent with an authenticate request.
+  final String id;
+
+  /// Display name.
+  final String name;
+
+  /// Display description.
+  final String description;
+}
+
 /// A reasoning effort supported by a model.
 final class ReasoningEffortOption {
   /// Creates a reasoning effort option.

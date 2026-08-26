@@ -14,6 +14,9 @@ enum WorkspaceMessageKind {
   /// A tool invocation and its result.
   tool,
 
+  /// An agent plan with step statuses.
+  plan,
+
   /// A local status notice.
   notice,
 

@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:atlas_acp/atlas_acp.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stream_channel/stream_channel.dart';
 
 import 'package:atlas_flutter/app/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
@@ -13,6 +16,220 @@ import 'package:atlas_flutter/features/workspace/application/workspace_message.d
 import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
 
 void main() {
+  test('activateConnection switches the runtime and resets sessions', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('local')),
+    );
+    final store = DriftSessionStore.inMemory();
+    final localRuntime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final localEnv = RuntimeEnvironment(
+      runtime: localRuntime,
+      models: [model],
+      skills: _EmptySkillCatalog(),
+    );
+    final wire = StreamChannelController<String>();
+    final acpServer = AcpServer(localRuntime, models: [model]);
+    final serverDone = acpServer.serveChannel(wire.local);
+    final acpClient = AcpClient.channel(wire.foreign);
+    await acpClient.connect();
+
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(local: localEnv),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(() => serverDone);
+    addTearDown(acpClient.close);
+    addTearDown(container.dispose);
+    final controller = container.read(workspaceProvider.notifier);
+    container.listen(workspaceProvider, (_, _) {});
+
+    await controller.send('hello');
+    expect(container.read(workspaceProvider).sessionId, isNotNull);
+
+    // Switch to an ACP connection: sessions reset and the new runtime is used.
+    final runtimeController = container.read(
+      runtimeEnvironmentProvider.notifier,
+    );
+    // Activate the already-connected client by swapping the environment
+    // through the controller's test surface; bootstrapAcpClient would
+    // spawn a real process.
+    runtimeController.overrideEnvironmentForTest(acpClient);
+
+    // The switch replaces the runtime environment.
+    final runtimeState = container.read(runtimeEnvironmentProvider);
+    expect(runtimeState.status, AcpConnectionStatus.connected);
+    expect(runtimeState.environment, isNotNull);
+
+    // Sessions reset to a fresh draft under the new runtime.
+    final workspace = container.read(workspaceProvider);
+    expect(workspace.messages, isEmpty);
+
+    // The session list reloads from the ACP server after activation.
+    await pumpEventQueue();
+    final after = container.read(workspaceProvider);
+    expect(after.sessions, hasLength(1));
+    expect(after.sessions.first.workingDirectory, '/tmp');
+  });
+
+  test(
+    'deactivateConnection restores the local runtime without closing it',
+    () async {
+      final model = ModelDescriptor(
+        ref: ModelRef(
+          providerId: ProviderId('test'),
+          modelId: ModelId('local'),
+        ),
+      );
+      final store = DriftSessionStore.inMemory();
+      final localRuntime = AgentRuntime(
+        store: store,
+        provider: _FakeProvider(model.ref),
+        tools: LocalToolRegistry(const []),
+        ids: SecureIdGenerator(),
+        defaultModel: model.ref,
+      );
+      final localEnv = RuntimeEnvironment(
+        runtime: localRuntime,
+        models: [model],
+        skills: _EmptySkillCatalog(),
+      );
+      final wire = StreamChannelController<String>();
+      final acpServer = AcpServer(localRuntime, models: [model]);
+      final serverDone = acpServer.serveChannel(wire.local);
+      final acpClient = AcpClient.channel(wire.foreign);
+      await acpClient.connect();
+
+      final runtimeController = RuntimeEnvironmentController(local: localEnv);
+      final container = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWith(() => runtimeController),
+        ],
+      );
+      addTearDown(store.close);
+      addTearDown(() => serverDone);
+      addTearDown(acpClient.close);
+      addTearDown(container.dispose);
+      container.read(runtimeEnvironmentProvider);
+
+      runtimeController.overrideEnvironmentForTest(acpClient);
+      expect(
+        container.read(runtimeEnvironmentProvider).status,
+        AcpConnectionStatus.connected,
+      );
+
+      await runtimeController.deactivateConnection();
+      final restored = container.read(runtimeEnvironmentProvider);
+      expect(restored.status, AcpConnectionStatus.disconnected);
+      expect(identical(restored.environment, localEnv), isTrue);
+
+      final session = await localRuntime.createSession(
+        workingDirectory: '/tmp',
+      );
+      expect(session.workingDirectory, '/tmp');
+    },
+  );
+
+  test('surfaces permission requests and forwards the reply', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('local')),
+    );
+    final store = DriftSessionStore.inMemory();
+    final localRuntime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final localEnv = RuntimeEnvironment(
+      runtime: localRuntime,
+      models: [model],
+      skills: _EmptySkillCatalog(),
+    );
+    final wire = StreamChannelController<String>();
+    final acpServer = AcpServer(localRuntime, models: [model]);
+    final serverDone = acpServer.serveChannel(wire.local);
+    final acpClient = AcpClient.channel(wire.foreign);
+    await acpClient.connect();
+
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(local: localEnv),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(() => serverDone);
+    addTearDown(acpClient.close);
+    addTearDown(container.dispose);
+    final controller = container.read(workspaceProvider.notifier);
+    container.listen(workspaceProvider, (_, _) {});
+
+    container
+        .read(runtimeEnvironmentProvider.notifier)
+        .overrideEnvironmentForTest(acpClient);
+    await pumpEventQueue();
+
+    // The server pushes a permission request for a tool call.
+    wire.local.sink.add(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': 999,
+        'method': 'session/request_permission',
+        'params': {
+          'sessionId': 'sess-1',
+          'toolCall': {
+            'toolCallId': 'call-9',
+            'toolName': 'edit',
+            'title': 'Edit: /tmp/a.txt',
+            'input': {'path': '/tmp/a.txt'},
+          },
+          'options': [
+            {'optionId': 'once', 'kind': 'allow_once', 'name': 'Allow once'},
+            {
+              'optionId': 'always',
+              'kind': 'allow_always',
+              'name': 'Always allow',
+            },
+            {'optionId': 'reject', 'kind': 'reject_once', 'name': 'Reject'},
+          ],
+        },
+      }),
+    );
+    await pumpEventQueue();
+
+    final workspace = container.read(workspaceProvider);
+    expect(workspace.pendingPermissions, hasLength(1));
+    final request = workspace.pendingPermissions.single;
+    expect(request.toolName, 'Edit: /tmp/a.txt');
+    expect(request.options, hasLength(3));
+
+    await controller.respondPermission(
+      request.requestId,
+      PermissionReply.allowAlways,
+    );
+    await pumpEventQueue();
+
+    expect(container.read(workspaceProvider).pendingPermissions, isEmpty);
+  });
+
   test('defaults the workspace directory to the home directory', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -43,11 +260,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -93,11 +312,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -153,11 +374,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -203,11 +426,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -257,11 +482,13 @@ void main() {
       );
       final container = ProviderContainer(
         overrides: [
-          runtimeEnvironmentProvider.overrideWithValue(
-            RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: _EmptySkillCatalog(),
+          runtimeEnvironmentProvider.overrideWith(
+            () => RuntimeEnvironmentController(
+              local: RuntimeEnvironment(
+                runtime: runtime,
+                models: [model],
+                skills: _EmptySkillCatalog(),
+              ),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -299,11 +526,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -347,11 +576,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -369,6 +600,100 @@ void main() {
     await controller.renameSession(sessionId, 'Renamed title');
     final sessions = container.read(workspaceProvider).sessions;
     expect(sessions.single.title, 'Renamed title');
+  });
+
+  test('selectMode applies immediately to an existing session', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final modeRuntime = _FakeModeRuntime(runtime);
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: modeRuntime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    await controller.send('first session');
+    final sessionId = container.read(workspaceProvider).sessionId!;
+
+    await controller.selectMode('plan');
+    expect(container.read(workspaceProvider).mode, 'plan');
+    expect(modeRuntime.modeCalls, [(sessionId.value, 'plan')]);
+  });
+
+  test('selectMode on a draft carries the mode into the first turn', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('streaming'),
+      ),
+      name: 'Streaming test model',
+      reasoningEfforts: const [ReasoningEffortOption(value: 'balanced')],
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final modeRuntime = _FakeModeRuntime(runtime);
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: modeRuntime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => _FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+
+    final controller = container.read(workspaceProvider.notifier);
+    // Draft: no session yet, so selectMode only records the selection.
+    await controller.selectMode('plan');
+    expect(container.read(workspaceProvider).mode, 'plan');
+    expect(modeRuntime.modeCalls, isEmpty);
+
+    // The first turn creates the session and carries the mode in the request.
+    await controller.send('hello');
+    expect(modeRuntime.turnModes, ['plan']);
   });
 
   test('deleteSession removes the session and resets the active one', () async {
@@ -390,11 +715,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -444,11 +771,13 @@ void main() {
       );
       final container = ProviderContainer(
         overrides: [
-          runtimeEnvironmentProvider.overrideWithValue(
-            RuntimeEnvironment(
-              runtime: runtime,
-              models: [visionModel, textModel],
-              skills: _EmptySkillCatalog(),
+          runtimeEnvironmentProvider.overrideWith(
+            () => RuntimeEnvironmentController(
+              local: RuntimeEnvironment(
+                runtime: runtime,
+                models: [visionModel, textModel],
+                skills: _EmptySkillCatalog(),
+              ),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -510,11 +839,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [visionModel, textModel],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [visionModel, textModel],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -568,11 +899,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [visionModel],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [visionModel],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -621,11 +954,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [visionModel],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [visionModel],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -663,11 +998,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [textModel],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [textModel],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -709,11 +1046,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [visionModel],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [visionModel],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -771,11 +1110,13 @@ void main() {
       );
       final container = ProviderContainer(
         overrides: [
-          runtimeEnvironmentProvider.overrideWithValue(
-            RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: _EmptySkillCatalog(),
+          runtimeEnvironmentProvider.overrideWith(
+            () => RuntimeEnvironmentController(
+              local: RuntimeEnvironment(
+                runtime: runtime,
+                models: [model],
+                skills: _EmptySkillCatalog(),
+              ),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -843,11 +1184,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [modelA, modelB],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [modelA, modelB],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -901,11 +1244,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -953,11 +1298,13 @@ void main() {
       );
       final first = ProviderContainer(
         overrides: [
-          runtimeEnvironmentProvider.overrideWithValue(
-            RuntimeEnvironment(
-              runtime: firstRuntime,
-              models: [modelA, modelB],
-              skills: _EmptySkillCatalog(),
+          runtimeEnvironmentProvider.overrideWith(
+            () => RuntimeEnvironmentController(
+              local: RuntimeEnvironment(
+                runtime: firstRuntime,
+                models: [modelA, modelB],
+                skills: _EmptySkillCatalog(),
+              ),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -980,11 +1327,13 @@ void main() {
       );
       final second = ProviderContainer(
         overrides: [
-          runtimeEnvironmentProvider.overrideWithValue(
-            RuntimeEnvironment(
-              runtime: secondRuntime,
-              models: [modelA],
-              skills: _EmptySkillCatalog(),
+          runtimeEnvironmentProvider.overrideWith(
+            () => RuntimeEnvironmentController(
+              local: RuntimeEnvironment(
+                runtime: secondRuntime,
+                models: [modelA],
+                skills: _EmptySkillCatalog(),
+              ),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -1068,6 +1417,93 @@ final class _EmptySkillCatalog implements SkillCatalog {
 
   @override
   List<SkillSummary> get summaries => const [];
+}
+
+/// A runtime that advertises agent modes and records mode switches.
+final class _FakeModeRuntime implements RuntimeService {
+  _FakeModeRuntime(this._inner);
+
+  final AgentRuntime _inner;
+  final modeCalls = <(String, String)>[];
+  final turnModes = <String?>[];
+
+  static const modes = [
+    ModeOption(id: 'build', name: 'build'),
+    ModeOption(id: 'plan', name: 'plan'),
+  ];
+
+  @override
+  ModelRef get defaultModel => _inner.defaultModel;
+
+  @override
+  Stream<AgentEvent> run(TurnRequest request) {
+    turnModes.add(request.mode);
+    return _inner.run(request);
+  }
+
+  @override
+  Stream<AgentEvent> compact(
+    SessionId sessionId, {
+    String? instruction,
+    CancellationToken? cancellation,
+  }) => _inner.compact(
+    sessionId,
+    instruction: instruction,
+    cancellation: cancellation,
+  );
+
+  @override
+  Future<SessionPage> listSessions({
+    String? workingDirectory,
+    String? cursor,
+    int limit = 20,
+  }) => _inner.listSessions(
+    workingDirectory: workingDirectory,
+    cursor: cursor,
+    limit: limit,
+  );
+
+  @override
+  Future<Session> createSession({
+    required String workingDirectory,
+    List<String> additionalDirectories = const <String>[],
+  }) => _inner.createSession(
+    workingDirectory: workingDirectory,
+    additionalDirectories: additionalDirectories,
+  );
+
+  @override
+  Future<SessionSnapshot> loadSession(SessionId sessionId) =>
+      _inner.loadSession(sessionId);
+
+  @override
+  Future<void> deleteSession(SessionId sessionId) =>
+      _inner.deleteSession(sessionId);
+
+  @override
+  Future<void> renameSession(SessionId sessionId, String title) =>
+      _inner.renameSession(sessionId, title);
+
+  @override
+  Future<int> contextWindowSize() => _inner.contextWindowSize();
+
+  @override
+  String? titleFor(SessionId sessionId) => _inner.titleFor(sessionId);
+
+  @override
+  List<AgentCommand> commandsFor(SessionId sessionId) =>
+      _inner.commandsFor(sessionId);
+
+  @override
+  List<ModeOption> get modeOptions => modes;
+
+  @override
+  String? modeFor(SessionId sessionId) => null;
+
+  @override
+  Future<void> setMode(SessionId sessionId, String modeId) async {
+    modeCalls.add((sessionId.value, modeId));
+  }
 }
 
 final class _RecordingProvider implements ModelProvider {

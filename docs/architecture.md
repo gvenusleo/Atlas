@@ -36,8 +36,8 @@ graph TD
     PROVIDER --> RT
     TOOLS --> RT
     STORAGE --> RT
-    ACP --> JRPC[json_rpc_2]
-    MCP -.-> JRPC
+    ACP --> ACPD[acpd]
+    MCP -.-> JRPC[json_rpc_2]
 ```
 
 Planned components and edges (`atlas_ws` and MCP) appear above for target-state
@@ -48,9 +48,11 @@ storage, tools, and the system prompt builder. `atlas_cli` and `atlas_flutter`
 use this shared composition from their own process bootstraps.
 Running `atlas` enters the Nocterm TUI by default. Running `atlas acp`
 serves the composed runtime to ACP clients (editors such as Zed) over NDJSON
-stdio. A planned `atlas server` subcommand will expose the composed runtime
-handler through `atlas_ws` for remote clients. Local Flutter and Nocterm interactions
-do not serialize through the remote protocol. ACP is an inbound adapter to
+stdio. The Flutter app is always an ACP client: local mode starts an
+in-process `AcpServer` over an in-memory transport, and remote mode spawns a
+third-party ACP agent through `acpd_io`. Nocterm still talks to the runtime
+directly. A planned `atlas server` subcommand will expose the composed runtime
+handler through `atlas_ws` for remote clients. ACP is an inbound adapter to
 the same runtime; MCP primarily connects external tools to the tool layer.
 
 ## Package Responsibilities
@@ -83,7 +85,7 @@ the same runtime; MCP primarily connects external tools to the tool layer.
 - Local presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters; both application roots use `atlas_composition`.
 - `atlas_prompt` depends on `atlas_runtime` public types only and is consumed by composition roots through `buildSystemPrompt`.
 - `atlas_cli` and `atlas_flutter` are separate process composition roots and share construction code, not runtime instances.
-- ACP and MCP own their protocol lifecycle rules and use `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.
+- ACP owns its protocol lifecycle through `acpd`. MCP still uses `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.
 
 ## Runtime Contracts
 

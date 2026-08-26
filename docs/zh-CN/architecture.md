@@ -34,8 +34,8 @@ graph TD
     PROVIDER --> RT
     TOOLS --> RT
     STORAGE --> RT
-    ACP --> JRPC[json_rpc_2]
-    MCP -.-> JRPC
+    ACP --> ACPD[acpd]
+    MCP -.-> JRPC[json_rpc_2]
 ```
 
 图中 `atlas_ws` 与 MCP 为 **Planned** 组件或连线，仅用于展示目标形态，当前
@@ -44,10 +44,12 @@ graph TD
 `atlas_composition` 从 `atlas_config`、provider、存储、工具与系统提示词构建器
 组装一个 runtime；`atlas_cli` 与 `atlas_flutter` 的进程 bootstrap 共用这段
 组装代码。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas acp` 时通过 NDJSON
-stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）；规划中的
-`atlas server` 子命令将通过 `atlas_ws` 把已组装的 runtime handler 暴露给远程
-客户端。本地 Flutter 与 Nocterm 调用无需经过远程协议序列化。ACP 作为入口
-适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
+stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）。Flutter App
+始终是 ACP 客户端：本地模式在进程内启动 `AcpServer` 并通过内存 transport
+连接，远程模式通过 `acpd_io` 拉起第三方 ACP agent。Nocterm 仍直接使用
+runtime。规划中的 `atlas server` 子命令将通过 `atlas_ws` 把已组装的 runtime
+handler 暴露给远程客户端。ACP 作为入口适配到同一 runtime；MCP 主要用于把
+外部工具接入工具层。
 
 ## Package 职责
 
@@ -79,7 +81,7 @@ stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）�
 - 本地展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器；两个应用根都使用 `atlas_composition`。
 - `atlas_prompt` 只依赖 `atlas_runtime` 公开类型，组合根通过 `buildSystemPrompt` 使用它。
 - `atlas_cli` 与 `atlas_flutter` 是独立的进程组合根，共享构造代码而不共享 runtime 实例。
-- ACP 和 MCP 负责各自协议生命周期并直接使用 `json_rpc_2`；只有出现稳定重复代码后才提取共享 wrapper。
+- ACP 通过 `acpd` 负责协议生命周期；MCP 仍直接使用 `json_rpc_2`。只有出现稳定重复代码后才提取共享 wrapper。
 
 ## Runtime 行为契约
 

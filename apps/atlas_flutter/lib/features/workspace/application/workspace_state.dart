@@ -33,6 +33,7 @@ final class SessionWorkspace {
     this.hasImages = false,
     this.showTerminal = false,
     this.reasoningEffort,
+    this.mode,
   }) : messages = List.unmodifiable(messages);
 
   /// Persisted session id, or null for a draft that has not started a turn.
@@ -71,6 +72,9 @@ final class SessionWorkspace {
   /// Provider-local reasoning effort for subsequent turns on this session.
   final String? reasoningEffort;
 
+  /// Agent session mode for subsequent turns, when the agent offers modes.
+  final String? mode;
+
   /// Returns a copy with the given fields replaced.
   SessionWorkspace copyWith({
     SessionId? sessionId,
@@ -85,6 +89,7 @@ final class SessionWorkspace {
     bool? showTerminal,
     ModelDescriptor? activeModel,
     Object? reasoningEffort = _unset,
+    Object? mode = _unset,
   }) => SessionWorkspace(
     sessionId: sessionId ?? this.sessionId,
     workingDirectory: workingDirectory ?? this.workingDirectory,
@@ -102,6 +107,7 @@ final class SessionWorkspace {
     reasoningEffort: identical(reasoningEffort, _unset)
         ? this.reasoningEffort
         : reasoningEffort as String?,
+    mode: identical(mode, _unset) ? this.mode : mode as String?,
   );
 
   static const _unset = Object();
@@ -115,8 +121,10 @@ final class WorkspaceState {
     required Map<String, SessionWorkspace> workspaces,
     required List<SessionSummary> sessions,
     this.loadingSessions = false,
+    List<PermissionRequest> pendingPermissions = const [],
   }) : workspaces = Map<String, SessionWorkspace>.unmodifiable(workspaces),
-       sessions = List.unmodifiable(sessions);
+       sessions = List.unmodifiable(sessions),
+       pendingPermissions = List.unmodifiable(pendingPermissions);
 
   /// Cache key of the focused session or draft.
   final String activeKey;
@@ -129,6 +137,9 @@ final class WorkspaceState {
 
   /// Whether the session sidebar is refreshing.
   final bool loadingSessions;
+
+  /// Agent permission requests awaiting a user decision, in arrival order.
+  final List<PermissionRequest> pendingPermissions;
 
   /// Focused session cache.
   SessionWorkspace get active {
@@ -166,6 +177,9 @@ final class WorkspaceState {
   /// Reasoning effort of the focused session.
   String? get reasoningEffort => active.reasoningEffort;
 
+  /// Agent session mode of the focused session.
+  String? get mode => active.mode;
+
   /// Persisted sessions that currently have a turn or compaction in flight.
   Set<SessionId> get runningSessionIds => {
     for (final workspace in workspaces.values)
@@ -201,10 +215,12 @@ final class WorkspaceState {
     Map<String, SessionWorkspace>? workspaces,
     List<SessionSummary>? sessions,
     bool? loadingSessions,
+    List<PermissionRequest>? pendingPermissions,
   }) => WorkspaceState(
     activeKey: activeKey ?? this.activeKey,
     workspaces: workspaces ?? this.workspaces,
     sessions: sessions ?? this.sessions,
     loadingSessions: loadingSessions ?? this.loadingSessions,
+    pendingPermissions: pendingPermissions ?? this.pendingPermissions,
   );
 }

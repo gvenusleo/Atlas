@@ -50,3 +50,22 @@ final class SkillSummary {
   /// The skill description.
   final String description;
 }
+
+/// A slash command advertised by an agent for a session.
+final class AgentCommand {
+  /// Creates an agent command.
+  const AgentCommand({
+    required this.name,
+    required this.description,
+    this.inputHint = '',
+  });
+
+  /// The command name, without the leading slash.
+  final String name;
+
+  /// Human-readable description of what the command does.
+  final String description;
+
+  /// Optional hint shown while the user has not typed input yet.
+  final String inputHint;
+}

@@ -119,6 +119,40 @@ final class ToolFinished extends AgentEvent {
   final ToolResultItem result;
 }
 
+/// One step of an agent plan.
+final class PlanEntry {
+  /// Creates a plan entry.
+  const PlanEntry({
+    required this.content,
+    this.priority = 'medium',
+    this.status = 'pending',
+  });
+
+  /// The step description.
+  final String content;
+
+  /// The step priority (`high`, `medium`, or `low`).
+  final String priority;
+
+  /// The step status (`pending`, `in_progress`, or `completed`).
+  final String status;
+}
+
+/// Indicates that the agent replaced its plan for the current turn.
+final class PlanUpdated extends AgentEvent {
+  /// Creates a plan-updated event.
+  const PlanUpdated({
+    required super.sessionId,
+    required super.turnId,
+    required super.sequence,
+    required super.occurredAt,
+    required this.entries,
+  });
+
+  /// The complete plan, replacing any previous plan for this turn.
+  final List<PlanEntry> entries;
+}
+
 /// Indicates that context compaction has started after a terminal turn.
 final class CompactionStarted extends AgentEvent {
   /// Creates a compaction-started event.

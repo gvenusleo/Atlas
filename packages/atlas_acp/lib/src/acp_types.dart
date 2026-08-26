@@ -1,6 +1,5 @@
-import 'dart:convert';
-
-import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:acpd/acpd.dart' hide PlanEntry, ToolCall;
+import 'package:atlas_runtime/atlas_runtime.dart' as rt;
 
 /// The ACP protocol version implemented by this adapter.
 const acpProtocolVersion = 1;
@@ -9,7 +8,21 @@ const acpProtocolVersion = 1;
 const acpConfigIdModel = 'model';
 
 /// The config option identifier for reasoning effort selection.
-const acpConfigIdReasoningEffort = 'reasoning_effort';
+const acpConfigIdEffort = 'effort';
+
+/// The config option identifier for session mode selection.
+const acpConfigIdMode = 'mode';
+
+/// Atlas extension method for renaming a session. ACP v1 has no rename
+/// request; clients that do not implement this method keep a local title
+/// overlay instead.
+const acpSessionSetTitleMethod = 'session/set_title';
+
+/// The agent version reported during initialization.
+const acpAgentVersion = '0.1.0';
+
+/// The client name reported during initialization.
+const acpClientName = 'atlas';
 
 /// Builds the session `configOptions` list for [models] with [currentModel]
 /// selected and [currentEffort] as the current reasoning effort.
@@ -18,215 +31,118 @@ const acpConfigIdReasoningEffort = 'reasoning_effort';
 /// across providers. The reasoning effort option is only offered when the
 /// current model declares supported efforts, matching the ACP `thought_level`
 /// category.
-List<JsonObject> sessionConfigOptions(
-  List<ModelDescriptor> models,
-  ModelRef currentModel,
+List<SessionConfigOption> sessionConfigOptions(
+  List<rt.ModelDescriptor> models,
+  rt.ModelRef currentModel,
   String? currentEffort,
 ) => [
-  {
-    'id': acpConfigIdModel,
-    'name': 'Model',
-    'description': 'The model used for this session',
-    'category': 'model',
-    'type': 'select',
-    'currentValue': currentModel.toString(),
-    'options': [
-      for (final model in _catalogFor(models, currentModel))
-        {
-          'value': model.ref.toString(),
-          'name': model.name.isEmpty ? model.ref.modelId.value : model.name,
-          if (model.description.isNotEmpty) 'description': model.description,
-        },
-    ],
-  },
-  ?_reasoningEffortOption(models, currentModel, currentEffort),
+  _modelOption(models, currentModel),
+  ..._effortOptions(models, currentModel, currentEffort),
 ];
 
-/// The model catalog with [currentModel] guaranteed present, so the select
-/// option always offers a matching entry for its current value even when the
-/// catalog is empty or omits the default model.
-List<ModelDescriptor> _catalogFor(
-  List<ModelDescriptor> models,
-  ModelRef currentModel,
+/// The model select option, with [currentModel] guaranteed present so the
+/// current value always has a matching option even when the catalog is empty
+/// or omits the default model.
+SessionConfigOption _modelOption(
+  List<rt.ModelDescriptor> models,
+  rt.ModelRef currentModel,
 ) {
-  if (models.any((model) => model.ref == currentModel)) {
-    return models;
-  }
-  return [...models, ModelDescriptor(ref: currentModel)];
+  final catalog = _catalogFor(models, currentModel);
+  return SessionConfigSelectOptionValue(
+    id: acpConfigIdModel,
+    name: 'Model',
+    description: 'The model used for this session',
+    category: SessionConfigOptionCategory.model,
+    currentValue: currentModel.toString(),
+    options: SessionConfigUngroupedOptions([
+      for (final model in catalog)
+        SessionConfigSelectOption(
+          value: model.ref.toString(),
+          name: model.name.isEmpty ? model.ref.modelId.value : model.name,
+          description: model.description.isEmpty ? null : model.description,
+        ),
+    ]),
+  );
 }
 
-/// Builds the reasoning effort config option for [currentModel], or returns
-/// null when the model declares no supported efforts.
-JsonObject? _reasoningEffortOption(
-  List<ModelDescriptor> models,
-  ModelRef currentModel,
+/// The reasoning effort select option for [currentModel], or an empty list
+/// when the model declares no supported efforts.
+List<SessionConfigOption> _effortOptions(
+  List<rt.ModelDescriptor> models,
+  rt.ModelRef currentModel,
   String? currentEffort,
 ) {
   final descriptor = models.firstWhere(
     (model) => model.ref == currentModel,
-    orElse: () => ModelDescriptor(ref: currentModel),
+    orElse: () => rt.ModelDescriptor(ref: currentModel),
   );
   if (descriptor.reasoningEfforts.isEmpty) {
-    return null;
+    return const [];
   }
-  return {
-    'id': acpConfigIdReasoningEffort,
-    'name': 'Reasoning effort',
-    'description': 'Controls model reasoning depth',
-    'category': 'thought_level',
-    'type': 'select',
-    'currentValue': currentEffort ?? descriptor.reasoningEfforts.first.value,
-    'options': [
-      for (final effort in descriptor.reasoningEfforts)
-        {
-          'value': effort.value,
-          'name': effort.name.isEmpty ? effort.value : effort.name,
-          if (effort.description.isNotEmpty) 'description': effort.description,
-        },
-    ],
-  };
+  return [
+    SessionConfigSelectOptionValue(
+      id: acpConfigIdEffort,
+      name: 'Effort',
+      description: 'Available effort levels for this model',
+      category: SessionConfigOptionCategory.thoughtLevel,
+      currentValue: currentEffort ?? descriptor.reasoningEfforts.first.value,
+      options: SessionConfigUngroupedOptions([
+        for (final effort in descriptor.reasoningEfforts)
+          SessionConfigSelectOption(
+            value: effort.value,
+            name: effort.name.isEmpty ? effort.value : effort.name,
+            description: effort.description.isEmpty ? null : effort.description,
+          ),
+      ]),
+    ),
+  ];
 }
 
-/// The agent version reported during initialization.
-const acpAgentVersion = '0.1.0';
-
-/// One `session/update` notification payload.
-final class SessionUpdate {
-  /// Creates a session update notification.
-  const SessionUpdate(this.sessionId, this.update);
-
-  /// The owning session.
-  final SessionId sessionId;
-
-  /// The typed update object.
-  final JsonObject update;
-
-  /// Serializes the full JSON-RPC notification for the wire.
-  JsonObject toJson() => {
-    'jsonrpc': '2.0',
-    'method': 'session/update',
-    'params': {'sessionId': sessionId.value, 'update': update},
-  };
-
-  /// The JSON-encoded notification.
-  String toJsonString() => jsonEncode(toJson());
+/// The model catalog with [currentModel] guaranteed present.
+List<rt.ModelDescriptor> _catalogFor(
+  List<rt.ModelDescriptor> models,
+  rt.ModelRef currentModel,
+) {
+  if (models.any((model) => model.ref == currentModel)) {
+    return models;
+  }
+  return [...models, rt.ModelDescriptor(ref: currentModel)];
 }
 
 /// Builds the `initialize` result with the capabilities Atlas provides.
-JsonObject initializeResult() => {
-  'protocolVersion': acpProtocolVersion,
-  'agentCapabilities': {
-    'loadSession': true,
-    'sessionCapabilities': {
-      'resume': <String, Object?>{},
-      'list': <String, Object?>{},
-      'close': <String, Object?>{},
-      'delete': <String, Object?>{},
-      'additionalDirectories': <String, Object?>{},
-    },
-    'promptCapabilities': {'image': true, 'embeddedContext': true},
-  },
-  'agentInfo': {'name': 'atlas', 'title': 'Atlas', 'version': acpAgentVersion},
-  'authMethods': <Object?>[],
-};
-
-/// A replayed user message (`user_message_chunk`).
-SessionUpdate userMessageChunk(
-  SessionId sessionId, {
-  required String messageId,
-  required String text,
-}) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'user_message_chunk',
-  'messageId': messageId,
-  'content': {'type': 'text', 'text': text},
-});
-
-/// An assistant text chunk (`agent_message_chunk`).
-SessionUpdate agentMessageChunk(
-  SessionId sessionId, {
-  required String messageId,
-  required String text,
-}) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'agent_message_chunk',
-  'messageId': messageId,
-  'content': {'type': 'text', 'text': text},
-});
-
-/// A model reasoning chunk (`agent_thought_chunk`).
-SessionUpdate agentThoughtChunk(
-  SessionId sessionId, {
-  required String messageId,
-  required String text,
-}) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'agent_thought_chunk',
-  'messageId': messageId,
-  'content': {'type': 'text', 'text': text},
-});
-
-/// A pending tool call (`tool_call`).
-SessionUpdate toolCall(
-  SessionId sessionId, {
-  required String toolCallId,
-  required String title,
-  required String kind,
-  Map<String, Object?>? rawInput,
-  List<JsonObject>? locations,
-  List<JsonObject>? content,
-  Map<String, Object?>? meta,
-}) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'tool_call',
-  'toolCallId': toolCallId,
-  'title': title,
-  'kind': kind,
-  'status': 'pending',
-  'rawInput': ?rawInput,
-  if (locations != null && locations.isNotEmpty) 'locations': locations,
-  if (content != null && content.isNotEmpty) 'content': content,
-  if (meta != null && meta.isNotEmpty) '_meta': meta,
-});
-
-/// A tool call progress or result update (`tool_call_update`).
-SessionUpdate toolCallUpdate(
-  SessionId sessionId, {
-  required String toolCallId,
-  required String status,
-  List<JsonObject>? content,
-  List<JsonObject>? locations,
-  Map<String, Object?>? rawOutput,
-  Map<String, Object?>? meta,
-}) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'tool_call_update',
-  'toolCallId': toolCallId,
-  'status': status,
-  if (content != null && content.isNotEmpty) 'content': content,
-  if (locations != null && locations.isNotEmpty) 'locations': locations,
-  'rawOutput': ?rawOutput,
-  if (meta != null && meta.isNotEmpty) '_meta': meta,
-});
-
-/// A standard text content block for tool call output.
-List<JsonObject> textToolCallContent(String text) => [
-  {
-    'type': 'content',
-    'content': {'type': 'text', 'text': text},
-  },
-];
+InitializeResponse initializeResult() => InitializeResponse(
+  protocolVersion: ProtocolVersion.v1,
+  agentCapabilities: AgentCapabilities(
+    loadSession: true,
+    sessionCapabilities: SessionCapabilities(
+      resume: SessionResumeCapabilities(),
+      list: SessionListCapabilities(),
+      close: SessionCloseCapabilities(),
+      delete: SessionDeleteCapabilities(),
+      additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
+    ),
+    promptCapabilities: PromptCapabilities(image: true, embeddedContext: true),
+  ),
+  authMethods: const [],
+  agentInfo: Implementation(
+    name: 'atlas',
+    title: 'Atlas',
+    version: acpAgentVersion,
+  ),
+);
 
 /// The display-only terminal id for a shell tool call. Derived from the
 /// tool call id so it stays unique within the session.
 String shellTerminalId(String toolCallId) => 'term-$toolCallId';
 
-/// The terminal content block for a shell tool call, which makes Zed render
-/// the call as a live terminal instead of a collapsed card.
-List<JsonObject> shellTerminalContent(String toolCallId) => [
-  {'type': 'terminal', 'terminalId': shellTerminalId(toolCallId)},
-];
+/// The terminal content block for a shell tool call, which makes clients
+/// render the call as a live terminal instead of a collapsed card.
+ToolCallContent terminalToolCallContent(String toolCallId) =>
+    ToolCallTerminal(terminalId: shellTerminalId(toolCallId));
 
 /// The `_meta` registration for Zed's display-only terminal: a v1 extension
 /// (not part of the ACP v1 spec) that lets a locally-executed command render
-/// as a live terminal in Zed. ACP v2 standardizes the same capability as
-/// `terminal_update` / `terminal_output_chunk`; migrate there when Atlas
-/// moves to v2.
+/// as a live terminal in Zed.
 Map<String, Object?> shellTerminalInfo(
   String toolCallId,
   Map<String, Object?> arguments,
@@ -241,8 +157,7 @@ Map<String, Object?> shellTerminalInfo(
 }
 
 /// The `_meta` payload for a finished shell tool call: the captured output
-/// and exit status, streamed to Zed's display-only terminal. [output] is the
-/// raw text (Zed's v1 extension carries it as a JSON string, not base64).
+/// and exit status, streamed to the display-only terminal.
 Map<String, Object?> shellTerminalUpdateMeta(
   String toolCallId,
   String output,
@@ -258,65 +173,28 @@ Map<String, Object?> shellTerminalUpdateMeta(
   },
 };
 
-/// A complete plan replacement (`plan`).
-SessionUpdate planUpdate(SessionId sessionId, List<JsonObject> entries) =>
-    SessionUpdate(sessionId, {'sessionUpdate': 'plan', 'entries': entries});
-
-/// A session metadata change (`session_info_update`).
-SessionUpdate sessionInfoUpdate(SessionId sessionId, {required String title}) =>
-    SessionUpdate(sessionId, {
-      'sessionUpdate': 'session_info_update',
-      'title': title,
-    });
-
-/// A context usage report (`usage_update`).
-SessionUpdate usageUpdate(
-  SessionId sessionId, {
-  required int used,
-  required int size,
-}) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'usage_update',
-  'used': used,
-  'size': size,
-});
-
-/// The slash commands available in a session (`available_commands_update`).
-SessionUpdate availableCommandsUpdate(
-  SessionId sessionId,
-  List<JsonObject> commands,
-) => SessionUpdate(sessionId, {
-  'sessionUpdate': 'available_commands_update',
-  'availableCommands': commands,
-});
-
 /// The built-in slash command that manually compacts the session context.
 const compactCommandName = 'compact';
 
 /// Builds the slash commands offered in one session: the built-in `/compact`
 /// command followed by one command per available skill, skipping names that
 /// collide with `/compact` or cannot be represented as slash commands.
-///
-/// `/compact` carries no input hint: Atlas forwards any trailing instruction
-/// text to the compaction summary request.
-List<JsonObject> availableCommandsFor(List<SkillSummary> skills) => [
-  {
-    'name': compactCommandName,
-    'description': 'Compact earlier conversation context.',
-  },
+List<AvailableCommand> availableCommandsFor(List<rt.SkillSummary> skills) => [
+  AvailableCommand(
+    name: compactCommandName,
+    description: 'Compact earlier conversation context.',
+  ),
   for (final summary in skills)
     if (summary.name != compactCommandName &&
         validSlashCommandName(summary.name))
-      {
-        'name': summary.name,
-        'description': summary.description,
-        'input': {'hint': 'task'},
-      },
+      AvailableCommand(
+        name: summary.name,
+        description: summary.description,
+        input: UnstructuredCommandInput(hint: 'task'),
+      ),
 ];
 
 /// Whether [name] can be safely exposed as a slash command name.
-///
-/// Restricted to ASCII letters, digits, `_`, `-`, and `.` so a command token
-/// can always be parsed out of a prompt without escaping.
 bool validSlashCommandName(String name) {
   if (name.isEmpty) {
     return false;
@@ -352,10 +230,6 @@ String? slashCommandName(String text) {
 }
 
 /// Parses a `/compact [instruction]` command from [text].
-///
-/// Returns the trailing instruction text (possibly empty) when [text] is a
-/// compact command, or null when it is a regular prompt. The instruction is
-/// forwarded to the runtime compaction summary request when non-empty.
 String? compactCommandInstruction(String text) {
   final trimmed = text.trim();
   if (trimmed == '/$compactCommandName') {
@@ -383,26 +257,19 @@ List<String> matchedCommandNames(String text, Set<String> known) {
 }
 
 /// Maps an Atlas tool name to the ACP tool kind.
-String toolCallKind(String name) => switch (name) {
-  'read' => 'read',
-  'write' || 'edit' => 'edit',
-  'shell' => 'execute',
-  'plan' => 'think',
-  _ => 'other',
+ToolKind toolCallKind(String name) => switch (name) {
+  'read' => ToolKind.read,
+  'write' || 'edit' => ToolKind.edit,
+  'shell' => ToolKind.execute,
+  'plan' => ToolKind.think,
+  _ => ToolKind.other,
 };
 
 /// The maximum length of a shell command shown in a `tool_call` title.
 const shellTitleLimit = 1000;
 
 /// The short human-readable `tool_call` title for [name], shown by clients as
-/// the headline of the tool call. ACP titles describe what the tool is doing
-/// rather than duplicating the model-facing description.
-///
-/// Shell calls use the command itself as the title (truncated to
-/// [shellTitleLimit] code units with an ellipsis); file tools prefix their
-/// target path; and the plan tool reports completed steps over the total.
-/// Titles fall back to a fixed phrase or the tool name when the arguments do
-/// not carry enough information.
+/// the headline of the tool call.
 String toolCallTitle(String name, Map<String, Object?> arguments) =>
     switch (name) {
       'shell' => switch (arguments['command']) {
@@ -417,7 +284,7 @@ String toolCallTitle(String name, Map<String, Object?> arguments) =>
         _ => '${_titleCase(name)} file',
       },
       'plan' => switch (planEntries(arguments['plan'])) {
-        final List<JsonObject> plan =>
+        final List<Map<String, Object?>> plan =>
           'Plan: '
               '${plan.where((entry) => entry['status'] == 'completed').length}'
               '/${plan.length} completed',
@@ -440,22 +307,15 @@ String _truncateCommand(String command) {
 
 /// A `diff` content block for a file modification shown by clients as a
 /// before/after view. [oldText] is null for newly created files.
-List<JsonObject> diffToolCallContent({
+ToolCallDiff diffToolCallContent({
   required String path,
   required String? oldText,
   required String newText,
-}) => [
-  {'type': 'diff', 'path': path, 'oldText': oldText, 'newText': newText},
-];
+}) => ToolCallDiff(path: path, oldText: oldText, newText: newText);
 
 /// The absolute file locations affected by a tool call, extracted from its
 /// arguments for ACP `locations` follow-along support.
-///
-/// Only tools that act on a single `path` argument report locations; shell
-/// commands and plan updates operate on no file and return an empty list.
-/// Relative paths are resolved against [workingDirectory] when one is known;
-/// reads that start at an explicit `offset` also report the start line.
-List<JsonObject> toolCallLocations(
+List<ToolCallLocation> toolCallLocations(
   String name,
   Map<String, Object?> arguments, {
   String? workingDirectory,
@@ -470,13 +330,9 @@ List<JsonObject> toolCallLocations(
   final absolute = _absolutePath(path, workingDirectory);
   final offset = arguments['offset'];
   if (name == 'read' && offset is num && offset >= 1) {
-    return [
-      {'path': absolute, 'line': offset.toInt()},
-    ];
+    return [ToolCallLocation(path: absolute, line: offset.toInt())];
   }
-  return [
-    {'path': absolute},
-  ];
+  return [ToolCallLocation(path: absolute)];
 }
 
 /// Resolves [path] against [workingDirectory] when it is relative and a
@@ -490,14 +346,11 @@ String _absolutePath(String path, String? workingDirectory) {
 
 /// Converts the `plan` tool argument list into ACP plan entries, or returns
 /// `null` when [rawPlan] is not a well-formed plan payload.
-///
-/// Atlas plans carry no priority, so entries are reported with the neutral
-/// `medium` priority.
-List<JsonObject>? planEntries(Object? rawPlan) {
+List<Map<String, Object?>>? planEntries(Object? rawPlan) {
   if (rawPlan is! List || rawPlan.isEmpty) {
     return null;
   }
-  final entries = <JsonObject>[];
+  final entries = <Map<String, Object?>>[];
   for (final raw in rawPlan) {
     if (raw is! Map) {
       return null;

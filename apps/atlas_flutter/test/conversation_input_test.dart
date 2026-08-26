@@ -121,6 +121,33 @@ void main() {
     expect(find.text('Model B'), findsOneWidget); // Only the trigger button.
   });
 
+  testWidgets('mode menu appears only when the agent advertises modes', (
+    tester,
+  ) async {
+    await _pumpComposer(tester, withModes: true);
+
+    // The mode trigger shows the current mode.
+    expect(find.text('build'), findsOneWidget);
+
+    // Open the mode picker and select plan.
+    await tester.tap(find.text('build'));
+    await tester.pumpAndSettle();
+    expect(find.text('plan'), findsOneWidget);
+
+    await tester.tap(find.text('plan'));
+    await tester.pumpAndSettle();
+    expect(find.text('plan'), findsOneWidget); // Trigger now shows plan.
+  });
+
+  testWidgets('mode menu is hidden when the agent has no modes', (
+    tester,
+  ) async {
+    await _pumpComposer(tester);
+
+    expect(find.text('build'), findsNothing);
+    expect(find.text('plan'), findsNothing);
+  });
+
   testWidgets('slash suggestions have no footer hint', (tester) async {
     await _pumpComposer(tester);
 
@@ -608,6 +635,7 @@ Future<void> _pumpComposer(
   List<SkillSummary> skills = const [],
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
+  bool withModes = false,
   Future<List<PendingImage>> Function()? onPickImages,
   Future<List<PendingImage>> Function()? onPasteImages,
 }) async {
@@ -617,6 +645,7 @@ Future<void> _pumpComposer(
     skills: skills,
     contextWindow: contextWindow,
     usage: usage,
+    withModes: withModes,
     onPickImages: onPickImages,
     onPasteImages: onPasteImages,
     child: const Align(
@@ -648,6 +677,7 @@ Future<void> _pumpWorkspace(
   List<SkillSummary> skills = const [],
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
+  bool withModes = false,
   Future<List<PendingImage>> Function()? onPickImages,
   Future<List<PendingImage>> Function()? onPasteImages,
 }) async {
@@ -666,25 +696,37 @@ Future<void> _pumpWorkspace(
   final allModels = models ?? [modelA, modelB];
   final defaultModel = allModels.firstOrNull ?? modelA;
   final store = DriftSessionStore.inMemory();
-  final runtime = AgentRuntime(
-    store: store,
-    provider: _FakeProvider(defaultModel.ref, usage: usage),
-    tools: LocalToolRegistry(const []),
-    ids: SecureIdGenerator(),
-    defaultModel: defaultModel.ref,
-  );
+  final runtime = withModes
+      ? _FakeModeRuntime(
+          AgentRuntime(
+            store: store,
+            provider: _FakeProvider(defaultModel.ref, usage: usage),
+            tools: LocalToolRegistry(const []),
+            ids: SecureIdGenerator(),
+            defaultModel: defaultModel.ref,
+          ),
+        )
+      : AgentRuntime(
+          store: store,
+          provider: _FakeProvider(defaultModel.ref, usage: usage),
+          tools: LocalToolRegistry(const []),
+          ids: SecureIdGenerator(),
+          defaultModel: defaultModel.ref,
+        );
   addTearDown(store.close);
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: allModels,
-            skills: skills.isEmpty
-                ? _EmptySkillCatalog()
-                : _FakeSkillCatalog(skills),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: allModels,
+              skills: skills.isEmpty
+                  ? _EmptySkillCatalog()
+                  : _FakeSkillCatalog(skills),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -775,6 +817,86 @@ ModelDescriptor _visionModel() => ModelDescriptor(
     ModelInputCapability.image,
   },
 );
+
+/// A runtime that advertises agent modes for composer tests.
+final class _FakeModeRuntime implements RuntimeService {
+  _FakeModeRuntime(this._inner);
+
+  final AgentRuntime _inner;
+
+  static const modes = [
+    ModeOption(id: 'build', name: 'build'),
+    ModeOption(id: 'plan', name: 'plan'),
+  ];
+
+  @override
+  ModelRef get defaultModel => _inner.defaultModel;
+
+  @override
+  Stream<AgentEvent> run(TurnRequest request) => _inner.run(request);
+
+  @override
+  Stream<AgentEvent> compact(
+    SessionId sessionId, {
+    String? instruction,
+    CancellationToken? cancellation,
+  }) => _inner.compact(
+    sessionId,
+    instruction: instruction,
+    cancellation: cancellation,
+  );
+
+  @override
+  Future<SessionPage> listSessions({
+    String? workingDirectory,
+    String? cursor,
+    int limit = 20,
+  }) => _inner.listSessions(
+    workingDirectory: workingDirectory,
+    cursor: cursor,
+    limit: limit,
+  );
+
+  @override
+  Future<Session> createSession({
+    required String workingDirectory,
+    List<String> additionalDirectories = const <String>[],
+  }) => _inner.createSession(
+    workingDirectory: workingDirectory,
+    additionalDirectories: additionalDirectories,
+  );
+
+  @override
+  Future<SessionSnapshot> loadSession(SessionId sessionId) =>
+      _inner.loadSession(sessionId);
+
+  @override
+  Future<void> deleteSession(SessionId sessionId) =>
+      _inner.deleteSession(sessionId);
+
+  @override
+  Future<void> renameSession(SessionId sessionId, String title) =>
+      _inner.renameSession(sessionId, title);
+
+  @override
+  Future<int> contextWindowSize() => _inner.contextWindowSize();
+
+  @override
+  String? titleFor(SessionId sessionId) => _inner.titleFor(sessionId);
+
+  @override
+  List<AgentCommand> commandsFor(SessionId sessionId) =>
+      _inner.commandsFor(sessionId);
+
+  @override
+  List<ModeOption> get modeOptions => modes;
+
+  @override
+  String? modeFor(SessionId sessionId) => null;
+
+  @override
+  Future<void> setMode(SessionId sessionId, String modeId) async {}
+}
 
 PendingImage _pngImage() => PendingImage(
   bytes: Uint8List.fromList(

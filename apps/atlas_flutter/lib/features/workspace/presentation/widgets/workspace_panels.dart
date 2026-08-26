@@ -12,6 +12,8 @@ import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
 import 'conversation_view.dart';
 import 'file_browser.dart';
+import 'permission_dialog.dart';
+import 'settings_dialog.dart';
 import 'terminal_panel.dart';
 import 'workspace_controls.dart';
 
@@ -30,7 +32,7 @@ class SessionsPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final environment = ref.watch(runtimeEnvironmentProvider);
+    final environment = ref.watch(runtimeEnvironmentProvider).environment;
     return _SidePanel(
       semanticLabel: 'Sessions',
       compact: onClose != null,
@@ -380,7 +382,10 @@ class _SessionListState extends ConsumerState<_SessionList> {
             child: WorkspaceToolbarButton(
               icon: LucideIcons.settings,
               tooltip: 'Settings',
-              onPressed: () {},
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (context) => const SettingsDialog(),
+              ),
             ),
           ),
         ),
@@ -674,7 +679,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final environment = ref.watch(runtimeEnvironmentProvider);
+    final environment = ref.watch(runtimeEnvironmentProvider).environment;
     if (environment == null) {
       return _SidePanel(
         semanticLabel: 'Workspace tools',
@@ -865,7 +870,7 @@ class WorkspacePanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = AtlasColors.of(context);
-    final environment = ref.watch(runtimeEnvironmentProvider);
+    final environment = ref.watch(runtimeEnvironmentProvider).environment;
     final sessionTitle = environment == null
         ? 'New session'
         : ref.watch(workspaceProvider.select((s) => s.sessionTitle));
@@ -877,68 +882,70 @@ class WorkspacePanel extends ConsumerWidget {
         ? Duration.zero
         : WorkspaceMetrics.sidebarAnimationDuration;
 
-    return ColoredBox(
-      key: const ValueKey('atlas-center-panel'),
-      color: colors.canvas,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          WorkspaceTitlebarDragArea(
-            child: SizedBox(
-              height: compact
-                  ? WorkspaceMetrics.compactToolbarHeight
-                  : WorkspaceMetrics.desktopToolbarHeight,
-              child: AnimatedPadding(
-                duration: animationDuration,
-                curve: Curves.easeOutCubic,
-                padding: EdgeInsets.only(left: leftToolbarInset, right: 6),
-                child: Row(
-                  children: [
-                    if (compact)
-                      WorkspaceToolbarButton(
-                        key: const ValueKey('atlas-left-toggle'),
-                        icon: LucideIcons.panelLeft,
-                        tooltip: 'Open sessions',
-                        size: 44,
-                        onPressed: onLeftPressed,
-                      ),
-                    if (!compact)
-                      AnimatedContainer(
-                        duration: animationDuration,
-                        curve: Curves.easeOutCubic,
-                        width: leftActive
-                            ? 0
-                            : WorkspaceMetrics.desktopToolbarButtonSize,
-                      ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        sessionTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+    return PermissionHost(
+      child: ColoredBox(
+        key: const ValueKey('atlas-center-panel'),
+        color: colors.canvas,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            WorkspaceTitlebarDragArea(
+              child: SizedBox(
+                height: compact
+                    ? WorkspaceMetrics.compactToolbarHeight
+                    : WorkspaceMetrics.desktopToolbarHeight,
+                child: AnimatedPadding(
+                  duration: animationDuration,
+                  curve: Curves.easeOutCubic,
+                  padding: EdgeInsets.only(left: leftToolbarInset, right: 6),
+                  child: Row(
+                    children: [
+                      if (compact)
+                        WorkspaceToolbarButton(
+                          key: const ValueKey('atlas-left-toggle'),
+                          icon: LucideIcons.panelLeft,
+                          tooltip: 'Open sessions',
+                          size: 44,
+                          onPressed: onLeftPressed,
+                        ),
+                      if (!compact)
+                        AnimatedContainer(
+                          duration: animationDuration,
+                          curve: Curves.easeOutCubic,
+                          width: leftActive
+                              ? 0
+                              : WorkspaceMetrics.desktopToolbarButtonSize,
+                        ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          sessionTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
-                    ),
-                    if (compact)
-                      WorkspaceToolbarButton(
-                        key: const ValueKey('atlas-right-toggle'),
-                        icon: LucideIcons.panelRight,
-                        tooltip: 'Open workspace tools',
-                        size: 44,
-                        onPressed: onRightPressed,
-                      ),
-                  ],
+                      if (compact)
+                        WorkspaceToolbarButton(
+                          key: const ValueKey('atlas-right-toggle'),
+                          icon: LucideIcons.panelRight,
+                          tooltip: 'Open workspace tools',
+                          size: 44,
+                          onPressed: onRightPressed,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const Divider(),
-          Expanded(child: _WorkspaceBody(error: startupError)),
-        ],
+            const Divider(),
+            Expanded(child: _WorkspaceBody(error: startupError)),
+          ],
+        ),
       ),
     );
   }
@@ -951,7 +958,7 @@ class _WorkspaceBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final environment = ref.watch(runtimeEnvironmentProvider);
+    final environment = ref.watch(runtimeEnvironmentProvider).environment;
     if (environment == null) {
       return _StartupFailure(
         message: error ?? 'Atlas runtime is not configured.',

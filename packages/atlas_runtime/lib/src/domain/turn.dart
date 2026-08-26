@@ -39,6 +39,7 @@ final class TurnRequest {
     this.sessionId,
     this.model,
     this.reasoningEffort,
+    this.mode,
     this.workingDirectory,
     this.additionalDirectories,
     this.skills = const <String>[],
@@ -56,6 +57,9 @@ final class TurnRequest {
 
   /// The requested reasoning effort value.
   final String? reasoningEffort;
+
+  /// The requested agent session mode, applied before the prompt.
+  final String? mode;
 
   /// The working directory for a new session; ignored when [sessionId]
   /// resumes an existing session, which keeps its own directory.

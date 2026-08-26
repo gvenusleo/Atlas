@@ -24,6 +24,10 @@ const _builtInCommands = <(String, String)>[
 /// Maximum slash suggestion rows shown before the popup scrolls.
 const _maxSlashPopupRows = 5;
 
+/// Maximum rows shown in the floating model picker; the window follows the
+/// highlight so long remote catalogs stay within the viewport.
+const _maxModelPopupRows = 8;
+
 /// Composer with model, reasoning effort, slash completion, send, and cancel.
 class ConversationInput extends ConsumerStatefulWidget {
   /// Creates a composer bound to [sessionKey], or the focused session.
@@ -44,13 +48,16 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   final _focusNode = FocusNode();
   final _modelMenuKey = GlobalKey();
   final _effortMenuKey = GlobalKey();
+  final _modeMenuKey = GlobalKey();
   final _layerLink = LayerLink();
   final _overlayPortalController = OverlayPortalController();
   var _selectedSuggestion = 0;
   var _modelHighlighted = 0;
   var _effortHighlighted = 0;
+  var _modeHighlighted = 0;
   var _modelOpen = false;
   var _effortOpen = false;
+  var _modeOpen = false;
   var _composing = false;
   var _imeCommitPending = false;
   var _attaching = false;
@@ -92,12 +99,13 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   }
 
   void _closeMenus() {
-    if (!_modelOpen && !_effortOpen) {
+    if (!_modelOpen && !_effortOpen && !_modeOpen) {
       return;
     }
     setState(() {
       _modelOpen = false;
       _effortOpen = false;
+      _modeOpen = false;
     });
     _overlayPortalController.hide();
   }
@@ -128,6 +136,11 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
             : s.workspaces[sessionKey]?.reasoningEffort,
       ),
     );
+    final mode = ref.watch(
+      workspaceProvider.select(
+        (s) => sessionKey == null ? s.mode : s.workspaces[sessionKey]?.mode,
+      ),
+    );
     final contextTokens = ref.watch(
       workspaceProvider.select(
         (s) => sessionKey == null
@@ -136,7 +149,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       ),
     );
     final controller = ref.read(workspaceProvider.notifier);
-    final environment = ref.watch(runtimeEnvironmentProvider)!;
+    final environment =
+        ref.read(runtimeEnvironmentProvider).environment ??
+        (throw StateError('runtime is not ready'));
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
       child: ConstrainedBox(
@@ -231,6 +246,12 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                 value: reasoningEffort,
                                 onTap: _toggleEffort,
                               ),
+                            if (environment.runtime.modeOptions.isNotEmpty)
+                              _ModeMenu(
+                                modes: environment.runtime.modeOptions,
+                                value: mode,
+                                onTap: _toggleMode,
+                              ),
                             const Spacer(),
                             if (contextTokens > 0)
                               Padding(
@@ -304,7 +325,11 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                       showWhenUnlinked: false,
                       offset: Offset(
                         0,
-                        -(environment.models.length * _ModelMenuCard.rowHeight +
+                        -(math.min(
+                                  environment.models.length,
+                                  _maxModelPopupRows,
+                                ) *
+                                _ModelMenuCard.rowHeight +
                             _ModelMenuCard.cardPadding * 2 +
                             8),
                       ),
@@ -334,7 +359,10 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                       showWhenUnlinked: false,
                       offset: Offset(
                         0,
-                        -(activeModel.reasoningEfforts.length *
+                        -(math.min(
+                                  activeModel.reasoningEfforts.length,
+                                  _maxModelPopupRows,
+                                ) *
                                 _EffortMenuCard.rowHeight +
                             _EffortMenuCard.cardPadding * 2 +
                             8),
@@ -359,6 +387,42 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                         ),
                       ),
                     ),
+                  if (_modeOpen)
+                    CompositedTransformFollower(
+                      link: _layerLink,
+                      showWhenUnlinked: false,
+                      offset: Offset(
+                        0,
+                        -(math.min(
+                                  environment.runtime.modeOptions.length,
+                                  _maxModelPopupRows,
+                                ) *
+                                _ModeMenuCard.rowHeight +
+                            _ModeMenuCard.cardPadding * 2 +
+                            8),
+                      ),
+                      child: SizedBox(
+                        width: 150,
+                        child: _ModeMenuCard(
+                          key: _modeMenuKey,
+                          modes: environment.runtime.modeOptions,
+                          value: mode,
+                          highlighted: _modeHighlighted,
+                          onHighlighted: (index) =>
+                              setState(() => _modeHighlighted = index),
+                          onSelected: (selected) {
+                            setState(() => _modeOpen = false);
+                            _overlayPortalController.hide();
+                            unawaited(
+                              controller.selectMode(
+                                selected.id,
+                                sessionKey: widget.sessionKey,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                 ],
               ),
               child: const SizedBox.shrink(),
@@ -378,12 +442,13 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Closes the floating menus when a pointer lands outside them.
   void _handleOverlayPointerDown(PointerDownEvent event) {
-    if (!_modelOpen && !_effortOpen) {
+    if (!_modelOpen && !_effortOpen && !_modeOpen) {
       return;
     }
     final keys = [
       if (_modelOpen) _modelMenuKey,
       if (_effortOpen) _effortMenuKey,
+      if (_modeOpen) _modeMenuKey,
     ];
     for (final key in keys) {
       final box = key.currentContext?.findRenderObject() as RenderBox?;
@@ -394,13 +459,16 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     setState(() {
       _modelOpen = false;
       _effortOpen = false;
+      _modeOpen = false;
     });
     _overlayPortalController.hide();
   }
 
   /// Opens or closes the model picker.
   void _toggleModel() {
-    final environment = ref.read(runtimeEnvironmentProvider)!;
+    final environment =
+        ref.read(runtimeEnvironmentProvider).environment ??
+        (throw StateError('runtime is not ready'));
     final activeModel = _workspace.activeModel;
     setState(() {
       _modelOpen = !_modelOpen;
@@ -430,6 +498,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     setState(() {
       _effortOpen = !_effortOpen;
       _modelOpen = false;
+      _modeOpen = false;
       if (_effortOpen) {
         _effortHighlighted = activeModel.reasoningEfforts.indexWhere(
           (effort) => effort.value == current,
@@ -447,6 +516,33 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     }
   }
 
+  /// Opens or closes the session-mode picker.
+  void _toggleMode() {
+    final environment =
+        ref.read(runtimeEnvironmentProvider).environment ??
+        (throw StateError('runtime is not ready'));
+    final current = _workspace.mode;
+    setState(() {
+      _modeOpen = !_modeOpen;
+      _modelOpen = false;
+      _effortOpen = false;
+      if (_modeOpen) {
+        _modeHighlighted = environment.runtime.modeOptions.indexWhere(
+          (option) => option.id == current,
+        );
+        if (_modeHighlighted < 0) {
+          _modeHighlighted = 0;
+        }
+      }
+    });
+    if (_modeOpen) {
+      _overlayPortalController.show();
+      _focusNode.requestFocus();
+    } else {
+      _overlayPortalController.hide();
+    }
+  }
+
   List<(String, String)> get _suggestions {
     final value = _textController.value;
     if (_dismissedText == value.text) {
@@ -456,11 +552,17 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     if (token == null) {
       return const [];
     }
-    final skills = ref.read(runtimeEnvironmentProvider)!.skills.summaries;
+    final skills = ref
+        .read(runtimeEnvironmentProvider)
+        .environment!
+        .skills
+        .summaries;
     final commands = <(String, String, bool)>[
       for (final command in _builtInCommands) (command.$1, command.$2, false),
       for (final skill in skills)
         (skill.name, '[Skill] ${skill.description}', true),
+      for (final command in _remoteCommands)
+        (command.name, command.description, false),
     ];
     final candidates = token.skillsOnly
         ? [
@@ -474,16 +576,31 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     ];
   }
 
+  /// Slash commands advertised by the agent for the focused session.
+  List<AgentCommand> get _remoteCommands {
+    final environment = ref.read(runtimeEnvironmentProvider).environment;
+    final runtime = environment?.runtime;
+    if (runtime == null) {
+      return const [];
+    }
+    final sessionId = ref.read(workspaceProvider).sessionId;
+    if (sessionId == null) {
+      return const [];
+    }
+    return runtime.commandsFor(sessionId);
+  }
+
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
     final suggestions = _suggestions;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
-      if (_modelOpen || _effortOpen || suggestions.isNotEmpty) {
+      if (_modelOpen || _effortOpen || _modeOpen || suggestions.isNotEmpty) {
         setState(() {
           _modelOpen = false;
           _effortOpen = false;
+          _modeOpen = false;
         });
         _overlayPortalController.hide();
         if (suggestions.isNotEmpty) {
@@ -518,7 +635,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       return KeyEventResult.ignored;
     }
     if (_modelOpen) {
-      final models = ref.read(runtimeEnvironmentProvider)!.models;
+      final models = ref.read(runtimeEnvironmentProvider).environment!.models;
       if (models.isEmpty) {
         return KeyEventResult.ignored;
       }
@@ -566,6 +683,37 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
         ref
             .read(workspaceProvider.notifier)
             .selectReasoningEffort(efforts[_effortHighlighted].value);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (_modeOpen) {
+      final modes = ref
+          .read(runtimeEnvironmentProvider)
+          .environment!
+          .runtime
+          .modeOptions;
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        setState(() {
+          _modeHighlighted = (_modeHighlighted + 1) % modes.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        setState(() {
+          _modeHighlighted =
+              (_modeHighlighted - 1 + modes.length) % modes.length;
+        });
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        setState(() => _modeOpen = false);
+        _overlayPortalController.hide();
+        unawaited(
+          ref
+              .read(workspaceProvider.notifier)
+              .selectMode(modes[_modeHighlighted].id),
+        );
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
@@ -792,7 +940,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     return null;
   }
   final query = text.substring(start + 1, end);
-  if (query.isNotEmpty && !_validSlashCommandName(query)) {
+  if (query.isNotEmpty && !_validAgentCommandName(query)) {
     return null;
   }
   final skillsOnly = '${text.substring(0, start)}${text.substring(end)}'
@@ -831,7 +979,7 @@ bool _isWhitespace(String char) =>
     char == ' ' || char == '\t' || char == '\n' || char == '\r';
 
 /// Whether [name] is a valid slash token, matching the TUI character set.
-bool _validSlashCommandName(String name) {
+bool _validAgentCommandName(String name) {
   if (name.isEmpty) {
     return false;
   }
@@ -1203,6 +1351,7 @@ class _ModelMenuCard extends StatelessWidget {
       onSelected: onSelected,
       rowHeight: rowHeight,
       cardPadding: cardPadding,
+      maxVisibleRows: _maxModelPopupRows,
       itemBuilder: (context, model, index) => Row(
         children: [
           Expanded(
@@ -1275,6 +1424,115 @@ class _EffortMenu extends StatelessWidget {
   }
 }
 
+/// Session-mode selector shown when the agent advertises operating modes.
+class _ModeMenu extends StatelessWidget {
+  const _ModeMenu({
+    required this.modes,
+    required this.value,
+    required this.onTap,
+  });
+
+  final List<ModeOption> modes;
+  final String? value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final current = value ?? (modes.isEmpty ? '' : modes.first.id);
+    final label = modes
+        .where((option) => option.id == current)
+        .map((option) => option.name.isEmpty ? option.id : option.name)
+        .firstOrNull;
+    return WorkspaceHoverSurface(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: TextButton(
+        style: ButtonStyle(
+          padding: WidgetStatePropertyAll(
+            const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          ),
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+        onPressed: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.layoutGrid, size: 12, color: colors.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              label ?? current,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating session-mode picker card with a gliding highlight.
+class _ModeMenuCard extends StatelessWidget {
+  const _ModeMenuCard({
+    super.key,
+    required this.modes,
+    required this.value,
+    required this.highlighted,
+    required this.onHighlighted,
+    required this.onSelected,
+  });
+
+  static const rowHeight = 30.0;
+
+  /// Vertical padding around the row list, used to size the floating card.
+  static const cardPadding = 8.0;
+
+  final List<ModeOption> modes;
+  final String? value;
+  final int highlighted;
+  final ValueChanged<int> onHighlighted;
+  final ValueChanged<ModeOption> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final current = value ?? (modes.isEmpty ? '' : modes.first.id);
+    final selectedIndex = modes.indexWhere((option) => option.id == current);
+    return _FloatingMenuCard(
+      items: modes,
+      selectedIndex: selectedIndex,
+      highlighted: highlighted,
+      onHighlighted: onHighlighted,
+      onSelected: onSelected,
+      rowHeight: rowHeight,
+      cardPadding: cardPadding,
+      maxVisibleRows: _maxModelPopupRows,
+      itemBuilder: (context, option, index) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              option.name.isEmpty ? option.id : option.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          if (option.id == current)
+            Icon(LucideIcons.check, size: 13, color: colors.textPrimary),
+        ],
+      ),
+    );
+  }
+}
+
 /// Floating reasoning-effort picker card with a gliding highlight.
 class _EffortMenuCard extends StatelessWidget {
   const _EffortMenuCard({
@@ -1312,6 +1570,7 @@ class _EffortMenuCard extends StatelessWidget {
       onSelected: onSelected,
       rowHeight: rowHeight,
       cardPadding: cardPadding,
+      maxVisibleRows: _maxModelPopupRows,
       itemBuilder: (context, effort, index) => Row(
         children: [
           Expanded(

@@ -8,8 +8,9 @@ environment:
 
 resolution: workspace
 dependencies:
+  acpd: ^1.0.0
+  acpd_io: ^1.0.0
   atlas_runtime: ^0.1.0
-  json_rpc_2: ^4.1.0
   stream_channel: ^2.1.4
 dev_dependencies:
   test: ^1.31.0

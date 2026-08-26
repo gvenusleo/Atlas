@@ -359,11 +359,13 @@ void main() {
     );
     final container = ProviderContainer(
       overrides: [
-        runtimeEnvironmentProvider.overrideWithValue(
-          RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(
+              runtime: runtime,
+              models: [model],
+              skills: _EmptySkillCatalog(),
+            ),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(

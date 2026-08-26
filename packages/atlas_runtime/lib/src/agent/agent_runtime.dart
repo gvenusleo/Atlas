@@ -19,9 +19,10 @@ import '../ports/session_store.dart';
 import '../ports/tool_registry.dart';
 import '../skills/skill.dart';
 import '../skills/skill_catalog.dart';
+import 'runtime_service.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
-final class AgentRuntime {
+final class AgentRuntime implements RuntimeService {
   /// Creates an agent runtime with injected model, tool, and storage adapters.
   AgentRuntime({
     required this.store,
@@ -56,6 +57,7 @@ final class AgentRuntime {
   final IdGenerator ids;
 
   /// The model used when a turn does not provide an override.
+  @override
   final ModelRef defaultModel;
 
   /// Builds the system prompt for a session and turn.
@@ -81,6 +83,7 @@ final class AgentRuntime {
   final Map<String, SessionContext> _sessionContexts = {};
 
   /// Executes one turn and emits events in their exact occurrence order.
+  @override
   Stream<AgentEvent> run(TurnRequest request) async* {
     final sessionId = request.sessionId;
     if (sessionId == null) {
@@ -103,6 +106,7 @@ final class AgentRuntime {
   ///
   /// Uses the model and turn of the latest recorded turn so the emitted
   /// events stay attached to the session's most recent execution.
+  @override
   Stream<AgentEvent> compact(
     SessionId sessionId, {
     String? instruction,
@@ -139,6 +143,7 @@ final class AgentRuntime {
   ///
   /// Passes [workingDirectory] to restrict results to one directory, or
   /// `null` to list every session. See [SessionQuery] for pagination.
+  @override
   Future<SessionPage> listSessions({
     String? workingDirectory,
     String? cursor,
@@ -155,6 +160,7 @@ final class AgentRuntime {
   ///
   /// Used by protocol adapters whose session lifecycle is separate from the
   /// first turn, such as ACP's `session/new`.
+  @override
   Future<Session> createSession({
     required String workingDirectory,
     List<String> additionalDirectories = const <String>[],
@@ -177,12 +183,14 @@ final class AgentRuntime {
   /// Loads one session and its timeline for display or resume.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.
+  @override
   Future<SessionSnapshot> loadSession(SessionId sessionId) =>
       store.loadSession(sessionId);
 
   /// Deletes [sessionId] and all of its dependent records.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.
+  @override
   Future<void> deleteSession(SessionId sessionId) async {
     final release = await _acquireSessionLock(sessionId);
     try {
@@ -195,6 +203,7 @@ final class AgentRuntime {
   /// Renames [sessionId]'s display title.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.
+  @override
   Future<void> renameSession(SessionId sessionId, String title) async {
     final release = await _acquireSessionLock(sessionId);
     try {
@@ -205,6 +214,7 @@ final class AgentRuntime {
   }
 
   /// The context window size of the default model, or 0 when unknown.
+  @override
   Future<int> contextWindowSize() async {
     try {
       return (await provider.describe(defaultModel)).contextWindow;
@@ -212,6 +222,26 @@ final class AgentRuntime {
       return 0;
     }
   }
+
+  /// Local sessions already carry their persisted title.
+  @override
+  String? titleFor(SessionId sessionId) => null;
+
+  /// Local slash commands come from the skill catalog, not the runtime.
+  @override
+  List<AgentCommand> commandsFor(SessionId sessionId) => const [];
+
+  /// Local sessions have no agent-defined operating modes.
+  @override
+  List<ModeOption> get modeOptions => const [];
+
+  /// Local sessions have no agent-defined operating modes.
+  @override
+  String? modeFor(SessionId sessionId) => null;
+
+  /// Local sessions have no agent-defined operating modes.
+  @override
+  Future<void> setMode(SessionId sessionId, String modeId) async {}
 
   Stream<AgentEvent> _runTurn(TurnRequest request) async* {
     final cancellation = request.cancellation ?? CancellationToken();
@@ -1010,7 +1040,47 @@ final class AgentRuntime {
           );
       }
     }
-    return List<ModelMessage>.unmodifiable(result);
+    return List<ModelMessage>.unmodifiable(_dropOrphanToolCalls(result));
+  }
+
+  /// Removes tool calls that never received a tool result.
+  ///
+  /// A cancelled or interrupted turn can persist a tool call without its
+  /// result; strict chat-completions providers reject such a message because
+  /// every `tool_calls` entry must be answered by a tool message.
+  static List<ModelMessage> _dropOrphanToolCalls(List<ModelMessage> messages) {
+    final toolResultIds = <ToolCallId>{
+      for (final message in messages)
+        if (message.role == ModelMessageRole.tool && message.toolCallId != null)
+          message.toolCallId!,
+    };
+    final cleaned = <ModelMessage>[];
+    for (final message in messages) {
+      if (message.role != ModelMessageRole.assistant ||
+          message.toolCalls.isEmpty) {
+        cleaned.add(message);
+        continue;
+      }
+      final paired = [
+        for (final call in message.toolCalls)
+          if (toolResultIds.contains(call.id)) call,
+      ];
+      if (paired.length == message.toolCalls.length) {
+        cleaned.add(message);
+        continue;
+      }
+      if (paired.isNotEmpty || message.content.isNotEmpty) {
+        cleaned.add(
+          ModelMessage(
+            role: message.role,
+            content: message.content,
+            toolCalls: paired,
+            continuation: message.continuation,
+          ),
+        );
+      }
+    }
+    return cleaned;
   }
 
   Turn _terminalTurn(
