@@ -22,6 +22,11 @@ void main() {
     final result = response['result'] as Map<String, Object?>;
     expect(result['protocolVersion'], 1);
     final capabilities = result['agentCapabilities'] as Map<String, Object?>;
+    final meta = capabilities['_meta'] as Map<String, Object?>;
+    expect(
+      (meta['atlas.dev'] as Map<String, Object?>)['permissionModel'],
+      'none',
+    );
     expect(capabilities['loadSession'], isTrue);
     final sessionCaps =
         capabilities['sessionCapabilities'] as Map<String, Object?>;

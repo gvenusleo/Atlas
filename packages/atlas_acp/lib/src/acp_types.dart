@@ -122,6 +122,13 @@ InitializeResponse initializeResult() => InitializeResponse(
       additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
     ),
     promptCapabilities: PromptCapabilities(image: true, embeddedContext: true),
+    meta: {
+      'atlas.dev': {
+        'setTitle': true,
+        'compact': true,
+        'permissionModel': 'none',
+      },
+    },
   ),
   authMethods: const [],
   agentInfo: Implementation(
