@@ -12,9 +12,8 @@ not implemented yet.
 
 ## Responsibility
 
-- Composition root and presentation client for desktop and mobile. The local
-  app receives the shared runtime directly: application bootstrap may compose
-  runtime adapters and inject the runtime; feature and presentation code
+- Composition root and ACP presentation client for desktop and mobile. The
+  local app hosts an in-process ACP server; feature and presentation code
   renders UI only.
 - Remote WebSocket mode is planned separately through `atlas_ws`.
 
@@ -33,8 +32,8 @@ not implemented yet.
 - No agent orchestration, provider logic, tool execution, or session
   persistence in feature or presentation code; only bootstrap composes
   adapters.
-- No remote client protocol logic; `atlas_ws`, `atlas_acp`, and `atlas_mcp`
-  are not owned here.
+- No ACP protocol implementation; the app consumes `atlas_acp` as a client.
+  WebSocket and MCP adapters are Planned and have no code package yet.
 - No Nocterm rendering logic; the terminal TUI belongs to `atlas_tui`.
 
 ## Structure

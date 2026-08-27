@@ -25,5 +25,5 @@ The Nocterm presentation package for Atlas.
   `atlas_flutter`.
 - No model, provider, storage, or orchestration logic; the agent loop lives in
   `atlas_runtime`.
-- No remote client protocol logic; `atlas_ws`, `atlas_acp`, and `atlas_mcp`
-  adapters are not owned here.
+- No remote protocol logic; ACP and Planned WebSocket/MCP adapters are not
+  owned here.

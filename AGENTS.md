@@ -6,7 +6,7 @@
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
 - The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, Nocterm TUI, and Flutter local client are implemented; the WebSocket transport and MCP remain unimplemented.
 - All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
-- Local Flutter and Nocterm entry points receive the runtime directly. Remote clients use the versioned WebSocket contract in `atlas_ws`.
+- Nocterm receives the runtime through an injected interface. Flutter is always an ACP client; its local mode uses an in-process ACP transport. Remote WebSocket transport is Planned and has no package implementation yet.
 - Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.
 - Provider-specific authentication, endpoints, request fields, and response conversion belong in `packages/atlas_provider` and must not enter `atlas_runtime` domain requests.
 
@@ -28,9 +28,8 @@
 
 - `atlas_runtime` owns domain models, events, ports, orchestration, cancellation, compaction, skills, and the model/tool loop. It must not depend on persistence, provider, tool, UI, or protocol implementations.
 - `atlas_storage`, `atlas_provider`, and `atlas_tools` depend on and implement runtime ports without owning orchestration.
-- `atlas_ws` owns versioned WebSocket wire DTOs, codecs, client and server transport behavior, and explicit conversion to runtime types. It may depend on `atlas_runtime` but must not compose runtime services.
-- `atlas_acp` and `atlas_mcp` use `json_rpc_2` directly and own their different lifecycle and transport rules. Extract shared RPC code only after stable duplication exists.
-- `atlas_acp` and `atlas_mcp` adapt protocols to the shared runtime.
+- `atlas_ws` is Planned; when implemented it will own versioned WebSocket wire DTOs, codecs, and transport behavior without composing runtime services.
+- `atlas_acp` owns ACP lifecycle and adapts the shared runtime through `acpd`; `atlas_mcp` is Planned.
 - `atlas_tui` renders and interacts with an injected runtime interface; it does not depend on remote client protocols.
 - `atlas_cli` and `atlas_flutter` are application composition roots. Running `atlas` enters the TUI by default; `atlas acp` serves the composed runtime to ACP clients; a planned `atlas server` will expose the composed runtime through `atlas_ws`.
 

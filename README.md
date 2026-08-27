@@ -9,7 +9,7 @@ Atlas is a local general-purpose AI agent being rebuilt as a unified Dart and Fl
 The repository currently contains:
 
 - a Pub workspace that defines runtime, protocol, client, and adapter boundaries;
-- a Flutter desktop and mobile client with local runtime composition, sessions,
+- a Flutter desktop and mobile client that always connects through ACP, with sessions,
   agent turns, a file browser, and an embedded terminal;
 - a working `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
 - an `atlas_provider` package with OpenAI-compatible Chat Completions and

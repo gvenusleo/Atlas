@@ -28,7 +28,7 @@ The command-line and Nocterm entry point for Atlas.
 - No re-implementation of the agent loop; every client uses the single
   `atlas_runtime` engine.
 - No rendering logic; the Nocterm UI belongs to `atlas_tui`.
-- No protocol logic: `atlas_ws` and `atlas_mcp` adapters are not owned here;
+- No protocol logic: Planned WebSocket and MCP adapters are not owned here;
   `atlas_acp` is started from this process but implemented in its own package.
 - No provider-specific request fields, persistence schemas, or tool
   implementations; those belong to their owning packages. Composition of
