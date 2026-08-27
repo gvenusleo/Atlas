@@ -23,6 +23,9 @@ Atlas 扩展使用 `_atlas.dev` 命名空间，并在
 Atlas ACP 客户端仍会处理第三方 Agent 发出的权限请求。Agent 与客户端的权限行为是
 两个不同的协议角色。
 
+运行时会话契约为 `AgentSession`；ACP 专属的标题、命令和模式通过
+`PresentationAgentSession` 暴露。
+
 ## Planned
 
 结构化 `_atlas.dev/session/compact`、客户端文件系统与终端能力，以及 ACP v2 支持仍为

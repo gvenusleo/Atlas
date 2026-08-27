@@ -25,6 +25,9 @@ Atlas extensions use the `_atlas.dev` namespace and are declared in
 The Atlas ACP client still handles permission requests from third-party
 agents. Agent and client permission behavior are separate protocol roles.
 
+The runtime-facing contract is `AgentSession`; ACP-only presentation members
+(titles, commands, and modes) are exposed through `PresentationAgentSession`.
+
 ## Planned
 
 Structured `_atlas.dev/session/compact`, client filesystem and terminal

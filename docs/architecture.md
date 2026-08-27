@@ -37,7 +37,7 @@ graph TD
     TOOLS --> RT
     STORAGE --> RT
     ACP --> ACPD[acpd]
-    MCP -.-> JRPC[json_rpc_2]
+MCP -.-> JRPC[planned protocol]
 ```
 
 Planned components and edges (`atlas_ws` and MCP) appear above for target-state
