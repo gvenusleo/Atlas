@@ -637,6 +637,11 @@ final class _FakeServer {
           content: const acpd.TextContentBlock(
             text: 'Context compacted. Kept 3 recent messages.',
           ),
+          meta: const {
+            'atlas.dev': {
+              'compact': {'status': 'completed', 'keptMessages': 3},
+            },
+          },
         ),
       ),
     );

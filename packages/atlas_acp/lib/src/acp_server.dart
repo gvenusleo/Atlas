@@ -682,6 +682,19 @@ final class AcpServer {
           chunk: ContentChunk(
             messageId: 'msg-compact-${_compactCounter++}',
             content: TextContentBlock(text: message),
+            meta: {
+              'atlas.dev': {
+                'compact': {
+                  'status': failed
+                      ? 'failed'
+                      : keptMessages >= 0
+                      ? 'completed'
+                      : 'no_op',
+                  'keptMessages': ?(keptMessages >= 0 ? keptMessages : null),
+                  'tokensAfter': ?compactedUsage,
+                },
+              },
+            },
           ),
         ),
       );

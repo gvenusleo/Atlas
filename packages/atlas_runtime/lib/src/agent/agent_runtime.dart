@@ -664,6 +664,10 @@ final class AgentRuntime
       return;
     }
     final kept = _keptWindow(timeline, keptRecentTurns);
+    if (!enforceThreshold &&
+        timeline.map((item) => item.turnId).toSet().length <= 1) {
+      return;
+    }
     // A long single turn can fill the context before a second turn exists.
     // Keep the newest item as the minimum live context and compact the prefix.
     final boundaryIndex = timeline.length - kept.length - 1 < 0

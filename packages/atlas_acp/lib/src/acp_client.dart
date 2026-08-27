@@ -426,17 +426,20 @@ final class AcpClient
     // a usage update; hold the message until the usage arrives so the
     // checkpoint carries the post-compaction token count.
     String? pendingCompactText;
+    Map<String, Object?>? pendingCompactMeta;
     final sub = _updates.stream
         .where((update) => update.sessionId == sessionId.value)
         .listen((update) {
           switch (update.update) {
             case AgentMessageChunk(:final chunk):
               pendingCompactText = _chunkText(chunk);
+              pendingCompactMeta = chunk.meta;
             case UsageSessionUpdate(:final used):
               final events = _compactEvents(
                 mapper,
                 pendingCompactText ?? '',
                 used,
+                pendingCompactMeta,
               );
               for (final event in events) {
                 controller.add(event);
@@ -464,6 +467,7 @@ final class AcpClient
                 mapper,
                 pendingCompactText!,
                 _sessionUsage[sessionId.value],
+                pendingCompactMeta,
               );
               for (final event in events) {
                 controller.add(event);
@@ -844,9 +848,12 @@ final class AcpClient
     ClientUpdateMapper mapper,
     String text,
     int? usedTokens,
+    Map<String, Object?>? meta,
   ) {
-    final kept = RegExp(r'Kept (\d+) recent messages').firstMatch(text);
-    if (kept != null) {
+    final atlas = meta?['atlas.dev'];
+    final compact = atlas is Map ? atlas['compact'] : null;
+    if (compact is Map && compact['status'] == 'completed') {
+      final kept = compact['keptMessages'];
       return [
         rt.CompactionFinished(
           sessionId: mapper.sessionId,
@@ -857,7 +864,7 @@ final class AcpClient
             sessionId: mapper.sessionId,
             compactedThroughSequence: 0,
             summary: '',
-            keptRecentMessages: int.parse(kept.group(1)!),
+            keptRecentMessages: kept is num ? kept.toInt() : 0,
             inputTokensBefore: 0,
             inputTokensAfter: usedTokens ?? 0,
             createdAt: DateTime.now().toUtc(),
@@ -865,7 +872,7 @@ final class AcpClient
         ),
       ];
     }
-    if (text.contains('Compaction failed')) {
+    if (compact is Map && compact['status'] == 'failed') {
       return [
         rt.CompactionFailed(
           sessionId: mapper.sessionId,
