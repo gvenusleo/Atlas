@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:acpd/acpd.dart' hide PlanEntry, ToolCall;
 import 'package:atlas_runtime/atlas_runtime.dart' as rt;
 
@@ -348,7 +350,11 @@ String _absolutePath(String path, String? workingDirectory) {
   if (workingDirectory == null || workingDirectory.isEmpty) {
     return path;
   }
-  return path.startsWith('/') ? path : '$workingDirectory/$path';
+  if (path.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)) {
+    return path;
+  }
+  final separator = Platform.pathSeparator;
+  return '$workingDirectory$separator$path';
 }
 
 /// Converts the `plan` tool argument list into ACP plan entries, or returns

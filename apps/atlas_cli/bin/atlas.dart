@@ -11,6 +11,21 @@ import 'package:atlas_tui/atlas_tui.dart';
 /// interface against it. Running `atlas acp` serves the same runtime to ACP
 /// clients over NDJSON stdio instead.
 Future<void> main(List<String> args) async {
+  if (args.length > 1 ||
+      (args.isNotEmpty &&
+          !{'acp', '--help', '-h', '--version', '-V'}.contains(args.first))) {
+    stderr.writeln('unknown command or arguments: ${args.join(' ')}');
+    stderr.writeln('usage: atlas [acp]');
+    exit(64);
+  }
+  if (args.length == 1 && (args.first == '--help' || args.first == '-h')) {
+    stdout.writeln('usage: atlas [acp]');
+    return;
+  }
+  if (args.length == 1 && (args.first == '--version' || args.first == '-V')) {
+    stdout.writeln('0.1.0');
+    return;
+  }
   final home = Platform.environment['HOME'] ?? '.';
   final configFile = File('$home/.atlas/config.yaml');
   final AtlasConfig config;
