@@ -49,7 +49,7 @@ final class PermissionRequest {
   /// The session the tool call belongs to.
   final SessionId sessionId;
 
-  /// The JSON-RPC request id used to respond.
+  /// Opaque correlation id used to respond to this request.
   final Object requestId;
 
   /// The tool call identifier reported by the agent.

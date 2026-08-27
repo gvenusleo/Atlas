@@ -838,7 +838,10 @@ final class AcpClient
         stopReason: stopReason == StopReason.maxTokens
             ? rt.StopReason.maxTokens
             : rt.StopReason.endTurn,
-        usage: rt.TokenUsage(totalTokens: _sessionUsage[sessionId.value] ?? 0),
+        usage: rt.TokenUsage(
+          inputTokens: _sessionUsage[sessionId.value] ?? 0,
+          totalTokens: _sessionUsage[sessionId.value] ?? 0,
+        ),
       ),
     );
   }

@@ -726,7 +726,7 @@ final class AcpServer {
   /// when the session was not configured in this process.
   Future<_SessionConfig> _configFor(rt.SessionId session) async {
     final snapshot = await _load(session);
-    return _defaultConfig(snapshot.session.workingDirectory);
+    return _configForSnapshot(snapshot);
   }
 
   Future<rt.SessionSnapshot> _load(rt.SessionId session) async {

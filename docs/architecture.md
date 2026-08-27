@@ -65,13 +65,13 @@ the same runtime; MCP primarily connects external tools to the tool layer.
 | `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration objects |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
 | `atlas_prompt` | System prompt construction: operating template, tool listing, `~/.atlas/AGENTS.md` and working-directory `AGENTS.md` loading, and platform/shell/date context |
-| `atlas_ws` | Versioned WebSocket wire contract, codecs, client and server transport, and runtime conversion |
+| `atlas_ws` | Planned: Versioned WebSocket wire contract, codecs, and transport |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
-| `atlas_mcp` | MCP client first, with server support deferred until needed |
+| `atlas_mcp` | Planned: MCP client first, with server support deferred until needed |
 | `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
 | `atlas_composition` | Shared application composition for configured providers, tools, storage, prompts, and the single runtime |
 | `atlas_cli` | Composition root for the default TUI and other CLI commands; delegates runtime construction to `atlas_composition` |
-| `atlas_flutter` | Desktop and mobile client with local runtime composition; remote WebSocket mode is planned |
+| `atlas_flutter` | Desktop and mobile ACP client; remote WebSocket mode is planned |
 
 ## Dependency Rules
 
@@ -81,11 +81,11 @@ the same runtime; MCP primarily connects external tools to the tool layer.
 - `atlas_provider` selects a configured endpoint by `ModelRef`; its public configuration is programmatic and does not define CLI or configuration-file parsing.
 - OpenAI and Anthropic providers share `HttpStreamClient` for retries, timeouts, and cancellation, and `decodeSse` for SSE framing. `CompositeModelProvider` routes requests by provider identifier so several providers share one runtime instance.
 - Streaming failures are emitted as one terminal runtime event. Retries happen only before the first streamed event; cancellation is bridged to Dio's `CancelToken`.
-- `atlas_ws` may depend on runtime types but owns an explicit versioned wire schema rather than serializing runtime objects directly. It accepts an injected request handler and does not compose runtime services.
+- `atlas_ws` is Planned; when implemented it will own an explicit versioned wire schema and will not compose runtime services.
 - Local presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters; both application roots use `atlas_composition`.
 - `atlas_prompt` depends on `atlas_runtime` public types only and is consumed by composition roots through `buildSystemPrompt`.
 - `atlas_cli` and `atlas_flutter` are separate process composition roots and share construction code, not runtime instances.
-- ACP owns its protocol lifecycle through `acpd`. MCP still uses `json_rpc_2` directly. Shared wrappers are extracted only after stable duplication exists.
+- ACP owns its protocol lifecycle through `acpd`. MCP is Planned and has no implementation package yet.
 
 ## Runtime Contracts
 
