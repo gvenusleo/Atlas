@@ -664,7 +664,11 @@ final class AgentRuntime
       return;
     }
     final kept = _keptWindow(timeline, keptRecentTurns);
-    final boundaryIndex = timeline.length - kept.length - 1;
+    // A long single turn can fill the context before a second turn exists.
+    // Keep the newest item as the minimum live context and compact the prefix.
+    final boundaryIndex = timeline.length - kept.length - 1 < 0
+        ? (timeline.length > 1 ? 0 : -1)
+        : timeline.length - kept.length - 1;
     if (boundaryIndex < 0) {
       return;
     }
