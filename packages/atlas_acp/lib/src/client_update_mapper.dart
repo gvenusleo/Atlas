@@ -262,3 +262,60 @@ final class ClientTimelineMapper {
     modelId: rt.ModelId('default'),
   );
 }
+
+/// Maps ACP replay updates to presentation-only conversation items.
+final class ClientConversationMapper {
+  /// Creates a mapper for [sessionId].
+  ClientConversationMapper(this.sessionId);
+
+  /// Session identifier used to filter updates.
+  final rt.SessionId sessionId;
+
+  /// Converts one update without fabricating durable runtime identities.
+  List<rt.ConversationItem> map(SessionUpdate update) => switch (update) {
+    UserMessageChunk(:final chunk) => [
+      rt.ConversationUserMessage([rt.TextContent(_chunkText(chunk))]),
+    ],
+    AgentMessageChunk(:final chunk) => [
+      rt.ConversationAssistantMessage([rt.TextContent(_chunkText(chunk))]),
+    ],
+    AgentThoughtChunk(:final chunk) => [
+      rt.ConversationAssistantMessage(const [], reasoning: _chunkText(chunk)),
+    ],
+    ToolCallUpdateSession(:final toolCall) => [
+      rt.ConversationToolCall(
+        callId: toolCall.toolCallId,
+        name: _nameFromKind(toolCall.kind),
+        arguments: toolCall.rawInput is Map
+            ? Map<String, Object?>.from(toolCall.rawInput as Map)
+            : const {},
+      ),
+    ],
+    ToolCallStatusUpdate(:final update) => [
+      rt.ConversationToolResult(
+        callId: update.toolCallId,
+        content: _outputText(update.rawOutput),
+        isError: update.status == ToolCallStatus.failed,
+      ),
+    ],
+    _ => const [],
+  };
+
+  static String _chunkText(ContentChunk chunk) =>
+      chunk.content is TextContentBlock
+      ? (chunk.content as TextContentBlock).text
+      : '';
+
+  static String _outputText(Object? rawOutput) =>
+      rawOutput is Map && rawOutput['output'] is String
+      ? rawOutput['output'] as String
+      : '';
+
+  static String _nameFromKind(ToolKind? kind) => switch (kind) {
+    ToolKind.read => 'read',
+    ToolKind.edit => 'edit',
+    ToolKind.execute => 'shell',
+    ToolKind.think => 'plan',
+    _ => 'tool',
+  };
+}

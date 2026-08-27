@@ -1,4 +1,5 @@
 import 'ids.dart';
+import 'conversation.dart';
 import 'model.dart';
 import 'timeline.dart';
 import 'turn.dart';
@@ -98,6 +99,7 @@ final class SessionSnapshot {
     required this.turns,
     required this.timeline,
     this.modelCheckpoints = const <ModelCheckpoint>[],
+    this.conversation = const <ConversationItem>[],
   });
 
   /// Session metadata.
@@ -111,6 +113,9 @@ final class SessionSnapshot {
 
   /// Provider continuations linked to active assistant timeline items.
   final List<ModelCheckpoint> modelCheckpoints;
+
+  /// Presentation-only items reconstructed by remote protocol clients.
+  final List<ConversationItem> conversation;
 }
 
 /// A cursor-paginated session list.

@@ -6,6 +6,7 @@ export 'src/agent/agent_engine.dart';
 export 'src/agent/agent_session.dart';
 export 'src/agent/agent_capabilities.dart';
 export 'src/domain/content.dart';
+export 'src/domain/conversation.dart';
 export 'src/domain/events.dart';
 export 'src/domain/ids.dart';
 export 'src/domain/instruction_file.dart';

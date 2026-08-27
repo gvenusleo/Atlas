@@ -602,11 +602,14 @@ final class AcpClient
   Future<rt.SessionSnapshot> loadSession(rt.SessionId sessionId) async {
     final cwd = _sessionCwd[sessionId.value] ?? await _findCwd(sessionId);
     final mapper = ClientTimelineMapper(sessionId);
+    final conversationMapper = ClientConversationMapper(sessionId);
     final timeline = <rt.TimelineItem>[];
+    final conversation = <rt.ConversationItem>[];
     final sub = _updates.stream
         .where((update) => update.sessionId == sessionId.value)
         .listen((update) {
           timeline.addAll(mapper.map(update.update));
+          conversation.addAll(conversationMapper.map(update.update));
         });
     try {
       final response = await _client.loadSession(
@@ -626,6 +629,7 @@ final class AcpClient
         ),
         turns: const [],
         timeline: timeline,
+        conversation: List.unmodifiable(conversation),
       );
     } finally {
       await sub.cancel();
