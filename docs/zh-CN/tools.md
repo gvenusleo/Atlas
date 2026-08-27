@@ -19,6 +19,11 @@ Unicode 匹配。`write` 是全量写入操作，不追加。`shell` 最多返�
 默认超时 30 秒，最大 300 秒。省略 `cwd` 时，命令在会话工作目录中运行。
 `plan` 最多接受 50 步，每步最多 500 字符。
 
+文件与 shell 工具还会返回供 ACP 适配器使用的结构化 metadata：
+`read.next_offset` 是下一行（从 1 开始），`write`/`edit` 对受限大小文件
+使用 `path`、`newText`、`oldText` 描述差异，`shell` 使用 `exit_code`、
+`truncated` 与 `total_bytes`。
+
 ## 安全边界
 
 工具以本地 Atlas 进程的权限运行。Atlas 不提供沙箱、权限提示或

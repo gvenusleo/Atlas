@@ -67,13 +67,15 @@ final class OpenAICompatibleProvider implements ModelProvider {
                   providerId: entry.provider.id,
                   message: 'stream failed after the response started',
                 ),
-        HttpStreamException(:final statusCode) => OpenAIProviderException(
-          providerId: entry.provider.id,
-          message: statusCode == null
-              ? 'provider request failed'
-              : 'provider request failed (status $statusCode)',
-          statusCode: statusCode,
-        ),
+        HttpStreamException(:final statusCode, :final detail) =>
+          OpenAIProviderException(
+            providerId: entry.provider.id,
+            message: statusCode == null
+                ? 'provider request failed'
+                : 'provider request failed (status $statusCode)',
+            statusCode: statusCode,
+            detail: detail,
+          ),
         FormatException() => OpenAIProviderException(
           providerId: entry.provider.id,
           message: 'stream returned malformed data',

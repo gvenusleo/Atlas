@@ -62,6 +62,7 @@ final class OpenAIProviderException implements SafeMessageException {
     required this.providerId,
     required this.message,
     this.statusCode,
+    this.detail,
   });
 
   /// The provider that reported the failure.
@@ -70,11 +71,17 @@ final class OpenAIProviderException implements SafeMessageException {
   /// The HTTP status when the server returned one.
   final int? statusCode;
 
+  /// Bounded provider response detail for diagnostics.
+  final String? detail;
+
   /// A redacted, provider-safe error message.
   final String message;
 
   @override
-  String get safeMessage => message;
+  String get safeMessage => detail == null ? message : '$message: $detail';
+
+  @override
+  String? get diagnosticDetail => detail;
 
   @override
   String toString() {

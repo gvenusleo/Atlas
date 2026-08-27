@@ -22,6 +22,11 @@ timeout is 30 seconds and the maximum is 300. When `cwd` is omitted, the
 command runs in the session working directory. `plan` accepts at most 50
 steps of 500 characters each.
 
+File and shell tools also return structured metadata consumed by ACP adapters:
+`read.next_offset` is the next 1-indexed line, `write`/`edit` use `path`,
+`newText`, and `oldText` for bounded diffs, and `shell` uses `exit_code`,
+`truncated`, and `total_bytes`.
+
 ## Security Boundary
 
 Tools run with the permissions of the local Atlas process. Atlas does not

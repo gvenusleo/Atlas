@@ -60,13 +60,15 @@ final class AnthropicProvider implements ModelProvider {
                   providerId: entry.provider.id,
                   message: 'stream failed after the response started',
                 ),
-        HttpStreamException(:final statusCode) => AnthropicProviderException(
-          providerId: entry.provider.id,
-          message: statusCode == null
-              ? 'provider request failed'
-              : 'provider request failed (status $statusCode)',
-          statusCode: statusCode,
-        ),
+        HttpStreamException(:final statusCode, :final detail) =>
+          AnthropicProviderException(
+            providerId: entry.provider.id,
+            message: statusCode == null
+                ? 'provider request failed'
+                : 'provider request failed (status $statusCode)',
+            statusCode: statusCode,
+            detail: detail,
+          ),
         FormatException() => AnthropicProviderException(
           providerId: entry.provider.id,
           message: 'stream returned malformed data',

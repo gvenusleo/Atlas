@@ -55,6 +55,9 @@ final class HttpStreamException implements SafeMessageException {
       detail == null || detail!.isEmpty ? message : '$message: $detail';
 
   @override
+  String? get diagnosticDetail => detail;
+
+  @override
   String toString() {
     final status = statusCode == null ? '' : ' (status $statusCode)';
     return 'HttpStreamException$status: $message';

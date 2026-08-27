@@ -25,10 +25,12 @@ final class ResponsesParser implements StreamParser {
   final _fallbackContent = StringBuffer();
   final _calls = <ToolCall>[];
   final _items = <Object?>[];
+  final _itemKeys = <String>{};
   TokenUsage _usage = const TokenUsage();
   String? _status;
   String? _incompleteReason;
   String? _failure;
+  String? _failureDetail;
   bool _sawEvent = false;
 
   @override
@@ -64,11 +66,19 @@ final class ResponsesParser implements StreamParser {
       }
     } else if (type == 'response.failed') {
       _failure = 'responses request failed';
+      _failureDetail = _errorMessage(value);
       _status = 'failed';
     } else if (type == 'error') {
       _failure = 'responses request failed';
+      _failureDetail = _errorMessage(value);
       _status = 'failed';
     }
+  }
+
+  static String? _errorMessage(Map<String, Object?> value) {
+    final error = asJsonMap(value['error']);
+    final message = error['message'] ?? value['message'];
+    return message is String && message.trim().isNotEmpty ? message : null;
   }
 
   @override
@@ -83,6 +93,7 @@ final class ResponsesParser implements StreamParser {
       throw OpenAIProviderException(
         providerId: providerId,
         message: _failure ?? 'responses request failed',
+        detail: _failureDetail,
       );
     }
     final reason = _calls.isNotEmpty
@@ -121,7 +132,7 @@ final class ResponsesParser implements StreamParser {
 
   void _captureOutput(Map<String, Object?> item) {
     final frozen = freezeJson(item);
-    if (!_items.any((existing) => jsonEncode(existing) == jsonEncode(frozen))) {
+    if (_itemKeys.add(jsonEncode(frozen))) {
       _items.add(frozen);
     }
     if (item['type'] == 'message' && _fallbackContent.isEmpty) {

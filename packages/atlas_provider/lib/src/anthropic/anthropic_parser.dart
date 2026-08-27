@@ -25,6 +25,7 @@ final class AnthropicParser implements StreamParser {
   int _outputTokens = 0;
   String? _stopReason;
   String? _failure;
+  String? _failureDetail;
   bool _sawMessageStop = false;
   bool _sawEvent = false;
 
@@ -121,7 +122,12 @@ final class AnthropicParser implements StreamParser {
       case 'message_stop':
         _sawMessageStop = true;
       case 'error':
+        final error = asJsonMap(value['error']);
+        final message = error['message'] ?? value['message'];
         _failure = 'anthropic stream failed';
+        _failureDetail = message is String && message.trim().isNotEmpty
+            ? message
+            : null;
       case 'ping':
         break;
     }
@@ -140,6 +146,7 @@ final class AnthropicParser implements StreamParser {
       throw AnthropicProviderException(
         providerId: providerId,
         message: _failure!,
+        detail: _failureDetail,
       );
     }
     final calls = <ToolCall>[];

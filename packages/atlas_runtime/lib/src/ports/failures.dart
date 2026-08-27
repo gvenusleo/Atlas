@@ -7,4 +7,7 @@
 abstract interface class SafeMessageException implements Exception {
   /// A redacted, human-readable description of the failure.
   String get safeMessage;
+
+  /// Optional bounded diagnostic detail retained separately from the summary.
+  String? get diagnosticDetail => null;
 }

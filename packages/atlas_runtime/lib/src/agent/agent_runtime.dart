@@ -542,6 +542,7 @@ final class AgentRuntime
         failure: TurnFailure(
           code: 'turn_failed',
           message: _safeErrorMessage('Turn failed', error),
+          providerDetail: _providerDetail(error),
         ),
       );
       logger.log(
@@ -563,6 +564,7 @@ final class AgentRuntime
           failure: TurnFailure(
             code: 'turn_failed',
             message: _safeErrorMessage('Turn failed', error),
+            providerDetail: _providerDetail(error),
           ),
         ),
       );
@@ -918,6 +920,10 @@ final class AgentRuntime
     }
     return '$prefix (${error.runtimeType})';
   }
+
+  /// Extracts bounded provider detail without exposing arbitrary exceptions.
+  static String? _providerDetail(Object error) =>
+      error is SafeMessageException ? error.diagnosticDetail : null;
 
   /// The maximum total size of skill instructions injected into one turn.
   static const maxSelectedSkillBytes = 64 * 1024;
