@@ -28,5 +28,4 @@ Atlas ACP 客户端仍会处理第三方 Agent 发出的权限请求。Agent 与
 
 ## Planned
 
-结构化 `_atlas.dev/session/compact`、客户端文件系统与终端能力，以及 ACP v2 支持仍为
-Planned。
+客户端文件系统与终端能力，以及 ACP v2 支持仍为 Planned。

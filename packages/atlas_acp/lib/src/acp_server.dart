@@ -257,6 +257,7 @@ final class AcpServer {
     _titles[session.id.value] = session.title;
     final config = _defaultConfig(cwd);
     _sessionConfigs[session.id.value] = config;
+    await runtime.updateSessionConfig(session.id, config.model, config.effort);
     _sendAvailableCommandsLater(session.id, cwd);
     return NewSessionResponse(
       sessionId: session.id.value,
@@ -563,6 +564,11 @@ final class AcpServer {
       ),
     };
     _sessionConfigs[sessionId] = updated;
+    await runtime.updateSessionConfig(
+      rt.SessionId(sessionId),
+      updated.model,
+      updated.effort,
+    );
     return SetSessionConfigOptionResponse(
       configOptions: sessionConfigOptions(
         models,
@@ -624,6 +630,13 @@ final class AcpServer {
   /// Restores the last model and effort selected for a persisted session.
   _SessionConfig _configForSnapshot(rt.SessionSnapshot snapshot) {
     final fallback = _defaultConfig(snapshot.session.workingDirectory);
+    if (snapshot.session.model != null) {
+      return _SessionConfig(
+        cwd: snapshot.session.workingDirectory,
+        model: snapshot.session.model!,
+        effort: snapshot.session.reasoningEffort,
+      );
+    }
     for (final turn in snapshot.turns.reversed) {
       final model = turn.model;
       if (model != null) {

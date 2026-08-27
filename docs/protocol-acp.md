@@ -30,5 +30,4 @@ The runtime-facing contract is `AgentSession`; ACP-only presentation members
 
 ## Planned
 
-Structured `_atlas.dev/session/compact`, client filesystem and terminal
-capabilities, and ACP v2 support remain planned.
+Client filesystem and terminal capabilities, and ACP v2 support remain planned.

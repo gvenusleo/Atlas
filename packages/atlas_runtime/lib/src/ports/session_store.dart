@@ -107,3 +107,13 @@ abstract interface class SessionStore {
   /// Renames a session's display title.
   Future<void> renameSession(SessionId sessionId, String title);
 }
+
+/// Optional persistence capability for session-level model settings.
+abstract interface class SessionConfigStore {
+  /// Persists the selected model and reasoning effort for a session.
+  Future<void> updateSessionConfig(
+    SessionId sessionId,
+    ModelRef? model,
+    String? reasoningEffort,
+  );
+}

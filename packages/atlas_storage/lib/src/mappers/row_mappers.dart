@@ -15,6 +15,13 @@ final class RowMappers {
     id: runtime.SessionId(row.id),
     title: row.title,
     workingDirectory: row.workingDirectory,
+    model: row.modelProviderId == null || row.modelId == null
+        ? null
+        : runtime.ModelRef(
+            providerId: runtime.ProviderId(row.modelProviderId!),
+            modelId: runtime.ModelId(row.modelId!),
+          ),
+    reasoningEffort: row.reasoningEffort,
     additionalDirectories: _decodeDirectories(row.additionalDirectoriesJson),
     createdAt: row.createdAt.toUtc(),
     updatedAt: row.updatedAt.toUtc(),
@@ -28,6 +35,13 @@ final class RowMappers {
         id: runtime.SessionId(row.id),
         title: row.title,
         workingDirectory: row.workingDirectory,
+        model: row.modelProviderId == null || row.modelId == null
+            ? null
+            : runtime.ModelRef(
+                providerId: runtime.ProviderId(row.modelProviderId!),
+                modelId: runtime.ModelId(row.modelId!),
+              ),
+        reasoningEffort: row.reasoningEffort,
         additionalDirectories: _decodeDirectories(
           row.additionalDirectoriesJson,
         ),
@@ -41,6 +55,9 @@ final class RowMappers {
         id: value.id.value,
         title: Value(value.title),
         workingDirectory: value.workingDirectory,
+        modelProviderId: Value(value.model?.providerId.value),
+        modelId: Value(value.model?.modelId.value),
+        reasoningEffort: Value(value.reasoningEffort),
         additionalDirectoriesJson: Value(
           jsonEncode(value.additionalDirectories),
         ),

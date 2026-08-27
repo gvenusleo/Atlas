@@ -16,6 +16,8 @@ final class Session {
     this.additionalDirectories = const <String>[],
     this.compaction,
     this.lastUsage = const TokenUsage(),
+    this.model,
+    this.reasoningEffort,
   });
 
   /// The durable session identifier.
@@ -41,6 +43,12 @@ final class Session {
 
   /// Usage reported by the latest completed model response.
   final TokenUsage lastUsage;
+
+  /// Session-level model selection.
+  final ModelRef? model;
+
+  /// Session-level reasoning effort selection.
+  final String? reasoningEffort;
 }
 
 /// A compact session row used by list views.
@@ -53,6 +61,8 @@ final class SessionSummary {
     required this.updatedAt,
     this.additionalDirectories = const <String>[],
     this.lastUsage = const TokenUsage(),
+    this.model,
+    this.reasoningEffort,
   });
 
   /// The session identifier.
@@ -72,6 +82,12 @@ final class SessionSummary {
 
   /// The latest model usage.
   final TokenUsage lastUsage;
+
+  /// Session-level model selection.
+  final ModelRef? model;
+
+  /// Session-level reasoning effort selection.
+  final String? reasoningEffort;
 }
 
 /// Session state required to continue agent execution.

@@ -552,17 +552,16 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     if (token == null) {
       return const [];
     }
-    final skills = ref
-        .read(runtimeEnvironmentProvider)
-        .environment!
-        .skills
-        .summaries;
+    final remoteCommands = _remoteCommands;
+    final fallbackSkills = remoteCommands.isEmpty
+        ? ref.read(runtimeEnvironmentProvider).environment!.skills.summaries
+        : const <SkillSummary>[];
     final commands = <(String, String, bool)>[
       for (final command in _builtInCommands) (command.$1, command.$2, false),
-      for (final skill in skills)
+      for (final command in remoteCommands)
+        (command.name, '[Skill] ${command.description}', true),
+      for (final skill in fallbackSkills)
         (skill.name, '[Skill] ${skill.description}', true),
-      for (final command in _remoteCommands)
-        (command.name, command.description, false),
     ];
     final candidates = token.skillsOnly
         ? [

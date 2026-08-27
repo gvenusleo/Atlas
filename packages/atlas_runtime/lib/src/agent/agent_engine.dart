@@ -1,4 +1,5 @@
 import '../domain/session_context.dart';
+import '../domain/ids.dart';
 import 'agent_session.dart';
 
 /// Engine contract used by protocol adapters to execute local agent turns.
@@ -8,4 +9,11 @@ import 'agent_session.dart';
 abstract interface class AgentEngine implements AgentSession {
   /// Builds the cached session context for a working directory.
   SessionContext sessionContext(String workingDirectory);
+
+  /// Persists protocol-selected model settings for a session.
+  Future<void> updateSessionConfig(
+    SessionId sessionId,
+    ModelRef model,
+    String? reasoningEffort,
+  );
 }

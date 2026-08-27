@@ -39,6 +39,39 @@ class $SessionsTable extends Sessions
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _modelProviderIdMeta = const VerificationMeta(
+    'modelProviderId',
+  );
+  @override
+  late final GeneratedColumn<String> modelProviderId = GeneratedColumn<String>(
+    'model_provider_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _modelIdMeta = const VerificationMeta(
+    'modelId',
+  );
+  @override
+  late final GeneratedColumn<String> modelId = GeneratedColumn<String>(
+    'model_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _reasoningEffortMeta = const VerificationMeta(
+    'reasoningEffort',
+  );
+  @override
+  late final GeneratedColumn<String> reasoningEffort = GeneratedColumn<String>(
+    'reasoning_effort',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _additionalDirectoriesJsonMeta =
       const VerificationMeta('additionalDirectoriesJson');
   @override
@@ -203,6 +236,9 @@ class $SessionsTable extends Sessions
     id,
     title,
     workingDirectory,
+    modelProviderId,
+    modelId,
+    reasoningEffort,
     additionalDirectoriesJson,
     lastInputTokens,
     lastOutputTokens,
@@ -251,6 +287,30 @@ class $SessionsTable extends Sessions
       );
     } else if (isInserting) {
       context.missing(_workingDirectoryMeta);
+    }
+    if (data.containsKey('model_provider_id')) {
+      context.handle(
+        _modelProviderIdMeta,
+        modelProviderId.isAcceptableOrUnknown(
+          data['model_provider_id']!,
+          _modelProviderIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('model_id')) {
+      context.handle(
+        _modelIdMeta,
+        modelId.isAcceptableOrUnknown(data['model_id']!, _modelIdMeta),
+      );
+    }
+    if (data.containsKey('reasoning_effort')) {
+      context.handle(
+        _reasoningEffortMeta,
+        reasoningEffort.isAcceptableOrUnknown(
+          data['reasoning_effort']!,
+          _reasoningEffortMeta,
+        ),
+      );
     }
     if (data.containsKey('additional_directories_json')) {
       context.handle(
@@ -397,6 +457,18 @@ class $SessionsTable extends Sessions
         DriftSqlType.string,
         data['${effectivePrefix}working_directory'],
       )!,
+      modelProviderId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}model_provider_id'],
+      ),
+      modelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}model_id'],
+      ),
+      reasoningEffort: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_effort'],
+      ),
       additionalDirectoriesJson: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}additional_directories_json'],
@@ -472,6 +544,15 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
   /// Primary tool working directory.
   final String workingDirectory;
 
+  /// Selected provider identifier for the session.
+  final String? modelProviderId;
+
+  /// Selected model identifier for the session.
+  final String? modelId;
+
+  /// Selected reasoning effort for the session.
+  final String? reasoningEffort;
+
   /// JSON-encoded additional tool roots.
   final String additionalDirectoriesJson;
 
@@ -517,6 +598,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     required this.id,
     required this.title,
     required this.workingDirectory,
+    this.modelProviderId,
+    this.modelId,
+    this.reasoningEffort,
     required this.additionalDirectoriesJson,
     required this.lastInputTokens,
     required this.lastOutputTokens,
@@ -538,6 +622,15 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     map['id'] = Variable<String>(id);
     map['title'] = Variable<String>(title);
     map['working_directory'] = Variable<String>(workingDirectory);
+    if (!nullToAbsent || modelProviderId != null) {
+      map['model_provider_id'] = Variable<String>(modelProviderId);
+    }
+    if (!nullToAbsent || modelId != null) {
+      map['model_id'] = Variable<String>(modelId);
+    }
+    if (!nullToAbsent || reasoningEffort != null) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort);
+    }
     map['additional_directories_json'] = Variable<String>(
       additionalDirectoriesJson,
     );
@@ -566,6 +659,15 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       id: Value(id),
       title: Value(title),
       workingDirectory: Value(workingDirectory),
+      modelProviderId: modelProviderId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(modelProviderId),
+      modelId: modelId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(modelId),
+      reasoningEffort: reasoningEffort == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reasoningEffort),
       additionalDirectoriesJson: Value(additionalDirectoriesJson),
       lastInputTokens: Value(lastInputTokens),
       lastOutputTokens: Value(lastOutputTokens),
@@ -596,6 +698,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       id: serializer.fromJson<String>(json['id']),
       title: serializer.fromJson<String>(json['title']),
       workingDirectory: serializer.fromJson<String>(json['workingDirectory']),
+      modelProviderId: serializer.fromJson<String?>(json['modelProviderId']),
+      modelId: serializer.fromJson<String?>(json['modelId']),
+      reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       additionalDirectoriesJson: serializer.fromJson<String>(
         json['additionalDirectoriesJson'],
       ),
@@ -633,6 +738,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       'id': serializer.toJson<String>(id),
       'title': serializer.toJson<String>(title),
       'workingDirectory': serializer.toJson<String>(workingDirectory),
+      'modelProviderId': serializer.toJson<String?>(modelProviderId),
+      'modelId': serializer.toJson<String?>(modelId),
+      'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'additionalDirectoriesJson': serializer.toJson<String>(
         additionalDirectoriesJson,
       ),
@@ -656,6 +764,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     String? id,
     String? title,
     String? workingDirectory,
+    Value<String?> modelProviderId = const Value.absent(),
+    Value<String?> modelId = const Value.absent(),
+    Value<String?> reasoningEffort = const Value.absent(),
     String? additionalDirectoriesJson,
     int? lastInputTokens,
     int? lastOutputTokens,
@@ -674,6 +785,13 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     id: id ?? this.id,
     title: title ?? this.title,
     workingDirectory: workingDirectory ?? this.workingDirectory,
+    modelProviderId: modelProviderId.present
+        ? modelProviderId.value
+        : this.modelProviderId,
+    modelId: modelId.present ? modelId.value : this.modelId,
+    reasoningEffort: reasoningEffort.present
+        ? reasoningEffort.value
+        : this.reasoningEffort,
     additionalDirectoriesJson:
         additionalDirectoriesJson ?? this.additionalDirectoriesJson,
     lastInputTokens: lastInputTokens ?? this.lastInputTokens,
@@ -702,6 +820,13 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
       workingDirectory: data.workingDirectory.present
           ? data.workingDirectory.value
           : this.workingDirectory,
+      modelProviderId: data.modelProviderId.present
+          ? data.modelProviderId.value
+          : this.modelProviderId,
+      modelId: data.modelId.present ? data.modelId.value : this.modelId,
+      reasoningEffort: data.reasoningEffort.present
+          ? data.reasoningEffort.value
+          : this.reasoningEffort,
       additionalDirectoriesJson: data.additionalDirectoriesJson.present
           ? data.additionalDirectoriesJson.value
           : this.additionalDirectoriesJson,
@@ -749,6 +874,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           ..write('id: $id, ')
           ..write('title: $title, ')
           ..write('workingDirectory: $workingDirectory, ')
+          ..write('modelProviderId: $modelProviderId, ')
+          ..write('modelId: $modelId, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('additionalDirectoriesJson: $additionalDirectoriesJson, ')
           ..write('lastInputTokens: $lastInputTokens, ')
           ..write('lastOutputTokens: $lastOutputTokens, ')
@@ -772,6 +900,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
     id,
     title,
     workingDirectory,
+    modelProviderId,
+    modelId,
+    reasoningEffort,
     additionalDirectoriesJson,
     lastInputTokens,
     lastOutputTokens,
@@ -794,6 +925,9 @@ class SessionRow extends DataClass implements Insertable<SessionRow> {
           other.id == this.id &&
           other.title == this.title &&
           other.workingDirectory == this.workingDirectory &&
+          other.modelProviderId == this.modelProviderId &&
+          other.modelId == this.modelId &&
+          other.reasoningEffort == this.reasoningEffort &&
           other.additionalDirectoriesJson == this.additionalDirectoriesJson &&
           other.lastInputTokens == this.lastInputTokens &&
           other.lastOutputTokens == this.lastOutputTokens &&
@@ -814,6 +948,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
   final Value<String> id;
   final Value<String> title;
   final Value<String> workingDirectory;
+  final Value<String?> modelProviderId;
+  final Value<String?> modelId;
+  final Value<String?> reasoningEffort;
   final Value<String> additionalDirectoriesJson;
   final Value<int> lastInputTokens;
   final Value<int> lastOutputTokens;
@@ -833,6 +970,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     this.id = const Value.absent(),
     this.title = const Value.absent(),
     this.workingDirectory = const Value.absent(),
+    this.modelProviderId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.additionalDirectoriesJson = const Value.absent(),
     this.lastInputTokens = const Value.absent(),
     this.lastOutputTokens = const Value.absent(),
@@ -853,6 +993,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     required String id,
     this.title = const Value.absent(),
     required String workingDirectory,
+    this.modelProviderId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.additionalDirectoriesJson = const Value.absent(),
     this.lastInputTokens = const Value.absent(),
     this.lastOutputTokens = const Value.absent(),
@@ -876,6 +1019,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Expression<String>? id,
     Expression<String>? title,
     Expression<String>? workingDirectory,
+    Expression<String>? modelProviderId,
+    Expression<String>? modelId,
+    Expression<String>? reasoningEffort,
     Expression<String>? additionalDirectoriesJson,
     Expression<int>? lastInputTokens,
     Expression<int>? lastOutputTokens,
@@ -896,6 +1042,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       if (id != null) 'id': id,
       if (title != null) 'title': title,
       if (workingDirectory != null) 'working_directory': workingDirectory,
+      if (modelProviderId != null) 'model_provider_id': modelProviderId,
+      if (modelId != null) 'model_id': modelId,
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (additionalDirectoriesJson != null)
         'additional_directories_json': additionalDirectoriesJson,
       if (lastInputTokens != null) 'last_input_tokens': lastInputTokens,
@@ -925,6 +1074,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     Value<String>? id,
     Value<String>? title,
     Value<String>? workingDirectory,
+    Value<String?>? modelProviderId,
+    Value<String?>? modelId,
+    Value<String?>? reasoningEffort,
     Value<String>? additionalDirectoriesJson,
     Value<int>? lastInputTokens,
     Value<int>? lastOutputTokens,
@@ -945,6 +1097,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
       id: id ?? this.id,
       title: title ?? this.title,
       workingDirectory: workingDirectory ?? this.workingDirectory,
+      modelProviderId: modelProviderId ?? this.modelProviderId,
+      modelId: modelId ?? this.modelId,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       additionalDirectoriesJson:
           additionalDirectoriesJson ?? this.additionalDirectoriesJson,
       lastInputTokens: lastInputTokens ?? this.lastInputTokens,
@@ -977,6 +1132,15 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
     }
     if (workingDirectory.present) {
       map['working_directory'] = Variable<String>(workingDirectory.value);
+    }
+    if (modelProviderId.present) {
+      map['model_provider_id'] = Variable<String>(modelProviderId.value);
+    }
+    if (modelId.present) {
+      map['model_id'] = Variable<String>(modelId.value);
+    }
+    if (reasoningEffort.present) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
     }
     if (additionalDirectoriesJson.present) {
       map['additional_directories_json'] = Variable<String>(
@@ -1042,6 +1206,9 @@ class SessionsCompanion extends UpdateCompanion<SessionRow> {
           ..write('id: $id, ')
           ..write('title: $title, ')
           ..write('workingDirectory: $workingDirectory, ')
+          ..write('modelProviderId: $modelProviderId, ')
+          ..write('modelId: $modelId, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('additionalDirectoriesJson: $additionalDirectoriesJson, ')
           ..write('lastInputTokens: $lastInputTokens, ')
           ..write('lastOutputTokens: $lastOutputTokens, ')
@@ -2751,6 +2918,9 @@ typedef $$SessionsTableCreateCompanionBuilder =
       required String id,
       Value<String> title,
       required String workingDirectory,
+      Value<String?> modelProviderId,
+      Value<String?> modelId,
+      Value<String?> reasoningEffort,
       Value<String> additionalDirectoriesJson,
       Value<int> lastInputTokens,
       Value<int> lastOutputTokens,
@@ -2772,6 +2942,9 @@ typedef $$SessionsTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> title,
       Value<String> workingDirectory,
+      Value<String?> modelProviderId,
+      Value<String?> modelId,
+      Value<String?> reasoningEffort,
       Value<String> additionalDirectoriesJson,
       Value<int> lastInputTokens,
       Value<int> lastOutputTokens,
@@ -2852,6 +3025,21 @@ class $$SessionsTableFilterComposer
 
   ColumnFilters<String> get workingDirectory => $composableBuilder(
     column: $table.workingDirectory,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get modelProviderId => $composableBuilder(
+    column: $table.modelProviderId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3000,6 +3188,21 @@ class $$SessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get modelProviderId => $composableBuilder(
+    column: $table.modelProviderId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get additionalDirectoriesJson => $composableBuilder(
     column: $table.additionalDirectoriesJson,
     builder: (column) => ColumnOrderings(column),
@@ -3088,6 +3291,19 @@ class $$SessionsTableAnnotationComposer
 
   GeneratedColumn<String> get workingDirectory => $composableBuilder(
     column: $table.workingDirectory,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get modelProviderId => $composableBuilder(
+    column: $table.modelProviderId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get modelId =>
+      $composableBuilder(column: $table.modelId, builder: (column) => column);
+
+  GeneratedColumn<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => column,
   );
 
@@ -3239,6 +3455,9 @@ class $$SessionsTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<String> workingDirectory = const Value.absent(),
+                Value<String?> modelProviderId = const Value.absent(),
+                Value<String?> modelId = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> additionalDirectoriesJson = const Value.absent(),
                 Value<int> lastInputTokens = const Value.absent(),
                 Value<int> lastOutputTokens = const Value.absent(),
@@ -3258,6 +3477,9 @@ class $$SessionsTableTableManager
                 id: id,
                 title: title,
                 workingDirectory: workingDirectory,
+                modelProviderId: modelProviderId,
+                modelId: modelId,
+                reasoningEffort: reasoningEffort,
                 additionalDirectoriesJson: additionalDirectoriesJson,
                 lastInputTokens: lastInputTokens,
                 lastOutputTokens: lastOutputTokens,
@@ -3279,6 +3501,9 @@ class $$SessionsTableTableManager
                 required String id,
                 Value<String> title = const Value.absent(),
                 required String workingDirectory,
+                Value<String?> modelProviderId = const Value.absent(),
+                Value<String?> modelId = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> additionalDirectoriesJson = const Value.absent(),
                 Value<int> lastInputTokens = const Value.absent(),
                 Value<int> lastOutputTokens = const Value.absent(),
@@ -3298,6 +3523,9 @@ class $$SessionsTableTableManager
                 id: id,
                 title: title,
                 workingDirectory: workingDirectory,
+                modelProviderId: modelProviderId,
+                modelId: modelId,
+                reasoningEffort: reasoningEffort,
                 additionalDirectoriesJson: additionalDirectoriesJson,
                 lastInputTokens: lastInputTokens,
                 lastOutputTokens: lastOutputTokens,

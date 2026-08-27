@@ -35,7 +35,7 @@ final class AtlasTuiApp extends StatefulComponent {
   });
 
   /// The runtime that executes turns.
-  final AgentRuntime runtime;
+  final AgentSession runtime;
 
   /// The models the user can switch to with `/model`.
   final List<ModelDescriptor> models;
@@ -561,7 +561,7 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
 /// [onQuit] is invoked when the user submits `/quit`; it defaults to
 /// [shutdownApp] so the process exits cleanly.
 Future<void> runAtlasTui({
-  required AgentRuntime runtime,
+  required AgentSession runtime,
   required List<ModelDescriptor> models,
   SkillCatalog? skills,
   String? workingDirectory,

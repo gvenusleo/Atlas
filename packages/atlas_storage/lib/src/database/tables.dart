@@ -12,6 +12,15 @@ class Sessions extends Table {
   /// Primary tool working directory.
   TextColumn get workingDirectory => text()();
 
+  /// Selected provider identifier for the session.
+  TextColumn get modelProviderId => text().nullable()();
+
+  /// Selected model identifier for the session.
+  TextColumn get modelId => text().nullable()();
+
+  /// Selected reasoning effort for the session.
+  TextColumn get reasoningEffort => text().nullable()();
+
   /// JSON-encoded additional tool roots.
   TextColumn get additionalDirectoriesJson =>
       text().withDefault(const Constant('[]'))();

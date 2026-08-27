@@ -66,6 +66,17 @@ final class AgentRuntime
   SessionContext sessionContext(String workingDirectory) =>
       sessionContextBuilder(workingDirectory);
 
+  @override
+  Future<void> updateSessionConfig(
+    SessionId sessionId,
+    ModelRef model,
+    String? reasoningEffort,
+  ) async {
+    if (store case final SessionConfigStore configurable) {
+      await configurable.updateSessionConfig(sessionId, model, reasoningEffort);
+    }
+  }
+
   /// The ID generator used for new records.
   final IdGenerator ids;
 
@@ -751,6 +762,7 @@ final class AgentRuntime
         instruction: instruction,
         cancellation: cancellation,
         outputTokenLimit: descriptor.maxOutputTokens,
+        contextWindow: descriptor.contextWindow,
       );
       final checkpoint = CompactionCheckpoint(
         sessionId: session.id,
@@ -778,7 +790,11 @@ final class AgentRuntime
         turnId: turnId,
         sequence: nextSequence(),
         occurredAt: _now().toUtc(),
-        message: _safeErrorMessage('Context compaction failed', error),
+        message: _safeErrorMessage(
+          'Context compaction failed; shorten the compaction instruction or '
+          'select a model with a larger context window',
+          error,
+        ),
       );
     }
   }
@@ -793,19 +809,98 @@ final class AgentRuntime
     String? instruction,
     CancellationToken? cancellation,
     int outputTokenLimit = 0,
+    required int contextWindow,
   }) async {
-    final buffer = StringBuffer(_compactionInstruction);
+    final prefix = StringBuffer(_compactionInstruction);
     final instructionText = instruction?.trim();
     if (instructionText != null && instructionText.isNotEmpty) {
-      buffer.write('\n\nAdditional user instruction:\n$instructionText');
+      prefix.write('\n\nAdditional user instruction:\n$instructionText');
     }
     final previous = session.compaction?.summary.trim();
     if (previous != null && previous.isNotEmpty) {
-      buffer.write('\n\n<previous_summary>\n$previous\n</previous_summary>');
+      prefix.write('\n\n<previous_summary>\n$previous\n</previous_summary>');
     }
-    buffer.write(
-      '\n\n<transcript>\n${_renderTimeline(compacted)}\n</transcript>',
+    final inputBudget = (contextWindow * 0.6).floor().clamp(1, contextWindow);
+    final transcript = _renderTimeline(compacted);
+    if (estimateTokens('$prefix\n$transcript') <= inputBudget) {
+      return _requestSummary(
+        prompt: '$prefix\n\n<transcript>\n$transcript\n</transcript>',
+        session: session,
+        model: model,
+        turnId: turnId,
+        cancellation: cancellation,
+        outputTokenLimit: outputTokenLimit,
+      );
+    }
+    final chunks = _summaryChunks(compacted, inputBudget ~/ 2);
+    final summaries = <String>[];
+    final chunkCount = chunks.length;
+    for (var index = 0; index < chunks.length; index++) {
+      cancellation?.throwIfCancelled();
+      summaries.add(
+        await _requestSummary(
+          prompt:
+              '$_compactionInstruction\n\nSummarize history chunk '
+              '${index + 1} of $chunkCount.\n\n<transcript>\n'
+              '${_renderTimeline(chunks[index])}\n</transcript>',
+          session: session,
+          model: model,
+          turnId: turnId,
+          cancellation: cancellation,
+          outputTokenLimit: outputTokenLimit,
+        ),
+      );
+    }
+    final boundedSummaries = summaries
+        .map(
+          (summary) => summary.length > 12000
+              ? '${summary.substring(0, 12000)}\n...[summary truncated]'
+              : summary,
+        )
+        .join('\n\n');
+    return _requestSummary(
+      prompt:
+          '$prefix\n\n<chunk_summaries>\n$boundedSummaries'
+          '\n</chunk_summaries>',
+      session: session,
+      model: model,
+      turnId: turnId,
+      cancellation: cancellation,
+      outputTokenLimit: outputTokenLimit,
     );
+  }
+
+  /// Groups complete timeline items into bounded summary requests.
+  static List<List<TimelineItem>> _summaryChunks(
+    List<TimelineItem> items,
+    int tokenBudget,
+  ) {
+    final chunks = <List<TimelineItem>>[];
+    var current = <TimelineItem>[];
+    var tokens = 0;
+    for (final item in items) {
+      final itemTokens = estimateTokenCount(_renderTimeline([item]));
+      if (current.isNotEmpty && tokens + itemTokens > tokenBudget) {
+        chunks.add(current);
+        current = <TimelineItem>[];
+        tokens = 0;
+      }
+      current.add(item);
+      tokens += itemTokens;
+    }
+    if (current.isNotEmpty) chunks.add(current);
+    return chunks;
+  }
+
+  /// Executes one bounded summary request and returns its non-empty text.
+  Future<String> _requestSummary({
+    required String prompt,
+    required Session session,
+    required ModelRef model,
+    required TurnId turnId,
+    required CancellationToken? cancellation,
+    required int outputTokenLimit,
+  }) async {
     final request = ModelRequest(
       sessionId: session.id,
       turnId: turnId,
@@ -813,7 +908,7 @@ final class AgentRuntime
       messages: [
         ModelMessage(
           role: ModelMessageRole.user,
-          content: [TextContent(buffer.toString())],
+          content: [TextContent(prompt)],
         ),
       ],
       maxOutputTokens: outputTokenLimit > 0

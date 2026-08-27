@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:acpd/acpd.dart' hide PlanEntry, ToolCall;
 import 'package:atlas_runtime/atlas_runtime.dart' as rt;
 
+import 'atlas_extensions.dart';
+export 'atlas_extensions.dart';
+
 /// The ACP protocol version implemented by this adapter.
 const acpProtocolVersion = 1;
 
@@ -18,10 +21,10 @@ const acpConfigIdMode = 'mode';
 /// Atlas extension method for renaming a session. ACP v1 has no rename
 /// request; clients that do not implement this method keep a local title
 /// overlay instead.
-const acpSessionSetTitleMethod = '_atlas.dev/session/set_title';
+const acpSessionSetTitleMethod = atlasSessionSetTitleMethod;
 
 /// Atlas extension method for structured context compaction.
-const acpSessionCompactMethod = '_atlas.dev/session/compact';
+const acpSessionCompactMethod = atlasSessionCompactMethod;
 
 /// The agent version reported during initialization.
 const acpAgentVersion = '0.1.0';

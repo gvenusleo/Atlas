@@ -9,7 +9,8 @@ import '../database/database.dart';
 import '../mappers/row_mappers.dart';
 
 /// Drift-backed implementation of the runtime session persistence port.
-final class DriftSessionStore implements runtime.SessionStore {
+final class DriftSessionStore
+    implements runtime.SessionStore, runtime.SessionConfigStore {
   DriftSessionStore._(this._database) : _mappers = RowMappers();
 
   /// Opens a persistent store backed by [file].
@@ -234,6 +235,23 @@ final class DriftSessionStore implements runtime.SessionStore {
     if (count == 0) {
       throw runtime.SessionNotFoundException(sessionId);
     }
+  }
+
+  @override
+  Future<void> updateSessionConfig(
+    runtime.SessionId sessionId,
+    runtime.ModelRef? model,
+    String? reasoningEffort,
+  ) async {
+    await (_database.update(
+      _database.sessions,
+    )..where((table) => table.id.equals(sessionId.value))).write(
+      SessionsCompanion(
+        modelProviderId: Value(model?.providerId.value),
+        modelId: Value(model?.modelId.value),
+        reasoningEffort: Value(reasoningEffort),
+      ),
+    );
   }
 
   Future<SessionRow> _sessionRow(runtime.SessionId sessionId) async {

@@ -158,7 +158,10 @@ Map<String, Object?> _anthropicRequest(
   final maxTokens = request.maxOutputTokens > 0
       ? request.maxOutputTokens
       : (descriptor.maxOutputTokens > 0 ? descriptor.maxOutputTokens : 4096);
-  final thinkingBudget = entry.configuration.thinkingBudgetTokens;
+  final thinkingBudget = _thinkingBudget(
+    entry.configuration.thinkingBudgetTokens,
+    request.reasoningEffort,
+  );
   final thinkingEnabled = request.reasoningEffort != null && thinkingBudget > 0;
   if (thinkingEnabled && thinkingBudget >= maxTokens) {
     throw AnthropicProviderException(
@@ -190,6 +193,17 @@ Map<String, Object?> _anthropicRequest(
     };
   }
   return result;
+}
+
+int _thinkingBudget(int base, String? effort) {
+  if (base <= 0 || effort == null) return base;
+  final multiplier = switch (effort) {
+    'minimal' => 0.25,
+    'low' => 0.5,
+    'max' => 1.5,
+    _ => 1.0,
+  };
+  return (base * multiplier).round().clamp(1, 1 << 30);
 }
 
 List<Object?> _anthropicMessages(List<ModelMessage> messages) {
