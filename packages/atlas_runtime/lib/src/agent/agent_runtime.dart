@@ -727,6 +727,7 @@ final class AgentRuntime
         turnId: turnId,
         instruction: instruction,
         cancellation: cancellation,
+        outputTokenLimit: descriptor.maxOutputTokens,
       );
       final checkpoint = CompactionCheckpoint(
         sessionId: session.id,
@@ -768,6 +769,7 @@ final class AgentRuntime
     required TurnId turnId,
     String? instruction,
     CancellationToken? cancellation,
+    int outputTokenLimit = 0,
   }) async {
     final buffer = StringBuffer(_compactionInstruction);
     final instructionText = instruction?.trim();
@@ -791,7 +793,9 @@ final class AgentRuntime
           content: [TextContent(buffer.toString())],
         ),
       ],
-      maxOutputTokens: maxSummaryTokens,
+      maxOutputTokens: outputTokenLimit > 0
+          ? outputTokenLimit.clamp(1, 8192)
+          : maxSummaryTokens,
       cancellation: cancellation,
     );
     ModelResponse? completed;
