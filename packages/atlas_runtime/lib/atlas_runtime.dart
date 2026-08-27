@@ -15,6 +15,7 @@ export 'src/domain/session.dart';
 export 'src/domain/session_context.dart';
 export 'src/domain/timeline.dart';
 export 'src/domain/turn.dart';
+export 'src/domain/token_estimate.dart';
 export 'src/domain/usage.dart';
 export 'src/ports/id_generator.dart';
 export 'src/ports/cancellation.dart';

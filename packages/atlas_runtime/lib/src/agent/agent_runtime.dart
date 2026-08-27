@@ -10,6 +10,7 @@ import '../domain/session.dart';
 import '../domain/session_context.dart';
 import '../domain/timeline.dart';
 import '../domain/turn.dart';
+import '../domain/token_estimate.dart';
 import '../domain/usage.dart';
 import '../ports/cancellation.dart';
 import '../ports/failures.dart';
@@ -879,21 +880,7 @@ final class AgentRuntime
   /// Estimates token count from text using the common four-characters-per-
   /// token ratio; used when the provider does not report usage.
   static int estimateTokens(String text) {
-    var cjk = 0;
-    var other = 0;
-    for (final rune in text.runes) {
-      final isCjk =
-          (rune >= 0x4e00 && rune <= 0x9fff) ||
-          (rune >= 0x3400 && rune <= 0x4dbf) ||
-          (rune >= 0xac00 && rune <= 0xd7af) ||
-          (rune >= 0x3040 && rune <= 0x30ff);
-      if (isCjk) {
-        cjk++;
-      } else {
-        other++;
-      }
-    }
-    return cjk + (other / 4).ceil();
+    return estimateTokenCount(text);
   }
 
   Future<ToolResult> _executeTool({

@@ -864,7 +864,7 @@ final class AcpServer {
           buffer.write(content);
       }
     }
-    return buffer.length ~/ 4;
+    return rt.estimateTokenCount(buffer.toString());
   }
 
   /// Converts an ACP prompt array into runtime content parts.
