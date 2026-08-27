@@ -320,7 +320,12 @@ AgentConfig _agent(Map<String, Object?> root) {
     'agent.compaction',
   );
   return AgentConfig(
-    maxSteps: _positiveInt(map['max_steps'], 'agent.max_steps', 100),
+    maxSteps: _positiveInt(map['max_steps'], 'agent.max_steps', 20),
+    maxOutputTokens: _nonNegativeInt(
+      map['max_output_tokens'],
+      'agent.max_output_tokens',
+      0,
+    ),
     temperature: _doubleOrNull(map['temperature'], 'agent.temperature'),
     compaction: CompactionConfig(
       threshold: _fraction(

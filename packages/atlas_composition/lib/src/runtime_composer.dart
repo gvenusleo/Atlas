@@ -45,6 +45,7 @@ AgentRuntime composeRuntime(
     defaultModel: config.defaultModel,
     sessionContextBuilder: sessionContextBuilder ?? buildSessionContext,
     maxSteps: config.agent.maxSteps,
+    maxOutputTokens: config.agent.maxOutputTokens,
     temperature: config.agent.temperature,
     compactionThreshold: config.agent.compaction.threshold,
     systemPromptBuilder: (context) => buildSystemPrompt(

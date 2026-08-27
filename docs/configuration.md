@@ -43,7 +43,8 @@ providers:
         prompt_cache: true            # optional, default false
 
 agent:
-  max_steps: 100                      # optional, default 100
+  max_steps: 20                       # optional, default 20
+  max_output_tokens: 0                # optional, provider default
   temperature: 0.7                    # optional
   compaction:
     threshold: 0.8                    # optional, default 0.8

@@ -42,7 +42,8 @@ providers:
         prompt_cache: true            # 可选，默认 false
 
 agent:
-  max_steps: 100                      # 可选，默认 100
+  max_steps: 20                       # 可选，默认 20
+  max_output_tokens: 0                # 可选，使用 provider 默认值
   temperature: 0.7                    # 可选
   compaction:
     threshold: 0.8                    # 可选，默认 0.8

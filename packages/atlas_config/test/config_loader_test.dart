@@ -119,7 +119,8 @@ providers:
     expect(descriptor.inputCapabilities, const {ModelInputCapability.text});
     expect(descriptor.reasoningEfforts, isEmpty);
     expect(openai.configuration.models.single.promptCacheEnabled, isFalse);
-    expect(config.agent.maxSteps, 100);
+    expect(config.agent.maxSteps, 20);
+    expect(config.agent.maxOutputTokens, 0);
     expect(config.agent.compaction.threshold, 0.8);
     expect(config.agent.temperature, isNull);
     expect(config.session.dbPath, '~/.atlas/atlas.db');

@@ -55,13 +55,17 @@ final class ConfiguredAnthropic extends ConfiguredProvider {
 final class AgentConfig {
   /// Creates agent parameters.
   const AgentConfig({
-    this.maxSteps = 100,
+    this.maxSteps = 20,
+    this.maxOutputTokens = 0,
     this.temperature,
     this.compaction = const CompactionConfig(),
   });
 
   /// Maximum model/tool steps for one turn.
   final int maxSteps;
+
+  /// Maximum model output tokens for one step; zero uses provider defaults.
+  final int maxOutputTokens;
 
   /// Optional model sampling temperature.
   final double? temperature;
