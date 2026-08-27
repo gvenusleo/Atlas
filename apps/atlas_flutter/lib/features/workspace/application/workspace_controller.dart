@@ -898,8 +898,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       _catalogDescriptor(ref) ?? ModelDescriptor(ref: ref);
 
   List<String> _selectedSkills(String text) {
+    final sessionId =
+        state.workspaces[state.activeKey]?.sessionId ?? state.active.sessionId;
+    if (sessionId == null) return const [];
     final available = {
-      for (final skill in _environment.skills.summaries) skill.name,
+      for (final command in _environment.runtime.commandsFor(sessionId))
+        command.name,
     };
     final selected = <String>[];
     for (final token in text.split(RegExp(r'\s+'))) {

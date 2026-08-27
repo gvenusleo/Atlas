@@ -19,3 +19,20 @@ String resolveFilePath(String cwd, String path) {
     windows: Platform.isWindows,
   ).normalizePath().toFilePath(windows: Platform.isWindows);
 }
+
+/// Resolves a readable path against the primary directory and extra roots.
+/// Extra roots are fallback locations for reads; writes remain anchored to the
+/// primary working directory.
+Future<String> resolveReadableFilePath(
+  String cwd,
+  List<String> additionalDirectories,
+  String path,
+) async {
+  final primary = resolveFilePath(cwd, path);
+  if (await File(primary).exists() || File(path).isAbsolute) return primary;
+  for (final directory in additionalDirectories) {
+    final candidate = resolveFilePath(directory, path);
+    if (await File(candidate).exists()) return candidate;
+  }
+  return primary;
+}

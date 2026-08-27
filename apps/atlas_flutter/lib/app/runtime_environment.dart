@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:atlas_acp/atlas_acp.dart';
 import 'package:atlas_composition/atlas_composition.dart';
 import 'package:atlas_config/atlas_config.dart';
-import 'package:atlas_prompt/atlas_prompt.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -234,7 +233,8 @@ Future<RuntimeBootstrap> bootstrapRuntime({
       RuntimeEnvironment(
         runtime: client,
         models: client.catalog.isEmpty ? models : client.catalog,
-        skills: loadSkillCatalog(homeDirectory: home),
+        // Skills and slash commands come from the ACP agent session.
+        skills: const _EmptySkillCatalog(),
         onClose: () async {
           await client.close();
           await serverDone;
