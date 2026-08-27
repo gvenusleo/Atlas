@@ -234,7 +234,7 @@ final class AcpServer {
     final session = rt.SessionId(params.sessionId);
     final snapshot = await _load(session);
     _titles[snapshot.session.id.value] = snapshot.session.title;
-    final config = _defaultConfig(snapshot.session.workingDirectory);
+    final config = _configForSnapshot(snapshot);
     _sessionConfigs[snapshot.session.id.value] = config;
     for (final update in replayTimeline(
       snapshot.timeline,
@@ -265,7 +265,7 @@ final class AcpServer {
     final session = rt.SessionId(params.sessionId);
     final snapshot = await _load(session);
     _titles[snapshot.session.id.value] = snapshot.session.title;
-    final config = _defaultConfig(snapshot.session.workingDirectory);
+    final config = _configForSnapshot(snapshot);
     _sessionConfigs[snapshot.session.id.value] = config;
     _sendAvailableCommandsLater(
       snapshot.session.id,
@@ -583,6 +583,22 @@ final class AcpServer {
           ? null
           : descriptor.reasoningEfforts.first.value,
     );
+  }
+
+  /// Restores the last model and effort selected for a persisted session.
+  _SessionConfig _configForSnapshot(rt.SessionSnapshot snapshot) {
+    final fallback = _defaultConfig(snapshot.session.workingDirectory);
+    for (final turn in snapshot.turns.reversed) {
+      final model = turn.model;
+      if (model != null) {
+        return _SessionConfig(
+          cwd: snapshot.session.workingDirectory,
+          model: model,
+          effort: turn.reasoningEffort,
+        );
+      }
+    }
+    return fallback;
   }
 
   /// The catalog descriptor for [ref], or a bare descriptor when the catalog
