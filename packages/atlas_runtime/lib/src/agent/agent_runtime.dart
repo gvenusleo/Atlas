@@ -439,6 +439,7 @@ final class AgentRuntime implements RuntimeService {
             turnId: turnId,
             latestUsage: latestUsage,
             nextSequence: () => eventSequence++,
+            cancellation: cancellation,
           );
           return;
         }
@@ -512,6 +513,7 @@ final class AgentRuntime implements RuntimeService {
         turnId: turnId,
         latestUsage: latestUsage,
         nextSequence: () => eventSequence++,
+        cancellation: cancellation,
       );
     } catch (error, stackTrace) {
       final outcome = TurnOutcome(
@@ -546,6 +548,7 @@ final class AgentRuntime implements RuntimeService {
         turnId: turnId,
         latestUsage: latestUsage,
         nextSequence: () => eventSequence++,
+        cancellation: cancellation,
       );
       Error.throwWithStackTrace(error, stackTrace);
     }
@@ -645,7 +648,10 @@ final class AgentRuntime implements RuntimeService {
     String? instruction,
     CancellationToken? cancellation,
   }) async* {
-    cancellation?.throwIfCancelled();
+    // Cancellation stops all trailing background work, including compaction.
+    if (cancellation?.isCancelled == true) {
+      return;
+    }
     final kept = _keptWindow(timeline, keptRecentTurns);
     final boundaryIndex = timeline.length - kept.length - 1;
     if (boundaryIndex < 0) {
@@ -827,7 +833,23 @@ final class AgentRuntime implements RuntimeService {
 
   /// Estimates token count from text using the common four-characters-per-
   /// token ratio; used when the provider does not report usage.
-  static int estimateTokens(String text) => text.length ~/ 4;
+  static int estimateTokens(String text) {
+    var cjk = 0;
+    var other = 0;
+    for (final rune in text.runes) {
+      final isCjk =
+          (rune >= 0x4e00 && rune <= 0x9fff) ||
+          (rune >= 0x3400 && rune <= 0x4dbf) ||
+          (rune >= 0xac00 && rune <= 0xd7af) ||
+          (rune >= 0x3040 && rune <= 0x30ff);
+      if (isCjk) {
+        cjk++;
+      } else {
+        other++;
+      }
+    }
+    return cjk + (other / 4).ceil();
+  }
 
   Future<ToolResult> _executeTool({
     required Session session,

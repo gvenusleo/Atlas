@@ -558,6 +558,16 @@ void main() {
       expect(updates[3], isA<ToolCallUpdateSession>());
       expect(updates[4], isA<ToolCallStatusUpdate>());
     });
+
+    test('replays orphan tool calls as failed', () {
+      final updates = replayTimeline([
+        _toolCallItem('orphan', 'read', 1, id: 'item-orphan'),
+      ]);
+      expect(updates, hasLength(1));
+      final update = updates.single as ToolCallUpdateSession;
+      expect(update.toolCall.status, ToolCallStatus.failed);
+      expect(update.toolCall.content, isNotEmpty);
+    });
   });
 }
 

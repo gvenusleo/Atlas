@@ -600,9 +600,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       case ToolFinished(:final result):
         _streamOpen[target] = false;
         _patch(target, (workspace) {
-          final index = workspace.messages.lastIndexWhere(
+          final index = workspace.messages.indexWhere(
             (message) =>
-                message.kind == WorkspaceMessageKind.tool && message.isRunning,
+                message.kind == WorkspaceMessageKind.tool &&
+                message.isRunning &&
+                message.id == result.callId.value,
           );
           if (index < 0) {
             return workspace.copyWith(turnPhase: TurnPhase.working);
@@ -630,7 +632,9 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           target,
           (workspace) => workspace.copyWith(
             turnPhase: TurnPhase.idle,
-            contextTokens: outcome.usage.totalTokens,
+            contextTokens: outcome.usage.inputTokens > 0
+                ? outcome.usage.inputTokens
+                : outcome.usage.totalTokens,
           ),
         );
       case CompactionStarted():

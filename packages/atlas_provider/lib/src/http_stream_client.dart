@@ -33,15 +33,26 @@ final class ActiveHttpStream {
 }
 
 /// A provider-safe streaming request failure.
-final class HttpStreamException implements Exception {
+final class HttpStreamException implements SafeMessageException {
   /// Creates a stream failure.
-  const HttpStreamException({required this.message, this.statusCode});
+  const HttpStreamException({
+    required this.message,
+    this.statusCode,
+    this.detail,
+  });
 
   /// A redacted, provider-safe error message.
   final String message;
 
   /// The HTTP status when the server returned one.
   final int? statusCode;
+
+  /// A bounded, provider-supplied diagnostic detail safe for display.
+  final String? detail;
+
+  @override
+  String get safeMessage =>
+      detail == null || detail!.isEmpty ? message : '$message: $detail';
 
   @override
   String toString() {
@@ -130,10 +141,11 @@ final class DioHttpStreamClient implements HttpStreamClient {
           );
         }
         final retryable = status == 429 || status >= 500;
-        await _discardErrorBody(response.data?.stream);
+        final detail = await _readErrorDetail(response.data?.stream);
         lastError = HttpStreamException(
           statusCode: status,
           message: 'provider returned an error response',
+          detail: detail,
         );
         if (!retryable || attempt == maxAttempts - 1) {
           throw lastError;
@@ -163,9 +175,25 @@ final class DioHttpStreamClient implements HttpStreamClient {
   }
 }
 
-Future<void> _discardErrorBody(Stream<List<int>>? stream) async {
-  if (stream == null) return;
-  await stream.listen((_) {}).cancel();
+Future<String?> _readErrorDetail(Stream<List<int>>? stream) async {
+  if (stream == null) return null;
+  final bytes = <int>[];
+  await for (final chunk in stream) {
+    bytes.addAll(chunk);
+    if (bytes.length >= 2048) break;
+  }
+  if (bytes.isEmpty) return null;
+  final text = utf8.decode(bytes, allowMalformed: true).trim();
+  try {
+    final decoded = jsonDecode(text);
+    if (decoded is Map && decoded['error'] is Map) {
+      final message = (decoded['error'] as Map)['message'];
+      if (message is String && message.isNotEmpty) return message;
+    }
+  } on FormatException {
+    // Keep the bounded raw response below when it is not JSON.
+  }
+  return text.length > 512 ? text.substring(0, 512) : text;
 }
 
 Duration _retryDelay(int attempt, Headers? headers) {

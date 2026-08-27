@@ -366,7 +366,9 @@ final class AcpServer {
             stopReason = outcome.stopReason == rt.StopReason.maxTokens
                 ? 'max_tokens'
                 : 'end_turn';
-            usedTokens = outcome.usage.totalTokens;
+            usedTokens = outcome.usage.inputTokens > 0
+                ? outcome.usage.inputTokens
+                : outcome.usage.totalTokens;
           case rt.TurnStatus.cancelled:
             stopReason = 'cancelled';
           case rt.TurnStatus.failed:
@@ -867,8 +869,8 @@ final class AcpServer {
               mimeType: mimeType,
             ),
           );
-        case ResourceLink():
-          break;
+        case ResourceLink(:final name, :final uri):
+          parts.add(rt.TextContent('<resource name="$name" uri="$uri"/>'));
         case EmbeddedResource(:final resource):
           switch (resource) {
             case TextResourceContents(:final uri, :final text):

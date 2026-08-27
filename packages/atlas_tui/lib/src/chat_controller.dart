@@ -313,9 +313,11 @@ final class ChatController implements Listenable {
         _sealed = true;
         _messages.add(
           ChatMessage(
+            id: event.call.call.id.value,
             kind: ChatMessageKind.tool,
             toolName: event.call.call.name,
             arguments: event.call.call.arguments,
+            toolCallId: event.call.call.id.value,
             text: 'running…',
           ),
         );
@@ -343,7 +345,9 @@ final class ChatController implements Listenable {
       case TurnFinished(:final outcome):
         _turnPhase = TurnPhase.idle;
         _sealed = true;
-        _contextTokens = outcome.usage.totalTokens;
+        _contextTokens = outcome.usage.inputTokens > 0
+            ? outcome.usage.inputTokens
+            : outcome.usage.totalTokens;
         if (outcome.status == TurnStatus.cancelled) {
           _messages.add(
             ChatMessage(kind: ChatMessageKind.system, text: 'Turn cancelled'),
@@ -378,8 +382,10 @@ final class ChatController implements Listenable {
   }
 
   void _updateLastTool(ToolResultItem result) {
-    final index = _messages.lastIndexWhere(
-      (message) => message.kind == ChatMessageKind.tool,
+    final index = _messages.indexWhere(
+      (message) =>
+          message.kind == ChatMessageKind.tool &&
+          message.id == result.callId.value,
     );
     if (index < 0) {
       return;
@@ -439,15 +445,18 @@ List<ChatMessage> messagesFromTimeline(List<TimelineItem> timeline) {
       case ToolCallItem(:final call):
         messages.add(
           ChatMessage(
+            id: call.id.value,
             kind: ChatMessageKind.tool,
             toolName: call.name,
             arguments: call.arguments,
             text: 'running…',
           ),
         );
-      case ToolResultItem(:final content, :final isError):
+      case ToolResultItem(:final callId, :final content, :final isError):
         final index = messages.lastIndexWhere(
-          (message) => message.kind == ChatMessageKind.tool,
+          (message) =>
+              message.kind == ChatMessageKind.tool &&
+              message.id == callId.value,
         );
         if (index >= 0) {
           final summary = content.length > maxToolResultChars
@@ -455,6 +464,7 @@ List<ChatMessage> messagesFromTimeline(List<TimelineItem> timeline) {
               : content;
           final previous = messages[index];
           messages[index] = ChatMessage(
+            id: previous.id,
             kind: ChatMessageKind.tool,
             toolName: previous.toolName,
             arguments: previous.arguments,

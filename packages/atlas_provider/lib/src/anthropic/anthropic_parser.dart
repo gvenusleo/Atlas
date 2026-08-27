@@ -216,7 +216,11 @@ final class _ToolBlock {
   Map<String, Object?>? _parsedInput;
 
   void completeInput() {
-    if (_parsedInput != null || input.isEmpty) {
+    if (_parsedInput != null) {
+      return;
+    }
+    if (input.isEmpty) {
+      _parsedInput = <String, Object?>{};
       return;
     }
     try {

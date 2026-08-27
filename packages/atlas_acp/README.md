@@ -22,7 +22,7 @@ as a subprocess and drive sessions through JSON-RPC.
   `embeddedContext`)
 - `session/new`, `session/load` (with timeline replay), `session/resume`,
   `session/list`, `session/close`, `session/delete`
-- Atlas extension `session/set_title` for renaming a session; third-party
+- Atlas extension `_atlas.dev/session/set_title` for renaming a session; third-party
   agents that do not implement it keep a local title overlay in `AcpClient`
 - Session `configOptions` (model and reasoning effort selectors returned by
   new/load/resume, `category: "model"` and `category: "thought_level"`) with

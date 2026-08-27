@@ -183,6 +183,10 @@ List<SessionUpdate> replayTimeline(
   final pendingShellResults = <String>[];
   // Call ids of write/edit tool calls, whose results render as diffs.
   final pendingFileResults = <String>[];
+  final resultCallIds = <(rt.TurnId, String)>{
+    for (final item in timeline)
+      if (item is rt.ToolResultItem) (item.turnId, item.callId.value),
+  };
   for (final item in timeline) {
     switch (item) {
       case rt.UserMessageItem(:final content):
@@ -213,7 +217,7 @@ List<SessionUpdate> replayTimeline(
             ),
           ),
         );
-      case rt.ToolCallItem(:final call):
+      case rt.ToolCallItem(:final call, :final turnId):
         final plan = planEntries(call.arguments['plan']);
         if (call.name == 'plan' && plan != null) {
           pendingPlanResults.add(call.id.value);
@@ -221,10 +225,11 @@ List<SessionUpdate> replayTimeline(
         } else {
           final isShell = call.name == 'shell';
           final isFile = call.name == 'write' || call.name == 'edit';
-          if (isShell) {
+          final hasResult = resultCallIds.contains((turnId, call.id.value));
+          if (isShell && hasResult) {
             pendingShellResults.add(call.id.value);
           }
-          if (isFile) {
+          if (isFile && hasResult) {
             pendingFileResults.add(call.id.value);
           }
           updates.add(
@@ -233,14 +238,22 @@ List<SessionUpdate> replayTimeline(
                 toolCallId: call.id.value,
                 title: toolCallTitle(call.name, call.arguments),
                 kind: toolCallKind(call.name),
-                status: ToolCallStatus.pending,
+                status: hasResult
+                    ? ToolCallStatus.pending
+                    : ToolCallStatus.failed,
                 rawInput: call.arguments,
                 locations: toolCallLocations(
                   call.name,
                   call.arguments,
                   workingDirectory: workingDirectory,
                 ),
-                content: isShell
+                content: !hasResult
+                    ? [
+                        ToolCallContentBlock(
+                          content: TextContentBlock(text: 'interrupted'),
+                        ),
+                      ]
+                    : isShell
                     ? [terminalToolCallContent(call.id.value)]
                     : const [],
                 meta: isShell

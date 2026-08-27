@@ -16,7 +16,7 @@ const acpConfigIdMode = 'mode';
 /// Atlas extension method for renaming a session. ACP v1 has no rename
 /// request; clients that do not implement this method keep a local title
 /// overlay instead.
-const acpSessionSetTitleMethod = 'session/set_title';
+const acpSessionSetTitleMethod = '_atlas.dev/session/set_title';
 
 /// The agent version reported during initialization.
 const acpAgentVersion = '0.1.0';

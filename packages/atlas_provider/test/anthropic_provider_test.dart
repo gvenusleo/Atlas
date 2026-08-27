@@ -63,6 +63,22 @@ void main() {
     expect((call.arguments['nested'] as Map<String, Object?>)['a'], [1, 2]);
   });
 
+  test('accepts Anthropic tool use with empty input', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool-1","name":"noop","input":{}}}',
+        '{"type":"content_block_stop","index":0}',
+        '{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}',
+        '{"type":"message_stop"}',
+      ]);
+    });
+    addTearDown(server.close);
+    final events = await _provider(server).stream(_request()).toList();
+    final call = (events.last as ModelCompletedEvent).response.toolCalls.single;
+    expect(call.arguments, isEmpty);
+  });
+
   test('surfaces HTTP errors as provider exceptions', () async {
     final server = await _startServer((request) async {
       request.response.statusCode = HttpStatus.badRequest;
