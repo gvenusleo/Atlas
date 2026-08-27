@@ -59,8 +59,9 @@ final class EditTool implements Tool {
   @override
   Future<ToolResult> execute(ToolContext context, JsonObject arguments) async {
     try {
-      final path = resolveFilePath(
+      final path = await resolveReadableFilePath(
         context.workingDirectory,
+        context.additionalDirectories,
         arguments['path'] as String? ?? '',
       );
       final rawEdits = arguments['edits'];

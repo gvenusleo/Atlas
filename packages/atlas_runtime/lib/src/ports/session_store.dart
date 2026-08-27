@@ -108,6 +108,12 @@ abstract interface class SessionStore {
   Future<void> renameSession(SessionId sessionId, String title);
 }
 
+/// Optional persistence capability for lightweight metadata reads.
+abstract interface class SessionMetadataStore {
+  /// Loads only durable session metadata without timeline rows.
+  Future<Session> loadSessionMetadata(SessionId sessionId);
+}
+
 /// Optional persistence capability for session-level model settings.
 abstract interface class SessionConfigStore {
   /// Persists the selected model and reasoning effort for a session.

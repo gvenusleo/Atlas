@@ -215,6 +215,13 @@ final class AgentRuntime
   Future<SessionSnapshot> loadSession(SessionId sessionId) =>
       store.loadSession(sessionId);
 
+  /// Loads lightweight session metadata for presentation updates.
+  @override
+  Future<Session> loadSessionMetadata(SessionId sessionId) =>
+      store is SessionMetadataStore
+      ? (store as SessionMetadataStore).loadSessionMetadata(sessionId)
+      : store.loadSession(sessionId).then((snapshot) => snapshot.session);
+
   /// Deletes [sessionId] and all of its dependent records.
   ///
   /// Throws [SessionNotFoundException] when [sessionId] does not exist.

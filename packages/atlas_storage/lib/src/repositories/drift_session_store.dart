@@ -10,7 +10,10 @@ import '../mappers/row_mappers.dart';
 
 /// Drift-backed implementation of the runtime session persistence port.
 final class DriftSessionStore
-    implements runtime.SessionStore, runtime.SessionConfigStore {
+    implements
+        runtime.SessionStore,
+        runtime.SessionConfigStore,
+        runtime.SessionMetadataStore {
   DriftSessionStore._(this._database) : _mappers = RowMappers();
 
   /// Opens a persistent store backed by [file].
@@ -31,6 +34,11 @@ final class DriftSessionStore
   Future<void> createSession(runtime.Session session) => _database
       .into(_database.sessions)
       .insert(_mappers.sessionCompanion(session));
+
+  @override
+  Future<runtime.Session> loadSessionMetadata(
+    runtime.SessionId sessionId,
+  ) async => _mappers.session(await _sessionRow(sessionId));
 
   @override
   Future<runtime.SessionSnapshot> loadSession(

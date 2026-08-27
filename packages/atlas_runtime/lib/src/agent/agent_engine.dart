@@ -1,5 +1,6 @@
 import '../domain/session_context.dart';
 import '../domain/ids.dart';
+import '../domain/session.dart';
 import 'agent_session.dart';
 
 /// Engine contract used by protocol adapters to execute local agent turns.
@@ -16,4 +17,7 @@ abstract interface class AgentEngine implements AgentSession {
     ModelRef model,
     String? reasoningEffort,
   );
+
+  /// Loads lightweight session metadata for protocol notifications.
+  Future<Session> loadSessionMetadata(SessionId sessionId);
 }

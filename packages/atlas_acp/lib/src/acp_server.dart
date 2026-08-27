@@ -676,8 +676,9 @@ final class AcpServer {
   /// (from the first user message) that the client has not seen yet.
   Future<void> _notifyTitleChange(rt.SessionId session) async {
     try {
-      final snapshot = await runtime.loadSession(session);
-      final title = snapshot.session.title;
+      final title = runtime is rt.AgentRuntime
+          ? (await runtime.loadSessionMetadata(session)).title
+          : (await runtime.loadSession(session)).session.title;
       if (title.isNotEmpty && title != _titles[session.value]) {
         _titles[session.value] = title;
         _sendUpdate(session, SessionInfoSessionUpdate(title: title));
