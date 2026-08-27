@@ -27,7 +27,7 @@ import 'agent_capabilities.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
 final class AgentRuntime
-    implements AgentEngine, AgentSession, AgentCapabilityProvider {
+    implements AgentEngine, PresentationAgentSession, AgentCapabilityProvider {
   /// Creates an agent runtime with injected model, tool, and storage adapters.
   AgentRuntime({
     required this.store,

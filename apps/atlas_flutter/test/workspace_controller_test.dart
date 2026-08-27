@@ -1420,7 +1420,7 @@ final class _EmptySkillCatalog implements SkillCatalog {
 }
 
 /// A runtime that advertises agent modes and records mode switches.
-final class _FakeModeRuntime implements RuntimeService {
+final class _FakeModeRuntime implements PresentationAgentSession {
   _FakeModeRuntime(this._inner);
 
   final AgentRuntime _inner;

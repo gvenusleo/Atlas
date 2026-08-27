@@ -819,7 +819,7 @@ ModelDescriptor _visionModel() => ModelDescriptor(
 );
 
 /// A runtime that advertises agent modes for composer tests.
-final class _FakeModeRuntime implements RuntimeService {
+final class _FakeModeRuntime implements PresentationAgentSession {
   _FakeModeRuntime(this._inner);
 
   final AgentRuntime _inner;

@@ -9,7 +9,7 @@ import 'acp_types.dart';
 import 'client_update_mapper.dart';
 import 'transport.dart';
 
-/// An ACP client that exposes any ACP server as a [RuntimeService].
+/// An ACP client that exposes any ACP server as a [AgentSession].
 ///
 /// Connects over a [Transport] (stdio for local processes, in-memory for the
 /// Flutter app), speaks the ACP JSON-RPC methods through acpd, and
@@ -20,7 +20,10 @@ import 'transport.dart';
 /// through [PermissionPort] so presentation code can ask the user before
 /// replying.
 final class AcpClient
-    implements rt.AgentSession, rt.PermissionPort, rt.AgentCapabilityProvider {
+    implements
+        rt.PresentationAgentSession,
+        rt.PermissionPort,
+        rt.AgentCapabilityProvider {
   /// Creates an ACP client over [transport].
   ///
   /// [catalog] and [defaultModel] seed the model list before the first

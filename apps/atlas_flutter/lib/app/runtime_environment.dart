@@ -23,7 +23,7 @@ final class RuntimeEnvironment {
   });
 
   /// The single runtime used by every Flutter feature.
-  final RuntimeService runtime;
+  final PresentationAgentSession runtime;
 
   /// Models configured for user selection.
   final List<ModelDescriptor> models;
@@ -166,7 +166,7 @@ final class RuntimeEnvironmentController extends Notifier<AcpRuntimeState> {
   /// Replaces the active environment with [environment], used by tests that
   /// cannot spawn a real ACP server process.
   @visibleForTesting
-  void overrideEnvironmentForTest(RuntimeService runtime) {
+  void overrideEnvironmentForTest(PresentationAgentSession runtime) {
     final previous = state.environment;
     state = AcpRuntimeState(
       environment: RuntimeEnvironment(
