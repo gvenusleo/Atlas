@@ -25,7 +25,7 @@ final class AcpServer {
   AcpServer(this.runtime, {this.models = const <rt.ModelDescriptor>[]});
 
   /// The runtime serving ACP sessions.
-  final rt.AgentRuntime runtime;
+  final rt.AgentEngine runtime;
 
   /// The configured model catalog, in display priority order.
   final List<rt.ModelDescriptor> models;
@@ -729,7 +729,7 @@ final class AcpServer {
   /// session context cannot be built.
   List<rt.SkillSummary> _skillsFor(String cwd) {
     try {
-      return runtime.sessionContextBuilder(cwd).skills.summaries;
+      return runtime.sessionContext(cwd).skills.summaries;
     } catch (_) {
       return const [];
     }

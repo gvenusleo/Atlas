@@ -19,10 +19,10 @@ import '../ports/session_store.dart';
 import '../ports/tool_registry.dart';
 import '../skills/skill.dart';
 import '../skills/skill_catalog.dart';
-import 'runtime_service.dart';
+import 'agent_engine.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
-final class AgentRuntime implements RuntimeService {
+final class AgentRuntime implements AgentEngine {
   /// Creates an agent runtime with injected model, tool, and storage adapters.
   AgentRuntime({
     required this.store,
@@ -52,6 +52,10 @@ final class AgentRuntime implements RuntimeService {
   /// Builds the filesystem context (instructions and skills) for a session
   /// working directory; invoked once per directory and cached.
   final SessionContext Function(String workingDirectory) sessionContextBuilder;
+
+  @override
+  SessionContext sessionContext(String workingDirectory) =>
+      sessionContextBuilder(workingDirectory);
 
   /// The ID generator used for new records.
   final IdGenerator ids;

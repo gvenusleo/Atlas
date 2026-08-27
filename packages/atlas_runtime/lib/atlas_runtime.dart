@@ -2,6 +2,7 @@
 library;
 
 export 'src/agent/agent_runtime.dart';
+export 'src/agent/agent_engine.dart';
 export 'src/agent/runtime_service.dart';
 export 'src/domain/content.dart';
 export 'src/domain/events.dart';
