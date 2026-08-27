@@ -170,6 +170,7 @@ Map<String, Object?> _anthropicRequest(
     'messages': _anthropicMessages(request.messages),
     'stream': true,
   };
+  result.addAll(request.providerOptions);
   if (request.systemPrompt.isNotEmpty) {
     result['system'] = request.systemPrompt;
   }

@@ -165,6 +165,7 @@ Map<String, Object?> _chatRequest(ModelRequest request, _ModelEntry entry) {
     'stream': true,
     'stream_options': <String, Object?>{'include_usage': true},
   };
+  result.addAll(request.providerOptions);
   final tools = _tools(request.tools, responses: false);
   if (tools.isNotEmpty) {
     result['tools'] = tools;
@@ -197,6 +198,7 @@ Map<String, Object?> _responsesRequest(
     ),
     'stream': true,
   };
+  result.addAll(request.providerOptions);
   if (request.systemPrompt.isNotEmpty) {
     result['instructions'] = request.systemPrompt;
   }

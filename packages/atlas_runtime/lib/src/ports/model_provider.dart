@@ -15,6 +15,7 @@ final class ModelRequest {
     this.reasoningEffort,
     this.maxOutputTokens = 0,
     this.temperature,
+    this.providerOptions = const <String, Object?>{},
     this.cancellation,
   });
 
@@ -44,6 +45,9 @@ final class ModelRequest {
 
   /// The sampling temperature.
   final double? temperature;
+
+  /// Provider-specific request fields passed through without interpretation.
+  final Map<String, Object?> providerOptions;
 
   /// Cooperative cancellation for the provider stream.
   final CancellationToken? cancellation;
