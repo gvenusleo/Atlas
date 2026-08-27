@@ -45,9 +45,5 @@ Future<void> main(List<String> args) async {
     await stdout.flush();
     exit(0);
   }
-  await runAtlasTui(
-    runtime: runtime,
-    models: composeModels(config),
-    skills: loadSkillCatalog(),
-  );
+  await runAtlasTui(runtime: runtime, models: composeModels(config));
 }

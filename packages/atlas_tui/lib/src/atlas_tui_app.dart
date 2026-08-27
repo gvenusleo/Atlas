@@ -111,6 +111,14 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
   /// the user can actually trigger with `/skillname`.
   List<SlashCommand> get _slashCommands => [
     ...slashCommands,
+    for (final command in _agentCommands)
+      if (validSlashCommandName(command.name) &&
+          !slashCommands.any((item) => item.name == command.name))
+        SlashCommand(
+          name: command.name,
+          description: '[Skill] ${command.description}',
+          isSkill: true,
+        ),
     for (final skill in component.skills?.summaries ?? const <SkillSummary>[])
       if (validSlashCommandName(skill.name) &&
           !slashCommands.any((command) => command.name == skill.name))
@@ -120,6 +128,14 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
           isSkill: true,
         ),
   ];
+
+  List<AgentCommand> get _agentCommands {
+    final runtime = component.runtime;
+    final session = _controller.sessionId;
+    return runtime is PresentationAgentSession && session != null
+        ? runtime.commandsFor(session)
+        : const [];
+  }
 
   /// The model catalog as slash-style commands for the picker popup.
   ///

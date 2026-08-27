@@ -45,6 +45,9 @@ final class ChatController implements Listenable {
   /// The runtime that executes turns.
   final AgentSession runtime;
 
+  /// The currently focused session, when one has been created.
+  SessionId? get sessionId => _sessionId;
+
   String _workingDirectory;
   final List<ChatMessage> _messages = [];
   final List<void Function()> _listeners = [];

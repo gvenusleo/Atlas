@@ -105,6 +105,7 @@ final class AgentRuntime
   final DateTime Function() _now;
   final Map<SessionId, Future<void>> _sessionTails = {};
   final Map<String, SessionContext> _sessionContexts = {};
+  final Map<SessionId, List<AgentCommand>> _sessionCommands = {};
 
   @override
   AgentCapabilities get capabilities =>
@@ -205,6 +206,10 @@ final class AgentRuntime
       updatedAt: now,
     );
     await store.createSession(session);
+    _sessionCommands[session.id] = [
+      for (final skill in sessionContext(workingDirectory).skills.summaries)
+        AgentCommand(name: skill.name, description: skill.description),
+    ];
     return session;
   }
 
@@ -264,7 +269,8 @@ final class AgentRuntime
 
   /// Local slash commands come from the skill catalog, not the runtime.
   @override
-  List<AgentCommand> commandsFor(SessionId sessionId) => const [];
+  List<AgentCommand> commandsFor(SessionId sessionId) =>
+      _sessionCommands[sessionId] ?? const [];
 
   /// Local sessions have no agent-defined operating modes.
   @override
