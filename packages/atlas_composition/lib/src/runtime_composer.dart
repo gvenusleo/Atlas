@@ -7,6 +7,8 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 
+import 'logging.dart';
+
 /// Composes the configured runtime for one process.
 AgentRuntime composeRuntime(
   AtlasConfig config, {
