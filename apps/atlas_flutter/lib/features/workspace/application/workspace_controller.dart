@@ -145,8 +145,16 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     );
   }
 
+  Future<void>? _refreshInFlight;
+
   /// Loads every persisted session across all directories, newest first.
-  Future<void> refreshSessions({bool showLoading = true}) async {
+  Future<void> refreshSessions({bool showLoading = true}) {
+    return _refreshInFlight ??= _refreshSessions(
+      showLoading: showLoading,
+    ).whenComplete(() => _refreshInFlight = null);
+  }
+
+  Future<void> _refreshSessions({required bool showLoading}) async {
     if (showLoading) {
       state = state.copyWith(loadingSessions: true);
     }

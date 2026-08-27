@@ -30,6 +30,9 @@ final class AtlasDatabase extends _$AtlasDatabase {
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
+      // WAL permits concurrent readers while SQLite serializes writers.
+      await customStatement('PRAGMA journal_mode = WAL');
+      await customStatement('PRAGMA busy_timeout = 5000');
     },
   );
 }
