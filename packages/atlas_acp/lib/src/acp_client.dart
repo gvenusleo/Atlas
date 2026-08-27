@@ -128,6 +128,7 @@ final class AcpClient
     final response = await _client.initialize(
       const InitializeRequest(
         protocolVersion: ProtocolVersion.v1,
+        clientCapabilities: ClientCapabilities(),
         clientInfo: Implementation(
           name: acpClientName,
           version: acpAgentVersion,

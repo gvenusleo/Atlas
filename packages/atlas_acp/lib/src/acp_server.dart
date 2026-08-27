@@ -54,6 +54,7 @@ final class AcpServer {
   AgentContext? _context;
   bool _debug = false;
   String? _clientName;
+  ClientCapabilities? _clientCapabilities;
   InFlightTransport? _gate;
 
   /// Serves ACP over [input] and [output], completing when the connection
@@ -237,6 +238,7 @@ final class AcpServer {
 
   Future<InitializeResponse> _initialize(InitializeRequest params) async {
     _clientName = params.clientInfo?.name;
+    _clientCapabilities = params.clientCapabilities;
     if (_debug && _clientName != null) {
       stderr.writeln('atlas_acp: client=$_clientName');
     }
