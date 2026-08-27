@@ -19,6 +19,7 @@ export 'src/domain/usage.dart';
 export 'src/ports/id_generator.dart';
 export 'src/ports/cancellation.dart';
 export 'src/ports/failures.dart';
+export 'src/ports/logger.dart';
 export 'src/ports/model_provider.dart';
 export 'src/ports/permission_port.dart';
 export 'src/ports/session_store.dart';
