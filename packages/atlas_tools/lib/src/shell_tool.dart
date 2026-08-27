@@ -75,6 +75,13 @@ final class ShellTool implements Tool {
     final workingDirectory = cwd == null || cwd.isEmpty
         ? context.workingDirectory
         : Directory(cwd).absolute.path;
+    if (!_allowedDirectory(context, workingDirectory)) {
+      return ToolResult(
+        content:
+            'cwd must be the session working directory or an authorized additional directory',
+        isError: true,
+      );
+    }
     final timeout = Duration(
       seconds: timeoutSeconds ?? defaultShellTimeoutSeconds,
     );
@@ -240,5 +247,18 @@ final class ShellTool implements Tool {
     final head = output.substring(0, shellOutputEdge);
     final tail = output.substring(output.length - shellOutputEdge);
     return (text: '$head\n... [output truncated] ...\n$tail', truncated: true);
+  }
+
+  /// Checks that an explicit shell directory is one of the session roots.
+  static bool _allowedDirectory(ToolContext context, String path) {
+    final target = Directory(path).absolute.path;
+    final roots = [
+      context.workingDirectory,
+      ...context.additionalDirectories,
+    ].map((root) => Directory(root).absolute.path);
+    return roots.any(
+      (root) =>
+          target == root || target.startsWith('$root${Platform.pathSeparator}'),
+    );
   }
 }
