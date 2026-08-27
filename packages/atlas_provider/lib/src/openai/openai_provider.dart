@@ -170,9 +170,9 @@ Map<String, Object?> _chatRequest(ModelRequest request, _ModelEntry entry) {
     result['tools'] = tools;
   }
   if (request.maxOutputTokens > 0) {
-    result['max_tokens'] = request.maxOutputTokens;
+    result['max_completion_tokens'] = request.maxOutputTokens;
   }
-  if (request.temperature != null) {
+  if (request.temperature != null && request.reasoningEffort == null) {
     result['temperature'] = request.temperature;
   }
   if (request.reasoningEffort != null) {
@@ -207,7 +207,9 @@ Map<String, Object?> _responsesRequest(
   if (request.maxOutputTokens > 0) {
     result['max_output_tokens'] = request.maxOutputTokens;
   }
-  if (request.temperature != null) result['temperature'] = request.temperature;
+  if (request.temperature != null && request.reasoningEffort == null) {
+    result['temperature'] = request.temperature;
+  }
   if (request.reasoningEffort != null) {
     result['reasoning'] = <String, Object?>{'effort': request.reasoningEffort};
   }
