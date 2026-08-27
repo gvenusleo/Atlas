@@ -20,6 +20,9 @@ const acpConfigIdMode = 'mode';
 /// overlay instead.
 const acpSessionSetTitleMethod = '_atlas.dev/session/set_title';
 
+/// Atlas extension method for structured context compaction.
+const acpSessionCompactMethod = '_atlas.dev/session/compact';
+
 /// The agent version reported during initialization.
 const acpAgentVersion = '0.1.0';
 

@@ -53,6 +53,7 @@ final class AcpServer {
 
   AgentContext? _context;
   bool _debug = false;
+  String? _clientName;
   InFlightTransport? _gate;
 
   /// Serves ACP over [input] and [output], completing when the connection
@@ -119,6 +120,37 @@ final class AcpServer {
         } catch (error) {
           throw _internalError(error);
         }
+      })
+      ..handle(acpSessionCompactMethod, (params, context) async {
+        final sessionId = params['sessionId'];
+        if (sessionId is! String || sessionId.isEmpty) {
+          throw RpcError(code: -32602, message: 'sessionId is required');
+        }
+        final instruction = params['instruction'] as String?;
+        var kept = 0;
+        var before = 0;
+        var after = 0;
+        var summaryPresent = false;
+        await for (final event in runtime.compact(
+          rt.SessionId(sessionId),
+          instruction: instruction,
+        )) {
+          switch (event) {
+            case rt.CompactionFinished(:final checkpoint):
+              kept = checkpoint.keptRecentMessages;
+              before = checkpoint.inputTokensBefore;
+              after = checkpoint.inputTokensAfter;
+              summaryPresent = checkpoint.summary.isNotEmpty;
+            default:
+              break;
+          }
+        }
+        return <String, Object?>{
+          'keptMessages': kept,
+          'tokensBefore': before,
+          'tokensAfter': after,
+          'summaryPresent': summaryPresent,
+        };
       });
     final connection = role.connect(gate);
     _context = connection.agent;
@@ -203,9 +235,13 @@ final class AcpServer {
     );
   }
 
-  static Future<InitializeResponse> _initialize(
-    InitializeRequest params,
-  ) async => initializeResult();
+  Future<InitializeResponse> _initialize(InitializeRequest params) async {
+    _clientName = params.clientInfo?.name;
+    if (_debug && _clientName != null) {
+      stderr.writeln('atlas_acp: client=$_clientName');
+    }
+    return initializeResult();
+  }
 
   Future<NewSessionResponse> _newSession(NewSessionRequest params) async {
     _rejectMcpServers(params.mcpServers);
