@@ -432,6 +432,39 @@ final class AcpClient
   }) async* {
     final turnId = rt.TurnId('turn-${_turnCounter++}');
     final mapper = ClientUpdateMapper(sessionId, turnId);
+    try {
+      final result = await _connection!.connection
+          .sendRequest<AtlasCompactResult>(
+            atlasSessionCompactMethod,
+            params: {
+              'sessionId': sessionId.value,
+              if (instruction != null && instruction.isNotEmpty)
+                'instruction': instruction,
+            },
+            mapResult: (value) => AtlasCompactResult.fromJson(
+              Map<String, Object?>.from(value as Map),
+            ),
+          );
+      _sessionUsage[sessionId.value] = result.tokensAfter;
+      yield rt.CompactionFinished(
+        sessionId: sessionId,
+        turnId: turnId,
+        sequence: mapper.nextSequence(),
+        occurredAt: DateTime.now().toUtc(),
+        checkpoint: rt.CompactionCheckpoint(
+          sessionId: sessionId,
+          compactedThroughSequence: 0,
+          summary: result.summaryPresent ? '[compacted]' : '',
+          keptRecentMessages: result.keptMessages,
+          inputTokensBefore: result.tokensBefore,
+          inputTokensAfter: result.tokensAfter,
+          createdAt: DateTime.now().toUtc(),
+        ),
+      );
+      return;
+    } on RpcError catch (error) {
+      if (error.code != -32601) rethrow;
+    }
     final controller = StreamController<rt.AgentEvent>();
     // The server reports the compact outcome as a message chunk followed by
     // a usage update; hold the message until the usage arrives so the
