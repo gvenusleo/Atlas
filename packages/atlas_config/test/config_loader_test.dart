@@ -93,6 +93,7 @@ session:
     expect(config.agent.temperature, 0.7);
     expect(config.agent.compaction.threshold, 0.9);
     expect(config.session.dbPath, '/home/test/.atlas/atlas.db');
+    expect(config.logging.level, 'info');
   });
 
   test('applies defaults for omitted fields', () {
@@ -124,6 +125,30 @@ providers:
     expect(config.agent.compaction.threshold, 0.8);
     expect(config.agent.temperature, isNull);
     expect(config.session.dbPath, '~/.atlas/atlas.db');
+    expect(config.logging.directory, isNull);
+  });
+
+  test('parses logging settings and environment level', () {
+    final config = parseConfig(
+      '''
+default_model: oa/gpt-4o
+providers:
+  - name: oa
+    type: responses
+    base_url: https://example.com
+    api_key: key
+    models:
+      - value: gpt-4o
+logging:
+  directory: ~/.atlas/logs
+  retain_days: 3
+''',
+      homeDirectory: home,
+      environment: const {'ATLAS_LOG_LEVEL': 'debug'},
+    );
+    expect(config.logging.level, 'debug');
+    expect(config.logging.directory, '/home/test/.atlas/logs');
+    expect(config.logging.retainDays, 3);
   });
 
   test('rejects zero max_steps', () {

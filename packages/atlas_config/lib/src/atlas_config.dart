@@ -9,6 +9,7 @@ final class AtlasConfig {
     required this.providers,
     required this.agent,
     required this.session,
+    this.logging = const LoggingConfig(),
   });
 
   /// The model used when a turn does not provide an override.
@@ -22,6 +23,28 @@ final class AtlasConfig {
 
   /// Local session storage settings.
   final SessionConfig session;
+
+  /// Structured file logging settings.
+  final LoggingConfig logging;
+}
+
+/// Local structured logging settings.
+final class LoggingConfig {
+  /// Creates logging settings.
+  const LoggingConfig({
+    this.level = 'info',
+    this.directory,
+    this.retainDays = 7,
+  });
+
+  /// Minimum level written by file sinks (`debug`, `info`, `warn`, or `error`).
+  final String level;
+
+  /// Optional log directory. A null value leaves logging disabled by default.
+  final String? directory;
+
+  /// Number of daily log files to retain.
+  final int retainDays;
 }
 
 /// A configured model provider in its original file order.

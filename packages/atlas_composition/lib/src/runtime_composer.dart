@@ -47,7 +47,17 @@ AgentRuntime composeRuntime(
     sessionContextBuilder: sessionContextBuilder ?? buildSessionContext,
     maxSteps: config.agent.maxSteps,
     maxOutputTokens: config.agent.maxOutputTokens,
-    logger: logger ?? const NoopLogger(),
+    logger:
+        logger ??
+        (config.logging.directory == null
+            ? const NoopLogger()
+            : FileLogSink(
+                Directory(config.logging.directory!),
+                minimumLevel: LogLevel.values.firstWhere(
+                  (level) => level.name == config.logging.level,
+                ),
+                retainDays: config.logging.retainDays,
+              )),
     temperature: config.agent.temperature,
     compactionThreshold: config.agent.compaction.threshold,
     systemPromptBuilder: (context) => buildSystemPrompt(

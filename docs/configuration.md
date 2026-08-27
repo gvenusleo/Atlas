@@ -51,6 +51,11 @@ agent:
 
 session:
   db_path: ~/.atlas/atlas.db         # optional, ~ expands to home
+
+logging:
+  level: info                         # debug | info | warn | error
+  directory: ~/.atlas/logs            # optional; omitted disables file logs
+  retain_days: 7                      # optional, daily files to retain
 ```
 
 ## Rules
@@ -77,3 +82,6 @@ session:
   context window fraction that triggers automatic compaction after a turn.
 - Validation failures raise `ConfigLoadException` with a field path such as
   `providers[0].base_url`.
+- `logging.directory` enables redacted JSON-lines file logging. `ATLAS_LOG_LEVEL`
+  supplies the level when `logging.level` is omitted; explicit configuration
+  takes precedence.

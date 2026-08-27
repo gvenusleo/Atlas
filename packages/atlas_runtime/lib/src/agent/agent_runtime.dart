@@ -837,13 +837,24 @@ final class AgentRuntime
             ..write(_escapeXml(jsonEncode(call.arguments)))
             ..writeln('"/>');
         case ToolResultItem(:final content, :final isError):
+          final rendered = _truncateToolResult(content);
           buffer
             ..writeln('<tool_result error="$isError">')
-            ..writeln(_escapeXml(content))
+            ..writeln(_escapeXml(rendered))
             ..writeln('</tool_result>');
       }
     }
     return buffer.toString().trimRight();
+  }
+
+  /// Bounds tool output included in model-facing transcripts to avoid one
+  /// command consuming the complete compaction request budget.
+  static String _truncateToolResult(String content) {
+    const limit = 4096;
+    if (content.length <= limit) return content;
+    final head = limit ~/ 2;
+    final tail = limit - head;
+    return '${content.substring(0, head)}\n...[tool result truncated; original length ${content.length}]...\n${content.substring(content.length - tail)}';
   }
 
   /// Returns the newest [keptRecentTurns] whole turns from [timeline].

@@ -50,6 +50,11 @@ agent:
 
 session:
   db_path: ~/.atlas/atlas.db         # 可选，~ 展开为用户主目录
+
+logging:
+  level: info                         # debug | info | warn | error
+  directory: ~/.atlas/logs            # 可选；省略则关闭文件日志
+  retain_days: 7                      # 可选，保留的每日文件数
 ```
 
 ## 规则
@@ -73,3 +78,5 @@ session:
   自动压缩的上下文窗口比例。
 - 校验失败抛出 `ConfigLoadException`，消息包含字段路径，例如
   `providers[0].base_url`。
+- 配置 `logging.directory` 后会启用脱敏 JSON Lines 文件日志。未配置
+  `logging.level` 时可使用 `ATLAS_LOG_LEVEL`；显式配置优先。

@@ -39,6 +39,32 @@ AtlasConfig parseConfig(
     providers: providers,
     agent: _agent(root),
     session: _session(root, home),
+    logging: _logging(root, home, env),
+  );
+}
+
+LoggingConfig _logging(
+  Map<String, Object?> root,
+  String? home,
+  Map<String, String> environment,
+) {
+  final map = _asMap(root['logging'] ?? const <String, Object?>{}, 'logging');
+  final rawLevel =
+      (_stringOrNull(map['level'], 'logging.level') ??
+              environment['ATLAS_LOG_LEVEL'] ??
+              'info')
+          .toLowerCase();
+  if (!{'debug', 'info', 'warn', 'error'}.contains(rawLevel)) {
+    throw ConfigLoadException(
+      'logging.level must be debug, info, warn, or error',
+    );
+  }
+  final rawDirectory = _stringOrNull(map['directory'], 'logging.directory');
+  final retainDays = _positiveInt(map['retain_days'], 'logging.retain_days', 7);
+  return LoggingConfig(
+    level: rawLevel,
+    directory: rawDirectory == null ? null : _expandHome(rawDirectory, home),
+    retainDays: retainDays,
   );
 }
 
