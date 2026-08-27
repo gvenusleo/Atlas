@@ -1225,12 +1225,34 @@ class $TurnsTable extends Turns with TableInfo<$TurnsTable, TurnRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _failureKindMeta = const VerificationMeta(
+    'failureKind',
+  );
+  @override
+  late final GeneratedColumn<String> failureKind = GeneratedColumn<String>(
+    'failure_kind',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _failureMessageMeta = const VerificationMeta(
     'failureMessage',
   );
   @override
   late final GeneratedColumn<String> failureMessage = GeneratedColumn<String>(
     'failure_message',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _providerDetailMeta = const VerificationMeta(
+    'providerDetail',
+  );
+  @override
+  late final GeneratedColumn<String> providerDetail = GeneratedColumn<String>(
+    'provider_detail',
     aliasedName,
     true,
     type: DriftSqlType.string,
@@ -1263,7 +1285,9 @@ class $TurnsTable extends Turns with TableInfo<$TurnsTable, TurnRow> {
     cacheReadTokens,
     cacheWriteTokens,
     failureCode,
+    failureKind,
     failureMessage,
+    providerDetail,
     cancelReason,
   ];
   @override
@@ -1391,12 +1415,30 @@ class $TurnsTable extends Turns with TableInfo<$TurnsTable, TurnRow> {
         ),
       );
     }
+    if (data.containsKey('failure_kind')) {
+      context.handle(
+        _failureKindMeta,
+        failureKind.isAcceptableOrUnknown(
+          data['failure_kind']!,
+          _failureKindMeta,
+        ),
+      );
+    }
     if (data.containsKey('failure_message')) {
       context.handle(
         _failureMessageMeta,
         failureMessage.isAcceptableOrUnknown(
           data['failure_message']!,
           _failureMessageMeta,
+        ),
+      );
+    }
+    if (data.containsKey('provider_detail')) {
+      context.handle(
+        _providerDetailMeta,
+        providerDetail.isAcceptableOrUnknown(
+          data['provider_detail']!,
+          _providerDetailMeta,
         ),
       );
     }
@@ -1474,9 +1516,17 @@ class $TurnsTable extends Turns with TableInfo<$TurnsTable, TurnRow> {
         DriftSqlType.string,
         data['${effectivePrefix}failure_code'],
       ),
+      failureKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_kind'],
+      ),
       failureMessage: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}failure_message'],
+      ),
+      providerDetail: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_detail'],
       ),
       cancelReason: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -1534,8 +1584,14 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
   /// Stable runtime failure code.
   final String? failureCode;
 
+  /// Stable failure category.
+  final String? failureKind;
+
   /// User-visible failure message.
   final String? failureMessage;
+
+  /// Bounded provider diagnostic detail.
+  final String? providerDetail;
 
   /// Cancellation reason.
   final String? cancelReason;
@@ -1554,7 +1610,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
     required this.cacheReadTokens,
     required this.cacheWriteTokens,
     this.failureCode,
+    this.failureKind,
     this.failureMessage,
+    this.providerDetail,
     this.cancelReason,
   });
   @override
@@ -1584,8 +1642,14 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
     if (!nullToAbsent || failureCode != null) {
       map['failure_code'] = Variable<String>(failureCode);
     }
+    if (!nullToAbsent || failureKind != null) {
+      map['failure_kind'] = Variable<String>(failureKind);
+    }
     if (!nullToAbsent || failureMessage != null) {
       map['failure_message'] = Variable<String>(failureMessage);
+    }
+    if (!nullToAbsent || providerDetail != null) {
+      map['provider_detail'] = Variable<String>(providerDetail);
     }
     if (!nullToAbsent || cancelReason != null) {
       map['cancel_reason'] = Variable<String>(cancelReason);
@@ -1619,9 +1683,15 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
       failureCode: failureCode == null && nullToAbsent
           ? const Value.absent()
           : Value(failureCode),
+      failureKind: failureKind == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureKind),
       failureMessage: failureMessage == null && nullToAbsent
           ? const Value.absent()
           : Value(failureMessage),
+      providerDetail: providerDetail == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerDetail),
       cancelReason: cancelReason == null && nullToAbsent
           ? const Value.absent()
           : Value(cancelReason),
@@ -1648,7 +1718,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
       cacheReadTokens: serializer.fromJson<int>(json['cacheReadTokens']),
       cacheWriteTokens: serializer.fromJson<int>(json['cacheWriteTokens']),
       failureCode: serializer.fromJson<String?>(json['failureCode']),
+      failureKind: serializer.fromJson<String?>(json['failureKind']),
       failureMessage: serializer.fromJson<String?>(json['failureMessage']),
+      providerDetail: serializer.fromJson<String?>(json['providerDetail']),
       cancelReason: serializer.fromJson<String?>(json['cancelReason']),
     );
   }
@@ -1670,7 +1742,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
       'cacheReadTokens': serializer.toJson<int>(cacheReadTokens),
       'cacheWriteTokens': serializer.toJson<int>(cacheWriteTokens),
       'failureCode': serializer.toJson<String?>(failureCode),
+      'failureKind': serializer.toJson<String?>(failureKind),
       'failureMessage': serializer.toJson<String?>(failureMessage),
+      'providerDetail': serializer.toJson<String?>(providerDetail),
       'cancelReason': serializer.toJson<String?>(cancelReason),
     };
   }
@@ -1690,7 +1764,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
     int? cacheReadTokens,
     int? cacheWriteTokens,
     Value<String?> failureCode = const Value.absent(),
+    Value<String?> failureKind = const Value.absent(),
     Value<String?> failureMessage = const Value.absent(),
+    Value<String?> providerDetail = const Value.absent(),
     Value<String?> cancelReason = const Value.absent(),
   }) => TurnRow(
     id: id ?? this.id,
@@ -1709,9 +1785,13 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
     cacheReadTokens: cacheReadTokens ?? this.cacheReadTokens,
     cacheWriteTokens: cacheWriteTokens ?? this.cacheWriteTokens,
     failureCode: failureCode.present ? failureCode.value : this.failureCode,
+    failureKind: failureKind.present ? failureKind.value : this.failureKind,
     failureMessage: failureMessage.present
         ? failureMessage.value
         : this.failureMessage,
+    providerDetail: providerDetail.present
+        ? providerDetail.value
+        : this.providerDetail,
     cancelReason: cancelReason.present ? cancelReason.value : this.cancelReason,
   );
   TurnRow copyWithCompanion(TurnsCompanion data) {
@@ -1748,9 +1828,15 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
       failureCode: data.failureCode.present
           ? data.failureCode.value
           : this.failureCode,
+      failureKind: data.failureKind.present
+          ? data.failureKind.value
+          : this.failureKind,
       failureMessage: data.failureMessage.present
           ? data.failureMessage.value
           : this.failureMessage,
+      providerDetail: data.providerDetail.present
+          ? data.providerDetail.value
+          : this.providerDetail,
       cancelReason: data.cancelReason.present
           ? data.cancelReason.value
           : this.cancelReason,
@@ -1774,7 +1860,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
           ..write('cacheReadTokens: $cacheReadTokens, ')
           ..write('cacheWriteTokens: $cacheWriteTokens, ')
           ..write('failureCode: $failureCode, ')
+          ..write('failureKind: $failureKind, ')
           ..write('failureMessage: $failureMessage, ')
+          ..write('providerDetail: $providerDetail, ')
           ..write('cancelReason: $cancelReason')
           ..write(')'))
         .toString();
@@ -1796,7 +1884,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
     cacheReadTokens,
     cacheWriteTokens,
     failureCode,
+    failureKind,
     failureMessage,
+    providerDetail,
     cancelReason,
   );
   @override
@@ -1817,7 +1907,9 @@ class TurnRow extends DataClass implements Insertable<TurnRow> {
           other.cacheReadTokens == this.cacheReadTokens &&
           other.cacheWriteTokens == this.cacheWriteTokens &&
           other.failureCode == this.failureCode &&
+          other.failureKind == this.failureKind &&
           other.failureMessage == this.failureMessage &&
+          other.providerDetail == this.providerDetail &&
           other.cancelReason == this.cancelReason);
 }
 
@@ -1836,7 +1928,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
   final Value<int> cacheReadTokens;
   final Value<int> cacheWriteTokens;
   final Value<String?> failureCode;
+  final Value<String?> failureKind;
   final Value<String?> failureMessage;
+  final Value<String?> providerDetail;
   final Value<String?> cancelReason;
   final Value<int> rowid;
   const TurnsCompanion({
@@ -1854,7 +1948,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
     this.cacheReadTokens = const Value.absent(),
     this.cacheWriteTokens = const Value.absent(),
     this.failureCode = const Value.absent(),
+    this.failureKind = const Value.absent(),
     this.failureMessage = const Value.absent(),
+    this.providerDetail = const Value.absent(),
     this.cancelReason = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1873,7 +1969,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
     this.cacheReadTokens = const Value.absent(),
     this.cacheWriteTokens = const Value.absent(),
     this.failureCode = const Value.absent(),
+    this.failureKind = const Value.absent(),
     this.failureMessage = const Value.absent(),
+    this.providerDetail = const Value.absent(),
     this.cancelReason = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -1895,7 +1993,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
     Expression<int>? cacheReadTokens,
     Expression<int>? cacheWriteTokens,
     Expression<String>? failureCode,
+    Expression<String>? failureKind,
     Expression<String>? failureMessage,
+    Expression<String>? providerDetail,
     Expression<String>? cancelReason,
     Expression<int>? rowid,
   }) {
@@ -1914,7 +2014,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
       if (cacheReadTokens != null) 'cache_read_tokens': cacheReadTokens,
       if (cacheWriteTokens != null) 'cache_write_tokens': cacheWriteTokens,
       if (failureCode != null) 'failure_code': failureCode,
+      if (failureKind != null) 'failure_kind': failureKind,
       if (failureMessage != null) 'failure_message': failureMessage,
+      if (providerDetail != null) 'provider_detail': providerDetail,
       if (cancelReason != null) 'cancel_reason': cancelReason,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1935,7 +2037,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
     Value<int>? cacheReadTokens,
     Value<int>? cacheWriteTokens,
     Value<String?>? failureCode,
+    Value<String?>? failureKind,
     Value<String?>? failureMessage,
+    Value<String?>? providerDetail,
     Value<String?>? cancelReason,
     Value<int>? rowid,
   }) {
@@ -1954,7 +2058,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
       cacheReadTokens: cacheReadTokens ?? this.cacheReadTokens,
       cacheWriteTokens: cacheWriteTokens ?? this.cacheWriteTokens,
       failureCode: failureCode ?? this.failureCode,
+      failureKind: failureKind ?? this.failureKind,
       failureMessage: failureMessage ?? this.failureMessage,
+      providerDetail: providerDetail ?? this.providerDetail,
       cancelReason: cancelReason ?? this.cancelReason,
       rowid: rowid ?? this.rowid,
     );
@@ -2005,8 +2111,14 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
     if (failureCode.present) {
       map['failure_code'] = Variable<String>(failureCode.value);
     }
+    if (failureKind.present) {
+      map['failure_kind'] = Variable<String>(failureKind.value);
+    }
     if (failureMessage.present) {
       map['failure_message'] = Variable<String>(failureMessage.value);
+    }
+    if (providerDetail.present) {
+      map['provider_detail'] = Variable<String>(providerDetail.value);
     }
     if (cancelReason.present) {
       map['cancel_reason'] = Variable<String>(cancelReason.value);
@@ -2034,7 +2146,9 @@ class TurnsCompanion extends UpdateCompanion<TurnRow> {
           ..write('cacheReadTokens: $cacheReadTokens, ')
           ..write('cacheWriteTokens: $cacheWriteTokens, ')
           ..write('failureCode: $failureCode, ')
+          ..write('failureKind: $failureKind, ')
           ..write('failureMessage: $failureMessage, ')
+          ..write('providerDetail: $providerDetail, ')
           ..write('cancelReason: $cancelReason, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -3286,7 +3400,9 @@ typedef $$TurnsTableCreateCompanionBuilder =
       Value<int> cacheReadTokens,
       Value<int> cacheWriteTokens,
       Value<String?> failureCode,
+      Value<String?> failureKind,
       Value<String?> failureMessage,
+      Value<String?> providerDetail,
       Value<String?> cancelReason,
       Value<int> rowid,
     });
@@ -3306,7 +3422,9 @@ typedef $$TurnsTableUpdateCompanionBuilder =
       Value<int> cacheReadTokens,
       Value<int> cacheWriteTokens,
       Value<String?> failureCode,
+      Value<String?> failureKind,
       Value<String?> failureMessage,
+      Value<String?> providerDetail,
       Value<String?> cancelReason,
       Value<int> rowid,
     });
@@ -3425,8 +3543,18 @@ class $$TurnsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get failureKind => $composableBuilder(
+    column: $table.failureKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get failureMessage => $composableBuilder(
     column: $table.failureMessage,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerDetail => $composableBuilder(
+    column: $table.providerDetail,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3558,8 +3686,18 @@ class $$TurnsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get failureKind => $composableBuilder(
+    column: $table.failureKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get failureMessage => $composableBuilder(
     column: $table.failureMessage,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get providerDetail => $composableBuilder(
+    column: $table.providerDetail,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3658,8 +3796,18 @@ class $$TurnsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get failureKind => $composableBuilder(
+    column: $table.failureKind,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get failureMessage => $composableBuilder(
     column: $table.failureMessage,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get providerDetail => $composableBuilder(
+    column: $table.providerDetail,
     builder: (column) => column,
   );
 
@@ -3759,7 +3907,9 @@ class $$TurnsTableTableManager
                 Value<int> cacheReadTokens = const Value.absent(),
                 Value<int> cacheWriteTokens = const Value.absent(),
                 Value<String?> failureCode = const Value.absent(),
+                Value<String?> failureKind = const Value.absent(),
                 Value<String?> failureMessage = const Value.absent(),
+                Value<String?> providerDetail = const Value.absent(),
                 Value<String?> cancelReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TurnsCompanion(
@@ -3777,7 +3927,9 @@ class $$TurnsTableTableManager
                 cacheReadTokens: cacheReadTokens,
                 cacheWriteTokens: cacheWriteTokens,
                 failureCode: failureCode,
+                failureKind: failureKind,
                 failureMessage: failureMessage,
+                providerDetail: providerDetail,
                 cancelReason: cancelReason,
                 rowid: rowid,
               ),
@@ -3797,7 +3949,9 @@ class $$TurnsTableTableManager
                 Value<int> cacheReadTokens = const Value.absent(),
                 Value<int> cacheWriteTokens = const Value.absent(),
                 Value<String?> failureCode = const Value.absent(),
+                Value<String?> failureKind = const Value.absent(),
                 Value<String?> failureMessage = const Value.absent(),
+                Value<String?> providerDetail = const Value.absent(),
                 Value<String?> cancelReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TurnsCompanion.insert(
@@ -3815,7 +3969,9 @@ class $$TurnsTableTableManager
                 cacheReadTokens: cacheReadTokens,
                 cacheWriteTokens: cacheWriteTokens,
                 failureCode: failureCode,
+                failureKind: failureKind,
                 failureMessage: failureMessage,
+                providerDetail: providerDetail,
                 cancelReason: cancelReason,
                 rowid: rowid,
               ),

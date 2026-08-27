@@ -17,6 +17,7 @@ import '../ports/id_generator.dart';
 import '../ports/model_provider.dart';
 import '../ports/session_store.dart';
 import '../ports/tool_registry.dart';
+import '../ports/logger.dart';
 import '../skills/skill.dart';
 import '../skills/skill_catalog.dart';
 import 'agent_engine.dart';
@@ -34,6 +35,7 @@ final class AgentRuntime
     required this.ids,
     required this.defaultModel,
     this.sessionContextBuilder = _emptySessionContext,
+    this.logger = const NoopLogger(),
     DateTime Function()? now,
     this.systemPromptBuilder = _emptySystemPrompt,
     this.maxSteps = 20,
@@ -55,6 +57,9 @@ final class AgentRuntime
   /// Builds the filesystem context (instructions and skills) for a session
   /// working directory; invoked once per directory and cached.
   final SessionContext Function(String workingDirectory) sessionContextBuilder;
+
+  /// Structured diagnostic logger.
+  final AtlasLogger logger;
 
   @override
   SessionContext sessionContext(String workingDirectory) =>
@@ -505,6 +510,16 @@ final class AgentRuntime
         content: finalContent,
         usage: latestUsage,
         failure: TurnFailure(code: 'cancelled', message: error.toString()),
+      );
+      logger.log(
+        LogEvent(
+          level: LogLevel.error,
+          code: 'turn.failed',
+          message: outcome.failure?.message ?? 'turn failed',
+          sessionId: session.id,
+          turnId: turnId,
+          occurredAt: _now().toUtc(),
+        ),
       );
       await _finishTurnToleratingDeletion(
         session.id,

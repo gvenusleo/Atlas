@@ -15,6 +15,7 @@ AgentRuntime composeRuntime(
   ModelProvider? provider,
   SessionContext Function(String workingDirectory)? sessionContextBuilder,
   String? dbPath,
+  AtlasLogger? logger,
 }) {
   final resolvedTools =
       tools ??
@@ -46,6 +47,7 @@ AgentRuntime composeRuntime(
     sessionContextBuilder: sessionContextBuilder ?? buildSessionContext,
     maxSteps: config.agent.maxSteps,
     maxOutputTokens: config.agent.maxOutputTokens,
+    logger: logger ?? const NoopLogger(),
     temperature: config.agent.temperature,
     compactionThreshold: config.agent.compaction.threshold,
     systemPromptBuilder: (context) => buildSystemPrompt(

@@ -111,8 +111,14 @@ class Turns extends Table {
   /// Stable runtime failure code.
   TextColumn get failureCode => text().nullable()();
 
+  /// Stable failure category.
+  TextColumn get failureKind => text().nullable()();
+
   /// User-visible failure message.
   TextColumn get failureMessage => text().nullable()();
+
+  /// Bounded provider diagnostic detail.
+  TextColumn get providerDetail => text().nullable()();
 
   /// Cancellation reason.
   TextColumn get cancelReason => text().nullable()();

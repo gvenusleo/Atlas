@@ -79,6 +79,8 @@ final class RowMappers {
         : runtime.TurnFailure(
             code: row.failureCode!,
             message: row.failureMessage!,
+            kind: row.failureKind ?? 'internal',
+            providerDetail: row.providerDetail,
           ),
     cancelReason: row.cancelReason,
   );
@@ -99,7 +101,9 @@ final class RowMappers {
     cacheReadTokens: Value(value.usage.cacheReadInputTokens),
     cacheWriteTokens: Value(value.usage.cacheWriteInputTokens),
     failureCode: Value(value.failure?.code),
+    failureKind: Value(value.failure?.kind),
     failureMessage: Value(value.failure?.message),
+    providerDetail: Value(value.failure?.providerDetail),
     cancelReason: Value(value.cancelReason),
   );
 

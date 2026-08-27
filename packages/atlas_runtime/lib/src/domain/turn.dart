@@ -22,13 +22,24 @@ enum TurnStatus {
 /// A structured failure recorded for a turn.
 final class TurnFailure {
   /// Creates a turn failure.
-  const TurnFailure({required this.code, required this.message});
+  const TurnFailure({
+    required this.code,
+    required this.message,
+    this.kind = 'internal',
+    this.providerDetail,
+  });
 
   /// A stable runtime error code.
   final String code;
 
   /// A user-visible error message.
   final String message;
+
+  /// Stable failure category used for retry and diagnostics.
+  final String kind;
+
+  /// Bounded provider diagnostic detail, when available.
+  final String? providerDetail;
 }
 
 /// The request that starts one user turn.
