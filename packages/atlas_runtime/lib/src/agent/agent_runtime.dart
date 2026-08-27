@@ -265,7 +265,9 @@ final class AgentRuntime
     final now = _now().toUtc();
     final model = request.model ?? defaultModel;
     final loaded = await _loadOrCreateSession(request, now);
-    final session = loaded.session;
+    final session = loaded.session.title.isEmpty
+        ? _withGeneratedTitle(loaded.session, request.content)
+        : loaded.session;
     final turnId = ids.turnId();
     final turn = Turn(
       id: turnId,
@@ -629,6 +631,24 @@ final class AgentRuntime
       session: session,
       timeline: const <TimelineItem>[],
       modelCheckpoints: const <ModelCheckpoint>[],
+    );
+  }
+
+  /// Derives the initial display title from the first user message.
+  Session _withGeneratedTitle(Session session, List<ContentPart> content) {
+    final text = textFromContent(content).trim();
+    if (text.isEmpty) return session;
+    final firstLine = text.split('\n').first.trim();
+    final title = String.fromCharCodes(firstLine.runes.take(80));
+    return Session(
+      id: session.id,
+      title: title,
+      workingDirectory: session.workingDirectory,
+      additionalDirectories: session.additionalDirectories,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      compaction: session.compaction,
+      lastUsage: session.lastUsage,
     );
   }
 

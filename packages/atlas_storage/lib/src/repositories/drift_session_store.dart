@@ -115,14 +115,11 @@ final class DriftSessionStore implements runtime.SessionStore {
           .into(_database.turns)
           .insert(_mappers.turnCompanion(operation.turn));
       await _insertMessage(operation.userMessage);
-      final title = operation.session.title.isEmpty
-          ? _title(operation.userMessage)
-          : operation.session.title;
       await (_database.update(
         _database.sessions,
       )..where((table) => table.id.equals(operation.session.id.value))).write(
         SessionsCompanion(
-          title: Value(title),
+          title: Value(operation.session.title),
           updatedAt: Value(operation.userMessage.occurredAt.toUtc()),
         ),
       );
@@ -344,16 +341,6 @@ final class DriftSessionStore implements runtime.SessionStore {
         'compaction boundary must be the final item of its turn',
       );
     }
-  }
-
-  static String _title(runtime.UserMessageItem item) {
-    final text = runtime.textFromContent(item.content).trim();
-    if (text.isEmpty) {
-      return '';
-    }
-    final firstLine = text.split('\n').first.trim();
-    final runes = firstLine.runes.toList();
-    return String.fromCharCodes(runes.take(80));
   }
 
   static String _encodeCursor(DateTime updatedAt, String id) =>
