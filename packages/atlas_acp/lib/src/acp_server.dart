@@ -240,7 +240,11 @@ final class AcpServer {
     _clientName = params.clientInfo?.name;
     _clientCapabilities = params.clientCapabilities;
     if (_debug && _clientName != null) {
-      stderr.writeln('atlas_acp: client=$_clientName');
+      stderr.writeln(
+        'atlas_acp: client=$_clientName '
+        'fs=${_clientCapabilities?.fs != null} '
+        'terminal=${_clientCapabilities?.terminal == true}',
+      );
     }
     return initializeResult();
   }
