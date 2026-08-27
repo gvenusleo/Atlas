@@ -19,7 +19,8 @@ import 'transport.dart';
 /// Inbound agent requests (such as `session/request_permission`) are surfaced
 /// through [PermissionPort] so presentation code can ask the user before
 /// replying.
-final class AcpClient implements rt.AgentSession, rt.PermissionPort {
+final class AcpClient
+    implements rt.AgentSession, rt.PermissionPort, rt.AgentCapabilityProvider {
   /// Creates an ACP client over [transport].
   ///
   /// [catalog] and [defaultModel] seed the model list before the first
@@ -73,6 +74,16 @@ final class AcpClient implements rt.AgentSession, rt.PermissionPort {
   final _sessionModels = <String, rt.ModelRef>{};
   final _sessionEfforts = <String, String?>{};
   final _sessionUsage = <String, int>{};
+
+  @override
+  rt.AgentCapabilities get capabilities => const rt.AgentCapabilities(
+    modes: true,
+    slashCommands: true,
+    rename: true,
+    compact: true,
+    permissions: true,
+    images: true,
+  );
   final _sessionTitles = <String, String>{};
   final _sessionCommands = <String, List<rt.AgentCommand>>{};
   final _sessionModes = <String, String>{};

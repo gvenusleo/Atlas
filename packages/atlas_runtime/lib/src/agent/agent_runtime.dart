@@ -21,9 +21,11 @@ import '../skills/skill.dart';
 import '../skills/skill_catalog.dart';
 import 'agent_engine.dart';
 import 'agent_session.dart';
+import 'agent_capabilities.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
-final class AgentRuntime implements AgentEngine, AgentSession {
+final class AgentRuntime
+    implements AgentEngine, AgentSession, AgentCapabilityProvider {
   /// Creates an agent runtime with injected model, tool, and storage adapters.
   AgentRuntime({
     required this.store,
@@ -86,6 +88,10 @@ final class AgentRuntime implements AgentEngine, AgentSession {
   final DateTime Function() _now;
   final Map<SessionId, Future<void>> _sessionTails = {};
   final Map<String, SessionContext> _sessionContexts = {};
+
+  @override
+  AgentCapabilities get capabilities =>
+      const AgentCapabilities(slashCommands: true, compact: true);
 
   /// Executes one turn and emits events in their exact occurrence order.
   @override
