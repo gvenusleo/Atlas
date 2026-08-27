@@ -681,20 +681,10 @@ final class AgentRuntime
     if (cancellation?.isCancelled == true) {
       return;
     }
-    final kept = _keptWindow(timeline, keptRecentTurns);
     if (!enforceThreshold &&
         timeline.map((item) => item.turnId).toSet().length <= 1) {
       return;
     }
-    // A long single turn can fill the context before a second turn exists.
-    // Keep the newest item as the minimum live context and compact the prefix.
-    final boundaryIndex = timeline.length - kept.length - 1 < 0
-        ? (timeline.length > 1 ? 0 : -1)
-        : timeline.length - kept.length - 1;
-    if (boundaryIndex < 0) {
-      return;
-    }
-    final boundary = timeline[boundaryIndex];
     final ModelDescriptor descriptor;
     try {
       descriptor = await provider.describe(model);
@@ -714,6 +704,17 @@ final class AgentRuntime
         tokens < descriptor.contextWindow * compactionThreshold) {
       return;
     }
+    final turnCount = timeline.map((item) => item.turnId).toSet().length;
+    final kept = turnCount <= keptRecentTurns + 1
+        ? _keptWindow(timeline, keptRecentTurns)
+        : _keptWindowWithinBudget(timeline, descriptor.contextWindow ~/ 3);
+    // A long single turn can fill the context before a second turn exists.
+    // Keep the newest item as the minimum live context and compact the prefix.
+    final boundaryIndex = timeline.length - kept.length - 1 < 0
+        ? (timeline.length > 1 ? 0 : -1)
+        : timeline.length - kept.length - 1;
+    if (boundaryIndex < 0) return;
+    final boundary = timeline[boundaryIndex];
     yield CompactionStarted(
       sessionId: session.id,
       turnId: turnId,
@@ -881,6 +882,32 @@ final class AgentRuntime
       keptTurns.add(timeline[i].turnId);
     }
     return timeline.where((item) => keptTurns.contains(item.turnId)).toList();
+  }
+
+  /// Keeps complete newest turns within a token budget, always retaining one.
+  static List<TimelineItem> _keptWindowWithinBudget(
+    List<TimelineItem> timeline,
+    int budget,
+  ) {
+    final turns = <TurnId>[];
+    for (var i = timeline.length - 1; i >= 0; i--) {
+      if (!turns.contains(timeline[i].turnId)) turns.add(timeline[i].turnId);
+    }
+    final kept = <TimelineItem>[];
+    for (final turn in turns) {
+      final candidate = timeline.where((item) => item.turnId == turn).toList();
+      if (kept.isNotEmpty &&
+          budget > 0 &&
+          estimateTokenCount(_renderTimeline([...candidate, ...kept])) >
+              budget) {
+        break;
+      }
+      kept.insertAll(0, candidate);
+    }
+    if (kept.length == timeline.length && timeline.length > 1) {
+      return [timeline.last];
+    }
+    return kept;
   }
 
   /// Estimates token count from text using the common four-characters-per-
