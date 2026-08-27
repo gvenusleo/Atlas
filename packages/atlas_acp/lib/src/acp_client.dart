@@ -65,6 +65,7 @@ final class AcpClient
   final _permissionRequests =
       StreamController<rt.PermissionRequest>.broadcast();
   final _pendingPermissions = <Object, Completer<rt.PermissionReply>>{};
+  final _cancelledPermissions = <Object>{};
   int _permissionCounter = 0;
   ClientConnection? _connection;
   HandlerRegistration? _notificationReg;
@@ -143,6 +144,7 @@ final class AcpClient
     // Reject any unanswered permission requests so the agent never waits.
     final pending = _pendingPermissions.values.toList();
     _pendingPermissions.clear();
+    _cancelledPermissions.clear();
     for (final completer in pending) {
       if (!completer.isCompleted) {
         completer.complete(rt.PermissionReply.reject);
@@ -191,6 +193,11 @@ final class AcpClient
     _permissionRequests.add(parsed);
     return _respondPermission(requestId)
         .then((reply) {
+          if (_cancelledPermissions.remove(requestId)) {
+            return const RequestPermissionResponse(
+              outcome: PermissionCancelled(),
+            );
+          }
           final kind = switch (reply) {
             rt.PermissionReply.allowOnce => PermissionOptionKind.allowOnce,
             rt.PermissionReply.allowAlways => PermissionOptionKind.allowAlways,
@@ -382,6 +389,7 @@ final class AcpClient
         });
     final cancellation = request.cancellation;
     void cancelTurn() {
+      _cancelPendingPermissions(sessionId);
       _client.cancel(sessionId.value);
     }
 
@@ -450,7 +458,10 @@ final class AcpClient
           }
         });
     if (cancellation != null) {
-      cancellation.whenCancelled.then((_) => _client.cancel(sessionId.value));
+      cancellation.whenCancelled.then((_) {
+        _cancelPendingPermissions(sessionId);
+        _client.cancel(sessionId.value);
+      });
     }
     try {
       final prompt = instruction == null || instruction.isEmpty
@@ -484,6 +495,20 @@ final class AcpClient
       yield* controller.stream;
     } finally {
       await sub.cancel();
+    }
+  }
+
+  /// Resolves permission prompts belonging to a cancelled session.
+  void _cancelPendingPermissions(rt.SessionId sessionId) {
+    final prefix = '${sessionId.value}:';
+    for (final entry in _pendingPermissions.entries.toList()) {
+      if (entry.key is String && (entry.key as String).startsWith(prefix)) {
+        _cancelledPermissions.add(entry.key);
+        if (!entry.value.isCompleted) {
+          entry.value.complete(rt.PermissionReply.reject);
+        }
+        _pendingPermissions.remove(entry.key);
+      }
     }
   }
 
