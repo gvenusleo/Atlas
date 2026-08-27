@@ -511,16 +511,6 @@ final class AgentRuntime
         usage: latestUsage,
         failure: TurnFailure(code: 'cancelled', message: error.toString()),
       );
-      logger.log(
-        LogEvent(
-          level: LogLevel.error,
-          code: 'turn.failed',
-          message: outcome.failure?.message ?? 'turn failed',
-          sessionId: session.id,
-          turnId: turnId,
-          occurredAt: _now().toUtc(),
-        ),
-      );
       await _finishTurnToleratingDeletion(
         session.id,
         _terminalTurn(
@@ -551,6 +541,16 @@ final class AgentRuntime
         failure: TurnFailure(
           code: 'turn_failed',
           message: _safeErrorMessage('Turn failed', error),
+        ),
+      );
+      logger.log(
+        LogEvent(
+          level: LogLevel.error,
+          code: 'turn.failed',
+          message: outcome.failure?.message ?? 'turn failed',
+          sessionId: session.id,
+          turnId: turnId,
+          occurredAt: _now().toUtc(),
         ),
       );
       await _finishTurnToleratingDeletion(
