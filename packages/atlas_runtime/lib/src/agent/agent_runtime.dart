@@ -20,9 +20,10 @@ import '../ports/tool_registry.dart';
 import '../skills/skill.dart';
 import '../skills/skill_catalog.dart';
 import 'agent_engine.dart';
+import 'agent_session.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
-final class AgentRuntime implements AgentEngine {
+final class AgentRuntime implements AgentEngine, AgentSession {
   /// Creates an agent runtime with injected model, tool, and storage adapters.
   AgentRuntime({
     required this.store,

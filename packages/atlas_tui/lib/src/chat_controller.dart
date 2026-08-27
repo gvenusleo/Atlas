@@ -43,7 +43,7 @@ final class ChatController implements Listenable {
     : _workingDirectory = workingDirectory ?? Directory.current.path;
 
   /// The runtime that executes turns.
-  final AgentRuntime runtime;
+  final AgentSession runtime;
 
   String _workingDirectory;
   final List<ChatMessage> _messages = [];
