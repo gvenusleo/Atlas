@@ -40,12 +40,14 @@ final class FileSkillCatalog implements SkillCatalog {
   }
 }
 
-/// Loads skills from `~/.atlas/skills`, `~/.agents/skills`, and the
-/// `.atlas/skills` and `.agents/skills` directories under [workingDirectory].
+/// Loads skills from the user-level `~/.agents/skills` and `~/.atlas/skills`
+/// roots, then the `.agents/skills` and `.atlas/skills` roots under
+/// [workingDirectory].
 ///
-/// Later roots override earlier ones for duplicate skill names. Missing root
-/// directories, directories without SKILL.md, and malformed or oversized
-/// SKILL.md files are skipped; the remaining skills stay usable.
+/// Later roots override earlier ones for duplicate skill names, so `.atlas`
+/// wins over `.agents` within a level and project roots win over user roots.
+/// Missing root directories, directories without SKILL.md, and malformed or
+/// oversized SKILL.md files are skipped; the remaining skills stay usable.
 FileSkillCatalog loadSkillCatalog({
   String? workingDirectory,
   String? homeDirectory,
@@ -53,10 +55,10 @@ FileSkillCatalog loadSkillCatalog({
   final home = homeDirectory ?? Platform.environment['HOME'];
   final cwd = workingDirectory ?? Directory.current.path;
   final roots = <Directory>[
-    if (home != null && home.isNotEmpty) Directory('$home/.atlas/skills'),
     if (home != null && home.isNotEmpty) Directory('$home/.agents/skills'),
-    Directory('$cwd/.atlas/skills'),
+    if (home != null && home.isNotEmpty) Directory('$home/.atlas/skills'),
     Directory('$cwd/.agents/skills'),
+    Directory('$cwd/.atlas/skills'),
   ];
   return FileSkillCatalog(roots);
 }

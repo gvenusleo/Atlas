@@ -9,9 +9,12 @@ System prompt construction for Atlas.
   directory, and current date context.
 - Loads `~/.atlas/AGENTS.md` and the working-directory `AGENTS.md` through
   `loadInstructionFiles` and renders them into the prompt.
-- Loads skills from `~/.atlas/skills`, `~/.agents/skills`, and the project
-  `.atlas/skills` / `.agents/skills` directories through `loadSkillCatalog`
-  (pass `workingDirectory` so project skills resolve against the session cwd)
+- Loads skills from the user-level `~/.agents/skills` and `~/.atlas/skills`
+  roots, then the project `.agents/skills` / `.atlas/skills` roots under the
+  working directory through `loadSkillCatalog` (pass `workingDirectory` so
+  project skills resolve against the session cwd); later roots override
+  earlier ones, so `.atlas/skills` wins over `.agents/skills` within a level
+  and project skills win over user skills.
   and exposes them as a `SkillCatalog`.
 
 ## Allowed dependencies

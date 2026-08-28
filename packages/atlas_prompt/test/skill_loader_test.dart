@@ -9,12 +9,15 @@ void main() {
   late Directory userAtlas;
   late Directory userAgents;
   late Directory projectAgents;
+  late Directory projectAtlas;
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('skill_loader_test');
     userAtlas = Directory('${root.path}/.atlas/skills')
       ..createSync(recursive: true);
     userAgents = Directory('${root.path}/.agents/skills')
+      ..createSync(recursive: true);
+    projectAtlas = Directory('${root.path}/proj/.atlas/skills')
       ..createSync(recursive: true);
     projectAgents = Directory('${root.path}/proj/.agents/skills')
       ..createSync(recursive: true);
@@ -70,6 +73,33 @@ void main() {
     final catalog = load();
     expect(catalog.lookup('dup')!.content, contains('Project content'));
     expect(catalog.summaries.single.description, 'Project version.');
+  });
+
+  test('atlas roots override agents roots at the same level', () {
+    writeSkill(
+      userAgents.path,
+      'dup',
+      '---\nname: dup\ndescription: User agents.\n---\nUser agents content',
+    );
+    writeSkill(
+      userAtlas.path,
+      'dup',
+      '---\nname: dup\ndescription: User atlas.\n---\nUser atlas content',
+    );
+    writeSkill(
+      projectAgents.path,
+      'proj',
+      '---\nname: proj\ndescription: Project agents.\n---\nProject agents content',
+    );
+    writeSkill(
+      projectAtlas.path,
+      'proj',
+      '---\nname: proj\ndescription: Project atlas.\n---\nProject atlas content',
+    );
+
+    final catalog = load();
+    expect(catalog.lookup('dup')!.content, contains('User atlas content'));
+    expect(catalog.lookup('proj')!.content, contains('Project atlas content'));
   });
 
   test('unquotes quoted frontmatter values', () {
