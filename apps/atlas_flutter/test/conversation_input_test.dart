@@ -15,7 +15,8 @@ import 'package:atlas_flutter/features/workspace/application/workspace_controlle
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
 import 'package:atlas_flutter/features/workspace/data/image_attachment.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/conversation_input.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/context_usage_ring.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 

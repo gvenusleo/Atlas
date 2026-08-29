@@ -10,7 +10,9 @@ import '../../../app/runtime_environment.dart';
 import '../../../shared/theme/atlas_theme.dart';
 import '../application/workspace_controller.dart';
 import 'widgets/workspace_controls.dart';
-import 'widgets/workspace_panels.dart';
+import 'widgets/details_panel.dart';
+import 'widgets/sessions_panel.dart';
+import 'widgets/workspace_panel.dart';
 import 'workspace_metrics.dart';
 
 /// Responsive Atlas workspace with desktop side panels and compact drawers.

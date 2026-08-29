@@ -9,7 +9,7 @@ import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
 import '../../data/image_attachment.dart';
-import 'conversation_input.dart';
+import 'conversation_input/conversation_input.dart';
 import 'turn_status_banner.dart';
 import 'workspace_controls.dart';
 import '../workspace_metrics.dart';
