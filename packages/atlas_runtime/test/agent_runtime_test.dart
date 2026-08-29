@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:atlas_runtime/src/agent/context_compactor.dart'
+    show maxSummaryTokens;
+import 'package:atlas_runtime/src/agent/model_request_composer.dart'
+    show maxSelectedSkillBytes;
 import 'package:test/test.dart';
 
 void main() {
@@ -671,7 +675,7 @@ void main() {
               description: 'Huge.',
               dir: '/skills/huge',
               path: '/skills/huge/SKILL.md',
-              content: 'x' * (AgentRuntime.maxSelectedSkillBytes + 1),
+              content: 'x' * (maxSelectedSkillBytes + 1),
             ),
           ]),
         ),
@@ -799,9 +803,9 @@ void main() {
   });
 
   test('estimates tokens from text length', () {
-    expect(AgentRuntime.estimateTokens(''), 0);
-    expect(AgentRuntime.estimateTokens('abcd'), 1);
-    expect(AgentRuntime.estimateTokens('a' * 100), 25);
+    expect(estimateTokenCount(''), 0);
+    expect(estimateTokenCount('abcd'), 1);
+    expect(estimateTokenCount('a' * 100), 25);
   });
 
   test('compacts an exhausted context and keeps the newest turn', () async {
@@ -877,7 +881,7 @@ void main() {
     expect(summaryPrompt, contains('<transcript>'));
     expect(summaryPrompt, contains('first reply'));
     expect(summaryPrompt, isNot(contains('second reply')));
-    expect(summaryRequest.maxOutputTokens, AgentRuntime.maxSummaryTokens);
+    expect(summaryRequest.maxOutputTokens, maxSummaryTokens);
 
     await runtime
         .run(
