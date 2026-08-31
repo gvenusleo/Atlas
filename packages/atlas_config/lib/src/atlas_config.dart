@@ -100,10 +100,20 @@ final class AgentConfig {
 /// Automatic context compaction settings.
 final class CompactionConfig {
   /// Creates compaction settings.
-  const CompactionConfig({this.threshold = 0.8});
+  const CompactionConfig({
+    this.threshold = 0.8,
+    this.keepRecentTokens = 20000,
+    this.reserveTokens = 16384,
+  });
 
-  /// Context window fraction that triggers compaction after a turn.
+  /// Legacy fraction retained for compatibility with existing config files.
   final double threshold;
+
+  /// Approximate number of newest tokens retained verbatim.
+  final int keepRecentTokens;
+
+  /// Tokens reserved for the next model response.
+  final int reserveTokens;
 }
 
 /// Local session storage settings.

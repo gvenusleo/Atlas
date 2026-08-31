@@ -62,6 +62,8 @@ AgentRuntime composeRuntime(
               )),
     temperature: config.agent.temperature,
     compactionThreshold: config.agent.compaction.threshold,
+    keepRecentTokens: config.agent.compaction.keepRecentTokens,
+    reserveTokens: config.agent.compaction.reserveTokens,
     systemPromptBuilder: (context) => buildSystemPrompt(
       workingDirectory: context.workingDirectory,
       tools: resolvedTools.descriptors,

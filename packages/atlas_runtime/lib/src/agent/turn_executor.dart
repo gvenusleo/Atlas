@@ -59,7 +59,8 @@ final class TurnExecutor {
   /// The model used when a turn does not provide an override.
   final ModelRef defaultModel;
 
-  /// The compactor invoked after terminal turns and by manual compaction.
+  /// The compactor invoked before model requests, after terminal turns, and
+  /// by manual compaction.
   final ContextCompactor compactor;
 
   /// Resolves the session context for a working directory; may throw.
@@ -85,7 +86,7 @@ final class TurnExecutor {
     final now = _now().toUtc();
     final model = request.model ?? defaultModel;
     final loaded = await _loadOrCreateSession(request, now);
-    final session = loaded.session.title.isEmpty
+    var session = loaded.session.title.isEmpty
         ? _withGeneratedTitle(loaded.session, request.content)
         : loaded.session;
     final turnId = ids.turnId();
@@ -137,8 +138,30 @@ final class TurnExecutor {
       // models that cannot accept them; null falls back to provider-side
       // request validation.
       final capabilities = await _modelCapabilities(model);
+      var compactedBeforeRequest = false;
       for (var step = 0; step < maxSteps; step++) {
         cancellation.throwIfCancelled();
+        final compactionEvents = compactedBeforeRequest
+            ? const <AgentEvent>[]
+            : await _compactBeforeRequest(
+                session: session,
+                timeline: timeline,
+                model: model,
+                turnId: turnId,
+                latestUsage: latestUsage,
+                cancellation: cancellation,
+                nextSequence: () => eventSequence++,
+              );
+        for (final event in compactionEvents) {
+          if (event case CompactionFinished(:final checkpoint)) {
+            session = _withCompaction(session, checkpoint);
+            timeline.removeWhere(
+              (item) => item.sequence <= checkpoint.compactedThroughSequence,
+            );
+            compactedBeforeRequest = true;
+          }
+          yield event;
+        }
         ModelResponse? response;
         final modelRequest = ModelRequest(
           sessionId: session.id,
@@ -152,7 +175,7 @@ final class TurnExecutor {
               compaction: session.compaction,
             ),
           ], capabilities),
-          systemPrompt: _systemPrompt(session, context),
+          systemPrompt: systemPromptBuilder(context),
           tools: tools.descriptors,
           reasoningEffort: request.reasoningEffort,
           maxOutputTokens: maxOutputTokens,
@@ -503,27 +526,12 @@ final class TurnExecutor {
     );
   }
 
-  String _systemPrompt(Session session, SessionContext context) {
-    final prompt = systemPromptBuilder(context);
-    final checkpoint = session.compaction;
-    final summary = checkpoint?.summary.trim();
-    if (summary == null || summary.isEmpty) {
-      return prompt;
-    }
-    final summaryText =
-        'Context compacted. '
-        'Kept ${checkpoint!.keptRecentMessages} recent messages.\n\n$summary';
-    if (prompt.trim().isEmpty) {
-      return '<context_summary>\n$summaryText\n</context_summary>';
-    }
-    return '$prompt\n\n<context_summary>\n$summaryText\n</context_summary>';
-  }
-
   /// The current system prompt for [session], or '' when its cached context
-  /// is unavailable; used for post-turn compaction token estimates.
+  /// is unavailable; used for compaction token estimates. The compaction
+  /// summary is projected as the first user message, not appended here.
   String _sessionPrompt(Session session) {
     final context = _contextOrNull(session.workingDirectory);
-    return context == null ? '' : _systemPrompt(session, context);
+    return context == null ? '' : systemPromptBuilder(context);
   }
 
   /// Returns the session context, or null when resolution fails.
@@ -533,6 +541,35 @@ final class TurnExecutor {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Attempts threshold compaction before the next model request.
+  Future<List<AgentEvent>> _compactBeforeRequest({
+    required Session session,
+    required List<TimelineItem> timeline,
+    required ModelRef model,
+    required TurnId turnId,
+    required TokenUsage latestUsage,
+    required CancellationToken cancellation,
+    required int Function() nextSequence,
+  }) {
+    if (!compactor.usesTokenWindow) {
+      return Future.value(const <AgentEvent>[]);
+    }
+    return compactor
+        .compact(
+          CompactionJob(
+            session: session,
+            timeline: _visibleTimeline(timeline, session.compaction),
+            systemPrompt: _sessionPrompt(session),
+            model: model,
+            turnId: turnId,
+            latestUsage: latestUsage,
+            nextSequence: nextSequence,
+            cancellation: cancellation,
+          ),
+        )
+        .toList();
   }
 
   /// Builds the post-turn compaction job for [session].
@@ -548,8 +585,8 @@ final class TurnExecutor {
   }) => compactor.compact(
     CompactionJob(
       session: session,
-      timeline: timeline,
-      systemPrompt: context == null ? '' : _systemPrompt(session, context),
+      timeline: _visibleTimeline(timeline, session.compaction),
+      systemPrompt: context == null ? '' : systemPromptBuilder(context),
       model: model,
       turnId: turnId,
       latestUsage: latestUsage,
@@ -616,6 +653,32 @@ final class TurnExecutor {
 
   /// Persists a terminal turn, tolerating a session that was deleted while
   /// the turn was running: the terminal outcome still stands for the caller.
+  static List<TimelineItem> _visibleTimeline(
+    List<TimelineItem> timeline,
+    CompactionCheckpoint? compaction,
+  ) {
+    if (compaction == null || compaction.summary.trim().isEmpty) {
+      return timeline;
+    }
+    return timeline
+        .where((item) => item.sequence > compaction.compactedThroughSequence)
+        .toList();
+  }
+
+  Session _withCompaction(Session session, CompactionCheckpoint checkpoint) =>
+      Session(
+        id: session.id,
+        title: session.title,
+        workingDirectory: session.workingDirectory,
+        additionalDirectories: session.additionalDirectories,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        compaction: checkpoint,
+        lastUsage: session.lastUsage,
+        model: session.model,
+        reasoningEffort: session.reasoningEffort,
+      );
+
   Future<void> _finishTurnToleratingDeletion(
     SessionId sessionId,
     Turn terminal,

@@ -47,7 +47,9 @@ agent:
   max_output_tokens: 0                # optional, provider default
   temperature: 0.7                    # optional
   compaction:
-    threshold: 0.8                    # optional, default 0.8
+    threshold: 0.8                    # optional, default 0.8 (legacy fallback)
+    keep_recent_tokens: 20000         # optional, default 20000
+    reserve_tokens: 16384             # optional, default 16384
 
 session:
   db_path: ~/.atlas/atlas.db         # optional, ~ expands to home
@@ -78,8 +80,15 @@ logging:
   `max_tokens`. When thinking is enabled, Atlas omits `agent.temperature` from
   Anthropic requests because that sampling option is incompatible.
   `input_capabilities` and `reasoning_efforts` apply to every provider type.
-- `agent.compaction.threshold` must be greater than 0 and at most 1; it is the
-  context window fraction that triggers automatic compaction after a turn.
+- `agent.compaction.keep_recent_tokens` must be greater than 0; it caps how
+  many tokens of the newest context are kept verbatim during compaction,
+  clamped to one third of the model context window.
+- `agent.compaction.reserve_tokens` must be greater than 0; automatic
+  compaction runs after terminal turns and before each model request once the
+  estimated context reaches `context_window - reserve_tokens`. When
+  `reserve_tokens` is greater than or equal to `context_window`, the legacy
+  `agent.compaction.threshold` fraction is used as the trigger instead;
+  `threshold` must be greater than 0 and at most 1.
 - Validation failures raise `ConfigLoadException` with a field path such as
   `providers[0].base_url`.
 - `logging.directory` enables redacted JSON-lines file logging. `ATLAS_LOG_LEVEL`

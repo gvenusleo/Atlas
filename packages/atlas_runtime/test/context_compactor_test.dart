@@ -34,11 +34,13 @@ void main() {
     SessionStore store, {
     double threshold = 0.8,
     int keptRecentTurns = 5,
+    int? keepRecentTokens,
   }) => ContextCompactor(
     provider: provider,
     store: store,
     threshold: threshold,
     keptRecentTurns: keptRecentTurns,
+    keepRecentTokens: keepRecentTokens,
   );
 
   CompactionJob job(
@@ -151,7 +153,7 @@ void main() {
     expect(singleTurn, isEmpty);
   });
 
-  test('a single long turn keeps the newest item as live context', () async {
+  test('a single long turn keeps the newest message boundary', () async {
     final provider = _ScriptedProvider([
       const ModelResponse(
         content: [TextContent('Summary.')],
@@ -159,7 +161,7 @@ void main() {
       ),
     ], contextWindow: 10000);
     final store = _RecordingStore();
-    await compactor(provider, store)
+    await compactor(provider, store, keepRecentTokens: 1)
         .compact(
           job(session(), [
             item(turn1, 1),
@@ -171,8 +173,8 @@ void main() {
         .toList();
 
     final checkpoint = store.saved.single;
-    expect(checkpoint.compactedThroughSequence, 1);
-    expect(checkpoint.keptRecentMessages, 4);
+    expect(checkpoint.compactedThroughSequence, 3);
+    expect(checkpoint.keptRecentMessages, 1);
   });
 
   test('skips when the context window is unknown or describe fails', () async {

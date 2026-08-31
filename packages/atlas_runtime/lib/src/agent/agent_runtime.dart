@@ -39,12 +39,17 @@ final class AgentRuntime
     this.maxOutputTokens = 0,
     this.temperature,
     this.compactionThreshold = 0.8,
+    this.keepRecentTokens,
+    this.reserveTokens = 16384,
     this.keptRecentTurns = 5,
   }) : _now = now ?? DateTime.now,
        _compactor = ContextCompactor(
          provider: provider,
          store: store,
          threshold: compactionThreshold,
+         keepRecentTokens:
+             keepRecentTokens ?? (keptRecentTurns == 5 ? 20000 : null),
+         reserveTokens: reserveTokens,
          keptRecentTurns: keptRecentTurns,
          now: now,
        );
@@ -102,7 +107,13 @@ final class AgentRuntime
   /// Context window fraction that triggers compaction after a turn.
   final double compactionThreshold;
 
-  /// The number of most recent turns kept verbatim during compaction.
+  /// The approximate number of newest tokens kept verbatim.
+  final int? keepRecentTokens;
+
+  /// Tokens reserved for the next model response.
+  final int reserveTokens;
+
+  /// Legacy turn count retained for source compatibility.
   final int keptRecentTurns;
 
   final DateTime Function() _now;

@@ -51,14 +51,22 @@ void main() {
           )
           .toList();
 
-      expect(provider.requests.single.systemPrompt, contains('Drift'));
+      expect(provider.requests.single.systemPrompt, 'base prompt');
+      expect(provider.requests.single.messages, hasLength(2));
       expect(
-        provider.requests.single.systemPrompt,
+        provider.requests.single.messages.first.role,
+        ModelMessageRole.user,
+      );
+      final summaryText = textFromContent(
+        provider.requests.single.messages.first.content,
+      );
+      expect(summaryText, contains('Drift'));
+      expect(
+        summaryText,
         contains('Context compacted. Kept 2 recent messages.'),
       );
-      expect(provider.requests.single.messages, hasLength(1));
       expect(
-        textFromContent(provider.requests.single.messages.single.content),
+        textFromContent(provider.requests.single.messages.last.content),
         'new request',
       );
       expect(store.timeline.first.sequence, 2);
@@ -147,14 +155,14 @@ void main() {
           ),
         )
         .toList();
+    final resumedSummary = textFromContent(
+      provider.requests.last.messages.first.content,
+    );
     expect(
-      provider.requests.last.systemPrompt,
+      resumedSummary,
       contains('Context compacted. Kept 2 recent messages.'),
     );
-    expect(
-      provider.requests.last.systemPrompt,
-      contains('Summary of the first turn.'),
-    );
+    expect(resumedSummary, contains('Summary of the first turn.'));
   });
   test('manually compacts without the threshold check', () async {
     final store = MemorySessionStore();

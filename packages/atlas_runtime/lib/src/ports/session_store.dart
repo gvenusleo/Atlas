@@ -95,7 +95,8 @@ abstract interface class SessionStore {
   /// Marks a turn as completed, failed, or cancelled.
   Future<void> finishTurn(SessionId sessionId, Turn turn);
 
-  /// Saves a checkpoint ending at the final item of a terminal turn.
+  /// Saves a checkpoint at a persisted timeline boundary. The boundary may
+  /// split a turn but must not split a tool call/result pair.
   Future<void> saveCompaction(
     SessionId sessionId,
     CompactionCheckpoint checkpoint,

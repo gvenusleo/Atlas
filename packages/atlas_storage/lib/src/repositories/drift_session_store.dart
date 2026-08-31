@@ -346,25 +346,36 @@ final class DriftSessionStore
     final turn = await (_database.select(
       _database.turns,
     )..where((table) => table.id.equals(boundary.turnId))).getSingleOrNull();
-    if (turn == null || turn.status == runtime.TurnStatus.running.name) {
+    if (turn == null) {
       throw const FormatException(
-        'compaction boundary must belong to a terminal turn',
+        'compaction boundary must belong to the session',
       );
     }
-    final laterItem =
+    // Active turns may be compacted between model steps. The runtime selects
+    // boundaries that preserve complete tool call/result groups.
+    final suffix =
         await (_database.select(_database.messages)
               ..where(
                 (table) =>
-                    table.turnId.equals(boundary.turnId) &
+                    table.sessionId.equals(sessionId.value) &
                     table.sequence.isBiggerThanValue(
                       checkpoint.compactedThroughSequence,
                     ),
               )
-              ..limit(1))
-            .getSingleOrNull();
-    if (laterItem != null) {
+              ..orderBy([(table) => OrderingTerm.asc(table.sequence)]))
+            .get();
+    final suffixItems = suffix.map(_mappers.message).map((value) => value.item);
+    final callIds = {
+      for (final item in suffixItems)
+        if (item case runtime.ToolCallItem(:final call)) call.id,
+    };
+    final resultIds = {
+      for (final item in suffixItems)
+        if (item case runtime.ToolResultItem(:final callId)) callId,
+    };
+    if (!callIds.containsAll(resultIds) || !resultIds.containsAll(callIds)) {
       throw const FormatException(
-        'compaction boundary must be the final item of its turn',
+        'compaction boundary must not split a tool call/result pair',
       );
     }
   }

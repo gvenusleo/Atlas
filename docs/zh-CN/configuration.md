@@ -46,7 +46,9 @@ agent:
   max_output_tokens: 0                # 可选，使用 provider 默认值
   temperature: 0.7                    # 可选
   compaction:
-    threshold: 0.8                    # 可选，默认 0.8
+    threshold: 0.8                    # 可选，默认 0.8（旧版回退）
+    keep_recent_tokens: 20000         # 可选，默认 20000
+    reserve_tokens: 16384             # 可选，默认 16384
 
 session:
   db_path: ~/.atlas/atlas.db         # 可选，~ 展开为用户主目录
@@ -74,8 +76,13 @@ logging:
   启用 thinking 时，Atlas 会省略 Anthropic 请求中的 `agent.temperature`，
   因为该采样选项不兼容。`input_capabilities` 与 `reasoning_efforts` 适用于
   所有 provider 类型。
-- `agent.compaction.threshold` 必须大于 0 且不超过 1；它是触发 turn 结束后
-  自动压缩的上下文窗口比例。
+- `agent.compaction.keep_recent_tokens` 必须大于 0；它限制压缩时原样保留的
+  最近上下文 token 数，上限为模型上下文窗口的三分之一。
+- `agent.compaction.reserve_tokens` 必须大于 0；当估算上下文达到
+  `context_window - reserve_tokens` 时，会在 turn 结束后以及每次模型请求前
+  自动压缩。当 `reserve_tokens` 大于等于 `context_window` 时，改用旧版
+  `agent.compaction.threshold` 比例作为触发条件；`threshold` 必须大于 0
+  且不超过 1。
 - 校验失败抛出 `ConfigLoadException`，消息包含字段路径，例如
   `providers[0].base_url`。
 - 配置 `logging.directory` 后会启用脱敏 JSON Lines 文件日志。未配置

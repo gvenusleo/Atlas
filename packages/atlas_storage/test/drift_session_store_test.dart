@@ -372,7 +372,7 @@ void main() {
     );
   });
 
-  test('rejects compaction inside a running or partial turn', () async {
+  test('allows active-turn compaction but rejects split tool pairs', () async {
     final session = _session(
       'session-compact-boundary',
       updatedAt: DateTime.utc(2026),
@@ -394,10 +394,7 @@ void main() {
       inputTokensAfter: 2,
       createdAt: session.updatedAt,
     );
-    await expectLater(
-      store.saveCompaction(session.id, checkpoint),
-      throwsFormatException,
-    );
+    await store.saveCompaction(session.id, checkpoint);
 
     final assistant = runtime.AssistantMessageItem(
       id: runtime.TimelineItemId('compact-assistant'),

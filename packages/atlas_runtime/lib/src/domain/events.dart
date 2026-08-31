@@ -153,7 +153,7 @@ final class PlanUpdated extends AgentEvent {
   final List<PlanEntry> entries;
 }
 
-/// Indicates that context compaction has started after a terminal turn.
+/// Indicates that context compaction has started.
 final class CompactionStarted extends AgentEvent {
   /// Creates a compaction-started event.
   const CompactionStarted({

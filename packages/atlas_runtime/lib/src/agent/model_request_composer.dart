@@ -51,7 +51,10 @@ abstract final class ModelRequestComposer {
 
   /// Projects durable timeline items onto model messages, merging tool calls
   /// into their assistant messages and dropping calls that never received a
-  /// result. Items at or before the compaction boundary are excluded.
+  /// result. Items at or before the compaction boundary are excluded, and a
+  /// non-empty checkpoint summary is emitted as the leading user message so
+  /// providers that require a user-role first message stay valid after
+  /// mid-turn cuts.
   static List<ModelMessage> projectTimeline(
     List<TimelineItem> items,
     List<ModelCheckpoint> checkpoints, {
@@ -62,6 +65,23 @@ abstract final class ModelRequestComposer {
         checkpoint.timelineItemId: checkpoint.continuation,
     };
     final result = <ModelMessage>[];
+    final summary = compaction?.summary.trim();
+    if (summary != null && summary.isNotEmpty) {
+      result.add(
+        ModelMessage(
+          role: ModelMessageRole.user,
+          content: [
+            TextContent(
+              '<context_summary>\n'
+              'Context compacted. '
+              'Kept ${compaction!.keptRecentMessages} recent messages.\n\n'
+              '$summary\n'
+              '</context_summary>',
+            ),
+          ],
+        ),
+      );
+    }
     final visibleItems = compaction == null || compaction.summary.trim().isEmpty
         ? items
         : items.where(

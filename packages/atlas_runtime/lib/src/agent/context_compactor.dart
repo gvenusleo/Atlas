@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../domain/content.dart';
 import '../domain/events.dart';
@@ -20,15 +21,14 @@ const maxSummaryTokens = 4096;
 
 /// The instruction prefix used for compaction summary generation.
 const _compactionInstruction =
-    'You are summarizing the early portion of a session transcript so the '
-    'conversation can continue within a compact context.\n\n'
-    'Preserve, in dense factual plain text:\n'
-    '- The user\'s goals and constraints.\n'
-    '- Key decisions and their rationale.\n'
-    '- The current task state and what remains undone.\n'
-    '- Files, commands, and code touched, with their purposes.\n'
-    '- Any unresolved issues or open questions.\n\n'
-    'Do not summarize the recent messages that are kept in context verbatim.';
+    'You are a context summarization assistant. Do not continue the '
+    'conversation; output only a concise structured checkpoint.\n\n'
+    'Use exactly these sections:\n'
+    '## Goal\n## Constraints & Preferences\n## Progress\n'
+    '### Done\n### In Progress\n### Blocked\n## Key Decisions\n'
+    '## Next Steps\n## Critical Context\n\n'
+    'Preserve exact file paths, symbols, commands, and error messages. '
+    'Summarize only the supplied history; recent messages are retained verbatim.';
 
 /// The inputs for one compaction attempt over a session timeline.
 final class CompactionJob {
@@ -77,19 +77,20 @@ final class CompactionJob {
   final CancellationToken? cancellation;
 }
 
-/// Plans and executes context compaction after terminal turns.
+/// Plans and executes context compaction before or after model turns.
 ///
-/// Compaction summarizes the timeline prefix before a boundary item, keeps
-/// the newest turns verbatim, and persists the resulting checkpoint through
-/// the session store; the store validates that the boundary is the final
-/// item of a terminal turn.
+/// Compaction summarizes the timeline prefix before a message boundary, keeps
+/// the newest token window verbatim, and persists the resulting checkpoint
+/// through the session store.
 final class ContextCompactor {
   /// Creates a compactor with injected provider and storage ports.
   ContextCompactor({
     required this.provider,
     required this.store,
     required this.threshold,
-    required this.keptRecentTurns,
+    this.keepRecentTokens,
+    this.keptRecentTurns = 5,
+    this.reserveTokens = 16384,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
@@ -102,10 +103,19 @@ final class ContextCompactor {
   /// Context window fraction that triggers compaction after a turn.
   final double threshold;
 
-  /// The number of most recent turns kept verbatim during compaction.
+  /// The approximate number of newest tokens kept verbatim.
+  final int? keepRecentTokens;
+
+  /// The legacy turn count used only as a fallback for small sessions.
   final int keptRecentTurns;
 
+  /// Tokens reserved for the next model response.
+  final int reserveTokens;
+
   final DateTime Function() _now;
+
+  /// Whether this compactor uses token-based message boundaries.
+  bool get usesTokenWindow => keepRecentTokens != null;
 
   /// Compacts [job] when required, emitting the compaction event triple.
   Stream<AgentEvent> compact(CompactionJob job) async* {
@@ -113,8 +123,10 @@ final class ContextCompactor {
     if (job.cancellation?.isCancelled == true) {
       return;
     }
-    if (!job.enforceThreshold &&
-        job.timeline.map((item) => item.turnId).toSet().length <= 1) {
+    if (job.timeline.length < 2 ||
+        (!job.enforceThreshold &&
+            keepRecentTokens == null &&
+            job.timeline.map((item) => item.turnId).toSet().length <= 1)) {
       return;
     }
     final ModelDescriptor descriptor;
@@ -131,21 +143,34 @@ final class ContextCompactor {
         : estimateTokenCount(
             '${job.systemPrompt}\n${_renderTimeline(job.timeline)}',
           );
-    if (job.enforceThreshold && tokens < descriptor.contextWindow * threshold) {
+    final thresholdTokens =
+        reserveTokens > 0 && reserveTokens < descriptor.contextWindow
+        ? descriptor.contextWindow - reserveTokens
+        : (descriptor.contextWindow * threshold).floor();
+    if (job.enforceThreshold && tokens < thresholdTokens) {
       return;
     }
     final timeline = job.timeline;
-    final turnCount = timeline.map((item) => item.turnId).toSet().length;
-    final kept = turnCount <= keptRecentTurns + 1
-        ? _keptWindow(timeline, keptRecentTurns)
-        : _keptWindowWithinBudget(timeline, descriptor.contextWindow ~/ 3);
-    // A long single turn can fill the context before a second turn exists.
-    // Keep the newest item as the minimum live context and compact the prefix.
-    final boundaryIndex = timeline.length - kept.length - 1 < 0
-        ? (timeline.length > 1 ? 0 : -1)
-        : timeline.length - kept.length - 1;
-    if (boundaryIndex < 0) return;
-    final boundary = timeline[boundaryIndex];
+    final int firstKeptIndex;
+    final List<TimelineItem> kept;
+    if (keepRecentTokens == null) {
+      final turnCount = timeline.map((item) => item.turnId).toSet().length;
+      kept = turnCount <= keptRecentTurns + 1
+          ? _keptWindow(timeline, keptRecentTurns)
+          : _keptWindowWithinBudget(
+              timeline,
+              math.max(1, descriptor.contextWindow ~/ 3),
+            );
+      firstKeptIndex = math.max(1, timeline.length - kept.length);
+    } else {
+      final keepBudget =
+          keepRecentTokens!.clamp(1, math.max(1, descriptor.contextWindow ~/ 3))
+              as int;
+      firstKeptIndex = _firstKeptIndex(timeline, keepBudget);
+      kept = timeline.sublist(firstKeptIndex);
+    }
+    if (firstKeptIndex <= 0 || firstKeptIndex >= timeline.length) return;
+    final boundary = timeline[firstKeptIndex - 1];
     yield CompactionStarted(
       sessionId: job.session.id,
       turnId: job.turnId,
@@ -153,17 +178,41 @@ final class ContextCompactor {
       occurredAt: _now().toUtc(),
     );
     try {
-      final compacted = timeline.sublist(0, boundaryIndex + 1);
-      final summary = await _generateSummary(
-        session: job.session,
-        compacted: compacted,
-        model: job.model,
-        turnId: job.turnId,
-        instruction: job.instruction,
-        cancellation: job.cancellation,
-        outputTokenLimit: descriptor.maxOutputTokens,
-        contextWindow: descriptor.contextWindow,
-      );
+      final compacted = timeline.sublist(0, firstKeptIndex);
+      final turnPrefixStart = _turnStartIndex(timeline, firstKeptIndex);
+      final history = compacted.sublist(0, turnPrefixStart);
+      final turnPrefix = compacted.sublist(turnPrefixStart);
+      final summaries = <String>[];
+      if (history.isNotEmpty) {
+        summaries.add(
+          await _generateSummary(
+            session: job.session,
+            compacted: history,
+            model: job.model,
+            turnId: job.turnId,
+            instruction: job.instruction,
+            cancellation: job.cancellation,
+            outputTokenLimit: descriptor.maxOutputTokens,
+            contextWindow: descriptor.contextWindow,
+          ),
+        );
+      } else if (job.session.compaction?.summary.trim().isNotEmpty == true) {
+        summaries.add(job.session.compaction!.summary.trim());
+      }
+      if (turnPrefix.isNotEmpty) {
+        summaries.add(
+          await _generateTurnPrefixSummary(
+            turnPrefix: turnPrefix,
+            model: job.model,
+            session: job.session,
+            turnId: job.turnId,
+            cancellation: job.cancellation,
+            outputTokenLimit: descriptor.maxOutputTokens,
+            instruction: job.instruction,
+          ),
+        );
+      }
+      final summary = summaries.join('\n\n---\n\n');
       final checkpoint = CompactionCheckpoint(
         sessionId: job.session.id,
         compactedThroughSequence: boundary.sequence,
@@ -269,6 +318,41 @@ final class ContextCompactor {
       cancellation: cancellation,
       outputTokenLimit: outputTokenLimit,
     );
+  }
+
+  /// Summarizes the prefix of a turn whose recent suffix remains verbatim.
+  Future<String> _generateTurnPrefixSummary({
+    required List<TimelineItem> turnPrefix,
+    required ModelRef model,
+    required Session session,
+    required TurnId turnId,
+    required CancellationToken? cancellation,
+    required int outputTokenLimit,
+    String? instruction,
+  }) => _requestSummary(
+    prompt:
+        'The following is the early prefix of a turn. The newer suffix is '
+        'retained verbatim. Summarize only the information needed to '
+        'understand that suffix. Use concise bullets under these headings:\n'
+        '## Original Request\n## Early Progress\n## Context for Suffix\n\n'
+        '${instruction?.trim().isEmpty ?? true ? '' : 'Additional user instruction:\n${instruction!.trim()}\n\n'}'
+        '<transcript>\n${_renderTimeline(turnPrefix)}\n</transcript>',
+    session: session,
+    model: model,
+    turnId: turnId,
+    cancellation: cancellation,
+    outputTokenLimit: outputTokenLimit,
+  );
+
+  /// Finds the first item of the turn containing [firstKeptIndex].
+  static int _turnStartIndex(List<TimelineItem> timeline, int firstKeptIndex) {
+    if (firstKeptIndex <= 0) return 0;
+    final turn = timeline[firstKeptIndex].turnId;
+    var index = firstKeptIndex - 1;
+    while (index >= 0 && timeline[index].turnId == turn) {
+      index--;
+    }
+    return index + 1;
   }
 
   /// Groups complete timeline items into bounded summary requests.
@@ -381,14 +465,47 @@ final class ContextCompactor {
     return '${content.substring(0, head)}\n...[tool result truncated; original length ${content.length}]...\n${content.substring(content.length - tail)}';
   }
 
+  /// Finds a message boundary that keeps approximately [budget] newest tokens.
+  ///
+  /// A boundary may precede a user or assistant item, but never a tool call
+  /// result. The newest user message is always retained.
+  static int _firstKeptIndex(List<TimelineItem> timeline, int budget) {
+    final valid = <int>[];
+    for (var i = 0; i < timeline.length; i++) {
+      if (timeline[i] is UserMessageItem ||
+          timeline[i] is AssistantMessageItem) {
+        valid.add(i);
+      }
+    }
+    if (valid.isEmpty) return timeline.length;
+    var tokens = 0;
+    var first = valid.first;
+    for (var i = timeline.length - 1; i >= 0; i--) {
+      tokens += estimateTokenCount(_renderTimeline([timeline[i]]));
+      if (tokens >= budget) {
+        first = valid.firstWhere(
+          (index) => index >= i,
+          orElse: () => valid.last,
+        );
+        break;
+      }
+    }
+    if (first == valid.first && valid.length > 1) {
+      final newestTurn = timeline.last.turnId;
+      first = valid.firstWhere(
+        (index) => timeline[index].turnId == newestTurn,
+        orElse: () => valid.last,
+      );
+    }
+    return first;
+  }
+
   /// Returns the newest [keptRecentTurns] whole turns from [timeline].
   static List<TimelineItem> _keptWindow(
     List<TimelineItem> timeline,
     int keptRecentTurns,
   ) {
-    if (timeline.isEmpty || keptRecentTurns <= 0) {
-      return const [];
-    }
+    if (timeline.isEmpty || keptRecentTurns <= 0) return const [];
     final keptTurns = <TurnId>{};
     for (
       var i = timeline.length - 1;

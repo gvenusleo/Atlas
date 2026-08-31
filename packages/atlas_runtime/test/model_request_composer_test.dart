@@ -107,9 +107,14 @@ void main() {
         compaction: compaction,
       );
 
-      expect(messages, hasLength(1));
+      expect(messages, hasLength(2));
+      expect(messages.first.role, ModelMessageRole.user);
       expect(
-        messages.single.content.whereType<TextContent>().single.text,
+        messages.first.content.whereType<TextContent>().single.text,
+        contains('summary'),
+      );
+      expect(
+        messages.last.content.whereType<TextContent>().single.text,
         'kept',
       );
     });

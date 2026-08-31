@@ -359,6 +359,16 @@ AgentConfig _agent(Map<String, Object?> root) {
         'agent.compaction.threshold',
         0.8,
       ),
+      keepRecentTokens: _positiveInt(
+        compaction['keep_recent_tokens'],
+        'agent.compaction.keep_recent_tokens',
+        20000,
+      ),
+      reserveTokens: _positiveInt(
+        compaction['reserve_tokens'],
+        'agent.compaction.reserve_tokens',
+        16384,
+      ),
     ),
   );
 }
