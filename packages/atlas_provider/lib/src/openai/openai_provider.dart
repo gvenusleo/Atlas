@@ -326,7 +326,7 @@ List<Object?> _responsesInput(
       if (message.content.isNotEmpty) {
         result.add(<String, Object?>{
           'role': 'assistant',
-          'content': _responsesContent(message.content),
+          'content': _responsesContent(message.content, assistant: true),
         });
       }
       for (final call in message.toolCalls) {
@@ -341,27 +341,39 @@ List<Object?> _responsesInput(
     }
     result.add(<String, Object?>{
       'role': message.role.name,
-      'content': _responsesContent(message.content),
+      'content': _responsesContent(
+        message.content,
+        assistant: message.role == ModelMessageRole.assistant,
+      ),
     });
   }
   return result;
 }
 
-List<Object?> _responsesContent(List<ContentPart> parts) => parts.map((part) {
-  if (part is TextContent) {
-    return <String, Object?>{'type': 'input_text', 'text': part.text};
-  }
-  if (part is ResourceContent) {
-    // The Responses API has no resource block; embed the text as plain text.
-    return <String, Object?>{'type': 'input_text', 'text': part.text};
-  }
-  final image = part as ImageContent;
-  return <String, Object?>{
-    'type': 'input_image',
-    'image_url': image.source,
-    'detail': image.detail.name,
-  };
-}).toList();
+/// Encodes Responses message content. Assistant messages replayed without a
+/// stored continuation are output messages and only accept `output_text`;
+/// user and system messages require `input_text`.
+List<Object?> _responsesContent(
+  List<ContentPart> parts, {
+  required bool assistant,
+}) {
+  final textType = assistant ? 'output_text' : 'input_text';
+  return parts.map((part) {
+    if (part is TextContent) {
+      return <String, Object?>{'type': textType, 'text': part.text};
+    }
+    if (part is ResourceContent) {
+      // The Responses API has no resource block; embed the text as plain text.
+      return <String, Object?>{'type': textType, 'text': part.text};
+    }
+    final image = part as ImageContent;
+    return <String, Object?>{
+      'type': 'input_image',
+      'image_url': image.source,
+      'detail': image.detail.name,
+    };
+  }).toList();
+}
 
 List<Object?> _tools(List<ToolDescriptor> tools, {required bool responses}) =>
     tools

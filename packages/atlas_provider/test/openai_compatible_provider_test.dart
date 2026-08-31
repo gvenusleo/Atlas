@@ -259,6 +259,49 @@ void main() {
     expect((inputs[1].first as Map<String, Object?>)['type'], isNull);
   });
 
+  test('encodes fallback assistant text as output_text items', () async {
+    final requests = <Map<String, Object?>>[];
+    final server = await _startServer((request) async {
+      requests.add(
+        jsonDecode(await utf8.decoder.bind(request).join())
+            as Map<String, Object?>,
+      );
+      await _sendSse(request.response, [
+        '{"type":"response.output_text.delta","delta":"ok"}',
+        '{"type":"response.completed","response":{"status":"completed","output":[]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    // An assistant item replayed after a compaction boundary whose stored
+    // continuation no longer matches the active provider/model falls back to
+    // the generic encoding path; the Responses API only accepts output_text
+    // content on assistant messages.
+    await _provider(server, OpenAIProtocol.responses)
+        .stream(
+          _request(
+            messages: const [
+              ModelMessage(
+                role: ModelMessageRole.user,
+                content: [TextContent('earlier request')],
+              ),
+              ModelMessage(
+                role: ModelMessageRole.assistant,
+                content: [TextContent('Done')],
+              ),
+            ],
+          ),
+        )
+        .toList();
+
+    final input = (requests.single['input'] as List)
+        .cast<Map<String, Object?>>();
+    final assistant = input.firstWhere((item) => item['role'] == 'assistant');
+    expect(assistant['content'], [
+      {'type': 'output_text', 'text': 'Done'},
+    ]);
+  });
+
   test('treats an empty Responses tool call arguments as no arguments', () async {
     final server = await _startServer((request) async {
       await _sendSse(request.response, [
