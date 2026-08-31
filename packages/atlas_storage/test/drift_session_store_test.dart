@@ -236,6 +236,48 @@ void main() {
     expect(loaded.modelCheckpoints, isEmpty);
   });
 
+  test('round trips an aborted partial assistant message', () async {
+    final session = _session(
+      'session-abort',
+      updatedAt: DateTime.utc(2026, 1, 2),
+    );
+    final turn = _turn(session.id, 'turn-abort');
+    await store.beginTurn(
+      runtime.BeginTurn(
+        session: session,
+        turn: turn,
+        userMessage: _user(session, turn, 'hello'),
+      ),
+    );
+    final partial = runtime.AssistantMessageItem(
+      id: runtime.TimelineItemId('item-abort'),
+      sessionId: session.id,
+      turnId: turn.id,
+      sequence: 1,
+      occurredAt: DateTime.utc(2026, 1, 2, 0, 0, 1),
+      content: const [runtime.TextContent('partial answer')],
+      model: _model,
+      stopReason: runtime.StopReason.aborted,
+    );
+    await store.appendModelStep(
+      session.id,
+      runtime.PersistedModelStep(
+        assistantMessage: partial,
+        toolCalls: const [],
+      ),
+    );
+
+    final loaded = await store.loadSession(session.id);
+    final loadedPartial = loaded.timeline
+        .whereType<runtime.AssistantMessageItem>()
+        .single;
+    expect(loadedPartial.stopReason, runtime.StopReason.aborted);
+    expect(
+      (loadedPartial.content.single as runtime.TextContent).text,
+      'partial answer',
+    );
+  });
+
   test('round trips an empty tool result content string', () async {
     final session = _session(
       'session-empty-tool-result',

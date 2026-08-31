@@ -96,7 +96,7 @@ product-level contracts:
 - `AgentEvent` values are emitted in occurrence order so clients do not regroup output after a turn.
 - A `Session` contains ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request.
 - Every assistant message may carry a provider-owned `ModelContinuation`; it is persisted inside the assistant row and restored onto the corresponding provider-neutral message.
-- Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary.
+- Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary: text already received from an interrupted model stream is persisted as an aborted assistant message and participates in later model context.
 - Skill injection preserves the original user text in history. Full skill instructions are turn-scoped model context, not transcript content.
 - Compaction preserves the durable timeline while replacing the active context checkpoint, which is stored on the session row. The runtime keeps the newest whole turns verbatim, summarizes everything earlier, and injects `Context compacted. Kept {n} recent messages.` with the summary into the system prompt. An optional compact instruction changes the generated summary, not user history.
 

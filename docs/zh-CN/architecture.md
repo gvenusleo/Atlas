@@ -91,7 +91,7 @@ handler 暴露给远程客户端。ACP 作为入口适配到同一 runtime；MCP
 - `AgentEvent` 按发生顺序发送，客户端不能在 turn 结束后重新分组输出。
 - `Session` 包含有序的 `TimelineItem` 与持久化的 `Turn`。用户输入会和 running turn 原子写入，然后才发起第一个 Provider 请求。
 - 每个 assistant message 可以携带 Provider 所有的 `ModelContinuation`；它内嵌在 assistant 行中持久化，并恢复到对应的 provider-neutral message。
-- turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界。
+- turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界：被中断模型流已接收的文本会以 aborted assistant message 持久化，并参与后续 turn 的模型上下文。
 - Skill 注入会保留历史中的原始用户文本；完整 skill 指令仅作为当前 turn 可见的模型上下文，不写入 transcript。
 - Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并在 system prompt 中注入 `Context compacted. Kept {n} recent messages.` 与摘要。可选 compact 指令只影响摘要，不修改用户历史。
 

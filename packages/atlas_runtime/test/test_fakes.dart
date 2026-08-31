@@ -162,6 +162,53 @@ final class CancellingProvider implements ModelProvider {
   }
 }
 
+/// Emits one text delta, then cancels the request mid-stream.
+final class PartialStreamCancelProvider implements ModelProvider {
+  @override
+  Future<ModelDescriptor> describe(ModelRef model) async =>
+      ModelDescriptor(ref: model);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    yield const TextDeltaEvent('partial answer');
+    request.cancellation!.cancel();
+    throw const TurnCancelledException();
+  }
+}
+
+/// Completes one tool-use step, then cancels the next stream mid-answer.
+final class CancelAfterToolUseProvider implements ModelProvider {
+  var _step = 0;
+
+  @override
+  Future<ModelDescriptor> describe(ModelRef model) async =>
+      ModelDescriptor(ref: model);
+
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    if (_step++ == 0) {
+      yield ModelCompletedEvent(
+        ModelResponse(
+          content: const [TextContent('calling tool')],
+          toolCalls: [
+            ToolCall(
+              id: ToolCallId('call-1'),
+              name: 'inspect',
+              arguments: const <String, Object?>{},
+            ),
+          ],
+          stopReason: StopReason.toolUse,
+          usage: const TokenUsage(inputTokens: 10, outputTokens: 5),
+        ),
+      );
+      return;
+    }
+    yield const TextDeltaEvent('partial answer');
+    request.cancellation!.cancel();
+    throw const TurnCancelledException();
+  }
+}
+
 /// A session context builder that injects [skills] for every directory.
 SessionContext Function(String) contextBuilder(SkillCatalog skills) =>
     (cwd) => SessionContext(
@@ -370,5 +417,16 @@ final class MemorySessionStore implements SessionStore {
       compaction: value.compaction,
       lastUsage: value.lastUsage,
     );
+  }
+}
+
+/// Rejects every model-step append to exercise cancellation-path tolerance.
+final class RejectingStepStore extends MemorySessionStore {
+  @override
+  Future<void> appendModelStep(
+    SessionId sessionId,
+    PersistedModelStep operation,
+  ) async {
+    throw SessionNotFoundException(sessionId);
   }
 }

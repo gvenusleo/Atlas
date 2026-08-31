@@ -128,6 +128,9 @@ final class TurnExecutor {
 
     var latestUsage = const TokenUsage();
     var finalContent = const <ContentPart>[];
+    // Text deltas received by the in-flight model stream; flushed as an
+    // aborted assistant item when cancellation interrupts the stream.
+    final partialText = StringBuffer();
     try {
       final context = sessionContextOf(session.workingDirectory);
       final selectedSkillMessages = ModelRequestComposer.skillMessages(
@@ -182,10 +185,12 @@ final class TurnExecutor {
           temperature: temperature,
           cancellation: cancellation,
         );
+        partialText.clear();
         await for (final event in provider.stream(modelRequest)) {
           cancellation.throwIfCancelled();
           switch (event) {
             case TextDeltaEvent(:final delta):
+              partialText.write(delta);
               yield ModelTextDelta(
                 sessionId: session.id,
                 turnId: turnId,
@@ -214,6 +219,8 @@ final class TurnExecutor {
         if (completedResponse == null) {
           throw StateError('model stream ended without response');
         }
+        // The step persists in full below; the partial buffer is stale now.
+        partialText.clear();
 
         final assistantId = ids.timelineItemId();
         final assistant = AssistantMessageItem(
@@ -349,6 +356,24 @@ final class TurnExecutor {
       }
       throw StateError('maximum model steps exceeded: $maxSteps');
     } on TurnCancelledException catch (error) {
+      final partialItem = await _flushAbortedPartial(
+        sessionId: session.id,
+        turnId: turnId,
+        timeline: timeline,
+        model: model,
+        latestUsage: latestUsage,
+        partialText: partialText,
+      );
+      if (partialItem != null) {
+        yield ModelResponseReceived(
+          sessionId: session.id,
+          turnId: turnId,
+          sequence: eventSequence++,
+          occurredAt: _now().toUtc(),
+          assistantMessage: partialItem,
+          toolCalls: const [],
+        );
+      }
       final outcome = TurnOutcome(
         sessionId: session.id,
         turnId: turnId,
@@ -650,6 +675,57 @@ final class TurnExecutor {
     failure: failure,
     cancelReason: cancelReason,
   );
+
+  /// Persists text received by a stream that cancellation interrupted as an
+  /// aborted assistant item; returns null when the stream had delivered no
+  /// text or the append failed, so the terminal turn state is always reached.
+  Future<AssistantMessageItem?> _flushAbortedPartial({
+    required SessionId sessionId,
+    required TurnId turnId,
+    required List<TimelineItem> timeline,
+    required ModelRef model,
+    required TokenUsage latestUsage,
+    required StringBuffer partialText,
+  }) async {
+    if (partialText.isEmpty) return null;
+    final item = AssistantMessageItem(
+      id: ids.timelineItemId(),
+      sessionId: sessionId,
+      turnId: turnId,
+      sequence: _nextSequence(timeline),
+      occurredAt: _now().toUtc(),
+      content: List<ContentPart>.unmodifiable([
+        TextContent(partialText.toString()),
+      ]),
+      model: model,
+      stopReason: StopReason.aborted,
+      usage: latestUsage,
+    );
+    try {
+      await store.appendModelStep(
+        sessionId,
+        PersistedModelStep(assistantMessage: item, toolCalls: const []),
+      );
+    } on Exception catch (error) {
+      // The partial is best-effort enrichment of the cancellation path; a
+      // flush failure (for example a concurrently deleted session) must not
+      // skip the terminal turn state below.
+      logger.log(
+        LogEvent(
+          level: LogLevel.warn,
+          code: 'turn.partial_flush_failed',
+          message: safeErrorMessage('Partial flush failed', error),
+          sessionId: sessionId,
+          turnId: turnId,
+          occurredAt: _now().toUtc(),
+        ),
+      );
+      return null;
+    }
+    partialText.clear();
+    timeline.add(item);
+    return item;
+  }
 
   /// Persists a terminal turn, tolerating a session that was deleted while
   /// the turn was running: the terminal outcome still stands for the caller.

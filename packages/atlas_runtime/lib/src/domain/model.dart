@@ -116,6 +116,10 @@ enum StopReason {
   /// The output token limit stopped generation.
   maxTokens,
 
+  /// The stream was interrupted before a terminal response; the persisted
+  /// content is the partial answer received so far.
+  aborted,
+
   /// The provider did not expose a recognized reason.
   unknown,
 }

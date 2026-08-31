@@ -448,4 +448,166 @@ void main() {
       [0, 2],
     );
   });
+  test(
+    'flushes partial text as an aborted assistant message on cancellation',
+    () async {
+      final store = MemorySessionStore();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: PartialStreamCancelProvider(),
+        tools: MemoryTools(result: const ToolResult(content: 'ok')),
+        ids: TestIds(),
+        defaultModel: testModel,
+      );
+
+      final events = await runtime
+          .run(
+            TurnRequest(
+              content: const [TextContent('hello')],
+              workingDirectory: '/tmp',
+            ),
+          )
+          .toList();
+
+      final aborted = store.timeline.whereType<AssistantMessageItem>().single;
+      expect(aborted.stopReason, StopReason.aborted);
+      expect((aborted.content.single as TextContent).text, 'partial answer');
+      expect(store.turns.single.status, TurnStatus.cancelled);
+
+      // The flush is announced after the deltas and before TurnFinished.
+      final received = events.whereType<ModelResponseReceived>().single;
+      expect(received.assistantMessage.id, aborted.id);
+      expect(
+        events.indexOf(received),
+        lessThan(events.indexOf(events.whereType<TurnFinished>().single)),
+      );
+    },
+  );
+  test('keeps the aborted partial in the next turn model context', () async {
+    final store = MemorySessionStore();
+    final cancelledRuntime = AgentRuntime(
+      store: store,
+      provider: PartialStreamCancelProvider(),
+      tools: MemoryTools(result: const ToolResult(content: 'ok')),
+      ids: TestIds(),
+      defaultModel: testModel,
+    );
+    await cancelledRuntime
+        .run(
+          TurnRequest(
+            content: const [TextContent('hello')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    final scripted = ScriptedProvider(const [
+      ModelResponse(
+        content: [TextContent('done')],
+        stopReason: StopReason.endTurn,
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: scripted,
+      tools: MemoryTools(result: const ToolResult(content: 'ok')),
+      ids: TestIds(),
+      defaultModel: testModel,
+    );
+
+    await runtime
+        .run(
+          TurnRequest(
+            sessionId: store.session!.id,
+            content: const [TextContent('continue')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    final assistantMessages = scripted.requests.single.messages
+        .where((message) => message.role == ModelMessageRole.assistant)
+        .toList();
+    expect(assistantMessages, hasLength(1));
+    expect(
+      (assistantMessages.single.content.single as TextContent).text,
+      'partial answer',
+    );
+  });
+  test(
+    'cancellation without received deltas persists no assistant message',
+    () async {
+      final store = MemorySessionStore();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: CancellingProvider(),
+        tools: MemoryTools(result: const ToolResult(content: 'ok')),
+        ids: TestIds(),
+        defaultModel: testModel,
+      );
+
+      final events = await runtime
+          .run(
+            TurnRequest(
+              content: const [TextContent('hello')],
+              workingDirectory: '/tmp',
+            ),
+          )
+          .toList();
+
+      expect(store.timeline.whereType<AssistantMessageItem>(), isEmpty);
+      expect(events.whereType<ModelResponseReceived>(), isEmpty);
+      expect(store.turns.single.status, TurnStatus.cancelled);
+    },
+  );
+  test('finishes the turn when the partial flush fails to persist', () async {
+    final store = RejectingStepStore();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: PartialStreamCancelProvider(),
+      tools: MemoryTools(result: const ToolResult(content: 'ok')),
+      ids: TestIds(),
+      defaultModel: testModel,
+    );
+
+    final events = await runtime
+        .run(
+          TurnRequest(
+            content: const [TextContent('hello')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    expect(store.timeline.whereType<AssistantMessageItem>(), isEmpty);
+    expect(
+      events.whereType<TurnFinished>().single.outcome.status,
+      TurnStatus.cancelled,
+    );
+    expect(store.turns.single.status, TurnStatus.cancelled);
+  });
+  test('carries the turn usage through the aborted partial flush', () async {
+    final store = MemorySessionStore();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: CancelAfterToolUseProvider(),
+      tools: MemoryTools(result: const ToolResult(content: 'ok')),
+      ids: TestIds(),
+      defaultModel: testModel,
+    );
+
+    await runtime
+        .run(
+          TurnRequest(
+            content: const [TextContent('hello')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+
+    final aborted = store.timeline.whereType<AssistantMessageItem>().last;
+    expect(aborted.stopReason, StopReason.aborted);
+    expect(aborted.usage.inputTokens, 10);
+    expect(store.turns.single.status, TurnStatus.cancelled);
+  });
 }
