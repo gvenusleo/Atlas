@@ -80,7 +80,9 @@ List<Skill> _loadRoot(Directory root) {
   }
   final result = <Skill>[];
   for (final entry in root.listSync(followLinks: false)) {
-    if (entry is! Directory) {
+    // Plain files cannot contain SKILL.md; symlinked directories still
+    // resolve through the SKILL.md path below.
+    if (entry is File) {
       continue;
     }
     final skillFile = File('${entry.path}/SKILL.md');
@@ -155,6 +157,11 @@ Map<String, String> _parseFrontmatter(String path, String text) {
   for (var i = 1; i < end; i++) {
     final trimmed = lines[i].trim();
     if (trimmed.isEmpty || trimmed.startsWith('#')) {
+      continue;
+    }
+    // Sequence entries (e.g. `allowed-tools` lists) are not consumed by this
+    // mapping-only parser; skip them instead of failing the whole skill.
+    if (trimmed == '-' || trimmed.startsWith('- ')) {
       continue;
     }
     final colon = trimmed.indexOf(':');

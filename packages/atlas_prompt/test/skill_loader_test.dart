@@ -310,4 +310,38 @@ void main() {
     final catalog = load();
     expect(catalog.summaries.map((s) => s.name), ['good']);
   });
+
+  test('parses frontmatter containing YAML sequence items', () {
+    // Sequence entries such as `allowed-tools` lists are not consumed by the
+    // catalog; their lines must not fail the whole skill.
+    writeSkill(
+      userAgents.path,
+      'listed',
+      '---\n'
+          'name: listed\n'
+          'description: |\n'
+          '  Multi-line description.\n'
+          'allowed-tools:\n'
+          '  - Bash(ls *)\n'
+          '  - Bash(git status)\n'
+          '---\nBody',
+    );
+
+    final catalog = load();
+    expect(catalog.lookup('listed')!.description, 'Multi-line description.');
+    expect(catalog.summaries.map((s) => s.name), ['listed']);
+  });
+
+  test('loads skills from symlinked directories', () {
+    writeSkill(
+      Directory('${root.path}/real').path,
+      'linked',
+      '---\nname: linked\ndescription: From a symlink.\n---\nBody',
+    );
+    Link('${userAgents.path}/linked').createSync('${root.path}/real/linked');
+
+    final catalog = load();
+    expect(catalog.summaries.map((s) => s.name), ['linked']);
+    expect(catalog.lookup('linked')!.description, 'From a symlink.');
+  });
 }
