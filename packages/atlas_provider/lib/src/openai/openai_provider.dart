@@ -295,6 +295,14 @@ List<Object?> _responsesInput(
   ProviderId providerId,
   String modelId,
 ) {
+  // Continuation replays must not emit function calls that never received an
+  // output: interrupted turns can persist the raw provider items without the
+  // tool result, and the Responses API rejects unpaired function calls.
+  final outputCallIds = <String>{
+    for (final message in messages)
+      if (message.role == ModelMessageRole.tool && message.toolCallId != null)
+        message.toolCallId!.value,
+  };
   final result = <Object?>[];
   for (final message in messages) {
     if (message.role == ModelMessageRole.assistant &&
@@ -309,7 +317,7 @@ List<Object?> _responsesInput(
         message.continuation?.opaquePayload['model'] == modelId) {
       final items = message.continuation!.opaquePayload['items'];
       if (items is List && items.isNotEmpty) {
-        result.addAll(items.cast<Object?>());
+        result.addAll(_pairedFunctionCalls(items, outputCallIds));
         continue;
       }
     }
@@ -349,6 +357,19 @@ List<Object?> _responsesInput(
   }
   return result;
 }
+
+/// Filters continuation replay items, dropping `function_call` entries whose
+/// call never received a `function_call_output`; all other items pass through.
+List<Object?> _pairedFunctionCalls(
+  List<Object?> items,
+  Set<String> outputCallIds,
+) => [
+  for (final item in items)
+    if (item is! Map<String, Object?> ||
+        item['type'] != 'function_call' ||
+        outputCallIds.contains(item['call_id']))
+      item,
+];
 
 /// Encodes Responses message content. Assistant messages replayed without a
 /// stored continuation are output messages and only accept `output_text`;

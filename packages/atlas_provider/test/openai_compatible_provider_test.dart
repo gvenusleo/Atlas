@@ -207,6 +207,92 @@ void main() {
     );
   });
 
+  test('drops unpaired function_call items from continuation replay', () async {
+    final inputs = <List<Object?>>[];
+    final server = await _startServer((request) async {
+      final body =
+          jsonDecode(await utf8.decoder.bind(request).join())
+              as Map<String, Object?>;
+      inputs.add((body['input'] as List).cast<Object?>());
+      await _sendSse(request.response, [
+        '{"type":"response.output_text.delta","delta":"Ok"}',
+        '{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2},"output":[]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    // An interrupted turn can persist the assistant message with its raw
+    // provider items while the tool result was never written; replaying the
+    // function_call without its output is rejected by the Responses API.
+    final continuation = ModelContinuation(
+      providerId: _modelRef.providerId,
+      opaquePayload: const {
+        'protocol': 'responses',
+        'model': 'test-model',
+        'items': [
+          {
+            'type': 'message',
+            'content': [
+              {'type': 'output_text', 'text': 'Done'},
+            ],
+          },
+          {
+            'type': 'function_call',
+            'call_id': 'call-lost',
+            'name': 'inspect',
+            'arguments': '{}',
+          },
+          {
+            'type': 'function_call',
+            'call_id': 'call-paired',
+            'name': 'read',
+            'arguments': '{}',
+          },
+        ],
+      },
+    );
+
+    await _provider(server, OpenAIProtocol.responses)
+        .stream(
+          _request(
+            messages: [
+              ModelMessage(
+                role: ModelMessageRole.assistant,
+                content: const [TextContent('Done')],
+                continuation: continuation,
+              ),
+              ModelMessage(
+                role: ModelMessageRole.tool,
+                toolCallId: ToolCallId('call-paired'),
+                toolOutput: 'files',
+              ),
+            ],
+          ),
+        )
+        .toList();
+
+    final input = inputs.single;
+    final callIds = [
+      for (final item in input)
+        if (item is Map<String, Object?> && item['type'] == 'function_call')
+          item['call_id'],
+    ];
+    final outputIds = [
+      for (final item in input)
+        if (item is Map<String, Object?> &&
+            item['type'] == 'function_call_output')
+          item['call_id'],
+    ];
+    expect(callIds, ['call-paired']);
+    expect(outputIds, ['call-paired']);
+    expect(
+      input.where(
+        (item) => item is Map<String, Object?> && item['type'] == 'message',
+      ),
+      isNotEmpty,
+    );
+  });
+
   test('does not replay Responses items when the model changes', () async {
     var callCount = 0;
     final inputs = <List<Object?>>[];
