@@ -43,8 +43,9 @@ abstract interface class AgentSession {
   /// Renames a session.
   Future<void> renameSession(SessionId sessionId, String title);
 
-  /// Returns the default model context window.
-  Future<int> contextWindowSize();
+  /// Returns the context window of [model], or of the default model when
+  /// [model] is omitted.
+  Future<int> contextWindowSize({ModelRef? model});
 }
 
 /// Optional presentation capabilities exposed by protocol-backed sessions.

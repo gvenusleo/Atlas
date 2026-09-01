@@ -575,6 +575,18 @@ final class AcpServer {
       updated.model,
       updated.effort,
     );
+    if (configId == acpConfigIdModel) {
+      // Report the new model's context window immediately so the client's
+      // usage meter switches without waiting for the next turn. Usage is
+      // estimated from the persisted timeline, mirroring session/load.
+      final snapshot = await _load(rt.SessionId(sessionId));
+      await _bestEffort(
+        () => _sendUsageUpdate(
+          rt.SessionId(sessionId),
+          _estimatedSessionUsage(snapshot),
+        ),
+      );
+    }
     return SetSessionConfigOptionResponse(
       configOptions: sessionConfigOptions(
         models,
@@ -855,20 +867,24 @@ final class AcpServer {
     }
   }
 
-  int? _contextSize;
+  /// Cached context windows per model reference string.
+  final _contextSizes = <String, int>{};
 
-  /// The cached context window of the default model, or 0 when unknown.
+  /// The context window of [model], or of the runtime default model when
+  /// [model] is null, or 0 when unknown.
   ///
-  /// Only positive values are cached, so a transient describe failure is
-  /// retried on the next turn instead of disabling usage updates forever.
-  Future<int> _contextWindow() async {
-    final cached = _contextSize;
+  /// Only positive values are cached per model, so a transient describe
+  /// failure is retried on the next turn instead of disabling usage updates
+  /// forever.
+  Future<int> _contextWindow(rt.ModelRef? model) async {
+    final key = model?.toString() ?? '';
+    final cached = _contextSizes[key];
     if (cached != null && cached > 0) {
       return cached;
     }
-    final size = await runtime.contextWindowSize();
+    final size = await runtime.contextWindowSize(model: model);
     if (size > 0) {
-      _contextSize = size;
+      _contextSizes[key] = size;
     }
     return size;
   }
@@ -878,7 +894,7 @@ final class AcpServer {
     if (usedTokens == null || usedTokens <= 0) {
       return;
     }
-    final size = await _contextWindow();
+    final size = await _contextWindow(_sessionConfigs[session.value]?.model);
     if (size <= 0) {
       return;
     }

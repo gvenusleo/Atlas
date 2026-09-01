@@ -272,11 +272,12 @@ final class AgentRuntime
     }
   }
 
-  /// The context window size of the default model, or 0 when unknown.
+  /// The context window size of [model], or of the default model when
+  /// [model] is omitted, or 0 when unknown.
   @override
-  Future<int> contextWindowSize() async {
+  Future<int> contextWindowSize({ModelRef? model}) async {
     try {
-      return (await provider.describe(defaultModel)).contextWindow;
+      return (await provider.describe(model ?? defaultModel)).contextWindow;
     } catch (_) {
       return 0;
     }

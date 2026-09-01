@@ -688,7 +688,7 @@ final class AcpClient
   }
 
   @override
-  Future<int> contextWindowSize() async => _contextSize;
+  Future<int> contextWindowSize({rt.ModelRef? model}) async => _contextSize;
 
   /// Ensures the server session uses [model], [effort], and [mode], sending
   /// `session/set_config_option` when they differ from the last known values.

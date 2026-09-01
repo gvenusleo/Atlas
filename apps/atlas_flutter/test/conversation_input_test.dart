@@ -880,7 +880,8 @@ final class _FakeModeRuntime implements PresentationAgentSession {
       _inner.renameSession(sessionId, title);
 
   @override
-  Future<int> contextWindowSize() => _inner.contextWindowSize();
+  Future<int> contextWindowSize({ModelRef? model}) =>
+      _inner.contextWindowSize(model: model);
 
   @override
   String? titleFor(SessionId sessionId) => _inner.titleFor(sessionId);

@@ -280,8 +280,15 @@ final class ScriptedProvider implements ModelProvider {
   ModelRequest? lastRequest;
 
   @override
-  Future<ModelDescriptor> describe(ModelRef model) async =>
-      ModelDescriptor(ref: model, name: 'test', contextWindow: 128000);
+  Future<ModelDescriptor> describe(ModelRef model) async {
+    // Model-aware so tests can observe which model the caller resolved.
+    for (final descriptor in testCatalog) {
+      if (descriptor.ref == model) {
+        return descriptor;
+      }
+    }
+    return ModelDescriptor(ref: model, name: 'test', contextWindow: 128000);
+  }
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
