@@ -292,20 +292,21 @@ void main() {
     expect(find.text('/compact'), findsOneWidget);
     expect(find.text('/skill-1'), findsOneWidget);
     expect(find.text('/skill-4'), findsOneWidget);
-    expect(find.text('/skill-5'), findsNothing);
-    expect(find.text('/skill-6'), findsNothing);
+    // Rows below the viewport exist in the tree but are not visible.
+    expect(find.text('/skill-5').hitTestable(), findsNothing);
+    expect(find.text('/skill-6').hitTestable(), findsNothing);
 
     for (var i = 0; i < 5; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
     }
 
-    expect(find.text('/compact'), findsNothing);
-    expect(find.text('/skill-3'), findsOneWidget);
-    expect(find.text('/skill-6'), findsOneWidget);
+    expect(find.text('/compact').hitTestable(), findsNothing);
+    expect(find.text('/skill-3').hitTestable(), findsOneWidget);
+    expect(find.text('/skill-6').hitTestable(), findsOneWidget);
     AnimatedPositioned highlight() =>
         tester.widget<AnimatedPositioned>(find.byType(AnimatedPositioned));
-    expect(highlight().top, 90);
+    expect(highlight().top, 150);
   });
 
   testWidgets('uppercase and dotted skill names still complete', (
