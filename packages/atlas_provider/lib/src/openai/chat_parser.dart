@@ -42,7 +42,9 @@ final class ChatParser implements StreamParser {
       _content.write(text);
       yield TextDeltaEvent(text);
     }
-    final reasoning = delta['reasoning_content'];
+    // DeepSeek natively streams reasoning under `reasoning_content`; some
+    // relays (e.g. CommandCode) rewrite it to `reasoning`, so accept both.
+    final reasoning = delta['reasoning_content'] ?? delta['reasoning'];
     if (reasoning is String && reasoning.isNotEmpty) {
       _reasoning.write(reasoning);
       yield ReasoningDeltaEvent(reasoning);

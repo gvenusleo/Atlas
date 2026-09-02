@@ -147,6 +147,35 @@ void main() {
     },
   );
 
+  test('reads relay reasoning deltas under the reasoning key', () async {
+    // Some relays (e.g. CommandCode) rewrite DeepSeek's reasoning_content
+    // to a plain `reasoning` field, so the chat parser must accept both.
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"choices":[{"delta":{"reasoning":"let"}}]}',
+        '{"choices":[{"delta":{"reasoning":" me think"}}]}',
+        '{"choices":[{"delta":{"content":"2"}}]}',
+        '{"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        '[DONE]',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final provider = _provider(server, OpenAIProtocol.chatCompletions);
+    final events = await provider.stream(_request()).toList();
+
+    final reasoningEvents = events
+        .whereType<ReasoningDeltaEvent>()
+        .map((e) => e.delta)
+        .toList();
+    expect(reasoningEvents, ['let', ' me think']);
+    final response = (events.last as ModelCompletedEvent).response;
+    expect(response.reasoning, 'let me think');
+    expect(response.continuation?.reasoningSummary, 'let me think');
+    expect(response.content.single, isA<TextContent>());
+    expect((response.content.single as TextContent).text, '2');
+  });
+
   test('replays Responses continuation items for the same provider', () async {
     var callCount = 0;
     final inputs = <List<Object?>>[];
