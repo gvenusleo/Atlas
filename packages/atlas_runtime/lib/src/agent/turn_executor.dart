@@ -278,6 +278,7 @@ final class TurnExecutor {
           occurredAt: _now().toUtc(),
           assistantMessage: assistant,
           toolCalls: List<ToolCallItem>.unmodifiable(calls),
+          usage: latestUsage,
         );
 
         if (calls.isEmpty) {

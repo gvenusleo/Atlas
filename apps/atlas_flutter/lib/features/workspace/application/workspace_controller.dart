@@ -640,9 +640,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           target,
           (workspace) => workspace.copyWith(
             turnPhase: TurnPhase.idle,
-            contextTokens: outcome.usage.inputTokens > 0
-                ? outcome.usage.inputTokens
-                : outcome.usage.totalTokens,
+            contextTokens: outcome.usage.contextTokens,
           ),
         );
       case CompactionStarted():

@@ -171,6 +171,20 @@ void main() {
     expect(controller.contextTokens, 4321);
   });
 
+  test('updates context tokens on each intermediate model response', () async {
+    provider.toolCallInputTokens = 700;
+    final controller = ChatController(runtime: runtime);
+    final observed = <int>[];
+    controller.addListener(() => observed.add(controller.contextTokens));
+
+    await controller.send('hello');
+
+    // The intermediate tool-call response reports 700 and the final response
+    // 4321; both must be observed instead of only the turn-end figure.
+    expect(observed, contains(700));
+    expect(observed.last, 4321);
+  });
+
   test('flips between working and thinking while a turn runs', () async {
     provider.printReasoning = true;
     provider.gate = Completer<void>();
@@ -733,6 +747,9 @@ final class _ScriptedProvider implements ModelProvider {
   /// Input tokens reported by the final response of each turn.
   int inputTokens = 0;
 
+  /// Input tokens reported by the intermediate tool-call response.
+  int? toolCallInputTokens;
+
   /// Blocks the compaction request when set.
   Completer<void>? compactionGate;
 
@@ -790,6 +807,7 @@ final class _ScriptedProvider implements ModelProvider {
             ),
           ],
           stopReason: StopReason.toolUse,
+          usage: TokenUsage(inputTokens: toolCallInputTokens ?? 0),
         ),
       );
       return;

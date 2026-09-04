@@ -23,4 +23,8 @@ final class TokenUsage {
 
   /// Number of input tokens written to provider cache.
   final int cacheWriteInputTokens;
+
+  /// The best-known context occupancy figure: input tokens when reported,
+  /// else total tokens (input plus output).
+  int get contextTokens => inputTokens > 0 ? inputTokens : totalTokens;
 }

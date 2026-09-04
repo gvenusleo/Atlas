@@ -38,6 +38,10 @@ void main() {
       ],
     );
     final sessionId = await createWireSession(wire);
+    final usageUpdates = wire.turnNotifications.where((message) {
+      final update = (message['params'] as Map?)?['update'];
+      return update is Map && update['sessionUpdate'] == 'usage_update';
+    });
     final promptFuture = wire.send({
       'jsonrpc': '2.0',
       'id': 2,
@@ -49,13 +53,66 @@ void main() {
         ],
       },
     });
-    // agent_message_chunk, session_info_update, usage_update.
-    final updates = await wire.turnNotifications.take(3).toList();
+    // The mid-turn report from the model response and the turn-end report
+    // carry the same figure, so exactly one update reaches the client.
+    final usageMessage = await usageUpdates.first;
+    await promptFuture;
     final usage =
-        ((updates[2]['params'] as Map)['update'] as Map<String, Object?>);
-    expect(usage['sessionUpdate'], 'usage_update');
+        ((usageMessage['params'] as Map)['update'] as Map<String, Object?>);
     expect(usage['used'], 1200);
     expect(usage['size'], 128000);
+    final response = await promptFuture;
+    expect((response['result'] as Map)['stopReason'], 'end_turn');
+    await wire.close();
+  });
+  test('emits usage_update after each intermediate model response', () async {
+    final wire = await Wire.open(
+      responses: [
+        ModelResponse(
+          content: const [TextContent('I will inspect the files.')],
+          toolCalls: [
+            ToolCall(
+              id: ToolCallId('call-1'),
+              name: 'read',
+              arguments: <String, Object?>{'path': '.'},
+            ),
+          ],
+          stopReason: StopReason.toolUse,
+          usage: const TokenUsage(totalTokens: 900),
+        ),
+        const ModelResponse(
+          content: [TextContent('Done.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await createWireSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': 'Inspect the files'},
+        ],
+      },
+    });
+    // The scripted default turn ends with an empty usage, so the only
+    // usage_update can come from the intermediate model response.
+    final updates = await wire.turnNotifications
+        .where(
+          (message) =>
+              ((message['params'] as Map?)?['update']
+                  as Map?)?['sessionUpdate'] ==
+              'usage_update',
+        )
+        .take(1)
+        .toList();
+    final usage =
+        ((updates[0]['params'] as Map)['update'] as Map<String, Object?>);
+    expect(usage['size'], 128000);
+    expect(usage['used'], 900);
     final response = await promptFuture;
     expect((response['result'] as Map)['stopReason'], 'end_turn');
     await wire.close();
@@ -113,12 +170,13 @@ void main() {
           .map((m) => (m['params'] as Map)['update'] as Map<String, Object?>)
           .where((u) => u['sessionUpdate'] == 'usage_update')
           .toList();
-      // Only the post-compaction usage is reported; the pre-compaction turn
-      // usage (200000) is replaced by the compacted estimate.
-      expect(usages, hasLength(1));
-      expect(usages.single['used'], greaterThan(0));
-      expect(usages.single['used'], lessThan(200000));
-      expect(usages.single['size'], 128000);
+      // The mid-turn report shows the pre-compaction usage (200000); the
+      // post-compaction estimate then replaces it with the freed figure.
+      expect(usages, hasLength(2));
+      expect(usages.first['used'], 200000);
+      expect(usages.last['used'], greaterThan(0));
+      expect(usages.last['used'], lessThan(200000));
+      expect(usages.last['size'], 128000);
       expect((response['result'] as Map)['stopReason'], 'end_turn');
       await wire.close();
     },

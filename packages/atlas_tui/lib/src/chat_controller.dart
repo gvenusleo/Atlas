@@ -345,12 +345,12 @@ final class ChatController implements Listenable {
             text: 'Context compaction failed: $message',
           ),
         );
+      case ModelResponseReceived(:final usage) when usage.contextTokens > 0:
+        _contextTokens = usage.contextTokens;
       case TurnFinished(:final outcome):
         _turnPhase = TurnPhase.idle;
         _sealed = true;
-        _contextTokens = outcome.usage.inputTokens > 0
-            ? outcome.usage.inputTokens
-            : outcome.usage.totalTokens;
+        _contextTokens = outcome.usage.contextTokens;
         if (outcome.status == TurnStatus.cancelled) {
           _messages.add(
             ChatMessage(kind: ChatMessageKind.system, text: 'Turn cancelled'),

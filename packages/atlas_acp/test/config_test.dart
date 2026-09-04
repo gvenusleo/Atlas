@@ -133,11 +133,17 @@ void main() {
         ],
       },
     });
-    // agent_message_chunk, session_info_update, usage_update.
-    final updates = await wire.turnNotifications.take(3).toList();
+    final usageMessage = await wire.turnNotifications
+        .where(
+          (message) =>
+              ((message['params'] as Map?)?['update']
+                  as Map?)?['sessionUpdate'] ==
+              'usage_update',
+        )
+        .first;
+    await promptFuture;
     final usage =
-        ((updates[2]['params'] as Map)['update'] as Map<String, Object?>);
-    expect(usage['sessionUpdate'], 'usage_update');
+        ((usageMessage['params'] as Map)['update'] as Map<String, Object?>);
     expect(usage['used'], 1200);
     expect(usage['size'], 64000);
     final response = await promptFuture;

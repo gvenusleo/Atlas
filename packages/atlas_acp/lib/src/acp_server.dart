@@ -400,6 +400,11 @@ final class AcpServer {
         cancellation: cancellation,
       ),
     )) {
+      if (event case rt.ModelResponseReceived(
+        :final usage,
+      ) when usage.contextTokens > 0) {
+        await _bestEffort(() => _sendUsageUpdate(session, usage.contextTokens));
+      }
       for (final update in mapper.map(event)) {
         _sendUpdate(session, update);
       }
@@ -409,9 +414,7 @@ final class AcpServer {
             stopReason = outcome.stopReason == rt.StopReason.maxTokens
                 ? 'max_tokens'
                 : 'end_turn';
-            usedTokens = outcome.usage.inputTokens > 0
-                ? outcome.usage.inputTokens
-                : outcome.usage.totalTokens;
+            usedTokens = outcome.usage.contextTokens;
           case rt.TurnStatus.cancelled:
             stopReason = 'cancelled';
           case rt.TurnStatus.failed:
@@ -497,6 +500,7 @@ final class AcpServer {
         in _activeTurns[sessionId] ?? const <rt.CancellationToken>[]) {
       token.cancel();
     }
+    _lastUsageReports.remove(sessionId);
     return CloseSessionResponse();
   }
 
@@ -515,6 +519,7 @@ final class AcpServer {
     }
     _titles.remove(sessionId);
     _sessionConfigs.remove(sessionId);
+    _lastUsageReports.remove(sessionId);
     return DeleteSessionResponse();
   }
 
@@ -889,6 +894,11 @@ final class AcpServer {
     return size;
   }
 
+  /// Last (used, size) pair reported per session, so repeated identical
+  /// reports are not sent when a turn's final usage matches the last
+  /// intermediate model response.
+  final _lastUsageReports = <String, (int, int)>{};
+
   /// Emits a `usage_update` after a completed turn when usage is known.
   Future<void> _sendUsageUpdate(rt.SessionId session, int? usedTokens) async {
     if (usedTokens == null || usedTokens <= 0) {
@@ -898,6 +908,10 @@ final class AcpServer {
     if (size <= 0) {
       return;
     }
+    if (_lastUsageReports[session.value] == (usedTokens, size)) {
+      return;
+    }
+    _lastUsageReports[session.value] = (usedTokens, size);
     _sendUpdate(session, UsageSessionUpdate(used: usedTokens, size: size));
   }
 

@@ -1,6 +1,7 @@
 import 'ids.dart';
 import 'timeline.dart';
 import 'turn.dart';
+import 'usage.dart';
 
 /// A runtime event emitted while executing a turn.
 sealed class AgentEvent {
@@ -80,6 +81,7 @@ final class ModelResponseReceived extends AgentEvent {
     required super.occurredAt,
     required this.assistantMessage,
     required this.toolCalls,
+    this.usage = const TokenUsage(),
   });
 
   /// The persisted assistant item.
@@ -87,6 +89,10 @@ final class ModelResponseReceived extends AgentEvent {
 
   /// Persisted tool call items emitted by this response.
   final List<ToolCallItem> toolCalls;
+
+  /// The provider usage of the completed model request backing this
+  /// response; zero-valued when unknown so clients keep the previous figure.
+  final TokenUsage usage;
 }
 
 /// Indicates that a tool is about to execute.
