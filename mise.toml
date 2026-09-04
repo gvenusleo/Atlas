@@ -80,11 +80,18 @@ run = [
 [tasks.app-run]
 description = "Run the Flutter app on a device"
 usage = '''
-flag "--device <device>" help="Target device" default="macos"
+flag "--device <device>" help="Target device (defaults to the only attached device)"
 '''
 dir = "apps/atlas_flutter"
 depends = ["deps"]
-run = "flutter run --no-pub -d {{ usage.device }}"
+shell = "bash -eu -o pipefail -c"
+run = '''
+if [ -n "{{ usage.device }}" ]; then
+  flutter run --no-pub -d "{{ usage.device }}"
+else
+  flutter run --no-pub
+fi
+'''
 
 [tasks.app-build-linux]
 description = "Build the Flutter app for Linux"
