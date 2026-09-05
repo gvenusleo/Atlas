@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -90,97 +91,111 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     final widths = _resolvePanelWidths(availableWidth);
     final leftPanelWidth = _leftVisible ? widths.left : _leftClosingWidth;
     final rightPanelWidth = _rightVisible ? widths.right : _rightClosingWidth;
-    final closedLeftButtonX = WorkspaceMetrics.usesIntegratedTitlebar
+    final closedLeftButtonX = WorkspaceMetrics.showsTrafficLights
         ? WorkspaceMetrics.macOSTrafficLightInset
         : 6.0;
 
     return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Row(
-                children: [
-                  _AnimatedSideRegion(
-                    animation: _leftSidebarAnimation,
-                    alignment: Alignment.centerLeft,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          key: const ValueKey('atlas-left-panel'),
-                          width: leftPanelWidth,
-                          child: const SessionsPanel(),
-                        ),
-                        WorkspaceResizeHandle(
-                          key: const ValueKey('atlas-left-resize-handle'),
-                          panelOnLeft: true,
-                          onDrag: (delta) => _resizeLeft(delta, availableWidth),
-                        ),
-                      ],
+      body: WorkspaceResizeRing(
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Row(
+                  children: [
+                    _AnimatedSideRegion(
+                      animation: _leftSidebarAnimation,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            key: const ValueKey('atlas-left-panel'),
+                            width: leftPanelWidth,
+                            child: const SessionsPanel(),
+                          ),
+                          WorkspaceResizeHandle(
+                            key: const ValueKey('atlas-left-resize-handle'),
+                            panelOnLeft: true,
+                            onDrag: (delta) =>
+                                _resizeLeft(delta, availableWidth),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: WorkspacePanel(
-                      startupError: widget.startupError,
-                      compact: false,
-                      leftActive: _leftVisible,
-                      onLeftPressed: () => _setLeftVisible(true, widths.left),
-                      onRightPressed: () =>
-                          _setRightVisible(true, widths.right),
+                    Expanded(
+                      child: WorkspacePanel(
+                        startupError: widget.startupError,
+                        compact: false,
+                        leftActive: _leftVisible,
+                        onLeftPressed: () => _setLeftVisible(true, widths.left),
+                        onRightPressed: () =>
+                            _setRightVisible(true, widths.right),
+                      ),
                     ),
-                  ),
-                  _AnimatedSideRegion(
-                    animation: _rightSidebarAnimation,
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        WorkspaceResizeHandle(
-                          key: const ValueKey('atlas-right-resize-handle'),
-                          panelOnLeft: false,
-                          onDrag: (delta) =>
-                              _resizeRight(delta, availableWidth),
-                        ),
-                        SizedBox(
-                          key: const ValueKey('atlas-right-panel'),
-                          width: rightPanelWidth,
-                          child: const DetailsPanel(),
-                        ),
-                      ],
+                    _AnimatedSideRegion(
+                      animation: _rightSidebarAnimation,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          WorkspaceResizeHandle(
+                            key: const ValueKey('atlas-right-resize-handle'),
+                            panelOnLeft: false,
+                            onDrag: (delta) =>
+                                _resizeRight(delta, availableWidth),
+                          ),
+                          SizedBox(
+                            key: const ValueKey('atlas-right-panel'),
+                            width: rightPanelWidth,
+                            child: const DetailsPanel(),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Positioned(
-              key: const ValueKey('atlas-left-toggle-positioned'),
-              top: 6,
-              left: closedLeftButtonX,
-              child: WorkspaceToolbarButton(
-                key: const ValueKey('atlas-left-toggle'),
-                icon: _leftVisible
-                    ? LucideIcons.panelLeft
-                    : LucideIcons.panelLeftOpen,
-                tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
-                onPressed: () => _setLeftVisible(!_leftVisible, leftPanelWidth),
+              Positioned(
+                key: const ValueKey('atlas-left-toggle-positioned'),
+                top: 6,
+                left: closedLeftButtonX,
+                child: WorkspaceToolbarButton(
+                  key: const ValueKey('atlas-left-toggle'),
+                  icon: _leftVisible
+                      ? LucideIcons.panelLeft
+                      : LucideIcons.panelLeftOpen,
+                  tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
+                  onPressed: () =>
+                      _setLeftVisible(!_leftVisible, leftPanelWidth),
+                ),
               ),
-            ),
-            Positioned(
-              key: const ValueKey('atlas-right-toggle-positioned'),
-              top: 6,
-              right: 6,
-              child: WorkspaceToolbarButton(
-                key: const ValueKey('atlas-right-toggle'),
-                icon: _rightVisible
-                    ? LucideIcons.panelRight
-                    : LucideIcons.panelRightOpen,
-                tooltip: _rightVisible ? 'Hide details' : 'Show details',
-                onPressed: () =>
-                    _setRightVisible(!_rightVisible, rightPanelWidth),
+              Positioned(
+                key: const ValueKey('atlas-right-toggle-positioned'),
+                top: 6,
+                right: 6,
+                child: WorkspaceToolbarButton(
+                  key: const ValueKey('atlas-right-toggle'),
+                  icon: _rightVisible
+                      ? LucideIcons.panelRight
+                      : LucideIcons.panelRightOpen,
+                  tooltip: _rightVisible ? 'Hide details' : 'Show details',
+                  onPressed: () =>
+                      _setRightVisible(!_rightVisible, rightPanelWidth),
+                ),
               ),
-            ),
-          ],
+              if (usesCaptionControls(
+                desktop: Platform.environment['XDG_CURRENT_DESKTOP'] ?? '',
+                sessionType: Platform.environment['XDG_SESSION_TYPE'] ?? '',
+              ))
+                const Positioned(
+                  key: ValueKey('atlas-window-controls'),
+                  top: 6,
+                  right: 6,
+                  child: AtlasWindowControls(),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -207,13 +222,15 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
           child: DetailsPanel(onClose: () => Navigator.of(context).pop()),
         ),
       ),
-      body: SafeArea(
-        child: WorkspacePanel(
-          startupError: widget.startupError,
-          compact: true,
-          leftActive: false,
-          onLeftPressed: () => _scaffoldKey.currentState?.openDrawer(),
-          onRightPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+      body: WorkspaceResizeRing(
+        child: SafeArea(
+          child: WorkspacePanel(
+            startupError: widget.startupError,
+            compact: true,
+            leftActive: false,
+            onLeftPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            onRightPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+          ),
         ),
       ),
     );

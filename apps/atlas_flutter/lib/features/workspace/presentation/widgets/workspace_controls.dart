@@ -1,9 +1,149 @@
+import 'dart:async';
+
+import 'dart:io';
+
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
 import '../workspace_metrics.dart';
+
+/// Whether the host window lacks native edge resizing and needs the
+/// in-widget resize ring. macOS keeps native resize edges, and the
+/// window_manager Windows plugin installs hit-test edges for frameless
+/// windows; on Linux the hidden title bar leaves the GTK window without
+/// native decorations, which drops both SSD and CSD edges on every backend.
+bool get needsResizeRing {
+  if (!WorkspaceMetrics.usesIntegratedTitlebar || !Platform.isLinux) {
+    return false;
+  }
+  return true;
+}
+
+/// Whether custom minimize/maximize/close buttons should be shown. Tiling
+/// Wayland compositors (Hyprland, Sway, i3) drive those commands through
+/// keybindings and never show caption buttons, so the toolbar keeps a
+/// clean right edge there; floating desktops keep the controls.
+bool usesCaptionControls({
+  required String desktop,
+  required String sessionType,
+}) {
+  if (!WorkspaceMetrics.usesIntegratedTitlebar) {
+    return false;
+  }
+  if (!Platform.isLinux) {
+    return true;
+  }
+  // Empty XDG_CURRENT_DESKTOP values fall through to showing the controls:
+  // an unidentifiable compositor is assumed to be floating-desktop-like.
+  final onTilingCompositor =
+      sessionType == 'wayland' &&
+      const ['hyprland', 'sway', 'i3'].contains(desktop.toLowerCase());
+  return !onTilingCompositor;
+}
+
+/// A transparent ring around the workspace that restores edge resizing on
+/// platforms where the hidden title bar removes native resize handles.
+class WorkspaceResizeRing extends StatelessWidget {
+  const WorkspaceResizeRing({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!needsResizeRing) {
+      return child;
+    }
+    return DragToResizeArea(resizeEdgeSize: 4, child: child);
+  }
+}
+
+/// Minimize, maximize and close buttons for platforms without native
+/// caption controls, matching the workspace toolbar's visual language.
+class AtlasWindowControls extends StatefulWidget {
+  const AtlasWindowControls({super.key});
+
+  @override
+  State<AtlasWindowControls> createState() => _AtlasWindowControlsState();
+}
+
+class _AtlasWindowControlsState extends State<AtlasWindowControls>
+    with WindowListener {
+  bool _maximized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+    unawaited(_refreshMaximized());
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowMaximize() {
+    if (mounted) {
+      setState(() => _maximized = true);
+    }
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    if (mounted) {
+      setState(() => _maximized = false);
+    }
+  }
+
+  Future<void> _toggleMaximize() async {
+    if (await windowManager.isMaximized()) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+  }
+
+  Future<void> _refreshMaximized() async {
+    final maximized = await windowManager.isMaximized();
+    if (mounted && maximized != _maximized) {
+      setState(() => _maximized = maximized);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The glyph mirrors the resulting state: tapping restore shows the
+    // overlaid squares, tapping maximize shows the plain square.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        WorkspaceToolbarButton(
+          icon: LucideIcons.minus,
+          tooltip: 'Minimize',
+          onPressed: windowManager.minimize,
+        ),
+        WorkspaceToolbarButton(
+          icon: _maximized ? LucideIcons.copy : LucideIcons.square,
+          tooltip: _maximized ? 'Restore' : 'Maximize',
+          onPressed: () async {
+            await _toggleMaximize();
+            await _refreshMaximized();
+          },
+        ),
+        WorkspaceToolbarButton(
+          icon: LucideIcons.x,
+          tooltip: 'Close',
+          onPressed: windowManager.close,
+        ),
+      ],
+    );
+  }
+}
 
 /// Makes a toolbar draggable on platforms with an integrated titlebar.
 class WorkspaceTitlebarDragArea extends StatelessWidget {

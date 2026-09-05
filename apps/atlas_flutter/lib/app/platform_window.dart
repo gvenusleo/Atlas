@@ -23,11 +23,9 @@ Future<void> initializePlatformWindow() async {
     minimumSize: const Size(400, 600),
     center: true,
     backgroundColor: AtlasColors.forBrightness(brightness).canvas,
-    // Only macOS integrates the toolbar; other desktops keep the native
-    // title bar until custom caption controls exist.
-    titleBarStyle: Platform.isMacOS
-        ? TitleBarStyle.hidden
-        : TitleBarStyle.normal,
+    // All desktop platforms integrate the toolbar: the custom caption
+    // controls are painted by AtlasWindowControls on Windows and Linux.
+    titleBarStyle: TitleBarStyle.hidden,
     windowButtonVisibility: true,
   );
   await windowManager.waitUntilReadyToShow(windowOptions, () async {

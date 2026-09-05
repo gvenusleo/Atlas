@@ -45,7 +45,7 @@ class WorkspacePanel extends ConsumerWidget {
         ? 'New session'
         : ref.watch(workspaceProvider.select((s) => s.sessionTitle));
     final leftToolbarInset =
-        WorkspaceMetrics.usesIntegratedTitlebar && (compact || !leftActive)
+        WorkspaceMetrics.showsTrafficLights && (compact || !leftActive)
         ? WorkspaceMetrics.macOSTrafficLightInset
         : 6.0;
     final animationDuration = MediaQuery.disableAnimationsOf(context)

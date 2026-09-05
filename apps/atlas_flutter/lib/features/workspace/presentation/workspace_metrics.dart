@@ -46,8 +46,17 @@ abstract final class WorkspaceMetrics {
   /// Duration of the desktop sidebar reveal animation.
   static const sidebarAnimationDuration = Duration(milliseconds: 180);
 
-  /// Whether the platform uses the integrated Atlas titlebar.
+  /// Whether the platform uses the integrated Atlas titlebar. All desktop
+  /// platforms draw the toolbar in-window with custom caption controls.
   static bool get usesIntegratedTitlebar =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
+  /// Whether native traffic-light buttons overlay the window's top-left
+  /// corner; panels keep a wider inset there. Only macOS has them.
+  static bool get showsTrafficLights =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
   /// Whether the platform uses touch-first navigation with drawers.
