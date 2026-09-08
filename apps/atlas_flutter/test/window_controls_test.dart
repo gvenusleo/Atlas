@@ -85,12 +85,34 @@ void main() {
     expect(calls.map((c) => c.method), contains('close'));
   });
 
-  test('caption controls skip tiling window managers', () {
-    // The gate sits behind the desktop-titlebar getter, which reads
-    // defaultTargetPlatform; pin a desktop value for the matrix below.
+  test('macOS never shows custom caption controls', () {
+    // macOS keeps its native traffic lights; the toolbar must not add a
+    // second button group at the top right.
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    expect(
+      usesCaptionControls(desktop: 'GNOME:GNOME', sessionType: 'wayland'),
+      isFalse,
+    );
+    expect(usesCaptionControls(desktop: '', sessionType: 'x11'), isFalse);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('windows always shows custom caption controls', () {
+    // The hidden native title bar leaves no window buttons, so Windows
+    // relies on the custom group regardless of desktop environment.
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    expect(
+      usesCaptionControls(desktop: 'Hyprland', sessionType: 'wayland'),
+      isTrue,
+    );
+    expect(usesCaptionControls(desktop: '', sessionType: ''), isTrue);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('linux caption controls skip tiling window managers', () {
     // Hyprland/Sway/i3 drive window commands through keybindings, so the
     // toolbar must not reserve a corner for minimize/maximize/close.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     expect(
       usesCaptionControls(desktop: 'Hyprland', sessionType: 'wayland'),
       isFalse,

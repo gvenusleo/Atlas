@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
@@ -22,10 +23,11 @@ bool get needsResizeRing {
   return true;
 }
 
-/// Whether custom minimize/maximize/close buttons should be shown. Tiling
-/// Wayland compositors (Hyprland, Sway, i3) drive those commands through
-/// keybindings and never show caption buttons, so the toolbar keeps a
-/// clean right edge there; floating desktops keep the controls.
+/// Whether custom minimize/maximize/close buttons should be shown. macOS
+/// keeps its native traffic lights and never draws the group; Windows hides
+/// the native title bar and relies on it everywhere; Linux shows it except
+/// on tiling Wayland compositors (Hyprland, Sway, i3), which drive those
+/// commands through keybindings.
 bool usesCaptionControls({
   required String desktop,
   required String sessionType,
@@ -33,7 +35,10 @@ bool usesCaptionControls({
   if (!WorkspaceMetrics.usesIntegratedTitlebar) {
     return false;
   }
-  if (!Platform.isLinux) {
+  if (defaultTargetPlatform == TargetPlatform.macOS) {
+    return false;
+  }
+  if (defaultTargetPlatform != TargetPlatform.linux) {
     return true;
   }
   // Empty XDG_CURRENT_DESKTOP values fall through to showing the controls:
