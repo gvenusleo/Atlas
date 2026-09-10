@@ -20,6 +20,9 @@ final class ClientUpdateMapper {
 
   int _sequence = 0;
 
+  /// Tool calls already announced with a [rt.ToolStarted] event.
+  final _startedCalls = <String>{};
+
   /// The next event sequence number.
   int nextSequence() => _sequence++;
 
@@ -49,6 +52,7 @@ final class ClientUpdateMapper {
       case UserMessageChunk():
         return const [];
       case ToolCallUpdateSession(:final toolCall):
+        _startedCalls.add(toolCall.toolCallId);
         return [
           rt.ToolStarted(
             sessionId: sessionId,
@@ -72,24 +76,58 @@ final class ClientUpdateMapper {
           ),
         ];
       case ToolCallStatusUpdate(:final update):
-        return [
-          rt.ToolFinished(
-            sessionId: sessionId,
-            turnId: turnId,
-            sequence: nextSequence(),
-            occurredAt: _now(),
-            result: rt.ToolResultItem(
-              id: rt.TimelineItemId('result-${update.toolCallId}'),
+        // Status updates arrive repeatedly: an in-progress report (sent right
+        // after the call is announced) must not finish the card, and only a
+        // completed/failed status carries the result.
+        if (update.status == ToolCallStatus.completed ||
+            update.status == ToolCallStatus.failed) {
+          _startedCalls.remove(update.toolCallId);
+          return [
+            rt.ToolFinished(
               sessionId: sessionId,
               turnId: turnId,
               sequence: nextSequence(),
               occurredAt: _now(),
-              callId: rt.ToolCallId(update.toolCallId),
-              content: _outputText(update.rawOutput),
-              isError: update.status == ToolCallStatus.failed,
+              result: rt.ToolResultItem(
+                id: rt.TimelineItemId('result-${update.toolCallId}'),
+                sessionId: sessionId,
+                turnId: turnId,
+                sequence: nextSequence(),
+                occurredAt: _now(),
+                callId: rt.ToolCallId(update.toolCallId),
+                content: _outputText(update.rawOutput),
+                isError: update.status == ToolCallStatus.failed,
+              ),
             ),
-          ),
-        ];
+          ];
+        }
+        // Some servers only send progress updates and never announce the
+        // call; surface the card on first sight so it is not invisible.
+        if (_startedCalls.add(update.toolCallId)) {
+          return [
+            rt.ToolStarted(
+              sessionId: sessionId,
+              turnId: turnId,
+              sequence: nextSequence(),
+              occurredAt: _now(),
+              call: rt.ToolCallItem(
+                id: rt.TimelineItemId(update.toolCallId),
+                sessionId: sessionId,
+                turnId: turnId,
+                sequence: nextSequence(),
+                occurredAt: _now(),
+                call: rt.ToolCall(
+                  id: rt.ToolCallId(update.toolCallId),
+                  name: _nameFromKind(update.kind),
+                  arguments: update.rawInput is Map
+                      ? Map<String, Object?>.from(update.rawInput as Map)
+                      : const <String, Object?>{},
+                ),
+              ),
+            ),
+          ];
+        }
+        return const [];
       case PlanUpdate(:final plan):
         return [
           rt.PlanUpdated(
