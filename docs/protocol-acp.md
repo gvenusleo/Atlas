@@ -28,6 +28,24 @@ agents. Agent and client permission behavior are separate protocol roles.
 The runtime-facing contract is `AgentSession`; ACP-only presentation members
 (titles, commands, and modes) are exposed through `PresentationAgentSession`.
 
+## WebSocket Transport
+
+`atlas server` exposes the same ACP surface over a custom WebSocket transport
+(`atlas_ws`), used by the Atlas mobile client:
+
+- Endpoint `GET /acp`; the HTTP upgrade is guarded by
+  `Authorization: Bearer <token>` (token issued by `atlas server`, stored in
+  `~/.atlas/remote_token`, mode 0600).
+- Each WebSocket text frame carries exactly one ACP JSON-RPC message
+  (request, response, or notification, in both directions). Binary frames and
+  oversized frames close the connection.
+- Lifecycle, sessions, events, permission requests, and `_atlas.dev`
+  extensions behave exactly as over stdio; the server runs one `AcpServer`
+  per connection over the shared runtime.
+- A dropped socket does not cancel an in-flight turn: the runtime finishes
+  and persists it, and the client reconciles through `session/load` after
+  reconnecting with exponential backoff.
+
 ## Planned
 
 Client filesystem and terminal capabilities, and ACP v2 support remain planned.

@@ -6,7 +6,8 @@
 > 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
 > prompt 构建、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP
 > 服务端适配器（`atlas_acp`，由 `atlas acp` 提供）以及 Flutter 本地 runtime
-> 组装均**Available**。MCP 适配器与 WebSocket transport 为 **Planned**。
+> 组装、WebSocket transport（`atlas_ws`）、`atlas server` 入口与移动端远程
+> 客户端均**Available**。MCP 适配器仍为 **Planned**。
 
 ## 系统形态
 
@@ -18,7 +19,7 @@ graph TD
     CLI[atlas_cli] --> TUI[atlas_tui]
     CLI --> COMP[atlas_composition]
     CLI --> ACP[atlas_acp]
-    CLI -.-> WS[atlas_ws]
+    CLI --> WS[atlas_ws]
     FL[atlas_flutter] --> COMP
     COMP --> CONFIG[atlas_config]
     COMP --> PROMPT[atlas_prompt]
@@ -28,8 +29,8 @@ graph TD
     COMP --> RT[atlas_runtime]
     TUI --> RT
     ACP --> RT
-    REMOTE[远程客户端] -.-> WS
-    WS -.-> RT
+    REMOTE[远程客户端] --> WS
+    WS --> RT
     MCP[atlas_mcp] -.-> RT
     PROVIDER --> RT
     TOOLS --> RT
@@ -38,8 +39,7 @@ graph TD
     MCP -.-> JRPC[json_rpc_2]
 ```
 
-图中 `atlas_ws` 与 MCP 为 **Planned** 组件或连线，仅用于展示目标形态，当前
-代码中尚未接线。
+图中的 MCP 组件与连线仅用于展示目标形态，当前代码中尚未接线。
 
 `atlas_composition` 从 `atlas_config`、provider、存储、工具与系统提示词构建器
 组装一个 runtime；`atlas_cli` 与 `atlas_flutter` 的进程 bootstrap 共用这段
@@ -47,9 +47,11 @@ graph TD
 stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）。Flutter App
 始终是 ACP 客户端：本地模式在进程内启动 `AcpServer` 并通过内存 transport
 连接，远程模式通过 `acpd_io` 拉起第三方 ACP agent。Nocterm 仍直接使用
-runtime。规划中的 `atlas server` 子命令将通过 `atlas_ws` 把已组装的 runtime
-handler 暴露给远程客户端。ACP 作为入口适配到同一 runtime；MCP 主要用于把
-外部工具接入工具层。
+runtime。`atlas server` 通过 `atlas_ws` 把已组装的 runtime handler 暴露给
+远程客户端：Atlas 移动 App（及任意 ACP 客户端）经 WebSocket 连接——每个
+text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接断开时已
+开始的 turn 会继续执行完毕，重连后通过 `session/load` 恢复现场。ACP 作为
+入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 
 ## Package 职责
 
@@ -61,13 +63,13 @@ handler 暴露给远程客户端。ACP 作为入口适配到同一 runtime；MCP
 | `atlas_config` | YAML 配置文件 schema、加载与校验，并映射为 provider 配置对象 |
 | `atlas_tools` | 返回结构化调用和结果的内置工具 |
 | `atlas_prompt` | 系统提示词构建：操作模板、工具列表、`~/.atlas/AGENTS.md` 与工作目录 `AGENTS.md` 加载，以及平台/shell/日期上下文 |
-| `atlas_ws` | Planned：版本化 WebSocket wire contract、codec 与 transport |
+| `atlas_ws` | 版本化 WebSocket wire contract 与 transport：`/acp` upgrade 端点、bearer token 认证、连接与帧策略、共享 runtime 上每连接一个 `AcpServer` 的生命周期 |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
 | `atlas_mcp` | Planned：优先实现 MCP client，server 按真实需求再增加 |
 | `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
 | `atlas_composition` | 共用的应用组装：构造 provider、工具、存储、提示词与唯一 runtime |
 | `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根；委托 `atlas_composition` 构造 runtime |
-| `atlas_flutter` | 桌面端与移动端 ACP 客户端；远程 WebSocket 仍规划中 |
+| `atlas_flutter` | 桌面端与移动端 ACP 客户端；移动端通过远程连接页接入 `atlas server`，远程模式下不展示本地文件与终端 |
 
 ## 依赖规则
 
@@ -77,11 +79,11 @@ handler 暴露给远程客户端。ACP 作为入口适配到同一 runtime；MCP
 - `atlas_provider` 通过 `ModelRef` 选择已配置的 endpoint；公开配置使用程序化 API，不负责 CLI 或配置文件解析。
 - OpenAI 与 Anthropic 共享 `HttpStreamClient`（重试、超时、取消）和 `decodeSse`（SSE 分帧）；`CompositeModelProvider` 按 provider 标识路由请求，使多个 provider 共享一个 runtime 实例。
 - 流式失败会转换为一个 runtime 终态事件；只有首个流事件产生前才会重试，取消会桥接到 Dio 的 `CancelToken`。
-- `atlas_ws` 为 Planned；实现后将维护显式版本化 wire schema，且不负责组装 runtime 服务。
+- `atlas_ws` 维护显式版本化 wire schema 与 transport 行为；不负责组装 runtime 服务。
 - 本地展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器；两个应用根都使用 `atlas_composition`。
 - `atlas_prompt` 只依赖 `atlas_runtime` 公开类型，组合根通过 `buildSystemPrompt` 使用它。
 - `atlas_cli` 与 `atlas_flutter` 是独立的进程组合根，共享构造代码而不共享 runtime 实例。
-- ACP 通过 `acpd` 负责协议生命周期；MCP 为 Planned，当前没有实现包。
+- ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个 WebSocket 连接复用同一 `AcpServer`。MCP 为 Planned，当前没有实现包。
 
 ## Runtime 行为契约
 

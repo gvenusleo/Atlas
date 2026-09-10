@@ -25,10 +25,15 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   提供，覆盖会话生命周期、模型与 effort 配置、斜杠命令、turn 流式输出、
   agent plan，以及 Zed 展示增强（实时 shell 终端、文件 diff 与
   follow-along 位置）；
+- 由新 `atlas server` 子命令提供的 `atlas_ws` WebSocket transport：
+  bearer token 认证、每个 text frame 一条 ACP JSON-RPC 消息、客户端自动
+  重连——Flutter 移动 App 由此可在 Tailscale/私有网络上远程驱动电脑端的
+  Atlas；
 - Dart 实现需要遵守的架构与开发规范。
 
-WebSocket transport 与 MCP 集成尚未实现。CLI 可通过 `mise run cli-build`
-构建为单文件可执行程序（`build/bundle/bin/atlas`）。
+MCP 集成尚未实现。CLI 可通过 `mise run cli-build` 构建为单文件可执行程序
+（`build/bundle/bin/atlas`）。用 `atlas server` 启动远程端点，再在 App 的
+远程连接页接入（`atlas server` 每次启动都会打印配对 token）。
 
 ## 安装
 

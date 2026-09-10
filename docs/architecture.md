@@ -6,8 +6,9 @@
 > adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
 > prompt construction, `atlas_composition`, the `atlas_tui` Nocterm chat
 > interface, the ACP server adapter (`atlas_acp`, served by `atlas acp`), and
-> local Flutter runtime composition are **Available**. The MCP adapter and
-> WebSocket transport are **Planned**.
+> local Flutter runtime composition, the WebSocket transport (`atlas_ws`),
+> the `atlas server` entry point, and the mobile remote client are
+> **Available**. The MCP adapter remains **Planned**.
 
 ## System Shape
 
@@ -20,7 +21,7 @@ graph TD
     CLI[atlas_cli] --> TUI[atlas_tui]
     CLI --> COMP[atlas_composition]
     CLI --> ACP[atlas_acp]
-    CLI -.-> WS[atlas_ws]
+    CLI --> WS[atlas_ws]
     FL[atlas_flutter] --> COMP
     COMP --> CONFIG[atlas_config]
     COMP --> PROMPT[atlas_prompt]
@@ -30,8 +31,8 @@ graph TD
     COMP --> RT[atlas_runtime]
     TUI --> RT
     ACP --> RT
-    REMOTE[Remote client] -.-> WS
-    WS -.-> RT
+    REMOTE[Remote client] --> WS
+    WS --> RT
     MCP[atlas_mcp] -.-> RT
     PROVIDER --> RT
     TOOLS --> RT
@@ -40,8 +41,8 @@ graph TD
 MCP -.-> JRPC[planned protocol]
 ```
 
-Planned components and edges (`atlas_ws` and MCP) appear above for target-state
-context; they are not wired in code yet.
+The MCP component and edges above appear for target-state context; they are
+not wired in code yet.
 
 `atlas_composition` composes one runtime from `atlas_config`, providers,
 storage, tools, and the system prompt builder. `atlas_cli` and `atlas_flutter`
@@ -51,9 +52,13 @@ serves the composed runtime to ACP clients (editors such as Zed) over NDJSON
 stdio. The Flutter app is always an ACP client: local mode starts an
 in-process `AcpServer` over an in-memory transport, and remote mode spawns a
 third-party ACP agent through `acpd_io`. Nocterm still talks to the runtime
-directly. A planned `atlas server` subcommand will expose the composed runtime
-handler through `atlas_ws` for remote clients. ACP is an inbound adapter to
-the same runtime; MCP primarily connects external tools to the tool layer.
+directly. `atlas server` exposes the composed runtime handler through
+`atlas_ws` for remote clients: the Atlas mobile app (and any ACP client)
+connects over a WebSocket where each text frame carries one ACP JSON-RPC
+message, guarded by a bearer token; turns started on a connection keep running
+when the socket drops and are recovered through `session/load` after
+reconnection. ACP is an inbound adapter to the same runtime; MCP primarily
+connects external tools to the tool layer.
 
 ## Package Responsibilities
 
@@ -65,7 +70,7 @@ the same runtime; MCP primarily connects external tools to the tool layer.
 | `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration objects |
 | `atlas_tools` | Built-in tool implementations with structured calls and results |
 | `atlas_prompt` | System prompt construction: operating template, tool listing, `~/.atlas/AGENTS.md` and working-directory `AGENTS.md` loading, and platform/shell/date context |
-| `atlas_ws` | Planned: Versioned WebSocket wire contract, codecs, and transport |
+| `atlas_ws` | Versioned WebSocket wire contract and transport: the `/acp` upgrade endpoint, bearer-token authorization, connection and frame policies, and per-connection `AcpServer` lifecycle over the shared runtime |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
 | `atlas_mcp` | Planned: MCP client first, with server support deferred until needed |
 | `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
@@ -81,11 +86,11 @@ the same runtime; MCP primarily connects external tools to the tool layer.
 - `atlas_provider` selects a configured endpoint by `ModelRef`; its public configuration is programmatic and does not define CLI or configuration-file parsing.
 - OpenAI and Anthropic providers share `HttpStreamClient` for retries, timeouts, and cancellation, and `decodeSse` for SSE framing. `CompositeModelProvider` routes requests by provider identifier so several providers share one runtime instance.
 - Streaming failures are emitted as one terminal runtime event. Retries happen only before the first streamed event; cancellation is bridged to Dio's `CancelToken`.
-- `atlas_ws` is Planned; when implemented it will own an explicit versioned wire schema and will not compose runtime services.
+- `atlas_ws` owns an explicit versioned wire schema and the transport behavior; it does not compose runtime services.
 - Local presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters; both application roots use `atlas_composition`.
 - `atlas_prompt` depends on `atlas_runtime` public types only and is consumed by composition roots through `buildSystemPrompt`.
 - `atlas_cli` and `atlas_flutter` are separate process composition roots and share construction code, not runtime instances.
-- ACP owns its protocol lifecycle through `acpd`. MCP is Planned and has no implementation package yet.
+- ACP owns its protocol lifecycle through `acpd`; `atlas server` reuses the same `AcpServer` per WebSocket connection. MCP is Planned and has no implementation package yet.
 
 ## Runtime Contracts
 

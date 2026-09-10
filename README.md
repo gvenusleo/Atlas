@@ -28,11 +28,16 @@ The repository currently contains:
   stdio, covering session lifecycle, model and effort config, slash commands,
   turn streaming, agent plans, and Zed display enhancements (live shell
   terminals, file diffs, and follow-along locations);
+- a `atlas_ws` WebSocket transport served by the new `atlas server`
+  subcommand: bearer-token auth, one ACP JSON-RPC message per text frame, and
+  automatic client reconnection, so the Flutter mobile app can drive the
+  computer's Atlas from anywhere on the Tailscale/private network;
 - architecture and development contracts for the Dart implementation.
 
-WebSocket transport and MCP integrations are not implemented yet. The CLI
-builds as a single executable with `mise run cli-build`
-(`build/bundle/bin/atlas`).
+MCP integration is not implemented yet. The CLI builds as a single executable
+with `mise run cli-build` (`build/bundle/bin/atlas`). Start the remote
+endpoint with `atlas server` and connect from the app's remote connection
+screen (`atlas server` prints the pairing token on every start).
 
 ## Installation
 

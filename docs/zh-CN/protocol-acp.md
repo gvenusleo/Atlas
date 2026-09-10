@@ -26,6 +26,20 @@ Atlas ACP 客户端仍会处理第三方 Agent 发出的权限请求。Agent 与
 运行时会话契约为 `AgentSession`；ACP 专属的标题、命令和模式通过
 `PresentationAgentSession` 暴露。
 
+## WebSocket transport
+
+`atlas server` 通过自定义 WebSocket transport（`atlas_ws`）暴露同一 ACP
+协议面，供 Atlas 移动客户端使用：
+
+- 端点 `GET /acp`；HTTP upgrade 由 `Authorization: Bearer <token>` 守卫
+  （token 由 `atlas server` 签发，存于 `~/.atlas/remote_token`，权限 0600）。
+- 每个 WebSocket text frame 恰好承载一条 ACP JSON-RPC 消息（请求、响应或
+  通知，双向皆可）。binary frame 与超大 frame 会关闭连接。
+- 生命周期、会话、事件、权限请求与 `_atlas.dev` 扩展的行为与 stdio 完全
+  一致；服务端在共享 runtime 上为每个连接运行一个 `AcpServer`。
+- socket 断开不会取消进行中的 turn：runtime 会执行完毕并持久化；客户端
+  以指数退避重连后通过 `session/load` 校准现场。
+
 ## Planned
 
 客户端文件系统与终端能力，以及 ACP v2 支持仍为 Planned。
