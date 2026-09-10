@@ -145,6 +145,21 @@ final class ClientUpdateMapper {
             ]),
           ),
         ];
+      case UsageSessionUpdate(:final used):
+        // The server reports context occupancy after every model step (not
+        // only at the turn boundary), so the client can refresh live usage.
+        if (used == null || used <= 0) {
+          return const [];
+        }
+        return [
+          rt.UsageUpdated(
+            sessionId: sessionId,
+            turnId: turnId,
+            sequence: nextSequence(),
+            occurredAt: _now(),
+            usage: rt.TokenUsage(inputTokens: used, totalTokens: used),
+          ),
+        ];
       default:
         return const [];
     }

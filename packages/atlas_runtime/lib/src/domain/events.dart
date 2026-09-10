@@ -95,6 +95,26 @@ final class ModelResponseReceived extends AgentEvent {
   final TokenUsage usage;
 }
 
+/// Indicates that the context occupancy changed without a turn completing.
+///
+/// Synthesized by protocol clients that receive usage outside a turn
+/// boundary (ACP `session/update`), so presentation code can refresh live
+/// usage figures while tools still run. The local runtime reports usage
+/// through [ModelResponseReceived] instead.
+final class UsageUpdated extends AgentEvent {
+  /// Creates a usage-updated event.
+  const UsageUpdated({
+    required super.sessionId,
+    required super.turnId,
+    required super.sequence,
+    required super.occurredAt,
+    required this.usage,
+  });
+
+  /// The current context occupancy.
+  final TokenUsage usage;
+}
+
 /// Indicates that a tool is about to execute.
 final class ToolStarted extends AgentEvent {
   /// Creates a tool-started event.

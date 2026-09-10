@@ -685,6 +685,17 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
             messages: messages,
           );
         });
+      case UsageUpdated(:final usage):
+        // Live occupancy from ACP usage notifications: the server reports
+        // after every model step, so the composer ring updates mid-turn
+        // instead of waiting for the turn boundary.
+        if (usage.contextTokens <= 0) {
+          break;
+        }
+        _patch(
+          target,
+          (workspace) => workspace.copyWith(contextTokens: usage.contextTokens),
+        );
       case TurnFinished(:final outcome):
         _finishRunningReasoning(target);
         _streamOpen[target] = false;

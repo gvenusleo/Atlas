@@ -113,6 +113,7 @@ final class TurnUpdateMapper {
         ];
       case rt.TurnStarted() ||
           rt.ModelResponseReceived() ||
+          rt.UsageUpdated() ||
           rt.PlanUpdated() ||
           rt.CompactionStarted() ||
           rt.CompactionFinished() ||
