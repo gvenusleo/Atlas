@@ -11,18 +11,21 @@ import 'package:atlas_tui/atlas_tui.dart';
 /// interface against it. Running `atlas acp` serves the same runtime to ACP
 /// clients over NDJSON stdio instead.
 Future<void> main(List<String> args) async {
-  if (args.length > 1 ||
-      (args.isNotEmpty &&
-          !{'acp', '--help', '-h', '--version', '-V'}.contains(args.first))) {
+  const standalone = {'--help', '-h', '--version', '-V'};
+  final command = args.isEmpty ? null : args.first;
+  if (args.isNotEmpty &&
+      command != 'acp' &&
+      command != 'server' &&
+      !(args.length == 1 && standalone.contains(command))) {
     stderr.writeln('unknown command or arguments: ${args.join(' ')}');
-    stderr.writeln('usage: atlas [acp]');
+    stderr.writeln('usage: atlas [acp|server|--help|--version]');
     exit(64);
   }
-  if (args.length == 1 && (args.first == '--help' || args.first == '-h')) {
-    stdout.writeln('usage: atlas [acp]');
+  if (args.length == 1 && (command == '--help' || command == '-h')) {
+    stdout.writeln('usage: atlas [acp|server]');
     return;
   }
-  if (args.length == 1 && (args.first == '--version' || args.first == '-V')) {
+  if (args.length == 1 && (command == '--version' || command == '-V')) {
     stdout.writeln('0.1.0');
     return;
   }
@@ -36,8 +39,12 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
-  final runtime = composeRuntime(config);
   if (args.isNotEmpty && args.first == 'acp') {
+    if (args.length > 1) {
+      stderr.writeln('usage: atlas acp (takes no arguments)');
+      exit(64);
+    }
+    final runtime = composeRuntime(config);
     // The connection ends when the client closes stdin. Flush pending wire
     // output and exit explicitly so lingering storage handles do not keep
     // the process alive.
@@ -45,6 +52,11 @@ Future<void> main(List<String> args) async {
     await stdout.flush();
     exit(0);
   }
+  if (args.isNotEmpty && args.first == 'server') {
+    await runServerCommand(config, home: home, args: args.sublist(1));
+    exit(0);
+  }
+  final runtime = composeRuntime(config);
   await runAtlasTui(
     runtime: runtime,
     models: composeModels(config),

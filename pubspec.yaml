@@ -15,6 +15,7 @@ workspace:
   - packages/atlas_tools
   - packages/atlas_acp
   - packages/atlas_tui
+  - packages/atlas_ws
   - apps/atlas_cli
   - apps/atlas_flutter
 

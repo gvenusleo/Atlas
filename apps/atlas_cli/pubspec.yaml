@@ -17,5 +17,6 @@ dependencies:
   atlas_storage: ^0.1.0
   atlas_tools: ^0.1.0
   atlas_tui: ^0.1.0
+  atlas_ws: ^0.1.0
 dev_dependencies:
   test: ^1.31.0
