@@ -146,17 +146,20 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     // selectables whose render objects were recycled by the lazy list.
     // The reversed list anchors offset zero at the newest message, so
     // streaming growth and fresh sessions stay pinned to the latest text.
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: ListView.builder(
-          controller: _scrollController,
-          reverse: true,
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-          itemCount: messages.length,
-          itemBuilder: (context, index) =>
-              _MessageView(message: messages[messages.length - 1 - index]),
+    return _ConversationScrollAnchor(
+      onGrowth: _compensateDisclosureGrowth,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView.builder(
+            controller: _scrollController,
+            reverse: true,
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+            itemCount: messages.length,
+            itemBuilder: (context, index) =>
+                _MessageView(message: messages[messages.length - 1 - index]),
+          ),
         ),
       ),
     );
@@ -172,6 +175,26 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
       return;
     }
     _scrollController.jumpTo(0);
+  }
+
+  /// Keeps a tapped disclosure's top edge pinned while it animates.
+  ///
+  /// A reversed list grows away from its bottom anchor, so an expanding card
+  /// would otherwise push the history upward. Shifting the viewport by the
+  /// same amount turns the expansion into a downward one.
+  void _compensateDisclosureGrowth(double delta) {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    // Collapsing can run past the bottom edge; expanding never exceeds the
+    // maximum because the scrollable extent grows by the same delta.
+    final adjusted = delta < 0 && position.pixels + delta < 0
+        ? -position.pixels
+        : delta;
+    if (adjusted != 0) {
+      position.correctBy(adjusted);
+    }
   }
 }
 
@@ -341,8 +364,18 @@ class _ActivityDisclosure extends StatefulWidget {
 
 class _ActivityDisclosureState extends State<_ActivityDisclosure>
     with TickerProviderStateMixin {
+  /// Height cap for the expanded section; longer content scrolls inside.
+  static const _maxExpandedExtent = 300.0;
+
   late final AnimationController _pulse;
   late final AnimationController _expand;
+  late final CurvedAnimation _expandCurve;
+
+  /// Measures the expanded section; the size survives layout at factor zero.
+  final _expandedAreaKey = GlobalKey();
+
+  /// Height already reported to the transcript's scroll anchor.
+  var _reportedGrowth = 0.0;
   var _expanded = false;
 
   @override
@@ -358,9 +391,12 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
           duration: const Duration(milliseconds: 180),
         )..addStatusListener((status) {
           if (status == AnimationStatus.dismissed && mounted) {
+            _reportedGrowth = 0;
             setState(() {});
           }
         });
+    _expandCurve = CurvedAnimation(parent: _expand, curve: Curves.easeOutCubic);
+    _expand.addListener(_reportGrowth);
     _syncPulse();
   }
 
@@ -374,6 +410,8 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
 
   @override
   void dispose() {
+    _expand.removeListener(_reportGrowth);
+    _expandCurve.dispose();
     _pulse.dispose();
     _expand.dispose();
     super.dispose();
@@ -395,6 +433,24 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
     } else {
       _expand.reverse();
     }
+  }
+
+  /// Reports each frame's height change so the transcript can hold the
+  /// tapped card's top edge in place while it animates.
+  void _reportGrowth() {
+    final extent = _expandedAreaKey.currentContext?.size?.height;
+    if (extent == null) {
+      return;
+    }
+    final height = _expandCurve.value * extent;
+    final delta = height - _reportedGrowth;
+    _reportedGrowth = height;
+    if (delta == 0) {
+      return;
+    }
+    context
+        .getInheritedWidgetOfExactType<_ConversationScrollAnchor>()
+        ?.onGrowth(delta);
   }
 
   @override
@@ -447,21 +503,30 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
             ),
           ),
           SizeTransition(
-            sizeFactor: CurvedAnimation(
-              parent: _expand,
-              curve: Curves.easeOutCubic,
-            ),
+            sizeFactor: _expandCurve,
             alignment: Alignment.topLeft,
             child: _expanded || _expand.isAnimating
-                ? Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border(left: BorderSide(color: colors.divider)),
+                ? ConstrainedBox(
+                    key: _expandedAreaKey,
+                    constraints: const BoxConstraints(
+                      maxHeight: _maxExpandedExtent,
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(
+                        left: 12,
+                        top: 4,
+                        bottom: 4,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 12),
-                        child: widget.child,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(color: colors.divider),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: widget.child,
+                        ),
                       ),
                     ),
                   )
@@ -783,4 +848,19 @@ class _ErrorMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Lets transcript items keep their on-screen position while they grow.
+class _ConversationScrollAnchor extends InheritedWidget {
+  const _ConversationScrollAnchor({
+    required this.onGrowth,
+    required super.child,
+  });
+
+  /// Called with the height change of an animating disclosure; positive when
+  /// it grows.
+  final ValueChanged<double> onGrowth;
+
+  @override
+  bool updateShouldNotify(_ConversationScrollAnchor oldWidget) => false;
 }
