@@ -142,6 +142,12 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
     if (messages.isEmpty) {
       return const _ConversationEmptyState();
     }
+    // Keyed by stable id so the sliver can move elements to their new index
+    // (preserving disclosure state) when fresh messages shift the list.
+    final indexById = <String, int>{
+      for (var i = 0; i < messages.length; i++)
+        messages[i].id: messages.length - 1 - i,
+    };
     // One SelectionArea per message: a list-wide delegate would keep sorting
     // selectables whose render objects were recycled by the lazy list.
     // The reversed list anchors offset zero at the newest message, so
@@ -157,8 +163,12 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
             reverse: true,
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
             itemCount: messages.length,
-            itemBuilder: (context, index) =>
-                _MessageView(message: messages[messages.length - 1 - index]),
+            findChildIndexCallback: (key) =>
+                key is ValueKey<String> ? indexById[key.value] : null,
+            itemBuilder: (context, index) {
+              final message = messages[messages.length - 1 - index];
+              return _MessageView(key: ValueKey(message.id), message: message);
+            },
           ),
         ),
       ),
@@ -231,7 +241,7 @@ class _ConversationEmptyState extends StatelessWidget {
 }
 
 class _MessageView extends StatelessWidget {
-  const _MessageView({required this.message});
+  const _MessageView({required this.message, super.key});
 
   final WorkspaceMessage message;
 
