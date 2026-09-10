@@ -73,6 +73,13 @@ final class AcpClient
   ClientConnection? _connection;
   HandlerRegistration? _notificationReg;
   bool _connected = false;
+  Future<void>? _closed;
+
+  /// Completes when the underlying connection ends, for any reason.
+  ///
+  /// Completes after [close] as well as after an unexpected disconnect, so
+  /// callers must distinguish the two through their own lifecycle state.
+  Future<void> get closed => _closed ?? Future<void>.value();
 
   final _sessionCwd = <String, String>{};
   final _sessionModels = <String, rt.ModelRef>{};
@@ -115,6 +122,7 @@ final class AcpClient
     }
     final role = ClientRole()..onRequestPermission(_handlePermissionRequest);
     _connection = role.connect(_transport);
+    _closed = _connection!.closed;
     _notificationReg = _connection!.connection.onAnyNotification((
       method,
       params,
