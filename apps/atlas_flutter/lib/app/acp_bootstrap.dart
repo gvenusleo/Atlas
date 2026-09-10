@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:acpd_io/acpd_io.dart';
 import 'package:atlas_acp/atlas_acp.dart';
-import 'package:atlas_runtime/atlas_runtime.dart';
 
 import 'acp_connections.dart';
 import 'runtime_environment.dart';
@@ -36,7 +35,7 @@ Future<RuntimeBootstrap> bootstrapAcpClient(AcpConnection connection) async {
       RuntimeEnvironment(
         runtime: client,
         models: catalog,
-        skills: const _EmptySkillCatalog(),
+        skills: const NoopSkillCatalog(),
         onClose: () async {
           await client.close();
           await agent.close();
@@ -46,15 +45,4 @@ Future<RuntimeBootstrap> bootstrapAcpClient(AcpConnection connection) async {
   } on Object catch (error) {
     return RuntimeBootstrap.failed('Cannot start ACP server: $error');
   }
-}
-
-/// An empty skill catalog: skills live on the ACP server side.
-final class _EmptySkillCatalog implements SkillCatalog {
-  const _EmptySkillCatalog();
-
-  @override
-  Skill? lookup(String name) => null;
-
-  @override
-  List<SkillSummary> get summaries => const [];
 }

@@ -7,21 +7,28 @@ The desktop and mobile client for Atlas.
 The current implementation provides a responsive workspace shell, resizable
 desktop sidebars, compact mobile drawers, Ayu light and dark palettes that
 follow the system theme, a local runtime bootstrap with sessions and agent
-turns, a file browser, and an embedded terminal. Remote WebSocket mode is
-not implemented yet.
+turns, a file browser, an embedded terminal, and a remote connection screen
+that drives a computer-side `atlas server` over WebSocket (used on mobile,
+available on desktop through Settings). Remote sessions hide the local file
+browser and terminal: files and commands run on the computer.
 
 ## Responsibility
 
 - Composition root and ACP presentation client for desktop and mobile. The
   local app hosts an in-process ACP server; feature and presentation code
   renders UI only.
-- Remote WebSocket mode is planned separately through `atlas_ws`.
+- Remote WebSocket mode: mobile boots into the remote connection screen and
+  desktop can switch from Settings; connections and tokens live in the
+  platform secure storage.
 
 ## Allowed dependencies
 
 - Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`,
   `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`,
-  `file_selector`, `clipboard`, `pty2`, and `terminal_view`.
+  `file_selector`, `clipboard`, `pty2`, `terminal_view`,
+  `flutter_secure_storage`, `stream_channel`, and `web_socket_channel`.
+- Tests may also import `atlas_ws` (dev dependency) to serve a real
+  `atlas server` endpoint for remote connection integration tests.
 - `atlas_composition` for process-level runtime construction.
 - `atlas_config`, `atlas_prompt`, and `atlas_storage` from application
   bootstrap only. Tests may also import `atlas_tools`.
@@ -32,8 +39,9 @@ not implemented yet.
 - No agent orchestration, provider logic, tool execution, or session
   persistence in feature or presentation code; only bootstrap composes
   adapters.
-- No ACP protocol implementation; the app consumes `atlas_acp` as a client.
-  WebSocket and MCP adapters are Planned and have no code package yet.
+- No ACP protocol implementation; the app consumes `atlas_acp` as a client,
+  including over WebSocket (the bridge lives in the app bootstrap). MCP
+  adapters remain Planned.
 - No Nocterm rendering logic; the terminal TUI belongs to `atlas_tui`.
 
 ## Structure

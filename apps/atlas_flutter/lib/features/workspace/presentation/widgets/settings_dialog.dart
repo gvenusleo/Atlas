@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../app/acp_connections.dart';
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../remote_connection/presentation/remote_connect_view.dart';
 import 'workspace_controls.dart';
 
 /// Settings dialog for managing ACP server connections.
@@ -46,6 +47,26 @@ class _SettingsDialogState extends ConsumerState<SettingsDialog> {
   Future<void> _removeConnection(AcpConnection connection) async {
     setState(() => _connections.remove(connection));
     _save();
+  }
+
+  Future<void> _manageRemote() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        contentPadding: EdgeInsets.zero,
+        content: SizedBox(
+          width: 560,
+          height: 480,
+          child: RemoteConnectView(key: const ValueKey('remote-settings-view')),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _activate(AcpConnection connection) async {
@@ -146,6 +167,24 @@ class _SettingsDialogState extends ConsumerState<SettingsDialog> {
                 onPressed: () => unawaited(_addConnection()),
                 icon: const Icon(LucideIcons.plus, size: 14),
                 label: const Text('Add connection'),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Remote Atlas Server',
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            WorkspaceHoverSurface(
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
+              child: TextButton.icon(
+                onPressed: () => unawaited(_manageRemote()),
+                icon: const Icon(LucideIcons.monitorSmartphone, size: 14),
+                label: const Text('Manage remote connections'),
               ),
             ),
           ],

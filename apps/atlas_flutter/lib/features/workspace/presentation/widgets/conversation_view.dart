@@ -10,6 +10,7 @@ import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
 import '../../data/image_attachment.dart';
 import 'conversation_input/conversation_input.dart';
+import 'remote_working_directory_bar.dart';
 import 'turn_status_banner.dart';
 import 'workspace_controls.dart';
 import '../workspace_metrics.dart';
@@ -80,6 +81,8 @@ class _SessionPane extends ConsumerWidget {
                           startedAt: workspace.turnStartedAt,
                         ),
                       ),
+                    if (active && workspace.sessionId == null)
+                      const RemoteWorkingDirectoryBar(),
                     ConversationInput(sessionKey: sessionKey, active: active),
                   ],
                 ),

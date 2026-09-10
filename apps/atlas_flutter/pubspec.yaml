@@ -34,12 +34,14 @@ dependencies:
   url_launcher: ^6.3.2
   atlas_acp: ^0.1.0
   acpd_io: ^1.0.0
+  flutter_secure_storage: ^11.0.0
+  stream_channel: ^2.1.0
+  web_socket_channel: ^3.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  stream_channel: ^2.1.4
-
+  atlas_ws: ^0.1.0
 flutter:
   uses-material-design: true

@@ -50,6 +50,29 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
     );
     final sessionKey = ref.watch(workspaceProvider.select((s) => s.activeKey));
     final terminal = ref.watch(workspaceProvider.select((s) => s.showTerminal));
+    if (environment.isRemote) {
+      // Files and terminals belong to the computer; remote sessions surface
+      // file diffs and shell output through the conversation instead.
+      return SidePanel(
+        semanticLabel: 'Workspace tools',
+        compact: widget.onClose != null,
+        useCanvasColor: true,
+        action: widget.onClose != null
+            ? WorkspaceToolbarButton(
+                icon: LucideIcons.x,
+                tooltip: 'Close workspace tools',
+                size: 44,
+                onPressed: widget.onClose!,
+              )
+            : const SizedBox(width: 40),
+        child: const PanelEmptyState(
+          icon: LucideIcons.monitorSmartphone,
+          message:
+              'Remote session: files and terminal run on the computer. '
+              'Ask the agent to read or modify files and watch the diffs.',
+        ),
+      );
+    }
     if (terminal && !_terminalCreated) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !_terminalCreated) {

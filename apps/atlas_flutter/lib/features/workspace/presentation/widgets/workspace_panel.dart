@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../remote_connection/presentation/remote_connect_view.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
 import 'conversation_view.dart';
@@ -51,6 +52,8 @@ class WorkspacePanel extends ConsumerWidget {
     final animationDuration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : WorkspaceMetrics.sidebarAnimationDuration;
+    final runtimeState = ref.watch(runtimeEnvironmentProvider);
+    final remoteStatus = runtimeState.remoteStatus;
 
     return PermissionHost(
       child: ColoredBox(
@@ -99,6 +102,30 @@ class WorkspacePanel extends ConsumerWidget {
                           ),
                         ),
                       ),
+                      if (remoteStatus == RemoteConnectionStatus.reconnecting)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: Row(
+                            key: const ValueKey('atlas-remote-status'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox.square(
+                                dimension: 8,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Reconnecting…',
+                                style: TextStyle(
+                                  color: colors.textSecondary,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       if (compact)
                         WorkspaceToolbarButton(
                           key: const ValueKey('atlas-right-toggle'),
@@ -130,6 +157,11 @@ class _WorkspaceBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
     if (environment == null) {
+      // Mobile clients start without a runtime and manage remote connections
+      // here; desktop configuration failures keep the startup message.
+      if (error == null) {
+        return const RemoteConnectView();
+      }
       return _StartupFailure(
         message: error ?? 'Atlas runtime is not configured.',
       );

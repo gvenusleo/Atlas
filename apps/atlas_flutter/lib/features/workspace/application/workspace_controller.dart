@@ -54,6 +54,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
 
   RuntimeEnvironment? _environmentCache;
 
+  /// The computer-side directory of the active remote profile, or null when
+  /// no directory was configured (or no remote profile is active). Drafts
+  /// must not start a remote session without one: ACP requires a real `cwd`
+  /// when the session is created on the first message.
+  String? _remoteProfileWorkingDirectory;
+
   /// Models available in the current configuration.
   List<ModelDescriptor> get models => _environment.models;
 
@@ -64,18 +70,27 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     // would lose the callback registration).
     final runtimeState = ref.read(runtimeEnvironmentProvider);
     _environmentCache = runtimeState.environment;
-    if (_environmentCache == null) {
-      throw StateError('workspaceProvider requires a composed runtime');
-    }
+    _remoteProfileWorkingDirectory =
+        runtimeState.remoteProfile?.workingDirectory;
+    // Register lifecycle hooks before the runtime check: mobile clients
+    // start with no runtime and the workspace shell is mounted while the
+    // remote connection screen shows. Throwing here would freeze the
+    // provider in an error state that never recovers once the runtime
+    // arrives (ref.read does not subscribe), so render an idle draft until
+    // the runtime switch resets session caches.
     ref.onDispose(_cancelAll);
     // A runtime switch (ACP activation) replaces sessions and caches: the
     // new runtime owns a different session list.
     ref.listen(runtimeEnvironmentProvider, (previous, next) {
       _environmentCache = next.environment;
+      _remoteProfileWorkingDirectory = next.remoteProfile?.workingDirectory;
       if (_environmentCache != null) {
         _resetForRuntime();
       }
     });
+    if (_environmentCache == null) {
+      return _idleWorkspaceState();
+    }
     _subscribePermissions();
     final draftKey = _nextDraftKey();
     _touch(draftKey);
@@ -87,6 +102,32 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       sessions: const [],
     );
   }
+
+  /// An idle draft for clients without a composed runtime yet.
+  ///
+  /// Mobile clients mount the workspace shell while the remote connection
+  /// screen is visible; the draft is replaced when a connection provides the
+  /// runtime (the listen callback resets session caches).
+  WorkspaceState _idleWorkspaceState() {
+    final draftKey = _nextDraftKey();
+    _touch(draftKey);
+    final draft = SessionWorkspace(
+      workingDirectory: ref.read(workspaceWorkingDirectoryProvider),
+      activeModel: _idleModel,
+    );
+    return WorkspaceState(
+      activeKey: draftKey,
+      workspaces: {draftKey: draft},
+      sessions: const [],
+    );
+  }
+
+  /// Placeholder model for drafts rendered before a runtime exists; it is
+  /// never offered to a provider because turns cannot start without a
+  /// runtime.
+  static final _idleModel = ModelDescriptor(
+    ref: ModelRef(providerId: ProviderId('idle'), modelId: ModelId('idle')),
+  );
 
   /// Discards session caches and starts a fresh draft after a runtime switch.
   void _resetForRuntime() {
@@ -408,6 +449,22 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         key,
         WorkspaceMessageKind.notice,
         '$label does not support image input.',
+      );
+      return false;
+    }
+    // A remote draft has no usable directory until the user picks one: the
+    // local fallback path (mobile sandbox) would otherwise create the
+    // session in a meaningless location on the computer. The UI asks for the
+    // directory before the first message and the guard enforces it.
+    if (_environment.isRemote &&
+        workspace.sessionId == null &&
+        (_remoteProfileWorkingDirectory == null ||
+            _remoteProfileWorkingDirectory!.isEmpty)) {
+      _append(
+        key,
+        WorkspaceMessageKind.notice,
+        'Choose the working directory on the computer before sending the '
+        'first message.',
       );
       return false;
     }
