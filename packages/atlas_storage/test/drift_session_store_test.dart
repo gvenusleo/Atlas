@@ -414,6 +414,53 @@ void main() {
     );
   });
 
+  test(
+    'keeps the session model selection across turns and compaction',
+    () async {
+      final session = _session(
+        'session-config',
+        updatedAt: DateTime.utc(2026, 1, 1),
+      );
+      await store.createSession(session);
+      final selected = runtime.ModelRef(
+        providerId: runtime.ProviderId('provider'),
+        modelId: runtime.ModelId('selected'),
+      );
+
+      await store.updateSessionConfig(session.id, selected, 'high');
+      var snapshot = await store.loadSession(session.id);
+      expect(snapshot.session.model, selected);
+      expect(snapshot.session.reasoningEffort, 'high');
+
+      // A turn carries the loaded selection back into the session row, and the
+      // compaction checkpoint write must leave it untouched.
+      final turn = _turn(session.id, 'turn-config');
+      await store.beginTurn(
+        runtime.BeginTurn(
+          session: snapshot.session,
+          turn: turn,
+          userMessage: _user(snapshot.session, turn, 'request'),
+        ),
+      );
+      await store.saveCompaction(
+        session.id,
+        runtime.CompactionCheckpoint(
+          sessionId: session.id,
+          compactedThroughSequence: 0,
+          summary: 'summary',
+          keptRecentMessages: 1,
+          inputTokensBefore: 10,
+          inputTokensAfter: 2,
+          createdAt: session.updatedAt,
+        ),
+      );
+
+      snapshot = await store.loadSession(session.id);
+      expect(snapshot.session.model, selected);
+      expect(snapshot.session.reasoningEffort, 'high');
+    },
+  );
+
   test('allows active-turn compaction but rejects split tool pairs', () async {
     final session = _session(
       'session-compact-boundary',

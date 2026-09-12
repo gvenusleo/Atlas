@@ -15,9 +15,13 @@ abstract interface class AgentSession {
   Stream<AgentEvent> run(TurnRequest request);
 
   /// Manually compacts a session.
+  ///
+  /// [model] overrides the model used for the summary request; clients that
+  /// keep the session's model selection in local state pass it here.
   Stream<AgentEvent> compact(
     SessionId sessionId, {
     String? instruction,
+    ModelRef? model,
     CancellationToken? cancellation,
   });
 

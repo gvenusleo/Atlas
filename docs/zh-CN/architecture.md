@@ -95,7 +95,7 @@ text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接�
 - 每个 assistant message 可以携带 Provider 所有的 `ModelContinuation`；它内嵌在 assistant 行中持久化，并恢复到对应的 provider-neutral message。
 - turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界：被中断模型流已接收的文本会以 aborted assistant message 持久化，并参与后续 turn 的模型上下文。
 - Skill 注入会保留历史中的原始用户文本；完整 skill 指令仅作为当前 turn 可见的模型上下文，不写入 transcript。
-- Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并在 system prompt 中注入 `Context compacted. Kept {n} recent messages.` 与摘要。可选 compact 指令只影响摘要，不修改用户历史。
+- Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并在 system prompt 中注入 `Context compacted. Kept {n} recent messages.` 与摘要。可选 compact 指令只影响摘要，不修改用户历史。手动 compact 使用该 session 当前选中的模型生成摘要，没有选中模型时回退到最后一个 turn 使用的模型。
 
 这些是产品行为约束，不表示需要兼容已删除 Go 实现的内部结构或数据库 schema。
 

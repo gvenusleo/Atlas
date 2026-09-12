@@ -437,6 +437,7 @@ final class AcpClient
   Stream<rt.AgentEvent> compact(
     rt.SessionId sessionId, {
     String? instruction,
+    rt.ModelRef? model,
     rt.CancellationToken? cancellation,
   }) async* {
     final turnId = rt.TurnId('turn-${_turnCounter++}');

@@ -456,11 +456,14 @@ final class TurnExecutor {
 
   /// Runs a threshold-less compaction over the latest persisted state.
   ///
-  /// Uses the model and turn of the snapshot's most recent turn so the
-  /// emitted events stay attached to the session's last execution.
+  /// The summary runs on [model] when the caller supplies its current
+  /// selection, otherwise on the session's persisted selection, otherwise on
+  /// the model of the latest recorded turn, which also carries the emitted
+  /// events so they stay attached to the session's last execution.
   Stream<AgentEvent> compact(
     SessionSnapshot snapshot, {
     String? instruction,
+    ModelRef? model,
     CancellationToken? cancellation,
   }) async* {
     final turns = snapshot.turns;
@@ -474,7 +477,8 @@ final class TurnExecutor {
         session: snapshot.session,
         timeline: snapshot.timeline,
         systemPrompt: _sessionPrompt(snapshot.session),
-        model: lastTurn.model ?? defaultModel,
+        model:
+            model ?? snapshot.session.model ?? lastTurn.model ?? defaultModel,
         turnId: lastTurn.id,
         latestUsage: lastTurn.usage,
         enforceThreshold: false,
@@ -507,6 +511,8 @@ final class TurnExecutor {
         updatedAt: current.updatedAt,
         compaction: current.compaction,
         lastUsage: current.lastUsage,
+        model: current.model,
+        reasoningEffort: current.reasoningEffort,
       );
       return (
         session: session,
@@ -549,6 +555,8 @@ final class TurnExecutor {
       updatedAt: session.updatedAt,
       compaction: session.compaction,
       lastUsage: session.lastUsage,
+      model: session.model,
+      reasoningEffort: session.reasoningEffort,
     );
   }
 

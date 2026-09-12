@@ -841,10 +841,12 @@ final class _FakeModeRuntime implements PresentationAgentSession {
   Stream<AgentEvent> compact(
     SessionId sessionId, {
     String? instruction,
+    ModelRef? model,
     CancellationToken? cancellation,
   }) => _inner.compact(
     sessionId,
     instruction: instruction,
+    model: model,
     cancellation: cancellation,
   );
 

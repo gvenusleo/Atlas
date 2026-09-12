@@ -163,14 +163,16 @@ final class AgentRuntime
   ///
   /// [instruction] is an optional user-provided direction for the compaction
   /// summary; when non-empty it is included in the summary request.
+  /// [model] overrides the session's selected model for the summary request.
   /// [cancellation] stops the summary model request cooperatively.
   ///
-  /// Uses the model and turn of the latest recorded turn so the emitted
-  /// events stay attached to the session's most recent execution.
+  /// The summary runs on the session's selected model, falling back to the
+  /// model of the latest recorded turn and then to the runtime default.
   @override
   Stream<AgentEvent> compact(
     SessionId sessionId, {
     String? instruction,
+    ModelRef? model,
     CancellationToken? cancellation,
   }) async* {
     final release = await _acquireSessionLock(sessionId);
@@ -180,6 +182,7 @@ final class AgentRuntime
       yield* _executor.compact(
         snapshot,
         instruction: instruction,
+        model: model,
         cancellation: cancellation,
       );
     } finally {

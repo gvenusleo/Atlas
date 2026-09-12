@@ -366,7 +366,7 @@ final class MemoryTools implements ToolRegistry {
       const ToolResult(content: 'file list');
 }
 
-final class MemorySessionStore implements SessionStore {
+final class MemorySessionStore implements SessionStore, SessionConfigStore {
   Session? session;
   final turns = <Turn>[];
   final timeline = <TimelineItem>[];
@@ -421,6 +421,8 @@ final class MemorySessionStore implements SessionStore {
           updatedAt: value.updatedAt,
           compaction: value.compaction,
           lastUsage: value.lastUsage,
+          model: value.model,
+          reasoningEffort: value.reasoningEffort,
         );
       }
     }
@@ -472,8 +474,34 @@ final class MemorySessionStore implements SessionStore {
         updatedAt: value.updatedAt,
         compaction: checkpoint,
         lastUsage: value.lastUsage,
+        model: value.model,
+        reasoningEffort: value.reasoningEffort,
       );
     }
+  }
+
+  @override
+  Future<void> updateSessionConfig(
+    SessionId sessionId,
+    ModelRef? model,
+    String? reasoningEffort,
+  ) async {
+    final value = session;
+    if (value == null || value.id != sessionId) {
+      throw SessionNotFoundException(sessionId);
+    }
+    session = Session(
+      id: value.id,
+      title: value.title,
+      workingDirectory: value.workingDirectory,
+      additionalDirectories: value.additionalDirectories,
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      compaction: value.compaction,
+      lastUsage: value.lastUsage,
+      model: model,
+      reasoningEffort: reasoningEffort,
+    );
   }
 
   @override

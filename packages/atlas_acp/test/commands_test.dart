@@ -211,6 +211,51 @@ void main() {
     expect(summaryPrompt, contains('Additional user instruction:\nkeep files'));
     await wire.close();
   });
+  test('/compact runs the summary on the configured model', () async {
+    final wire = await Wire.open(
+      models: testCatalog,
+      keptRecentTurns: 1,
+      responses: [
+        ...defaultWireResponses(),
+        ...defaultWireResponses(),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ],
+    );
+    final sessionId = await createWireSession(wire);
+    await runWirePrompt(wire, sessionId);
+    await runWirePrompt(wire, sessionId);
+    // The client switches models after the last turn, without prompting.
+    await wire.send({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'session/set_config_option',
+      'params': {
+        'sessionId': sessionId,
+        'configId': 'model',
+        'value': 'test/m2',
+      },
+    });
+
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 4,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {'type': 'text', 'text': '/compact'},
+        ],
+      },
+    });
+    await wire.turnNotifications.first;
+    await promptFuture;
+
+    expect(wire.lastRequest!.model, testModel2);
+    await wire.close();
+  });
   test('/compact with nothing to compact reports it', () async {
     final wire = await Wire.open();
     final sessionId = await createWireSession(wire);

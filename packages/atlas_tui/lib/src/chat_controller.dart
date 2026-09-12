@@ -156,8 +156,9 @@ final class ChatController implements Listenable {
   /// Manually compacts the current session, skipping the threshold check.
   ///
   /// [instruction] is an optional user direction forwarded to the compaction
-  /// summary request. Ignored while a turn is running or before any session
-  /// exists; both cases show a notice.
+  /// summary request. The summary runs on the currently selected model rather
+  /// than the model of the last turn. Ignored while a turn is running or
+  /// before any session exists; both cases show a notice.
   Future<void> compact({String? instruction}) async {
     final sessionId = _sessionId;
     if (sessionId == null) {
@@ -178,6 +179,7 @@ final class ChatController implements Listenable {
       await for (final event in runtime.compact(
         sessionId,
         instruction: instruction,
+        model: _model,
         cancellation: cancellation,
       )) {
         if (event is CompactionStarted) {

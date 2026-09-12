@@ -141,6 +141,153 @@ void main() {
       );
     },
   );
+
+  test(
+    'manual compaction prefers the session model to the last turn',
+    () async {
+      final store = _MemorySessionStore();
+      final provider = _ScriptedProvider([
+        const ModelResponse(
+          content: [TextContent('First reply')],
+          stopReason: StopReason.endTurn,
+        ),
+        const ModelResponse(
+          content: [TextContent('Second reply')],
+          stopReason: StopReason.endTurn,
+        ),
+        const ModelResponse(
+          content: [TextContent('Summary.')],
+          stopReason: StopReason.endTurn,
+        ),
+      ], contextWindow: 10000);
+      final turnExecutor = executor(store, provider);
+      final turnModel = ModelRef(
+        providerId: ProviderId('turn'),
+        modelId: ModelId('ran'),
+      );
+      final sessionModel = ModelRef(
+        providerId: ProviderId('session'),
+        modelId: ModelId('selected'),
+      );
+
+      await turnExecutor
+          .run(
+            const TurnRequest(
+              content: [TextContent('First turn')],
+              workingDirectory: '/tmp',
+            ),
+          )
+          .toList();
+      // A client selected a session-level model after the first turn.
+      final created = store.session!;
+      store.session = Session(
+        id: created.id,
+        workingDirectory: created.workingDirectory,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+        model: sessionModel,
+      );
+      await turnExecutor
+          .run(
+            TurnRequest(
+              sessionId: created.id,
+              content: const [TextContent('Second turn')],
+              model: turnModel,
+            ),
+          )
+          .toList();
+
+      final snapshot = await store.loadSession(created.id);
+      await turnExecutor.compact(snapshot).toList();
+
+      expect(provider.requests.last.model, sessionModel);
+      // The selection outlives the turn that just ran with an override.
+      expect(store.session!.model, sessionModel);
+    },
+  );
+
+  test('manual compaction honors an explicit model override', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('First reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('Second reply')],
+        stopReason: StopReason.endTurn,
+      ),
+      const ModelResponse(
+        content: [TextContent('Summary.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ], contextWindow: 10000);
+    final turnExecutor = executor(store, provider);
+    final override = ModelRef(
+      providerId: ProviderId('client'),
+      modelId: ModelId('override'),
+    );
+
+    await turnExecutor
+        .run(
+          const TurnRequest(
+            content: [TextContent('First turn')],
+            workingDirectory: '/tmp',
+          ),
+        )
+        .toList();
+    final created = store.session!;
+    await turnExecutor
+        .run(
+          TurnRequest(
+            sessionId: created.id,
+            content: const [TextContent('Second turn')],
+          ),
+        )
+        .toList();
+
+    final snapshot = await store.loadSession(created.id);
+    await turnExecutor.compact(snapshot, model: override).toList();
+
+    expect(provider.requests.last.model, override);
+  });
+
+  test('generating a title keeps the session model selection', () async {
+    final store = _MemorySessionStore();
+    final provider = _ScriptedProvider([
+      const ModelResponse(
+        content: [TextContent('Answer.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ], contextWindow: 10000);
+    final sessionModel = ModelRef(
+      providerId: ProviderId('session'),
+      modelId: ModelId('selected'),
+    );
+    final createdAt = DateTime.utc(2026, 1, 1);
+    final created = Session(
+      id: SessionId('untitled-session'),
+      workingDirectory: '/tmp',
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      model: sessionModel,
+      reasoningEffort: 'high',
+    );
+    store.session = created;
+
+    await executor(store, provider)
+        .run(
+          TurnRequest(
+            sessionId: created.id,
+            content: const [TextContent('Title me')],
+          ),
+        )
+        .toList();
+
+    expect(store.session!.title, 'Title me');
+    expect(store.session!.model, sessionModel);
+    expect(store.session!.reasoningEffort, 'high');
+  });
 }
 
 final class _ScriptedProvider implements ModelProvider {

@@ -261,6 +261,36 @@ void main() {
     expect(controller.messages.last.text, startsWith('Context compacted.'));
   });
 
+  test('compact runs the summary on the selected model', () async {
+    await closeDefaultStore();
+    final compactingProvider = _ScriptedProvider()..contextWindow = 10000;
+    final compactingRuntime = AgentRuntime(
+      store: _testStore(),
+      provider: compactingProvider,
+      tools: LocalToolRegistry([_EchoTool()]),
+      ids: SecureIdGenerator(),
+      defaultModel: ModelRef(
+        providerId: ProviderId('fake'),
+        modelId: ModelId('model'),
+      ),
+      maxSteps: 5,
+      keptRecentTurns: 1,
+    );
+    final controller = ChatController(runtime: compactingRuntime);
+    await controller.send('first');
+    await controller.send('second');
+
+    final selected = ModelRef(
+      providerId: ProviderId('fake'),
+      modelId: ModelId('picked'),
+    );
+    controller.setModel(selected, displayName: 'Picked');
+    await controller.compact();
+
+    expect(compactingProvider.lastModel, selected);
+    expect(controller.messages.last.text, startsWith('Context compacted.'));
+  });
+
   test('compact without a session shows a notice', () async {
     final controller = ChatController(runtime: runtime);
 
