@@ -7,10 +7,6 @@ INSTALL_DIR = "$HOME/.local/bin"
 # Directory the macOS app is installed into by `mise run app-install-macos`.
 APP_INSTALL_DIR = "/Applications"
 
-[tasks.default]
-description = "List all tasks"
-run = "mise tasks"
-
 [tasks.deps]
 description = "Resolve the shared workspace lockfile without changing locked versions"
 run = "flutter pub get --enforce-lockfile"
