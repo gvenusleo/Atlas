@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:terminal_view/terminal_view.dart';
 
+import '../../application/terminal_registry.dart';
 import '../../application/workspace_controller.dart';
 import '../../data/terminal_session.dart';
 import '../workspace_metrics.dart';
@@ -60,7 +61,7 @@ class _TerminalHostState extends ConsumerState<TerminalHost> {
 }
 
 /// Interactive shell backed by a pseudo-terminal and a terminal emulator.
-class TerminalPanel extends StatefulWidget {
+class TerminalPanel extends ConsumerStatefulWidget {
   /// Creates a shell rooted at [workingDirectory].
   const TerminalPanel({super.key, required this.workingDirectory});
 
@@ -68,17 +69,23 @@ class TerminalPanel extends StatefulWidget {
   final String workingDirectory;
 
   @override
-  State<TerminalPanel> createState() => _TerminalPanelState();
+  ConsumerState<TerminalPanel> createState() => _TerminalPanelState();
 }
 
-class _TerminalPanelState extends State<TerminalPanel> {
+class _TerminalPanelState extends ConsumerState<TerminalPanel> {
   final _terminal = Terminal();
   final _session = TerminalSession();
+  late final TerminalSessionRegistry _registry;
   bool _starting = false;
 
   @override
   void initState() {
     super.initState();
+    // The registry kills this shell when the application exits: disposing the
+    // panel is not part of the window-close path. It is captured here because
+    // `ref` cannot be read from `dispose`.
+    _registry = ref.read(terminalSessionRegistryProvider);
+    _registry.track(_session);
     _terminal.onOutput = _writeToPty;
     _terminal.onResize = _resizePty;
     unawaited(_startShell());
@@ -94,6 +101,7 @@ class _TerminalPanelState extends State<TerminalPanel> {
 
   @override
   void dispose() {
+    _registry.untrack(_session);
     unawaited(_session.close());
     super.dispose();
   }

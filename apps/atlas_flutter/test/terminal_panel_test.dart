@@ -1,4 +1,5 @@
 import 'package:atlas_flutter/app/runtime_environment.dart';
+import 'package:atlas_flutter/features/workspace/application/terminal_registry.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/terminal_panel.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
@@ -13,9 +14,11 @@ import 'package:terminal_view/terminal_view.dart';
 void main() {
   testWidgets('terminal panel mounts and starts a shell', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAtlasTheme(Brightness.dark),
-        home: const TerminalPanel(workingDirectory: '/tmp'),
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildAtlasTheme(Brightness.dark),
+          home: const TerminalPanel(workingDirectory: '/tmp'),
+        ),
       ),
     );
     await tester.pump(const Duration(milliseconds: 100));
@@ -23,13 +26,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('terminal panel tracks its shell until it is unmounted', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final registry = container.read(terminalSessionRegistryProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildAtlasTheme(Brightness.dark),
+          home: const TerminalPanel(workingDirectory: '/tmp'),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    // The exit hook can only release PTYs the panel registered.
+    expect(registry.length, 1);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildAtlasTheme(Brightness.dark),
+          home: const SizedBox.shrink(),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(registry.isEmpty, isTrue);
+  });
+
   testWidgets('uses Zed Ayu Light ANSI colors without bold-as-bright', (
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
-        home: const TerminalPanel(workingDirectory: '/tmp'),
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildAtlasTheme(Brightness.light),
+          home: const TerminalPanel(workingDirectory: '/tmp'),
+        ),
       ),
     );
     await tester.pump();
@@ -49,9 +87,11 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAtlasTheme(Brightness.dark),
-        home: const TerminalPanel(workingDirectory: '/tmp'),
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildAtlasTheme(Brightness.dark),
+          home: const TerminalPanel(workingDirectory: '/tmp'),
+        ),
       ),
     );
     await tester.pump();

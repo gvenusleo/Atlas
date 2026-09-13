@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../features/workspace/application/terminal_registry.dart';
 import '../shared/theme/atlas_theme.dart';
 import 'app_router.dart';
 import 'platform_window.dart';
@@ -40,6 +42,16 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
     final brightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     unawaited(syncPlatformWindowBackground(brightness));
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    // The framework asks before the embedder terminates, which is the last
+    // point at which the shells can still be killed: pty2 releases each PTY
+    // from a native finalizer during isolate shutdown, and closing a master
+    // whose shell is still alive blocks the main thread.
+    ref.read(terminalSessionRegistryProvider).closeAll();
+    return AppExitResponse.exit;
   }
 
   @override
