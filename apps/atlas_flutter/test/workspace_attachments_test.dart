@@ -33,11 +33,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [visionModel],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [visionModel]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -87,11 +83,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [visionModel],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [visionModel]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -130,11 +122,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [textModel],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [textModel]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -177,11 +165,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [visionModel],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [visionModel]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(

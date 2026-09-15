@@ -31,11 +31,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: _EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -89,11 +85,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: _EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -147,11 +139,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: _EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -264,11 +252,7 @@ Future<void> _pumpToolConversation(
     overrides: [
       runtimeEnvironmentProvider.overrideWith(
         () => RuntimeEnvironmentController(
-          local: RuntimeEnvironment(
-            runtime: runtime,
-            models: [model],
-            skills: _EmptySkillCatalog(),
-          ),
+          local: RuntimeEnvironment(runtime: runtime, models: [model]),
         ),
       ),
       workspaceWorkingDirectoryProvider.overrideWith(
@@ -420,14 +404,6 @@ final class _NamedFakeTool implements Tool {
   @override
   Future<ToolResult> execute(ToolContext context, JsonObject arguments) async =>
       ToolResult(content: result);
-}
-
-final class _EmptySkillCatalog implements SkillCatalog {
-  @override
-  Skill? lookup(String name) => null;
-
-  @override
-  List<SkillSummary> get summaries => const [];
 }
 
 final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {

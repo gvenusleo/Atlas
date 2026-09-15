@@ -78,7 +78,6 @@ Future<void> _pumpDetails(WidgetTester tester, {required bool isRemote}) async {
   final environment = RuntimeEnvironment(
     runtime: runtime,
     models: [model],
-    skills: const NoopSkillCatalog(),
     isRemote: isRemote,
   );
   final container = ProviderContainer(

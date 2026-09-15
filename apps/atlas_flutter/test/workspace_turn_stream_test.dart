@@ -33,11 +33,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -84,11 +80,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -145,11 +137,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -208,7 +196,6 @@ void main() {
               local: RuntimeEnvironment(
                 runtime: runtime,
                 models: [visionModel, textModel],
-                skills: EmptySkillCatalog(),
               ),
             ),
           ),
@@ -275,7 +262,6 @@ void main() {
             local: RuntimeEnvironment(
               runtime: runtime,
               models: [visionModel, textModel],
-              skills: EmptySkillCatalog(),
             ),
           ),
         ),
@@ -339,7 +325,6 @@ void main() {
               local: RuntimeEnvironment(
                 runtime: firstRuntime,
                 models: [modelA, modelB],
-                skills: EmptySkillCatalog(),
               ),
             ),
           ),
@@ -368,7 +353,6 @@ void main() {
               local: RuntimeEnvironment(
                 runtime: secondRuntime,
                 models: [modelA],
-                skills: EmptySkillCatalog(),
               ),
             ),
           ),

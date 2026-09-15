@@ -22,7 +22,6 @@ final class RuntimeEnvironment {
   const RuntimeEnvironment({
     required this.runtime,
     required this.models,
-    required this.skills,
     this.onClose,
     this.isRemote = false,
     this.closed,
@@ -33,9 +32,6 @@ final class RuntimeEnvironment {
 
   /// Models configured for user selection.
   final List<ModelDescriptor> models;
-
-  /// Skills available to slash-command completion.
-  final SkillCatalog skills;
 
   /// Closes process-owned resources when the application exits.
   final Future<void> Function()? onClose;
@@ -424,29 +420,13 @@ final class RuntimeEnvironmentController extends Notifier<AcpRuntimeState> {
   void overrideEnvironmentForTest(PresentationAgentSession runtime) {
     final previous = state.environment;
     state = AcpRuntimeState(
-      environment: RuntimeEnvironment(
-        runtime: runtime,
-        models: const [],
-        skills: const NoopSkillCatalog(),
-      ),
+      environment: RuntimeEnvironment(runtime: runtime, models: const []),
       status: AcpConnectionStatus.connected,
     );
     if (!identical(previous, _local)) {
       unawaited(previous?.close());
     }
   }
-}
-
-/// An empty skill catalog used for test and remote environments.
-final class NoopSkillCatalog implements SkillCatalog {
-  /// Creates an empty catalog.
-  const NoopSkillCatalog();
-
-  @override
-  Skill? lookup(String name) => null;
-
-  @override
-  List<SkillSummary> get summaries => const [];
 }
 
 /// Supplies a configuration or startup failure to the workspace.
@@ -490,8 +470,6 @@ Future<RuntimeBootstrap> bootstrapRuntime({
       RuntimeEnvironment(
         runtime: client,
         models: client.catalog.isEmpty ? models : client.catalog,
-        // Skills and slash commands come from the ACP agent session.
-        skills: const NoopSkillCatalog(),
         onClose: () async {
           await client.close();
           await serverDone;

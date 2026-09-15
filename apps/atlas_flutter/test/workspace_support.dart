@@ -66,14 +66,6 @@ final class FakeProvider implements ModelProvider {
   }
 }
 
-final class EmptySkillCatalog implements SkillCatalog {
-  @override
-  Skill? lookup(String name) => null;
-
-  @override
-  List<SkillSummary> get summaries => const [];
-}
-
 /// A runtime that advertises agent modes and records mode switches.
 final class FakeModeRuntime implements PresentationAgentSession {
   FakeModeRuntime(this._inner);

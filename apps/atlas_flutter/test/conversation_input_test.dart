@@ -760,13 +760,7 @@ Future<void> _pumpWorkspace(
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: allModels,
-              skills: skills.isEmpty
-                  ? _EmptySkillCatalog()
-                  : _FakeSkillCatalog(skills),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: allModels),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -815,37 +809,6 @@ final class _FakeProvider implements ModelProvider {
         usage: usage,
       ),
     );
-  }
-}
-
-final class _EmptySkillCatalog implements SkillCatalog {
-  @override
-  Skill? lookup(String name) => null;
-
-  @override
-  List<SkillSummary> get summaries => const [];
-}
-
-final class _FakeSkillCatalog implements SkillCatalog {
-  _FakeSkillCatalog(this.summaries);
-
-  @override
-  final List<SkillSummary> summaries;
-
-  @override
-  Skill? lookup(String name) {
-    for (final summary in summaries) {
-      if (summary.name == name) {
-        return Skill(
-          name: summary.name,
-          path: summary.path,
-          dir: summary.path,
-          description: summary.description,
-          content: '',
-        );
-      }
-    }
-    return null;
   }
 }
 

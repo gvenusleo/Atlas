@@ -54,7 +54,6 @@ Future<RemoteSessionHandle> bootstrapRemoteConnection(
     environment: RuntimeEnvironment(
       runtime: client,
       models: catalog.isEmpty ? client.catalog : catalog,
-      skills: const NoopSkillCatalog(),
       isRemote: true,
       closed: client.closed,
       onClose: () async {

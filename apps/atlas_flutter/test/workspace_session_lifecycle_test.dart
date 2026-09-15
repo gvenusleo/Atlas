@@ -28,11 +28,7 @@ void main() {
       ids: SecureIdGenerator(),
       defaultModel: model.ref,
     );
-    final localEnv = RuntimeEnvironment(
-      runtime: localRuntime,
-      models: [model],
-      skills: EmptySkillCatalog(),
-    );
+    final localEnv = RuntimeEnvironment(runtime: localRuntime, models: [model]);
     final wire = StreamChannelController<String>();
     final acpServer = AcpServer(localRuntime, models: [model]);
     final serverDone = acpServer.serveChannel(wire.local);
@@ -103,7 +99,6 @@ void main() {
       final localEnv = RuntimeEnvironment(
         runtime: localRuntime,
         models: [model],
-        skills: EmptySkillCatalog(),
       );
       final wire = StreamChannelController<String>();
       final acpServer = AcpServer(localRuntime, models: [model]);
@@ -152,11 +147,7 @@ void main() {
       ids: SecureIdGenerator(),
       defaultModel: model.ref,
     );
-    final localEnv = RuntimeEnvironment(
-      runtime: localRuntime,
-      models: [model],
-      skills: EmptySkillCatalog(),
-    );
+    final localEnv = RuntimeEnvironment(runtime: localRuntime, models: [model]);
     final wire = StreamChannelController<String>();
     final acpServer = AcpServer(localRuntime, models: [model]);
     final serverDone = acpServer.serveChannel(wire.local);
@@ -258,11 +249,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -313,11 +300,7 @@ void main() {
         overrides: [
           runtimeEnvironmentProvider.overrideWith(
             () => RuntimeEnvironmentController(
-              local: RuntimeEnvironment(
-                runtime: runtime,
-                models: [model],
-                skills: EmptySkillCatalog(),
-              ),
+              local: RuntimeEnvironment(runtime: runtime, models: [model]),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -356,11 +339,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -405,11 +384,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -450,11 +425,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: modeRuntime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: modeRuntime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -495,11 +466,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: modeRuntime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: modeRuntime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -541,11 +508,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -590,11 +553,7 @@ void main() {
         overrides: [
           runtimeEnvironmentProvider.overrideWith(
             () => RuntimeEnvironmentController(
-              local: RuntimeEnvironment(
-                runtime: runtime,
-                models: [model],
-                skills: EmptySkillCatalog(),
-              ),
+              local: RuntimeEnvironment(runtime: runtime, models: [model]),
             ),
           ),
           workspaceWorkingDirectoryProvider.overrideWith(
@@ -666,7 +625,6 @@ void main() {
             local: RuntimeEnvironment(
               runtime: runtime,
               models: [modelA, modelB],
-              skills: EmptySkillCatalog(),
             ),
           ),
         ),
@@ -722,11 +680,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(

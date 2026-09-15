@@ -35,7 +35,6 @@ Future<RuntimeBootstrap> bootstrapAcpClient(AcpConnection connection) async {
       RuntimeEnvironment(
         runtime: client,
         models: catalog,
-        skills: const NoopSkillCatalog(),
         onClose: () async {
           await client.close();
           await agent.close();

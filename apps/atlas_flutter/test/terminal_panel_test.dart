@@ -123,11 +123,7 @@ void main() {
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
           () => RuntimeEnvironmentController(
-            local: RuntimeEnvironment(
-              runtime: runtime,
-              models: [model],
-              skills: _EmptySkillCatalog(),
-            ),
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
           ),
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
@@ -201,12 +197,4 @@ final class _EmptyProvider implements ModelProvider {
       ),
     );
   }
-}
-
-final class _EmptySkillCatalog implements SkillCatalog {
-  @override
-  Skill? lookup(String name) => null;
-
-  @override
-  List<SkillSummary> get summaries => const [];
 }
