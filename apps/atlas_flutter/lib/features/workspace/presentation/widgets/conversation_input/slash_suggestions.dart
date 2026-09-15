@@ -7,12 +7,10 @@ import 'floating_menu_card.dart';
 /// Maximum slash suggestion rows shown before the popup scrolls.
 const maxSlashPopupRows = 5;
 
-/// Slash commands built into the composer itself.
-const builtInSlashCommands = <(String, String)>[
-  ('compact', 'Compact the conversation'),
-];
-
 /// The suggestion popup shown while a slash token is being typed.
+///
+/// Rows come from the commands the agent advertises for the session, so the
+/// client never keeps its own copy of the command catalog.
 class SlashSuggestions extends StatelessWidget {
   /// Creates a slash suggestion popup.
   const SlashSuggestions({
@@ -73,13 +71,7 @@ class SlashSuggestions extends StatelessWidget {
 
 /// The slash token under [offset], or null when the cursor is not inside a
 /// `/name` token.
-///
-/// Mirrors the TUI completer: a token whose surroundings are not all
-/// whitespace only completes skills, so built-ins stay whole-line commands.
-({int start, int end, String query, bool skillsOnly})? slashTokenAt(
-  String text,
-  int offset,
-) {
+({int start, int end, String query})? slashTokenAt(String text, int offset) {
   if (text.isEmpty) {
     return null;
   }
@@ -102,23 +94,20 @@ class SlashSuggestions extends StatelessWidget {
   if (query.isNotEmpty && !_isValidCommandName(query)) {
     return null;
   }
-  final skillsOnly = '${text.substring(0, start)}${text.substring(end)}'
-      .trim()
-      .isNotEmpty;
-  return (start: start, end: end, query: query, skillsOnly: skillsOnly);
+  return (start: start, end: end, query: query);
 }
 
 /// Ranks slash commands: exact name first, then prefix, then substring.
-List<(String, String, bool)> rankSlashCommands(
+List<(String, String)> rankSlashCommands(
   String query,
-  List<(String, String, bool)> commands,
+  List<(String, String)> commands,
 ) {
   if (query.isEmpty) {
     return List.of(commands);
   }
-  final exact = <(String, String, bool)>[];
-  final prefix = <(String, String, bool)>[];
-  final contains = <(String, String, bool)>[];
+  final exact = <(String, String)>[];
+  final prefix = <(String, String)>[];
+  final contains = <(String, String)>[];
   final lower = query.toLowerCase();
   for (final command in commands) {
     final name = command.$1.toLowerCase();

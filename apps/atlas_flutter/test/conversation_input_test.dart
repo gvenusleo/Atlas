@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:atlas_acp/atlas_acp.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
@@ -69,6 +70,7 @@ void main() {
   testWidgets('slash suggestions highlight follows the mouse', (tester) async {
     await _pumpComposer(
       tester,
+      withSession: true,
       skills: const [
         SkillSummary(
           name: 'hunt',
@@ -78,7 +80,7 @@ void main() {
       ],
     );
 
-    // Type a slash to open the command picker: built-in first, then skills.
+    // Type a slash to open the command picker: advertised commands in order.
     await tester.enterText(
       find.byKey(const ValueKey('atlas-prompt-input')),
       '/',
@@ -178,7 +180,7 @@ void main() {
   testWidgets('escape dismisses the slash suggestions without clearing', (
     tester,
   ) async {
-    await _pumpComposer(tester);
+    await _pumpComposer(tester, withSession: true);
 
     // Type a slash to open the command picker.
     await tester.enterText(
@@ -186,7 +188,10 @@ void main() {
       '/compact',
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('Compact the conversation'), findsOneWidget);
+    expect(
+      find.textContaining('Compact earlier conversation context'),
+      findsOneWidget,
+    );
 
     // Escape dismisses the popup but keeps the draft text.
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -217,9 +222,12 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('skill suggestions carry a [Skill] tag', (tester) async {
+  testWidgets('advertised commands carry their agent description', (
+    tester,
+  ) async {
     await _pumpComposer(
       tester,
+      withSession: true,
       skills: const [
         SkillSummary(
           name: 'hunt',
@@ -235,13 +243,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('[Skill]'), findsOneWidget);
     expect(find.textContaining('Finds root causes'), findsOneWidget);
+    // The agent owns the catalog, so the client adds no wording of its own.
+    expect(find.textContaining('[Skill]'), findsNothing);
   });
 
-  testWidgets('mid-text slash tokens complete skills only', (tester) async {
+  testWidgets('mid-text slash tokens complete advertised commands', (
+    tester,
+  ) async {
     await _pumpComposer(
       tester,
+      withSession: true,
       skills: const [
         SkillSummary(
           name: 'hunt',
@@ -257,11 +269,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Only the skill matches: built-ins are whole-line commands.
-    expect(find.text('/compact'), findsNothing);
     expect(find.text('/hunt'), findsOneWidget);
+    expect(find.text('/compact'), findsNothing);
 
-    // Enter applies the skill token and preserves the draft before it.
+    // Enter applies the command token and preserves the draft before it.
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(
@@ -270,9 +281,24 @@ void main() {
     expect(field.controller!.text, 'explain this /hunt ');
   });
 
+  testWidgets('mid-text slash tokens complete the compaction command', (
+    tester,
+  ) async {
+    await _pumpComposer(tester, withSession: true);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('atlas-prompt-input')),
+      'please /co',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('/compact'), findsOneWidget);
+  });
+
   testWidgets('slash popup windows more than five matches', (tester) async {
     await _pumpComposer(
       tester,
+      withSession: true,
       skills: [
         for (var i = 1; i <= 6; i++)
           SkillSummary(
@@ -314,6 +340,7 @@ void main() {
   ) async {
     await _pumpComposer(
       tester,
+      withSession: true,
       skills: const [
         SkillSummary(
           name: 'My.Skill_v2',
@@ -334,14 +361,17 @@ void main() {
   testWidgets('escape keeps the popup closed until the draft changes', (
     tester,
   ) async {
-    await _pumpComposer(tester);
+    await _pumpComposer(tester, withSession: true);
 
     await tester.enterText(
       find.byKey(const ValueKey('atlas-prompt-input')),
       '/compact',
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('Compact the conversation'), findsOneWidget);
+    expect(
+      find.textContaining('Compact earlier conversation context'),
+      findsOneWidget,
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
@@ -356,7 +386,10 @@ void main() {
       '/compac',
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('Compact the conversation'), findsOneWidget);
+    expect(
+      find.textContaining('Compact earlier conversation context'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('send button shifts to the accent color on hover', (
@@ -638,6 +671,7 @@ Future<void> _pumpComposer(
   int contextWindow = 0,
   TokenUsage usage = const TokenUsage(),
   bool withModes = false,
+  bool withSession = false,
   Future<List<PendingImage>> Function()? onPickImages,
   Future<List<PendingImage>> Function()? onPasteImages,
 }) async {
@@ -655,6 +689,14 @@ Future<void> _pumpComposer(
       child: ConversationInput(),
     ),
   );
+  if (withSession) {
+    // Commands are advertised per session, so a draft workspace has none.
+    final prompt = find.byKey(const ValueKey('atlas-prompt-input'));
+    await ProviderScope.containerOf(
+      tester.element(prompt),
+    ).read(workspaceProvider.notifier).send('hello');
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _pumpSessionPanes(
@@ -698,23 +740,19 @@ Future<void> _pumpWorkspace(
   final allModels = models ?? [modelA, modelB];
   final defaultModel = allModels.firstOrNull ?? modelA;
   final store = DriftSessionStore.inMemory();
+  final baseRuntime = AgentRuntime(
+    store: store,
+    provider: _FakeProvider(defaultModel.ref, usage: usage),
+    tools: LocalToolRegistry(const []),
+    ids: SecureIdGenerator(),
+    defaultModel: defaultModel.ref,
+  );
+  // The composer reads its catalog from the agent, so tests advertise the same
+  // commands the ACP server sends for a session.
+  final advertisingRuntime = _AdvertisedCommandsRuntime(baseRuntime, skills);
   final runtime = withModes
-      ? _FakeModeRuntime(
-          AgentRuntime(
-            store: store,
-            provider: _FakeProvider(defaultModel.ref, usage: usage),
-            tools: LocalToolRegistry(const []),
-            ids: SecureIdGenerator(),
-            defaultModel: defaultModel.ref,
-          ),
-        )
-      : AgentRuntime(
-          store: store,
-          provider: _FakeProvider(defaultModel.ref, usage: usage),
-          tools: LocalToolRegistry(const []),
-          ids: SecureIdGenerator(),
-          defaultModel: defaultModel.ref,
-        );
+      ? _FakeModeRuntime(advertisingRuntime)
+      : advertisingRuntime;
   addTearDown(store.close);
 
   await tester.pumpWidget(
@@ -821,10 +859,96 @@ ModelDescriptor _visionModel() => ModelDescriptor(
 );
 
 /// A runtime that advertises agent modes for composer tests.
+final class _AdvertisedCommandsRuntime implements PresentationAgentSession {
+  _AdvertisedCommandsRuntime(this._inner, this._skills);
+
+  final AgentRuntime _inner;
+  final List<SkillSummary> _skills;
+
+  @override
+  List<AgentCommand> commandsFor(SessionId sessionId) => [
+    for (final command in availableCommandsFor(_skills))
+      AgentCommand(
+        name: command.name,
+        description: command.description,
+        inputHint: command.input?.hint ?? '',
+      ),
+  ];
+
+  @override
+  ModelRef get defaultModel => _inner.defaultModel;
+
+  @override
+  Stream<AgentEvent> run(TurnRequest request) => _inner.run(request);
+
+  @override
+  Stream<AgentEvent> compact(
+    SessionId sessionId, {
+    String? instruction,
+    ModelRef? model,
+    CancellationToken? cancellation,
+  }) => _inner.compact(
+    sessionId,
+    instruction: instruction,
+    model: model,
+    cancellation: cancellation,
+  );
+
+  @override
+  Future<SessionPage> listSessions({
+    String? workingDirectory,
+    String? cursor,
+    int limit = 20,
+  }) => _inner.listSessions(
+    workingDirectory: workingDirectory,
+    cursor: cursor,
+    limit: limit,
+  );
+
+  @override
+  Future<Session> createSession({
+    required String workingDirectory,
+    List<String> additionalDirectories = const <String>[],
+  }) => _inner.createSession(
+    workingDirectory: workingDirectory,
+    additionalDirectories: additionalDirectories,
+  );
+
+  @override
+  Future<SessionSnapshot> loadSession(SessionId sessionId) =>
+      _inner.loadSession(sessionId);
+
+  @override
+  Future<void> deleteSession(SessionId sessionId) =>
+      _inner.deleteSession(sessionId);
+
+  @override
+  Future<void> renameSession(SessionId sessionId, String title) =>
+      _inner.renameSession(sessionId, title);
+
+  @override
+  Future<int> contextWindowSize({ModelRef? model}) =>
+      _inner.contextWindowSize(model: model);
+
+  @override
+  String? titleFor(SessionId sessionId) => _inner.titleFor(sessionId);
+
+  @override
+  List<ModeOption> get modeOptions => _inner.modeOptions;
+
+  @override
+  String? modeFor(SessionId sessionId) => _inner.modeFor(sessionId);
+
+  @override
+  Future<void> setMode(SessionId sessionId, String modeId) =>
+      _inner.setMode(sessionId, modeId);
+}
+
+/// A runtime that advertises agent modes for composer tests.
 final class _FakeModeRuntime implements PresentationAgentSession {
   _FakeModeRuntime(this._inner);
 
-  final AgentRuntime _inner;
+  final PresentationAgentSession _inner;
 
   static const modes = [
     ModeOption(id: 'build', name: 'build'),

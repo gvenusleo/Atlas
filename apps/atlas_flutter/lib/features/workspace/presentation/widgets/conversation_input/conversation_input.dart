@@ -500,34 +500,18 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     if (token == null) {
       return const [];
     }
-    final remoteCommands = _remoteCommands;
-    final fallbackSkills = remoteCommands.isEmpty
-        ? ref.read(runtimeEnvironmentProvider).environment!.skills.summaries
-        : const <SkillSummary>[];
-    final commands = <(String, String, bool)>[
-      for (final command in builtInSlashCommands)
-        (command.$1, command.$2, false),
-      for (final command in remoteCommands)
-        (command.name, '[Skill] ${command.description}', true),
-      for (final skill in fallbackSkills)
-        (skill.name, '[Skill] ${skill.description}', true),
-    ];
-    final candidates = token.skillsOnly
-        ? [
-            for (final command in commands)
-              if (command.$3) command,
-          ]
-        : commands;
-    return [
-      for (final (name, description, _) in rankSlashCommands(
-        token.query,
-        candidates,
-      ))
-        (name, description),
-    ];
+    // The agent owns the catalog: the ACP session advertises the built-in
+    // compaction command and one command per available skill.
+    return rankSlashCommands(token.query, [
+      for (final command in _remoteCommands)
+        (command.name, command.description),
+    ]);
   }
 
   /// Slash commands advertised by the agent for the focused session.
+  ///
+  /// Empty until the session exists and the agent has advertised its catalog,
+  /// which is why the popup stays closed in a draft workspace.
   List<AgentCommand> get _remoteCommands {
     final environment = ref.read(runtimeEnvironmentProvider).environment;
     final runtime = environment?.runtime;
