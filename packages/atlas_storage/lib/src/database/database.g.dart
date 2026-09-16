@@ -3545,7 +3545,7 @@ class $$SessionsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$SessionsTable, SessionRow>(table),
                   $$SessionsTableReferences(db, table, e),
                 ),
               )
@@ -4205,8 +4205,10 @@ class $$TurnsTableTableManager
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$TurnsTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable<$TurnsTable, TurnRow>(table),
+                  $$TurnsTableReferences(db, table, e),
+                ),
               )
               .toList(),
           prefetchHooksCallback: ({sessionId = false, messagesRefs = false}) {
@@ -4669,7 +4671,7 @@ class $$MessagesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$MessagesTable, MessageRow>(table),
                   $$MessagesTableReferences(db, table, e),
                 ),
               )

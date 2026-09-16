@@ -9,8 +9,8 @@ environment:
 resolution: workspace
 dependencies:
   atlas_runtime: ^0.1.0
-  drift: ^2.34.3
+  drift: ^2.35.0
 dev_dependencies:
   build_runner: ^2.15.1
-  drift_dev: ^2.34.0
+  drift_dev: ^2.35.0
   test: ^1.31.0
