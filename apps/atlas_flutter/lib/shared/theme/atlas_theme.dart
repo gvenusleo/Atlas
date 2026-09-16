@@ -1,6 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 
 /// Semantic colors shared by the Atlas application shell.
+///
+/// Values come from the Token Temper palette of
+/// [ThorstenRhau/token](https://github.com/ThorstenRhau/token) at commit
+/// `1538e1e` (`lua/token/palettes/temper.lua`, BSD-3-Clause), one upstream
+/// field per token: `canvas` is `bg3`, `panel` `bg1`, `raised` `bg5`,
+/// `divider` `line_nr`, the text ramp `fg0`/`fg2`, `accent`/`success`/
+/// `warning`/`error` are `accent`/`green`/`yellow`/`red`, and `scrim` is `fg0`
+/// at the conventional overlay alpha.
 @immutable
 class AtlasColors extends ThemeExtension<AtlasColors> {
   const AtlasColors({
@@ -12,34 +20,37 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
     required this.textSecondary,
     required this.accent,
     required this.success,
+    required this.warning,
     required this.error,
     required this.scrim,
   });
 
   static const light = AtlasColors(
-    canvas: Color(0xFFFCFCFC),
-    panel: Color(0xFFECECED),
-    raised: Color(0xFFDFE0E1),
-    divider: Color(0xFFCFD1D2),
-    textPrimary: Color(0xFF5C6166),
-    textSecondary: Color(0xFF8B8E92),
-    accent: Color(0xFF3B9EE5),
-    success: Color(0xFF85B304),
-    error: Color(0xFFEF7271),
-    scrim: Color(0x525C6166),
+    canvas: Color(0xFFF5F7F8),
+    panel: Color(0xFFE7EBEF),
+    raised: Color(0xFFE0E5EA),
+    divider: Color(0xFFA7B2BB),
+    textPrimary: Color(0xFF283039),
+    textSecondary: Color(0xFF414C57),
+    accent: Color(0xFF005850),
+    success: Color(0xFF005B53),
+    warning: Color(0xFF946B1E),
+    error: Color(0xFFBF3F50),
+    scrim: Color(0x52283039),
   );
 
   static const dark = AtlasColors(
-    canvas: Color(0xFF0D1016),
-    panel: Color(0xFF1F2127),
-    raised: Color(0xFF2D2F34),
-    divider: Color(0xFF3F4043),
-    textPrimary: Color(0xFFBFBDB6),
-    textSecondary: Color(0xFF8A8986),
-    accent: Color(0xFF5AC1FE),
-    success: Color(0xFFAAD84C),
-    error: Color(0xFFEF7177),
-    scrim: Color(0x66BFBDB6),
+    canvas: Color(0xFF272C33),
+    panel: Color(0xFF1C2127),
+    raised: Color(0xFF373E47),
+    divider: Color(0xFF535D68),
+    textPrimary: Color(0xFFC3C8CC),
+    textSecondary: Color(0xFF9AA4AE),
+    accent: Color(0xFF5CC1B3),
+    success: Color(0xFF5EC4B5),
+    warning: Color(0xFFC5A15A),
+    error: Color(0xFFE3888C),
+    scrim: Color(0x66C3C8CC),
   );
 
   final Color canvas;
@@ -50,6 +61,10 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
   final Color textSecondary;
   final Color accent;
   final Color success;
+
+  /// Warning accent for pending or degraded states.
+  final Color warning;
+
   final Color error;
   final Color scrim;
 
@@ -75,6 +90,7 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
     Color? textSecondary,
     Color? accent,
     Color? success,
+    Color? warning,
     Color? error,
     Color? scrim,
   }) {
@@ -87,6 +103,7 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
       textSecondary: textSecondary ?? this.textSecondary,
       accent: accent ?? this.accent,
       success: success ?? this.success,
+      warning: warning ?? this.warning,
       error: error ?? this.error,
       scrim: scrim ?? this.scrim,
     );
@@ -106,6 +123,7 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
       success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
       error: Color.lerp(error, other.error, t)!,
       scrim: Color.lerp(scrim, other.scrim, t)!,
     );

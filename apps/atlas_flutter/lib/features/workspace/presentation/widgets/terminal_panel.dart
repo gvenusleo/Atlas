@@ -155,8 +155,8 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
       cursorType: TerminalCursorType.verticalBar,
       padding: const EdgeInsets.only(bottom: 8),
       theme: Theme.of(context).brightness == Brightness.dark
-          ? _ayuDarkTerminalTheme
-          : _ayuLightTerminalTheme,
+          ? _temperDarkTerminalTheme
+          : _temperLightTerminalTheme,
       textStyle: TerminalStyle(
         fontSize: 13,
         fontFamily: WorkspaceMetrics.monospaceFontFamily,
@@ -167,61 +167,69 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
   }
 }
 
-/// Ayu Light ANSI palette from Zed's `ayu.json`.
+/// Token Temper light ANSI palette from `ThorstenRhau/token` @ `1538e1e`.
 ///
-/// Bold is not remapped onto the bright slots: those colors are pastel
-/// variants in Ayu, and `ls` / starship use bold + a normal ANSI color.
-const _ayuLightTerminalTheme = TerminalTheme(
-  cursor: Color(0xFF3B9EE5),
-  selection: Color(0x3D3B9EE5),
-  foreground: Color(0xFF5C6166),
-  background: Color(0xFFFCFCFC),
-  black: Color(0xFF5C6166),
-  red: Color(0xFFEF7271),
-  green: Color(0xFF85B304),
-  yellow: Color(0xFFF1AD49),
-  blue: Color(0xFF3B9EE5),
-  magenta: Color(0xFF55B4D3),
-  cyan: Color(0xFF4DBF99),
-  white: Color(0xFFFCFCFC),
-  brightBlack: Color(0xFF3B9EE5),
-  brightRed: Color(0xFFFEBAB6),
-  brightGreen: Color(0xFFC7D98F),
-  brightYellow: Color(0xFFFED5A3),
-  brightBlue: Color(0xFFABCDF2),
-  brightMagenta: Color(0xFFB1D8E8),
-  brightCyan: Color(0xFFACE0CB),
-  brightWhite: Color(0xFFFFFFFF),
-  searchHitBackground: Color(0x663B9EE5),
-  searchHitBackgroundCurrent: Color(0x66F88B36),
-  searchHitForeground: Color(0xFF5C6166),
+/// Colors come from the upstream Apple Terminal profile
+/// (`contrib/apple-terminal/token-temper-light.terminal`): slots 0-15,
+/// foreground, background, cursor, and selection are transcribed as exported.
+/// Bold is not remapped onto the bright slots: the upstream `TextBoldColor`
+/// equals the normal `TextColor`, and `ls` / starship rely on bold with a
+/// normal ANSI color.
+const _temperLightTerminalTheme = TerminalTheme(
+  cursor: Color(0xFF283039),
+  selection: Color(0xFFDCE2E7),
+  foreground: Color(0xFF283039),
+  background: Color(0xFFF5F7F8),
+  black: Color(0xFF283039),
+  red: Color(0xFFBF3F50),
+  green: Color(0xFF005B53),
+  yellow: Color(0xFF946B1E),
+  blue: Color(0xFF005850),
+  magenta: Color(0xFF612C8D),
+  cyan: Color(0xFF005B53),
+  white: Color(0xFFA7B2BB),
+  brightBlack: Color(0xFF414C57),
+  brightRed: Color(0xFF005850),
+  brightGreen: Color(0xFF004A44),
+  brightYellow: Color(0xFF683495),
+  brightBlue: Color(0xFF005B53),
+  brightMagenta: Color(0xFF7646A2),
+  brightCyan: Color(0xFF16746B),
+  brightWhite: Color(0xFFF5F7F8),
+  searchHitBackground: Color(0xFFE9DDBE),
+  searchHitBackgroundCurrent: Color(0xFF005850),
+  searchHitForeground: Color(0xFF283039),
   drawBoldTextInBrightColors: false,
 );
 
-/// Ayu Dark ANSI palette from Zed's `ayu.json`.
-const _ayuDarkTerminalTheme = TerminalTheme(
-  cursor: Color(0xFF5AC1FE),
-  selection: Color(0x3D5AC1FE),
-  foreground: Color(0xFFBFBDB6),
-  background: Color(0xFF0D1016),
-  black: Color(0xFF0D1016),
-  red: Color(0xFFEF7177),
-  green: Color(0xFFAAD84C),
-  yellow: Color(0xFFFEB454),
-  blue: Color(0xFF5AC1FE),
-  magenta: Color(0xFF39BAE5),
-  cyan: Color(0xFF95E5CB),
-  white: Color(0xFFBFBDB6),
-  brightBlack: Color(0xFF545557),
-  brightRed: Color(0xFF83353B),
-  brightGreen: Color(0xFF567627),
-  brightYellow: Color(0xFF92582B),
-  brightBlue: Color(0xFF27618C),
-  brightMagenta: Color(0xFF205A78),
-  brightCyan: Color(0xFF4C806F),
-  brightWhite: Color(0xFFFAFAFA),
-  searchHitBackground: Color(0x665AC2FE),
-  searchHitBackgroundCurrent: Color(0x66EA5701),
-  searchHitForeground: Color(0xFFBFBDB6),
+/// Token Temper dark ANSI palette from `ThorstenRhau/token` @ `1538e1e`.
+///
+/// Same Apple Terminal export as the light palette. Search hits have no
+/// terminal equivalent upstream, so they use the Neovim roles: `Search`
+/// (`match`) for matches and `CurSearch` (`accent`) for the active one.
+const _temperDarkTerminalTheme = TerminalTheme(
+  cursor: Color(0xFFC3C8CC),
+  selection: Color(0xFF3A414A),
+  foreground: Color(0xFFC3C8CC),
+  background: Color(0xFF272C33),
+  black: Color(0xFF1C2127),
+  red: Color(0xFFE3888C),
+  green: Color(0xFF5EC4B5),
+  yellow: Color(0xFFC5A15A),
+  blue: Color(0xFF51B8AA),
+  magenta: Color(0xFFC294E6),
+  cyan: Color(0xFF62C7B9),
+  white: Color(0xFFA2A9AF),
+  brightBlack: Color(0xFF858F9B),
+  brightRed: Color(0xFF5CC1B3),
+  brightGreen: Color(0xFF76D5C7),
+  brightYellow: Color(0xFFE7CDFF),
+  brightBlue: Color(0xFF64C3B6),
+  brightMagenta: Color(0xFFC69AE7),
+  brightCyan: Color(0xFF72D1C3),
+  brightWhite: Color(0xFFC3C8CC),
+  searchHitBackground: Color(0xFF4A402E),
+  searchHitBackgroundCurrent: Color(0xFF5CC1B3),
+  searchHitForeground: Color(0xFFC3C8CC),
   drawBoldTextInBrightColors: false,
 );

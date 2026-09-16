@@ -35,6 +35,15 @@ void main() {
     expect(dark.scaffoldBackgroundColor, AtlasColors.dark.canvas);
   });
 
+  test('palette carries the Token Temper values', () {
+    expect(AtlasColors.light.canvas, const Color(0xFFF5F7F8));
+    expect(AtlasColors.dark.canvas, const Color(0xFF272C33));
+    expect(AtlasColors.light.divider, const Color(0xFFA7B2BB));
+    expect(AtlasColors.dark.divider, const Color(0xFF535D68));
+    expect(AtlasColors.light.accent, const Color(0xFF005850));
+    expect(AtlasColors.dark.accent, const Color(0xFF5CC1B3));
+  });
+
   testShell(
     'application follows the system brightness',
     const Size(1200, 760),
@@ -84,11 +93,12 @@ void main() {
         expect(_overlayStyleOf(tester), SystemUiOverlayStyle.light);
         if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
           expect(calls.last.method, 'setBackgroundColor');
+          final canvas = AtlasColors.dark.canvas;
           expect(calls.last.arguments, {
-            'backgroundColorA': 255,
-            'backgroundColorR': 13,
-            'backgroundColorG': 16,
-            'backgroundColorB': 22,
+            'backgroundColorA': (canvas.a * 255).round(),
+            'backgroundColorR': (canvas.r * 255).round(),
+            'backgroundColorG': (canvas.g * 255).round(),
+            'backgroundColorB': (canvas.b * 255).round(),
           });
         }
       } finally {

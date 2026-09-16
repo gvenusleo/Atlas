@@ -299,14 +299,8 @@ class _ProfileTile extends StatelessWidget {
     final colors = AtlasColors.of(context);
     final (label, color) = switch (status) {
       RemoteConnectionStatus.connecting => ('Connecting…', colors.accent),
-      RemoteConnectionStatus.connected => (
-        'Connected',
-        const Color(0xFF85B304),
-      ),
-      RemoteConnectionStatus.reconnecting => (
-        'Reconnecting…',
-        const Color(0xFFF1AD49),
-      ),
+      RemoteConnectionStatus.connected => ('Connected', colors.success),
+      RemoteConnectionStatus.reconnecting => ('Reconnecting…', colors.warning),
       RemoteConnectionStatus.error => ('Connection failed', colors.error),
       RemoteConnectionStatus.disconnected => (
         'Not connected',

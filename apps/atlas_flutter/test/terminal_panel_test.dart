@@ -59,7 +59,7 @@ void main() {
     expect(registry.isEmpty, isTrue);
   });
 
-  testWidgets('uses Zed Ayu Light ANSI colors without bold-as-bright', (
+  testWidgets('uses Token Temper light ANSI colors without bold-as-bright', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -73,17 +73,21 @@ void main() {
     await tester.pump();
 
     final view = tester.widget<TerminalView>(find.byType(TerminalView));
-    expect(view.theme.foreground, const Color(0xFF5C6166));
-    expect(view.theme.background, const Color(0xFFFCFCFC));
-    expect(view.theme.white, const Color(0xFFFCFCFC));
-    expect(view.theme.green, const Color(0xFF85B304));
-    expect(view.theme.blue, const Color(0xFF3B9EE5));
-    expect(view.theme.brightGreen, const Color(0xFFC7D98F));
-    expect(view.theme.brightBlue, const Color(0xFFABCDF2));
+    expect(view.theme.foreground, const Color(0xFF283039));
+    expect(view.theme.background, const Color(0xFFF5F7F8));
+    expect(view.theme.cursor, const Color(0xFF283039));
+    expect(view.theme.selection, const Color(0xFFDCE2E7));
+    expect(view.theme.white, const Color(0xFFA7B2BB));
+    expect(view.theme.green, const Color(0xFF005B53));
+    expect(view.theme.blue, const Color(0xFF005850));
+    expect(view.theme.brightGreen, const Color(0xFF004A44));
+    expect(view.theme.brightBlue, const Color(0xFF005B53));
+    // Upstream maps slot 11 (bright yellow) onto the secondary accent.
+    expect(view.theme.brightYellow, const Color(0xFF683495));
     expect(view.theme.drawBoldTextInBrightColors, isFalse);
   });
 
-  testWidgets('uses Zed Ayu Dark ANSI colors without bold-as-bright', (
+  testWidgets('uses Token Temper dark ANSI colors without bold-as-bright', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -97,11 +101,16 @@ void main() {
     await tester.pump();
 
     final view = tester.widget<TerminalView>(find.byType(TerminalView));
-    expect(view.theme.foreground, const Color(0xFFBFBDB6));
-    expect(view.theme.background, const Color(0xFF0D1016));
-    expect(view.theme.white, const Color(0xFFBFBDB6));
-    expect(view.theme.green, const Color(0xFFAAD84C));
-    expect(view.theme.brightBlack, const Color(0xFF545557));
+    expect(view.theme.foreground, const Color(0xFFC3C8CC));
+    expect(view.theme.background, const Color(0xFF272C33));
+    expect(view.theme.cursor, const Color(0xFFC3C8CC));
+    expect(view.theme.selection, const Color(0xFF3A414A));
+    expect(view.theme.white, const Color(0xFFA2A9AF));
+    expect(view.theme.green, const Color(0xFF5EC4B5));
+    expect(view.theme.brightBlack, const Color(0xFF858F9B));
+    // Upstream maps slots 9 and 11 (bright red/yellow) onto the accents.
+    expect(view.theme.brightRed, const Color(0xFF5CC1B3));
+    expect(view.theme.brightYellow, const Color(0xFFE7CDFF));
     expect(view.theme.drawBoldTextInBrightColors, isFalse);
   });
 
