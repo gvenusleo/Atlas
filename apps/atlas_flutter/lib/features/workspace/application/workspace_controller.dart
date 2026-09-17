@@ -662,6 +662,19 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
             ],
           );
         });
+      case ToolOutputUpdated(:final callId, :final output):
+        _patch(target, (workspace) {
+          final index = workspace.messages.lastIndexWhere(
+            (message) =>
+                message.kind == WorkspaceMessageKind.tool &&
+                message.isRunning &&
+                message.id == callId.value,
+          );
+          if (index < 0) return workspace;
+          final messages = [...workspace.messages];
+          messages[index] = messages[index].copyWith(text: output.content);
+          return workspace.copyWith(messages: messages);
+        });
       case ToolFinished(:final result):
         _streamOpen[target] = false;
         _patch(target, (workspace) {

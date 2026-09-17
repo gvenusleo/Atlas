@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../domain/content.dart';
 import '../domain/events.dart';
 import '../domain/ids.dart';
@@ -81,8 +83,45 @@ final class TurnExecutor {
   final DateTime Function() _now;
 
   /// Executes one turn and emits events in their exact occurrence order.
-  Stream<AgentEvent> run(TurnRequest request) async* {
+  Stream<AgentEvent> run(TurnRequest request) {
     final cancellation = request.cancellation ?? CancellationToken();
+    final completed = Completer<void>();
+    late StreamSubscription<AgentEvent> subscription;
+    late StreamController<AgentEvent> controller;
+    controller = StreamController<AgentEvent>(
+      sync: true,
+      onListen: () {
+        subscription = _run(request, cancellation).listen(
+          (event) {
+            if (controller.hasListener) controller.add(event);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (controller.hasListener) controller.addError(error, stackTrace);
+          },
+          onDone: () {
+            completed.complete();
+            unawaited(controller.close());
+          },
+        );
+      },
+      onPause: () => subscription.pause(),
+      onResume: () => subscription.resume(),
+      onCancel: () async {
+        if (completed.isCompleted) return;
+        // A display subscription does not own persistence. Continue consuming
+        // the cancelled turn until every call has a result and the turn ends.
+        cancellation.cancel();
+        subscription.resume();
+        await completed.future;
+      },
+    );
+    return controller.stream;
+  }
+
+  Stream<AgentEvent> _run(
+    TurnRequest request,
+    CancellationToken cancellation,
+  ) async* {
     final now = _now().toUtc();
     final model = request.model ?? defaultModel;
     final loaded = await _loadOrCreateSession(request, now);
@@ -322,17 +361,31 @@ final class TurnExecutor {
             occurredAt: _now().toUtc(),
             call: callItem,
           );
-          final result = cancellation.isCancelled
-              ? const ToolResult(
-                  content: 'Tool execution cancelled',
-                  isError: true,
-                )
-              : await _executeTool(
-                  session: session,
-                  turn: turn,
-                  call: callItem.call,
-                  cancellation: cancellation,
+          var result = const ToolResult(
+            content: 'Tool execution cancelled',
+            isError: true,
+          );
+          if (!cancellation.isCancelled) {
+            await for (final update in _executeToolWithOutput(
+              session: session,
+              turn: turn,
+              call: callItem.call,
+              cancellation: cancellation,
+            )) {
+              if (update is ToolResult) {
+                result = update;
+              } else if (update is ToolOutputSnapshot) {
+                yield ToolOutputUpdated(
+                  sessionId: session.id,
+                  turnId: turnId,
+                  sequence: eventSequence++,
+                  occurredAt: _now().toUtc(),
+                  callId: callItem.call.id,
+                  output: update,
                 );
+              }
+            }
+          }
           final resultItem = ToolResultItem(
             id: ids.timelineItemId(),
             sessionId: session.id,
@@ -646,6 +699,7 @@ final class TurnExecutor {
     required Turn turn,
     required ToolCall call,
     required CancellationToken cancellation,
+    void Function(ToolOutputSnapshot)? onOutput,
   }) async {
     try {
       return await tools.execute(
@@ -655,6 +709,7 @@ final class TurnExecutor {
           workingDirectory: session.workingDirectory,
           additionalDirectories: session.additionalDirectories,
           cancellation: cancellation,
+          onOutput: onOutput,
         ),
         call,
       );
@@ -663,6 +718,57 @@ final class TurnExecutor {
         content: safeErrorMessage('Tool execution failed', error),
         isError: true,
       );
+    }
+  }
+
+  // A single-slot mailbox coalesces display snapshots without applying stream
+  // backpressure to the tool's pipe readers. Only the final result is durable.
+  Stream<Object> _executeToolWithOutput({
+    required Session session,
+    required Turn turn,
+    required ToolCall call,
+    required CancellationToken cancellation,
+  }) async* {
+    ToolOutputSnapshot? pending;
+    ToolResult? result;
+    var changed = Completer<void>();
+    var accepting = true;
+    void notify() {
+      if (!changed.isCompleted) changed.complete();
+    }
+
+    final execution =
+        _executeTool(
+          session: session,
+          turn: turn,
+          call: call,
+          cancellation: cancellation,
+          onOutput: (output) {
+            if (!accepting || result != null) return;
+            pending = output;
+            notify();
+          },
+        ).then((value) {
+          result = value;
+          notify();
+        });
+    try {
+      while (true) {
+        if (pending case final output?) {
+          pending = null;
+          yield output;
+        } else if (result case final completed?) {
+          yield completed;
+          break;
+        } else {
+          await changed.future;
+          changed = Completer<void>();
+        }
+      }
+    } finally {
+      accepting = false;
+      if (result == null) cancellation.cancel();
+      await execution;
     }
   }
 

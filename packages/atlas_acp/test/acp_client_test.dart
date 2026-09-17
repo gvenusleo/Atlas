@@ -137,6 +137,84 @@ void main() {
     await wire.close();
   });
 
+  test('coalesces shell output while an ACP consumer is paused', () async {
+    final prompting = Completer<void>();
+    final finish = Completer<void>();
+    final wire = await _FakeServer.open(
+      promptBody: (_) async {
+        prompting.complete();
+        await finish.future;
+      },
+    );
+    final client = AcpClient.channel(wire.clientChannel);
+    await client.connect();
+    addTearDown(client.close);
+    addTearDown(wire.close);
+    final received = <rt.AgentEvent>[];
+    final firstOutput = Completer<void>();
+    final done = Completer<void>();
+    late final StreamSubscription<rt.AgentEvent> sub;
+    sub = client
+        .run(
+          rt.TurnRequest(
+            workingDirectory: '/tmp',
+            content: const [rt.TextContent('run')],
+          ),
+        )
+        .listen(
+          (event) {
+            received.add(event);
+            if (event is rt.ToolOutputUpdated && !firstOutput.isCompleted) {
+              sub.pause();
+              firstOutput.complete();
+            }
+          },
+          onDone: done.complete,
+          onError: done.completeError,
+        );
+    addTearDown(sub.cancel);
+    await prompting.future;
+    void output(int i) => wire.push(
+      acpd.ToolCallStatusUpdate(
+        update: acpd.ToolCallUpdate(
+          toolCallId: 'shell-1',
+          kind: acpd.ToolKind.execute,
+          status: acpd.ToolCallStatus.inProgress,
+          rawOutput: {'output': '$i'},
+        ),
+      ),
+    );
+    output(0);
+    await firstOutput.future;
+    for (var i = 1; i <= 1000; i++) {
+      output(i);
+    }
+    // A response on this connection is a barrier after earlier notifications.
+    await client.listSessions();
+    wire.push(
+      acpd.ToolCallStatusUpdate(
+        update: acpd.ToolCallUpdate(
+          toolCallId: 'shell-1',
+          status: acpd.ToolCallStatus.completed,
+          rawOutput: {'output': 'final'},
+        ),
+      ),
+    );
+    finish.complete();
+    await client.listSessions();
+    sub.resume();
+    await done.future;
+    final outputs = received.whereType<rt.ToolOutputUpdated>().toList();
+    expect(outputs.map((event) => event.output.content), ['0', '1000']);
+    expect(
+      received.whereType<rt.ToolFinished>().single.result.content,
+      'final',
+    );
+    expect(received.last, isA<rt.TurnFinished>());
+    final sequences = received.map((event) => event.sequence).toList();
+    expect(sequences, orderedEquals([...sequences]..sort()));
+  });
+
   test('loads a session from a strict server without the cwd field', () async {
     final wire = await _FakeServer.open();
     final client = AcpClient.channel(wire.clientChannel);
@@ -545,6 +623,7 @@ final class _FakeServer {
   static Future<_FakeServer> open({
     Duration promptDelay = Duration.zero,
     bool deleteUnsupported = false,
+    Future<void> Function(_FakeServer)? promptBody,
   }) async {
     final server = _FakeServer._(
       deleteUnsupported: deleteUnsupported,
@@ -581,6 +660,10 @@ final class _FakeServer {
       })
       ..onPrompt((context, request, cancellation) async {
         server._requests.add(_Recorded('session/prompt', request.toJson()));
+        if (promptBody != null) {
+          await promptBody(server);
+          return acpd.PromptResponse(stopReason: acpd.StopReason.endTurn);
+        }
         if (promptDelay > Duration.zero) {
           await Future<void>.delayed(promptDelay);
           if (server._cancelled.contains(request.sessionId)) {

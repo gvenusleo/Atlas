@@ -11,10 +11,24 @@ Future<Directory> tempDir() async {
 }
 
 /// Builds a tool context rooted at [dir].
-ToolContext toolContext(Directory dir, {CancellationToken? cancellation}) =>
-    ToolContext(
-      sessionId: SessionId('session-test'),
-      turnId: TurnId('turn-test'),
-      workingDirectory: dir.path,
-      cancellation: cancellation,
-    );
+ToolContext toolContext(
+  Directory dir, {
+  CancellationToken? cancellation,
+  void Function(ToolOutputSnapshot)? onOutput,
+}) => ToolContext(
+  sessionId: SessionId('session-test'),
+  turnId: TurnId('turn-test'),
+  workingDirectory: dir.path,
+  cancellation: cancellation,
+  onOutput: onOutput,
+);
+
+/// Builds a platform-quoted command for the finite Dart shell fixture.
+String shellChildCommand(String mode) {
+  String quote(String value) => Platform.isWindows
+      ? "'${value.replaceAll("'", "''")}'"
+      : "'${value.replaceAll("'", "'\"'\"'")}'";
+  final executable = quote(Platform.resolvedExecutable);
+  final fixture = quote(File('test/fixtures/shell_child.dart').absolute.path);
+  return '${Platform.isWindows ? '& ' : ''}$executable $fixture $mode';
+}

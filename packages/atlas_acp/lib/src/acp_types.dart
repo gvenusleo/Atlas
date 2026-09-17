@@ -146,48 +146,6 @@ InitializeResponse initializeResult() => InitializeResponse(
   ),
 );
 
-/// The display-only terminal id for a shell tool call. Derived from the
-/// tool call id so it stays unique within the session.
-String shellTerminalId(String toolCallId) => 'term-$toolCallId';
-
-/// The terminal content block for a shell tool call, which makes clients
-/// render the call as a live terminal instead of a collapsed card.
-ToolCallContent terminalToolCallContent(String toolCallId) =>
-    ToolCallTerminal(terminalId: shellTerminalId(toolCallId));
-
-/// The `_meta` registration for Zed's display-only terminal: a v1 extension
-/// (not part of the ACP v1 spec) that lets a locally-executed command render
-/// as a live terminal in Zed.
-Map<String, Object?> shellTerminalInfo(
-  String toolCallId,
-  Map<String, Object?> arguments,
-) {
-  final cwd = arguments['cwd'];
-  return {
-    'terminal_info': {
-      'terminal_id': shellTerminalId(toolCallId),
-      if (cwd is String && cwd.isNotEmpty) 'cwd': cwd,
-    },
-  };
-}
-
-/// The `_meta` payload for a finished shell tool call: the captured output
-/// and exit status, streamed to the display-only terminal.
-Map<String, Object?> shellTerminalUpdateMeta(
-  String toolCallId,
-  String output,
-  int? exitCode,
-) => {
-  'terminal_output': {
-    'terminal_id': shellTerminalId(toolCallId),
-    'data': output,
-  },
-  'terminal_exit': {
-    'terminal_id': shellTerminalId(toolCallId),
-    'exit_code': ?exitCode,
-  },
-};
-
 /// The built-in slash command that manually compacts the session context.
 const compactCommandName = 'compact';
 

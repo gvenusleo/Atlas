@@ -36,14 +36,12 @@ as a subprocess and drive sessions through JSON-RPC.
   and file `locations`), `tool_call_update` (with `rawOutput` or a `diff`
   content block for bounded file modifications), `plan` (from the `plan`
   tool), `session_info_update` (auto-generated titles), and `usage_update`
-- Shell tool calls render as **display-only terminals** in Zed: the call
-  embeds a `terminal` content reference registered through Zed's v1 `_meta`
-  extension (`terminal_info` / `terminal_output` / `terminal_exit`), so a
-  locally-executed command shows a live, auto-expanding terminal instead of a
-  collapsed card. The command still runs in Atlas; ACP v2 standardizes the
-  same capability as `terminal_update` / `terminal_output_chunk`. Other ACP
-  clients that do not register the terminal will fail to resolve the
-  `terminal` content reference.
+- Shell output streams through standard `tool_call_update` text content and
+  `rawOutput`. Each snapshot replaces the displayed output while the call stays
+  `in_progress`; the final `completed` or `failed` update replaces it once more.
+  Final metadata and captured output survive errors and timeline replay. No
+  Zed-specific terminal reference is required. The Atlas client coalesces
+  pending snapshots when its presentation stream is paused.
 - `write`/`edit` results render as **diffs**: the tools report the previous
   and new file contents through result metadata, and Atlas emits a `diff`
   content block with absolute `path`/`oldText`/`newText` (`oldText` is null

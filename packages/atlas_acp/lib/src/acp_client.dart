@@ -391,7 +391,7 @@ final class AcpClient
         content: request.content,
       ),
     );
-    final controller = StreamController<rt.AgentEvent>();
+    final controller = _TurnEventBuffer();
     final sub = _updates.stream
         .where((update) => update.sessionId == sessionId.value)
         .listen((update) {
@@ -976,5 +976,60 @@ final class AcpClient
   static DateTime _parseTime(Object? value) {
     final parsed = value is String ? DateTime.tryParse(value) : null;
     return parsed?.toLocal() ?? DateTime.now();
+  }
+}
+
+// Keep only the latest replacement snapshot while presentation is paused.
+// Other events flush the pending snapshot first, preserving occurrence order.
+final class _TurnEventBuffer {
+  _TurnEventBuffer() {
+    _controller.onListen = _scheduleFlush;
+    _controller.onResume = _scheduleFlush;
+    _controller.onCancel = () {
+      _pending = null;
+      _cancelled = true;
+    };
+  }
+
+  final _controller = StreamController<rt.AgentEvent>(sync: true);
+  rt.ToolOutputUpdated? _pending;
+  var _cancelled = false;
+
+  Stream<rt.AgentEvent> get stream => _controller.stream;
+
+  void add(rt.AgentEvent event) {
+    if (_cancelled || _controller.isClosed) return;
+    if (event is rt.ToolOutputUpdated &&
+        (!_controller.hasListener || _controller.isPaused)) {
+      if (_pending != null && _pending!.callId != event.callId) _flush();
+      _pending = event;
+      return;
+    }
+    _flush();
+    _controller.add(event);
+  }
+
+  void addError(Object error, StackTrace stack) {
+    if (_cancelled || _controller.isClosed) return;
+    _flush();
+    _controller.addError(error, stack);
+  }
+
+  void close() {
+    if (_controller.isClosed) return;
+    _flush();
+    unawaited(_controller.close());
+  }
+
+  void _scheduleFlush() => scheduleMicrotask(() {
+    if (!_cancelled && !_controller.isClosed && !_controller.isPaused) {
+      _flush();
+    }
+  });
+
+  void _flush() {
+    final output = _pending;
+    _pending = null;
+    if (output != null && !_cancelled) _controller.add(output);
   }
 }

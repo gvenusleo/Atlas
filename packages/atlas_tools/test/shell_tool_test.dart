@@ -25,7 +25,7 @@ void main() {
     final dir = await tempDir();
 
     final result = await tool.execute(toolContext(dir), {
-      'command': 'cat',
+      'command': shellChildCommand('echo'),
       'stdin': 'from stdin',
     });
 
@@ -61,7 +61,7 @@ void main() {
 
     final stopwatch = Stopwatch()..start();
     final result = await tool.execute(toolContext(dir), {
-      'command': 'sleep 5',
+      'command': shellChildCommand('wait'),
       'timeout_seconds': 1,
     });
     stopwatch.stop();
@@ -74,11 +74,10 @@ void main() {
   test('kills the whole command tree on timeout', () async {
     final dir = await tempDir();
 
-    // `sleep 5 & wait` runs the child in the background, so killing the shell
-    // alone would leave the child holding the output pipes until it finishes.
+    // The fixture waits for a child that inherits its output pipes.
     final stopwatch = Stopwatch()..start();
     final result = await tool.execute(toolContext(dir), {
-      'command': 'sleep 5 & wait',
+      'command': shellChildCommand('tree'),
       'timeout_seconds': 1,
     });
     stopwatch.stop();
@@ -93,7 +92,7 @@ void main() {
     final cancellation = CancellationToken();
 
     final run = tool.execute(toolContext(dir, cancellation: cancellation), {
-      'command': 'sleep 5',
+      'command': shellChildCommand('wait'),
     });
     unawaited(
       Future<void>.delayed(
@@ -111,7 +110,7 @@ void main() {
     final dir = await tempDir();
 
     final result = await tool.execute(toolContext(dir), {
-      'command': 'seq 1 100000',
+      'command': shellChildCommand('numbers'),
     });
 
     expect(result.isError, isFalse);

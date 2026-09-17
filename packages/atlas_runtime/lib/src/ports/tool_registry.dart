@@ -3,6 +3,25 @@ import '../domain/model.dart';
 import '../domain/timeline.dart';
 import 'cancellation.dart';
 
+/// A bounded replacement snapshot of output produced by a running tool.
+final class ToolOutputSnapshot {
+  /// Creates a transient output snapshot; this is not a persisted tool result.
+  const ToolOutputSnapshot({
+    required this.content,
+    required this.totalBytes,
+    required this.truncated,
+  });
+
+  /// Text replacing the previous output for this call.
+  final String content;
+
+  /// Raw output bytes observed before decoding and display filtering.
+  final int totalBytes;
+
+  /// Whether some displayable output was omitted.
+  final bool truncated;
+}
+
 /// Context supplied to a tool invocation.
 final class ToolContext {
   /// Creates a tool context.
@@ -12,6 +31,7 @@ final class ToolContext {
     required this.workingDirectory,
     this.additionalDirectories = const <String>[],
     this.cancellation,
+    this.onOutput,
   });
 
   /// The active session.
@@ -28,6 +48,9 @@ final class ToolContext {
 
   /// Cooperative cancellation for the tool invocation.
   final CancellationToken? cancellation;
+
+  /// Receives bounded replacement output while execution is in progress.
+  final void Function(ToolOutputSnapshot snapshot)? onOutput;
 }
 
 /// A built-in or installed Atlas tool.

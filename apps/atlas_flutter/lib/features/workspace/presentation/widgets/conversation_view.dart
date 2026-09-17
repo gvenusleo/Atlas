@@ -109,6 +109,7 @@ class ConversationView extends ConsumerStatefulWidget {
 
 class _ConversationViewState extends ConsumerState<ConversationView> {
   final _scrollController = ScrollController();
+  final _disclosureStorage = PageStorageBucket();
   var _lastMessageCount = 0;
   var _lastTextLength = 0;
 
@@ -120,13 +121,11 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionKey = widget.sessionKey;
+    final sessionKey =
+        widget.sessionKey ??
+        ref.watch(workspaceProvider.select((state) => state.activeKey));
     final workspace = ref.watch(
-      workspaceProvider.select(
-        (s) => sessionKey == null
-            ? s.active
-            : s.workspaces[sessionKey] ?? s.active,
-      ),
+      workspaceProvider.select((s) => s.workspaces[sessionKey] ?? s.active),
     );
     final messages = workspace.messages;
     final textLength = messages.fold<int>(
@@ -167,7 +166,14 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
                 key is ValueKey<String> ? indexById[key.value] : null,
             itemBuilder: (context, index) {
               final message = messages[messages.length - 1 - index];
-              return _MessageView(key: ValueKey(message.id), message: message);
+              return PageStorage(
+                key: ValueKey(message.id),
+                bucket: _disclosureStorage,
+                child: _MessageView(
+                  key: PageStorageKey((sessionKey, message.id)),
+                  message: message,
+                ),
+              );
             },
           ),
         ),
@@ -360,6 +366,7 @@ class _ActivityDisclosure extends StatefulWidget {
     required this.child,
     this.isRunning = false,
     this.isError = false,
+    this.revealOutput = false,
   });
 
   final IconData icon;
@@ -367,6 +374,9 @@ class _ActivityDisclosure extends StatefulWidget {
   final Widget child;
   final bool isRunning;
   final bool isError;
+
+  /// Opens once when a running shell first produces output.
+  final bool revealOutput;
 
   @override
   State<_ActivityDisclosure> createState() => _ActivityDisclosureState();
@@ -387,6 +397,18 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
   /// Height already reported to the transcript's scroll anchor.
   var _reportedGrowth = 0.0;
   var _expanded = false;
+  var _userToggled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final saved = PageStorage.maybeOf(context)?.readState(context);
+    if (saved is bool) {
+      _userToggled = true;
+      _expanded = saved;
+      _expand.value = saved ? 1 : 0;
+    }
+  }
 
   @override
   void initState() {
@@ -408,6 +430,10 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
     _expandCurve = CurvedAnimation(parent: _expand, curve: Curves.easeOutCubic);
     _expand.addListener(_reportGrowth);
     _syncPulse();
+    if (widget.revealOutput) {
+      _expanded = true;
+      _expand.value = 1;
+    }
   }
 
   @override
@@ -415,6 +441,10 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isRunning != widget.isRunning) {
       _syncPulse();
+    }
+    if (!oldWidget.revealOutput && widget.revealOutput && !_userToggled) {
+      _expanded = true;
+      _expand.forward();
     }
   }
 
@@ -437,7 +467,9 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
   }
 
   void _toggle() {
+    _userToggled = true;
     setState(() => _expanded = !_expanded);
+    PageStorage.maybeOf(context)?.writeState(context, _expanded);
     if (_expanded) {
       _expand.forward();
     } else {
@@ -522,6 +554,7 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
                       maxHeight: _maxExpandedExtent,
                     ),
                     child: SingleChildScrollView(
+                      key: const PageStorageKey('activity-output-scroll'),
                       padding: const EdgeInsets.only(
                         left: 12,
                         top: 4,
@@ -597,6 +630,10 @@ class _ToolMessage extends ConsumerWidget {
       ),
       isRunning: message.isRunning,
       isError: message.isError,
+      revealOutput:
+          message.toolName == 'shell' &&
+          message.isRunning &&
+          message.text.isNotEmpty,
       child: _toolBody(context, colors),
     );
   }

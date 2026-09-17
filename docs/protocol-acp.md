@@ -9,6 +9,12 @@ always uses an ACP client, including for an Atlas runtime hosted in-process.
   deletion, and configuration options.
 - Text, image, embedded text resource, and resource-link prompt blocks.
 - Message, reasoning, tool, plan, command, session-info, and usage updates.
+- Shell progress uses standard `tool_call_update` text content with `in_progress`
+  status. Each snapshot replaces previous content; the final result replaces it
+  with `completed` or `failed` status. `rawOutput` carries captured text and final
+  metadata even for failures and replay. No terminal extension is required.
+- ACP clients preserve tool content when a partial update omits it, including
+  status-only completion and history replay. Explicit empty content clears it.
 - Atlas does not initiate permission requests. Tools run with the permissions
   of the Atlas process; clients must not wait for an approval round trip.
 

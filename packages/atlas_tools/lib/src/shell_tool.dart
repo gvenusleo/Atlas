@@ -1,51 +1,51 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
+
+import 'file_path.dart';
+import 'shell_output.dart';
 
 /// The default shell timeout in seconds.
 const defaultShellTimeoutSeconds = 30;
 
-/// The maximum shell timeout in seconds.
-const maxShellTimeoutSeconds = 300;
-
-/// The maximum command output returned to the model.
+/// Maximum UTF-8 bytes of captured text, including its truncation marker.
 const shellOutputLimit = 50 * 1024;
 
-/// The number of leading and trailing code units kept when output is truncated.
-const shellOutputEdge = shellOutputLimit ~/ 2;
-
-/// Runs a command with the platform default shell.
+/// Runs a command through /bin/sh on Unix or PowerShell on Windows.
 final class ShellTool implements Tool {
   @override
   ToolDescriptor get descriptor => const ToolDescriptor(
     name: 'shell',
     description:
-        'Run a command in the session working directory, optionally pass '
-        'text to standard input, and return combined output.',
+        'Run a command through /bin/sh on Unix or PowerShell on Windows. '
+        'Optionally pass stdin once; return combined output and exit status.',
     inputSchema: {
       'type': 'object',
       'properties': {
         'command': {
           'type': 'string',
-          'description': 'Command to execute with the platform default shell.',
+          'description': 'Shell command to execute.',
         },
         'stdin': {
           'type': 'string',
           'description':
-              'Optional text passed unchanged to the command\'s '
-              'standard input.',
+              'Optional text written once, followed by end of input.',
         },
         'cwd': {
           'type': 'string',
           'description':
-              'Working directory override. Omit to use the '
-              'session working directory.',
+              'Absolute directory or path relative to the session directory. '
+              'Defaults to the session directory.',
         },
         'timeout_seconds': {
           'type': 'integer',
-          'description': 'Optional timeout in seconds.',
+          'minimum': 1,
+          'description':
+              'Execution timeout in seconds. Defaults to 30; '
+              'set a longer timeout for builds and other long commands.',
         },
       },
       'required': ['command'],
@@ -54,211 +54,334 @@ final class ShellTool implements Tool {
 
   @override
   Future<ToolResult> execute(ToolContext context, JsonObject arguments) async {
-    final command = arguments['command'] as String? ?? '';
-    if (command.trim().isEmpty) {
-      return ToolResult(
-        content: 'command must be a non-empty string',
-        isError: true,
+    final command = arguments['command'];
+    final input = arguments['stdin'];
+    final cwd = arguments['cwd'];
+    final seconds = arguments['timeout_seconds'] ?? defaultShellTimeoutSeconds;
+    if (command is! String || command.trim().isEmpty) {
+      return _invalid('command must be a non-empty string');
+    }
+    if (input != null && input is! String) {
+      return _invalid('stdin must be a string');
+    }
+    if (cwd != null && cwd is! String) return _invalid('cwd must be a string');
+    // Duration stores microseconds in a signed native integer.
+    if (seconds is! int ||
+        seconds < 1 ||
+        seconds > 0x7fffffffffffffff ~/ 1000000) {
+      return _invalid(
+        'timeout_seconds must be a positive representable integer',
       );
     }
-    final timeoutSeconds = (arguments['timeout_seconds'] as num?)?.toInt();
-    if (timeoutSeconds != null &&
-        (timeoutSeconds < 1 || timeoutSeconds > maxShellTimeoutSeconds)) {
-      return ToolResult(
-        content:
-            'timeout_seconds must be between 1 and '
-            '$maxShellTimeoutSeconds',
-        isError: true,
-      );
-    }
-    final cwd = (arguments['cwd'] as String?)?.trim();
-    final workingDirectory = cwd == null || cwd.isEmpty
+    final workingDirectory = cwd == null || (cwd as String).trim().isEmpty
         ? context.workingDirectory
-        : Directory(cwd).absolute.path;
-    if (!_allowedDirectory(context, workingDirectory)) {
-      return ToolResult(
-        content:
-            'cwd must be the session working directory or an authorized additional directory',
-        isError: true,
-      );
-    }
-    final timeout = Duration(
-      seconds: timeoutSeconds ?? defaultShellTimeoutSeconds,
-    );
+        : resolveFilePath(context.workingDirectory, cwd);
+    return _ShellExecution(
+      context,
+      Duration(seconds: seconds),
+    ).run(command, workingDirectory, input as String?);
+  }
 
+  static ToolResult _invalid(String message) =>
+      ToolResult(content: message, isError: true);
+}
+
+final class _ShellExecution {
+  _ShellExecution(this.context, this.timeout);
+
+  final ToolContext context;
+  final Duration timeout;
+  final _buffer = ShellOutputBuffer(shellOutputLimit);
+  final _completed = Completer<void>();
+  final _interrupted = Completer<void>();
+  final _subscriptions = <StreamSubscription<String>>[];
+  Process? _process;
+  Timer? _deadline;
+  Timer? _drainDeadline;
+  Timer? _outputTimer;
+  var _closed = false;
+  var _stdinDone = false;
+  var _pipesDone = 0;
+  var _totalBytes = 0;
+  var _dirty = false;
+  var _published = false;
+  int? _exitCode;
+  String? _reason;
+  bool _cleanupFailed = false;
+
+  Future<ToolResult> run(String command, String cwd, String? input) async {
+    if (context.cancellation?.isCancelled == true) {
+      _stop('cancelled');
+      return _result();
+    }
+    _deadline = Timer(timeout, () => _stop('timed_out'));
+    final cancellationSubscription = context.cancellation?.whenCancelled
+        .asStream()
+        .listen((_) {
+          if (!_closed) _stop('cancelled');
+        });
     try {
       final process = await Process.start(
         Platform.isWindows ? 'powershell' : '/bin/sh',
         Platform.isWindows ? ['-Command', command] : ['-c', command],
-        workingDirectory: workingDirectory,
+        workingDirectory: cwd,
       );
-      final stdinData = arguments['stdin'] as String?;
-      if (stdinData != null && stdinData.isNotEmpty) {
-        process.stdin.write(stdinData);
-      }
-      await process.stdin.close();
-
-      // Drain both pipes in arrival order while the process runs. Register
-      // the completion futures before the process can close the streams, so
-      // their onDone handlers are captured.
-      final combined = StringBuffer();
-      final stdoutSub = process.stdout
-          .transform(utf8.decoder)
-          .listen(combined.write);
-      final stderrSub = process.stderr
-          .transform(utf8.decoder)
-          .listen(combined.write);
-      final stdoutDone = stdoutSub.asFuture<void>();
-      final stderrDone = stderrSub.asFuture<void>();
-      final exit = await _waitForExit(process, timeout, context.cancellation);
-      await stdoutDone;
-      await stderrDone;
-      final bounded = _bounded(combined.toString());
-      if (exit == _timedOut) {
-        return ToolResult(
-          content:
-              'command timed out after ${timeout.inSeconds}s\n'
-              '${bounded.text}',
-          isError: true,
-        );
-      }
-      if (exit == _cancelled) {
-        return ToolResult(content: 'command cancelled', isError: true);
-      }
-      return ToolResult(
-        content: exit == 0
-            ? bounded.text
-            : '${bounded.text}\n(exit code: $exit)',
-        metadata: {
-          'exit_code': exit,
-          'truncated': bounded.truncated,
-          'total_bytes': utf8.encode(combined.toString()).length,
-        },
-      );
-    } catch (error) {
-      return ToolResult(
-        content: error is FormatException ? error.message : '$error',
-        isError: true,
-      );
-    }
-  }
-
-  static const _timedOut = -1;
-  static const _cancelled = -2;
-
-  /// Completes with the process exit code, killing the process on timeout or
-  /// cancellation. The process is escalated to SIGKILL when it ignores the
-  /// initial termination signal.
-  static Future<int> _waitForExit(
-    Process process,
-    Duration timeout,
-    CancellationToken? cancellation,
-  ) {
-    final completer = Completer<int>();
-    var done = false;
-    Timer? timer;
-    void finish(int code) {
-      if (done) {
-        return;
-      }
-      done = true;
-      timer?.cancel();
-      completer.complete(code);
-    }
-
-    void interrupt() {
-      // Windows: `taskkill /T` terminates the whole tree.
-      if (Platform.isWindows) {
-        unawaited(
-          Process.run('taskkill', ['/PID', '${process.pid}', '/T', '/F']),
-        );
-        process.kill();
-      } else {
-        // Collect descendants before the shell dies: once the shell exits its
-        // children are reparented and `pgrep -P` can no longer find them.
-        // Killing the shell alone would leave children (e.g. a backgrounded
-        // `sleep`) running as orphans that keep the output pipes open until
-        // they finish.
-        unawaited(() async {
-          final children = await _collectDescendants(process.pid);
-          process.kill();
-          for (final child in children) {
-            Process.killPid(child, ProcessSignal.sigkill);
-          }
-        }());
-      }
+      _process = process;
+      _listen(process.stdout);
+      _listen(process.stderr);
       unawaited(
-        process.exitCode
-            .timeout(
+        process.exitCode.then((code) {
+          _exitCode = code;
+          _checkComplete();
+          if (!_completed.isCompleted && !_closed) {
+            _drainDeadline = Timer(
               const Duration(seconds: 2),
-              onTimeout: () {
-                if (!Platform.isWindows) {
-                  process.kill(ProcessSignal.sigkill);
-                }
-                return -1;
-              },
-            )
-            .catchError((_) => -1),
+              () => _stop('output_incomplete'),
+            );
+          }
+        }, onError: (Object _) => _stop('io_failed')),
       );
+      // Readers and error handlers are installed before any potentially blocking
+      // input flush. Input/output must progress concurrently.
+      unawaited(_writeInput(process, input));
+      await Future.any([_completed.future, _interrupted.future]);
+      _deadline?.cancel();
+      _drainDeadline?.cancel();
+      if (_reason != null) await _terminate();
+    } catch (_) {
+      _stop(_process == null ? 'start_failed' : 'io_failed');
+      if (_process != null) await _terminate();
+    } finally {
+      _closed = true;
+      await cancellationSubscription?.cancel();
+      _deadline?.cancel();
+      _drainDeadline?.cancel();
+      _outputTimer?.cancel();
+      // A descendant can keep a pipe open even after the shell has exited.
+      // Cancelling subscriptions must not make completion unbounded again.
+      await Future.wait(
+        _subscriptions.map((sub) => sub.cancel()),
+      ).timeout(const Duration(seconds: 1), onTimeout: () => <void>[]);
+      _publish();
     }
-
-    process.exitCode.then(finish);
-    timer = Timer(timeout, () {
-      interrupt();
-      finish(_timedOut);
-    });
-    cancellation?.whenCancelled.then((_) {
-      interrupt();
-      finish(_cancelled);
-    });
-    return completer.future;
+    return _result();
   }
 
-  /// Collects the process ids of every descendant of [rootPid] by walking
-  /// `pgrep -P` parent relationships breadth-first.
-  static Future<List<int>> _collectDescendants(int rootPid) async {
-    final descendants = <int>[];
-    final queue = <int>[rootPid];
-    while (queue.isNotEmpty) {
-      final parent = queue.removeLast();
-      final result = await Process.run('pgrep', ['-P', '$parent']);
-      if (result.exitCode != 0) {
-        continue;
+  void _listen(Stream<List<int>> bytes) {
+    final filter = ShellTextFilter();
+    final subscription = bytes
+        .map((data) {
+          _totalBytes += data.length;
+          return data;
+        })
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen(
+          (text) {
+            _buffer.add(filter.add(text));
+            _dirty = true;
+            if (context.onOutput == null) return;
+            if (!_published) {
+              _publish();
+              _published = true;
+            }
+            _outputTimer ??= Timer(const Duration(milliseconds: 100), () {
+              _outputTimer = null;
+              _publish();
+            });
+          },
+          onError: (Object _) => _stop('io_failed'),
+          onDone: () {
+            _pipesDone++;
+            _checkComplete();
+          },
+          cancelOnError: true,
+        );
+    _subscriptions.add(subscription);
+  }
+
+  Future<void> _writeInput(Process process, String? input) async {
+    try {
+      if (_reason == null && input != null) process.stdin.write(input);
+      await process.stdin.close();
+    } catch (_) {
+      _stop('stdin_failed');
+    } finally {
+      _stdinDone = true;
+      _checkComplete();
+    }
+  }
+
+  void _checkComplete() {
+    if (_exitCode != null &&
+        _stdinDone &&
+        _pipesDone == 2 &&
+        !_completed.isCompleted) {
+      _completed.complete();
+    }
+  }
+
+  void _stop(String reason) {
+    if (_closed || _completed.isCompleted || _reason != null) return;
+    _reason = reason;
+    _interrupted.complete();
+  }
+
+  void _publish() {
+    if (!_dirty || context.onOutput == null) return;
+    _dirty = false;
+    context.onOutput!(
+      ToolOutputSnapshot(
+        content: _buffer.text,
+        totalBytes: _totalBytes,
+        truncated: _buffer.truncated,
+      ),
+    );
+  }
+
+  Future<void> _terminate() async {
+    final process = _process!;
+    final children = <int>{};
+    // Enumerate while parent relationships still exist. Already reparented
+    // descendants cannot be recovered through pgrep and are not claimed killed.
+    if (_exitCode == null) {
+      try {
+        if (Platform.isWindows) {
+          final result = await _cleanupCommand('taskkill', [
+            '/PID',
+            '${process.pid}',
+            '/T',
+            '/F',
+          ]);
+          if (result.$1 != 0) _cleanupFailed = true;
+        } else {
+          final remaining = <int>[process.pid];
+          final clock = Stopwatch()..start();
+          while (remaining.isNotEmpty) {
+            if (clock.elapsedMilliseconds >= 500) {
+              _cleanupFailed = true;
+              break;
+            }
+            final parent = remaining.removeLast();
+            final result = await _cleanupCommand('pgrep', ['-P', '$parent']);
+            if (result.$1 != 0 && result.$1 != 1) _cleanupFailed = true;
+            for (final line in result.$2.split('\n')) {
+              final pid = int.tryParse(line.trim());
+              if (pid != null && children.add(pid)) remaining.add(pid);
+            }
+          }
+        }
+      } catch (_) {
+        _cleanupFailed = true;
       }
-      final stdout = result.stdout;
-      if (stdout is! String) {
-        continue;
-      }
-      for (final line in stdout.split('\n')) {
-        final child = int.tryParse(line.trim());
-        if (child != null) {
-          descendants.add(child);
-          queue.add(child);
+      if (!Platform.isWindows) {
+        for (final pid in children) {
+          _kill(() => Process.killPid(pid));
         }
       }
+      if (_exitCode == null) _kill(process.kill);
+      // Exit is not enough: a descendant might ignore TERM and keep a pipe open.
+      await _completed.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+      if (!Platform.isWindows) {
+        for (final pid in children) {
+          _kill(() => Process.killPid(pid, ProcessSignal.sigkill));
+        }
+      }
+      if (_exitCode == null) {
+        _kill(() => process.kill(ProcessSignal.sigkill));
+      }
+    } else if (_pipesDone != 2) {
+      _cleanupFailed = true;
     }
-    return descendants;
-  }
-
-  static ({String text, bool truncated}) _bounded(String output) {
-    if (output.codeUnits.length <= shellOutputLimit) {
-      return (text: output, truncated: false);
-    }
-    final head = output.substring(0, shellOutputEdge);
-    final tail = output.substring(output.length - shellOutputEdge);
-    return (text: '$head\n... [output truncated] ...\n$tail', truncated: true);
-  }
-
-  /// Checks that an explicit shell directory is one of the session roots.
-  static bool _allowedDirectory(ToolContext context, String path) {
-    final target = Directory(path).absolute.path;
-    final roots = [
-      context.workingDirectory,
-      ...context.additionalDirectories,
-    ].map((root) => Directory(root).absolute.path);
-    return roots.any(
-      (root) =>
-          target == root || target.startsWith('$root${Platform.pathSeparator}'),
+    await _completed.future.timeout(
+      const Duration(seconds: 1),
+      onTimeout: () {
+        _cleanupFailed = true;
+      },
     );
+  }
+
+  void _kill(bool Function() kill) {
+    try {
+      kill();
+    } catch (_) {
+      _cleanupFailed = true;
+    }
+  }
+
+  ToolResult _result() {
+    final summary = switch (_reason) {
+      'timed_out' => 'command timed out after ${timeout.inSeconds}s',
+      'cancelled' => 'command cancelled',
+      'start_failed' =>
+        'could not start shell command; check the shell and working directory',
+      'stdin_failed' => 'command input could not be delivered',
+      'output_incomplete' =>
+        'command exited but its output pipes did not close',
+      'io_failed' => 'command I/O failed',
+      _ => '',
+    };
+    final output = _buffer.text;
+    return ToolResult(
+      content: [
+        if (summary.isNotEmpty) summary,
+        if (output.isNotEmpty) output,
+        if (_reason == null && _exitCode != 0) '(exit code: $_exitCode)',
+        if (_cleanupFailed) 'process cleanup could not be confirmed',
+      ].join('\n'),
+      isError: _reason != null || _cleanupFailed,
+      metadata: {
+        if (_exitCode != null) 'exit_code': _exitCode,
+        if (_reason != null) 'termination_reason': _reason,
+        if (_cleanupFailed) 'cleanup_failed': true,
+        'truncated': _buffer.truncated,
+        'total_bytes': _totalBytes,
+      },
+    );
+  }
+}
+
+/// Runs a cleanup utility with bounded output and its own deadline.
+Future<(int, String)> _cleanupCommand(
+  String executable,
+  List<String> args,
+) async {
+  final process = await Process.start(executable, args);
+  final output = BytesBuilder(copy: false);
+  var overflowed = false;
+  // This output is machine-readable (including PIDs), so truncating even one
+  // digit can change the target of a signal. Reject overflow as a whole.
+  final sub = process.stdout.listen((bytes) {
+    if (overflowed) return;
+    if (output.length + bytes.length > shellOutputLimit) {
+      overflowed = true;
+    } else {
+      output.add(bytes);
+    }
+  }, onError: (Object _) {});
+  final err = process.stderr.listen((_) {}, onError: (Object _) {});
+  final drained = Future.wait([sub.asFuture<void>(), err.asFuture<void>()]);
+  // Attach a handler before the process can finish or a pipe can fail.
+  unawaited(drained.catchError((Object _) => <void>[]));
+  unawaited(process.stdin.close().catchError((Object _) {}));
+  var exited = false;
+  final exitCode = process.exitCode.then((code) {
+    exited = true;
+    return code;
+  });
+  try {
+    final exit = await exitCode.timeout(const Duration(milliseconds: 500));
+    // Pipe delivery can trail the exit notification.
+    await drained.timeout(const Duration(milliseconds: 100));
+    if (overflowed) throw StateError('cleanup output exceeded its limit');
+    return (exit, utf8.decode(output.takeBytes(), allowMalformed: true));
+  } finally {
+    if (!exited) process.kill(ProcessSignal.sigkill);
+    await Future.wait([
+      sub.cancel(),
+      err.cancel(),
+    ]).timeout(const Duration(milliseconds: 100), onTimeout: () => <void>[]);
   }
 }

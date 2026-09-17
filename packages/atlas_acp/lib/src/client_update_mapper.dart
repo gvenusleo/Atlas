@@ -19,6 +19,7 @@ final class ClientUpdateMapper {
   final rt.TurnId turnId;
 
   int _sequence = 0;
+  final _toolOutputs = <String, _ToolOutput>{};
 
   /// Tool calls already announced with a [rt.ToolStarted] event.
   final _startedCalls = <String>{};
@@ -52,6 +53,14 @@ final class ClientUpdateMapper {
       case UserMessageChunk():
         return const [];
       case ToolCallUpdateSession(:final toolCall):
+        _rememberToolOutput(
+          _toolOutputs,
+          ToolCallUpdate(
+            toolCallId: toolCall.toolCallId,
+            content: toolCall.content,
+            rawOutput: toolCall.rawOutput,
+          ),
+        );
         _startedCalls.add(toolCall.toolCallId);
         return [
           rt.ToolStarted(
@@ -76,12 +85,14 @@ final class ClientUpdateMapper {
           ),
         ];
       case ToolCallStatusUpdate(:final update):
+        final output = _rememberToolOutput(_toolOutputs, update);
         // Status updates arrive repeatedly: an in-progress report (sent right
         // after the call is announced) must not finish the card, and only a
         // completed/failed status carries the result.
         if (update.status == ToolCallStatus.completed ||
             update.status == ToolCallStatus.failed) {
           _startedCalls.remove(update.toolCallId);
+          _toolOutputs.remove(update.toolCallId);
           return [
             rt.ToolFinished(
               sessionId: sessionId,
@@ -95,16 +106,18 @@ final class ClientUpdateMapper {
                 sequence: nextSequence(),
                 occurredAt: _now(),
                 callId: rt.ToolCallId(update.toolCallId),
-                content: _outputText(update.rawOutput),
+                content: output.snapshot.content,
                 isError: update.status == ToolCallStatus.failed,
+                metadata: output.metadata,
               ),
             ),
           ];
         }
         // Some servers only send progress updates and never announce the
         // call; surface the card on first sight so it is not invisible.
+        final events = <rt.AgentEvent>[];
         if (_startedCalls.add(update.toolCallId)) {
-          return [
+          events.addAll([
             rt.ToolStarted(
               sessionId: sessionId,
               turnId: turnId,
@@ -125,9 +138,21 @@ final class ClientUpdateMapper {
                 ),
               ),
             ),
-          ];
+          ]);
         }
-        return const [];
+        if (update.rawOutput != null || update.content != null) {
+          events.add(
+            rt.ToolOutputUpdated(
+              sessionId: sessionId,
+              turnId: turnId,
+              sequence: nextSequence(),
+              occurredAt: _now(),
+              callId: rt.ToolCallId(update.toolCallId),
+              output: output.snapshot,
+            ),
+          );
+        }
+        return events;
       case PlanUpdate(:final plan):
         return [
           rt.PlanUpdated(
@@ -173,13 +198,6 @@ final class ClientUpdateMapper {
     return '';
   }
 
-  static String _outputText(Object? rawOutput) {
-    if (rawOutput is Map && rawOutput['output'] is String) {
-      return rawOutput['output'] as String;
-    }
-    return '';
-  }
-
   static String _nameFromKind(ToolKind? kind) => switch (kind) {
     ToolKind.read => 'read',
     ToolKind.edit => 'edit',
@@ -205,6 +223,7 @@ final class ClientTimelineMapper {
 
   final _turnId = rt.TurnId('acp-session');
   int _sequence = 0;
+  final _toolOutputs = <String, _ToolOutput>{};
 
   /// Converts one replayed [update] into timeline items.
   List<rt.TimelineItem> map(SessionUpdate update) {
@@ -248,6 +267,14 @@ final class ClientTimelineMapper {
           ),
         ];
       case ToolCallUpdateSession(:final toolCall):
+        _rememberToolOutput(
+          _toolOutputs,
+          ToolCallUpdate(
+            toolCallId: toolCall.toolCallId,
+            content: toolCall.content,
+            rawOutput: toolCall.rawOutput,
+          ),
+        );
         return [
           rt.ToolCallItem(
             id: rt.TimelineItemId(toolCall.toolCallId),
@@ -265,6 +292,12 @@ final class ClientTimelineMapper {
           ),
         ];
       case ToolCallStatusUpdate(:final update):
+        final output = _rememberToolOutput(_toolOutputs, update);
+        if (update.status != ToolCallStatus.completed &&
+            update.status != ToolCallStatus.failed) {
+          return const [];
+        }
+        _toolOutputs.remove(update.toolCallId);
         return [
           rt.ToolResultItem(
             id: rt.TimelineItemId('result-${update.toolCallId}'),
@@ -273,8 +306,9 @@ final class ClientTimelineMapper {
             sequence: _sequence++,
             occurredAt: _now(),
             callId: rt.ToolCallId(update.toolCallId),
-            content: _outputText(update.rawOutput),
+            content: output.snapshot.content,
             isError: update.status == ToolCallStatus.failed,
+            metadata: output.metadata,
           ),
         ];
       default:
@@ -289,13 +323,6 @@ final class ClientTimelineMapper {
     final content = chunk.content;
     if (content is TextContentBlock) {
       return content.text;
-    }
-    return '';
-  }
-
-  static String _outputText(Object? rawOutput) {
-    if (rawOutput is Map && rawOutput['output'] is String) {
-      return rawOutput['output'] as String;
     }
     return '';
   }
@@ -323,45 +350,58 @@ final class ClientConversationMapper {
 
   /// Session identifier used to filter updates.
   final rt.SessionId sessionId;
+  final _toolOutputs = <String, _ToolOutput>{};
 
   /// Converts one update without fabricating durable runtime identities.
-  List<rt.ConversationItem> map(SessionUpdate update) => switch (update) {
-    UserMessageChunk(:final chunk) => [
-      rt.ConversationUserMessage([rt.TextContent(_chunkText(chunk))]),
-    ],
-    AgentMessageChunk(:final chunk) => [
-      rt.ConversationAssistantMessage([rt.TextContent(_chunkText(chunk))]),
-    ],
-    AgentThoughtChunk(:final chunk) => [
-      rt.ConversationAssistantMessage(const [], reasoning: _chunkText(chunk)),
-    ],
-    ToolCallUpdateSession(:final toolCall) => [
-      rt.ConversationToolCall(
-        callId: toolCall.toolCallId,
-        name: _nameFromKind(toolCall.kind),
-        arguments: toolCall.rawInput is Map
-            ? Map<String, Object?>.from(toolCall.rawInput as Map)
-            : const {},
-      ),
-    ],
-    ToolCallStatusUpdate(:final update) => [
-      rt.ConversationToolResult(
-        callId: update.toolCallId,
-        content: _outputText(update.rawOutput),
-        isError: update.status == ToolCallStatus.failed,
-      ),
-    ],
-    _ => const [],
-  };
+  List<rt.ConversationItem> map(SessionUpdate update) {
+    if (update is ToolCallStatusUpdate) {
+      _rememberToolOutput(_toolOutputs, update.update);
+    } else if (update is ToolCallUpdateSession) {
+      _rememberToolOutput(
+        _toolOutputs,
+        ToolCallUpdate(
+          toolCallId: update.toolCall.toolCallId,
+          content: update.toolCall.content,
+          rawOutput: update.toolCall.rawOutput,
+        ),
+      );
+    }
+    return switch (update) {
+      UserMessageChunk(:final chunk) => [
+        rt.ConversationUserMessage([rt.TextContent(_chunkText(chunk))]),
+      ],
+      AgentMessageChunk(:final chunk) => [
+        rt.ConversationAssistantMessage([rt.TextContent(_chunkText(chunk))]),
+      ],
+      AgentThoughtChunk(:final chunk) => [
+        rt.ConversationAssistantMessage(const [], reasoning: _chunkText(chunk)),
+      ],
+      ToolCallUpdateSession(:final toolCall) => [
+        rt.ConversationToolCall(
+          callId: toolCall.toolCallId,
+          name: _nameFromKind(toolCall.kind),
+          arguments: toolCall.rawInput is Map
+              ? Map<String, Object?>.from(toolCall.rawInput as Map)
+              : const {},
+        ),
+      ],
+      ToolCallStatusUpdate(:final update)
+          when update.status == ToolCallStatus.completed ||
+              update.status == ToolCallStatus.failed =>
+        [
+          rt.ConversationToolResult(
+            callId: update.toolCallId,
+            content: _toolOutputs.remove(update.toolCallId)!.snapshot.content,
+            isError: update.status == ToolCallStatus.failed,
+          ),
+        ],
+      _ => const [],
+    };
+  }
 
   static String _chunkText(ContentChunk chunk) =>
       chunk.content is TextContentBlock
       ? (chunk.content as TextContentBlock).text
-      : '';
-
-  static String _outputText(Object? rawOutput) =>
-      rawOutput is Map && rawOutput['output'] is String
-      ? rawOutput['output'] as String
       : '';
 
   static String _nameFromKind(ToolKind? kind) => switch (kind) {
@@ -371,4 +411,53 @@ final class ClientConversationMapper {
     ToolKind.think => 'plan',
     _ => 'tool',
   };
+}
+
+typedef _ToolOutput = ({
+  rt.ToolOutputSnapshot snapshot,
+  rt.JsonObject metadata,
+});
+
+// ACP updates replace only supplied fields. Omitted content must survive both
+// live status notifications and session replay; an explicit [] clears it.
+_ToolOutput _rememberToolOutput(
+  Map<String, _ToolOutput> outputs,
+  ToolCallUpdate update,
+) {
+  final previous = outputs[update.toolCallId];
+  final raw = update.rawOutput;
+  return outputs[update.toolCallId] = (
+    snapshot: rt.ToolOutputSnapshot(
+      content: _updateText(update) ?? previous?.snapshot.content ?? '',
+      totalBytes: raw is Map && raw['total_bytes'] is int
+          ? raw['total_bytes'] as int
+          : previous?.snapshot.totalBytes ?? 0,
+      truncated: raw is Map && raw['truncated'] is bool
+          ? raw['truncated'] as bool
+          : previous?.snapshot.truncated ?? false,
+    ),
+    metadata: raw == null
+        ? previous?.metadata ?? const {}
+        : _updateMetadata(update),
+  );
+}
+
+String? _updateText(ToolCallUpdate update) {
+  final raw = update.rawOutput;
+  if (raw is Map && raw['output'] is String) return raw['output'] as String;
+  if (update.content == null) return null;
+  return update.content!
+      .whereType<ToolCallContentBlock>()
+      .map((block) => block.content)
+      .whereType<TextContentBlock>()
+      .map((block) => block.text)
+      .join('\n');
+}
+
+rt.JsonObject _updateMetadata(ToolCallUpdate update) {
+  final raw = update.rawOutput;
+  if (raw is Map && raw['metadata'] is Map) {
+    return Map<String, Object?>.from(raw['metadata'] as Map);
+  }
+  return const {};
 }

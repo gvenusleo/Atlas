@@ -99,6 +99,8 @@ product-level contracts:
 
 - Each model tool call receives one model-visible result in the original order, including failures.
 - `AgentEvent` values are emitted in occurrence order so clients do not regroup output after a turn.
+- Tool output snapshots are transient replacement events (`ToolOutputUpdated`), coalesced for slow consumers. They never enter the durable timeline or model context; each invocation still produces exactly one final tool result.
+- Cancelling a runtime event subscription requests cooperative turn cancellation and waits for paired tool results and the terminal turn to be persisted before releasing the session lock.
 - A `Session` contains ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request.
 - Every assistant message may carry a provider-owned `ModelContinuation`; it is persisted inside the assistant row and restored onto the corresponding provider-neutral message.
 - Cancellation before a turn starts creates no timeline item. Cancellation after user input reaches the runtime preserves the interrupted turn boundary: text already received from an interrupted model stream is persisted as an aborted assistant message and participates in later model context.

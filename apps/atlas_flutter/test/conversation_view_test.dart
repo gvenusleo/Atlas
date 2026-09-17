@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:atlas_acp/atlas_acp.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
@@ -15,6 +18,104 @@ import 'package:atlas_flutter/features/workspace/presentation/widgets/conversati
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 void main() {
+  testWidgets('manual shell collapse survives scrolling away and back', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      final model = ModelDescriptor(
+        ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('m')),
+      );
+      final tool = _StreamingShellTool();
+      final store = DriftSessionStore.inMemory();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: _NamedToolFakeProvider(model.ref, 'shell', {
+          'command': 'cascade build',
+        }),
+        tools: LocalToolRegistry([tool]),
+        ids: SecureIdGenerator(),
+        defaultModel: model.ref,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          runtimeEnvironmentProvider.overrideWith(
+            () => RuntimeEnvironmentController(
+              local: RuntimeEnvironment(runtime: runtime, models: [model]),
+            ),
+          ),
+          workspaceWorkingDirectoryProvider.overrideWith(
+            () => _FixedWorkingDirectory('/tmp'),
+          ),
+        ],
+      );
+      addTearDown(() async {
+        if (!tool.finish.isCompleted) tool.finish.complete();
+        container.dispose();
+        await store.close();
+      });
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: buildAtlasTheme(Brightness.light),
+            home: const Scaffold(body: ConversationView()),
+          ),
+        ),
+      );
+      final controller = container.read(workspaceProvider.notifier);
+      controller.state = controller.state.copyWith(
+        workspaces: {
+          ...controller.state.workspaces,
+          controller.state.activeKey: controller.state.active.copyWith(
+            messages: [
+              for (var i = 0; i < 100; i++)
+                WorkspaceMessage(
+                  id: 'history-$i',
+                  kind: WorkspaceMessageKind.user,
+                  text: 'History row $i ${'old text ' * 20}',
+                ),
+            ],
+          ),
+        },
+      );
+      await tester.pump();
+      final sending = controller.send('run');
+      await tool.started.future;
+      final live = Completer<void>();
+      final listener = container.listen(workspaceProvider, (_, state) {
+        if (state.messages.any((m) => m.text == 'live output') &&
+            !live.isCompleted) {
+          live.complete();
+        }
+      });
+      tool.emit('live output');
+      await live.future;
+      listener.close();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('live output'), findsOneWidget);
+      await tester.tap(find.textContaining('cascade build'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('live output'), findsNothing);
+      final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+      scroll.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('cascade build'), findsNothing);
+      scroll.jumpTo(0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      tool.finish.complete();
+      await sending;
+      expect(
+        find.text('live output'),
+        findsNothing,
+        reason: 'manual collapse should survive scrolling away and back',
+      );
+    });
+  });
+
   testWidgets('renders a tool message with a long name', (tester) async {
     final model = ModelDescriptor(
       ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('m')),
@@ -203,6 +304,121 @@ void main() {
     expect(find.textContaining('"command"'), findsNothing);
   });
 
+  for (final width in [800.0, 375.0]) {
+    testWidgets('shows live shell output through ACP at width $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // Keep ACP transport setup and teardown in the real async zone.
+      await tester.runAsync(() async {
+        final model = ModelDescriptor(
+          ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('m')),
+        );
+        final tool = _StreamingShellTool();
+        final store = DriftSessionStore.inMemory();
+        final runtime = AgentRuntime(
+          store: store,
+          provider: _NamedToolFakeProvider(model.ref, 'shell', {
+            'command': 'build project',
+          }),
+          tools: LocalToolRegistry([tool]),
+          ids: SecureIdGenerator(),
+          defaultModel: model.ref,
+        );
+        final (serverDone, transport) = AcpServer(
+          runtime,
+          models: [model],
+        ).serveMemory();
+        final client = AcpClient(
+          transport,
+          catalog: [model],
+          defaultModel: model.ref,
+        );
+        await client.connect();
+        final container = ProviderContainer(
+          overrides: [
+            runtimeEnvironmentProvider.overrideWith(
+              () => RuntimeEnvironmentController(
+                local: RuntimeEnvironment(runtime: client, models: [model]),
+              ),
+            ),
+            workspaceWorkingDirectoryProvider.overrideWith(
+              () => _FixedWorkingDirectory('/tmp'),
+            ),
+          ],
+        );
+        addTearDown(() async {
+          if (!tool.finish.isCompleted) tool.finish.complete();
+          container.dispose();
+          await client.close();
+          await serverDone;
+          await store.close();
+        });
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: buildAtlasTheme(Brightness.light),
+              home: const Scaffold(body: ConversationView()),
+            ),
+          ),
+        );
+        Future<void> emit(String text) async {
+          final delivered = Completer<void>();
+          final listener = container.listen(workspaceProvider, (_, state) {
+            if (state.messages.any(
+                  (message) =>
+                      message.kind == WorkspaceMessageKind.tool &&
+                      message.text == text,
+                ) &&
+                !delivered.isCompleted) {
+              delivered.complete();
+            }
+          });
+          tool.emit(text);
+          await delivered.future;
+          listener.close();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+
+        final sending = container
+            .read(workspaceProvider.notifier)
+            .send('run a build');
+        await tool.started.future;
+        await emit('Compiling first file');
+        expect(find.text('Compiling first file'), findsOneWidget);
+        expect(
+          container.read(workspaceProvider).messages.last.isRunning,
+          isTrue,
+        );
+        await tester.tap(find.textContaining('build project'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await emit('Compiling second file');
+        expect(find.text('Compiling second file'), findsNothing);
+        tool.finish.complete();
+        await sending.timeout(const Duration(seconds: 3));
+        await tester.pumpAndSettle();
+        final messages = container
+            .read(workspaceProvider)
+            .messages
+            .where((message) => message.kind == WorkspaceMessageKind.tool);
+        expect(messages, hasLength(1));
+        expect(messages.single.isRunning, isFalse);
+        expect(messages.single.text, 'Build complete');
+        expect(find.text('Build complete'), findsNothing);
+        await tester.tap(find.textContaining('build project'));
+        await tester.pumpAndSettle();
+        expect(find.text('Build complete'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    });
+  }
+
   testWidgets('plan title shows completed counts and lists steps', (
     tester,
   ) async {
@@ -362,7 +578,7 @@ final class _NamedToolFakeProvider implements ModelProvider {
 
   @override
   Stream<ModelStreamEvent> stream(ModelRequest request) async* {
-    expect(request.model, model);
+    expectSync(request.model, model);
     _calls++;
     if (_calls == 1) {
       yield ModelCompletedEvent(
@@ -413,4 +629,33 @@ final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
 
   @override
   String build() => path;
+}
+
+final class _StreamingShellTool implements Tool {
+  final started = Completer<void>();
+  final finish = Completer<void>();
+  late ToolContext _context;
+
+  @override
+  ToolDescriptor get descriptor => const ToolDescriptor(
+    name: 'shell',
+    description: 'Streaming shell fixture',
+    inputSchema: {},
+  );
+
+  void emit(String text) => _context.onOutput!(
+    ToolOutputSnapshot(
+      content: text,
+      totalBytes: text.length,
+      truncated: false,
+    ),
+  );
+
+  @override
+  Future<ToolResult> execute(ToolContext context, JsonObject arguments) async {
+    _context = context;
+    started.complete();
+    await finish.future;
+    return const ToolResult(content: 'Build complete');
+  }
 }

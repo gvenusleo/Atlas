@@ -26,8 +26,8 @@ The repository currently contains:
   instruction, and `/model` can then select a reasoning effort;
 - an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON
   stdio, covering session lifecycle, model and effort config, slash commands,
-  turn streaming, agent plans, and Zed display enhancements (live shell
-  terminals, file diffs, and follow-along locations);
+  turn streaming, agent plans, live shell output, file diffs, and follow-along
+  locations;
 - a `atlas_ws` WebSocket transport served by the new `atlas server`
   subcommand: bearer-token auth, one ACP JSON-RPC message per text frame, and
   automatic client reconnection, so the Flutter mobile app can drive the

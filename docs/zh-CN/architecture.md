@@ -91,6 +91,8 @@ text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接�
 
 - 每个模型工具调用都按原顺序得到一个模型可见结果，失败也不例外。
 - `AgentEvent` 按发生顺序发送，客户端不能在 turn 结束后重新分组输出。
+- 工具过程输出使用临时替换事件（`ToolOutputUpdated`），消费者处理较慢时合并待显示快照。过程输出不进入持久 timeline 或模型上下文；每次调用仍恰好产生一个最终工具结果。
+- 取消 runtime 事件订阅会请求协作式取消 turn，等待配对的工具结果与 turn 终态持久化后再释放会话锁。
 - `Session` 包含有序的 `TimelineItem` 与持久化的 `Turn`。用户输入会和 running turn 原子写入，然后才发起第一个 Provider 请求。
 - 每个 assistant message 可以携带 Provider 所有的 `ModelContinuation`；它内嵌在 assistant 行中持久化，并恢复到对应的 provider-neutral message。
 - turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界：被中断模型流已接收的文本会以 aborted assistant message 持久化，并参与后续 turn 的模型上下文。

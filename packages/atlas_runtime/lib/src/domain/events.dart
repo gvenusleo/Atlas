@@ -2,6 +2,7 @@ import 'ids.dart';
 import 'timeline.dart';
 import 'turn.dart';
 import 'usage.dart';
+import '../ports/tool_registry.dart';
 
 /// A runtime event emitted while executing a turn.
 sealed class AgentEvent {
@@ -143,6 +144,25 @@ final class ToolFinished extends AgentEvent {
 
   /// The persisted tool result.
   final ToolResultItem result;
+}
+
+/// Replaces a running tool's displayed output without changing its timeline.
+final class ToolOutputUpdated extends AgentEvent {
+  /// Creates an output update associated with one tool invocation.
+  const ToolOutputUpdated({
+    required super.sessionId,
+    required super.turnId,
+    required super.sequence,
+    required super.occurredAt,
+    required this.callId,
+    required this.output,
+  });
+
+  /// The invocation producing this output.
+  final ToolCallId callId;
+
+  /// Bounded text and counters replacing the previous display state.
+  final ToolOutputSnapshot output;
 }
 
 /// One step of an agent plan.

@@ -74,6 +74,46 @@ void main() {
     expect(tool.text, 'ok');
   });
 
+  test(
+    'replaces running tool output and preserves the final update target',
+    () async {
+      final tool = _LiveTool();
+      final liveRuntime = AgentRuntime(
+        store: _testStore(),
+        provider: _ScriptedProvider(),
+        tools: LocalToolRegistry([tool]),
+        ids: SecureIdGenerator(),
+        defaultModel: runtime.defaultModel,
+      );
+      final controller = ChatController(runtime: liveRuntime);
+      addTearDown(controller.dispose);
+      final displayed = Completer<void>();
+      controller.addListener(() {
+        if (controller.messages.any((message) => message.text == 'live') &&
+            !displayed.isCompleted) {
+          displayed.complete();
+        }
+      });
+      final turn = controller.send('run');
+      await displayed.future;
+      expect(controller.busy, isTrue);
+      expect(
+        controller.messages
+            .where((m) => m.kind == ChatMessageKind.tool)
+            .single
+            .id,
+        isNotNull,
+      );
+      tool.finish.complete();
+      await turn;
+      final message = controller.messages
+          .where((m) => m.kind == ChatMessageKind.tool)
+          .single;
+      expect(message.text, 'final');
+      expect(controller.busy, isFalse);
+    },
+  );
+
   test('marks tool failures and truncates long results', () async {
     provider.failTool = true;
     final controller = ChatController(runtime: runtime);
@@ -852,5 +892,24 @@ final class _ScriptedProvider implements ModelProvider {
         usage: TokenUsage(inputTokens: inputTokens, totalTokens: 4321),
       ),
     );
+  }
+}
+
+final class _LiveTool implements Tool {
+  final finish = Completer<void>();
+  @override
+  ToolDescriptor get descriptor =>
+      const ToolDescriptor(name: 'echo', description: '', inputSchema: {});
+  @override
+  Future<ToolResult> execute(ToolContext context, JsonObject arguments) async {
+    context.onOutput!(
+      const ToolOutputSnapshot(
+        content: 'live',
+        totalBytes: 4,
+        truncated: false,
+      ),
+    );
+    await finish.future;
+    return const ToolResult(content: 'final');
   }
 }

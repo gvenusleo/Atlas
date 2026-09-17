@@ -189,7 +189,7 @@ void main() {
       expect(toolCall.title, 'ls -la');
     });
 
-    test('shell tool calls embed a display-only terminal reference', () {
+    test('shell tool calls use portable text output', () {
       final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(
         ModelResponseReceived(
@@ -209,14 +209,9 @@ void main() {
         ),
       );
       final toolCall = (updates.single as ToolCallUpdateSession).toolCall;
-      expect(
-        toolCall.content.whereType<ToolCallTerminal>().single.terminalId,
-        'term-call-1',
-      );
-      expect(
-        (toolCall.meta['terminal_info'] as Map<String, Object?>)['terminal_id'],
-        'term-call-1',
-      );
+      expect(toolCall.content, isEmpty);
+      expect(toolCall.kind, ToolKind.execute);
+      expect(toolCall.meta, isEmpty);
     });
 
     test('tool_call titles truncate shell commands over the limit', () {
@@ -244,29 +239,30 @@ void main() {
       expect(title.codeUnits.length, shellTitleLimit + 1);
     });
 
-    test('in_progress shell updates keep the terminal reference', () {
-      final mapper = TurnUpdateMapper(session);
-      final updates = mapper.map(
-        ToolStarted(
-          sessionId: session,
-          turnId: turn,
-          sequence: 0,
-          occurredAt: time,
-          call: _toolCallItem(
-            'call-1',
-            'shell',
-            1,
-            arguments: {'command': 'ls -la'},
+    test(
+      'shell start updates use standard status without terminal references',
+      () {
+        final mapper = TurnUpdateMapper(session);
+        final updates = mapper.map(
+          ToolStarted(
+            sessionId: session,
+            turnId: turn,
+            sequence: 0,
+            occurredAt: time,
+            call: _toolCallItem(
+              'call-1',
+              'shell',
+              1,
+              arguments: {'command': 'ls -la'},
+            ),
           ),
-        ),
-      );
-      final update = (updates.single as ToolCallStatusUpdate).update;
-      expect(update.status, ToolCallStatus.inProgress);
-      expect(
-        update.content!.whereType<ToolCallTerminal>().single.terminalId,
-        'term-call-1',
-      );
-    });
+        );
+        final update = (updates.single as ToolCallStatusUpdate).update;
+        expect(update.status, ToolCallStatus.inProgress);
+        expect(update.content, isNull);
+        expect(update.meta, isEmpty);
+      },
+    );
 
     test('file tool results render as diffs with follow-along locations', () {
       final mapper = TurnUpdateMapper(session);
@@ -397,7 +393,7 @@ void main() {
       expect((content as TextContentBlock).text, 'search results');
     });
 
-    test('completed shell results stream output through terminal meta', () {
+    test('completed shell results carry text and exit metadata', () {
       final mapper = TurnUpdateMapper(session);
       final updates = <SessionUpdate>[
         ...mapper.map(
@@ -429,14 +425,12 @@ void main() {
       ];
       final update = (updates.last as ToolCallStatusUpdate).update;
       expect(update.status, ToolCallStatus.completed);
-      expect(
-        update.content!.whereType<ToolCallTerminal>().single.terminalId,
-        'term-call-1',
-      );
-      expect(
-        (update.meta['terminal_exit'] as Map<String, Object?>)['exit_code'],
-        1,
-      );
+      final text =
+          update.content!.whereType<ToolCallContentBlock>().single.content
+              as TextContentBlock;
+      expect(text.text, 'file list');
+      expect((update.rawOutput as Map)['metadata'], {'exit_code': 1});
+      expect(update.meta, isEmpty);
     });
 
     test(

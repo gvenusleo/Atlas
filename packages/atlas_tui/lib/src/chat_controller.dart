@@ -328,7 +328,13 @@ final class ChatController implements Listenable {
         );
       case ToolFinished():
         _turnPhase = TurnPhase.working;
-        _updateLastTool(event.result);
+        _updateTool(
+          event.result.callId,
+          event.result.content,
+          event.result.isError,
+        );
+      case ToolOutputUpdated():
+        _updateTool(event.callId, event.output.content, false);
       case CompactionStarted():
         _turnPhase = TurnPhase.compacting;
       case CompactionFinished(:final checkpoint):
@@ -386,26 +392,27 @@ final class ChatController implements Listenable {
     _sealed = false;
   }
 
-  void _updateLastTool(ToolResultItem result) {
-    final index = _messages.indexWhere(
+  void _updateTool(ToolCallId callId, String content, bool isError) {
+    final index = _messages.lastIndexWhere(
       (message) =>
-          message.kind == ChatMessageKind.tool &&
-          message.id == result.callId.value,
+          message.kind == ChatMessageKind.tool && message.id == callId.value,
     );
     if (index < 0) {
       return;
     }
     // Keep the tail of long results so the newest output stays visible; the
     // renderer elides the head with its own `...` when lines are dropped.
-    final summary = result.content.length > maxToolResultChars
-        ? '...${result.content.substring(result.content.length - maxToolResultChars)}'
-        : result.content;
+    final summary = content.length > maxToolResultChars
+        ? '...${content.substring(content.length - maxToolResultChars)}'
+        : content;
     _messages[index] = ChatMessage(
+      id: callId.value,
+      toolCallId: callId.value,
       kind: ChatMessageKind.tool,
       toolName: _messages[index].toolName,
       arguments: _messages[index].arguments,
-      text: result.isError ? 'failed: $summary' : summary,
-      isError: result.isError,
+      text: isError ? 'failed: $summary' : summary,
+      isError: isError,
     );
   }
 

@@ -23,8 +23,7 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   注入；`/compact` 可带可选指令，`/model` 之后可选择 reasoning effort；
 - `atlas_acp` 中的 ACP 服务端适配器，由 `atlas acp` 通过 NDJSON stdio
   提供，覆盖会话生命周期、模型与 effort 配置、斜杠命令、turn 流式输出、
-  agent plan，以及 Zed 展示增强（实时 shell 终端、文件 diff 与
-  follow-along 位置）；
+  agent plan、实时 shell 输出、文件 diff 与 follow-along 位置；
 - 由新 `atlas server` 子命令提供的 `atlas_ws` WebSocket transport：
   bearer token 认证、每个 text frame 一条 ACP JSON-RPC 消息、客户端自动
   重连——Flutter 移动 App 由此可在 Tailscale/私有网络上远程驱动电脑端的
