@@ -103,6 +103,9 @@ class _TreeNode {
 }
 
 class _FileBrowserState extends State<FileBrowser> {
+  /// How long filesystem events are coalesced before reloading.
+  static const _reloadDebounce = Duration(milliseconds: 300);
+
   late Directory _root;
   late _TreeNode _rootNode;
   List<_TreeNode> _visibleNodes = const [];
@@ -113,6 +116,15 @@ class _FileBrowserState extends State<FileBrowser> {
   FileClipboard? _clipboard;
   final _rootMenu = MenuController();
   final _rowMenus = <MenuController>[];
+
+  /// Watches one loaded directory so external changes reload its rows.
+  final _watchers = <String, StreamSubscription<FileSystemEvent>>{};
+
+  /// Pending reload debounce, keyed by watched directory path.
+  final _debounce = <String, Timer>{};
+
+  /// Pending debounce for re-reading the previewed file.
+  Timer? _previewDebounce;
 
   void _dismissMenus() {
     if (_rootMenu.isOpen) {
@@ -137,6 +149,12 @@ class _FileBrowserState extends State<FileBrowser> {
     if (oldWidget.workingDirectory != widget.workingDirectory) {
       _resetRoot();
     }
+  }
+
+  @override
+  void dispose() {
+    _cancelWatchers();
+    super.dispose();
   }
 
   @override
@@ -431,6 +449,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   void _resetRoot() {
+    _cancelWatchers();
     _root = Directory(widget.workingDirectory).absolute;
     _rootNode = _TreeNode(entity: _root, depth: 0)..expanded = true;
     _visibleNodes = const [];
@@ -453,35 +472,52 @@ class _FileBrowserState extends State<FileBrowser> {
     _rebuildVisible();
   }
 
-  Future<void> _loadChildren(_TreeNode node) async {
-    node.loading = true;
-    _rebuildVisible();
+  /// Loads the children of [node] from disk.
+  ///
+  /// Watch-driven reloads pass [auto]: they keep the row spinner off and skip
+  /// the rebuild when the listing did not change.
+  Future<void> _loadChildren(_TreeNode node, {bool auto = false}) async {
+    if (!auto) {
+      node.loading = true;
+      _rebuildVisible();
+    }
+    var changed = false;
     try {
       final entries = await widget.service.listDirectory(
         node.entity as Directory,
       );
-      // Reuse existing child nodes by path so expanded state survives reloads.
-      final existing = {
-        for (final child in node.children ?? const <_TreeNode>[])
-          child.entity.path: child,
-      };
-      final childDepth = node == _rootNode ? 0 : node.depth + 1;
-      node.children = entries
-          .map(
-            (entry) =>
-                existing[entry.path] ??
-                _TreeNode(entity: entry, depth: childDepth),
-          )
-          .toList();
+      if (!_sameEntries(node.children, entries)) {
+        // Reuse existing child nodes by path so expanded state survives
+        // reloads.
+        final existing = {
+          for (final child in node.children ?? const <_TreeNode>[])
+            child.entity.path: child,
+        };
+        final childDepth = node == _rootNode ? 0 : node.depth + 1;
+        node.children = entries
+            .map(
+              (entry) =>
+                  existing[entry.path] ??
+                  _TreeNode(entity: entry, depth: childDepth),
+            )
+            .toList();
+        changed = true;
+      }
+      changed = changed || node.error != null;
       node.error = null;
+      _watchDirectory(node.entity.path);
     } on FileSystemException catch (error) {
+      changed = true;
       node.error = error.message;
     } finally {
-      node.loading = false;
-      if (mounted) {
+      if (!auto) {
+        node.loading = false;
+      }
+      if (mounted && (!auto || changed)) {
         _rebuildVisible();
       }
     }
+    _pruneWatchers();
   }
 
   /// Reloads every expanded folder so newly created files appear.
@@ -498,6 +534,129 @@ class _FileBrowserState extends State<FileBrowser> {
     for (final child in node.children ?? const <_TreeNode>[]) {
       await _reloadExpanded(child);
     }
+  }
+
+  /// Watches [path] so external changes reload the tree without the manual
+  /// refresh button.
+  ///
+  /// Watching is best effort: unsupported platforms, network mounts, and
+  /// folders that already disappeared keep manual refresh as the only reload
+  /// path.
+  void _watchDirectory(String path) {
+    if (!mounted || _watchers.containsKey(path)) {
+      return;
+    }
+    try {
+      _watchers[path] = Directory(path).watch().listen(
+        (event) => _onFileSystemEvent(path, event),
+        onError: (Object _) => _unwatch(path),
+        cancelOnError: true,
+      );
+    } catch (_) {
+      // This folder cannot be watched on this platform; manual refresh still
+      // works.
+    }
+  }
+
+  /// Routes one filesystem event to the reloads it affects.
+  void _onFileSystemEvent(String directory, FileSystemEvent event) {
+    if (event.path == directory) {
+      // The watched folder itself was deleted or moved; the parent's watcher
+      // reports the entry change that removes it from the tree.
+      _unwatch(directory);
+      return;
+    }
+    final selected = _selectedFile;
+    if (selected != null && selected.path == event.path) {
+      _schedulePreviewReload(selected.path);
+    }
+    _scheduleReload(directory);
+  }
+
+  /// Debounces reloads of [path] into one directory listing.
+  void _scheduleReload(String path) {
+    if (!mounted) {
+      return;
+    }
+    _debounce[path]?.cancel();
+    _debounce[path] = Timer(_reloadDebounce, () {
+      _debounce.remove(path);
+      final node = _findNode(path);
+      if (node == null) {
+        _unwatch(path);
+        return;
+      }
+      unawaited(_loadChildren(node, auto: true));
+    });
+  }
+
+  /// Debounces re-reading the previewed file after it changed on disk.
+  void _schedulePreviewReload(String path) {
+    if (!mounted) {
+      return;
+    }
+    _previewDebounce?.cancel();
+    _previewDebounce = Timer(_reloadDebounce, () {
+      _previewDebounce = null;
+      if (_selectedFile?.path != path) {
+        return;
+      }
+      unawaited(_loadPreview());
+    });
+  }
+
+  /// Stops watching [path] and cancels its pending reload.
+  void _unwatch(String path) {
+    _debounce.remove(path)?.cancel();
+    _watchers.remove(path)?.cancel();
+  }
+
+  /// Stops watching folders that are no longer part of the tree.
+  void _pruneWatchers() {
+    if (_watchers.isEmpty) {
+      return;
+    }
+    final live = <String>{};
+    void visit(_TreeNode node) {
+      live.add(node.entity.path);
+      for (final child in node.children ?? const <_TreeNode>[]) {
+        visit(child);
+      }
+    }
+
+    visit(_rootNode);
+    for (final path in _watchers.keys.toList()) {
+      if (!live.contains(path)) {
+        _unwatch(path);
+      }
+    }
+  }
+
+  /// Stops all watchers and pending reloads.
+  void _cancelWatchers() {
+    for (final timer in _debounce.values) {
+      timer.cancel();
+    }
+    _debounce.clear();
+    _previewDebounce?.cancel();
+    _previewDebounce = null;
+    for (final subscription in _watchers.values) {
+      subscription.cancel();
+    }
+    _watchers.clear();
+  }
+
+  /// Whether [children] already holds exactly the [entries] listed on disk.
+  bool _sameEntries(List<_TreeNode>? children, List<FileSystemEntity> entries) {
+    if (children == null || children.length != entries.length) {
+      return false;
+    }
+    for (var i = 0; i < entries.length; i++) {
+      if (children[i].entity.path != entries[i].path) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _rebuildVisible() {
@@ -552,7 +711,13 @@ class _FileBrowserState extends State<FileBrowser> {
       }
     } on FileSystemException catch (error) {
       if (mounted) {
-        setState(() => _error = error.message);
+        setState(() {
+          // Auto-refresh can outlive the file itself; do not surface a raw
+          // operating-system error for that case.
+          _error = file.existsSync()
+              ? error.message
+              : 'This file no longer exists.';
+        });
       }
     } on FormatException catch (error) {
       if (mounted) {

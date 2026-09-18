@@ -28,12 +28,13 @@ void main() {
   /// Lets real file-system IO finish, then renders the updated frame.
   /// Directory listing streams items across real and fake event loops, so
   /// alternate real async waits with frame pumps until the tree settles.
+  /// The pumps also elapse the fake clock so auto-refresh debounces fire.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 20; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
     }
     await tester.pump();
     await tester.pump();
@@ -339,6 +340,87 @@ void main() {
     await tester.tap(find.byTooltip('Refresh files'));
     await settle(tester);
     expect(find.text('new.txt'), findsOneWidget);
+  });
+
+  testWidgets('auto-refreshes expanded folders when files change on disk', (
+    tester,
+  ) async {
+    final sub = Directory('${tempDir.path}/sub')..createSync();
+    File('${sub.path}/a.txt').writeAsStringSync('hello');
+
+    await pumpBrowser(tester);
+    await tester.tap(find.text('sub'));
+    await settle(tester);
+    expect(find.text('a.txt'), findsOneWidget);
+
+    // The change happens outside the browser: no manual refresh.
+    File('${sub.path}/new.txt').writeAsStringSync('new');
+    await settle(tester);
+    expect(find.text('new.txt'), findsOneWidget);
+
+    File('${sub.path}/a.txt').deleteSync();
+    await settle(tester);
+    expect(find.text('a.txt'), findsNothing);
+  });
+
+  testWidgets('auto-refreshes folders that change while collapsed', (
+    tester,
+  ) async {
+    final sub = Directory('${tempDir.path}/sub')..createSync();
+    File('${sub.path}/a.txt').writeAsStringSync('hello');
+
+    await pumpBrowser(tester);
+    await tester.tap(find.text('sub'));
+    await settle(tester);
+    await tester.tap(find.text('sub'));
+    await settle(tester);
+    expect(find.text('a.txt'), findsNothing);
+
+    File('${sub.path}/new.txt').writeAsStringSync('new');
+    await settle(tester);
+
+    // Re-expanding shows the refreshed listing without a manual refresh.
+    await tester.tap(find.text('sub'));
+    await settle(tester);
+    expect(find.text('new.txt'), findsOneWidget);
+  });
+
+  testWidgets('re-reads the previewed file when it changes on disk', (
+    tester,
+  ) async {
+    File('${tempDir.path}/b.txt').writeAsStringSync('one');
+
+    await pumpBrowser(tester);
+    await tester.tap(find.text('b.txt'));
+    await settle(tester);
+    expect(find.text('one'), findsOneWidget);
+
+    File('${tempDir.path}/b.txt').writeAsStringSync('two');
+    await settle(tester);
+    expect(find.text('two'), findsOneWidget);
+    expect(find.text('one'), findsNothing);
+  });
+
+  testWidgets('stops watching when the browser is disposed', (tester) async {
+    File('${tempDir.path}/a.txt').writeAsStringSync('hello');
+
+    await pumpBrowser(tester);
+    expect(find.text('a.txt'), findsOneWidget);
+
+    // Arm a debounce with an external change, then dispose before it fires:
+    // flutter_test fails when timers outlive the widget tree.
+    File('${tempDir.path}/b.txt').writeAsStringSync('new');
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 150)),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+
+    File('${tempDir.path}/c.txt').writeAsStringSync('later');
+    await settle(tester);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('FileBrowserHost keeps expand state when switching sessions', (
