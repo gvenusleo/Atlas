@@ -4,8 +4,14 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:test/test.dart';
 
 /// Creates an isolated temporary directory for one test.
+///
+/// The directory is created under the resolved system temp root: children
+/// report their working directory through `getcwd()`, which resolves symlinks
+/// (macOS `/var` is a link to `/private/var`), so canonical paths keep every
+/// path comparison in a test consistent with what a child prints.
 Future<Directory> tempDir() async {
-  final base = await Directory.systemTemp.createTemp('atlas_tools_test_');
+  final root = Directory(Directory.systemTemp.resolveSymbolicLinksSync());
+  final base = await root.createTemp('atlas_tools_test_');
   addTearDown(() => base.delete(recursive: true));
   return base;
 }
