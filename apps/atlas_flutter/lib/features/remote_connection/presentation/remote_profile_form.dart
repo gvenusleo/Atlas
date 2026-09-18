@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../app/remote_connections.dart';
 import '../../../shared/theme/atlas_theme.dart';
+import '../../../shared/widgets/animated_caret.dart';
 
 /// Form for creating or editing a remote connection profile.
 ///
@@ -97,13 +98,17 @@ class _RemoteProfileFormDialogState extends State<RemoteProfileFormDialog> {
   }
 
   Widget _field(TextEditingController controller, String label, String hint) {
-    return TextField(
+    return AnimatedCaret(
       controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        isDense: true,
-        border: const OutlineInputBorder(),
+      child: TextField(
+        showCursor: false,
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
       ),
     );
   }

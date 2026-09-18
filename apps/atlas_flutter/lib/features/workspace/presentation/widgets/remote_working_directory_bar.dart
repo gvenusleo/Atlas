@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../app/remote_connections.dart';
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../shared/widgets/animated_caret.dart';
 import '../../application/workspace_controller.dart';
 
 /// Prompts for the computer-side working directory of a remote connection.
@@ -198,17 +199,21 @@ class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
+            AnimatedCaret(
               controller: _controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Directory',
-                hintText: '/home/you/projects',
-                errorText: _error,
-                isDense: true,
-                border: const OutlineInputBorder(),
+              child: TextField(
+                showCursor: false,
+                controller: _controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Directory',
+                  hintText: '/home/you/projects',
+                  errorText: _error,
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _submit(),
               ),
-              onSubmitted: (_) => _submit(),
             ),
           ],
         ),

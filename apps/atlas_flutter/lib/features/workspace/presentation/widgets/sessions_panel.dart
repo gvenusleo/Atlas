@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../shared/widgets/animated_caret.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
 import 'settings_dialog.dart';
@@ -158,11 +159,15 @@ class _SessionListState extends ConsumerState<_SessionList> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Rename session'),
-        content: TextField(
+        content: AnimatedCaret(
           controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Title'),
-          onSubmitted: (value) => Navigator.pop(context, value.trim()),
+          child: TextField(
+            showCursor: false,
+            controller: textController,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Title'),
+            onSubmitted: (value) => Navigator.pop(context, value.trim()),
+          ),
         ),
         actions: [
           WorkspaceHoverSurface(

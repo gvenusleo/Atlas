@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../app/acp_connections.dart';
 import '../../../../app/runtime_environment.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../shared/widgets/animated_caret.dart';
 import '../../../remote_connection/presentation/remote_connect_view.dart';
 import 'workspace_controls.dart';
 
@@ -351,21 +352,33 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
+            AnimatedCaret(
               controller: _name,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Name'),
+              child: TextField(
+                showCursor: false,
+                controller: _name,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
             ),
             const SizedBox(height: 8),
-            TextField(
+            AnimatedCaret(
               controller: _command,
-              decoration: const InputDecoration(labelText: 'Command'),
+              child: TextField(
+                showCursor: false,
+                controller: _command,
+                decoration: const InputDecoration(labelText: 'Command'),
+              ),
             ),
             const SizedBox(height: 8),
-            TextField(
+            AnimatedCaret(
               controller: _arguments,
-              decoration: const InputDecoration(
-                labelText: 'Arguments (space separated)',
+              child: TextField(
+                showCursor: false,
+                controller: _arguments,
+                decoration: const InputDecoration(
+                  labelText: 'Arguments (space separated)',
+                ),
               ),
             ),
           ],

@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../shared/widgets/animated_caret.dart';
 import 'workspace_controls.dart';
 
 /// Actions invoked from a file-browser context menu.
@@ -317,11 +318,15 @@ Future<String?> promptFileName(
       final colors = AtlasColors.of(context);
       return AlertDialog(
         title: Text(title),
-        content: TextField(
+        content: AnimatedCaret(
           controller: textController,
-          autofocus: true,
-          decoration: InputDecoration(hintText: hint),
-          onSubmitted: (value) => Navigator.pop(context, value.trim()),
+          child: TextField(
+            showCursor: false,
+            controller: textController,
+            autofocus: true,
+            decoration: InputDecoration(hintText: hint),
+            onSubmitted: (value) => Navigator.pop(context, value.trim()),
+          ),
         ),
         actions: [
           WorkspaceHoverSurface(

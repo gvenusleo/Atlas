@@ -11,6 +11,7 @@ import 'package:morphnext/morphnext.dart';
 
 import '../../../../../app/runtime_environment.dart';
 import '../../../../../shared/theme/atlas_theme.dart';
+import '../../../../../shared/widgets/animated_caret.dart';
 import '../../../application/workspace_controller.dart';
 import '../../../application/workspace_state.dart';
 import '../../../data/image_attachment.dart';
@@ -180,33 +181,39 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                           ),
                         Focus(
                           onKeyEvent: _handleKey,
-                          child: TextField(
-                            key: const ValueKey('atlas-prompt-input'),
+                          child: AnimatedCaret(
                             controller: _textController,
-                            focusNode: _focusNode,
-                            enabled: !busy,
-                            minLines: 1,
-                            maxLines: 6,
-                            keyboardType: TextInputType.multiline,
-                            textInputAction: TextInputAction.newline,
-                            style: TextStyle(
-                              color: colors.textPrimary,
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: _images.isEmpty
-                                  ? 'Message Atlas'
-                                  : 'Add a caption, or send the image',
-                              hintStyle: TextStyle(color: colors.textSecondary),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              errorBorder: InputBorder.none,
-                              isCollapsed: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 12,
+                            child: TextField(
+                              key: const ValueKey('atlas-prompt-input'),
+                              showCursor: false,
+                              controller: _textController,
+                              focusNode: _focusNode,
+                              enabled: !busy,
+                              minLines: 1,
+                              maxLines: 6,
+                              keyboardType: TextInputType.multiline,
+                              textInputAction: TextInputAction.newline,
+                              style: TextStyle(
+                                color: colors.textPrimary,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: _images.isEmpty
+                                    ? 'Message Atlas'
+                                    : 'Add a caption, or send the image',
+                                hintStyle: TextStyle(
+                                  color: colors.textSecondary,
+                                ),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                isCollapsed: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 12,
+                                ),
                               ),
                             ),
                           ),

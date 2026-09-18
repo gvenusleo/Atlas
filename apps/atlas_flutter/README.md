@@ -10,7 +10,9 @@ follow the system theme, a local runtime bootstrap with sessions and agent
 turns, a file browser, an embedded terminal, and a remote connection screen
 that drives a computer-side `atlas server` over WebSocket (used on mobile,
 available on desktop through Settings). Remote sessions hide the local file
-browser and terminal: files and commands run on the computer.
+browser and terminal: files and commands run on the computer. Every text
+field draws its caret through the shared `AnimatedCaret` wrapper, which
+animates the caret with spring-driven corner physics.
 
 ## Responsibility
 

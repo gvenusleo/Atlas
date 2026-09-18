@@ -41,6 +41,7 @@
 - Use go_router for page-level navigation. Direct `Navigator` calls are acceptable for dialogs, sheets, drawers, and other local UI surfaces.
 - Preserve dependency direction: `app` may depend on features and shared code; features may depend on shared code; shared code must not import a feature.
 - Flutter bootstrap may compose runtime adapters, but Flutter feature and presentation code must not own agent orchestration, provider logic, tool execution, or session persistence.
+- Every text field is wrapped in `AnimatedCaret` and built with `showCursor: false`, so the shared caret layer (`lib/shared/widgets/animated_caret.dart`) is the only caret renderer. The wrapper decorates exactly one field.
 
 ## Documentation
 
