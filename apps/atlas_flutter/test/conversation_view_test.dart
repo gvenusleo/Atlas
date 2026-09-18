@@ -93,6 +93,14 @@ void main() {
       listener.close();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.text('live output'),
+        findsNothing,
+        reason: 'streamed output stays collapsed until the user expands it',
+      );
+      await tester.tap(find.textContaining('cascade build'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('live output'), findsOneWidget);
       await tester.tap(find.textContaining('cascade build'));
       await tester.pump();
@@ -305,118 +313,126 @@ void main() {
   });
 
   for (final width in [800.0, 375.0]) {
-    testWidgets('shows live shell output through ACP at width $width', (
-      tester,
-    ) async {
-      tester.view.physicalSize = Size(width, 700);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      // Keep ACP transport setup and teardown in the real async zone.
-      await tester.runAsync(() async {
-        final model = ModelDescriptor(
-          ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('m')),
-        );
-        final tool = _StreamingShellTool();
-        final store = DriftSessionStore.inMemory();
-        final runtime = AgentRuntime(
-          store: store,
-          provider: _NamedToolFakeProvider(model.ref, 'shell', {
-            'command': 'build project',
-          }),
-          tools: LocalToolRegistry([tool]),
-          ids: SecureIdGenerator(),
-          defaultModel: model.ref,
-        );
-        final (serverDone, transport) = AcpServer(
-          runtime,
-          models: [model],
-        ).serveMemory();
-        final client = AcpClient(
-          transport,
-          catalog: [model],
-          defaultModel: model.ref,
-        );
-        await client.connect();
-        final container = ProviderContainer(
-          overrides: [
-            runtimeEnvironmentProvider.overrideWith(
-              () => RuntimeEnvironmentController(
-                local: RuntimeEnvironment(runtime: client, models: [model]),
+    testWidgets(
+      'keeps streamed shell output collapsed until expanded at width $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        // Keep ACP transport setup and teardown in the real async zone.
+        await tester.runAsync(() async {
+          final model = ModelDescriptor(
+            ref: ModelRef(
+              providerId: ProviderId('test'),
+              modelId: ModelId('m'),
+            ),
+          );
+          final tool = _StreamingShellTool();
+          final store = DriftSessionStore.inMemory();
+          final runtime = AgentRuntime(
+            store: store,
+            provider: _NamedToolFakeProvider(model.ref, 'shell', {
+              'command': 'build project',
+            }),
+            tools: LocalToolRegistry([tool]),
+            ids: SecureIdGenerator(),
+            defaultModel: model.ref,
+          );
+          final (serverDone, transport) = AcpServer(
+            runtime,
+            models: [model],
+          ).serveMemory();
+          final client = AcpClient(
+            transport,
+            catalog: [model],
+            defaultModel: model.ref,
+          );
+          await client.connect();
+          final container = ProviderContainer(
+            overrides: [
+              runtimeEnvironmentProvider.overrideWith(
+                () => RuntimeEnvironmentController(
+                  local: RuntimeEnvironment(runtime: client, models: [model]),
+                ),
+              ),
+              workspaceWorkingDirectoryProvider.overrideWith(
+                () => _FixedWorkingDirectory('/tmp'),
+              ),
+            ],
+          );
+          addTearDown(() async {
+            if (!tool.finish.isCompleted) tool.finish.complete();
+            container.dispose();
+            await client.close();
+            await serverDone;
+            await store.close();
+          });
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: container,
+              child: MaterialApp(
+                theme: buildAtlasTheme(Brightness.light),
+                home: const Scaffold(body: ConversationView()),
               ),
             ),
-            workspaceWorkingDirectoryProvider.overrideWith(
-              () => _FixedWorkingDirectory('/tmp'),
-            ),
-          ],
-        );
-        addTearDown(() async {
-          if (!tool.finish.isCompleted) tool.finish.complete();
-          container.dispose();
-          await client.close();
-          await serverDone;
-          await store.close();
-        });
-        await tester.pumpWidget(
-          UncontrolledProviderScope(
-            container: container,
-            child: MaterialApp(
-              theme: buildAtlasTheme(Brightness.light),
-              home: const Scaffold(body: ConversationView()),
-            ),
-          ),
-        );
-        Future<void> emit(String text) async {
-          final delivered = Completer<void>();
-          final listener = container.listen(workspaceProvider, (_, state) {
-            if (state.messages.any(
-                  (message) =>
-                      message.kind == WorkspaceMessageKind.tool &&
-                      message.text == text,
-                ) &&
-                !delivered.isCompleted) {
-              delivered.complete();
-            }
-          });
-          tool.emit(text);
-          await delivered.future;
-          listener.close();
+          );
+          Future<void> emit(String text) async {
+            final delivered = Completer<void>();
+            final listener = container.listen(workspaceProvider, (_, state) {
+              if (state.messages.any(
+                    (message) =>
+                        message.kind == WorkspaceMessageKind.tool &&
+                        message.text == text,
+                  ) &&
+                  !delivered.isCompleted) {
+                delivered.complete();
+              }
+            });
+            tool.emit(text);
+            await delivered.future;
+            listener.close();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 300));
+          }
+
+          final sending = container
+              .read(workspaceProvider.notifier)
+              .send('run a build');
+          await tool.started.future;
+          await emit('Compiling first file');
+          expect(find.text('Compiling first file'), findsNothing);
+          expect(
+            container.read(workspaceProvider).messages.last.isRunning,
+            isTrue,
+          );
+          await tester.tap(find.textContaining('build project'));
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 300));
-        }
-
-        final sending = container
-            .read(workspaceProvider.notifier)
-            .send('run a build');
-        await tool.started.future;
-        await emit('Compiling first file');
-        expect(find.text('Compiling first file'), findsOneWidget);
-        expect(
-          container.read(workspaceProvider).messages.last.isRunning,
-          isTrue,
-        );
-        await tester.tap(find.textContaining('build project'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-        await emit('Compiling second file');
-        expect(find.text('Compiling second file'), findsNothing);
-        tool.finish.complete();
-        await sending.timeout(const Duration(seconds: 3));
-        await tester.pumpAndSettle();
-        final messages = container
-            .read(workspaceProvider)
-            .messages
-            .where((message) => message.kind == WorkspaceMessageKind.tool);
-        expect(messages, hasLength(1));
-        expect(messages.single.isRunning, isFalse);
-        expect(messages.single.text, 'Build complete');
-        expect(find.text('Build complete'), findsNothing);
-        await tester.tap(find.textContaining('build project'));
-        await tester.pumpAndSettle();
-        expect(find.text('Build complete'), findsOneWidget);
-        expect(tester.takeException(), isNull);
-      });
-    });
+          expect(find.text('Compiling first file'), findsOneWidget);
+          await tester.tap(find.textContaining('build project'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+          await emit('Compiling second file');
+          expect(find.text('Compiling second file'), findsNothing);
+          tool.finish.complete();
+          await sending.timeout(const Duration(seconds: 3));
+          await tester.pumpAndSettle();
+          final messages = container
+              .read(workspaceProvider)
+              .messages
+              .where((message) => message.kind == WorkspaceMessageKind.tool);
+          expect(messages, hasLength(1));
+          expect(messages.single.isRunning, isFalse);
+          expect(messages.single.text, 'Build complete');
+          expect(find.text('Build complete'), findsNothing);
+          await tester.tap(find.textContaining('build project'));
+          await tester.pumpAndSettle();
+          expect(find.text('Build complete'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        });
+      },
+    );
   }
 
   testWidgets('plan title shows completed counts and lists steps', (

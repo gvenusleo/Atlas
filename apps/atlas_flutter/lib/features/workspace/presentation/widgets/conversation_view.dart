@@ -366,7 +366,6 @@ class _ActivityDisclosure extends StatefulWidget {
     required this.child,
     this.isRunning = false,
     this.isError = false,
-    this.revealOutput = false,
   });
 
   final IconData icon;
@@ -374,9 +373,6 @@ class _ActivityDisclosure extends StatefulWidget {
   final Widget child;
   final bool isRunning;
   final bool isError;
-
-  /// Opens once when a running shell first produces output.
-  final bool revealOutput;
 
   @override
   State<_ActivityDisclosure> createState() => _ActivityDisclosureState();
@@ -397,14 +393,12 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
   /// Height already reported to the transcript's scroll anchor.
   var _reportedGrowth = 0.0;
   var _expanded = false;
-  var _userToggled = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final saved = PageStorage.maybeOf(context)?.readState(context);
     if (saved is bool) {
-      _userToggled = true;
       _expanded = saved;
       _expand.value = saved ? 1 : 0;
     }
@@ -430,10 +424,6 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
     _expandCurve = CurvedAnimation(parent: _expand, curve: Curves.easeOutCubic);
     _expand.addListener(_reportGrowth);
     _syncPulse();
-    if (widget.revealOutput) {
-      _expanded = true;
-      _expand.value = 1;
-    }
   }
 
   @override
@@ -441,10 +431,6 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isRunning != widget.isRunning) {
       _syncPulse();
-    }
-    if (!oldWidget.revealOutput && widget.revealOutput && !_userToggled) {
-      _expanded = true;
-      _expand.forward();
     }
   }
 
@@ -467,7 +453,6 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
   }
 
   void _toggle() {
-    _userToggled = true;
     setState(() => _expanded = !_expanded);
     PageStorage.maybeOf(context)?.writeState(context, _expanded);
     if (_expanded) {
@@ -630,10 +615,6 @@ class _ToolMessage extends ConsumerWidget {
       ),
       isRunning: message.isRunning,
       isError: message.isError,
-      revealOutput:
-          message.toolName == 'shell' &&
-          message.isRunning &&
-          message.text.isNotEmpty,
       child: _toolBody(context, colors),
     );
   }
