@@ -43,16 +43,10 @@ final class OpenAIProviderConfiguration {
 /// Configuration for one model exposed by an OpenAI-compatible provider.
 final class OpenAIModelConfiguration {
   /// Creates a model configuration.
-  const OpenAIModelConfiguration({
-    required this.descriptor,
-    this.promptCacheEnabled = false,
-  });
+  const OpenAIModelConfiguration({required this.descriptor});
 
   /// The runtime model descriptor.
   final ModelDescriptor descriptor;
-
-  /// Whether to send the session identifier as a prompt cache key.
-  final bool promptCacheEnabled;
 }
 
 /// A safe provider failure with the endpoint identity and optional HTTP status.

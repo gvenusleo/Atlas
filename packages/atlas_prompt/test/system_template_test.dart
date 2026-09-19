@@ -16,7 +16,7 @@ void main() {
     ),
   ];
 
-  test('renders the dynamic context into the header', () {
+  test('appends the operating context after the static sections', () {
     final prompt = buildSystemPrompt(
       workingDirectory: '/work/project',
       tools: tools,
@@ -25,10 +25,14 @@ void main() {
       now: DateTime.utc(2026, 8, 10),
     );
 
-    expect(prompt, contains('Operating context: 2026-08-10'));
+    expect(prompt, contains('## Operating Context'));
+    expect(prompt, contains('- Today: 2026-08-10.'));
     expect(prompt, contains('Platform: macos'));
     expect(prompt, contains('Default shell: /bin/sh'));
     expect(prompt, contains('Working directory: /work/project'));
+    // The date is the only value that changes between requests; keeping it at
+    // the very end preserves the cached prefix above it.
+    expect(prompt, endsWith('- Today: 2026-08-10.'));
   });
 
   test('lists available tools when tools are provided', () {

@@ -217,11 +217,6 @@ OpenAIModelConfiguration _openAIModel(
   final id = _modelId(map, path, seen);
   return OpenAIModelConfiguration(
     descriptor: _descriptor(map, providerName, path, id),
-    promptCacheEnabled: _boolDefault(
-      map['prompt_cache'],
-      '$path.prompt_cache',
-      false,
-    ),
   );
 }
 
@@ -485,16 +480,6 @@ String? _stringOrNull(Object? value, String path) {
     return value;
   }
   throw ConfigLoadException('$path must be a string');
-}
-
-bool _boolDefault(Object? value, String path, bool fallback) {
-  if (value == null) {
-    return fallback;
-  }
-  if (value is bool) {
-    return value;
-  }
-  throw ConfigLoadException('$path must be a boolean');
 }
 
 int _intDefault(Object? value, String path, int fallback) {

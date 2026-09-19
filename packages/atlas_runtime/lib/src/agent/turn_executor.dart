@@ -209,14 +209,17 @@ final class TurnExecutor {
           sessionId: session.id,
           turnId: turn.id,
           model: model,
-          messages: ModelRequestComposer.applyInputCapabilities([
-            ...selectedSkillMessages,
-            ...ModelRequestComposer.projectTimeline(
-              timeline,
-              modelCheckpoints,
-              compaction: session.compaction,
+          messages: ModelRequestComposer.applyInputCapabilities(
+            ModelRequestComposer.withSkillInstructions(
+              ModelRequestComposer.projectTimeline(
+                timeline,
+                modelCheckpoints,
+                compaction: session.compaction,
+              ),
+              selectedSkillMessages,
             ),
-          ], capabilities),
+            capabilities,
+          ),
           systemPrompt: systemPromptBuilder(context),
           tools: tools.descriptors,
           reasoningEffort: request.reasoningEffort,

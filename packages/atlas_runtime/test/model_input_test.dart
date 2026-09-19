@@ -96,7 +96,7 @@ void main() {
     expect(user.content.whereType<ImageContent>(), hasLength(1));
     expect(store.turns.single.status, TurnStatus.completed);
   });
-  test('injects selected skills as leading non-persistent messages', () async {
+  test('injects selected skills as trailing non-persistent messages', () async {
     final store = MemorySessionStore();
     final provider = ScriptedProvider([
       const ModelResponse(
@@ -134,16 +134,19 @@ void main() {
         .toList();
 
     final messages = provider.requests.single.messages;
+    // Skill instructions are appended after the projected history so the
+    // prefix shared with earlier requests stays byte-identical.
+    expect(messages, hasLength(2));
     expect(messages.first.role, ModelMessageRole.user);
+    expect(textFromContent(messages.first.content), 'Use alpha');
+    expect(messages.last.role, ModelMessageRole.user);
     expect(
-      textFromContent(messages.first.content),
+      textFromContent(messages.last.content),
       contains(
         '<skill>\n<name>alpha</name>\n<path>/skills/alpha/SKILL.md</path>',
       ),
     );
-    expect(textFromContent(messages.first.content), contains('Follow these'));
-    expect(messages.last.role, ModelMessageRole.user);
-    expect(textFromContent(messages.last.content), 'Use alpha');
+    expect(textFromContent(messages.last.content), contains('Follow these'));
     expect(store.timeline, hasLength(2));
     expect(store.timeline.whereType<UserMessageItem>().single.content, const [
       TextContent('Use alpha'),
@@ -153,6 +156,75 @@ void main() {
       const [TextContent('Done.')],
     );
   });
+  test('keeps skill instructions ahead of the tool exchange', () async {
+    final store = MemorySessionStore();
+    final provider = ScriptedProvider([
+      ModelResponse(
+        content: const [TextContent('Inspecting.')],
+        toolCalls: [
+          ToolCall(
+            id: ToolCallId('call-1'),
+            name: 'read',
+            arguments: const <String, Object?>{'path': '/tmp/a'},
+          ),
+        ],
+        stopReason: StopReason.toolUse,
+      ),
+      const ModelResponse(
+        content: [TextContent('Done.')],
+        stopReason: StopReason.endTurn,
+      ),
+    ]);
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: MemoryTools(result: const ToolResult(content: 'file body')),
+      ids: TestIds(),
+      defaultModel: testModel,
+      sessionContextBuilder: contextBuilder(
+        MemorySkillCatalog(const [
+          Skill(
+            name: 'alpha',
+            description: 'Alpha skill.',
+            dir: '/skills/alpha',
+            path: '/skills/alpha/SKILL.md',
+            content: '# Alpha\n\nFollow these steps.',
+          ),
+        ]),
+      ),
+    );
+
+    await runtime
+        .run(
+          const TurnRequest(
+            content: [TextContent('Use alpha')],
+            workingDirectory: '/tmp',
+            skills: ['alpha'],
+          ),
+        )
+        .toList();
+
+    bool isSkill(ModelMessage message) =>
+        textFromContent(message.content).contains('<skill>');
+    String shape(ModelMessage message) =>
+        '${message.role.name}|${textFromContent(message.content)}|'
+        '${message.toolCalls.map((call) => call.name).join(',')}|'
+        '${message.toolOutput ?? ''}';
+
+    final first = provider.requests.first.messages;
+    final second = provider.requests.last.messages;
+    // The skill instructions sit directly after the user message and before
+    // the tool exchange, so the later request extends the earlier prefix
+    // instead of re-sending the instructions as fresh input.
+    expect(first.length, 2);
+    expect(first[0].role, ModelMessageRole.user);
+    expect(isSkill(first[0]), isFalse);
+    expect(isSkill(first[1]), isTrue);
+    expect(second.length, first.length + 2);
+    expect(second.indexWhere(isSkill), first.indexWhere(isSkill));
+    expect(second.map(shape).take(first.length), equals(first.map(shape)));
+  });
+
   test('skips unknown and disabled skills when injecting', () async {
     final store = MemorySessionStore();
     final provider = ScriptedProvider([

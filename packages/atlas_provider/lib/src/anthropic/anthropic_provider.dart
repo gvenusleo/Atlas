@@ -169,18 +169,31 @@ Map<String, Object?> _anthropicRequest(
       message: 'thinking budget must be less than max_tokens',
     );
   }
+  final messages = _anthropicMessages(request.messages);
+  // A breakpoint on the last message extends the cached prefix by one step per
+  // request instead of re-writing the whole conversation each time.
+  _markTrailingCacheBreakpoint(messages);
   final result = <String, Object?>{
     'model': descriptor.ref.modelId.value,
     'max_tokens': maxTokens,
-    'messages': _anthropicMessages(request.messages),
+    'messages': messages,
     'stream': true,
   };
   result.addAll(request.providerOptions);
   if (request.systemPrompt.isNotEmpty) {
-    result['system'] = request.systemPrompt;
+    result['system'] = <Object?>[
+      <String, Object?>{
+        'type': 'text',
+        'text': request.systemPrompt,
+        'cache_control': _ephemeralCache,
+      },
+    ];
   }
   final tools = _tools(request.tools);
   if (tools.isNotEmpty) {
+    // The tool block precedes the system prompt, so marking it caches the
+    // whole preamble that every request in the session shares.
+    (tools.last as Map<String, Object?>)['cache_control'] = _ephemeralCache;
     result['tools'] = tools;
   }
   if (!thinkingEnabled && request.temperature != null) {
@@ -324,3 +337,36 @@ List<Object?> _tools(List<ToolDescriptor> tools) => tools
       },
     )
     .toList();
+
+/// Cache breakpoint marker for Anthropic prompt caching.
+const _ephemeralCache = <String, Object?>{'type': 'ephemeral'};
+
+/// Marks the last cacheable block in [messages] as a cache breakpoint.
+///
+/// Thinking blocks cannot carry `cache_control`, so a trailing assistant turn
+/// made only of thinking ends the cached prefix at the last eligible block
+/// instead of at the very end of the conversation.
+void _markTrailingCacheBreakpoint(List<Object?> messages) {
+  for (var index = messages.length - 1; index >= 0; index--) {
+    final message = messages[index];
+    if (message is! Map<String, Object?>) {
+      continue;
+    }
+    final content = message['content'];
+    if (content is! List) {
+      continue;
+    }
+    for (var block = content.length - 1; block >= 0; block--) {
+      final entry = content[block];
+      if (entry is! Map<String, Object?>) {
+        continue;
+      }
+      final type = entry['type'];
+      if (type == 'thinking' || type == 'redacted_thinking') {
+        continue;
+      }
+      entry['cache_control'] = _ephemeralCache;
+      return;
+    }
+  }
+}

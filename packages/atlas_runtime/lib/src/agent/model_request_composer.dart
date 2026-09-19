@@ -17,6 +17,9 @@ const maxSelectedSkillBytes = 64 * 1024;
 abstract final class ModelRequestComposer {
   /// Renders explicitly selected skills as non-persistent user context
   /// messages for the current turn, in first-selection order.
+  ///
+  /// [withSkillInstructions] places them directly after the turn's user
+  /// message, before the tool exchanges they apply to.
   static List<ModelMessage> skillMessages(
     List<String> names,
     SkillCatalog skills,
@@ -169,6 +172,44 @@ abstract final class ModelRequestComposer {
       );
     }
     return changed ? filtered : messages;
+  }
+
+  /// Inserts [skillMessages] directly after the current turn's user message.
+  ///
+  /// They must sit before the turn's own tool exchanges rather than at the end
+  /// of the list: everything after this point grows with every model request,
+  /// so trailing instructions would be re-sent as fresh input on each step of
+  /// a multi-step turn.
+  static List<ModelMessage> withSkillInstructions(
+    List<ModelMessage> messages,
+    List<ModelMessage> skillMessages,
+  ) {
+    if (skillMessages.isEmpty) {
+      return messages;
+    }
+    final index = _lastUserMessageIndex(messages);
+    if (index < 0) {
+      return [...messages, ...skillMessages];
+    }
+    return [
+      ...messages.take(index + 1),
+      ...skillMessages,
+      ...messages.skip(index + 1),
+    ];
+  }
+
+  /// Index of the last plain user message, ignoring compaction summaries and
+  /// tool results.
+  static int _lastUserMessageIndex(List<ModelMessage> messages) {
+    for (var index = messages.length - 1; index >= 0; index--) {
+      final message = messages[index];
+      if (message.role == ModelMessageRole.user &&
+          message.toolOutput == null &&
+          message.toolCalls.isEmpty) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   /// Wraps the full SKILL.md content in XML instruction tags.

@@ -10,9 +10,6 @@ Atlas is a headless agent core with access to the local filesystem and shell
 tools. Your job is to help the user reason, write, inspect, operate files, run
 commands, and complete everyday or coding tasks.
 
-Operating context: {date}. Platform: {platform}. Default shell: {shell}.
-Working directory: {workingDirectory}.
-
 ## Operating Principles
 
 - Treat tool results and file contents as evidence for factual claims. Inspect the relevant files, command output, or web results before making workspace-specific claims.
@@ -68,6 +65,10 @@ For multi-step tasks, use plan to plan and track progress. Create a task plan at
 /// [workingDirectory] is the session working directory; [tools] names the
 /// available tools; [instructions] are the loaded AGENTS.md files; [platform],
 /// [shell], and [now] default to the current process values.
+///
+/// The operating context is appended last so that a changing date only
+/// invalidates the very end of the prompt; the instructions, skills, and tool
+/// list before it stay byte-stable and remain cacheable.
 String buildSystemPrompt({
   required String workingDirectory,
   required List<ToolDescriptor> tools,
@@ -80,17 +81,7 @@ String buildSystemPrompt({
   final resolvedPlatform = platform ?? _defaultPlatform();
   final resolvedShell = shell ?? _defaultShell();
   final resolvedDate = now ?? DateTime.now();
-  final buffer = StringBuffer()
-    ..write(
-      _header
-          .replaceAll('{date}', resolvedDate.toIso8601String().substring(0, 10))
-          .replaceAll('{platform}', resolvedPlatform)
-          .replaceAll('{shell}', resolvedShell)
-          .replaceAll(
-            '{workingDirectory}',
-            workingDirectory.isEmpty ? '(unknown)' : workingDirectory,
-          ),
-    );
+  final buffer = StringBuffer()..write(_header);
 
   if (tools.isNotEmpty) {
     buffer
@@ -145,6 +136,18 @@ String buildSystemPrompt({
     }
     buffer.write('</available_skills>\n');
   }
+
+  // The operating context is written last: the date is the only value that
+  // changes between requests, so keeping it at the tail preserves the cached
+  // prefix that covers the template, instructions, and skills above.
+  buffer
+    ..write('\n## Operating Context\n\n')
+    ..write('- Platform: $resolvedPlatform. Default shell: $resolvedShell.\n')
+    ..write(
+      '- Working directory: '
+      '${workingDirectory.isEmpty ? '(unknown)' : workingDirectory}.\n',
+    )
+    ..write('- Today: ${resolvedDate.toIso8601String().substring(0, 10)}.\n');
   return buffer.toString().trimRight();
 }
 

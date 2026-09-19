@@ -222,9 +222,16 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      // Skill instructions trail the projected history so the prompt prefix
+      // shared with earlier requests stays byte-identical.
       expect(provider.lastMessages!.first.role, ModelMessageRole.user);
       expect(
         textFromContent(provider.lastMessages!.first.content),
+        isNot(contains('<skill>')),
+      );
+      expect(provider.lastMessages!.last.role, ModelMessageRole.user);
+      expect(
+        textFromContent(provider.lastMessages!.last.content),
         contains('<skill>\n<name>check</name>'),
       );
     });

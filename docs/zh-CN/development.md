@@ -20,7 +20,7 @@ packages/atlas_ws            版本化 WebSocket 协议与 transport（Planned�
 packages/atlas_acp           ACP 适配器
 packages/atlas_mcp           MCP 适配器（Planned）
 packages/atlas_tui           Nocterm 展示 package
-apps/atlas_cli               atlas CLI、TUI 与其他命令（规划的 `atlas server` 子命令）
+apps/atlas_cli               atlas CLI 与 TUI，另有 `atlas acp`、`atlas server`、`atlas cache` 子命令
 apps/atlas_flutter           Flutter 桌面端与移动端应用
 ```
 

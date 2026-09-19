@@ -39,7 +39,6 @@ providers:
         context_window: 128000
         max_tokens: 4096
         input_capabilities: [text, image]  # 可选，默认 [text]
-        prompt_cache: true            # 可选，默认 false
 
 agent:
   max_steps: 20                       # 可选，默认 20

@@ -7,6 +7,7 @@ import 'package:drift/native.dart';
 
 import '../database/database.dart';
 import '../mappers/row_mappers.dart';
+import '../turn_usage.dart';
 
 /// Drift-backed implementation of the runtime session persistence port.
 final class DriftSessionStore
@@ -26,6 +27,39 @@ final class DriftSessionStore
 
   final AtlasDatabase _database;
   final RowMappers _mappers;
+
+  /// Loads the most recent [limit] turns, newest first, for picking a sample.
+  ///
+  /// The token columns on each sample are the turn's recorded usage, which
+  /// only covers the turn's last model response; per-request accounting reads
+  /// every assistant item's usage from the timeline instead.
+  Future<List<TurnUsageSample>> recentTurnUsage({int limit = 200}) async {
+    final query =
+        _database.select(_database.turns).join([
+            innerJoin(
+              _database.sessions,
+              _database.sessions.id.equalsExp(_database.turns.sessionId),
+            ),
+          ])
+          ..orderBy([OrderingTerm.desc(_database.turns.startedAt)])
+          ..limit(limit);
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        TurnUsageSample(
+          sessionId: row.readTable(_database.turns).sessionId,
+          turnId: row.readTable(_database.turns).id,
+          title: row.readTable(_database.sessions).title,
+          startedAt: row.readTable(_database.turns).startedAt.toUtc(),
+          providerId: row.readTable(_database.turns).providerId,
+          modelId: row.readTable(_database.turns).modelId,
+          inputTokens: row.readTable(_database.turns).inputTokens,
+          outputTokens: row.readTable(_database.turns).outputTokens,
+          cacheReadTokens: row.readTable(_database.turns).cacheReadTokens,
+          cacheWriteTokens: row.readTable(_database.turns).cacheWriteTokens,
+        ),
+    ];
+  }
 
   /// Closes the underlying database connection.
   Future<void> close() => _database.close();

@@ -38,7 +38,6 @@ providers:
         context_window: 128000
         max_tokens: 4096
         input_capabilities: [text, image]
-        prompt_cache: true
 agent:
   max_steps: 10
   temperature: 0.7
@@ -83,7 +82,6 @@ session:
     final openai = config.providers.last as ConfiguredOpenAI;
     expect(openai.configuration.protocol, OpenAIProtocol.responses);
     expect(openai.configuration.userAgent, 'Atlas');
-    expect(openai.configuration.models.single.promptCacheEnabled, isTrue);
     expect(openai.configuration.models.single.descriptor.inputCapabilities, {
       ModelInputCapability.text,
       ModelInputCapability.image,
@@ -119,7 +117,6 @@ providers:
     expect(descriptor.maxOutputTokens, 0);
     expect(descriptor.inputCapabilities, const {ModelInputCapability.text});
     expect(descriptor.reasoningEfforts, isEmpty);
-    expect(openai.configuration.models.single.promptCacheEnabled, isFalse);
     expect(config.agent.maxSteps, 20);
     expect(config.agent.maxOutputTokens, 0);
     expect(config.agent.compaction.threshold, 0.8);

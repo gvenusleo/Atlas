@@ -32,6 +32,8 @@ The repository currently contains:
   subcommand: bearer-token auth, one ACP JSON-RPC message per text frame, and
   automatic client reconnection, so the Flutter mobile app can drive the
   computer's Atlas from anywhere on the Tailscale/private network;
+- an `atlas cache` subcommand that reports prompt-cache reuse from the session
+  database, grouped by provider and session;
 - architecture and development contracts for the Dart implementation.
 
 MCP integration is not implemented yet. The CLI builds as a single executable

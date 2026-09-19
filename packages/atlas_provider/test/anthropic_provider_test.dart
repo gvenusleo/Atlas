@@ -35,7 +35,21 @@ void main() {
     expect(response.usage.cacheReadInputTokens, 1);
     expect(requests.single['stream'], isTrue);
     expect(requests.single['max_tokens'], 4096);
-    expect(requests.single['system'], 'Be concise.');
+    expect(requests.single['system'], [
+      {
+        'type': 'text',
+        'text': 'Be concise.',
+        'cache_control': {'type': 'ephemeral'},
+      },
+    ]);
+    final tools = (requests.single['tools'] as List)
+        .cast<Map<String, Object?>>();
+    expect(tools.single['cache_control'], {'type': 'ephemeral'});
+    final messages = (requests.single['messages'] as List)
+        .cast<Map<String, Object?>>();
+    final trailing = (messages.last['content'] as List)
+        .cast<Map<String, Object?>>();
+    expect(trailing.last['cache_control'], {'type': 'ephemeral'});
   });
 
   test('streams Anthropic tool use from split input JSON', () async {
@@ -207,6 +221,66 @@ void main() {
     expect(content.first['signature'], 'sig-1');
     expect(content.first['thinking'], '');
     expect(content[1], {'type': 'redacted_thinking', 'data': 'opaque-data'});
+    expect(content.first.containsKey('cache_control'), isFalse);
+    final trailing = (messages.last['content'] as List)
+        .cast<Map<String, Object?>>();
+    expect(trailing.single['cache_control'], {'type': 'ephemeral'});
+  });
+
+  test('marks the trailing breakpoint on the last non-thinking block', () async {
+    final requests = <Map<String, Object?>>[];
+    final server = await _startServer((request) async {
+      requests.add(
+        jsonDecode(await utf8.decoder.bind(request).join())
+            as Map<String, Object?>,
+      );
+      await _sendSse(request.response, [
+        '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+        '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+        '{"type":"content_block_stop","index":0}',
+        '{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
+        '{"type":"message_stop"}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    await _provider(server)
+        .stream(
+          _request(
+            messages: [
+              const ModelMessage(
+                role: ModelMessageRole.user,
+                content: [TextContent('Hi')],
+              ),
+              ModelMessage(
+                role: ModelMessageRole.assistant,
+                content: [TextContent('done')],
+                continuation: ModelContinuation(
+                  providerId: ProviderId('anthropic'),
+                  opaquePayload: {
+                    'thinking_blocks': [
+                      {
+                        'type': 'thinking',
+                        'thinking': 'hmm',
+                        'signature': 'sig-1',
+                      },
+                    ],
+                  },
+                ),
+              ),
+            ],
+          ),
+        )
+        .toList();
+
+    final messages = (requests.single['messages'] as List)
+        .cast<Map<String, Object?>>();
+    final assistant = (messages.last['content'] as List)
+        .cast<Map<String, Object?>>();
+    expect(assistant.map((block) => block['type']), ['thinking', 'text']);
+    expect(assistant.first.containsKey('cache_control'), isFalse);
+    expect(assistant.last['cache_control'], {'type': 'ephemeral'});
   });
 
   test('sends Anthropic headers, tools, and thinking configuration', () async {
@@ -335,6 +409,8 @@ void main() {
           'media_type': 'text/x-dart',
           'data': 'void main() {}',
         },
+        // The trailing block of the last message carries the cache breakpoint.
+        'cache_control': {'type': 'ephemeral'},
       },
     ]);
   });

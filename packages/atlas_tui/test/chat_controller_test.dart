@@ -496,10 +496,22 @@ void main() {
 
     await controller.send('/check review', selectedSkills: ['check']);
 
-    expect(provider.lastMessages!.first.role, ModelMessageRole.user);
+    // Skill instructions are injected right after the user's own message, ahead
+    // of the turn's tool exchange, so the prompt prefix stays byte-identical
+    // across the turn's model requests.
+    final messages = provider.lastMessages!;
+    expect(messages.first.role, ModelMessageRole.user);
+    expect(textFromContent(messages.first.content), isNot(contains('<skill>')));
+    expect(messages[1].role, ModelMessageRole.user);
     expect(
-      textFromContent(provider.lastMessages!.first.content),
+      textFromContent(messages[1].content),
       contains('<skill>\n<name>check</name>'),
+    );
+    expect(
+      messages.where(
+        (message) => textFromContent(message.content).contains('<skill>'),
+      ),
+      hasLength(1),
     );
   });
 

@@ -20,7 +20,7 @@ packages/atlas_ws            versioned WebSocket protocol and transport (Planned
 packages/atlas_acp           ACP adapter
 packages/atlas_mcp           MCP adapter (Planned)
 packages/atlas_tui           Nocterm presentation package
-apps/atlas_cli               atlas CLI, TUI, and other commands (planned `atlas server` subcommand)
+apps/atlas_cli               atlas CLI and TUI, with the `atlas acp`, `atlas server`, and `atlas cache` subcommands
 apps/atlas_flutter           Flutter desktop and mobile application
 ```
 

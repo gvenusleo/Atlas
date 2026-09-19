@@ -181,9 +181,9 @@ Map<String, Object?> _chatRequest(ModelRequest request, _ModelEntry entry) {
   if (request.reasoningEffort != null) {
     result['reasoning_effort'] = request.reasoningEffort;
   }
-  if (entry.configuration.promptCacheEnabled) {
-    result['prompt_cache_key'] = request.sessionId.value;
-  }
+  // Always sent so the provider can route a session's requests to the same
+  // cached prefix instead of billing every request as fresh input.
+  result['prompt_cache_key'] = request.sessionId.value;
   return result;
 }
 
@@ -217,9 +217,9 @@ Map<String, Object?> _responsesRequest(
   if (request.reasoningEffort != null) {
     result['reasoning'] = <String, Object?>{'effort': request.reasoningEffort};
   }
-  if (entry.configuration.promptCacheEnabled) {
-    result['prompt_cache_key'] = request.sessionId.value;
-  }
+  // Always sent so the provider can route a session's requests to the same
+  // cached prefix instead of billing every request as fresh input.
+  result['prompt_cache_key'] = request.sessionId.value;
   return result;
 }
 

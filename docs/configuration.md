@@ -40,7 +40,6 @@ providers:
         context_window: 128000
         max_tokens: 4096
         input_capabilities: [text, image]  # optional, default [text]
-        prompt_cache: true            # optional, default false
 
 agent:
   max_steps: 20                       # optional, default 20
