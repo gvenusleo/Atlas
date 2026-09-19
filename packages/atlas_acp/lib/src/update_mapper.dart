@@ -23,6 +23,7 @@ final class TurnUpdateMapper {
   String? _messageId;
   int _messageCounter = 0;
   final _planCallIds = <String>{};
+  final _shellCallIds = <String>{};
   final _fileCallIds = <String>{};
 
   /// Converts [event] into zero or more `session/update` notifications.
@@ -56,6 +57,11 @@ final class TurnUpdateMapper {
           _planCallIds.add(call.call.id.value);
           return [planUpdate(plan)];
         }
+        // The pending tool call already carries the display terminal for shell
+        // calls, so a status-only update leaves that terminal in place.
+        if (_isShell(call.call.name)) {
+          _shellCallIds.add(call.call.id.value);
+        }
         return [
           ToolCallStatusUpdate(
             update: ToolCallUpdate(
@@ -70,7 +76,11 @@ final class TurnUpdateMapper {
             update: ToolCallUpdate(
               toolCallId: callId.value,
               status: ToolCallStatus.inProgress,
-              content: _textOutput(output.content),
+              // Shell output renders through the client terminal, so its
+              // snapshots travel in rawOutput only.
+              content: _shellCallIds.contains(callId.value)
+                  ? null
+                  : _textOutput(output.content),
               rawOutput: {
                 'output': output.content,
                 'truncated': output.truncated,
@@ -83,7 +93,9 @@ final class TurnUpdateMapper {
         if (_planCallIds.contains(result.callId.value)) {
           return const [];
         }
-        final diff = _fileCallIds.contains(result.callId.value)
+        final isShell = _shellCallIds.contains(result.callId.value);
+        final exitCode = (result.metadata['exit_code'] as num?)?.toInt();
+        final diff = !isShell && _fileCallIds.contains(result.callId.value)
             ? _diffContent(result)
             : null;
         return [
@@ -93,9 +105,18 @@ final class TurnUpdateMapper {
               status: result.isError
                   ? ToolCallStatus.failed
                   : ToolCallStatus.completed,
-              content: diff != null ? [diff] : _textOutput(result.content),
+              content: isShell
+                  ? [terminalToolCallContent(result.callId.value)]
+                  : (diff != null ? [diff] : _textOutput(result.content)),
               rawOutput: _toolRawOutput(result.content, result.metadata),
               locations: diff != null ? _diffLocation(result) : null,
+              meta: isShell
+                  ? shellTerminalUpdateMeta(
+                      result.callId.value,
+                      result.content,
+                      exitCode,
+                    )
+                  : null,
             ),
           ),
         ];
@@ -111,8 +132,13 @@ final class TurnUpdateMapper {
     }
   }
 
-  /// Builds a pending update and remembers file calls eligible for diffs.
+  /// Builds a pending update and remembers shell and file calls, whose
+  /// results keep the client terminal or render as diffs.
   SessionUpdate _toolCallUpdate(rt.ToolCallItem item) {
+    final isShell = _isShell(item.call.name);
+    if (isShell) {
+      _shellCallIds.add(item.call.id.value);
+    }
     if (_isFileTool(item.call.name)) {
       _fileCallIds.add(item.call.id.value);
     }
@@ -128,9 +154,17 @@ final class TurnUpdateMapper {
           item.call.arguments,
           workingDirectory: workingDirectory,
         ),
+        content: isShell
+            ? [terminalToolCallContent(item.call.id.value)]
+            : const [],
+        meta: isShell
+            ? shellTerminalInfo(item.call.id.value, item.call.arguments)
+            : null,
       ),
     );
   }
+
+  static bool _isShell(String name) => name == 'shell';
 
   static bool _isFileTool(String name) => name == 'write' || name == 'edit';
 
@@ -153,6 +187,9 @@ List<SessionUpdate> replayTimeline(
   // follow their owning call in the timeline, so a FIFO queue matches them
   // even when the model reuses a call id across turns.
   final pendingPlanResults = <String>[];
+  // Call ids of shell tool calls, whose results stream into the client
+  // terminal.
+  final pendingShellResults = <String>[];
   // Call ids of write/edit tool calls, whose results render as diffs.
   final pendingFileResults = <String>[];
   final resultCallIds = <(rt.TurnId, String)>{
@@ -195,8 +232,12 @@ List<SessionUpdate> replayTimeline(
           pendingPlanResults.add(call.id.value);
           updates.add(planUpdate(plan));
         } else {
+          final isShell = call.name == 'shell';
           final isFile = call.name == 'write' || call.name == 'edit';
           final hasResult = resultCallIds.contains((turnId, call.id.value));
+          if (isShell && hasResult) {
+            pendingShellResults.add(call.id.value);
+          }
           if (isFile && hasResult) {
             pendingFileResults.add(call.id.value);
           }
@@ -215,13 +256,18 @@ List<SessionUpdate> replayTimeline(
                   call.arguments,
                   workingDirectory: workingDirectory,
                 ),
-                content: !hasResult
-                    ? [
-                        ToolCallContentBlock(
-                          content: TextContentBlock(text: 'interrupted'),
-                        ),
-                      ]
-                    : const [],
+                content: isShell && hasResult
+                    ? [terminalToolCallContent(call.id.value)]
+                    : (!hasResult
+                          ? [
+                              ToolCallContentBlock(
+                                content: TextContentBlock(text: 'interrupted'),
+                              ),
+                            ]
+                          : const []),
+                meta: isShell && hasResult
+                    ? shellTerminalInfo(call.id.value, call.arguments)
+                    : null,
               ),
             ),
           );
@@ -232,12 +278,19 @@ List<SessionUpdate> replayTimeline(
           pendingPlanResults.removeAt(0);
           break;
         }
+        final isShell =
+            pendingShellResults.isNotEmpty &&
+            pendingShellResults.first == callId.value;
+        if (isShell) {
+          pendingShellResults.removeAt(0);
+        }
         final isFile =
             pendingFileResults.isNotEmpty &&
             pendingFileResults.first == callId.value;
         if (isFile) {
           pendingFileResults.removeAt(0);
         }
+        final exitCode = (item.metadata['exit_code'] as num?)?.toInt();
         final diff = isFile ? _diffContent(item) : null;
         updates.add(
           ToolCallStatusUpdate(
@@ -246,9 +299,14 @@ List<SessionUpdate> replayTimeline(
               status: isError
                   ? ToolCallStatus.failed
                   : ToolCallStatus.completed,
-              content: diff != null ? [diff] : _textOutput(content),
+              content: isShell
+                  ? [terminalToolCallContent(callId.value)]
+                  : (diff != null ? [diff] : _textOutput(content)),
               rawOutput: _toolRawOutput(content, item.metadata),
               locations: diff != null ? _diffLocation(item) : null,
+              meta: isShell
+                  ? shellTerminalUpdateMeta(callId.value, content, exitCode)
+                  : null,
             ),
           ),
         );

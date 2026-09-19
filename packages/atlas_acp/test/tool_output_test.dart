@@ -75,9 +75,11 @@ void main() {
           final decoded = acp.SessionUpdate.fromJson(update.toJson());
           final output = (decoded as acp.ToolCallStatusUpdate).update;
           if (output.content != null) {
-            expect(output.content!.whereType<acp.ToolCallTerminal>(), isEmpty);
+            // Shell calls keep the display terminal reference so clients keep
+            // rendering them as terminals; the text travels in rawOutput.
+            expect(output.content, hasLength(1));
             expect(
-              output.content!.whereType<acp.ToolCallContentBlock>(),
+              output.content!.whereType<acp.ToolCallTerminal>(),
               hasLength(1),
             );
           }
