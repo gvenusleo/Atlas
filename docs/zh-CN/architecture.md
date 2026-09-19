@@ -69,7 +69,7 @@ text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接�
 | `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
 | `atlas_composition` | 共用的应用组装：构造 provider、工具、存储、提示词与唯一 runtime |
 | `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根；委托 `atlas_composition` 构造 runtime |
-| `atlas_flutter` | 桌面端与移动端 ACP 客户端；移动端通过远程连接页接入 `atlas server`，远程模式下不展示本地文件与终端 |
+| `atlas_flutter` | 桌面端与移动端 ACP 客户端；移动端通过远程连接页接入 `atlas server`，远程模式下不展示本地文件与终端；主题等客户端本地偏好存于 `shared_preferences` |
 
 ## 依赖规则
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -11,7 +12,6 @@ import '../../../../shared/theme/atlas_theme.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
-import 'settings_dialog.dart';
 import 'side_panel.dart';
 import 'workspace_controls.dart';
 
@@ -42,12 +42,33 @@ class SessionsPanel extends ConsumerWidget {
               onPressed: onClose!,
             )
           : const SizedBox(width: 40),
+      footer: const _SessionsPanelToolbar(),
       child: environment == null
           ? const PanelEmptyState(
               icon: LucideIcons.triangleAlert,
               message: 'Runtime unavailable',
             )
           : _SessionList(onClose: onClose),
+    );
+  }
+}
+
+/// Bottom toolbar of the sessions panel holding the settings entry.
+class _SessionsPanelToolbar extends StatelessWidget {
+  const _SessionsPanelToolbar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
+      child: Align(
+        alignment: Alignment.bottomLeft,
+        child: WorkspaceToolbarButton(
+          icon: LucideIcons.settings,
+          tooltip: 'Settings',
+          onPressed: () => context.push('/settings'),
+        ),
+      ),
     );
   }
 }
@@ -376,20 +397,6 @@ class _SessionListState extends ConsumerState<_SessionList> {
                     ],
                   ),
                 ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
-          child: Align(
-            alignment: Alignment.bottomLeft,
-            child: WorkspaceToolbarButton(
-              icon: LucideIcons.settings,
-              tooltip: 'Settings',
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (context) => const SettingsDialog(),
-              ),
-            ),
-          ),
         ),
       ],
     );

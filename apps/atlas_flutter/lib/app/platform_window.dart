@@ -10,13 +10,19 @@ bool get usesManagedDesktopWindow =>
     Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
 /// Initializes the native desktop window before the Flutter app starts.
-Future<void> initializePlatformWindow() async {
+///
+/// [initialBrightness] seeds the window background with the appearance the
+/// preference store already resolved; without it the platform appearance is
+/// used. Both only cover the first frame, after which the application keeps
+/// the window synchronized with the resolved theme.
+Future<void> initializePlatformWindow({Brightness? initialBrightness}) async {
   if (!usesManagedDesktopWindow) {
     return;
   }
 
   await windowManager.ensureInitialized();
   final brightness =
+      initialBrightness ??
       WidgetsBinding.instance.platformDispatcher.platformBrightness;
   final windowOptions = WindowOptions(
     size: const Size(1200, 760),

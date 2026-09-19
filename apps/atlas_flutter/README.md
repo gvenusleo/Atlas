@@ -53,10 +53,15 @@ animates the caret with spring-driven corner physics.
 lib/main.dart                            bootstrap and ProviderScope
 lib/app                                  application root, routing, platform window, runtime bootstrap
 lib/features/<feature>/application       feature controllers and state
-lib/features/<feature>/data              local filesystem and terminal access
+lib/features/<feature>/data              local filesystem, terminal, and preference access
 lib/features/<feature>/presentation      feature pages, layouts, and widgets
 lib/shared                               application-wide theme and shared UI
 ```
+
+Client-local preferences live in `lib/app`: `theme_mode.dart` reads and
+persists the theme mode with `shared_preferences`, and `atlas_app.dart`
+applies it. The settings page (`/settings`) owns appearance preferences and
+ACP connection management, and reuses the workspace window chrome.
 
 ## Run and Verify
 

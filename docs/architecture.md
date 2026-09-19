@@ -76,7 +76,7 @@ connects external tools to the tool layer.
 | `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
 | `atlas_composition` | Shared application composition for configured providers, tools, storage, prompts, and the single runtime |
 | `atlas_cli` | Composition root for the default TUI and other CLI commands; delegates runtime construction to `atlas_composition` |
-| `atlas_flutter` | Desktop and mobile ACP client; remote WebSocket mode is planned |
+| `atlas_flutter` | Desktop and mobile ACP client; remote WebSocket mode is planned; the theme preference is client-local (`shared_preferences`) |
 
 ## Dependency Rules
 

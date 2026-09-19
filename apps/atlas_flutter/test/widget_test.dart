@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:atlas_flutter/app/app_router.dart';
 import 'package:atlas_flutter/app/atlas_app.dart';
+import 'package:atlas_flutter/app/theme_mode.dart';
+import 'package:atlas_flutter/features/workspace/presentation/settings_page.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_page.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_metrics.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_shell.dart';
@@ -464,6 +466,196 @@ void main() {
       expect(find.byTooltip('Show sessions'), findsOneWidget);
     },
   );
+
+  testShell(
+    'a seeded dark preference overrides a light platform',
+    const Size(1200, 760),
+    child: ProviderScope(
+      overrides: [
+        themeModeProvider.overrideWith(
+          () => ThemeModeController(initial: ThemeMode.dark),
+        ),
+      ],
+      child: const AtlasApp(),
+    ),
+    (tester) async {
+      // Widget tests report a light platform; the stored preference wins.
+      final center = tester.widget<ColoredBox>(
+        find.byKey(const ValueKey('atlas-center-panel')),
+      );
+      expect(center.color, AtlasPalette.standard.dark.canvas);
+      expect(
+        AtlasColors.of(tester.element(find.text('New session'))),
+        same(AtlasPalette.standard.dark),
+      );
+      expect(_overlayStyleOf(tester), SystemUiOverlayStyle.light);
+    },
+  );
+
+  testShell(
+    'the settings page switches the running theme',
+    const Size(1200, 760),
+    (tester) async {
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsOneWidget);
+
+      await tester.tap(find.text('Dark'));
+      await tester.pumpAndSettle();
+
+      expect(
+        Theme.of(tester.element(find.byType(SettingsPage))).brightness,
+        Brightness.dark,
+      );
+      expect(
+        tester
+            .widget<ColoredBox>(
+              find.byKey(
+                const ValueKey('atlas-center-panel'),
+                skipOffstage: false,
+              ),
+            )
+            .color,
+        AtlasPalette.standard.dark.canvas,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('atlas-settings-back')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsNothing);
+      expect(find.byType(WorkspacePage), findsOneWidget);
+    },
+  );
+
+  testShell(
+    'the settings page is a section rail beside a content pane',
+    const Size(1200, 760),
+    (tester) async {
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+
+      // The rail reuses the sessions sidebar skeleton and carries the
+      // navigation: the back button sits in its header, clear of the macOS
+      // traffic lights, instead of in a toolbar above the whole window.
+      final rail = find.byKey(const ValueKey('atlas-settings-rail'));
+      expect(tester.getTopLeft(rail).dx, 0);
+      expect(tester.getTopLeft(rail).dy, 0);
+      expect(tester.getSize(rail).width, SettingsPage.railWidth);
+      final back = find.byKey(const ValueKey('atlas-settings-back'));
+      expect(find.descendant(of: rail, matching: back), findsOneWidget);
+      expect(
+        tester.getTopLeft(back).dx,
+        WorkspaceMetrics.macOSTrafficLightInset,
+      );
+      expect(
+        tester.getBottomLeft(back).dy,
+        lessThan(WorkspaceMetrics.desktopToolbarHeight),
+      );
+      expect(
+        tester
+            .widget<ColoredBox>(
+              find
+                  .descendant(of: rail, matching: find.byType(ColoredBox))
+                  .first,
+            )
+            .color,
+        AtlasPalette.standard.light.panel,
+      );
+
+      // The pane starts after the rail, and its title and row label share one
+      // left edge 32px in, instead of floating in a centered form.
+      final pane = find.byKey(const ValueKey('atlas-settings-pane'));
+      const contentLeft = SettingsPage.railWidth + 1 + 32;
+      expect(tester.getTopLeft(pane).dx, SettingsPage.railWidth + 1);
+      expect(
+        tester
+            .getTopLeft(
+              find.descendant(of: pane, matching: find.text('Appearance')),
+            )
+            .dx,
+        contentLeft,
+      );
+      expect(tester.getTopLeft(find.text('Theme')).dx, contentLeft);
+
+      // Rows are bounded so a wide window cannot stretch a label away from its
+      // control.
+      final sectionDivider = find
+          .descendant(of: pane, matching: find.byType(Divider))
+          .last;
+      expect(tester.getSize(sectionDivider).width, SettingsPage.columnWidth);
+
+      // The selector is a compact control trailing the row, not a Material
+      // default that outweighs the row text. Material clamps the segment
+      // height to 32 even with the compact density.
+      final selector = find.byType(SegmentedButton<ThemeMode>);
+      expect(tester.getSize(selector).height, 32);
+      expect(
+        tester.getTopRight(selector).dx,
+        contentLeft + SettingsPage.columnWidth,
+      );
+    },
+  );
+
+  testShell(
+    'the settings page stacks the selector on narrow windows',
+    const Size(390, 844),
+    platform: TargetPlatform.android,
+    (tester) async {
+      // Compact layouts keep the session panel in a drawer.
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+
+      // Compact layouts drop the rail and keep the pane only.
+      expect(find.byKey(const ValueKey('atlas-settings-rail')), findsNothing);
+
+      final selector = find.byType(SegmentedButton<ThemeMode>);
+      expect(
+        tester.getTopLeft(selector).dy,
+        greaterThan(tester.getBottomLeft(find.text('Theme')).dy),
+      );
+      expect(
+        tester.getTopLeft(selector).dx,
+        tester.getTopLeft(find.text('Theme')).dx,
+      );
+
+      // The rail is gone, so the pane carries the section strip instead.
+      await tester.tap(
+        find.byKey(const ValueKey('atlas-settings-strip-connections')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Theme'), findsNothing);
+      expect(find.text('Add connection'), findsOneWidget);
+    },
+  );
+
+  testShell(
+    'the rail switches to the ACP connections section',
+    const Size(1200, 760),
+    (tester) async {
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Theme'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('atlas-settings-rail-connections')),
+      );
+      await tester.pumpAndSettle();
+
+      // The appearance rows give way to the connection manager in the same
+      // pane, so every settings surface lives on one page.
+      expect(find.text('Theme'), findsNothing);
+      expect(find.text('Add connection'), findsOneWidget);
+      expect(find.text('Remote connections'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('atlas-settings-rail-appearance')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Theme'), findsOneWidget);
+      expect(find.text('Add connection'), findsNothing);
+    },
+  );
 }
 
 /// Pumps the workspace shell at [size] on [platform] and restores the
@@ -474,6 +666,7 @@ void testShell(
   Future<void> Function(WidgetTester tester) body, {
   TargetPlatform platform = TargetPlatform.macOS,
   bool disableAnimations = false,
+  Widget? child,
 }) {
   // Widget tests default to Android; desktop scenarios pin a desktop platform.
   testWidgets(description, (tester) async {
@@ -486,7 +679,7 @@ void testShell(
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = size;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(const ProviderScope(child: AtlasApp()));
+      await tester.pumpWidget(child ?? const ProviderScope(child: AtlasApp()));
       await tester.pumpAndSettle();
       await body(tester);
     } finally {

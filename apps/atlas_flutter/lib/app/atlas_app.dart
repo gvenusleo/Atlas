@@ -10,6 +10,7 @@ import '../shared/theme/atlas_theme.dart';
 import 'app_router.dart';
 import 'platform_window.dart';
 import 'runtime_environment.dart';
+import 'theme_mode.dart';
 
 /// Root application for the Atlas desktop and mobile clients.
 class AtlasApp extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class AtlasApp extends ConsumerStatefulWidget {
 class _AtlasAppState extends ConsumerState<AtlasApp>
     with WidgetsBindingObserver {
   RuntimeEnvironment? _runtimeEnvironment;
+  Brightness? _syncedBrightness;
 
   @override
   void initState() {
@@ -35,13 +37,6 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_runtimeEnvironment?.close());
     super.dispose();
-  }
-
-  @override
-  void didChangePlatformBrightness() {
-    final brightness =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness;
-    unawaited(syncPlatformWindowBackground(brightness));
   }
 
   @override
@@ -61,12 +56,18 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
       debugShowCheckedModeBanner: false,
       theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
       darkTheme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
-      themeMode: ThemeMode.system,
+      themeMode: ref.watch(themeModeProvider),
       routerConfig: ref.watch(appRouterProvider),
       builder: (context, child) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
+        // The window chrome follows the resolved appearance, not the platform:
+        // a forced light or dark mode has to repaint the native background.
+        final brightness = Theme.of(context).brightness;
+        if (brightness != _syncedBrightness) {
+          _syncedBrightness = brightness;
+          unawaited(syncPlatformWindowBackground(brightness));
+        }
         return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: isDark
+          value: brightness == Brightness.dark
               ? SystemUiOverlayStyle.light
               : SystemUiOverlayStyle.dark,
           child: child ?? const SizedBox.shrink(),

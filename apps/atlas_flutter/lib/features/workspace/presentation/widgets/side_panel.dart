@@ -15,6 +15,7 @@ class SidePanel extends StatelessWidget {
     this.compact = false,
     this.title,
     this.action,
+    this.footer,
     this.useCanvasColor = false,
   });
 
@@ -26,6 +27,10 @@ class SidePanel extends StatelessWidget {
   final bool compact;
   final Widget? title;
   final Widget? action;
+
+  /// Optional toolbar pinned below the scrolling content.
+  final Widget? footer;
+
   final bool useCanvasColor;
 
   @override
@@ -65,6 +70,7 @@ class SidePanel extends StatelessWidget {
             ),
             const Divider(),
             Expanded(child: child),
+            if (footer != null) footer!,
           ],
         ),
       ),

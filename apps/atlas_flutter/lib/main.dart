@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'app/atlas_app.dart';
 import 'app/platform_window.dart';
 import 'app/runtime_environment.dart';
+import 'app/theme_mode.dart';
 
 /// Whether this build targets a phone or tablet.
 ///
@@ -23,8 +24,14 @@ bool get isMobileClient =>
 /// connection screen is the entry point.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The theme preference is read before the first frame so the window opens in
+  // the stored appearance instead of flashing the platform default.
+  final preferences = await openThemePreferences();
+  final themeMode = loadThemeMode(preferences);
   if (!isMobileClient) {
-    await initializePlatformWindow();
+    await initializePlatformWindow(
+      initialBrightness: _effectiveBrightness(themeMode),
+    );
     // Atlas ships without the App Sandbox, so the macOS file dialogs carry no
     // file-access entitlements; without this the picker refuses to open.
     await FilePicker.skipEntitlementsChecks();
@@ -37,10 +44,25 @@ Future<void> main() async {
     ProviderScope(
       overrides: [
         runtimeEnvironmentProvider.overrideWith(() => controller),
+        themeModeProvider.overrideWith(
+          () =>
+              ThemeModeController(initial: themeMode, preferences: preferences),
+        ),
         if (!isMobileClient)
           runtimeStartupErrorProvider.overrideWithValue(bootstrap!.error),
       ],
       child: const AtlasApp(),
     ),
   );
+}
+
+/// Resolves the appearance the window and the first frame should use.
+Brightness _effectiveBrightness(ThemeMode mode) {
+  final platform =
+      WidgetsBinding.instance.platformDispatcher.platformBrightness;
+  return switch (mode) {
+    ThemeMode.light => Brightness.light,
+    ThemeMode.dark => Brightness.dark,
+    ThemeMode.system => platform,
+  };
 }
