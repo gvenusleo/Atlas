@@ -1,134 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-/// Semantic colors shared by the Atlas application shell.
-///
-/// Values come from the Token Temper palette of
-/// [ThorstenRhau/token](https://github.com/ThorstenRhau/token) at commit
-/// `1538e1e` (`lua/token/palettes/temper.lua`, BSD-3-Clause), one upstream
-/// field per token: `canvas` is `bg3`, `panel` `bg1`, `raised` `bg5`,
-/// `divider` `line_nr`, the text ramp `fg0`/`fg2`, `accent`/`success`/
-/// `warning`/`error` are `accent`/`green`/`yellow`/`red`, and `scrim` is `fg0`
-/// at the conventional overlay alpha.
-@immutable
-class AtlasColors extends ThemeExtension<AtlasColors> {
-  const AtlasColors({
-    required this.canvas,
-    required this.panel,
-    required this.raised,
-    required this.divider,
-    required this.textPrimary,
-    required this.textSecondary,
-    required this.accent,
-    required this.success,
-    required this.warning,
-    required this.error,
-    required this.scrim,
-  });
-
-  static const light = AtlasColors(
-    canvas: Color(0xFFF5F7F8),
-    panel: Color(0xFFE7EBEF),
-    raised: Color(0xFFE0E5EA),
-    divider: Color(0xFFA7B2BB),
-    textPrimary: Color(0xFF283039),
-    textSecondary: Color(0xFF414C57),
-    accent: Color(0xFF005850),
-    success: Color(0xFF005B53),
-    warning: Color(0xFF946B1E),
-    error: Color(0xFFBF3F50),
-    scrim: Color(0x52283039),
-  );
-
-  static const dark = AtlasColors(
-    canvas: Color(0xFF272C33),
-    panel: Color(0xFF1C2127),
-    raised: Color(0xFF373E47),
-    divider: Color(0xFF535D68),
-    textPrimary: Color(0xFFC3C8CC),
-    textSecondary: Color(0xFF9AA4AE),
-    accent: Color(0xFF5CC1B3),
-    success: Color(0xFF5EC4B5),
-    warning: Color(0xFFC5A15A),
-    error: Color(0xFFE3888C),
-    scrim: Color(0x66C3C8CC),
-  );
-
-  final Color canvas;
-  final Color panel;
-  final Color raised;
-  final Color divider;
-  final Color textPrimary;
-  final Color textSecondary;
-  final Color accent;
-  final Color success;
-
-  /// Warning accent for pending or degraded states.
-  final Color warning;
-
-  final Color error;
-  final Color scrim;
-
-  /// Returns the Atlas palette for [brightness].
-  static AtlasColors forBrightness(Brightness brightness) {
-    return brightness == Brightness.light ? light : dark;
-  }
-
-  /// Returns the active Atlas palette from the nearest theme.
-  static AtlasColors of(BuildContext context) {
-    final theme = Theme.of(context);
-    return theme.extension<AtlasColors>() ??
-        AtlasColors.forBrightness(theme.brightness);
-  }
-
-  @override
-  AtlasColors copyWith({
-    Color? canvas,
-    Color? panel,
-    Color? raised,
-    Color? divider,
-    Color? textPrimary,
-    Color? textSecondary,
-    Color? accent,
-    Color? success,
-    Color? warning,
-    Color? error,
-    Color? scrim,
-  }) {
-    return AtlasColors(
-      canvas: canvas ?? this.canvas,
-      panel: panel ?? this.panel,
-      raised: raised ?? this.raised,
-      divider: divider ?? this.divider,
-      textPrimary: textPrimary ?? this.textPrimary,
-      textSecondary: textSecondary ?? this.textSecondary,
-      accent: accent ?? this.accent,
-      success: success ?? this.success,
-      warning: warning ?? this.warning,
-      error: error ?? this.error,
-      scrim: scrim ?? this.scrim,
-    );
-  }
-
-  @override
-  AtlasColors lerp(covariant AtlasColors? other, double t) {
-    if (other == null) {
-      return this;
-    }
-    return AtlasColors(
-      canvas: Color.lerp(canvas, other.canvas, t)!,
-      panel: Color.lerp(panel, other.panel, t)!,
-      raised: Color.lerp(raised, other.raised, t)!,
-      divider: Color.lerp(divider, other.divider, t)!,
-      textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
-      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
-      accent: Color.lerp(accent, other.accent, t)!,
-      success: Color.lerp(success, other.success, t)!,
-      warning: Color.lerp(warning, other.warning, t)!,
-      error: Color.lerp(error, other.error, t)!,
-      scrim: Color.lerp(scrim, other.scrim, t)!,
-    );
-  }
-}
+import 'atlas_palette.dart';
+export 'atlas_palette.dart';
 
 /// Radius scale for controls in the otherwise flat application shell.
 abstract final class AtlasRadii {
@@ -137,17 +10,17 @@ abstract final class AtlasRadii {
   static const surface = 10.0;
 }
 
-/// Builds the Atlas visual theme for [brightness].
-ThemeData buildAtlasTheme(Brightness brightness) {
-  final colors = AtlasColors.forBrightness(brightness);
+/// Builds the Atlas visual theme for [palette] at [brightness].
+ThemeData buildAtlasTheme(AtlasPalette palette, Brightness brightness) {
+  final colors = palette.colors(brightness);
   final colorScheme = ColorScheme(
     brightness: brightness,
     primary: colors.accent,
-    onPrimary: colors.canvas,
+    onPrimary: colors.onAccent,
     secondary: colors.success,
-    onSecondary: colors.canvas,
+    onSecondary: colors.onAccent,
     error: colors.error,
-    onError: colors.canvas,
+    onError: colors.onAccent,
     surface: colors.canvas,
     onSurface: colors.textPrimary,
     onSurfaceVariant: colors.textSecondary,
@@ -195,7 +68,7 @@ ThemeData buildAtlasTheme(Brightness brightness) {
     tooltipTheme: TooltipThemeData(
       waitDuration: const Duration(milliseconds: 450),
       decoration: BoxDecoration(
-        color: colors.raised,
+        color: colors.overlay,
         borderRadius: BorderRadius.circular(AtlasRadii.small),
       ),
       textStyle: TextStyle(
@@ -206,7 +79,7 @@ ThemeData buildAtlasTheme(Brightness brightness) {
     ),
     menuTheme: MenuThemeData(
       style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(colors.canvas),
+        backgroundColor: WidgetStatePropertyAll(colors.overlay),
         elevation: WidgetStatePropertyAll(1),
         surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
         shape: WidgetStatePropertyAll(
@@ -260,7 +133,7 @@ ThemeData buildAtlasTheme(Brightness brightness) {
       ),
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: colors.canvas,
+      backgroundColor: colors.overlay,
       elevation: 1,
       shadowColor: colors.scrim,
       barrierColor: colors.textSecondary.withAlpha(100),

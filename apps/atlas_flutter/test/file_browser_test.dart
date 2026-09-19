@@ -46,7 +46,7 @@ void main() {
   }) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: Scaffold(
           body: FileBrowser(
             workingDirectory: tempDir.path,
@@ -197,7 +197,7 @@ void main() {
 
     expect(
       (rowSurface().decoration as BoxDecoration?)?.color,
-      AtlasColors.light.raised,
+      AtlasPalette.standard.light.raised,
     );
   });
 
@@ -458,7 +458,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.light),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
           home: Scaffold(
             body: Consumer(
               builder: (context, ref, _) {

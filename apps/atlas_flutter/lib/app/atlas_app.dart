@@ -59,8 +59,8 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
     return MaterialApp.router(
       title: 'Atlas',
       debugShowCheckedModeBanner: false,
-      theme: buildAtlasTheme(Brightness.light),
-      darkTheme: buildAtlasTheme(Brightness.dark),
+      theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
+      darkTheme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
       themeMode: ThemeMode.system,
       routerConfig: ref.watch(appRouterProvider),
       builder: (context, child) {

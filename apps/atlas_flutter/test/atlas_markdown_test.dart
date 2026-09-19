@@ -36,7 +36,7 @@ void main() {
     final launched = <Uri>[];
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: AtlasMarkdown(
           data: 'See [docs](https://example.com/docs) please.',
           launchLink: (uri) async {
@@ -69,7 +69,7 @@ void main() {
     final launched = <Uri>[];
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: AtlasMarkdown(
           data: 'Do not open [this](javascript:alert(1)).',
           launchLink: (uri) async {
@@ -101,7 +101,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: AtlasMarkdown(
           data: 'See [docs](https://example.com/docs) please.',
           launchLink: (uri) async => throw Exception('no handler'),
@@ -132,7 +132,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: AtlasMarkdown(data: 'Hello 世界', fontFamily: 'MonoTest'),
       ),
     );
@@ -151,7 +151,7 @@ void main() {
     // constraint; the infinity-width wrapper keeps blocks stretched.
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: Scaffold(
           body: SingleChildScrollView(
             child: AtlasMarkdown(data: '# Title\n\n```txt\nhi\n```\n'),

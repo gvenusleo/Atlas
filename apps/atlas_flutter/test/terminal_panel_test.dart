@@ -16,7 +16,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.dark),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
           home: const TerminalPanel(workingDirectory: '/tmp'),
         ),
       ),
@@ -37,7 +37,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.dark),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
           home: const TerminalPanel(workingDirectory: '/tmp'),
         ),
       ),
@@ -50,7 +50,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.dark),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
           home: const SizedBox.shrink(),
         ),
       ),
@@ -59,13 +59,13 @@ void main() {
     expect(registry.isEmpty, isTrue);
   });
 
-  testWidgets('uses Token Temper light ANSI colors without bold-as-bright', (
+  testWidgets('uses GitHub light ANSI colors without bold-as-bright', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.light),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
           home: const TerminalPanel(workingDirectory: '/tmp'),
         ),
       ),
@@ -73,27 +73,26 @@ void main() {
     await tester.pump();
 
     final view = tester.widget<TerminalView>(find.byType(TerminalView));
-    expect(view.theme.foreground, const Color(0xFF283039));
-    expect(view.theme.background, const Color(0xFFF5F7F8));
-    expect(view.theme.cursor, const Color(0xFF283039));
-    expect(view.theme.selection, const Color(0xFFDCE2E7));
-    expect(view.theme.white, const Color(0xFFA7B2BB));
-    expect(view.theme.green, const Color(0xFF005B53));
-    expect(view.theme.blue, const Color(0xFF005850));
-    expect(view.theme.brightGreen, const Color(0xFF004A44));
-    expect(view.theme.brightBlue, const Color(0xFF005B53));
-    // Upstream maps slot 11 (bright yellow) onto the secondary accent.
-    expect(view.theme.brightYellow, const Color(0xFF683495));
+    expect(view.theme.foreground, const Color(0xFF1F2328));
+    expect(view.theme.background, const Color(0xFFFFFFFF));
+    expect(view.theme.cursor, const Color(0xFF0969DA));
+    expect(view.theme.selection, const Color(0x330969DA));
+    expect(view.theme.white, const Color(0xFF6E7781));
+    expect(view.theme.green, const Color(0xFF116329));
+    expect(view.theme.blue, const Color(0xFF0969DA));
+    expect(view.theme.brightGreen, const Color(0xFF1A7F37));
+    expect(view.theme.brightBlue, const Color(0xFF218BFF));
+    expect(view.theme.brightYellow, const Color(0xFF633C01));
     expect(view.theme.drawBoldTextInBrightColors, isFalse);
   });
 
-  testWidgets('uses Token Temper dark ANSI colors without bold-as-bright', (
+  testWidgets('uses GitHub dark-dimmed ANSI colors without bold-as-bright', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.dark),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
           home: const TerminalPanel(workingDirectory: '/tmp'),
         ),
       ),
@@ -101,16 +100,15 @@ void main() {
     await tester.pump();
 
     final view = tester.widget<TerminalView>(find.byType(TerminalView));
-    expect(view.theme.foreground, const Color(0xFFC3C8CC));
-    expect(view.theme.background, const Color(0xFF272C33));
-    expect(view.theme.cursor, const Color(0xFFC3C8CC));
-    expect(view.theme.selection, const Color(0xFF3A414A));
-    expect(view.theme.white, const Color(0xFFA2A9AF));
-    expect(view.theme.green, const Color(0xFF5EC4B5));
-    expect(view.theme.brightBlack, const Color(0xFF858F9B));
-    // Upstream maps slots 9 and 11 (bright red/yellow) onto the accents.
-    expect(view.theme.brightRed, const Color(0xFF5CC1B3));
-    expect(view.theme.brightYellow, const Color(0xFFE7CDFF));
+    expect(view.theme.foreground, const Color(0xFFADBAC7));
+    expect(view.theme.background, const Color(0xFF22272E));
+    expect(view.theme.cursor, const Color(0xFF539BF5));
+    expect(view.theme.selection, const Color(0x33539BF5));
+    expect(view.theme.white, const Color(0xFF909DAB));
+    expect(view.theme.green, const Color(0xFF57AB5A));
+    expect(view.theme.brightBlack, const Color(0xFF636E7B));
+    expect(view.theme.brightRed, const Color(0xFFFF938A));
+    expect(view.theme.brightYellow, const Color(0xFFDAAA3F));
     expect(view.theme.drawBoldTextInBrightColors, isFalse);
   });
 
@@ -147,7 +145,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          theme: buildAtlasTheme(Brightness.dark),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
           home: Scaffold(
             body: Consumer(
               builder: (context, ref, _) {

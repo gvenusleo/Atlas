@@ -95,7 +95,7 @@ Future<void> _pumpDetails(WidgetTester tester, {required bool isRemote}) async {
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: Scaffold(
           body: Row(
             children: [

@@ -13,7 +13,7 @@ void main() {
     ]) {
       await tester.pumpWidget(
         MaterialApp(
-          theme: buildAtlasTheme(Brightness.light),
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
           home: Scaffold(
             body: TurnStatusBanner(phase: phase, startedAt: DateTime.now()),
           ),
@@ -29,7 +29,7 @@ void main() {
   testWidgets('typing dots bounce over time', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: Scaffold(
           body: TurnStatusBanner(
             phase: TurnPhase.working,
@@ -52,7 +52,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildAtlasTheme(Brightness.light),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
         home: Scaffold(
           body: TurnStatusBanner(phase: TurnPhase.working, startedAt: null),
         ),

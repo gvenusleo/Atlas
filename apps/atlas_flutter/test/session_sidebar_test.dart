@@ -216,7 +216,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
-            theme: buildAtlasTheme(Brightness.light),
+            theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
             home: const Scaffold(body: SessionsPanel()),
           ),
         ),
@@ -286,7 +286,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
-            theme: buildAtlasTheme(Brightness.light),
+            theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
             home: const Scaffold(body: SessionsPanel()),
           ),
         ),
@@ -352,7 +352,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
-              theme: buildAtlasTheme(Brightness.light),
+              theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
               home: const Scaffold(body: SessionsPanel()),
             ),
           ),

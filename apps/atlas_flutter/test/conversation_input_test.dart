@@ -409,7 +409,7 @@ void main() {
       ),
     );
     BoxDecoration? decoration() => surface().decoration as BoxDecoration?;
-    expect(decoration()?.color, AtlasColors.dark.textPrimary);
+    expect(decoration()?.color, AtlasPalette.standard.dark.textPrimary);
 
     final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await gesture.addPointer(location: Offset.zero);
@@ -420,7 +420,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(decoration()?.color, AtlasColors.dark.accent);
+    expect(decoration()?.color, AtlasPalette.standard.dark.accent);
   });
 
   testWidgets('enter sends the prompt when the IME is idle', (tester) async {
@@ -772,7 +772,7 @@ Future<void> _pumpWorkspace(
           imageClipboardProvider.overrideWithValue(onPasteImages),
       ],
       child: MaterialApp(
-        theme: buildAtlasTheme(Brightness.dark),
+        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
         home: Scaffold(body: child),
       ),
     ),

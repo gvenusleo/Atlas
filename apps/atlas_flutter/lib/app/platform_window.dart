@@ -22,7 +22,7 @@ Future<void> initializePlatformWindow() async {
     size: const Size(1200, 760),
     minimumSize: const Size(400, 600),
     center: true,
-    backgroundColor: AtlasColors.forBrightness(brightness).canvas,
+    backgroundColor: AtlasPalette.standard.colors(brightness).canvas,
     // All desktop platforms integrate the toolbar: the custom caption
     // controls are painted by AtlasWindowControls on Windows and Linux.
     titleBarStyle: TitleBarStyle.hidden,
@@ -44,6 +44,6 @@ Future<void> syncPlatformWindowBackground(Brightness brightness) async {
     return;
   }
   await windowManager.setBackgroundColor(
-    AtlasColors.forBrightness(brightness).canvas,
+    AtlasPalette.standard.colors(brightness).canvas,
   );
 }
