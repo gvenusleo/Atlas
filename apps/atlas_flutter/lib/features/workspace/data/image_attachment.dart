@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:clipboard/clipboard.dart';
-import 'package:file_selector/file_selector.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Limits applied to images attached to a prompt.
@@ -48,25 +48,13 @@ final imageClipboardProvider = Provider<Future<List<PendingImage>> Function()>(
 
 /// Opens a file dialog for PNG, JPEG, WebP, and GIF images.
 Future<List<PendingImage>> pickImageFiles() async {
-  final files = await openFiles(
-    acceptedTypeGroups: const [
-      XTypeGroup(
-        label: 'Images',
-        extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
-        mimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
-        uniformTypeIdentifiers: [
-          'public.png',
-          'public.jpeg',
-          'org.webmproject.webp',
-          'com.compuserve.gif',
-          'public.image',
-        ],
-      ),
-    ],
+  final files = await FilePicker.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp', 'gif'],
   );
   final images = <PendingImage>[];
   for (final file in files) {
-    final bytes = Uint8List.fromList(await file.readAsBytes());
+    final bytes = await file.readAsBytes();
     final mimeType = imageMimeType(name: file.name, bytes: bytes);
     if (mimeType == null) {
       continue;

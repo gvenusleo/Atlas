@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
-import 'package:file_selector/file_selector.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -17,7 +17,7 @@ import 'workspace_controls.dart';
 
 /// Picks a working directory for a new session; overridable in tests.
 final directoryPickerProvider = Provider<Future<String?> Function()>(
-  (ref) => getDirectoryPath,
+  (ref) => FilePicker.getDirectoryPath,
 );
 
 /// Sessions sidebar used by desktop panels and compact drawers.

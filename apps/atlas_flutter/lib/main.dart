@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -24,6 +25,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (!isMobileClient) {
     await initializePlatformWindow();
+    // Atlas ships without the App Sandbox, so the macOS file dialogs carry no
+    // file-access entitlements; without this the picker refuses to open.
+    await FilePicker.skipEntitlementsChecks();
   }
   final bootstrap = isMobileClient ? null : await bootstrapRuntime();
   final controller = isMobileClient

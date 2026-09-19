@@ -19,7 +19,6 @@ dependencies:
   atlas_storage: ^0.1.0
   atlas_tools: ^0.1.0
   clipboard: ^3.0.14
-  file_selector: ^1.1.0
   flutter_markdown_plus: ^1.0.12
   flutter_markdown_plus_latex: ^1.0.5
   flutter_riverpod: ^3.4.2
@@ -37,6 +36,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   stream_channel: ^2.1.0
   web_socket_channel: ^3.0.0
+  file_picker: ^13.1.0
 
 dev_dependencies:
   flutter_test:

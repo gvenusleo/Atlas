@@ -28,7 +28,7 @@ animates the caret with spring-driven corner physics.
 
 - Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`,
   `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`,
-  `file_selector`, `clipboard`, `pty2`, `terminal_view`,
+  `file_picker`, `clipboard`, `pty2`, `terminal_view`,
   `flutter_secure_storage`, `stream_channel`, and `web_socket_channel`.
 - Tests may also import `atlas_ws` (dev dependency) to serve a real
   `atlas server` endpoint for remote connection integration tests.
