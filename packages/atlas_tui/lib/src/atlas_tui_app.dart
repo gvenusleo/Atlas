@@ -12,6 +12,7 @@ import 'slash_completion.dart';
 import 'slash_popup.dart';
 import 'session_status_line.dart';
 import 'turn_status_line.dart';
+import 'terminal_session.dart';
 
 /// The root Nocterm application for Atlas.
 ///
@@ -570,12 +571,9 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
 
 /// Runs the Atlas chat application until the user quits.
 ///
-/// Owns the Nocterm bootstrap ([runApp] with a [NoctermApp] root) so the
-/// terminal framework stays a dependency of atlas_tui and composition roots
-/// never import nocterm directly.
-///
-/// [onQuit] is invoked when the user submits `/quit`; it defaults to
-/// [shutdownApp] so the process exits cleanly.
+/// Owns the Nocterm bootstrap so composition roots never import the framework.
+/// Restores the terminal and returns naturally so the caller can close adapters.
+/// [onQuit] is notified when the user submits `/quit` before ending the UI.
 Future<void> runAtlasTui({
   required AgentSession runtime,
   required List<ModelDescriptor> models,
@@ -583,14 +581,20 @@ Future<void> runAtlasTui({
   String? workingDirectory,
   void Function()? onQuit,
 }) {
-  return runApp(
-    NoctermApp(
+  return runTerminalSession(
+    (quit) => NoctermApp(
       child: AtlasTuiApp(
         runtime: runtime,
         models: models,
         skills: skills,
         workingDirectory: workingDirectory,
-        onQuit: onQuit ?? shutdownApp,
+        onQuit: () {
+          try {
+            onQuit?.call();
+          } finally {
+            quit();
+          }
+        },
       ),
     ),
   );

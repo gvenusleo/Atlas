@@ -32,6 +32,8 @@ jobs:
               (cd "$package" && mise exec -- dart test)
             fi
           done
+      - name: Run CLI process tests
+        run: mise run cli-integration-test
       - name: Run Flutter tests
         working-directory: apps/atlas_flutter
         run: mise exec -- flutter test --no-pub

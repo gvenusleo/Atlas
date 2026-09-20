@@ -12,7 +12,9 @@ The Nocterm presentation package for Atlas.
   providers, tools, or storage directly.
 - Exposes `runAtlasTui` as the single entry point that boots the Nocterm app
   and its shutdown; `atlas_cli` depends on this entry instead of importing
-  the rendering library directly.
+  the rendering library directly. Bootstrap checks terminal/ANSI support and
+  `NO_COLOR`, restores input modes before closing stdin, disposes the component
+  tree and backend, and returns without exiting the process.
 
 ## Allowed dependencies
 

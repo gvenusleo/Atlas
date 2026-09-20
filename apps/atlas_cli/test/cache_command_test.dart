@@ -43,12 +43,7 @@ void main() {
     );
 
     final out = StringBuffer();
-    final code = await runCacheCommand(
-      store,
-      config: _config(),
-      args: const [],
-      out: out,
-    );
+    final code = await runCacheCommand(store, config: _config(), out: out);
 
     expect(code, 0);
     final text = out.toString();
@@ -77,7 +72,7 @@ void main() {
     );
 
     final out = StringBuffer();
-    await runCacheCommand(store, config: _config(), args: const [], out: out);
+    await runCacheCommand(store, config: _config(), out: out);
 
     final text = out.toString();
     // Cached tokens are already part of input_tokens: 1400 / 3000.
@@ -107,7 +102,7 @@ void main() {
     );
 
     final out = StringBuffer();
-    await runCacheCommand(store, config: _config(), args: const [], out: out);
+    await runCacheCommand(store, config: _config(), out: out);
 
     expect(out.toString(), contains('Cache reads appeared in 1 of 2'));
     expect(
@@ -134,7 +129,7 @@ void main() {
       );
 
       final out = StringBuffer();
-      await runCacheCommand(store, config: _config(), args: const [], out: out);
+      await runCacheCommand(store, config: _config(), out: out);
 
       final text = out.toString();
       // The empty step is inspected but reported nothing, so it is not a miss.
@@ -164,7 +159,7 @@ void main() {
     );
 
     final out = StringBuffer();
-    await runCacheCommand(store, config: _config(), args: const [], out: out);
+    await runCacheCommand(store, config: _config(), out: out);
 
     final text = out.toString();
     // Cache reads sit outside input_tokens: 900 / (100 + 900), never above 100%.
@@ -195,7 +190,7 @@ void main() {
       );
 
       final out = StringBuffer();
-      await runCacheCommand(store, config: _config(), args: const [], out: out);
+      await runCacheCommand(store, config: _config(), out: out);
 
       // A cache write marks Anthropic accounting: 150 / (50 + 150 + 10).
       expect(out.toString(), contains('71.4% hit rate'));
@@ -204,18 +199,10 @@ void main() {
 
   test('honors the turn limit and reports an empty database', () async {
     final empty = DriftSessionStore.inMemory();
-    addTearDown(empty.close);
     final emptyOut = StringBuffer();
-    expect(
-      await runCacheCommand(
-        empty,
-        config: _config(),
-        args: const [],
-        out: emptyOut,
-      ),
-      0,
-    );
+    expect(await runCacheCommand(empty, config: _config(), out: emptyOut), 0);
     expect(emptyOut.toString(), contains('No turns recorded yet'));
+    await empty.close();
 
     final store = DriftSessionStore.inMemory();
     addTearDown(store.close);
@@ -235,25 +222,26 @@ void main() {
     await runCacheCommand(
       store,
       config: _config(),
-      args: const ['--limit', '1'],
+      options: const CacheOptions(limit: 1),
       out: out,
     );
     expect(out.toString(), contains('Sampled 1 model request from 1 turn'));
   });
 
-  test('rejects unknown options with the usage line', () async {
-    final store = DriftSessionStore.inMemory();
-    addTearDown(store.close);
+  test('rejects unknown options on stderr without opening storage', () async {
     final out = StringBuffer();
-    final code = await runCacheCommand(
-      store,
-      config: _config(),
-      args: const ['--nope'],
+    final err = StringBuffer();
+    final runner = AtlasCommandRunner(
       out: out,
+      err: err,
+      configLoader: () => throw StateError('must not load configuration'),
     );
+    final code = await runCli(['cache', '--nope'], runner: runner);
 
     expect(code, 64);
-    expect(out.toString(), contains('usage: atlas cache [--limit turns]'));
+    expect(out.toString(), isEmpty);
+    expect(err.toString(), contains('Usage: atlas cache'));
+    expect(err.toString(), contains('nope'));
   });
 }
 

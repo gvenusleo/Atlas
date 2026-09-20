@@ -98,6 +98,11 @@ final class DioHttpStreamClient implements HttpStreamClient {
   /// Maximum request attempts before streaming starts.
   final int maxAttempts;
 
+  /// Closes idle connections and cancels outstanding HTTP requests.
+  ///
+  /// Only the owner of this client should call this, after runtime shutdown.
+  void close() => _dio.close(force: true);
+
   @override
   Future<ActiveHttpStream> openStream({
     required Uri uri,

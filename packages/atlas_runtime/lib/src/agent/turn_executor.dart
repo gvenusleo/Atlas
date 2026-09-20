@@ -83,15 +83,18 @@ final class TurnExecutor {
   final DateTime Function() _now;
 
   /// Executes one turn and emits events in their exact occurrence order.
-  Stream<AgentEvent> run(TurnRequest request) {
-    final cancellation = request.cancellation ?? CancellationToken();
+  Stream<AgentEvent> run(
+    TurnRequest request, {
+    CancellationToken? cancellation,
+  }) {
+    final token = cancellation ?? request.cancellation ?? CancellationToken();
     final completed = Completer<void>();
     late StreamSubscription<AgentEvent> subscription;
     late StreamController<AgentEvent> controller;
     controller = StreamController<AgentEvent>(
       sync: true,
       onListen: () {
-        subscription = _run(request, cancellation).listen(
+        subscription = _run(request, token).listen(
           (event) {
             if (controller.hasListener) controller.add(event);
           },
@@ -110,7 +113,7 @@ final class TurnExecutor {
         if (completed.isCompleted) return;
         // A display subscription does not own persistence. Continue consuming
         // the cancelled turn until every call has a result and the turn ends.
-        cancellation.cancel();
+        token.cancel();
         subscription.resume();
         await completed.future;
       },

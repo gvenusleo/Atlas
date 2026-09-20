@@ -60,6 +60,18 @@ when the socket drops and are recovered through `session/load` after
 reconnection. ACP is an inbound adapter to the same runtime; MCP primarily
 connects external tools to the tool layer.
 
+### CLI Shutdown Ownership
+
+The CLI command runner parses arguments before creating adapters. Each running
+command owns its storage and HTTP client, composed through `atlas_composition`.
+On process shutdown it stops accepting work, calls `AgentRuntime.shutdown()`
+to cancel and drain active/queued turns and compactions, waits for protocol
+handlers, and closes adapter resources. Event consumers keep draining during
+shutdown so terminal persistence boundaries are completed. A normal WebSocket
+disconnect still lets existing turns finish; process shutdown is distinct.
+Nocterm bootstrap and terminal cleanup remain in `atlas_tui`; that bootstrap
+returns naturally instead of allowing Nocterm to terminate the process.
+
 ## Package Responsibilities
 
 | Package | Responsibility |

@@ -135,6 +135,34 @@ final class AgentRuntime
     maxOutputTokens: maxOutputTokens,
     temperature: temperature,
   );
+  final Map<Completer<void>, CancellationToken> _operations = {};
+  bool _shuttingDown = false;
+
+  /// Cancels active and queued turns/compactions and waits for persistence.
+  ///
+  /// Callers must stop accepting requests first and keep consuming event
+  /// streams until they finish. Adapter resources remain owned by the caller.
+  Future<void> shutdown() async {
+    _shuttingDown = true;
+    final pending = _operations.entries.toList();
+    for (final entry in pending) {
+      entry.value.cancel();
+    }
+    await Future.wait(pending.map((entry) => entry.key.future));
+  }
+
+  Completer<void> _beginOperation(CancellationToken cancellation) {
+    if (_shuttingDown) throw StateError('Runtime is shutting down');
+    final done = Completer<void>();
+    _operations[done] = cancellation;
+    return done;
+  }
+
+  void _endOperation(Completer<void> done) {
+    _operations.remove(done);
+    done.complete();
+  }
+
   final Map<SessionId, Future<void>> _sessionTails = {};
   final Map<String, SessionContext> _sessionContexts = {};
   final Map<SessionId, List<AgentCommand>> _sessionCommands = {};
@@ -146,16 +174,17 @@ final class AgentRuntime
   /// Executes one turn and emits events in their exact occurrence order.
   @override
   Stream<AgentEvent> run(TurnRequest request) async* {
-    final sessionId = request.sessionId;
-    if (sessionId == null) {
-      yield* _executor.run(request);
-      return;
-    }
-    final release = await _acquireSessionLock(sessionId);
+    final cancellation = request.cancellation ?? CancellationToken();
+    final done = _beginOperation(cancellation);
+    void Function()? release;
     try {
-      yield* _executor.run(request);
+      final sessionId = request.sessionId;
+      if (sessionId != null) release = await _acquireSessionLock(sessionId);
+      cancellation.throwIfCancelled();
+      yield* _executor.run(request, cancellation: cancellation);
     } finally {
-      release();
+      release?.call();
+      _endOperation(done);
     }
   }
 
@@ -175,18 +204,22 @@ final class AgentRuntime
     ModelRef? model,
     CancellationToken? cancellation,
   }) async* {
-    final release = await _acquireSessionLock(sessionId);
+    final token = cancellation ?? CancellationToken();
+    final done = _beginOperation(token);
+    void Function()? release;
     try {
-      cancellation?.throwIfCancelled();
+      release = await _acquireSessionLock(sessionId);
+      token.throwIfCancelled();
       final snapshot = await store.loadSession(sessionId);
       yield* _executor.compact(
         snapshot,
         instruction: instruction,
         model: model,
-        cancellation: cancellation,
+        cancellation: token,
       );
     } finally {
-      release();
+      release?.call();
+      _endOperation(done);
     }
   }
 

@@ -13,3 +13,4 @@ export 'src/slash_completion.dart';
 export 'src/slash_popup.dart';
 export 'src/session_status_line.dart';
 export 'src/turn_status_line.dart';
+export 'src/terminal_session.dart' show supportsAtlasTui;

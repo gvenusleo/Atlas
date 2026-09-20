@@ -34,10 +34,19 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          mise exec -- flutter pub get --enforce-lockfile
-          mise exec -- dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/
+          mise run cli-build
           VERSION="${GITHUB_REF_NAME#v}"
+          BINARY=build/bundle/bin/atlas
+          if [ "${{ matrix.os_name }}" = windows ]; then BINARY="$BINARY.exe"; fi
+          test "$("$BINARY" --version)" = "$VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Verify native CLI
+        shell: bash
+        run: |
+          BINARY="$PWD/build/bundle/bin/atlas"
+          if [ "${{ matrix.os_name }}" = windows ]; then BINARY="$BINARY.exe"; fi
+          cd apps/atlas_cli
+          ATLAS_TEST_BINARY="$BINARY" mise exec -- dart test integration_test
       - name: Archive (tar.gz)
         if: matrix.os_name != 'windows'
         shell: bash

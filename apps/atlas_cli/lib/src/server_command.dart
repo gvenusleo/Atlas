@@ -1,9 +1,12 @@
-import 'dart:async';
 import 'dart:io';
 
+import 'package:args/args.dart';
 import 'package:atlas_composition/atlas_composition.dart';
 import 'package:atlas_config/atlas_config.dart';
 import 'package:atlas_ws/atlas_ws.dart';
+
+import 'runtime_resources.dart';
+import 'termination_signals.dart';
 
 /// Parsed `atlas server` options.
 final class ServerOptions {
@@ -14,6 +17,24 @@ final class ServerOptions {
     this.tokenFile,
     this.rotateToken = false,
   });
+
+  /// Validates parsed server options before configuration or token access.
+  factory ServerOptions.fromResults(ArgResults results) {
+    if (results.rest.isNotEmpty) {
+      throw const FormatException('server does not take positional arguments');
+    }
+    final (host, rawPort) = _splitHostPort(results.option('listen')!);
+    final tokenFile = results.option('token-file');
+    if (tokenFile != null && tokenFile.trim().isEmpty) {
+      throw const FormatException('--token-file requires a non-empty path');
+    }
+    return ServerOptions(
+      address: _parseAddress(host),
+      port: _parsePort(rawPort),
+      tokenFile: tokenFile,
+      rotateToken: results.flag('rotate-token'),
+    );
+  }
 
   /// The interface to bind; null means loopback only.
   final InternetAddress? address;
@@ -32,121 +53,105 @@ final class ServerOptions {
 ///
 /// Throws [FormatException] on unknown flags or malformed values.
 ServerOptions parseServerOptions(List<String> args) {
-  var address = InternetAddress.loopbackIPv4;
-  var port = 8765;
-  String? tokenFile;
-  var rotateToken = false;
-  for (var i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--listen':
-        if (i + 1 >= args.length) {
-          throw const FormatException('--listen requires host:port');
-        }
-        final value = args[++i];
-        final (host, rawPort) = _splitHostPort(value);
-        address = _parseAddress(host);
-        port = _parsePort(rawPort);
-      case '--token-file':
-        if (i + 1 >= args.length) {
-          throw const FormatException('--token-file requires a path');
-        }
-        tokenFile = args[++i];
-      case '--rotate-token':
-        rotateToken = true;
-      default:
-        throw FormatException('unknown server option: ${args[i]}');
-    }
-  }
-  return ServerOptions(
-    address: address,
-    port: port,
-    tokenFile: tokenFile,
-    rotateToken: rotateToken,
-  );
+  final parser = ArgParser();
+  addServerOptions(parser);
+  return ServerOptions.fromResults(parser.parse(args));
+}
+
+/// Registers the remote server options.
+void addServerOptions(ArgParser parser) {
+  parser
+    ..addOption(
+      'listen',
+      defaultsTo: '127.0.0.1:8765',
+      valueHelp: 'host:port',
+      help: 'Address and port to bind (loopback by default).',
+    )
+    ..addOption(
+      'token-file',
+      valueHelp: 'path',
+      help: 'Token file (defaults to ~/.atlas/remote_token).',
+    )
+    ..addFlag(
+      'rotate-token',
+      negatable: false,
+      help: 'Rotate the token and exit without serving.',
+    );
 }
 
 /// Runs the `atlas server` subcommand: serves the composed runtime to ACP
 /// clients over WebSocket until interrupted.
-Future<void> runServerCommand(
-  AtlasConfig config, {
+Future<void> runServerCommand({
+  required ServerOptions options,
   required String home,
-  required List<String> args,
+  required AtlasConfig Function() loadConfiguration,
+  required StringSink out,
+  required StringSink err,
 }) async {
-  final ServerOptions options;
-  try {
-    options = parseServerOptions(args);
-  } on FormatException catch (error) {
-    stderr.writeln('atlas server: ${error.message}');
-    stderr.writeln(
-      'usage: atlas server [--listen host:port] '
-      '[--token-file path] [--rotate-token]',
-    );
-    exit(64);
-  }
   final tokenFile = RemoteTokenFile(
     File(options.tokenFile ?? '$home/.atlas/remote_token'),
   );
 
   if (options.rotateToken) {
     final token = await tokenFile.rotate();
-    stdout.writeln('Rotated the remote access token: $token');
-    stdout.writeln('Keep it secret; existing connections stay open.');
+    out.writeln('Rotated the remote access token: $token');
+    err.writeln('Keep it secret; existing connections stay open.');
     return;
   }
 
   // The pairing token prints on every start: users need it to connect their
   // phone, and it can be rotated at any time with --rotate-token.
+  final config = loadConfiguration();
   final token = await tokenFile.loadOrCreate();
-  stdout.writeln('Remote access token: $token');
-  stdout.writeln('Keep it secret; it grants full local agent access.');
+  out.writeln('Remote access token: $token');
+  err.writeln('Keep it secret; it grants full local agent access.');
 
-  final runtime = composeRuntime(config);
+  final resources = CliRuntimeResources(config);
+  final signals = TerminationSignals();
   final server = AtlasWsServer(
-    runtime: runtime,
+    runtime: resources.runtime,
     models: composeModels(config),
     authorize: tokenFile.authorize,
-    log: (message) => stderr.writeln('[ws] $message'),
+    log: (message) => err.writeln('[ws] $message'),
   );
 
   final resolvedAddress = options.address ?? InternetAddress.loopbackIPv4;
   if (resolvedAddress != InternetAddress.loopbackIPv4 &&
       resolvedAddress != InternetAddress.loopbackIPv6) {
-    stderr.writeln(
+    err.writeln(
       'WARNING: listening on ${resolvedAddress.address} exposes Atlas to '
       'the network. Prefer 127.0.0.1 behind Tailscale.',
     );
   }
 
-  final httpServer = await server.start(
-    address: resolvedAddress,
-    port: options.port,
-  );
-  final bound = httpServer.address;
-  stdout.writeln(
-    'Atlas WebSocket server listening on '
-    'ws://${bound.address}:${httpServer.port}/acp',
-  );
-  stdout.writeln(
-    lanReachabilityHint(
+  try {
+    final httpServer = await server.start(
+      address: resolvedAddress,
+      port: options.port,
+    );
+    final bound = httpServer.address;
+    out.writeln(
+      'Atlas WebSocket server listening on '
+      'ws://${bound.address}:${httpServer.port}/acp',
+    );
+    final hint = lanReachabilityHint(
       bound: bound,
       lanAddresses: await _localIPv4Addresses(),
       port: httpServer.port,
-    ),
-  );
-  stdout.writeln('Press Ctrl+C to stop.');
-
-  final interrupt = Completer<void>();
-  for (final signal in [ProcessSignal.sigint, ProcessSignal.sigterm]) {
-    unawaited(
-      signal.watch().first.then((_) {
-        if (!interrupt.isCompleted) {
-          interrupt.complete();
-        }
-      }),
     );
+    if (hint.isNotEmpty) out.writeln(hint);
+    err.writeln('Press Ctrl+C to stop.');
+    await signals.interrupted;
+  } finally {
+    try {
+      // Closing a client normally leaves turns running. Process shutdown must
+      // cancel them and drain protocol handlers before storage is closed.
+      await Future.wait([server.stop(), resources.runtime.shutdown()]);
+    } finally {
+      await signals.close();
+      await resources.close();
+    }
   }
-  await interrupt.future;
-  await server.stop();
 }
 
 /// Returns the non-loopback IPv4 addresses of this host, best-effort.

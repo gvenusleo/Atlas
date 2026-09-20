@@ -64,6 +64,31 @@ Windows 运行 `irm .../latest/download/install.ps1 | iex`；脚本会下载与�
 Windows（amd64）二进制，连同安装脚本一起上传到 GitHub Release。Release
 notes 在 GitHub Release 页自动生成，仓库不维护单独的 changelog 文件。
 
+## CLI 行为与验证
+
+`bin/atlas.dart` 只转发参数并设置返回的退出码。`atlas --help`、
+`atlas help <command>` 和 `<command> --help` 均不依赖配置。参数校验在加载配置
+或打开存储前完成；参数错误及 usage 全部写入 stderr。退出码为：成功 0、
+用法错误 64、配置失败 78、意外失败 70。`--verbose` 会在 stderr 附上精简堆栈。
+
+默认 TUI 要求 stdin/stdout 都是终端、支持 ANSI，且未设置 `NO_COLOR`
+（即使值为空也会禁用 TUI）。不支持的终端会被明确拒绝，不输出转义序列；
+非交互子命令仍可使用。TUI 退出时先恢复输入模式与光标，再释放 stdin。
+各命令关闭自身资源后自然返回，不调用 `exit()`。
+
+CLI package 声明了 `atlas` 可执行入口；在 workspace 根目录可运行
+`dart run atlas_cli:atlas --help`。版本由 `build_version` 从
+`apps/atlas_cli/pubspec.yaml` 生成。修改版本后运行 `mise run cli-version`，
+并提交 `apps/atlas_cli/lib/src/version.dart`。`mise run cli-build` 会自动生成
+版本文件；release 构建在打包前检查 `--version` 与发布 tag 一致。
+
+`mise run cli-integration-test` 已纳入 `mise run ci`，会在
+`.dart_tool/atlas_cli/` 下构建隔离的原生 bundle，再检查真实进程输出、退出码、
+ACP EOF 与资源清理。设置 `ATLAS_TEST_BINARY` 为可执行文件的绝对路径，可直接
+验证已有产物。macOS/Linux 还需要 Python 3，用真实 PTY 测试 `/quit`、信号、
+终端恢复和 `NO_COLOR`；Windows 跳过 POSIX 专属用例。Release job 会对各平台
+构建产物运行同一套进程测试。
+
 ## Package 规则
 
 - 领域概念与 runtime ports 放在 `atlas_runtime`；Provider、存储、工具、UI 和协议实现分别放在其所属 package。

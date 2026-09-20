@@ -15,6 +15,7 @@ AgentRuntime composeRuntime(
   SessionStore? store,
   ToolRegistry? tools,
   ModelProvider? provider,
+  HttpStreamClient? httpClient,
   SessionContext Function(String workingDirectory)? sessionContextBuilder,
   String? dbPath,
   AtlasLogger? logger,
@@ -32,9 +33,13 @@ AgentRuntime composeRuntime(
   for (final configured in config.providers) {
     switch (configured) {
       case ConfiguredOpenAI(:final configuration):
-        providers[configured.id] = OpenAICompatibleProvider([configuration]);
+        providers[configured.id] = OpenAICompatibleProvider([
+          configuration,
+        ], httpClient: httpClient);
       case ConfiguredAnthropic(:final configuration):
-        providers[configured.id] = AnthropicProvider([configuration]);
+        providers[configured.id] = AnthropicProvider([
+          configuration,
+        ], httpClient: httpClient);
     }
   }
 

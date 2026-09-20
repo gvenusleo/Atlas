@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:args/args.dart';
 import 'package:atlas_config/atlas_config.dart';
+import 'package:io/io.dart' show ExitCode;
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 
@@ -8,6 +10,18 @@ import 'package:atlas_storage/atlas_storage.dart';
 final class CacheOptions {
   /// Creates cache options.
   const CacheOptions({this.limit = 200});
+
+  /// Validates parsed command options.
+  factory CacheOptions.fromResults(ArgResults results) {
+    if (results.rest.isNotEmpty) {
+      throw const FormatException('cache does not take positional arguments');
+    }
+    final limit = int.tryParse(results.option('limit')!);
+    if (limit == null || limit <= 0) {
+      throw const FormatException('--limit must be a positive number');
+    }
+    return CacheOptions(limit: limit);
+  }
 
   /// Maximum number of recent turns to sample.
   ///
@@ -20,23 +34,19 @@ final class CacheOptions {
 ///
 /// Throws [FormatException] on unknown flags or malformed values.
 CacheOptions parseCacheOptions(List<String> args) {
-  var limit = 200;
-  for (var i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--limit':
-        if (i + 1 >= args.length) {
-          throw const FormatException('--limit requires a turn count');
-        }
-        final value = int.tryParse(args[++i]);
-        if (value == null || value <= 0) {
-          throw const FormatException('--limit must be a positive number');
-        }
-        limit = value;
-      default:
-        throw FormatException('unknown option: ${args[i]}');
-    }
-  }
-  return CacheOptions(limit: limit);
+  final parser = ArgParser();
+  addCacheOptions(parser);
+  return CacheOptions.fromResults(parser.parse(args));
+}
+
+/// Registers the prompt-cache report options.
+void addCacheOptions(ArgParser parser) {
+  parser.addOption(
+    'limit',
+    defaultsTo: '200',
+    valueHelp: 'turns',
+    help: 'Maximum number of recent turns to sample.',
+  );
 }
 
 /// Prints a prompt-cache report for [store] and returns the process exit code.
@@ -53,25 +63,19 @@ CacheOptions parseCacheOptions(List<String> args) {
 Future<int> runCacheCommand(
   DriftSessionStore store, {
   required AtlasConfig config,
-  required List<String> args,
+  CacheOptions options = const CacheOptions(),
   StringSink? out,
+  StringSink? err,
 }) async {
   final sink = out ?? stdout;
-  final CacheOptions options;
-  try {
-    options = parseCacheOptions(args);
-  } on FormatException catch (error) {
-    sink.writeln('atlas cache: ${error.message}');
-    sink.writeln('usage: atlas cache [--limit turns]');
-    return 64;
-  }
+  final diagnostics = err ?? stderr;
 
   final turns = await store.recentTurnUsage(limit: options.limit);
   sink.writeln('Atlas prompt cache report');
   sink.writeln();
   if (turns.isEmpty) {
     sink.writeln('No turns recorded yet (limit ${options.limit}).');
-    return 0;
+    return ExitCode.success.code;
   }
 
   final anthropicProviders = <String>{
@@ -204,7 +208,7 @@ Future<int> runCacheCommand(
     );
   }
   if (unreadSessions.isNotEmpty) {
-    notes.add(
+    diagnostics.writeln(
       '${_count(unreadSessions.length, 'session')} could not be read '
       '(${unreadSessions.join(', ')}); their requests are missing from the '
       'totals.',
@@ -217,7 +221,7 @@ Future<int> runCacheCommand(
       sink.writeln('  $note');
     }
   }
-  return 0;
+  return ExitCode.success.code;
 }
 
 /// One sampled session and the turns taken from it.

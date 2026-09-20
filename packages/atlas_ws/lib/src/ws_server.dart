@@ -61,6 +61,8 @@ final class AtlasWsServer {
   final void Function(String message)? log;
 
   final _connections = <WebSocketChannel>{};
+  final _serving = <Future<void>>{};
+  bool _stopping = false;
   var _active = 0;
 
   /// Number of currently connected clients.
@@ -78,6 +80,7 @@ final class AtlasWsServer {
   /// Defaults to loopback so the endpoint is not exposed to the network
   /// unless the caller opts in.
   Future<HttpServer> start({Object? address, int port = 8765}) async {
+    _stopping = false;
     final server = await shelf_io.serve(
       _handler,
       address ?? InternetAddress.loopbackIPv4,
@@ -87,8 +90,11 @@ final class AtlasWsServer {
     return server;
   }
 
-  /// Closes the listener and every live connection.
+  /// Closes connections and waits for their in-flight protocol handlers.
+  ///
+  /// The runtime owner must cancel ongoing turns if they should not finish.
   Future<void> stop() async {
+    _stopping = true;
     await _listener?.close(force: true);
     final live = _connections.toList();
     for (final connection in live) {
@@ -96,6 +102,7 @@ final class AtlasWsServer {
       // 1000 or the 3000-4999 range.
       await connection.sink.close(4001, 'server shutting down');
     }
+    await Future.wait(_serving.toList());
   }
 
   FutureOr<Response> _handler(Request request) {
@@ -113,10 +120,15 @@ final class AtlasWsServer {
     if (!await authorize(request.headers['authorization'])) {
       return Response(401, body: 'Unauthorized');
     }
+    if (_stopping) return Response(503, body: 'Server shutting down');
     return _upgradeHandler(request);
   }
 
   void _onConnection(WebSocketChannel channel, String? protocol) {
+    if (_stopping) {
+      unawaited(channel.sink.close(4001, 'server shutting down'));
+      return;
+    }
     if (_active >= maxConnections) {
       unawaited(channel.sink.close(4013, 'too many connections'));
       return;
@@ -155,9 +167,10 @@ final class AtlasWsServer {
       }
     });
     final bridge = StreamChannel<String>(incoming.stream, outbound.sink);
-    unawaited(
-      AcpServer(runtime, models: models).serveChannel(bridge).whenComplete(
-        () async {
+    late final Future<void> serving;
+    serving = AcpServer(runtime, models: models)
+        .serveChannel(bridge)
+        .whenComplete(() async {
           _active--;
           _connections.remove(channel);
           log?.call('client disconnected ($_active/$maxConnections)');
@@ -168,9 +181,12 @@ final class AtlasWsServer {
             await outbound.close();
           }
           await channel.sink.close();
-        },
-      ),
-    );
+        })
+        .catchError((Object error) {
+          log?.call('connection failed (${error.runtimeType})');
+        })
+        .whenComplete(() => _serving.remove(serving));
+    _serving.add(serving);
   }
 
   /// Rejects [channel] and ends the ACP session immediately.

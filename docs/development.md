@@ -67,6 +67,36 @@ them together with the install scripts to the GitHub release. Release notes
 are generated automatically on the GitHub release page; the repository keeps
 no separate changelog file.
 
+## CLI Contract and Verification
+
+`bin/atlas.dart` only forwards arguments and assigns the returned exit code.
+`atlas --help`, `atlas help <command>`, and `<command> --help` work without
+configuration. Argument errors are validated before loading configuration or
+opening storage; both the error and usage go to stderr. Exit codes are 0 for
+success, 64 for invalid usage, 78 for configuration failures, and 70 for
+unexpected failures. `--verbose` includes a terse stack trace on stderr.
+
+The default TUI requires terminal stdin/stdout, ANSI support, and an unset
+`NO_COLOR` (even an empty value disables it). Unsupported terminals are rejected
+without escape sequences; non-interactive subcommands remain available. TUI
+exit restores input modes and the cursor before releasing stdin. Commands
+close their resources and return naturally rather than calling `exit()`.
+
+The CLI package declares the `atlas` executable; from the workspace root use
+`dart run atlas_cli:atlas --help`. Its version is generated from
+`apps/atlas_cli/pubspec.yaml` by `build_version`. Run `mise run cli-version`
+after changing that version and commit `apps/atlas_cli/lib/src/version.dart`.
+`mise run cli-build` generates it automatically; release builds verify that
+`--version` matches the release tag before packaging.
+
+`mise run cli-integration-test` is included in `mise run ci`. It builds an
+isolated native bundle under `.dart_tool/atlas_cli/`, then checks real process
+output, exit codes, ACP EOF, and teardown. Set `ATLAS_TEST_BINARY` to an absolute
+executable path to test an existing bundle instead. On macOS/Linux, Python 3
+is also required for real PTY tests of `/quit`, signals, terminal restoration,
+and `NO_COLOR`; POSIX-only cases are skipped on Windows. Release jobs run the
+same process suite against each platform's built artifact.
+
 ## Package Rules
 
 - Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.

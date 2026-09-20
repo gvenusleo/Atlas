@@ -53,6 +53,16 @@ text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接�
 开始的 turn 会继续执行完毕，重连后通过 `session/load` 恢复现场。ACP 作为
 入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 
+### CLI 关闭职责
+
+CLI command runner 在创建适配器前解析参数。每个运行中的命令拥有自身的存储与
+HTTP client，并通过 `atlas_composition` 组装 runtime。进程关闭时先停止接收
+新任务，再调用 `AgentRuntime.shutdown()` 取消并等待活动或排队的 turn 与
+compact，等待协议 handler 完成后关闭适配器资源。关闭期间事件消费者继续
+消费流，确保终态持久化完成。普通 WebSocket 断连仍允许已有 turn 执行完毕，
+与进程关闭不同。Nocterm bootstrap 与终端清理仍属于 `atlas_tui`；该 bootstrap
+自然返回，不允许 Nocterm 直接终止进程。
+
 ## Package 职责
 
 | Package | 职责 |

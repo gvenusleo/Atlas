@@ -46,9 +46,15 @@ dir = "apps/atlas_flutter"
 depends = ["deps"]
 run = "flutter test --no-pub"
 
+[tasks.cli-integration-test]
+description = "Verify CLI process I/O, exit codes, and teardown"
+dir = "apps/atlas_cli"
+depends = ["deps"]
+run = "dart test integration_test"
+
 [tasks.test]
 description = "Run all Dart and Flutter tests"
-depends = ["dart-test", "app-test"]
+depends = ["dart-test", "app-test", "cli-integration-test"]
 
 [tasks.ci]
 description = "Complete repository verification (fmt-check + analyze + test)"
@@ -58,9 +64,15 @@ depends = ["fmt-check", "analyze", "test"]
 description = "Run the TUI with the Dart VM service enabled for debugging"
 run = "dart --enable-vm-service apps/atlas_cli/bin/atlas.dart"
 
+[tasks.cli-version]
+description = "Generate the CLI version from apps/atlas_cli/pubspec.yaml"
+dir = "apps/atlas_cli"
+depends = ["deps"]
+run = "dart run build_runner build --build-filter=lib/src/version.dart"
+
 [tasks.cli-build]
 description = "Build the native atlas executable (output lands under build/bundle/)"
-depends = ["deps"]
+depends = ["cli-version"]
 run = "dart build cli -t apps/atlas_cli/bin/atlas.dart -o build/"
 
 [tasks.cli-install]

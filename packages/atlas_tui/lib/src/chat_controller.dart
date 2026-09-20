@@ -252,8 +252,10 @@ final class ChatController implements Listenable {
     return true;
   }
 
-  /// Releases the status timer; call from the owning widget's dispose.
+  /// Cancels outstanding work and releases presentation listeners and timers.
   void dispose() {
+    cancelTurn();
+    _listeners.clear();
     _stopTurnTimer();
   }
 
