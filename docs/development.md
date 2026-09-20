@@ -92,10 +92,11 @@ after changing that version and commit `apps/atlas_cli/lib/src/version.dart`.
 `mise run cli-integration-test` is included in `mise run ci`. It builds an
 isolated native bundle under `.dart_tool/atlas_cli/`, then checks real process
 output, exit codes, ACP EOF, and teardown. Set `ATLAS_TEST_BINARY` to an absolute
-executable path to test an existing bundle instead. On macOS/Linux, Python 3
-is also required for real PTY tests of `/quit`, signals, terminal restoration,
-and `NO_COLOR`; POSIX-only cases are skipped on Windows. Release jobs run the
-same process suite against each platform's built artifact.
+executable path to test an existing bundle instead. On macOS/Linux, a Dart FFI
+probe creates a real PTY and uses the system `stty` utility to compare terminal
+state before and after exit. It tests `/quit`, signals, terminal restoration,
+and `NO_COLOR` without Python. POSIX-only cases are skipped on Windows. Release
+jobs run the same process suite against each platform's built artifact.
 
 ## Package Rules
 

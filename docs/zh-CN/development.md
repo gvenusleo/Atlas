@@ -85,9 +85,10 @@ CLI package 声明了 `atlas` 可执行入口；在 workspace 根目录可运行
 `mise run cli-integration-test` 已纳入 `mise run ci`，会在
 `.dart_tool/atlas_cli/` 下构建隔离的原生 bundle，再检查真实进程输出、退出码、
 ACP EOF 与资源清理。设置 `ATLAS_TEST_BINARY` 为可执行文件的绝对路径，可直接
-验证已有产物。macOS/Linux 还需要 Python 3，用真实 PTY 测试 `/quit`、信号、
-终端恢复和 `NO_COLOR`；Windows 跳过 POSIX 专属用例。Release job 会对各平台
-构建产物运行同一套进程测试。
+验证已有产物。macOS/Linux 使用 Dart FFI 探针创建真实 PTY，并通过系统
+`stty` 工具比较退出前后的终端状态，覆盖 `/quit`、信号、终端恢复和
+`NO_COLOR`，不再需要 Python。Windows 跳过 POSIX 专属用例。Release job
+会对各平台构建产物运行同一套进程测试。
 
 ## Package 规则
 

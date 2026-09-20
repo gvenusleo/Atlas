@@ -23,8 +23,9 @@ The command-line and Nocterm entry point for Atlas.
 
 `dart test` covers command behavior in memory. `dart test integration_test`
 builds and tests a native bundle (or uses `ATLAS_TEST_BINARY`). macOS/Linux
-PTY tests require Python 3. See [Development](../../docs/development.md) for
-terminal requirements, exit codes, and version generation.
+PTY tests use a Dart FFI probe and the system `stty` utility; no Python is
+required. See [Development](../../docs/development.md) for terminal
+requirements, exit codes, and version generation.
 
 ## Allowed dependencies
 

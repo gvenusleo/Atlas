@@ -276,8 +276,8 @@ session:
     test(
       'real PTY: $action restores terminal modes and exits',
       () async {
-        final probe = await TestProcess.start('python3', [
-          File('integration_test/support/terminal_probe.py').absolute.path,
+        final probe = await TestProcess.start('${cli_util.sdkPath}/bin/dart', [
+          File('integration_test/support/terminal_probe.dart').absolute.path,
           binary,
           d.sandbox,
           action,
@@ -286,20 +286,25 @@ session:
         final lines = await probe.stdout.rest.toList();
         expect(lines, hasLength(1));
         final result = jsonDecode(lines.single) as Map<String, Object?>;
+        final errors = (await probe.stderr.rest.toList()).join('\n');
         expect(result['timedOut'], isFalse);
-        expect(result['restored'], isTrue);
+        expect(
+          result['restored'],
+          isTrue,
+          reason: '${result['before']} -> ${result['after']}',
+        );
         if (action == 'no_color' || action == 'dumb') {
           expect(result['exitCode'], ExitCode.usage.code);
           expect(result['hasEscapes'], isFalse);
-          expect(result['stderr'], contains('requires interactive'));
+          expect(errors, contains('requires interactive'));
+          expect(errors, isNot(contains('\x1b')));
         } else {
           expect(result['exitCode'], 0);
           expect(result['rendered'], isTrue);
           expect(result['cursorRestored'], isTrue);
           expect(result['alternateScreenLeft'], isTrue);
-          expect(result['stderr'], isEmpty);
+          expect(errors, isEmpty);
         }
-        expect(await probe.stderr.rest.toList(), isEmpty);
       },
       skip: Platform.isWindows
           ? 'POSIX PTY probe; Windows startup tested separately'
