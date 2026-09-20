@@ -98,6 +98,37 @@ state before and after exit. It tests `/quit`, signals, terminal restoration,
 and `NO_COLOR` without Python. POSIX-only cases are skipped on Windows. Release
 jobs run the same process suite against each platform's built artifact.
 
+### Reading `atlas cache`
+
+`atlas cache --limit 200` samples the latest 200 turns and all their persisted
+conversation responses, including history hidden by context compaction. The
+report is read from one database snapshot and groups responses by provider/model
+and session. It does not include compaction-summary calls or attempts that never
+produced a response record; it is not a complete billing ledger.
+
+- **Token hit rate** is summed cache-read tokens divided by summed complete
+  input tokens, over measured requests only. Cache writes and output tokens do
+  not count as hits.
+- **Requests with hits** is the share of measured requests with any cache read,
+  not the share whose entire prompt was cached.
+- **Cache-data coverage** is measured requests divided by recorded responses.
+  Unknown, inconsistent, aborted, and zero-input records are excluded from rates
+  and disclosed separately. An unknown rate is `n/a`, not a cache miss.
+- Input breakdowns cover the same measured requests. When cache writes are not
+  reported, the remaining input is **unclassified**, not assumed to be fresh.
+
+Provider adapters persist normalized input totals and cache-field availability
+alongside the original counts. Old records without this metadata remain
+readable but are not reinterpreted using current configuration. Nonstandard
+Chat Completions top-level cache buckets without standard `cached_tokens` have
+unknown accounting and are excluded. New, standard usage gradually increases
+coverage; no historical data is rewritten. Token hit rate is not cost savings,
+and a low value alone does not identify the cause of a cache miss.
+
+Output is plain text, respects terminal width, and remains escape-free when
+piped or used with `NO_COLOR`. Session titles and provider names are sanitized
+before rendering.
+
 ## Package Rules
 
 - Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.

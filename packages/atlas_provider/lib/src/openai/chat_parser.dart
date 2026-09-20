@@ -155,21 +155,31 @@ final class ChatParser implements StreamParser {
   }
 }
 
-TokenUsage _chatUsage(Map<String, Object?> value) => TokenUsage(
-  inputTokens: asInt(value['prompt_tokens']),
-  outputTokens: asInt(value['completion_tokens']),
-  totalTokens: asInt(value['total_tokens']),
-  cacheReadInputTokens: asInt(value['cache_read_input_tokens']) > 0
-      ? asInt(value['cache_read_input_tokens'])
-      : asInt(asJsonMap(value['prompt_tokens_details'])['cached_tokens']),
-  cacheWriteInputTokens: asInt(value['cache_write_input_tokens']) > 0
-      ? asInt(value['cache_write_input_tokens'])
-      : asInt(
-          asJsonMap(
-            value['prompt_tokens_details'],
-          )['cache_creation_input_tokens'],
-        ),
-);
+TokenUsage _chatUsage(Map<String, Object?> value) {
+  final details = asJsonMap(value['prompt_tokens_details']);
+  final standardRead = tokenCount(details['cached_tokens']);
+  final read = standardRead ?? tokenCount(value['cache_read_input_tokens']);
+  final write =
+      tokenCount(details['cache_write_tokens']) ??
+      tokenCount(details['cache_creation_input_tokens']) ??
+      tokenCount(value['cache_write_input_tokens']);
+  // Custom top-level cache buckets do not establish whether prompt_tokens
+  // includes them. Preserve the counts without guessing their denominator.
+  final customAccounting =
+      !details.containsKey('cached_tokens') &&
+      (value.containsKey('cache_read_input_tokens') ||
+          value.containsKey('cache_write_input_tokens'));
+  return TokenUsage(
+    inputTokens: asInt(value['prompt_tokens']),
+    outputTokens: asInt(value['completion_tokens']),
+    totalTokens: asInt(value['total_tokens']),
+    cacheReadInputTokens: read ?? 0,
+    cacheWriteInputTokens: write ?? 0,
+    promptTokens: customAccounting ? null : tokenCount(value['prompt_tokens']),
+    cacheReadReported: read != null,
+    cacheWriteReported: write != null,
+  );
+}
 
 final class _ToolAccumulator {
   String? id;

@@ -1,3 +1,5 @@
+import 'package:atlas_runtime/atlas_runtime.dart';
+
 /// One persisted turn's token usage, used for cache reporting.
 final class TurnUsageSample {
   /// Creates a usage sample.
@@ -12,6 +14,7 @@ final class TurnUsageSample {
     this.outputTokens = 0,
     this.cacheReadTokens = 0,
     this.cacheWriteTokens = 0,
+    this.requests = const [],
   });
 
   /// Serialized identifier of the owning session.
@@ -31,6 +34,9 @@ final class TurnUsageSample {
 
   /// Model that served the turn, when recorded.
   final String? modelId;
+
+  /// Recorded model responses, including those before context compaction.
+  final List<AssistantMessageItem> requests;
 
   /// Input tokens as reported by the provider.
   ///

@@ -586,28 +586,39 @@ void main() {
     );
     expect(store.turns.single.status, TurnStatus.cancelled);
   });
-  test('carries the turn usage through the aborted partial flush', () async {
-    final store = MemorySessionStore();
-    final runtime = AgentRuntime(
-      store: store,
-      provider: CancelAfterToolUseProvider(),
-      tools: MemoryTools(result: const ToolResult(content: 'ok')),
-      ids: TestIds(),
-      defaultModel: testModel,
-    );
+  test(
+    'does not copy previous request usage onto an aborted partial',
+    () async {
+      final store = MemorySessionStore();
+      final runtime = AgentRuntime(
+        store: store,
+        provider: CancelAfterToolUseProvider(),
+        tools: MemoryTools(result: const ToolResult(content: 'ok')),
+        ids: TestIds(),
+        defaultModel: testModel,
+      );
 
-    await runtime
-        .run(
-          TurnRequest(
-            content: const [TextContent('hello')],
-            workingDirectory: '/tmp',
-          ),
-        )
-        .toList();
+      await runtime
+          .run(
+            TurnRequest(
+              content: const [TextContent('hello')],
+              workingDirectory: '/tmp',
+            ),
+          )
+          .toList();
 
-    final aborted = store.timeline.whereType<AssistantMessageItem>().last;
-    expect(aborted.stopReason, StopReason.aborted);
-    expect(aborted.usage.inputTokens, 10);
-    expect(store.turns.single.status, TurnStatus.cancelled);
-  });
+      final aborted = store.timeline.whereType<AssistantMessageItem>().last;
+      expect(aborted.stopReason, StopReason.aborted);
+      expect(aborted.usage.inputTokens, 0);
+      expect(aborted.usage.promptTokens, isNull);
+      expect(aborted.usage.cacheReadReported, isFalse);
+      final messages = store.timeline
+          .whereType<AssistantMessageItem>()
+          .toList();
+      expect(messages, hasLength(2));
+      expect(messages.first.usage.inputTokens, 10);
+      expect(store.turns.single.usage.inputTokens, 10);
+      expect(store.turns.single.status, TurnStatus.cancelled);
+    },
+  );
 }

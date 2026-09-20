@@ -90,6 +90,31 @@ ACP EOF 与资源清理。设置 `ATLAS_TEST_BINARY` 为可执行文件的绝对
 `NO_COLOR`，不再需要 Python。Windows 跳过 POSIX 专属用例。Release job
 会对各平台构建产物运行同一套进程测试。
 
+### 阅读 `atlas cache`
+
+`atlas cache --limit 200` 采样最近 200 个 turn 及其所有已持久化的对话回复，
+包括被上下文压缩隐藏的历史。报表从同一个数据库快照读取，按 Provider/model
+和 session 分组。不包括压缩摘要调用或未产生回复记录的请求尝试，因此不是完整账单。
+
+- **Token hit rate**：可测请求的缓存读取 token 总和除以完整输入 token 总和。
+  缓存写入和输出 token 不算命中。
+- **Requests with hits**：可测请求中发生过缓存读取的比例，不代表整个 prompt
+  全部命中的请求比例。
+- **Cache-data coverage**：可测请求数除以已记录回复数。未知、数据不一致、
+  已中断及零输入记录不参与命中率计算，并分别说明。未知命中率显示 `n/a`，
+  不算缓存未命中。
+- 输入明细使用同一批可测请求。未报告缓存写入时，其余输入标为
+  **unclassified**，不假定为 fresh input。
+
+Provider 适配器会在原始计数之外持久化归一化的完整输入量和缓存字段可用性。
+缺少这些元数据的旧记录仍可读取，但不会依赖当前配置重新解释。Chat Completions
+非标准顶层缓存字段若没有标准 `cached_tokens`，则口径未知，不参与计算。
+新增的标准 usage 会逐步提高覆盖率，不会重写历史数据。Token 命中率不等于
+费用节省率，也不能仅凭低命中率判断缓存未命中的原因。
+
+输出采用纯文本并适配终端宽度，管道输出或设置 `NO_COLOR` 时同样没有转义序列。
+会话标题与 Provider 名称在展示前会清理控制字符。
+
 ## Package 规则
 
 - 领域概念与 runtime ports 放在 `atlas_runtime`；Provider、存储、工具、UI 和协议实现分别放在其所属 package。

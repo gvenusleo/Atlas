@@ -220,13 +220,7 @@ final class _CacheCommand extends _AtlasCommand {
     final config = cli.loadConfiguration();
     final store = DriftSessionStore.openFile(File(config.session.dbPath));
     try {
-      return await runCacheCommand(
-        store,
-        config: config,
-        options: options,
-        out: cli.out,
-        err: cli.err,
-      );
+      return await runCacheCommand(store, options: options, out: cli.out);
     } finally {
       await store.close();
     }

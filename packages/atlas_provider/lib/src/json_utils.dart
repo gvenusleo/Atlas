@@ -5,3 +5,6 @@ Map<String, Object?> asJsonMap(Object? value) => value is Map
 
 /// Coerces a decoded JSON value into an integer, defaulting to zero.
 int asInt(Object? value) => value is num ? value.toInt() : 0;
+
+/// Returns an explicitly reported, nonnegative token count, or unknown.
+int? tokenCount(Object? value) => value is int && value >= 0 ? value : null;

@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:atlas_cli/src/version.dart';
+import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:atlas_storage/atlas_storage.dart';
 import 'package:cli_util/cli_util.dart' as cli_util;
 import 'package:io/io.dart' show ExitCode;
 import 'package:test/test.dart';
@@ -152,6 +154,124 @@ session:
     expect(db.existsSync(), isTrue);
     await db.rename(d.path('.atlas/closed.db'));
   });
+
+  test(
+    'cache reports persisted usage after compaction without provider config',
+    () async {
+      final db = File(d.path('.atlas/test.db'));
+      await db.parent.create(recursive: true);
+      final store = DriftSessionStore.openFile(db);
+      final session = SessionId('session-cache-fixture');
+      final turn = TurnId('turn-cache-fixture');
+      final started = DateTime.utc(2026, 9, 1);
+      final model = ModelRef(
+        providerId: ProviderId('retired'),
+        modelId: ModelId('sonnet'),
+      );
+      try {
+        await store.beginTurn(
+          BeginTurn(
+            session: Session(
+              id: session,
+              title: 'Cache fixture',
+              workingDirectory: d.sandbox,
+              createdAt: started,
+              updatedAt: started,
+            ),
+            turn: Turn(
+              id: turn,
+              sessionId: session,
+              status: TurnStatus.running,
+              startedAt: started,
+              model: model,
+            ),
+            userMessage: UserMessageItem(
+              id: TimelineItemId('user'),
+              sessionId: session,
+              turnId: turn,
+              sequence: 1,
+              occurredAt: started,
+              content: const [TextContent('hi')],
+            ),
+          ),
+        );
+        const usages = [
+          TokenUsage(
+            inputTokens: 100,
+            promptTokens: 150,
+            cacheWriteInputTokens: 50,
+            cacheReadReported: true,
+            cacheWriteReported: true,
+          ),
+          TokenUsage(
+            inputTokens: 150,
+            promptTokens: 250,
+            cacheReadInputTokens: 100,
+            cacheReadReported: true,
+            cacheWriteReported: true,
+          ),
+        ];
+        for (var index = 0; index < usages.length; index++) {
+          await store.appendModelStep(
+            session,
+            PersistedModelStep(
+              assistantMessage: AssistantMessageItem(
+                id: TimelineItemId('assistant-$index'),
+                sessionId: session,
+                turnId: turn,
+                sequence: index + 2,
+                occurredAt: started,
+                content: const [TextContent('done')],
+                model: model,
+                stopReason: StopReason.endTurn,
+                usage: usages[index],
+              ),
+              toolCalls: const [],
+            ),
+          );
+        }
+        await store.finishTurn(
+          session,
+          Turn(
+            id: turn,
+            sessionId: session,
+            status: TurnStatus.completed,
+            startedAt: started,
+            completedAt: started,
+            model: model,
+            usage: usages.last,
+          ),
+        );
+        await store.saveCompaction(
+          session,
+          CompactionCheckpoint(
+            sessionId: session,
+            compactedThroughSequence: 3,
+            summary: 'summary',
+            keptRecentMessages: 0,
+            inputTokensBefore: 250,
+            inputTokensAfter: 10,
+            createdAt: started,
+          ),
+        );
+      } finally {
+        await store.close();
+      }
+      final process = await start(['cache'], configured: true);
+      await process.shouldExit(0);
+      final lines = await process.stdout.rest.toList();
+      final text = lines.join('\n');
+      expect(text, contains('25.0%'));
+      expect(text, contains('50.0%'));
+      expect(text, contains('100.0%'));
+      expect(text, contains('100 / 400 measured input tokens'));
+      expect(text, contains('retired / sonnet'));
+      expect(text, contains('Cache fixture'));
+      expect(text, isNot(contains('\x1b')));
+      expect(lines.every((line) => line.length <= 80), isTrue);
+      expect(await process.stderr.rest.toList(), isEmpty);
+    },
+  );
 
   test(
     'ACP flushes responses and exits naturally on EOF after storage use',

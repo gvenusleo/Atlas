@@ -255,6 +255,9 @@ final class TimelineCodec {
     'total_tokens': usage.totalTokens,
     'cache_read_input_tokens': usage.cacheReadInputTokens,
     'cache_write_input_tokens': usage.cacheWriteInputTokens,
+    'prompt_tokens': usage.promptTokens,
+    'cache_read_reported': usage.cacheReadReported,
+    'cache_write_reported': usage.cacheWriteReported,
   };
 
   static TokenUsage _decodeUsage(Object? value) {
@@ -265,6 +268,9 @@ final class TimelineCodec {
       totalTokens: _int(object, 'total_tokens'),
       cacheReadInputTokens: _int(object, 'cache_read_input_tokens'),
       cacheWriteInputTokens: _int(object, 'cache_write_input_tokens'),
+      promptTokens: object['prompt_tokens'] as int?,
+      cacheReadReported: object['cache_read_reported'] as bool? ?? false,
+      cacheWriteReported: object['cache_write_reported'] as bool? ?? false,
     );
   }
 

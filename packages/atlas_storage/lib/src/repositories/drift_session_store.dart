@@ -31,9 +31,12 @@ final class DriftSessionStore
   /// Loads the most recent [limit] turns, newest first, for picking a sample.
   ///
   /// The token columns on each sample are the turn's recorded usage, which
-  /// only covers the turn's last model response; per-request accounting reads
-  /// every assistant item's usage from the timeline instead.
-  Future<List<TurnUsageSample>> recentTurnUsage({int limit = 200}) async {
+  /// only covers the turn's last model response. Each sample also contains all
+  /// recorded responses, even before compaction. Both queries share a database
+  /// snapshot; failures propagate rather than producing a partial report.
+  Future<List<TurnUsageSample>> recentTurnUsage({
+    int limit = 200,
+  }) => _database.transaction(() async {
     final query =
         _database.select(_database.turns).join([
             innerJoin(
@@ -41,9 +44,33 @@ final class DriftSessionStore
               _database.sessions.id.equalsExp(_database.turns.sessionId),
             ),
           ])
-          ..orderBy([OrderingTerm.desc(_database.turns.startedAt)])
+          ..orderBy([
+            OrderingTerm.desc(_database.turns.startedAt),
+            OrderingTerm.desc(_database.turns.id),
+          ])
           ..limit(limit);
     final rows = await query.get();
+    final requests = <String, List<runtime.AssistantMessageItem>>{};
+    // Bound the IN parameters independently of the user-selected turn limit.
+    for (var offset = 0; offset < rows.length; offset += 500) {
+      final ids = rows
+          .skip(offset)
+          .take(500)
+          .map((row) => row.readTable(_database.turns).id);
+      final messages =
+          await (_database.select(_database.messages)
+                ..where(
+                  (table) =>
+                      table.turnId.isIn(ids) &
+                      table.kind.equals('assistant_message'),
+                )
+                ..orderBy([(table) => OrderingTerm.asc(table.sequence)]))
+              .get();
+      for (final row in messages) {
+        final item = _mappers.message(row).item as runtime.AssistantMessageItem;
+        requests.putIfAbsent(row.turnId, () => []).add(item);
+      }
+    }
     return [
       for (final row in rows)
         TurnUsageSample(
@@ -57,9 +84,12 @@ final class DriftSessionStore
           outputTokens: row.readTable(_database.turns).outputTokens,
           cacheReadTokens: row.readTable(_database.turns).cacheReadTokens,
           cacheWriteTokens: row.readTable(_database.turns).cacheWriteTokens,
+          requests: List.unmodifiable(
+            requests[row.readTable(_database.turns).id] ?? const [],
+          ),
         ),
     ];
-  }
+  });
 
   /// Closes the underlying database connection.
   Future<void> close() => _database.close();

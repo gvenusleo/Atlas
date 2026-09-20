@@ -108,7 +108,7 @@ compact，等待协议 handler 完成后关闭适配器资源。关闭期间事�
 - turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界：被中断模型流已接收的文本会以 aborted assistant message 持久化，并参与后续 turn 的模型上下文。
 - Skill 注入会保留历史中的原始用户文本；完整 skill 指令仅作为当前 turn 可见的模型上下文，不写入 transcript。
 - 模型请求保持前缀稳定，让 provider 能复用此前请求已缓存的前缀：system prompt 由冻结的 session context 重新拼装且把运行上下文放在最后，timeline 投影只追加，skill 指令追加在投影历史之后。
-- Anthropic 请求在最后一个工具、system prompt 与最后一条可缓存消息块上打 cache 断点；OpenAI 兼容请求始终把 session 标识作为 `prompt_cache_key` 发送。`atlas cache` 从 session 数据库报告由此得到的命中率。
+- Anthropic 请求在最后一个工具、system prompt 与最后一条可缓存消息块上打 cache 断点；OpenAI 兼容请求始终把 session 标识作为 `prompt_cache_key` 发送。`atlas cache` 从 session 数据库报告 token 复用率、请求命中率和数据覆盖率，且不受上下文压缩影响。Provider 适配器会归一化完整输入量，并在 assistant usage 中记录缓存字段是否存在；报表不会依赖当前配置推断历史口径。旧记录和中断 usage 不参与命中率，摘要调用也不在已记录回复的统计范围内。
 - Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并把摘要作为模型请求的首条 user 消息投影进去（包在 `<context_summary>` 中，内容含 `Context compacted. Kept {n} recent messages.`）；system prompt 不受影响。可选 compact 指令只影响摘要，不修改用户历史。手动 compact 使用该 session 当前选中的模型生成摘要，没有选中模型时回退到最后一个 turn 使用的模型。
 
 这些是产品行为约束，不表示需要兼容已删除 Go 实现的内部结构或数据库 schema。

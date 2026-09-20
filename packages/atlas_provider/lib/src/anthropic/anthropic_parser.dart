@@ -20,6 +20,9 @@ final class AnthropicParser implements StreamParser {
   final _content = StringBuffer();
   final _toolBlocks = <int, _ToolBlock>{};
   int _inputTokens = 0;
+  int? _promptTokens;
+  bool _cacheReadReported = false;
+  bool _cacheWriteReported = false;
   int _cacheReadTokens = 0;
   int _cacheWriteTokens = 0;
   int _outputTokens = 0;
@@ -42,6 +45,14 @@ final class AnthropicParser implements StreamParser {
         _inputTokens = asInt(usage['input_tokens']);
         _cacheReadTokens = asInt(usage['cache_read_input_tokens']);
         _cacheWriteTokens = asInt(usage['cache_creation_input_tokens']);
+        final input = tokenCount(usage['input_tokens']);
+        final read = tokenCount(usage['cache_read_input_tokens']);
+        final write = tokenCount(usage['cache_creation_input_tokens']);
+        _cacheReadReported = read != null;
+        _cacheWriteReported = write != null;
+        _promptTokens = input != null && read != null && write != null
+            ? input + read + write
+            : null;
       case 'content_block_start':
         final block = asJsonMap(value['content_block']);
         switch (block['type']) {
@@ -193,6 +204,9 @@ final class AnthropicParser implements StreamParser {
         totalTokens: _inputTokens + _outputTokens,
         cacheReadInputTokens: _cacheReadTokens,
         cacheWriteInputTokens: _cacheWriteTokens,
+        promptTokens: _promptTokens,
+        cacheReadReported: _cacheReadReported,
+        cacheWriteReported: _cacheWriteReported,
       ),
       continuation: _thinkingBlocks.isEmpty
           ? null

@@ -421,7 +421,6 @@ final class TurnExecutor {
         turnId: turnId,
         timeline: timeline,
         model: model,
-        latestUsage: latestUsage,
         partialText: partialText,
       );
       if (partialItem != null) {
@@ -805,7 +804,6 @@ final class TurnExecutor {
     required TurnId turnId,
     required List<TimelineItem> timeline,
     required ModelRef model,
-    required TokenUsage latestUsage,
     required StringBuffer partialText,
   }) async {
     if (partialText.isEmpty) return null;
@@ -820,7 +818,8 @@ final class TurnExecutor {
       ]),
       model: model,
       stopReason: StopReason.aborted,
-      usage: latestUsage,
+      // The interrupted request has no final usage. The turn's latest usage
+      // belongs to the previous completed request, not this partial response.
     );
     try {
       await store.appendModelStep(

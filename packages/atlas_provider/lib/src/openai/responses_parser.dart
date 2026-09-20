@@ -191,11 +191,18 @@ final class ResponsesParser implements StreamParser {
   }
 }
 
-TokenUsage _responsesUsage(Map<String, Object?> value) => TokenUsage(
-  inputTokens: asInt(value['input_tokens']),
-  outputTokens: asInt(value['output_tokens']),
-  totalTokens: asInt(value['total_tokens']),
-  cacheReadInputTokens: asInt(
-    asJsonMap(value['input_tokens_details'])['cached_tokens'],
-  ),
-);
+TokenUsage _responsesUsage(Map<String, Object?> value) {
+  final details = asJsonMap(value['input_tokens_details']);
+  final read = tokenCount(details['cached_tokens']);
+  final write = tokenCount(details['cache_write_tokens']);
+  return TokenUsage(
+    inputTokens: asInt(value['input_tokens']),
+    outputTokens: asInt(value['output_tokens']),
+    totalTokens: asInt(value['total_tokens']),
+    cacheReadInputTokens: read ?? 0,
+    cacheWriteInputTokens: write ?? 0,
+    promptTokens: tokenCount(value['input_tokens']),
+    cacheReadReported: read != null,
+    cacheWriteReported: write != null,
+  );
+}
