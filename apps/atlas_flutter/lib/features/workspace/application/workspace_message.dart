@@ -25,47 +25,34 @@ enum WorkspaceMessageKind {
 }
 
 /// One presentation-ready item in the conversation timeline.
-final class WorkspaceMessage {
-  /// Creates a workspace message.
-  const WorkspaceMessage({
-    required this.id,
-    required this.kind,
-    required this.text,
-    this.imageSources = const [],
-    this.toolName,
-    this.arguments,
-    this.startedAt,
-    this.isError = false,
-    this.isRunning = false,
-  });
-
+final class const WorkspaceMessage({
   /// Stable identity used by the scrolling list.
-  final String id;
+  required final String id,
 
   /// The visual role of this item.
-  final WorkspaceMessageKind kind;
+  required final WorkspaceMessageKind kind,
 
   /// Markdown text or tool output.
-  final String text;
+  required final String text,
 
   /// Data URLs or remote URIs for user-attached images.
-  final List<String> imageSources;
+  final List<String> imageSources = const [],
 
   /// Tool name for tool items.
-  final String? toolName;
+  final String? toolName,
 
   /// Structured arguments for tool items.
-  final JsonObject? arguments;
+  final JsonObject? arguments,
 
   /// When a tool item started, used to render its elapsed time.
-  final DateTime? startedAt;
+  final DateTime? startedAt,
 
   /// Whether the item represents a failure.
-  final bool isError;
+  final bool isError = false,
 
   /// Whether a tool has not returned yet.
-  final bool isRunning;
-
+  final bool isRunning = false,
+}) {
   /// Returns a copy with updated streaming or tool state.
   WorkspaceMessage copyWith({String? text, bool? isError, bool? isRunning}) =>
       WorkspaceMessage(

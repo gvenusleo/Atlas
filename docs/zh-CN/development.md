@@ -28,7 +28,7 @@ apps/atlas_flutter           Flutter 桌面端与移动端应用
 
 ## 工具链
 
-根 `mise.toml` 固定 Flutter 3.47.0，其中包含 Dart 3.13.0。
+根 `mise.toml` 固定 Flutter 3.47.0，其中包含 Dart 3.13.0。所有 package 声明 `sdk: ^3.13.0`，因此代码依赖的 Dart 3.13 语言特性（主构造函数、sealed 类型 switch 语句的穷尽性检查）无需实验开关即可使用。
 
 ```sh
 mise install

@@ -3,36 +3,30 @@ import 'package:nocterm/nocterm.dart';
 import 'prompt_line.dart';
 
 /// Bottom bar with the message input.
-final class InputBar extends StatelessComponent {
-  /// Creates the input bar.
-  const InputBar({
-    super.key,
-    required this.controller,
-    required this.busy,
-    required this.onSubmitted,
-    this.onChanged,
-    this.onKeyEvent,
-    this.readOnly = false,
-  });
+final class const InputBar({
+  super.key,
 
   /// The text editing state.
-  final TextEditingController controller;
+  required final TextEditingController controller,
 
   /// Whether a turn is currently running.
-  final bool busy;
+  required final bool busy,
 
   /// Called with the submitted text.
-  final void Function(String text) onSubmitted;
+  required final void Function(String text) onSubmitted,
 
   /// Called whenever the input text changes.
-  final void Function(String text)? onChanged;
+  final void Function(String text)? onChanged,
 
   /// Intercepts key events before the field handles them; return `true` to
   /// consume the event.
-  final bool Function(KeyboardEvent event)? onKeyEvent;
+  final bool Function(KeyboardEvent event)? onKeyEvent,
 
   /// Whether the field accepts no text input (model picker mode).
-  final bool readOnly;
+  final bool readOnly = false,
+}) extends StatelessComponent {
+  /// Creates the input bar.
+  this;
 
   @override
   Component build(BuildContext context) {

@@ -11,28 +11,24 @@ import 'slash_commands.dart';
 const maxSlashPopupRows = 5;
 
 /// Renders the slash command completion popup above the input bar.
-final class SlashPopup extends StatelessComponent {
-  /// Creates a slash popup.
-  const SlashPopup({
-    super.key,
-    required this.matches,
-    required this.selected,
-    this.showSlash = true,
-    this.title,
-  });
+final class const SlashPopup({
+  super.key,
 
   /// The ranked command matches.
-  final List<SlashCommand> matches;
+  required final List<SlashCommand> matches,
 
   /// The index of the highlighted command.
-  final int selected;
+  required final int selected,
 
   /// Whether names are rendered with a leading `/`; hidden for the model
   /// picker, where the names are display labels.
-  final bool showSlash;
+  final bool showSlash = true,
 
   /// An optional heading line above the rows (e.g. the reasoning stage).
-  final String? title;
+  final String? title,
+}) extends StatelessComponent {
+  /// Creates a slash popup.
+  this;
 
   @override
   Component build(BuildContext context) {

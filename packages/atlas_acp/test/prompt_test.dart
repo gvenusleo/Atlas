@@ -365,6 +365,62 @@ void main() {
     expect((response['result'] as Map)['stopReason'], 'end_turn');
     await wire.close();
   });
+  test('preserves embedded resource identity for the model', () async {
+    final wire = await Wire.open();
+    final sessionId = await createWireSession(wire);
+    final promptFuture = wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {
+            'type': 'resource',
+            'resource': {
+              'uri': 'file:///tmp/project/main.dart',
+              'mimeType': 'text/x-dart',
+              'text': 'void main() {}',
+            },
+          },
+        ],
+      },
+    });
+    await wire.turnNotifications.take(5).toList();
+    await promptFuture;
+
+    final resources = [
+      for (final message in wire.lastRequest!.messages)
+        ...message.content.whereType<ResourceContent>(),
+    ];
+    expect(resources, isNotEmpty);
+    expect(resources.last.uri, 'file:///tmp/project/main.dart');
+    expect(resources.last.mimeType, 'text/x-dart');
+    expect(resources.last.text, 'void main() {}');
+    await wire.close();
+  });
+  test('rejects a binary embedded resource block', () async {
+    final wire = await Wire.open();
+    final sessionId = await createWireSession(wire);
+    final response = await wire.send({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': sessionId,
+        'prompt': [
+          {
+            'type': 'resource',
+            'resource': {'uri': 'file:///tmp/scan.pdf', 'blob': 'AAAA'},
+          },
+        ],
+      },
+    });
+    final error = response['error'] as Map<Object?, Object?>;
+    expect(error['code'], -32602);
+    expect(error['message'], 'only text resource blocks are supported');
+    await wire.close();
+  });
   test('rejects a resource block without a uri', () async {
     final wire = await Wire.open();
     final sessionId = await createWireSession(wire);

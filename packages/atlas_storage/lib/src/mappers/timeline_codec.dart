@@ -3,22 +3,18 @@ import 'dart:convert';
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// The encoded database representation of a timeline item.
-final class EncodedTimelineItem {
-  /// Creates an encoded timeline item.
-  const EncodedTimelineItem({
-    required this.kind,
-    required this.version,
-    required this.payload,
-  });
-
+final class const EncodedTimelineItem({
   /// The stable discriminant.
-  final String kind;
+  required final String kind,
 
   /// The payload schema version.
-  final int version;
+  required final int version,
 
   /// The JSON payload.
-  final String payload;
+  required final String payload,
+}) {
+  /// Creates an encoded timeline item.
+  this;
 }
 
 /// Encodes and decodes runtime timeline variants.
@@ -194,30 +190,26 @@ final class TimelineCodec {
     return List<ContentPart>.unmodifiable(
       value.map((item) {
         final object = _jsonObject(item, 'content item');
-        switch (_string(object, 'type')) {
-          case 'text':
-            return TextContent(_string(object, 'text'));
-          case 'image':
-            return ImageContent(
-              source: _string(object, 'source'),
-              mimeType: object['mime_type'] as String?,
-              detail: _enumByName(
-                ImageDetail.values,
-                _string(object, 'detail'),
-                'detail',
-              ),
-            );
-          case 'resource':
-            return ResourceContent(
-              uri: _string(object, 'uri'),
-              mimeType: object['mime_type'] as String?,
-              text: _stringOrDefault(object, 'text'),
-            );
-          default:
-            throw FormatException(
-              'Unsupported content type: ${object['type']}',
-            );
-        }
+        return switch (object) {
+          {'type': 'text'} => TextContent(_string(object, 'text')),
+          {'type': 'image'} => ImageContent(
+            source: _string(object, 'source'),
+            mimeType: object['mime_type'] as String?,
+            detail: _enumByName(
+              ImageDetail.values,
+              _string(object, 'detail'),
+              'detail',
+            ),
+          ),
+          {'type': 'resource'} => ResourceContent(
+            uri: _string(object, 'uri'),
+            mimeType: object['mime_type'] as String?,
+            text: _stringOrDefault(object, 'text'),
+          ),
+          _ => throw FormatException(
+            'Unsupported content type: ${_string(object, 'type')}',
+          ),
+        };
       }),
     );
   }

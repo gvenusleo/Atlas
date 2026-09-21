@@ -21,19 +21,18 @@ import 'caret_animation.dart';
 /// and the caret hides while [TickerMode] is disabled. While the field is
 /// unfocused or a range selection covers text the caret hides and the springs
 /// reset, so it reappears in place rather than sliding in.
-class AnimatedCaret extends StatefulWidget {
-  /// Wraps [child] with an animated caret driven by [controller].
-  const AnimatedCaret({
-    super.key,
-    required this.controller,
-    required this.child,
-  });
+class const AnimatedCaret({
+  super.key,
 
   /// Controller of the wrapped field; its selection drives the caret.
-  final TextEditingController controller;
+  required final TextEditingController controller,
 
   /// The text field to decorate, built with `showCursor: false`.
-  final Widget child;
+  required final Widget child,
+}) extends StatefulWidget {
+  /// Wraps [child] with an animated caret driven by [controller].
+  this;
+
   @override
   State<AnimatedCaret> createState() => _AnimatedCaretState();
 }
@@ -322,14 +321,14 @@ class _AnimatedCaretState extends State<AnimatedCaret>
 /// One frame's worth of caret drawing state.
 @immutable
 class _CaretPaint {
-  const _CaretPaint({
+  const new({
     required this.rect,
     required this.quad,
     required this.color,
     required this.visible,
   });
 
-  const _CaretPaint.hidden()
+  const new hidden()
     : rect = null,
       quad = null,
       color = const Color(0x00000000),
@@ -360,10 +359,9 @@ class _CaretPaint {
 }
 
 /// Paints the caret quad, or the plain caret rectangle while it settles.
-class _CaretPainter extends CustomPainter {
-  _CaretPainter(this.caret) : super(repaint: caret);
-
-  final ValueListenable<_CaretPaint> caret;
+class _CaretPainter(final ValueListenable<_CaretPaint> caret)
+    extends CustomPainter {
+  this : super(repaint: caret);
 
   @override
   void paint(Canvas canvas, Size size) {

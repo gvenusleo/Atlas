@@ -56,13 +56,12 @@ final themeModeProvider = NotifierProvider<ThemeModeController, ThemeMode>(
 ///
 /// The bootstrap in `main` seeds the controller with the value read before the
 /// first frame, so the first paint already uses the saved mode.
-final class ThemeModeController extends Notifier<ThemeMode> {
+final class ThemeModeController({
+  this._initial = ThemeMode.system,
+  this._preferences,
+}) extends Notifier<ThemeMode> {
   /// Creates a controller, optionally seeded with the persisted preference.
-  ThemeModeController({
-    ThemeMode initial = ThemeMode.system,
-    SharedPreferences? preferences,
-  }) : _initial = initial,
-       _preferences = preferences;
+  this;
 
   final ThemeMode _initial;
   final SharedPreferences? _preferences;

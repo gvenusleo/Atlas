@@ -10,13 +10,12 @@ import 'terminal_panel.dart';
 import 'workspace_controls.dart';
 
 /// Files and terminal sidebar used by desktop panels and compact drawers.
-class DetailsPanel extends ConsumerStatefulWidget {
-  /// Creates workspace tools.
-  const DetailsPanel({super.key, this.onClose});
+class const DetailsPanel({
+  super.key,
 
   /// Closes the compact drawer when present.
-  final VoidCallback? onClose;
-
+  final VoidCallback? onClose,
+}) extends ConsumerStatefulWidget {
   @override
   ConsumerState<DetailsPanel> createState() => _DetailsPanelState();
 }
@@ -120,12 +119,10 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
   }
 }
 
-class _ToolTabs extends StatelessWidget {
-  const _ToolTabs({required this.terminal, required this.onChanged});
-
-  final bool terminal;
-  final ValueChanged<bool> onChanged;
-
+class const _ToolTabs({
+  required final bool terminal,
+  required final ValueChanged<bool> onChanged,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(

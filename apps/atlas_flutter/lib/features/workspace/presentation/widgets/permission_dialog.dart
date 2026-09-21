@@ -12,12 +12,14 @@ import '../../application/workspace_controller.dart';
 ///
 /// Watches pending agent permission requests and shows one dialog at a time;
 /// dismissing the dialog rejects the request so the agent never waits.
-class PermissionHost extends ConsumerStatefulWidget {
-  /// Creates a permission host wrapping [child].
-  const PermissionHost({super.key, required this.child});
+class const PermissionHost({
+  super.key,
 
   /// The workspace content rendered beneath the dialogs.
-  final Widget child;
+  required final Widget child,
+}) extends ConsumerStatefulWidget {
+  /// Creates a permission host wrapping [child].
+  this;
 
   @override
   ConsumerState<PermissionHost> createState() => _PermissionHostState();
@@ -59,12 +61,14 @@ class _PermissionHostState extends ConsumerState<PermissionHost> {
 }
 
 /// A permission request dialog with allow-once, allow-always, and reject.
-class PermissionDialog extends StatelessWidget {
-  /// Creates a permission dialog for [request].
-  const PermissionDialog({super.key, required this.request});
+class const PermissionDialog({
+  super.key,
 
   /// The pending request being answered.
-  final PermissionRequest request;
+  required final PermissionRequest request,
+}) extends StatelessWidget {
+  /// Creates a permission dialog for [request].
+  this;
 
   @override
   Widget build(BuildContext context) {

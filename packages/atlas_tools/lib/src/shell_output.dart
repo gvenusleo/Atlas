@@ -2,16 +2,17 @@ import 'dart:collection';
 import 'dart:convert';
 
 /// Retains bounded UTF-8 head/tail bytes without splitting output characters.
-final class ShellOutputBuffer {
+final class ShellOutputBuffer(
+  /// Maximum encoded size of the rendered output.
+  final int limit,
+) {
   /// Creates a buffer including truncation text; [limit] must be at least 55.
-  ShellOutputBuffer(this.limit) {
+  this {
     if (limit < _marker.length * 2 - 1) {
       throw ArgumentError.value(limit, 'limit', 'must be at least 55 bytes');
     }
   }
 
-  /// Maximum encoded size of the rendered output.
-  final int limit;
   final _head = <int>[];
   final _tail = ListQueue<int>();
   int _length = 0;

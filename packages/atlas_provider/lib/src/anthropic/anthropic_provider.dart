@@ -10,13 +10,14 @@ import 'anthropic_configuration.dart';
 import 'anthropic_parser.dart';
 
 /// Streams configured models through the Anthropic Messages API.
-final class AnthropicProvider implements ModelProvider {
+final class AnthropicProvider(
+  List<AnthropicProviderConfiguration> configurations, {
+  HttpStreamClient? httpClient,
+}) implements ModelProvider {
   /// Creates a provider from endpoint configurations and an optional HTTP client.
-  AnthropicProvider(
-    List<AnthropicProviderConfiguration> configurations, {
-    HttpStreamClient? httpClient,
-  }) : _entries = _indexConfigurations(configurations),
-       _httpClient = httpClient ?? DioHttpStreamClient();
+  this
+    : _entries = _indexConfigurations(configurations),
+      _httpClient = httpClient ?? DioHttpStreamClient();
 
   final Map<ModelRef, _ModelEntry> _entries;
   final HttpStreamClient _httpClient;
@@ -102,12 +103,10 @@ final class AnthropicProvider implements ModelProvider {
   }
 }
 
-final class _ModelEntry {
-  const _ModelEntry(this.provider, this.configuration);
-
-  final AnthropicProviderConfiguration provider;
-  final AnthropicModelConfiguration configuration;
-}
+final class const _ModelEntry(
+  final AnthropicProviderConfiguration provider,
+  final AnthropicModelConfiguration configuration,
+) {}
 
 Map<ModelRef, _ModelEntry> _indexConfigurations(
   List<AnthropicProviderConfiguration> configurations,

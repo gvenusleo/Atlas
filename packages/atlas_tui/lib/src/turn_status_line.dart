@@ -11,23 +11,20 @@ const miniDotFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '
 /// Thinking, or Compacting), the wall-clock elapsed time, and an
 /// esc-to-interrupt hint. Compaction omits the hint because it cannot be
 /// interrupted. It renders nothing while no turn is running.
-final class TurnStatusLine extends StatelessComponent {
-  /// Creates a turn status line.
-  const TurnStatusLine({
-    super.key,
-    required this.phase,
-    required this.elapsed,
-    required this.frame,
-  });
+final class const TurnStatusLine({
+  super.key,
 
   /// The activity phase of the running turn.
-  final TurnPhase phase;
+  required final TurnPhase phase,
 
   /// The wall-clock duration since the turn started.
-  final Duration elapsed;
+  required final Duration elapsed,
 
   /// The spinner frame counter, advanced by the controller's status tick.
-  final int frame;
+  required final int frame,
+}) extends StatelessComponent {
+  /// Creates a turn status line.
+  this;
 
   @override
   Component build(BuildContext context) {

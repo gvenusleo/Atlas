@@ -37,13 +37,13 @@ const turnStatusTick = Duration(milliseconds: 250);
 /// turns through the injected [AgentRuntime], accumulates model deltas and
 /// tool activity into [ChatMessage]s, and notifies listeners on every change.
 /// It never calls providers, tools, or storage directly.
-final class ChatController implements Listenable {
-  /// Creates a controller bound to [runtime].
-  ChatController({required this.runtime, String? workingDirectory})
-    : _workingDirectory = workingDirectory ?? Directory.current.path;
-
+final class ChatController({
   /// The runtime that executes turns.
-  final AgentSession runtime;
+  required final AgentSession runtime,
+  String? workingDirectory,
+}) implements Listenable {
+  /// Creates a controller bound to [runtime].
+  this : _workingDirectory = workingDirectory ?? Directory.current.path;
 
   /// The currently focused session, when one has been created.
   SessionId? get sessionId => _sessionId;

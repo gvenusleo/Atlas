@@ -4,53 +4,42 @@ import '../domain/timeline.dart';
 import 'cancellation.dart';
 
 /// A bounded replacement snapshot of output produced by a running tool.
-final class ToolOutputSnapshot {
-  /// Creates a transient output snapshot; this is not a persisted tool result.
-  const ToolOutputSnapshot({
-    required this.content,
-    required this.totalBytes,
-    required this.truncated,
-  });
-
+final class const ToolOutputSnapshot({
   /// Text replacing the previous output for this call.
-  final String content;
+  required final String content,
 
   /// Raw output bytes observed before decoding and display filtering.
-  final int totalBytes;
+  required final int totalBytes,
 
   /// Whether some displayable output was omitted.
-  final bool truncated;
+  required final bool truncated,
+}) {
+  /// Creates a transient output snapshot; this is not a persisted tool result.
+  this;
 }
 
 /// Context supplied to a tool invocation.
-final class ToolContext {
-  /// Creates a tool context.
-  const ToolContext({
-    required this.sessionId,
-    required this.turnId,
-    required this.workingDirectory,
-    this.additionalDirectories = const <String>[],
-    this.cancellation,
-    this.onOutput,
-  });
-
+final class const ToolContext({
   /// The active session.
-  final SessionId sessionId;
+  required final SessionId sessionId,
 
   /// The active turn.
-  final TurnId turnId;
+  required final TurnId turnId,
 
   /// The primary working directory.
-  final String workingDirectory;
+  required final String workingDirectory,
 
   /// Additional roots available to the tool.
-  final List<String> additionalDirectories;
+  final List<String> additionalDirectories = const <String>[],
 
   /// Cooperative cancellation for the tool invocation.
-  final CancellationToken? cancellation;
+  final CancellationToken? cancellation,
 
   /// Receives bounded replacement output while execution is in progress.
-  final void Function(ToolOutputSnapshot snapshot)? onOutput;
+  final void Function(ToolOutputSnapshot snapshot)? onOutput,
+}) {
+  /// Creates a tool context.
+  this;
 }
 
 /// A built-in or installed Atlas tool.

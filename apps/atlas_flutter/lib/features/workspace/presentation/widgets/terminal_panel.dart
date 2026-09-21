@@ -11,19 +11,17 @@ import '../../../../shared/theme/atlas_theme.dart';
 import '../workspace_metrics.dart';
 
 /// Keeps one [TerminalPanel] per session so the shell survives focus changes.
-class TerminalHost extends ConsumerStatefulWidget {
-  /// Creates a host for the focused session's terminal.
-  const TerminalHost({
-    super.key,
-    required this.sessionKey,
-    required this.workingDirectory,
-  });
+class const TerminalHost({
+  super.key,
 
   /// Cache key of the focused session or draft.
-  final String sessionKey;
+  required final String sessionKey,
 
   /// Working directory of the focused session.
-  final String workingDirectory;
+  required final String workingDirectory,
+}) extends ConsumerStatefulWidget {
+  /// Creates a host for the focused session's terminal.
+  this;
 
   @override
   ConsumerState<TerminalHost> createState() => _TerminalHostState();
@@ -62,12 +60,14 @@ class _TerminalHostState extends ConsumerState<TerminalHost> {
 }
 
 /// Interactive shell backed by a pseudo-terminal and a terminal emulator.
-class TerminalPanel extends ConsumerStatefulWidget {
-  /// Creates a shell rooted at [workingDirectory].
-  const TerminalPanel({super.key, required this.workingDirectory});
+class const TerminalPanel({
+  super.key,
 
   /// Initial directory for the shell process.
-  final String workingDirectory;
+  required final String workingDirectory,
+}) extends ConsumerStatefulWidget {
+  /// Creates a shell rooted at [workingDirectory].
+  this;
 
   @override
   ConsumerState<TerminalPanel> createState() => _TerminalPanelState();

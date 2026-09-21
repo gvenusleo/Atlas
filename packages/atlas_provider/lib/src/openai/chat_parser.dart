@@ -8,12 +8,13 @@ import '../stream_runner.dart';
 import 'openai_configuration.dart';
 
 /// Parses a Chat Completions streaming response.
-final class ChatParser implements StreamParser {
-  /// Creates a chat parser for [providerId].
-  ChatParser(this.providerId);
-
+final class ChatParser(
   /// The provider that owns this stream.
-  final ProviderId providerId;
+  final ProviderId providerId,
+) implements StreamParser {
+  /// Creates a chat parser for [providerId].
+  this;
+
   final _reasoning = StringBuffer();
   final _content = StringBuffer();
   final _tools = <int, _ToolAccumulator>{};

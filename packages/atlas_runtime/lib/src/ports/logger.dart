@@ -16,38 +16,30 @@ enum LogLevel {
 }
 
 /// A redacted, structured diagnostic event.
-final class LogEvent {
-  /// Creates a log event.
-  const LogEvent({
-    required this.level,
-    required this.code,
-    required this.message,
-    this.sessionId,
-    this.turnId,
-    this.fields = const <String, Object?>{},
-    required this.occurredAt,
-  });
-
+final class const LogEvent({
   /// Event severity.
-  final LogLevel level;
+  required final LogLevel level,
 
   /// Stable event code.
-  final String code;
+  required final String code,
 
   /// Redacted human-readable message.
-  final String message;
+  required final String message,
 
   /// Related session, when available.
-  final SessionId? sessionId;
+  final SessionId? sessionId,
 
   /// Related turn, when available.
-  final TurnId? turnId;
+  final TurnId? turnId,
 
   /// Redacted structured fields.
-  final Map<String, Object?> fields;
+  final Map<String, Object?> fields = const <String, Object?>{},
 
   /// Event timestamp.
-  final DateTime occurredAt;
+  required final DateTime occurredAt,
+}) {
+  /// Creates a log event.
+  this;
 }
 
 /// Logging port used by runtime and adapters.
@@ -57,9 +49,9 @@ abstract interface class AtlasLogger {
 }
 
 /// Default logger that intentionally discards events.
-final class NoopLogger implements AtlasLogger {
+final class const NoopLogger() implements AtlasLogger {
   /// Creates a no-op logger.
-  const NoopLogger();
+  this;
 
   @override
   void log(LogEvent event) {}

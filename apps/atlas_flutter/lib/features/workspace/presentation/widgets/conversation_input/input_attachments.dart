@@ -6,19 +6,12 @@ import '../../../data/image_attachment.dart';
 import '../workspace_controls.dart';
 
 /// Toolbar trigger that opens the image picker.
-class AttachImageButton extends StatelessWidget {
-  /// Creates an image attachment trigger.
-  const AttachImageButton({
-    super.key,
-    required this.enabled,
-    required this.attaching,
-    required this.onPressed,
-  });
-
-  final bool enabled;
-  final bool attaching;
-  final VoidCallback onPressed;
-
+class const AttachImageButton({
+  super.key,
+  required final bool enabled,
+  required final bool attaching,
+  required final VoidCallback onPressed,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -47,17 +40,11 @@ class AttachImageButton extends StatelessWidget {
 }
 
 /// Row of images staged for the next message.
-class PendingImageStrip extends StatelessWidget {
-  /// Creates a pending image strip.
-  const PendingImageStrip({
-    super.key,
-    required this.images,
-    required this.onRemove,
-  });
-
-  final List<PendingImage> images;
-  final ValueChanged<int> onRemove;
-
+class const PendingImageStrip({
+  super.key,
+  required final List<PendingImage> images,
+  required final ValueChanged<int> onRemove,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -78,17 +65,11 @@ class PendingImageStrip extends StatelessWidget {
 }
 
 /// A single staged image with a remove affordance.
-class PendingImageChip extends StatelessWidget {
-  /// Creates a pending image chip.
-  const PendingImageChip({
-    super.key,
-    required this.image,
-    required this.onRemove,
-  });
-
-  final PendingImage image;
-  final VoidCallback onRemove;
-
+class const PendingImageChip({
+  super.key,
+  required final PendingImage image,
+  required final VoidCallback onRemove,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

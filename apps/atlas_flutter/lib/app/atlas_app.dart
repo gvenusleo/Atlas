@@ -13,9 +13,7 @@ import 'runtime_environment.dart';
 import 'theme_mode.dart';
 
 /// Root application for the Atlas desktop and mobile clients.
-class AtlasApp extends ConsumerStatefulWidget {
-  const AtlasApp({super.key});
-
+class const AtlasApp({super.key}) extends ConsumerStatefulWidget {
   @override
   ConsumerState<AtlasApp> createState() => _AtlasAppState();
 }

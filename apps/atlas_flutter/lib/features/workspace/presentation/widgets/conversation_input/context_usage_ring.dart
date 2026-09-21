@@ -33,17 +33,11 @@ String contextUsageLabel(int usedTokens, int contextWindow) {
 }
 
 /// Quiet context-usage ring shown beside the send control.
-class ContextUsageRing extends StatelessWidget {
-  /// Creates a context-usage ring.
-  const ContextUsageRing({
-    super.key,
-    required this.usedTokens,
-    required this.contextWindow,
-  });
-
-  final int usedTokens;
-  final int contextWindow;
-
+class const ContextUsageRing({
+  super.key,
+  required final int usedTokens,
+  required final int contextWindow,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -74,18 +68,11 @@ class ContextUsageRing extends StatelessWidget {
 }
 
 /// Paints the context-usage ring track and filled arc.
-class ContextUsageRingPainter extends CustomPainter {
-  /// Creates a ring painter.
-  ContextUsageRingPainter({
-    required this.progress,
-    required this.trackColor,
-    required this.fillColor,
-  });
-
-  final double progress;
-  final Color trackColor;
-  final Color fillColor;
-
+class ContextUsageRingPainter({
+  required final double progress,
+  required final Color trackColor,
+  required final Color fillColor,
+}) extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);

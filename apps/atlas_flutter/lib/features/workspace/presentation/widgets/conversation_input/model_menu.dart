@@ -7,19 +7,12 @@ import '../workspace_controls.dart';
 import 'floating_menu_card.dart';
 
 /// Toolbar trigger that opens the model picker.
-class ModelMenu extends StatelessWidget {
-  /// Creates a model picker trigger.
-  const ModelMenu({
-    super.key,
-    required this.models,
-    required this.activeModel,
-    required this.onTap,
-  });
-
-  final List<ModelDescriptor> models;
-  final ModelDescriptor activeModel;
-  final VoidCallback onTap;
-
+class const ModelMenu({
+  super.key,
+  required final List<ModelDescriptor> models,
+  required final ModelDescriptor activeModel,
+  required final VoidCallback onTap,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -53,28 +46,19 @@ class ModelMenu extends StatelessWidget {
 }
 
 /// Floating model picker card with a gliding highlight.
-class ModelMenuCard extends StatelessWidget {
-  /// Creates a model picker card.
-  const ModelMenuCard({
-    super.key,
-    required this.models,
-    required this.activeModel,
-    required this.highlighted,
-    required this.onHighlighted,
-    required this.onSelected,
-  });
-
+class const ModelMenuCard({
+  super.key,
+  required final List<ModelDescriptor> models,
+  required final ModelDescriptor activeModel,
+  required final int highlighted,
+  required final ValueChanged<int> onHighlighted,
+  required final ValueChanged<ModelDescriptor> onSelected,
+}) extends StatelessWidget {
   /// Row height used to size and position the floating card.
   static const rowHeight = 30.0;
 
   /// Vertical padding around the row list, used to size the floating card.
   static const cardPadding = 8.0;
-
-  final List<ModelDescriptor> models;
-  final ModelDescriptor activeModel;
-  final int highlighted;
-  final ValueChanged<int> onHighlighted;
-  final ValueChanged<ModelDescriptor> onSelected;
 
   @override
   Widget build(BuildContext context) {

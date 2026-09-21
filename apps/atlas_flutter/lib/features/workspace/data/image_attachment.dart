@@ -16,18 +16,18 @@ abstract final class ImageAttachmentLimits {
 }
 
 /// An image waiting to be sent with the next prompt.
-final class PendingImage {
-  /// Creates a pending image from decoded bytes.
-  const PendingImage({required this.bytes, required this.mimeType, this.name});
-
+final class const PendingImage({
   /// Encoded image bytes.
-  final Uint8List bytes;
+  required final Uint8List bytes,
 
   /// MIME type such as `image/png`.
-  final String mimeType;
+  required final String mimeType,
 
   /// Original file name when known.
-  final String? name;
+  final String? name,
+}) {
+  /// Creates a pending image from decoded bytes.
+  this;
 
   /// Runtime content part using a data URL.
   ImageContent toContent() => ImageContent(

@@ -4,27 +4,23 @@ import 'package:nocterm/nocterm.dart';
 ///
 /// Mirrors the classic Go TUI footer: the active model, its reasoning effort,
 /// and the context usage of the current session.
-final class SessionStatusLine extends StatelessComponent {
-  /// Creates a status line.
-  const SessionStatusLine({
-    super.key,
-    required this.modelName,
-    required this.contextTokens,
-    required this.contextWindow,
-    this.effortName,
-  });
+final class const SessionStatusLine({
+  super.key,
 
   /// The display name of the active model.
-  final String modelName;
-
-  /// The display name of the active reasoning effort, omitted when null.
-  final String? effortName;
+  required final String modelName,
 
   /// The total tokens of the most recently finished turn.
-  final int contextTokens;
+  required final int contextTokens,
 
   /// The model context window in tokens.
-  final int contextWindow;
+  required final int contextWindow,
+
+  /// The display name of the active reasoning effort, omitted when null.
+  final String? effortName,
+}) extends StatelessComponent {
+  /// Creates a status line.
+  this;
 
   @override
   Component build(BuildContext context) {

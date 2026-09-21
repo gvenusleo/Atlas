@@ -15,20 +15,18 @@ import 'widgets/workspace_controls.dart';
 import 'workspace_metrics.dart';
 
 /// Sections offered by the settings surface.
-enum SettingsSection {
+enum const SettingsSection(
+  /// Rail and strip label.
+  final String label,
+
+  /// Rail and strip icon.
+  final IconData icon,
+) {
   /// Client-local appearance preferences.
   appearance('Appearance', LucideIcons.sunMoon),
 
   /// ACP server connections and runtime switching.
-  connections('Connections', LucideIcons.plug);
-
-  const SettingsSection(this.label, this.icon);
-
-  /// Rail and strip label.
-  final String label;
-
-  /// Rail and strip icon.
-  final IconData icon;
+  connections('Connections', LucideIcons.plug),
 }
 
 /// Settings page for client-local preferences and ACP connections.
@@ -43,10 +41,7 @@ enum SettingsSection {
 /// button and the surface title while the pane starts at the same baseline.
 /// Compact layouts hide the rail and switch sections from a strip inside the
 /// pane instead.
-class SettingsPage extends ConsumerStatefulWidget {
-  /// Creates the settings page.
-  const SettingsPage({super.key});
-
+class const SettingsPage({super.key}) extends ConsumerStatefulWidget {
   /// Width of the section rail on desktop layouts.
   static const railWidth = WorkspaceMetrics.leftDefaultWidth;
 
@@ -99,12 +94,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 }
 
 /// Section list with the surface navigation in its header.
-class _SectionRail extends StatelessWidget {
-  const _SectionRail({required this.section, required this.onSelect});
-
-  final SettingsSection section;
-  final ValueChanged<SettingsSection> onSelect;
-
+class const _SectionRail({
+  required final SettingsSection section,
+  required final ValueChanged<SettingsSection> onSelect,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -163,18 +156,12 @@ class _SectionRail extends StatelessWidget {
 }
 
 /// One selectable section in the rail.
-class _SectionEntry extends StatelessWidget {
-  const _SectionEntry({
-    super.key,
-    required this.section,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  final SettingsSection section;
-  final bool selected;
-  final ValueChanged<SettingsSection> onSelect;
-
+class const _SectionEntry({
+  super.key,
+  required final SettingsSection section,
+  required final bool selected,
+  required final ValueChanged<SettingsSection> onSelect,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -222,21 +209,17 @@ class _SectionEntry extends StatelessWidget {
 }
 
 /// One pixel separator between the rail and the content pane.
-class _VerticalHairline extends StatelessWidget {
-  const _VerticalHairline();
-
+class const _VerticalHairline() extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Container(width: 1, color: AtlasColors.of(context).divider);
 }
 
 /// Horizontal section strip used when the rail is hidden.
-class _SectionStrip extends StatelessWidget {
-  const _SectionStrip({required this.section, required this.onSelect});
-
-  final SettingsSection section;
-  final ValueChanged<SettingsSection> onSelect;
-
+class const _SectionStrip({
+  required final SettingsSection section,
+  required final ValueChanged<SettingsSection> onSelect,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -299,17 +282,11 @@ class _SectionStrip extends StatelessWidget {
 ///
 /// Without the rail (compact layouts and phone screens) the same header line
 /// carries the back button, so navigation never disappears.
-class _SettingsPane extends StatelessWidget {
-  const _SettingsPane({
-    required this.section,
-    required this.onSelect,
-    required this.showRail,
-  });
-
-  final SettingsSection section;
-  final ValueChanged<SettingsSection> onSelect;
-  final bool showRail;
-
+class const _SettingsPane({
+  required final SettingsSection section,
+  required final ValueChanged<SettingsSection> onSelect,
+  required final bool showRail,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -393,9 +370,7 @@ class _SettingsPane extends StatelessWidget {
 }
 
 /// The appearance group: title, summary, and the theme row.
-class _AppearanceSection extends ConsumerWidget {
-  const _AppearanceSection();
-
+class const _AppearanceSection() extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
@@ -423,17 +398,11 @@ class _AppearanceSection extends ConsumerWidget {
 }
 
 /// One labelled setting with its control on the trailing edge of the row.
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({
-    required this.label,
-    required this.description,
-    required this.control,
-  });
-
-  final String label;
-  final String description;
-  final Widget control;
-
+class const _SettingRow({
+  required final String label,
+  required final String description,
+  required final Widget control,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -487,12 +456,10 @@ class _SettingRow extends StatelessWidget {
 }
 
 /// Three-way selector for the client-local theme mode.
-class _ThemeModeSelector extends StatelessWidget {
-  const _ThemeModeSelector({required this.mode, required this.onChanged});
-
-  final ThemeMode mode;
-  final ValueChanged<ThemeMode> onChanged;
-
+class const _ThemeModeSelector({
+  required final ThemeMode mode,
+  required final ValueChanged<ThemeMode> onChanged,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

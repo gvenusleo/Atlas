@@ -22,6 +22,7 @@
 - The runtime serializes active turns per session, and persisted provider/tool failures use safe summaries rather than raw exception text.
 - Compaction checkpoints end at the final timeline item of a terminal turn; they must never split an assistant/tool/result group.
 - Public Dart types and functions require concise documentation comments. Other comments should explain only non-obvious behavior.
+- Dart 3.13 is the workspace baseline: every package declares `sdk: ^3.13.0`, classes with a single generative constructor declare it in the class header, and switch statements over sealed types must be exhaustive.
 - Read relevant files before editing. Current code and command output are the source of truth.
 
 ## Workspace Boundaries

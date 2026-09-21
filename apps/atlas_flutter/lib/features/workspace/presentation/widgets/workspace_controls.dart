@@ -51,11 +51,8 @@ bool usesCaptionControls({
 
 /// A transparent ring around the workspace that restores edge resizing on
 /// platforms where the hidden title bar removes native resize handles.
-class WorkspaceResizeRing extends StatelessWidget {
-  const WorkspaceResizeRing({super.key, required this.child});
-
-  final Widget child;
-
+class const WorkspaceResizeRing({super.key, required final Widget child})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!needsResizeRing) {
@@ -67,9 +64,7 @@ class WorkspaceResizeRing extends StatelessWidget {
 
 /// Minimize, maximize and close buttons for platforms without native
 /// caption controls, matching the workspace toolbar's visual language.
-class AtlasWindowControls extends StatefulWidget {
-  const AtlasWindowControls({super.key});
-
+class const AtlasWindowControls({super.key}) extends StatefulWidget {
   @override
   State<AtlasWindowControls> createState() => _AtlasWindowControlsState();
 }
@@ -151,11 +146,8 @@ class _AtlasWindowControlsState extends State<AtlasWindowControls>
 }
 
 /// Makes a toolbar draggable on platforms with an integrated titlebar.
-class WorkspaceTitlebarDragArea extends StatelessWidget {
-  const WorkspaceTitlebarDragArea({super.key, required this.child});
-
-  final Widget child;
-
+class const WorkspaceTitlebarDragArea({super.key, required final Widget child})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!WorkspaceMetrics.usesIntegratedTitlebar) {
@@ -173,16 +165,11 @@ class WorkspaceTitlebarDragArea extends StatelessWidget {
 }
 
 /// Resizable gutter joining a desktop sidebar to the central workspace.
-class WorkspaceResizeHandle extends StatefulWidget {
-  const WorkspaceResizeHandle({
-    super.key,
-    required this.panelOnLeft,
-    required this.onDrag,
-  });
-
-  final bool panelOnLeft;
-  final ValueChanged<double> onDrag;
-
+class const WorkspaceResizeHandle({
+  super.key,
+  required final bool panelOnLeft,
+  required final ValueChanged<double> onDrag,
+}) extends StatefulWidget {
   @override
   State<WorkspaceResizeHandle> createState() => _WorkspaceResizeHandleState();
 }
@@ -253,34 +240,26 @@ class _WorkspaceResizeHandleState extends State<WorkspaceResizeHandle> {
 /// While the pointer is over the child, [hoveredColor] (defaults to the
 /// raised surface color) fades in as a rounded background behind the child,
 /// matching the shared button hover interaction.
-class WorkspaceHoverSurface extends StatefulWidget {
-  /// Creates a hover-highlighted surface.
-  const WorkspaceHoverSurface({
-    super.key,
-    required this.child,
-    this.color,
-    this.hoveredColor,
-    this.borderRadius = const BorderRadius.all(
-      Radius.circular(AtlasRadii.control),
-    ),
-    this.enabled = true,
-  });
-
-  /// Background color while not hovered.
-  final Color? color;
-
-  /// Background color while hovered; defaults to the raised surface color.
-  final Color? hoveredColor;
-
-  /// Corner radius of the hover background.
-  final BorderRadiusGeometry borderRadius;
-
-  /// Whether hover tracking is active.
-  final bool enabled;
+class const WorkspaceHoverSurface({
+  super.key,
 
   /// The child painted above the hover background.
-  final Widget child;
+  required final Widget child,
 
+  /// Background color while not hovered.
+  final Color? color,
+
+  /// Background color while hovered; defaults to the raised surface color.
+  final Color? hoveredColor,
+
+  /// Corner radius of the hover background.
+  final BorderRadiusGeometry borderRadius = const BorderRadius.all(
+    Radius.circular(AtlasRadii.control),
+  ),
+
+  /// Whether hover tracking is active.
+  final bool enabled = true,
+}) extends StatefulWidget {
   @override
   State<WorkspaceHoverSurface> createState() => _WorkspaceHoverSurfaceState();
 }
@@ -312,24 +291,16 @@ class _WorkspaceHoverSurfaceState extends State<WorkspaceHoverSurface> {
 }
 
 /// Cupertino toolbar action with Atlas hover and tooltip styling.
-class WorkspaceToolbarButton extends StatefulWidget {
-  const WorkspaceToolbarButton({
-    super.key,
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-    this.active = false,
-    this.size = WorkspaceMetrics.desktopToolbarButtonSize,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-  final bool active;
+class const WorkspaceToolbarButton({
+  super.key,
+  required final IconData icon,
+  required final String tooltip,
+  required final VoidCallback onPressed,
+  final bool active = false,
 
   /// Square side length; use a larger value for touch layouts.
-  final double size;
-
+  final double size = WorkspaceMetrics.desktopToolbarButtonSize,
+}) extends StatefulWidget {
   @override
   State<WorkspaceToolbarButton> createState() => _WorkspaceToolbarButtonState();
 }

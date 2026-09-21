@@ -120,9 +120,7 @@ void main() {
   );
 }
 
-class _Store<T> implements ConnectionStore<T> {
-  _Store(this.items);
-  List<T> items;
+class _Store<T>(var List<T> items) implements ConnectionStore<T> {
   int reads = 0;
   int writes = 0;
   bool failWrite = false;

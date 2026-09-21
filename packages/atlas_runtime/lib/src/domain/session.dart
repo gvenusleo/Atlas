@@ -6,126 +6,100 @@ import 'turn.dart';
 import 'usage.dart';
 
 /// Metadata and durable settings for a local session.
-final class Session {
-  /// Creates a session.
-  const Session({
-    required this.id,
-    required this.workingDirectory,
-    required this.createdAt,
-    required this.updatedAt,
-    this.title = '',
-    this.additionalDirectories = const <String>[],
-    this.compaction,
-    this.lastUsage = const TokenUsage(),
-    this.model,
-    this.reasoningEffort,
-  });
-
+final class const Session({
   /// The durable session identifier.
-  final SessionId id;
-
-  /// The display title derived from the first user message unless renamed.
-  final String title;
+  required final SessionId id,
 
   /// The primary working directory for tools.
-  final String workingDirectory;
-
-  /// Additional working directory roots granted to tools.
-  final List<String> additionalDirectories;
+  required final String workingDirectory,
 
   /// Session creation time in UTC.
-  final DateTime createdAt;
+  required final DateTime createdAt,
 
   /// Last timeline update time in UTC.
-  final DateTime updatedAt;
+  required final DateTime updatedAt,
+
+  /// The display title derived from the first user message unless renamed.
+  final String title = '',
+
+  /// Additional working directory roots granted to tools.
+  final List<String> additionalDirectories = const <String>[],
 
   /// The latest context checkpoint.
-  final CompactionCheckpoint? compaction;
+  final CompactionCheckpoint? compaction,
 
   /// Usage reported by the latest completed model response.
-  final TokenUsage lastUsage;
+  final TokenUsage lastUsage = const TokenUsage(),
 
   /// Session-level model selection.
-  final ModelRef? model;
+  final ModelRef? model,
 
   /// Session-level reasoning effort selection.
-  final String? reasoningEffort;
+  final String? reasoningEffort,
+}) {
+  /// Creates a session.
+  this;
 }
 
 /// A compact session row used by list views.
-final class SessionSummary {
-  /// Creates a session summary.
-  const SessionSummary({
-    required this.id,
-    required this.title,
-    required this.workingDirectory,
-    required this.updatedAt,
-    this.additionalDirectories = const <String>[],
-    this.lastUsage = const TokenUsage(),
-    this.model,
-    this.reasoningEffort,
-  });
-
+final class const SessionSummary({
   /// The session identifier.
-  final SessionId id;
+  required final SessionId id,
 
   /// The display title.
-  final String title;
+  required final String title,
 
   /// The primary working directory.
-  final String workingDirectory;
-
-  /// Additional working directory roots granted to tools.
-  final List<String> additionalDirectories;
+  required final String workingDirectory,
 
   /// The last update time in UTC.
-  final DateTime updatedAt;
+  required final DateTime updatedAt,
+
+  /// Additional working directory roots granted to tools.
+  final List<String> additionalDirectories = const <String>[],
 
   /// The latest model usage.
-  final TokenUsage lastUsage;
+  final TokenUsage lastUsage = const TokenUsage(),
 
   /// Session-level model selection.
-  final ModelRef? model;
+  final ModelRef? model,
 
   /// Session-level reasoning effort selection.
-  final String? reasoningEffort;
+  final String? reasoningEffort,
+}) {
+  /// Creates a session summary.
+  this;
 }
 
 /// Session state required to continue agent execution.
-final class SessionSnapshot {
-  /// Creates a session snapshot.
-  const SessionSnapshot({
-    required this.session,
-    required this.turns,
-    required this.timeline,
-    this.modelCheckpoints = const <ModelCheckpoint>[],
-    this.conversation = const <ConversationItem>[],
-  });
-
+final class const SessionSnapshot({
   /// Session metadata.
-  final Session session;
+  required final Session session,
 
   /// Turns ordered by start time.
-  final List<Turn> turns;
+  required final List<Turn> turns,
 
   /// Active timeline items after the current compaction boundary.
-  final List<TimelineItem> timeline;
+  required final List<TimelineItem> timeline,
 
   /// Provider continuations linked to active assistant timeline items.
-  final List<ModelCheckpoint> modelCheckpoints;
+  final List<ModelCheckpoint> modelCheckpoints = const <ModelCheckpoint>[],
 
   /// Presentation-only items reconstructed by remote protocol clients.
-  final List<ConversationItem> conversation;
+  final List<ConversationItem> conversation = const <ConversationItem>[],
+}) {
+  /// Creates a session snapshot.
+  this;
 }
 
 /// A cursor-paginated session list.
-final class SessionPage {
-  /// Creates a session page.
-  const SessionPage({required this.items, this.nextCursor});
-
+final class const SessionPage({
   /// Sessions in descending update order.
-  final List<SessionSummary> items;
+  required final List<SessionSummary> items,
 
   /// The cursor for the next page, if any.
-  final String? nextCursor;
+  final String? nextCursor,
+}) {
+  /// Creates a session page.
+  this;
 }

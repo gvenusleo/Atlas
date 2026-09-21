@@ -17,10 +17,7 @@ import 'settings_controls.dart';
 /// Lists the saved ACP servers, lets the user add or remove them, and activates
 /// one to switch the runtime from the local agent to a remote ACP server. The
 /// remote WebSocket profiles keep their own view, opened from here.
-class ConnectionsSettings extends ConsumerStatefulWidget {
-  /// Creates the ACP connection settings.
-  const ConnectionsSettings({super.key});
-
+class const ConnectionsSettings({super.key}) extends ConsumerStatefulWidget {
   @override
   ConsumerState<ConnectionsSettings> createState() =>
       _ConnectionsSettingsState();
@@ -183,19 +180,12 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
 }
 
 /// One saved connection with activate and remove actions.
-class _ConnectionRow extends StatelessWidget {
-  const _ConnectionRow({
-    required this.connection,
-    required this.active,
-    required this.onActivate,
-    required this.onRemove,
-  });
-
-  final AcpConnection connection;
-  final bool active;
-  final VoidCallback onActivate;
-  final VoidCallback onRemove;
-
+class const _ConnectionRow({
+  required final AcpConnection connection,
+  required final bool active,
+  required final VoidCallback onActivate,
+  required final VoidCallback onRemove,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -245,9 +235,7 @@ class _ConnectionRow extends StatelessWidget {
 }
 
 /// Form for creating or editing a connection, with preset shortcuts.
-class _ConnectionFormDialog extends ConsumerStatefulWidget {
-  const _ConnectionFormDialog();
-
+class const _ConnectionFormDialog() extends ConsumerStatefulWidget {
   @override
   ConsumerState<_ConnectionFormDialog> createState() =>
       _ConnectionFormDialogState();

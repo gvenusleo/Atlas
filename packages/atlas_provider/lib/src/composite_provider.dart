@@ -1,10 +1,10 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// Routes model requests to the provider that owns each model reference.
-final class CompositeModelProvider implements ModelProvider {
+final class CompositeModelProvider(Map<ProviderId, ModelProvider> providers)
+    implements ModelProvider {
   /// Creates a composite from providers keyed by their provider identifier.
-  CompositeModelProvider(Map<ProviderId, ModelProvider> providers)
-    : _providers = Map<ProviderId, ModelProvider>.unmodifiable(providers);
+  this : _providers = Map<ProviderId, ModelProvider>.unmodifiable(providers);
 
   final Map<ProviderId, ModelProvider> _providers;
 

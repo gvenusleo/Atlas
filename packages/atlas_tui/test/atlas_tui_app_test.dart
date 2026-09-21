@@ -946,11 +946,8 @@ final class _ScriptedProvider implements ModelProvider {
 }
 
 /// In-memory skill catalog for the slash completion tests.
-final class _TestSkillCatalog implements SkillCatalog {
-  _TestSkillCatalog(this.skills);
-
-  final List<Skill> skills;
-
+final class _TestSkillCatalog(final List<Skill> skills)
+    implements SkillCatalog {
   @override
   List<SkillSummary> get summaries => [
     for (final skill in skills)

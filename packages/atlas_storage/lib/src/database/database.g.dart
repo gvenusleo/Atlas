@@ -2913,54 +2913,52 @@ abstract class _$AtlasDatabase extends GeneratedDatabase {
   ]);
 }
 
-typedef $$SessionsTableCreateCompanionBuilder =
-    SessionsCompanion Function({
-      required String id,
-      Value<String> title,
-      required String workingDirectory,
-      Value<String?> modelProviderId,
-      Value<String?> modelId,
-      Value<String?> reasoningEffort,
-      Value<String> additionalDirectoriesJson,
-      Value<int> lastInputTokens,
-      Value<int> lastOutputTokens,
-      Value<int> lastTotalTokens,
-      Value<int> lastCacheReadTokens,
-      Value<int> lastCacheWriteTokens,
-      Value<int?> compactionSequence,
-      Value<String> compactionSummary,
-      Value<int> compactionKeptRecent,
-      Value<int> compactionTokensBefore,
-      Value<int> compactionTokensAfter,
-      Value<DateTime?> compactionCreatedAt,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<int> rowid,
-    });
-typedef $$SessionsTableUpdateCompanionBuilder =
-    SessionsCompanion Function({
-      Value<String> id,
-      Value<String> title,
-      Value<String> workingDirectory,
-      Value<String?> modelProviderId,
-      Value<String?> modelId,
-      Value<String?> reasoningEffort,
-      Value<String> additionalDirectoriesJson,
-      Value<int> lastInputTokens,
-      Value<int> lastOutputTokens,
-      Value<int> lastTotalTokens,
-      Value<int> lastCacheReadTokens,
-      Value<int> lastCacheWriteTokens,
-      Value<int?> compactionSequence,
-      Value<String> compactionSummary,
-      Value<int> compactionKeptRecent,
-      Value<int> compactionTokensBefore,
-      Value<int> compactionTokensAfter,
-      Value<DateTime?> compactionCreatedAt,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<int> rowid,
-    });
+typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
+  required String id,
+  Value<String> title,
+  required String workingDirectory,
+  Value<String?> modelProviderId,
+  Value<String?> modelId,
+  Value<String?> reasoningEffort,
+  Value<String> additionalDirectoriesJson,
+  Value<int> lastInputTokens,
+  Value<int> lastOutputTokens,
+  Value<int> lastTotalTokens,
+  Value<int> lastCacheReadTokens,
+  Value<int> lastCacheWriteTokens,
+  Value<int?> compactionSequence,
+  Value<String> compactionSummary,
+  Value<int> compactionKeptRecent,
+  Value<int> compactionTokensBefore,
+  Value<int> compactionTokensAfter,
+  Value<DateTime?> compactionCreatedAt,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<int> rowid,
+});
+typedef $$SessionsTableUpdateCompanionBuilder = SessionsCompanion Function({
+  Value<String> id,
+  Value<String> title,
+  Value<String> workingDirectory,
+  Value<String?> modelProviderId,
+  Value<String?> modelId,
+  Value<String?> reasoningEffort,
+  Value<String> additionalDirectoriesJson,
+  Value<int> lastInputTokens,
+  Value<int> lastOutputTokens,
+  Value<int> lastTotalTokens,
+  Value<int> lastCacheReadTokens,
+  Value<int> lastCacheWriteTokens,
+  Value<int?> compactionSequence,
+  Value<String> compactionSummary,
+  Value<int> compactionKeptRecent,
+  Value<int> compactionTokensBefore,
+  Value<int> compactionTokensAfter,
+  Value<DateTime?> compactionCreatedAt,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<int> rowid,
+});
 
 final class $$SessionsTableReferences
     extends BaseReferences<_$AtlasDatabase, $SessionsTable, SessionRow> {
@@ -3612,50 +3610,48 @@ typedef $$SessionsTableProcessedTableManager =
       SessionRow,
       PrefetchHooks Function({bool turnsRefs, bool messagesRefs})
     >;
-typedef $$TurnsTableCreateCompanionBuilder =
-    TurnsCompanion Function({
-      required String id,
-      required String sessionId,
-      required String status,
-      required DateTime startedAt,
-      Value<DateTime?> completedAt,
-      Value<String?> providerId,
-      Value<String?> modelId,
-      Value<String?> reasoningEffort,
-      Value<int> inputTokens,
-      Value<int> outputTokens,
-      Value<int> totalTokens,
-      Value<int> cacheReadTokens,
-      Value<int> cacheWriteTokens,
-      Value<String?> failureCode,
-      Value<String?> failureKind,
-      Value<String?> failureMessage,
-      Value<String?> providerDetail,
-      Value<String?> cancelReason,
-      Value<int> rowid,
-    });
-typedef $$TurnsTableUpdateCompanionBuilder =
-    TurnsCompanion Function({
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> status,
-      Value<DateTime> startedAt,
-      Value<DateTime?> completedAt,
-      Value<String?> providerId,
-      Value<String?> modelId,
-      Value<String?> reasoningEffort,
-      Value<int> inputTokens,
-      Value<int> outputTokens,
-      Value<int> totalTokens,
-      Value<int> cacheReadTokens,
-      Value<int> cacheWriteTokens,
-      Value<String?> failureCode,
-      Value<String?> failureKind,
-      Value<String?> failureMessage,
-      Value<String?> providerDetail,
-      Value<String?> cancelReason,
-      Value<int> rowid,
-    });
+typedef $$TurnsTableCreateCompanionBuilder = TurnsCompanion Function({
+  required String id,
+  required String sessionId,
+  required String status,
+  required DateTime startedAt,
+  Value<DateTime?> completedAt,
+  Value<String?> providerId,
+  Value<String?> modelId,
+  Value<String?> reasoningEffort,
+  Value<int> inputTokens,
+  Value<int> outputTokens,
+  Value<int> totalTokens,
+  Value<int> cacheReadTokens,
+  Value<int> cacheWriteTokens,
+  Value<String?> failureCode,
+  Value<String?> failureKind,
+  Value<String?> failureMessage,
+  Value<String?> providerDetail,
+  Value<String?> cancelReason,
+  Value<int> rowid,
+});
+typedef $$TurnsTableUpdateCompanionBuilder = TurnsCompanion Function({
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> status,
+  Value<DateTime> startedAt,
+  Value<DateTime?> completedAt,
+  Value<String?> providerId,
+  Value<String?> modelId,
+  Value<String?> reasoningEffort,
+  Value<int> inputTokens,
+  Value<int> outputTokens,
+  Value<int> totalTokens,
+  Value<int> cacheReadTokens,
+  Value<int> cacheWriteTokens,
+  Value<String?> failureCode,
+  Value<String?> failureKind,
+  Value<String?> failureMessage,
+  Value<String?> providerDetail,
+  Value<String?> cancelReason,
+  Value<int> rowid,
+});
 
 final class $$TurnsTableReferences
     extends BaseReferences<_$AtlasDatabase, $TurnsTable, TurnRow> {
@@ -4232,17 +4228,16 @@ class $$TurnsTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable: $$TurnsTableReferences
-                                    ._sessionIdTable(db),
-                                referencedColumn: $$TurnsTableReferences
-                                    ._sessionIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$TurnsTableReferences._sessionIdTable(
+                          db,
+                        ),
+                        referencedColumn: $$TurnsTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;
@@ -4282,30 +4277,28 @@ typedef $$TurnsTableProcessedTableManager =
       TurnRow,
       PrefetchHooks Function({bool sessionId, bool messagesRefs})
     >;
-typedef $$MessagesTableCreateCompanionBuilder =
-    MessagesCompanion Function({
-      required String id,
-      required String sessionId,
-      required String turnId,
-      required int sequence,
-      required String kind,
-      Value<int> payloadVersion,
-      required String payloadJson,
-      required DateTime occurredAt,
-      Value<int> rowid,
-    });
-typedef $$MessagesTableUpdateCompanionBuilder =
-    MessagesCompanion Function({
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> turnId,
-      Value<int> sequence,
-      Value<String> kind,
-      Value<int> payloadVersion,
-      Value<String> payloadJson,
-      Value<DateTime> occurredAt,
-      Value<int> rowid,
-    });
+typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
+  required String id,
+  required String sessionId,
+  required String turnId,
+  required int sequence,
+  required String kind,
+  Value<int> payloadVersion,
+  required String payloadJson,
+  required DateTime occurredAt,
+  Value<int> rowid,
+});
+typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> turnId,
+  Value<int> sequence,
+  Value<String> kind,
+  Value<int> payloadVersion,
+  Value<String> payloadJson,
+  Value<DateTime> occurredAt,
+  Value<int> rowid,
+});
 
 final class $$MessagesTableReferences
     extends BaseReferences<_$AtlasDatabase, $MessagesTable, MessageRow> {
@@ -4697,30 +4690,27 @@ class $$MessagesTableTableManager
                     >
                   >(state) {
                     if (sessionId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.sessionId,
-                                referencedTable: $$MessagesTableReferences
-                                    ._sessionIdTable(db),
-                                referencedColumn: $$MessagesTableReferences
-                                    ._sessionIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.sessionId,
+                        referencedTable: $$MessagesTableReferences
+                            ._sessionIdTable(db),
+                        referencedColumn: $$MessagesTableReferences
+                            ._sessionIdTable(db)
+                            .id,
+                      ) as T;
                     }
                     if (turnId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.turnId,
-                                referencedTable: $$MessagesTableReferences
-                                    ._turnIdTable(db),
-                                referencedColumn: $$MessagesTableReferences
-                                    ._turnIdTable(db)
-                                    .id,
-                              )
-                              as T;
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.turnId,
+                        referencedTable: $$MessagesTableReferences._turnIdTable(
+                          db,
+                        ),
+                        referencedColumn: $$MessagesTableReferences
+                            ._turnIdTable(db)
+                            .id,
+                      ) as T;
                     }
 
                     return state;

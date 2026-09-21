@@ -10,66 +10,55 @@ enum OpenAIProtocol {
 }
 
 /// Configuration for one OpenAI-compatible provider endpoint.
-final class OpenAIProviderConfiguration {
-  /// Creates a provider configuration.
-  OpenAIProviderConfiguration({
-    required this.id,
-    required this.protocol,
-    required this.baseUrl,
-    required List<OpenAIModelConfiguration> models,
-    this.apiKey = '',
-    this.userAgent,
-  }) : models = List<OpenAIModelConfiguration>.unmodifiable(models);
-
+final class OpenAIProviderConfiguration({
   /// The provider identifier used by configured model references.
-  final ProviderId id;
+  required final ProviderId id,
 
   /// The API protocol used by this endpoint.
-  final OpenAIProtocol protocol;
+  required final OpenAIProtocol protocol,
 
   /// The endpoint root, without the protocol-specific path.
-  final Uri baseUrl;
+  required final Uri baseUrl,
+  required List<OpenAIModelConfiguration> models,
 
   /// The bearer token. Empty values omit the authorization header.
-  final String apiKey;
+  final String apiKey = '',
 
   /// An optional user-agent override.
-  final String? userAgent;
+  final String? userAgent,
+}) {
+  /// Creates a provider configuration.
+  this : models = List<OpenAIModelConfiguration>.unmodifiable(models);
 
   /// Models served by this endpoint.
   final List<OpenAIModelConfiguration> models;
 }
 
 /// Configuration for one model exposed by an OpenAI-compatible provider.
-final class OpenAIModelConfiguration {
-  /// Creates a model configuration.
-  const OpenAIModelConfiguration({required this.descriptor});
-
+final class const OpenAIModelConfiguration({
   /// The runtime model descriptor.
-  final ModelDescriptor descriptor;
+  required final ModelDescriptor descriptor,
+}) {
+  /// Creates a model configuration.
+  this;
 }
 
 /// A safe provider failure with the endpoint identity and optional HTTP status.
-final class OpenAIProviderException implements SafeMessageException {
-  /// Creates a provider failure.
-  const OpenAIProviderException({
-    required this.providerId,
-    required this.message,
-    this.statusCode,
-    this.detail,
-  });
-
+final class const OpenAIProviderException({
   /// The provider that reported the failure.
-  final ProviderId providerId;
-
-  /// The HTTP status when the server returned one.
-  final int? statusCode;
-
-  /// Bounded provider response detail for diagnostics.
-  final String? detail;
+  required final ProviderId providerId,
 
   /// A redacted, provider-safe error message.
-  final String message;
+  required final String message,
+
+  /// The HTTP status when the server returned one.
+  final int? statusCode,
+
+  /// Bounded provider response detail for diagnostics.
+  final String? detail,
+}) implements SafeMessageException {
+  /// Creates a provider failure.
+  this;
 
   @override
   String get safeMessage => detail == null ? message : '$message: $detail';

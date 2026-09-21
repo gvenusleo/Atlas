@@ -9,12 +9,12 @@ part 'database.g.dart';
 
 /// The private Drift database used by [DriftSessionStore].
 @DriftDatabase(tables: [Sessions, Turns, Messages])
-final class AtlasDatabase extends _$AtlasDatabase {
+final class AtlasDatabase(super.executor) extends _$AtlasDatabase {
   /// Creates a database with an injected Drift executor.
-  AtlasDatabase(super.executor);
+  this;
 
   /// Opens a native database file on a background isolate.
-  factory AtlasDatabase.openFile(File file) =>
+  factory openFile(File file) =>
       AtlasDatabase(NativeDatabase.createInBackground(file));
 
   @override

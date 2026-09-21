@@ -8,15 +8,15 @@ import 'package:atlas_runtime/atlas_runtime.dart' as rt;
 /// are derived from the ACP tool kind. The events cover what presentation
 /// code consumes: text and reasoning deltas, tool start/finish, plans, and
 /// compaction outcomes.
-final class ClientUpdateMapper {
-  /// Creates a mapper for one turn of [sessionId] with [turnId].
-  ClientUpdateMapper(this.sessionId, this.turnId);
-
+final class ClientUpdateMapper(
   /// The session being mapped.
-  final rt.SessionId sessionId;
+  final rt.SessionId sessionId,
 
   /// The turn being mapped.
-  final rt.TurnId turnId;
+  final rt.TurnId turnId,
+) {
+  /// Creates a mapper for one turn of [sessionId] with [turnId].
+  this;
 
   int _sequence = 0;
   final _toolOutputs = <String, _ToolOutput>{};
@@ -214,12 +214,12 @@ final class ClientUpdateMapper {
 /// Message ids come from the ACP message and tool call ids; turns are
 /// collapsed into one synthetic turn per session because ACP does not expose
 /// turn boundaries.
-final class ClientTimelineMapper {
-  /// Creates a timeline mapper for [sessionId].
-  ClientTimelineMapper(this.sessionId);
-
+final class ClientTimelineMapper(
   /// The session being mapped.
-  final rt.SessionId sessionId;
+  final rt.SessionId sessionId,
+) {
+  /// Creates a timeline mapper for [sessionId].
+  this;
 
   final _turnId = rt.TurnId('acp-session');
   int _sequence = 0;
@@ -344,12 +344,13 @@ final class ClientTimelineMapper {
 }
 
 /// Maps ACP replay updates to presentation-only conversation items.
-final class ClientConversationMapper {
-  /// Creates a mapper for [sessionId].
-  ClientConversationMapper(this.sessionId);
-
+final class ClientConversationMapper(
   /// Session identifier used to filter updates.
-  final rt.SessionId sessionId;
+  final rt.SessionId sessionId,
+) {
+  /// Creates a mapper for [sessionId].
+  this;
+
   final _toolOutputs = <String, _ToolOutput>{};
 
   /// Converts one update without fabricating durable runtime identities.
@@ -357,12 +358,13 @@ final class ClientConversationMapper {
     if (update is ToolCallStatusUpdate) {
       _rememberToolOutput(_toolOutputs, update.update);
     } else if (update is ToolCallUpdateSession) {
+      final toolCall = update.toolCall;
       _rememberToolOutput(
         _toolOutputs,
         ToolCallUpdate(
-          toolCallId: update.toolCall.toolCallId,
-          content: update.toolCall.content,
-          rawOutput: update.toolCall.rawOutput,
+          toolCallId: toolCall.toolCallId,
+          content: toolCall.content,
+          rawOutput: toolCall.rawOutput,
         ),
       );
     }

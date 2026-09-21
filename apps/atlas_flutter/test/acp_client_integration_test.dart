@@ -216,11 +216,7 @@ void main() {
   });
 }
 
-final class _FakeProvider implements ModelProvider {
-  _FakeProvider(this.model);
-
-  final ModelRef model;
-
+final class _FakeProvider(final ModelRef model) implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
       ModelDescriptor(ref: requested);
@@ -240,11 +236,8 @@ final class _FakeProvider implements ModelProvider {
   }
 }
 
-final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
-  _FixedWorkingDirectory(this.directory);
-
-  final String directory;
-
+final class _FixedWorkingDirectory(final String directory)
+    extends WorkspaceWorkingDirectory {
   @override
   String build() => directory;
 }

@@ -210,10 +210,7 @@ class CaretAnimation {
 }
 
 /// One corner of the caret quad, spring driven along each axis.
-class _Corner {
-  _Corner(this.relativePosition);
-
-  final Offset relativePosition;
+class _Corner(final Offset relativePosition) {
   final _horizontal = _Spring();
   final _vertical = _Spring();
   var current = Offset.zero;

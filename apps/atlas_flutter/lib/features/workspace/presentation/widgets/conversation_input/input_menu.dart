@@ -5,10 +5,9 @@ enum InputMenu { model, effort, mode }
 ///
 /// Pure state holder: callers wrap mutations in [setState] and drive the
 /// overlay portal themselves, keeping Flutter state in the owning widget.
-final class InputMenuTracker {
+final class InputMenuTracker() {
   /// Creates a tracker with every menu closed.
-  InputMenuTracker()
-    : _highlights = {for (final menu in InputMenu.values) menu: 0};
+  this : _highlights = {for (final menu in InputMenu.values) menu: 0};
 
   InputMenu? _open;
   final Map<InputMenu, int> _highlights;

@@ -7,12 +7,12 @@ import 'package:yaml/yaml.dart';
 import 'atlas_config.dart';
 
 /// Raised when the configuration file cannot be parsed or validated.
-final class ConfigLoadException implements Exception {
-  /// Creates a configuration failure.
-  const ConfigLoadException(this.message);
-
+final class const ConfigLoadException(
   /// A user-visible message with a field path when available.
-  final String message;
+  final String message,
+) implements Exception {
+  /// Creates a configuration failure.
+  this;
 
   @override
   String toString() => message;

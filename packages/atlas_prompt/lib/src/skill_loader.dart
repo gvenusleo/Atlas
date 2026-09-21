@@ -10,9 +10,10 @@ const maxSkillDescriptionBytes = 2 * 1024;
 const maxSkillSummaryBytes = 32 * 1024;
 
 /// A [SkillCatalog] loaded from the user-level and project-level skill roots.
-final class FileSkillCatalog implements SkillCatalog {
+final class FileSkillCatalog(Iterable<Directory> roots)
+    implements SkillCatalog {
   /// Creates a catalog from the skills found under [roots].
-  FileSkillCatalog(Iterable<Directory> roots) : _skills = _loadRoots(roots);
+  this : _skills = _loadRoots(roots);
 
   final Map<String, Skill> _skills;
 

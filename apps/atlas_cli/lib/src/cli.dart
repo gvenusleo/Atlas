@@ -43,23 +43,24 @@ Future<int> runCli(List<String> args, {AtlasCommandRunner? runner}) async {
 }
 
 /// Routes Atlas commands without owning the agent loop or presentation.
-final class AtlasCommandRunner extends CommandRunner<int> {
+final class AtlasCommandRunner({
+  StringSink? out,
+  StringSink? err,
+  String? home,
+  final AtlasConfig Function()? _configLoader,
+  bool Function()? terminalAvailable,
+}) extends CommandRunner<int> {
   /// Creates a runner with injectable output and configuration for tests.
-  AtlasCommandRunner({
-    StringSink? out,
-    StringSink? err,
-    String? home,
-    this._configLoader,
-    bool Function()? terminalAvailable,
-  }) : out = out ?? stdout,
-       err = err ?? stderr,
-       home =
-           home ??
-           Platform.environment['HOME'] ??
-           Platform.environment['USERPROFILE'] ??
-           '.',
-       _terminalAvailable = terminalAvailable ?? (() => supportsAtlasTui),
-       super('atlas', 'A local general-purpose AI agent.') {
+  this
+    : out = out ?? stdout,
+      err = err ?? stderr,
+      home =
+          home ??
+          Platform.environment['HOME'] ??
+          Platform.environment['USERPROFILE'] ??
+          '.',
+      _terminalAvailable = terminalAvailable ?? (() => supportsAtlasTui),
+      super('atlas', 'A local general-purpose AI agent.') {
     argParser
       ..addFlag(
         'version',
@@ -86,7 +87,6 @@ final class AtlasCommandRunner extends CommandRunner<int> {
 
   /// The home directory containing the Atlas configuration.
   final String home;
-  final AtlasConfig Function()? _configLoader;
   final bool Function() _terminalAvailable;
 
   /// Whether unexpected failures include stack traces.
@@ -143,10 +143,8 @@ final class AtlasCommandRunner extends CommandRunner<int> {
   }
 }
 
-abstract class _AtlasCommand extends Command<int> {
-  _AtlasCommand(this.cli);
-  final AtlasCommandRunner cli;
-
+abstract class _AtlasCommand(final AtlasCommandRunner cli)
+    extends Command<int> {
   @override
   bool get takesArguments => false;
 
@@ -164,9 +162,7 @@ abstract class _AtlasCommand extends Command<int> {
   }
 }
 
-final class _AcpCommand extends _AtlasCommand {
-  _AcpCommand(super.cli);
-
+final class _AcpCommand(super.cli) extends _AtlasCommand {
   @override
   String get name => 'acp';
   @override
@@ -179,8 +175,8 @@ final class _AcpCommand extends _AtlasCommand {
   }
 }
 
-final class _ServerCommand extends _AtlasCommand {
-  _ServerCommand(super.cli) {
+final class _ServerCommand(super.cli) extends _AtlasCommand {
+  this {
     addServerOptions(argParser);
   }
 
@@ -204,8 +200,8 @@ final class _ServerCommand extends _AtlasCommand {
   }
 }
 
-final class _CacheCommand extends _AtlasCommand {
-  _CacheCommand(super.cli) {
+final class _CacheCommand(super.cli) extends _AtlasCommand {
+  this {
     addCacheOptions(argParser);
   }
 

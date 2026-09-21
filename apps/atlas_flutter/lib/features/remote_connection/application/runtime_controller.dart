@@ -10,31 +10,25 @@ import '../data/acp_connections.dart';
 import '../data/remote_connections.dart';
 
 /// Runtime services and catalogs injected into Flutter presentation code.
-final class RuntimeEnvironment {
-  /// Creates an environment around the shared agent runtime.
-  const RuntimeEnvironment({
-    required this.runtime,
-    required this.models,
-    this.onClose,
-    this.isRemote = false,
-    this.closed,
-  });
-
+final class const RuntimeEnvironment({
   /// The single runtime used by every Flutter feature.
-  final PresentationAgentSession runtime;
+  required final PresentationAgentSession runtime,
 
   /// Models configured for user selection.
-  final List<ModelDescriptor> models;
+  required final List<ModelDescriptor> models,
 
   /// Closes process-owned resources when the application exits.
-  final Future<void> Function()? onClose;
+  final Future<void> Function()? onClose,
 
   /// Whether the runtime is served by a remote `atlas server` over
   /// WebSocket; remote sessions cannot browse or run local terminals.
-  final bool isRemote;
+  final bool isRemote = false,
 
   /// Completes when the underlying connection ends, for remote runtimes.
-  final Future<void>? closed;
+  final Future<void>? closed,
+}) {
+  /// Creates an environment around the shared agent runtime.
+  this;
 
   /// Releases resources owned by this application environment.
   Future<void> close() async => onClose?.call();
@@ -43,10 +37,10 @@ final class RuntimeEnvironment {
 /// Result of loading the local Atlas configuration and composing the runtime.
 final class RuntimeBootstrap {
   /// Creates a successful bootstrap result.
-  const RuntimeBootstrap.ready(this.environment) : error = null;
+  const new ready(this.environment) : error = null;
 
   /// Creates a failed bootstrap result that keeps the application usable.
-  const RuntimeBootstrap.failed(this.error) : environment = null;
+  const new failed(this.error) : environment = null;
 
   /// The composed runtime environment when configuration succeeded.
   final RuntimeEnvironment? environment;
@@ -95,54 +89,42 @@ enum RemoteConnectionStatus {
 }
 
 /// The full runtime state exposed by [RuntimeEnvironmentController].
-final class AcpRuntimeState {
-  /// Creates a runtime state.
-  const AcpRuntimeState({
-    required this.environment,
-    this.status = AcpConnectionStatus.disconnected,
-    this.activationError,
-    this.activeConnection,
-    this.remoteProfile,
-    this.remoteStatus = RemoteConnectionStatus.disconnected,
-    this.remoteError,
-  });
-
+final class const AcpRuntimeState({
   /// The active runtime environment, or null on startup failure.
-  final RuntimeEnvironment? environment;
+  required final RuntimeEnvironment? environment,
 
   /// The local ACP connection lifecycle state.
-  final AcpConnectionStatus status;
+  final AcpConnectionStatus status = AcpConnectionStatus.disconnected,
 
   /// The last local ACP activation error, if any.
-  final String? activationError;
+  final String? activationError,
 
   /// The local ACP connection currently in use, or null for the local
   /// runtime.
-  final AcpConnection? activeConnection;
+  final AcpConnection? activeConnection,
 
   /// The remote profile currently in use, or null when none is active.
-  final RemoteConnectionProfile? remoteProfile;
+  final RemoteConnectionProfile? remoteProfile,
 
   /// The remote WebSocket connection lifecycle state.
-  final RemoteConnectionStatus remoteStatus;
+  final RemoteConnectionStatus remoteStatus =
+      RemoteConnectionStatus.disconnected,
 
   /// The last remote connection error, if any.
-  final String? remoteError;
-}
+  final String? remoteError,
+});
 
 /// Controls the active runtime, switching between the local runtime, ACP
 /// subprocess connections, and remote WebSocket connections.
-final class RuntimeEnvironmentController extends Notifier<AcpRuntimeState> {
-  /// Creates a controller around the startup [local] runtime.
-  RuntimeEnvironmentController({
-    this._local,
-    this._connectAcp,
-    this._connectRemote,
-  });
-
-  final Future<RuntimeBootstrap> Function(AcpConnection)? _connectAcp;
+final class RuntimeEnvironmentController({
+  /// The locally composed runtime built at startup; null on mobile clients.
+  final RuntimeEnvironment? _local,
+  final Future<RuntimeBootstrap> Function(AcpConnection)? _connectAcp,
   final Future<RemoteSessionHandle> Function(RemoteConnectionProfile)?
-  _connectRemote;
+  _connectRemote,
+}) extends Notifier<AcpRuntimeState> {
+  /// Creates a controller around the startup [local] runtime.
+  this;
 
   Future<RemoteSessionHandle> _openRemote(RemoteConnectionProfile profile) {
     final connect = _connectRemote;
@@ -151,9 +133,6 @@ final class RuntimeEnvironmentController extends Notifier<AcpRuntimeState> {
     }
     return connect(profile);
   }
-
-  /// The locally composed runtime built at startup; null on mobile clients.
-  final RuntimeEnvironment? _local;
 
   RemoteSessionHandle? _remoteHandle;
   var _remoteGeneration = 0;
@@ -447,13 +426,10 @@ final class RuntimeEnvironmentController extends Notifier<AcpRuntimeState> {
 final runtimeStartupErrorProvider = Provider<String?>((ref) => null);
 
 /// A connected remote session and its disconnect notification.
-final class RemoteSessionHandle {
-  /// Creates a handle.
-  const RemoteSessionHandle({required this.environment, required this.closed});
-
+final class const RemoteSessionHandle({
   /// The runtime environment backed by the remote server.
-  final RuntimeEnvironment environment;
+  required final RuntimeEnvironment environment,
 
   /// Completes when the underlying connection ends.
-  final Future<void> closed;
-}
+  required final Future<void> closed,
+});

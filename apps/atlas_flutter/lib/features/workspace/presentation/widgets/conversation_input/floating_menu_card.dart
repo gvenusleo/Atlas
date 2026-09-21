@@ -17,33 +17,21 @@ const maxPickerRows = 8;
 /// handles it explicitly with drag semantics (content follows fingers).
 /// Keyboard-driven navigation scrolls a centered window that follows the
 /// highlight; hovering never scrolls.
-class FloatingMenuCard<T> extends StatefulWidget {
-  /// Creates a floating picker card.
-  const FloatingMenuCard({
-    super.key,
-    required this.items,
-    required this.selectedIndex,
-    required this.highlighted,
-    required this.onHighlighted,
-    required this.onSelected,
-    required this.rowHeight,
-    required this.cardPadding,
-    required this.itemBuilder,
-    this.maxVisibleRows,
-  });
-
-  final List<T> items;
-  final int selectedIndex;
-  final int highlighted;
-  final ValueChanged<int> onHighlighted;
-  final ValueChanged<T> onSelected;
-  final double rowHeight;
-  final double cardPadding;
-  final Widget Function(BuildContext context, T item, int index) itemBuilder;
+class const FloatingMenuCard<T>({
+  super.key,
+  required final List<T> items,
+  required final int selectedIndex,
+  required final int highlighted,
+  required final ValueChanged<int> onHighlighted,
+  required final ValueChanged<T> onSelected,
+  required final double rowHeight,
+  required final double cardPadding,
+  required final Widget Function(BuildContext context, T item, int index)
+  itemBuilder,
 
   /// Maximum rows visible at once; the list scrolls beyond this.
-  final int? maxVisibleRows;
-
+  final int? maxVisibleRows,
+}) extends StatefulWidget {
   @override
   State<FloatingMenuCard<T>> createState() => _FloatingMenuCardState<T>();
 }

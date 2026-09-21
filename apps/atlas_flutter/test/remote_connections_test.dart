@@ -93,4 +93,49 @@ void main() {
       isEmpty,
     );
   });
+
+  test('fromJson requires the name and wsUrl keys to hold strings', () {
+    // A map pattern matches on key presence, so an omitted key, an explicit
+    // null, a wrong type, and an empty string must all be rejected.
+    for (final json in <Object?>[
+      <String, Object?>{'wsUrl': 'ws://x/acp'},
+      <String, Object?>{'name': 'x'},
+      <String, Object?>{'name': 'x', 'wsUrl': null},
+      <String, Object?>{'name': null, 'wsUrl': 'ws://x/acp'},
+      <String, Object?>{'name': 7, 'wsUrl': 'ws://x/acp'},
+      <String, Object?>{'name': 'x', 'wsUrl': 7},
+      <String, Object?>{'name': '', 'wsUrl': 'ws://x/acp'},
+      <String, Object?>{'name': 'x', 'wsUrl': ''},
+    ]) {
+      expect(
+        RemoteConnectionProfile.fromJson(json),
+        isNull,
+        reason: 'for $json',
+      );
+    }
+  });
+
+  test('fromJson ignores unknown keys and defaults the optional fields', () {
+    final profile = RemoteConnectionProfile.fromJson(<String, Object?>{
+      'name': 'x',
+      'wsUrl': 'ws://x/acp',
+      'token': 'token-a',
+      'unexpected': true,
+    });
+
+    expect(profile, isNotNull);
+    expect(profile!.name, 'x');
+    expect(profile.token, 'token-a');
+    expect(profile.workingDirectory, isNull);
+    // An explicitly present but non-string directory falls back to null
+    // instead of failing the whole profile.
+    expect(
+      RemoteConnectionProfile.fromJson(<String, Object?>{
+        'name': 'x',
+        'wsUrl': 'ws://x/acp',
+        'workingDirectory': '',
+      })!.workingDirectory,
+      isNull,
+    );
+  });
 }

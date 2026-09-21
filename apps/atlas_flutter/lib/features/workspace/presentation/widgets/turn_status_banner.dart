@@ -10,20 +10,15 @@ import '../../application/workspace_state.dart';
 ///
 /// Shows three small bouncing dots, the activity label (Working, Thinking, or
 /// Compacting), and the wall-clock elapsed time while a turn is active.
-class TurnStatusBanner extends StatefulWidget {
-  /// Creates a turn status banner.
-  const TurnStatusBanner({
-    super.key,
-    required this.phase,
-    required this.startedAt,
-  });
+class const TurnStatusBanner({
+  super.key,
 
   /// Activity phase of the active turn.
-  final TurnPhase phase;
+  required final TurnPhase phase,
 
   /// When the turn started, or null when it is unknown.
-  final DateTime? startedAt;
-
+  required final DateTime? startedAt,
+}) extends StatefulWidget {
   @override
   State<TurnStatusBanner> createState() => _TurnStatusBannerState();
 }
@@ -109,15 +104,13 @@ class _TurnStatusBannerState extends State<TurnStatusBanner>
 }
 
 /// Three small dots that bounce in a staggered wave.
-class _TypingDots extends StatelessWidget {
-  const _TypingDots({required this.value, required this.color});
-
+class const _TypingDots({
   /// Progress of the cycle, 0 to 1 and wrapping.
-  final double value;
+  required final double value,
 
   /// Dot fill color.
-  final Color color;
-
+  required final Color color,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The dots are decorative; keep them out of the semantics tree so the

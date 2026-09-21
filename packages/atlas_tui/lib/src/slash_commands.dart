@@ -1,20 +1,16 @@
 /// A slash command recognized by the input bar.
-final class SlashCommand {
-  /// Creates a slash command.
-  const SlashCommand({
-    required this.name,
-    this.description = '',
-    this.isSkill = false,
-  });
-
+final class const SlashCommand({
   /// The command name without the leading `/`.
-  final String name;
+  required final String name,
 
   /// One-line description shown in the completion popup.
-  final String description;
+  final String description = '',
 
   /// Whether this command is a skill trigger rather than a built-in command.
-  final bool isSkill;
+  final bool isSkill = false,
+}) {
+  /// Creates a slash command.
+  this;
 }
 
 /// The name of the `/model` command.

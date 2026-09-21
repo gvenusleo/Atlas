@@ -7,15 +7,15 @@ import 'file_path.dart';
 import 'text_utils.dart';
 
 /// One exact, unique text replacement.
-final class TextEdit {
-  /// Creates a text edit.
-  const TextEdit({required this.oldText, required this.newText});
-
+final class const TextEdit({
   /// The exact text to replace.
-  final String oldText;
+  required final String oldText,
 
   /// The replacement text.
-  final String newText;
+  required final String newText,
+}) {
+  /// Creates a text edit.
+  this;
 }
 
 /// Applies exact, non-overlapping replacements to one text file.

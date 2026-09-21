@@ -8,17 +8,17 @@ import 'acp_types.dart';
 /// Keeps per-turn state: the message id shared by chunks of the current
 /// assistant message, and the tool call ids that were reported as plan
 /// updates instead of ordinary tool calls.
-final class TurnUpdateMapper {
+final class TurnUpdateMapper(
+  /// The session being mapped.
+  final rt.SessionId sessionId, {
+
+  /// The session working directory used to absolutize file locations.
+  final String? workingDirectory,
+}) {
   /// Creates a mapper for one turn of [sessionId]. [workingDirectory]
   /// resolves relative tool paths into absolute ACP locations; when null,
   /// paths are reported as given.
-  TurnUpdateMapper(this.sessionId, {this.workingDirectory});
-
-  /// The session being mapped.
-  final rt.SessionId sessionId;
-
-  /// The session working directory used to absolutize file locations.
-  final String? workingDirectory;
+  this;
 
   String? _messageId;
   int _messageCounter = 0;

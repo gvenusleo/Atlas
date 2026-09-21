@@ -6,20 +6,15 @@ import '../../../../shared/theme/atlas_theme.dart';
 ///
 /// Used by every settings section so the pane reads as one surface regardless
 /// of which section the rail has selected.
-class SettingsSectionHeader extends StatelessWidget {
-  /// Creates a settings section header.
-  const SettingsSectionHeader({
-    super.key,
-    required this.title,
-    required this.description,
-  });
+class const SettingsSectionHeader({
+  super.key,
 
   /// Section title, for example "Appearance".
-  final String title;
+  required final String title,
 
   /// One-line summary of what the section controls.
-  final String description;
-
+  required final String description,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

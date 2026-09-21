@@ -1,9 +1,9 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// Dispatches model-initiated tool calls by tool name.
-final class LocalToolRegistry implements ToolRegistry {
+final class LocalToolRegistry(List<Tool> tools) implements ToolRegistry {
   /// Creates a registry from [tools]; tool names must be unique.
-  LocalToolRegistry(List<Tool> tools) : _tools = _index(tools);
+  this : _tools = _index(tools);
 
   final Map<String, Tool> _tools;
 

@@ -135,10 +135,7 @@ void main() {
 }
 
 /// Mutable message list holder that rebuilds its listener on every change.
-class _MessageListHolder {
-  _MessageListHolder(this.messages);
-
-  final List<ChatMessage> messages;
+class _MessageListHolder(final List<ChatMessage> messages) {
   void Function()? _listener;
 
   void notify() => _listener?.call();
@@ -146,11 +143,8 @@ class _MessageListHolder {
 
 /// Rebuilds a [MessageList] whenever the holder changes, mirroring how the
 /// app streams new content into the transcript across frames.
-class _RebuildableMessageList extends StatefulComponent {
-  const _RebuildableMessageList({required this.holder});
-
-  final _MessageListHolder holder;
-
+class const _RebuildableMessageList({required final _MessageListHolder holder})
+    extends StatefulComponent {
   @override
   State<_RebuildableMessageList> createState() =>
       _RebuildableMessageListState();

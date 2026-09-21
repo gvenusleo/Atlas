@@ -3,60 +3,48 @@ import 'ids.dart';
 import 'usage.dart';
 
 /// An agent operating mode offered by a server.
-final class ModeOption {
-  /// Creates a mode option.
-  const ModeOption({
-    required this.id,
-    required this.name,
-    this.description = '',
-  });
-
+final class const ModeOption({
   /// The mode identifier sent with a request.
-  final String id;
+  required final String id,
 
   /// Display name.
-  final String name;
+  required final String name,
 
   /// Display description.
-  final String description;
+  final String description = '',
+}) {
+  /// Creates a mode option.
+  this;
 }
 
 /// An authentication method advertised by an agent.
-final class AuthMethod {
-  /// Creates an auth method.
-  const AuthMethod({
-    required this.id,
-    required this.name,
-    this.description = '',
-  });
-
+final class const AuthMethod({
   /// The method identifier sent with an authenticate request.
-  final String id;
+  required final String id,
 
   /// Display name.
-  final String name;
+  required final String name,
 
   /// Display description.
-  final String description;
+  final String description = '',
+}) {
+  /// Creates an auth method.
+  this;
 }
 
 /// A reasoning effort supported by a model.
-final class ReasoningEffortOption {
-  /// Creates a reasoning effort option.
-  const ReasoningEffortOption({
-    required this.value,
-    this.name = '',
-    this.description = '',
-  });
-
+final class const ReasoningEffortOption({
   /// Provider-local value sent with a request.
-  final String value;
+  required final String value,
 
   /// Display name.
-  final String name;
+  final String name = '',
 
   /// Display description.
-  final String description;
+  final String description = '',
+}) {
+  /// Creates a reasoning effort option.
+  this;
 }
 
 /// Input capabilities exposed by a model.
@@ -69,40 +57,32 @@ enum ModelInputCapability {
 }
 
 /// A configured model and its capabilities.
-final class ModelDescriptor {
-  /// Creates a model descriptor.
-  const ModelDescriptor({
-    required this.ref,
-    this.name = '',
-    this.description = '',
-    this.contextWindow = 0,
-    this.maxOutputTokens = 0,
-    this.inputCapabilities = const <ModelInputCapability>{
-      ModelInputCapability.text,
-    },
-    this.reasoningEfforts = const <ReasoningEffortOption>[],
-  });
-
+final class const ModelDescriptor({
   /// The provider/model reference.
-  final ModelRef ref;
+  required final ModelRef ref,
 
   /// Display name.
-  final String name;
+  final String name = '',
 
   /// Display description.
-  final String description;
+  final String description = '',
 
   /// Maximum context window in tokens.
-  final int contextWindow;
+  final int contextWindow = 0,
 
   /// Maximum output tokens.
-  final int maxOutputTokens;
+  final int maxOutputTokens = 0,
 
   /// Modalities accepted by the model.
-  final Set<ModelInputCapability> inputCapabilities;
+  final Set<ModelInputCapability> inputCapabilities =
+      const <ModelInputCapability>{ModelInputCapability.text},
 
   /// Reasoning effort values accepted by the model.
-  final List<ReasoningEffortOption> reasoningEfforts;
+  final List<ReasoningEffortOption> reasoningEfforts =
+      const <ReasoningEffortOption>[],
+}) {
+  /// Creates a model descriptor.
+  this;
 }
 
 /// The reason a model step stopped.
@@ -125,22 +105,18 @@ enum StopReason {
 }
 
 /// A model-requested tool invocation.
-final class ToolCall {
-  /// Creates a tool call.
-  const ToolCall({
-    required this.id,
-    required this.name,
-    required this.arguments,
-  });
-
+final class const ToolCall({
   /// The provider-generated call identifier.
-  final ToolCallId id;
+  required final ToolCallId id,
 
   /// The registered tool name.
-  final String name;
+  required final String name,
 
   /// The parsed JSON arguments.
-  final JsonObject arguments;
+  required final JsonObject arguments,
+}) {
+  /// Creates a tool call.
+  this;
 }
 
 /// A model-visible role after timeline projection.
@@ -156,120 +132,94 @@ enum ModelMessageRole {
 }
 
 /// A provider-neutral message projected from the durable timeline.
-final class ModelMessage {
-  /// Creates a model message.
-  const ModelMessage({
-    required this.role,
-    this.content = const <ContentPart>[],
-    this.toolCalls = const <ToolCall>[],
-    this.toolCallId,
-    this.toolOutput,
-    this.continuation,
-  });
-
+final class const ModelMessage({
   /// The model role.
-  final ModelMessageRole role;
+  required final ModelMessageRole role,
 
   /// Structured text and image content.
-  final List<ContentPart> content;
+  final List<ContentPart> content = const <ContentPart>[],
 
   /// Tool calls emitted by an assistant message.
-  final List<ToolCall> toolCalls;
+  final List<ToolCall> toolCalls = const <ToolCall>[],
 
   /// The matching call ID for a tool result.
-  final ToolCallId? toolCallId;
+  final ToolCallId? toolCallId,
 
   /// The tool output for a tool result.
-  final String? toolOutput;
+  final String? toolOutput,
 
   /// Provider-owned continuation attached to this assistant message.
-  final ModelContinuation? continuation;
+  final ModelContinuation? continuation,
+}) {
+  /// Creates a model message.
+  this;
 }
 
 /// A tool schema advertised to the model.
-final class ToolDescriptor {
-  /// Creates a tool descriptor.
-  const ToolDescriptor({
-    required this.name,
-    required this.description,
-    required this.inputSchema,
-  });
-
+final class const ToolDescriptor({
   /// The unique model-facing tool name.
-  final String name;
+  required final String name,
 
   /// The tool's model-facing description.
-  final String description;
+  required final String description,
 
   /// A JSON Schema object for tool arguments.
-  final JsonObject inputSchema;
+  required final JsonObject inputSchema,
+}) {
+  /// Creates a tool descriptor.
+  this;
 }
 
 /// A provider's opaque continuation and optional reasoning summary.
-final class ModelContinuation {
-  /// Creates a model continuation.
-  const ModelContinuation({
-    required this.providerId,
-    this.reasoningSummary = '',
-    this.opaquePayload = const <String, Object?>{},
-  });
-
+final class const ModelContinuation({
   /// The provider that owns [opaquePayload].
-  final ProviderId providerId;
+  required final ProviderId providerId,
 
   /// Provider-produced reasoning summary, if available.
-  final String reasoningSummary;
+  final String reasoningSummary = '',
 
   /// Provider-owned continuation payload.
-  final JsonObject opaquePayload;
+  final JsonObject opaquePayload = const <String, Object?>{},
+}) {
+  /// Creates a model continuation.
+  this;
 }
 
 /// A persisted provider continuation linked to an assistant item.
-final class ModelCheckpoint {
-  /// Creates a model checkpoint.
-  const ModelCheckpoint({
-    required this.timelineItemId,
-    required this.continuation,
-    required this.createdAt,
-  });
-
+final class const ModelCheckpoint({
   /// The assistant item that produced this checkpoint.
-  final TimelineItemId timelineItemId;
+  required final TimelineItemId timelineItemId,
 
   /// The provider-owned continuation value.
-  final ModelContinuation continuation;
+  required final ModelContinuation continuation,
 
   /// The UTC time at which the checkpoint was persisted.
-  final DateTime createdAt;
+  required final DateTime createdAt,
+}) {
+  /// Creates a model checkpoint.
+  this;
 }
 
 /// A result returned by a completed model step.
-final class ModelResponse {
-  /// Creates a model response.
-  const ModelResponse({
-    this.content = const [],
-    this.toolCalls = const [],
-    this.stopReason = StopReason.unknown,
-    this.reasoning = '',
-    this.usage = const TokenUsage(),
-    this.continuation,
-  });
-
+final class const ModelResponse({
   /// The assistant content.
-  final List<ContentPart> content;
+  final List<ContentPart> content = const [],
 
   /// Tool calls requested by the assistant.
-  final List<ToolCall> toolCalls;
+  final List<ToolCall> toolCalls = const [],
 
   /// Why the model step stopped.
-  final StopReason stopReason;
+  final StopReason stopReason = StopReason.unknown,
 
   /// Provider-neutral reasoning text produced before the response.
-  final String reasoning;
+  final String reasoning = '',
 
   /// Token usage for this step.
-  final TokenUsage usage;
+  final TokenUsage usage = const TokenUsage(),
 
   /// Continuation state for this response.
-  final ModelContinuation? continuation;
+  final ModelContinuation? continuation,
+}) {
+  /// Creates a model response.
+  this;
 }

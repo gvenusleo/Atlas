@@ -180,9 +180,9 @@ void main() {
     var callCount = 0;
     final inputs = <List<Object?>>[];
     final server = await _startServer((request) async {
-      final body =
-          jsonDecode(await utf8.decoder.bind(request).join())
-              as Map<String, Object?>;
+      final body = jsonDecode(
+        await utf8.decoder.bind(request).join(),
+      ) as Map<String, Object?>;
       inputs.add((body['input'] as List).cast<Object?>());
       callCount++;
       if (callCount == 1) {
@@ -239,9 +239,9 @@ void main() {
   test('drops unpaired function_call items from continuation replay', () async {
     final inputs = <List<Object?>>[];
     final server = await _startServer((request) async {
-      final body =
-          jsonDecode(await utf8.decoder.bind(request).join())
-              as Map<String, Object?>;
+      final body = jsonDecode(
+        await utf8.decoder.bind(request).join(),
+      ) as Map<String, Object?>;
       inputs.add((body['input'] as List).cast<Object?>());
       await _sendSse(request.response, [
         '{"type":"response.output_text.delta","delta":"Ok"}',
@@ -326,9 +326,9 @@ void main() {
     var callCount = 0;
     final inputs = <List<Object?>>[];
     final server = await _startServer((request) async {
-      final body =
-          jsonDecode(await utf8.decoder.bind(request).join())
-              as Map<String, Object?>;
+      final body = jsonDecode(
+        await utf8.decoder.bind(request).join(),
+      ) as Map<String, Object?>;
       inputs.add((body['input'] as List).cast<Object?>());
       callCount++;
       if (callCount == 1) {
@@ -417,48 +417,54 @@ void main() {
     ]);
   });
 
-  test('treats an empty Responses tool call arguments as no arguments', () async {
-    final server = await _startServer((request) async {
-      await _sendSse(request.response, [
-        '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-4","name":"inspect","arguments":""}}',
-        '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call-4","name":"inspect","arguments":""}]}}',
-      ]);
-    });
-    addTearDown(server.close);
+  test(
+    'treats an empty Responses tool call arguments as no arguments',
+    () async {
+      final server = await _startServer((request) async {
+        await _sendSse(request.response, [
+          '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-4","name":"inspect","arguments":""}}',
+          '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call-4","name":"inspect","arguments":""}]}}',
+        ]);
+      });
+      addTearDown(server.close);
 
-    final events = await _provider(
-      server,
-      OpenAIProtocol.responses,
-    ).stream(_request()).toList();
+      final events = await _provider(
+        server,
+        OpenAIProtocol.responses,
+      ).stream(_request()).toList();
 
-    final response = (events.last as ModelCompletedEvent).response;
-    expect(response.stopReason, StopReason.toolUse);
-    expect(response.toolCalls.single.arguments, isEmpty);
-  });
+      final response = (events.last as ModelCompletedEvent).response;
+      expect(response.stopReason, StopReason.toolUse);
+      expect(response.toolCalls.single.arguments, isEmpty);
+    },
+  );
 
-  test('reports malformed Responses tool arguments as a provider error', () async {
-    final server = await _startServer((request) async {
-      // The tool arguments JSON is truncated, so the parser must surface a
-      // provider error instead of a bare FormatException.
-      await _sendSse(request.response, [
-        '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-4","name":"inspect","arguments":"{\\"path\\": \\"x"}}',
-        '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call-4","name":"inspect","arguments":"{\\"path\\": \\"x"}]}}',
-      ]);
-    });
-    addTearDown(server.close);
+  test(
+    'reports malformed Responses tool arguments as a provider error',
+    () async {
+      final server = await _startServer((request) async {
+        // The tool arguments JSON is truncated, so the parser must surface a
+        // provider error instead of a bare FormatException.
+        await _sendSse(request.response, [
+          '{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-4","name":"inspect","arguments":"{\\"path\\": \\"x"}}',
+          '{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call-4","name":"inspect","arguments":"{\\"path\\": \\"x"}]}}',
+        ]);
+      });
+      addTearDown(server.close);
 
-    final events = await _provider(
-      server,
-      OpenAIProtocol.responses,
-    ).stream(_request()).toList();
+      final events = await _provider(
+        server,
+        OpenAIProtocol.responses,
+      ).stream(_request()).toList();
 
-    final failed = events.single as ModelFailedEvent;
-    expect(failed.error, isA<OpenAIProviderException>());
-    expect(
-      (failed.error as OpenAIProviderException).message,
-      'responses stream returned invalid tool arguments',
-    );
-  });
+      final failed = events.single as ModelFailedEvent;
+      expect(failed.error, isA<OpenAIProviderException>());
+      expect(
+        (failed.error as OpenAIProviderException).message,
+        'responses stream returned invalid tool arguments',
+      );
+    },
+  );
 
   test('rejects an empty Responses tool call id as a provider error', () async {
     final server = await _startServer((request) async {
@@ -568,6 +574,70 @@ void main() {
       onTimeout: () => fail('subscription cancel did not close the connection'),
     );
   });
+
+  test('ignores unknown Responses events and non-text deltas', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"response.created","response":{"status":"in_progress"}}',
+        '{"type":"response.output_text.delta","delta":{"text":"not a string"}}',
+        '{"type":"response.reasoning_summary_part.added","part":{"type":"summary_text"}}',
+        '{"type":"response.output_text.delta","delta":"Kept"}',
+        '{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4},"output":[]}}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(
+      server,
+      OpenAIProtocol.responses,
+    ).stream(_request()).toList();
+    expect(events.whereType<TextDeltaEvent>().map((event) => event.delta), [
+      'Kept',
+    ]);
+    final response = (events.last as ModelCompletedEvent).response;
+    expect((response.content.single as TextContent).text, 'Kept');
+    expect(response.usage.totalTokens, 4);
+  });
+
+  test('maps an incomplete Responses stream to the stop reason', () async {
+    Future<ModelResponse> run(String reason) async {
+      final server = await _startServer((request) async {
+        await _sendSse(request.response, [
+          '{"type":"response.output_text.delta","delta":"Partial"}',
+          '{"type":"response.incomplete","response":{"status":"incomplete"${reason.isEmpty ? '' : ',"incomplete_details":{"reason":"$reason"}'},"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3},"output":[]}}',
+        ]);
+      });
+      addTearDown(server.close);
+      final events = await _provider(
+        server,
+        OpenAIProtocol.responses,
+      ).stream(_request()).toList();
+      return (events.last as ModelCompletedEvent).response;
+    }
+
+    expect((await run('max_output_tokens')).stopReason, StopReason.maxTokens);
+    expect((await run('content_filter')).stopReason, StopReason.unknown);
+    expect((await run('')).stopReason, StopReason.unknown);
+  });
+
+  test(
+    'an output limit makes an unexplained incomplete stop max tokens',
+    () async {
+      final server = await _startServer((request) async {
+        await _sendSse(request.response, [
+          '{"type":"response.incomplete","response":{"status":"incomplete","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3},"output":[]}}',
+        ]);
+      });
+      addTearDown(server.close);
+
+      final events = await _provider(
+        server,
+        OpenAIProtocol.responses,
+      ).stream(_request(maxOutputTokens: 512)).toList();
+      final response = (events.last as ModelCompletedEvent).response;
+      expect(response.stopReason, StopReason.maxTokens);
+    },
+  );
 
   test('surfaces HTTP errors as provider exceptions', () async {
     final server = await _startServer((request) async {
@@ -688,12 +758,14 @@ void main() {
 ModelRequest _request({
   ModelRef? model,
   List<ModelMessage>? messages,
+  int maxOutputTokens = 0,
   CancellationToken? cancellation,
 }) {
   return ModelRequest(
     sessionId: SessionId('session-1'),
     turnId: TurnId('turn-1'),
     model: model ?? _modelRef,
+    maxOutputTokens: maxOutputTokens,
     messages:
         messages ??
         const [

@@ -778,11 +778,7 @@ SessionContext Function(String) _contextBuilder(SkillCatalog skills) =>
     );
 
 /// In-memory catalog exposing skills by name from a fixed set.
-final class _Skills implements SkillCatalog {
-  _Skills(this.names);
-
-  final List<String> names;
-
+final class _Skills(final List<String> names) implements SkillCatalog {
   @override
   List<SkillSummary> get summaries => [
     for (final name in names)
@@ -848,9 +844,8 @@ final class _ScriptedProvider implements ModelProvider {
     _requests++;
     final compaction =
         request.messages.length == 1 &&
-        textFromContent(
-          request.messages.single.content,
-        ).contains('<transcript>');
+        textFromContent(request.messages.single.content)
+            .contains('<transcript>');
     if (compaction) {
       final gate = compactionGate;
       if (gate != null) {

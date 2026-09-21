@@ -433,9 +433,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    final user = _workspaceOf(
-      tester,
-    ).messages.where((message) => message.kind == WorkspaceMessageKind.user);
+    final user = _workspaceOf(tester).messages
+        .where((message) => message.kind == WorkspaceMessageKind.user);
     expect(user, hasLength(1));
     expect(user.first.text, 'hello');
   });
@@ -457,9 +456,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      _workspaceOf(
-        tester,
-      ).messages.where((message) => message.kind == WorkspaceMessageKind.user),
+      _workspaceOf(tester).messages
+          .where((message) => message.kind == WorkspaceMessageKind.user),
       isEmpty,
     );
     expect(field.controller!.text, 'nihao');
@@ -490,9 +488,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      _workspaceOf(
-        tester,
-      ).messages.where((message) => message.kind == WorkspaceMessageKind.user),
+      _workspaceOf(tester).messages
+          .where((message) => message.kind == WorkspaceMessageKind.user),
       isEmpty,
     );
 
@@ -618,9 +615,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('atlas-send-button')));
     await tester.pumpAndSettle();
-    final user = _workspaceOf(
-      tester,
-    ).messages.where((message) => message.kind == WorkspaceMessageKind.user);
+    final user = _workspaceOf(tester).messages
+        .where((message) => message.kind == WorkspaceMessageKind.user);
     expect(user, hasLength(1));
     expect(user.first.text, isEmpty);
     expect(user.first.imageSources, hasLength(1));
@@ -692,9 +688,9 @@ Future<void> _pumpComposer(
   if (withSession) {
     // Commands are advertised per session, so a draft workspace has none.
     final prompt = find.byKey(const ValueKey('atlas-prompt-input'));
-    await ProviderScope.containerOf(
-      tester.element(prompt),
-    ).read(workspaceProvider.notifier).send('hello');
+    await ProviderScope.containerOf(tester.element(prompt))
+        .read(workspaceProvider.notifier)
+        .send('hello');
     await tester.pumpAndSettle();
   }
 }
@@ -781,21 +777,16 @@ Future<void> _pumpWorkspace(
 }
 
 /// Working directory fixed for tests.
-final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
-  _FixedWorkingDirectory(this.path);
-
-  final String path;
-
+final class _FixedWorkingDirectory(final String path)
+    extends WorkspaceWorkingDirectory {
   @override
   String build() => path;
 }
 
-final class _FakeProvider implements ModelProvider {
-  _FakeProvider(this.model, {this.usage = const TokenUsage()});
-
-  final ModelRef model;
-  final TokenUsage usage;
-
+final class _FakeProvider(
+  final ModelRef model, {
+  final TokenUsage usage = const TokenUsage(),
+}) implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
       ModelDescriptor(ref: requested, contextWindow: 512000);
@@ -822,12 +813,10 @@ ModelDescriptor _visionModel() => ModelDescriptor(
 );
 
 /// A runtime that advertises agent modes for composer tests.
-final class _AdvertisedCommandsRuntime implements PresentationAgentSession {
-  _AdvertisedCommandsRuntime(this._inner, this._skills);
-
-  final AgentRuntime _inner;
-  final List<SkillSummary> _skills;
-
+final class _AdvertisedCommandsRuntime(
+  final AgentRuntime _inner,
+  final List<SkillSummary> _skills,
+) implements PresentationAgentSession {
   @override
   List<AgentCommand> commandsFor(SessionId sessionId) => [
     for (final command in availableCommandsFor(_skills))
@@ -908,11 +897,8 @@ final class _AdvertisedCommandsRuntime implements PresentationAgentSession {
 }
 
 /// A runtime that advertises agent modes for composer tests.
-final class _FakeModeRuntime implements PresentationAgentSession {
-  _FakeModeRuntime(this._inner);
-
-  final PresentationAgentSession _inner;
-
+final class _FakeModeRuntime(final PresentationAgentSession _inner)
+    implements PresentationAgentSession {
   static const modes = [
     ModeOption(id: 'build', name: 'build'),
     ModeOption(id: 'plan', name: 'plan'),

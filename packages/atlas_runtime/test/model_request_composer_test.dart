@@ -252,11 +252,7 @@ void main() {
 }
 
 /// A catalog holding exactly one lookup-able skill.
-final class _SingleSkillCatalog implements SkillCatalog {
-  _SingleSkillCatalog(this.skill);
-
-  final Skill skill;
-
+final class _SingleSkillCatalog(final Skill skill) implements SkillCatalog {
   @override
   List<SkillSummary> get summaries => [
     SkillSummary(

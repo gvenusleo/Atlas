@@ -5,9 +5,7 @@ import '../../remote_connection/application/runtime_controller.dart';
 import 'workspace_shell.dart';
 
 /// Entry page for the Atlas workspace route.
-class WorkspacePage extends ConsumerWidget {
-  const WorkspacePage({super.key});
-
+class const WorkspacePage({super.key}) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => WorkspaceShell(
     environment: ref.watch(runtimeEnvironmentProvider).environment,

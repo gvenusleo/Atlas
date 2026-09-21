@@ -406,20 +406,13 @@ void main() {
 }
 
 /// Working directory fixed for tests.
-final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
-  _FixedWorkingDirectory(this.path);
-
-  final String path;
-
+final class _FixedWorkingDirectory(final String path)
+    extends WorkspaceWorkingDirectory {
   @override
   String build() => path;
 }
 
-final class _FakeProvider implements ModelProvider {
-  _FakeProvider(this.model);
-
-  final ModelRef model;
-
+final class _FakeProvider(final ModelRef model) implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
       ModelDescriptor(ref: requested);
@@ -435,10 +428,7 @@ final class _FakeProvider implements ModelProvider {
   }
 }
 
-final class _BlockingProvider implements ModelProvider {
-  _BlockingProvider(this.model);
-
-  final ModelRef model;
+final class _BlockingProvider(final ModelRef model) implements ModelProvider {
   final firstStarted = Completer<void>();
   final releaseFirst = Completer<void>();
 

@@ -11,31 +11,22 @@ final class FileBrowserLimits {
 }
 
 /// Clipboard payload for copy and cut inside one file browser.
-final class FileClipboard {
-  /// Creates a clipboard entry.
-  const FileClipboard({required this.path, required this.cut});
-
+final class const FileClipboard({
   /// Absolute path of the copied or cut entry.
-  final String path;
+  required final String path,
 
   /// Whether paste should move instead of copy.
-  final bool cut;
-}
+  required final bool cut,
+});
 
 /// Performs bounded filesystem reads and writes for the workspace file browser.
-class FileBrowserService {
-  /// Creates a filesystem browser service.
-  const FileBrowserService({
-    this.trash = moveToTrash,
-    this.reveal = revealInFileManager,
-  });
-
+class const FileBrowserService({
   /// Moves a path into the platform trash.
-  final Future<void> Function(String path) trash;
+  final Future<void> Function(String path) trash = moveToTrash,
 
   /// Reveals a path in the platform file manager.
-  final Future<void> Function(String path) reveal;
-
+  final Future<void> Function(String path) reveal = revealInFileManager,
+}) {
   /// Watches one directory for external changes.
   Stream<FileSystemEvent> watchDirectory(String path) =>
       Directory(path).watch();

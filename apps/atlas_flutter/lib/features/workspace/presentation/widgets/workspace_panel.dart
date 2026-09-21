@@ -12,32 +12,24 @@ import 'permission_dialog.dart';
 import 'workspace_controls.dart';
 
 /// Central conversation panel and its responsive toolbar.
-class WorkspacePanel extends ConsumerWidget {
-  /// Creates a central workspace.
-  const WorkspacePanel({
-    super.key,
-    required this.compact,
-    required this.leftActive,
-    required this.onLeftPressed,
-    required this.onRightPressed,
-    this.startupError,
-  });
-
-  /// Runtime startup failure shown in place of the composer.
-  final String? startupError;
+class const WorkspacePanel({
+  super.key,
 
   /// Whether compact drawer navigation is active.
-  final bool compact;
+  required final bool compact,
 
   /// Whether the desktop session sidebar is visible.
-  final bool leftActive;
+  required final bool leftActive,
 
   /// Opens or reveals the session sidebar.
-  final VoidCallback onLeftPressed;
+  required final VoidCallback onLeftPressed,
 
   /// Opens or reveals the workspace tools sidebar.
-  final VoidCallback onRightPressed;
+  required final VoidCallback onRightPressed,
 
+  /// Runtime startup failure shown in place of the composer.
+  final String? startupError,
+}) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = AtlasColors.of(context);
@@ -148,11 +140,7 @@ class WorkspacePanel extends ConsumerWidget {
   }
 }
 
-class _WorkspaceBody extends ConsumerWidget {
-  const _WorkspaceBody({this.error});
-
-  final String? error;
-
+class const _WorkspaceBody({final String? error}) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
@@ -170,11 +158,8 @@ class _WorkspaceBody extends ConsumerWidget {
   }
 }
 
-class _StartupFailure extends StatelessWidget {
-  const _StartupFailure({required this.message});
-
-  final String message;
-
+class const _StartupFailure({required final String message})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

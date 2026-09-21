@@ -15,11 +15,10 @@ abstract interface class IdGenerator {
 }
 
 /// Generates timestamp-prefixed identifiers using the platform secure random source.
-final class SecureIdGenerator implements IdGenerator {
+final class SecureIdGenerator({DateTime Function()? now, Random? random})
+    implements IdGenerator {
   /// Creates a secure identifier generator.
-  SecureIdGenerator({DateTime Function()? now, Random? random})
-    : _now = now ?? DateTime.now,
-      _random = random ?? Random.secure();
+  this : _now = now ?? DateTime.now, _random = random ?? Random.secure();
 
   final DateTime Function() _now;
   final Random _random;

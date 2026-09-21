@@ -29,9 +29,9 @@ final class CancellationToken {
 }
 
 /// Raised when cooperative turn cancellation reaches an operation.
-final class TurnCancelledException implements Exception {
+final class const TurnCancelledException() implements Exception {
   /// Creates a cancellation error.
-  const TurnCancelledException();
+  this;
 
   @override
   String toString() => 'Turn cancelled';

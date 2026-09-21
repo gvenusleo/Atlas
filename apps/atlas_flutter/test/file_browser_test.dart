@@ -204,9 +204,8 @@ void main() {
   });
 
   testWidgets('rejects oversized files', (tester) async {
-    File(
-      '${tempDir.path}/big.txt',
-    ).writeAsBytesSync(List.filled(600 * 1024, 65));
+    File('${tempDir.path}/big.txt')
+        .writeAsBytesSync(List.filled(600 * 1024, 65));
 
     await pumpBrowser(tester);
 
@@ -493,20 +492,13 @@ void main() {
   });
 }
 
-class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
-  _FixedWorkingDirectory(this.path);
-
-  final String path;
-
+class _FixedWorkingDirectory(final String path)
+    extends WorkspaceWorkingDirectory {
   @override
   String build() => path;
 }
 
-final class _EmptyProvider implements ModelProvider {
-  _EmptyProvider(this.model);
-
-  final ModelRef model;
-
+final class _EmptyProvider(final ModelRef model) implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
       ModelDescriptor(ref: requested);

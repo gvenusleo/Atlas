@@ -13,10 +13,7 @@ import 'remote_profile_form.dart';
 
 /// Entry state for mobile clients and fallback for desktop without a runtime:
 /// manages remote server profiles and drives the connection lifecycle.
-class RemoteConnectView extends ConsumerStatefulWidget {
-  /// Creates the remote connection view.
-  const RemoteConnectView({super.key});
-
+class const RemoteConnectView({super.key}) extends ConsumerStatefulWidget {
   @override
   ConsumerState<RemoteConnectView> createState() => _RemoteConnectViewState();
 }
@@ -218,29 +215,17 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
 }
 
 /// One saved profile row with its connection state.
-class _ProfileTile extends StatelessWidget {
-  const _ProfileTile({
-    required this.profile,
-    required this.active,
-    required this.status,
-    required this.error,
-    required this.busy,
-    required this.onConnect,
-    required this.onDisconnect,
-    required this.onEdit,
-    required this.onRemove,
-  });
-
-  final RemoteConnectionProfile profile;
-  final bool active;
-  final RemoteConnectionStatus status;
-  final String? error;
-  final bool busy;
-  final VoidCallback onConnect;
-  final VoidCallback onDisconnect;
-  final VoidCallback onEdit;
-  final VoidCallback onRemove;
-
+class const _ProfileTile({
+  required final RemoteConnectionProfile profile,
+  required final bool active,
+  required final RemoteConnectionStatus status,
+  required final String? error,
+  required final bool busy,
+  required final VoidCallback onConnect,
+  required final VoidCallback onDisconnect,
+  required final VoidCallback onEdit,
+  required final VoidCallback onRemove,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

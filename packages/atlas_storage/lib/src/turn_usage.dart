@@ -1,55 +1,43 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// One persisted turn's token usage, used for cache reporting.
-final class TurnUsageSample {
-  /// Creates a usage sample.
-  const TurnUsageSample({
-    required this.sessionId,
-    required this.turnId,
-    required this.title,
-    required this.startedAt,
-    this.providerId,
-    this.modelId,
-    this.inputTokens = 0,
-    this.outputTokens = 0,
-    this.cacheReadTokens = 0,
-    this.cacheWriteTokens = 0,
-    this.requests = const [],
-  });
-
+final class const TurnUsageSample({
   /// Serialized identifier of the owning session.
-  final String sessionId;
+  required final String sessionId,
 
   /// Serialized identifier of the turn.
-  final String turnId;
+  required final String turnId,
 
   /// Session title at read time.
-  final String title;
+  required final String title,
 
   /// UTC start time of the turn.
-  final DateTime startedAt;
+  required final DateTime startedAt,
 
   /// Provider that served the turn, when recorded.
-  final String? providerId;
+  final String? providerId,
 
   /// Model that served the turn, when recorded.
-  final String? modelId;
-
-  /// Recorded model responses, including those before context compaction.
-  final List<AssistantMessageItem> requests;
+  final String? modelId,
 
   /// Input tokens as reported by the provider.
   ///
   /// Anthropic reports this figure without the cached tokens, while
   /// OpenAI-compatible endpoints already include them.
-  final int inputTokens;
+  final int inputTokens = 0,
 
   /// Output tokens as reported by the provider.
-  final int outputTokens;
+  final int outputTokens = 0,
 
   /// Cached input tokens read from the provider cache.
-  final int cacheReadTokens;
+  final int cacheReadTokens = 0,
 
   /// Cached input tokens written to the provider cache.
-  final int cacheWriteTokens;
+  final int cacheWriteTokens = 0,
+
+  /// Recorded model responses, including those before context compaction.
+  final List<AssistantMessageItem> requests = const [],
+}) {
+  /// Creates a usage sample.
+  this;
 }

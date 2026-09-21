@@ -4,174 +4,145 @@ import 'model.dart';
 import 'usage.dart';
 
 /// A persisted item in a session's ordered timeline.
-sealed class TimelineItem {
-  /// Creates a timeline item.
-  const TimelineItem({
-    required this.id,
-    required this.sessionId,
-    required this.turnId,
-    required this.sequence,
-    required this.occurredAt,
-  });
-
+sealed class const TimelineItem({
   /// The item identifier.
-  final TimelineItemId id;
+  required final TimelineItemId id,
 
   /// The owning session.
-  final SessionId sessionId;
+  required final SessionId sessionId,
 
   /// The owning turn.
-  final TurnId turnId;
+  required final TurnId turnId,
 
   /// The strict order inside the session.
-  final int sequence;
+  required final int sequence,
 
   /// The UTC time at which the item was appended.
-  final DateTime occurredAt;
+  required final DateTime occurredAt,
+}) {
+  /// Creates a timeline item.
+  this;
 }
 
 /// A user-submitted message.
-final class UserMessageItem extends TimelineItem {
-  /// Creates a user message item.
-  const UserMessageItem({
-    required super.id,
-    required super.sessionId,
-    required super.turnId,
-    required super.sequence,
-    required super.occurredAt,
-    required this.content,
-  });
+final class const UserMessageItem({
+  required super.id,
+  required super.sessionId,
+  required super.turnId,
+  required super.sequence,
+  required super.occurredAt,
 
   /// The submitted content parts.
-  final List<ContentPart> content;
+  required final List<ContentPart> content,
+}) extends TimelineItem {
+  /// Creates a user message item.
+  this;
 }
 
 /// A completed assistant response.
-final class AssistantMessageItem extends TimelineItem {
-  /// Creates an assistant message item.
-  const AssistantMessageItem({
-    required super.id,
-    required super.sessionId,
-    required super.turnId,
-    required super.sequence,
-    required super.occurredAt,
-    required this.content,
-    required this.model,
-    required this.stopReason,
-    this.reasoning = '',
-    this.usage = const TokenUsage(),
-  });
+final class const AssistantMessageItem({
+  required super.id,
+  required super.sessionId,
+  required super.turnId,
+  required super.sequence,
+  required super.occurredAt,
 
   /// The assistant content parts.
-  final List<ContentPart> content;
-
-  /// Provider-neutral reasoning text produced before the response.
-  final String reasoning;
+  required final List<ContentPart> content,
 
   /// The model that produced this response.
-  final ModelRef model;
+  required final ModelRef model,
 
   /// The provider stop reason.
-  final StopReason stopReason;
+  required final StopReason stopReason,
+
+  /// Provider-neutral reasoning text produced before the response.
+  final String reasoning = '',
 
   /// Token usage for the response.
-  final TokenUsage usage;
+  final TokenUsage usage = const TokenUsage(),
+}) extends TimelineItem {
+  /// Creates an assistant message item.
+  this;
 }
 
 /// A tool call emitted by an assistant response.
-final class ToolCallItem extends TimelineItem {
-  /// Creates a tool call item.
-  const ToolCallItem({
-    required super.id,
-    required super.sessionId,
-    required super.turnId,
-    required super.sequence,
-    required super.occurredAt,
-    required this.call,
-  });
+final class const ToolCallItem({
+  required super.id,
+  required super.sessionId,
+  required super.turnId,
+  required super.sequence,
+  required super.occurredAt,
 
   /// The model-requested call.
-  final ToolCall call;
+  required final ToolCall call,
+}) extends TimelineItem {
+  /// Creates a tool call item.
+  this;
 }
 
 /// A completed result for a tool call.
-final class ToolResultItem extends TimelineItem {
-  /// Creates a tool result item.
-  const ToolResultItem({
-    required super.id,
-    required super.sessionId,
-    required super.turnId,
-    required super.sequence,
-    required super.occurredAt,
-    required this.callId,
-    required this.content,
-    this.isError = false,
-    this.metadata = const <String, Object?>{},
-  });
+final class const ToolResultItem({
+  required super.id,
+  required super.sessionId,
+  required super.turnId,
+  required super.sequence,
+  required super.occurredAt,
 
   /// The matching tool call identifier.
-  final ToolCallId callId;
+  required final ToolCallId callId,
 
   /// The tool output text.
-  final String content;
+  required final String content,
 
   /// Whether the tool failed.
-  final bool isError;
+  final bool isError = false,
 
   /// Structured tool result data.
-  final JsonObject metadata;
+  final JsonObject metadata = const <String, Object?>{},
+}) extends TimelineItem {
+  /// Creates a tool result item.
+  this;
 }
 
 /// The value returned by a tool implementation before persistence.
-final class ToolResult {
-  /// Creates a tool result.
-  const ToolResult({
-    required this.content,
-    this.isError = false,
-    this.metadata = const <String, Object?>{},
-  });
-
+final class const ToolResult({
   /// The tool output text.
-  final String content;
+  required final String content,
 
   /// Whether the tool failed.
-  final bool isError;
+  final bool isError = false,
 
   /// Structured tool result data.
-  final JsonObject metadata;
+  final JsonObject metadata = const <String, Object?>{},
+}) {
+  /// Creates a tool result.
+  this;
 }
 
 /// A durable context compaction checkpoint.
-final class CompactionCheckpoint {
-  /// Creates a compaction checkpoint.
-  const CompactionCheckpoint({
-    required this.sessionId,
-    required this.compactedThroughSequence,
-    required this.summary,
-    required this.keptRecentMessages,
-    required this.inputTokensBefore,
-    required this.inputTokensAfter,
-    required this.createdAt,
-  });
-
+final class const CompactionCheckpoint({
   /// The owning session.
-  final SessionId sessionId;
+  required final SessionId sessionId,
 
   /// The last timeline sequence represented by [summary].
-  final int compactedThroughSequence;
+  required final int compactedThroughSequence,
 
   /// The generated summary used for future model context.
-  final String summary;
+  required final String summary,
 
   /// Timeline messages after the boundary that were kept verbatim.
-  final int keptRecentMessages;
+  required final int keptRecentMessages,
 
   /// Input tokens before compaction.
-  final int inputTokensBefore;
+  required final int inputTokensBefore,
 
   /// Input tokens after compaction.
-  final int inputTokensAfter;
+  required final int inputTokensAfter,
 
   /// The UTC creation time.
-  final DateTime createdAt;
+  required final DateTime createdAt,
+}) {
+  /// Creates a compaction checkpoint.
+  this;
 }

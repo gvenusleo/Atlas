@@ -54,23 +54,20 @@ Future<bool> launchMarkdownLink(Uri url) {
 ///
 /// Supports GitHub-flavored Markdown plus inline and block LaTeX, matching
 /// how assistant messages are rendered in the transcript.
-class AtlasMarkdown extends StatelessWidget {
-  /// Creates a Markdown renderer for [data].
-  const AtlasMarkdown({
-    super.key,
-    required this.data,
-    this.fontFamily,
-    this.launchLink,
-  });
+class const AtlasMarkdown({
+  super.key,
 
   /// Markdown source to render.
-  final String data;
+  required final String data,
 
   /// Monospace font family used for code; falls back to `monospace`.
-  final String? fontFamily;
+  final String? fontFamily,
 
   /// Opens a parsed Markdown link. Defaults to [launchMarkdownLink].
-  final Future<bool> Function(Uri url)? launchLink;
+  final Future<bool> Function(Uri url)? launchLink,
+}) extends StatelessWidget {
+  /// Creates a Markdown renderer for [data].
+  this;
 
   @override
   Widget build(BuildContext context) {

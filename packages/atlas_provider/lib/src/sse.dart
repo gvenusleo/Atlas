@@ -2,15 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 
 /// One Server-Sent Events record.
-final class SseEvent {
-  /// Creates an event with an optional event name and payload.
-  const SseEvent(this.name, this.data);
-
+final class const SseEvent(
   /// The SSE event name, if supplied by the server.
-  final String? name;
+  final String? name,
 
   /// The joined `data` fields.
-  final String data;
+  final String data,
+) {
+  /// Creates an event with an optional event name and payload.
+  this;
 }
 
 /// Decodes an SSE byte stream while preserving UTF-8 and CRLF boundaries.

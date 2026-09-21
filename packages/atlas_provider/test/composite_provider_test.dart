@@ -45,11 +45,8 @@ ModelRequest _request(ProviderId providerId, String modelId) => ModelRequest(
   ],
 );
 
-final class _RecordingProvider implements ModelProvider {
-  _RecordingProvider(this.calls);
-
-  final List<String> calls;
-
+final class _RecordingProvider(final List<String> calls)
+    implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef model) async {
     calls.add('describe');

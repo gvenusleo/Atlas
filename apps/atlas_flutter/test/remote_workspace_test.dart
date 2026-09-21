@@ -113,9 +113,7 @@ Future<void> _pumpDetails(WidgetTester tester, {required bool isRemote}) async {
   await tester.pump(const Duration(milliseconds: 400));
 }
 
-class _Host extends StatelessWidget {
-  const _Host();
-
+class const _Host() extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       const MaterialApp(home: Scaffold(body: RemoteConnectView()));

@@ -166,9 +166,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
 
   /// Loads every persisted session across all directories, newest first.
   Future<void> refreshSessions({bool showLoading = true}) {
-    return _refreshInFlight ??= _refreshSessions(
-      showLoading: showLoading,
-    ).whenComplete(() => _refreshInFlight = null);
+    return _refreshInFlight ??= _refreshSessions(showLoading: showLoading)
+        .whenComplete(() => _refreshInFlight = null);
   }
 
   Future<void> _refreshSessions({required bool showLoading}) async {
@@ -533,13 +532,9 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   Future<bool> _handleSlashCommand(String text, {String? sessionKey}) async {
     final key = sessionKey ?? state.activeKey;
     final parts = text.split(RegExp(r'\s+'));
-    switch (parts.first) {
-      case '/compact':
-        await _compact(parts.skip(1).join(' '), sessionKey: key);
-        return true;
-      default:
-        return false;
-    }
+    if (parts.first != '/compact') return false;
+    await _compact(parts.skip(1).join(' '), sessionKey: key);
+    return true;
   }
 
   Future<void> _compact(String instruction, {String? sessionKey}) async {

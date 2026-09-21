@@ -86,11 +86,7 @@ final class ShellTool implements Tool {
       ToolResult(content: message, isError: true);
 }
 
-final class _ShellExecution {
-  _ShellExecution(this.context, this.timeout);
-
-  final ToolContext context;
-  final Duration timeout;
+final class _ShellExecution(final ToolContext context, final Duration timeout) {
   final _buffer = ShellOutputBuffer(shellOutputLimit);
   final _completed = Completer<void>();
   final _interrupted = Completer<void>();
@@ -159,9 +155,8 @@ final class _ShellExecution {
       _outputTimer?.cancel();
       // A descendant can keep a pipe open even after the shell has exited.
       // Cancelling subscriptions must not make completion unbounded again.
-      await Future.wait(
-        _subscriptions.map((sub) => sub.cancel()),
-      ).timeout(const Duration(seconds: 1), onTimeout: () => <void>[]);
+      await Future.wait(_subscriptions.map((sub) => sub.cancel()))
+          .timeout(const Duration(seconds: 1), onTimeout: () => <void>[]);
       _publish();
     }
     return _result();
@@ -379,9 +374,7 @@ Future<(int, String)> _cleanupCommand(
     return (exit, utf8.decode(output.takeBytes(), allowMalformed: true));
   } finally {
     if (!exited) process.kill(ProcessSignal.sigkill);
-    await Future.wait([
-      sub.cancel(),
-      err.cancel(),
-    ]).timeout(const Duration(milliseconds: 100), onTimeout: () => <void>[]);
+    await Future.wait([sub.cancel(), err.cancel()])
+        .timeout(const Duration(milliseconds: 100), onTimeout: () => <void>[]);
   }
 }

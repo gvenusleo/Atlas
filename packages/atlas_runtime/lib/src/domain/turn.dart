@@ -20,151 +20,117 @@ enum TurnStatus {
 }
 
 /// A structured failure recorded for a turn.
-final class TurnFailure {
-  /// Creates a turn failure.
-  const TurnFailure({
-    required this.code,
-    required this.message,
-    this.kind = 'internal',
-    this.providerDetail,
-  });
-
+final class const TurnFailure({
   /// A stable runtime error code.
-  final String code;
+  required final String code,
 
   /// A user-visible error message.
-  final String message;
+  required final String message,
 
   /// Stable failure category used for retry and diagnostics.
-  final String kind;
+  final String kind = 'internal',
 
   /// Bounded provider diagnostic detail, when available.
-  final String? providerDetail;
+  final String? providerDetail,
+}) {
+  /// Creates a turn failure.
+  this;
 }
 
 /// The request that starts one user turn.
-final class TurnRequest {
-  /// Creates a turn request.
-  const TurnRequest({
-    required this.content,
-    this.sessionId,
-    this.model,
-    this.reasoningEffort,
-    this.mode,
-    this.workingDirectory,
-    this.additionalDirectories,
-    this.skills = const <String>[],
-    this.cancellation,
-  });
-
+final class const TurnRequest({
   /// The raw user content submitted for this turn.
-  final List<ContentPart> content;
+  required final List<ContentPart> content,
 
   /// An existing session to resume, or null to create one.
-  final SessionId? sessionId;
+  final SessionId? sessionId,
 
   /// The requested model override.
-  final ModelRef? model;
+  final ModelRef? model,
 
   /// The requested reasoning effort value.
-  final String? reasoningEffort;
+  final String? reasoningEffort,
 
   /// The requested agent session mode, applied before the prompt.
-  final String? mode;
+  final String? mode,
 
   /// The working directory for a new session; ignored when [sessionId]
   /// resumes an existing session, which keeps its own directory.
-  final String? workingDirectory;
+  final String? workingDirectory,
 
   /// Additional tool-accessible roots, or null to preserve session roots.
-  final List<String>? additionalDirectories;
+  final List<String>? additionalDirectories,
 
   /// Explicitly selected skill names whose full instructions are injected
   /// into this turn as non-persistent context.
-  final List<String> skills;
+  final List<String> skills = const <String>[],
 
   /// Cooperative cancellation for the turn.
-  final CancellationToken? cancellation;
+  final CancellationToken? cancellation,
+}) {
+  /// Creates a turn request.
+  this;
 }
 
 /// The result emitted when a turn reaches a terminal state.
-final class TurnOutcome {
-  /// Creates a turn outcome.
-  const TurnOutcome({
-    required this.sessionId,
-    required this.turnId,
-    required this.status,
-    this.content = const <ContentPart>[],
-    this.usage = const TokenUsage(),
-    this.stopReason,
-    this.failure,
-  });
-
+final class const TurnOutcome({
   /// The session that contains the turn.
-  final SessionId sessionId;
+  required final SessionId sessionId,
 
   /// The completed turn.
-  final TurnId turnId;
+  required final TurnId turnId,
 
   /// The terminal turn status.
-  final TurnStatus status;
+  required final TurnStatus status,
 
   /// The final assistant content, when available.
-  final List<ContentPart> content;
+  final List<ContentPart> content = const <ContentPart>[],
 
   /// The latest model usage.
-  final TokenUsage usage;
+  final TokenUsage usage = const TokenUsage(),
 
   /// Why the terminal model step stopped, for completed turns.
-  final StopReason? stopReason;
+  final StopReason? stopReason,
 
   /// The failure when the turn did not complete successfully.
-  final TurnFailure? failure;
+  final TurnFailure? failure,
+}) {
+  /// Creates a turn outcome.
+  this;
 }
 
 /// A durable turn record.
-final class Turn {
-  /// Creates a turn record.
-  const Turn({
-    required this.id,
-    required this.sessionId,
-    required this.status,
-    required this.startedAt,
-    this.completedAt,
-    this.model,
-    this.reasoningEffort,
-    this.usage = const TokenUsage(),
-    this.failure,
-    this.cancelReason,
-  });
-
+final class const Turn({
   /// The turn identifier.
-  final TurnId id;
+  required final TurnId id,
 
   /// The owning session identifier.
-  final SessionId sessionId;
+  required final SessionId sessionId,
 
   /// The lifecycle status.
-  final TurnStatus status;
+  required final TurnStatus status,
 
   /// The UTC start time.
-  final DateTime startedAt;
+  required final DateTime startedAt,
 
   /// The UTC terminal time.
-  final DateTime? completedAt;
+  final DateTime? completedAt,
 
   /// The model selected for this turn.
-  final ModelRef? model;
+  final ModelRef? model,
 
   /// The reasoning effort selected for this turn.
-  final String? reasoningEffort;
+  final String? reasoningEffort,
 
   /// The latest accumulated usage.
-  final TokenUsage usage;
+  final TokenUsage usage = const TokenUsage(),
 
   /// The failure for failed turns.
-  final TurnFailure? failure;
+  final TurnFailure? failure,
 
   /// The cancellation reason for cancelled turns.
-  final String? cancelReason;
+  final String? cancelReason,
+}) {
+  /// Creates a turn record.
+  this;
 }

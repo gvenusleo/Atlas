@@ -5,19 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 
-final class FixedWorkingDirectory extends WorkspaceWorkingDirectory {
-  FixedWorkingDirectory(this.path);
-
-  final String path;
-
+final class FixedWorkingDirectory(final String path)
+    extends WorkspaceWorkingDirectory {
   @override
   String build() => path;
 }
 
-final class GatedFakeProvider implements ModelProvider {
-  GatedFakeProvider(this.model);
-
-  final ModelRef model;
+final class GatedFakeProvider(final ModelRef model) implements ModelProvider {
   final reasoningGate = Completer<void>();
   final textGate = Completer<void>();
 
@@ -41,11 +35,7 @@ final class GatedFakeProvider implements ModelProvider {
   }
 }
 
-final class FakeProvider implements ModelProvider {
-  FakeProvider(this.model);
-
-  final ModelRef model;
-
+final class FakeProvider(final ModelRef model) implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
       ModelDescriptor(ref: requested);
@@ -67,12 +57,11 @@ final class FakeProvider implements ModelProvider {
 }
 
 /// A runtime that advertises agent modes and records mode switches.
-final class FakeModeRuntime implements PresentationAgentSession {
-  FakeModeRuntime(this._inner);
-
-  final AgentRuntime _inner;
+final class FakeModeRuntime(final AgentRuntime _inner)
+    implements PresentationAgentSession {
   final modeCalls = <(String, String)>[];
   final turnModes = <String?>[];
+  final compactCalls = <(SessionId, String?)>[];
 
   static const modes = [
     ModeOption(id: 'build', name: 'build'),
@@ -94,12 +83,15 @@ final class FakeModeRuntime implements PresentationAgentSession {
     String? instruction,
     ModelRef? model,
     CancellationToken? cancellation,
-  }) => _inner.compact(
-    sessionId,
-    instruction: instruction,
-    model: model,
-    cancellation: cancellation,
-  );
+  }) {
+    compactCalls.add((sessionId, instruction));
+    return _inner.compact(
+      sessionId,
+      instruction: instruction,
+      model: model,
+      cancellation: cancellation,
+    );
+  }
 
   @override
   Future<SessionPage> listSessions({
@@ -185,10 +177,7 @@ final class RecordingProvider implements ModelProvider {
   }
 }
 
-final class BlockingProvider implements ModelProvider {
-  BlockingProvider(this.model);
-
-  final ModelRef model;
+final class BlockingProvider(final ModelRef model) implements ModelProvider {
   final firstStarted = Completer<void>();
   final releaseFirst = Completer<void>();
 

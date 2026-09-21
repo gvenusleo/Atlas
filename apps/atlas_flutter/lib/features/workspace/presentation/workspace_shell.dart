@@ -17,15 +17,15 @@ import 'widgets/workspace_panel.dart';
 import 'workspace_metrics.dart';
 
 /// Responsive Atlas workspace with desktop side panels and compact drawers.
-class WorkspaceShell extends ConsumerStatefulWidget {
-  const WorkspaceShell({super.key, this.environment, this.startupError});
+class const WorkspaceShell({
+  super.key,
 
   /// Shared runtime services, absent when bootstrap failed or in shell tests.
-  final RuntimeEnvironment? environment;
+  final RuntimeEnvironment? environment,
 
   /// Configuration error shown in the empty conversation state.
-  final String? startupError;
-
+  final String? startupError,
+}) extends ConsumerStatefulWidget {
   @override
   ConsumerState<WorkspaceShell> createState() => _WorkspaceShellState();
 }
@@ -366,17 +366,11 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
 }
 
 /// Clips a desktop sidebar toward its anchored window edge while it animates.
-class _AnimatedSideRegion extends StatelessWidget {
-  const _AnimatedSideRegion({
-    required this.animation,
-    required this.alignment,
-    required this.child,
-  });
-
-  final Animation<double> animation;
-  final Alignment alignment;
-  final Widget child;
-
+class const _AnimatedSideRegion({
+  required final Animation<double> animation,
+  required final Alignment alignment,
+  required final Widget child,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -395,9 +389,4 @@ class _AnimatedSideRegion extends StatelessWidget {
   }
 }
 
-class _PanelWidths {
-  const _PanelWidths({this.left = 0, this.right = 0});
-
-  final double left;
-  final double right;
-}
+class const _PanelWidths({final double left = 0, final double right = 0}) {}

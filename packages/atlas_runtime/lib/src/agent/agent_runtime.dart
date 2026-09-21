@@ -22,53 +22,69 @@ import 'context_compactor.dart';
 import 'turn_executor.dart';
 
 /// Executes model turns and persists every durable boundary through ports.
-final class AgentRuntime
-    implements AgentEngine, PresentationAgentSession, AgentCapabilityProvider {
-  /// Creates an agent runtime with injected model, tool, and storage adapters.
-  AgentRuntime({
-    required this.store,
-    required this.provider,
-    required this.tools,
-    required this.ids,
-    required this.defaultModel,
-    this.sessionContextBuilder = _emptySessionContext,
-    this.logger = const NoopLogger(),
-    DateTime Function()? now,
-    this.systemPromptBuilder = _emptySystemPrompt,
-    this.maxSteps = 20,
-    this.maxOutputTokens = 0,
-    this.temperature,
-    this.compactionThreshold = 0.8,
-    this.keepRecentTokens,
-    this.reserveTokens = 16384,
-    this.keptRecentTurns = 5,
-  }) : _now = now ?? DateTime.now,
-       _compactor = ContextCompactor(
-         provider: provider,
-         store: store,
-         threshold: compactionThreshold,
-         keepRecentTokens:
-             keepRecentTokens ?? (keptRecentTurns == 5 ? 20000 : null),
-         reserveTokens: reserveTokens,
-         keptRecentTurns: keptRecentTurns,
-         now: now,
-       );
-
+final class AgentRuntime({
   /// The session persistence adapter.
-  final SessionStore store;
+  required final SessionStore store,
 
   /// The model provider adapter.
-  final ModelProvider provider;
+  required final ModelProvider provider,
 
   /// The registered local tools.
-  final ToolRegistry tools;
+  required final ToolRegistry tools,
+
+  /// The ID generator used for new records.
+  required final IdGenerator ids,
+
+  /// The model used when a turn does not provide an override.
+  @override required final ModelRef defaultModel,
 
   /// Builds the filesystem context (instructions and skills) for a session
   /// working directory; invoked once per directory and cached.
-  final SessionContext Function(String workingDirectory) sessionContextBuilder;
+  final SessionContext Function(String workingDirectory) sessionContextBuilder =
+      _emptySessionContext,
 
   /// Structured diagnostic logger.
-  final AtlasLogger logger;
+  final AtlasLogger logger = const NoopLogger(),
+  DateTime Function()? now,
+
+  /// Builds the system prompt for a session and turn.
+  final String Function(SessionContext context) systemPromptBuilder =
+      _emptySystemPrompt,
+
+  /// Maximum model/tool steps for one turn.
+  final int maxSteps = 20,
+
+  /// Model output token limit.
+  final int maxOutputTokens = 0,
+
+  /// Optional model temperature.
+  final double? temperature,
+
+  /// Context window fraction that triggers compaction after a turn.
+  final double compactionThreshold = 0.8,
+
+  /// The approximate number of newest tokens kept verbatim.
+  final int? keepRecentTokens,
+
+  /// Tokens reserved for the next model response.
+  final int reserveTokens = 16384,
+
+  /// Legacy turn count retained for source compatibility.
+  final int keptRecentTurns = 5,
+}) implements AgentEngine, PresentationAgentSession, AgentCapabilityProvider {
+  /// Creates an agent runtime with injected model, tool, and storage adapters.
+  this
+    : _now = now ?? DateTime.now,
+      _compactor = ContextCompactor(
+        provider: provider,
+        store: store,
+        threshold: compactionThreshold,
+        keepRecentTokens:
+            keepRecentTokens ?? (keptRecentTurns == 5 ? 20000 : null),
+        reserveTokens: reserveTokens,
+        keptRecentTurns: keptRecentTurns,
+        now: now,
+      );
 
   @override
   SessionContext sessionContext(String workingDirectory) =>
@@ -84,37 +100,6 @@ final class AgentRuntime
       await configurable.updateSessionConfig(sessionId, model, reasoningEffort);
     }
   }
-
-  /// The ID generator used for new records.
-  final IdGenerator ids;
-
-  /// The model used when a turn does not provide an override.
-  @override
-  final ModelRef defaultModel;
-
-  /// Builds the system prompt for a session and turn.
-  final String Function(SessionContext context) systemPromptBuilder;
-
-  /// Maximum model/tool steps for one turn.
-  final int maxSteps;
-
-  /// Model output token limit.
-  final int maxOutputTokens;
-
-  /// Optional model temperature.
-  final double? temperature;
-
-  /// Context window fraction that triggers compaction after a turn.
-  final double compactionThreshold;
-
-  /// The approximate number of newest tokens kept verbatim.
-  final int? keepRecentTokens;
-
-  /// Tokens reserved for the next model response.
-  final int reserveTokens;
-
-  /// Legacy turn count retained for source compatibility.
-  final int keptRecentTurns;
 
   final DateTime Function() _now;
   final ContextCompactor _compactor;

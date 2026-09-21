@@ -24,31 +24,26 @@ import 'terminal_session.dart';
 /// and layers a [TuiTheme] that keeps the preset accents but uses the
 /// terminal color for the background and surface. In test bindings, where no
 /// terminal is available, the preset theme is kept as-is.
-final class AtlasTuiApp extends StatefulComponent {
-  /// Creates the chat application.
-  AtlasTuiApp({
-    super.key,
-    required this.runtime,
-    required this.models,
-    this.skills,
-    this.workingDirectory,
-    this.onQuit,
-  });
+final class AtlasTuiApp({
+  super.key,
 
   /// The runtime that executes turns.
-  final AgentSession runtime;
+  required final AgentSession runtime,
 
   /// The models the user can switch to with `/model`.
-  final List<ModelDescriptor> models;
+  required final List<ModelDescriptor> models,
 
   /// The skills the user can select with `/skillname`.
-  final SkillCatalog? skills;
+  final SkillCatalog? skills,
 
   /// The working directory for tool execution, or the process directory.
-  final String? workingDirectory;
+  final String? workingDirectory,
 
   /// Called when the user submits `/quit`.
-  final void Function()? onQuit;
+  final void Function()? onQuit,
+}) extends StatefulComponent {
+  /// Creates the chat application.
+  this;
 
   @override
   State<AtlasTuiApp> createState() => _AtlasTuiAppState();

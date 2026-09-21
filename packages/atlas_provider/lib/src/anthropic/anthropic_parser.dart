@@ -8,12 +8,13 @@ import '../stream_runner.dart';
 import 'anthropic_configuration.dart';
 
 /// Parses an Anthropic Messages streaming response.
-final class AnthropicParser implements StreamParser {
-  /// Creates a parser for [providerId].
-  AnthropicParser(this.providerId);
-
+final class AnthropicParser(
   /// The provider that owns this stream.
-  final ProviderId providerId;
+  final ProviderId providerId,
+) implements StreamParser {
+  /// Creates a parser for [providerId].
+  this;
+
   final _thinkingBlocks = <Map<String, Object?>>[];
   _ThinkingBlock? _currentThinking;
   final _reasoning = StringBuffer();
@@ -55,57 +56,44 @@ final class AnthropicParser implements StreamParser {
             : null;
       case 'content_block_start':
         final block = asJsonMap(value['content_block']);
-        switch (block['type']) {
-          case 'tool_use':
+        switch (block) {
+          case {'type': 'tool_use'}:
             _toolBlocks.putIfAbsent(
                 value['index'] as int? ?? _toolBlocks.length,
                 _ToolBlock.new,
               )
               ..id = block['id'] as String?
               ..name = block['name'] as String?;
-          case 'thinking':
+          case {'type': 'thinking'}:
             _currentThinking = _ThinkingBlock(
               signature: block['signature'] as String? ?? '',
             );
-          case 'redacted_thinking':
-            final data = block['data'];
-            if (data is String && data.isNotEmpty) {
-              _thinkingBlocks.add(<String, Object?>{
-                'type': 'redacted_thinking',
-                'data': data,
-              });
-            }
+          case {'type': 'redacted_thinking', 'data': String data}
+              when data.isNotEmpty:
+            _thinkingBlocks.add(<String, Object?>{
+              'type': 'redacted_thinking',
+              'data': data,
+            });
         }
       case 'content_block_delta':
         final delta = asJsonMap(value['delta']);
         final index = value['index'] as int?;
-        switch (delta['type']) {
-          case 'text_delta':
-            final text = delta['text'];
-            if (text is String && text.isNotEmpty) {
-              _content.write(text);
-              yield TextDeltaEvent(text);
-            }
-          case 'thinking_delta':
-            final thinking = delta['thinking'];
-            if (thinking is String && thinking.isNotEmpty) {
-              _currentThinking?.text.write(thinking);
-              _reasoning.write(thinking);
-              yield ReasoningDeltaEvent(thinking);
-            }
-          case 'signature_delta':
-            final signature = delta['signature'];
-            if (signature is String) {
-              _currentThinking?.signature = signature;
-            }
-          case 'input_json_delta':
-            final partial = delta['partial_json'];
-            if (partial is String) {
-              _toolBlocks
-                  .putIfAbsent(index ?? _toolBlocks.length, _ToolBlock.new)
-                  .input
-                  .write(partial);
-            }
+        switch (delta) {
+          case {'type': 'text_delta', 'text': String text} when text.isNotEmpty:
+            _content.write(text);
+            yield TextDeltaEvent(text);
+          case {'type': 'thinking_delta', 'thinking': String thinking}
+              when thinking.isNotEmpty:
+            _currentThinking?.text.write(thinking);
+            _reasoning.write(thinking);
+            yield ReasoningDeltaEvent(thinking);
+          case {'type': 'signature_delta', 'signature': String signature}:
+            _currentThinking?.signature = signature;
+          case {'type': 'input_json_delta', 'partial_json': String partial}:
+            _toolBlocks
+                .putIfAbsent(index ?? _toolBlocks.length, _ToolBlock.new)
+                .input
+                .write(partial);
         }
       case 'content_block_stop':
         final thinkingBlock = _currentThinking;
@@ -223,10 +211,7 @@ final class AnthropicParser implements StreamParser {
   }
 }
 
-final class _ThinkingBlock {
-  _ThinkingBlock({required this.signature});
-
-  String signature;
+final class _ThinkingBlock({required var String signature}) {
   final text = StringBuffer();
 }
 

@@ -20,38 +20,30 @@ enum ChatMessageKind {
 }
 
 /// One rendered message in the chat transcript.
-final class ChatMessage {
-  /// Creates a chat message.
-  const ChatMessage({
-    required this.kind,
-    required this.text,
-    this.id,
-    this.toolName,
-    this.toolCallId,
-    this.arguments,
-    this.isError = false,
-  });
-
+final class const ChatMessage({
   /// The message kind.
-  final ChatMessageKind kind;
-
-  /// Stable tool-call identity used to pair parallel results.
-  final String? id;
+  required final ChatMessageKind kind,
 
   /// The rendered text.
-  final String text;
+  required final String text,
+
+  /// Stable tool-call identity used to pair parallel results.
+  final String? id,
 
   /// The tool name for [ChatMessageKind.tool] messages.
-  final String? toolName;
+  final String? toolName,
 
   /// The runtime tool call identifier used to pair completion results.
-  final String? toolCallId;
+  final String? toolCallId,
 
   /// The tool call arguments for [ChatMessageKind.tool] messages, captured
   /// when the call starts so the renderer can show path, command, and other
   /// metadata without further events.
-  final Map<String, Object?>? arguments;
+  final Map<String, Object?>? arguments,
 
   /// Whether this message represents a failure.
-  final bool isError;
+  final bool isError = false,
+}) {
+  /// Creates a chat message.
+  this;
 }

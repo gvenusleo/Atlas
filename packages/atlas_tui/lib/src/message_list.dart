@@ -17,12 +17,14 @@ const _italicStyle = TextStyle(fontStyle: FontStyle.italic);
 const _strikethroughStyle = TextStyle(decoration: TextDecoration.lineThrough);
 
 /// Renders the transcript as a scrollable list.
-final class MessageList extends StatelessComponent {
-  /// Creates a message list.
-  const MessageList({super.key, required this.messages});
+final class const MessageList({
+  super.key,
 
   /// The messages to render, in occurrence order.
-  final List<ChatMessage> messages;
+  required final List<ChatMessage> messages,
+}) extends StatelessComponent {
+  /// Creates a message list.
+  this;
 
   @override
   Component build(BuildContext context) {
@@ -58,11 +60,8 @@ final class MessageList extends StatelessComponent {
 }
 
 /// One rendered transcript line.
-final class _MessageRow extends StatelessComponent {
-  const _MessageRow({required this.message});
-
-  final ChatMessage message;
-
+final class const _MessageRow({required final ChatMessage message})
+    extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     final theme = TuiTheme.of(context);
@@ -100,12 +99,10 @@ final class _MessageRow extends StatelessComponent {
 
 /// Renders reasoning as a single line that always shows the newest tail of
 /// the message: long content is clipped at the head instead of wrapping.
-final class _ReasoningLine extends StatelessComponent {
-  const _ReasoningLine(this.text, {required this.style});
-
-  final String text;
-  final TextStyle? style;
-
+final class const _ReasoningLine(
+  final String text, {
+  required final TextStyle? style,
+}) extends StatelessComponent {
   @override
   Component build(BuildContext context) {
     return LayoutBuilder(
@@ -148,14 +145,13 @@ String tailWindow(String text, int maxWidth) {
 /// The heading carries the call metadata (path, edited blocks, or written
 /// lines); the result is shown as at most [maxResultLines] lines with the
 /// head elided when it is longer.
-final class _ToolLine extends StatelessComponent {
+final class const _ToolLine({required final ChatMessage message})
+    extends StatelessComponent {
   /// Creates a tool line.
-  const _ToolLine({required this.message});
+  this;
 
   /// The maximum number of result lines rendered under the heading.
   static const int maxResultLines = 5;
-
-  final ChatMessage message;
 
   @override
   Component build(BuildContext context) {
@@ -292,11 +288,10 @@ final class _ToolLine extends StatelessComponent {
 /// Steps carry a status symbol: `□` pending, `✔` completed with
 /// strikethrough, and the current step bold in the primary color, mirroring
 /// the Go reference plan block.
-final class _PlanLine extends StatelessComponent {
+final class const _PlanLine({required final ChatMessage message})
+    extends StatelessComponent {
   /// Creates a plan line.
-  const _PlanLine({required this.message});
-
-  final ChatMessage message;
+  this;
 
   @override
   Component build(BuildContext context) {

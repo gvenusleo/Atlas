@@ -6,12 +6,15 @@ import 'package:atlas_storage/atlas_storage.dart';
 import 'package:io/io.dart' show ExitCode;
 
 /// Parsed `atlas cache` options.
-final class CacheOptions {
+final class const CacheOptions({
+  /// Maximum number of recent turns, including every recorded model response.
+  final int limit = 200,
+}) {
   /// Creates cache options.
-  const CacheOptions({this.limit = 200});
+  this;
 
   /// Validates parsed command options.
-  factory CacheOptions.fromResults(ArgResults results) {
+  factory fromResults(ArgResults results) {
     if (results.rest.isNotEmpty) {
       throw const FormatException('cache does not take positional arguments');
     }
@@ -21,9 +24,6 @@ final class CacheOptions {
     }
     return CacheOptions(limit: limit);
   }
-
-  /// Maximum number of recent turns, including every recorded model response.
-  final int limit;
 }
 
 /// Parses `atlas cache` arguments.
@@ -251,11 +251,7 @@ class _Totals {
 // Plain text works unchanged with NO_COLOR, redirected stdout and TERM=dumb.
 // Non-ASCII runes are conservatively budgeted at two cells to avoid splitting
 // wide titles across the right edge. Control sequences never reach the sink.
-class _ReportWriter {
-  _ReportWriter(this.sink, this.columns);
-  final StringSink sink;
-  final int columns;
-
+class _ReportWriter(final StringSink sink, final int columns) {
   void line([String text = '']) {
     final clean = text
         .replaceAll(RegExp(r'\x1b\[[0-?]*[ -/]*[@-~]'), '')

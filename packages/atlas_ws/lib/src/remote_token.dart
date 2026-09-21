@@ -10,11 +10,9 @@ import 'package:crypto/crypto.dart';
 /// The token is a 256-bit random value written to a file with owner-only
 /// permissions (`0600` on POSIX systems). Validation reloads the file on
 /// every call so rotating the token takes effect without a server restart.
-final class RemoteTokenFile {
+final class RemoteTokenFile(final File _file) {
   /// Creates a token store backed by [file].
-  RemoteTokenFile(this._file);
-
-  final File _file;
+  this;
 
   /// Loads the current token, creating and persisting one on first use.
   ///

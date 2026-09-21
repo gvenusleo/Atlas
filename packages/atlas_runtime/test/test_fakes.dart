@@ -22,18 +22,12 @@ final class TestIds implements IdGenerator {
   TimelineItemId timelineItemId() => TimelineItemId('item-${++_item}');
 }
 
-final class ScriptedProvider implements ModelProvider {
-  ScriptedProvider(
-    this.responses, {
-    this.contextWindow = 0,
-    this.inputCapabilities = const <ModelInputCapability>{
-      ModelInputCapability.text,
-    },
-  });
-
-  final List<ModelResponse> responses;
-  final int contextWindow;
-  final Set<ModelInputCapability> inputCapabilities;
+final class ScriptedProvider(
+  final List<ModelResponse> responses, {
+  final int contextWindow = 0,
+  final Set<ModelInputCapability> inputCapabilities =
+      const <ModelInputCapability>{ModelInputCapability.text},
+}) implements ModelProvider {
   final requests = <ModelRequest>[];
   var _index = 0;
 
@@ -64,10 +58,8 @@ final class FailingProvider implements ModelProvider {
 }
 
 /// Succeeds for the scripted responses, then fails further model calls.
-final class SummaryFailingProvider implements ModelProvider {
-  SummaryFailingProvider(this.responses);
-
-  final List<ModelResponse> responses;
+final class SummaryFailingProvider(final List<ModelResponse> responses)
+    implements ModelProvider {
   var _index = 0;
 
   @override
@@ -85,10 +77,8 @@ final class SummaryFailingProvider implements ModelProvider {
 }
 
 /// Fails every describe call while streaming scripted responses.
-final class DescribeFailingProvider implements ModelProvider {
-  DescribeFailingProvider(this.responses);
-
-  final List<ModelResponse> responses;
+final class DescribeFailingProvider(final List<ModelResponse> responses)
+    implements ModelProvider {
   final requests = <ModelRequest>[];
   var _index = 0;
 
@@ -105,10 +95,8 @@ final class DescribeFailingProvider implements ModelProvider {
 }
 
 /// Succeeds once, then fails every subsequent model call.
-final class FirstOkThenFailProvider implements ModelProvider {
-  FirstOkThenFailProvider(this.first);
-
-  final ModelResponse first;
+final class FirstOkThenFailProvider(final ModelResponse first)
+    implements ModelProvider {
   var _calls = 0;
 
   @override
@@ -217,11 +205,8 @@ SessionContext Function(String) contextBuilder(SkillCatalog skills) =>
       skills: skills,
     );
 
-final class MemorySkillCatalog implements SkillCatalog {
-  MemorySkillCatalog(this.skills);
-
-  final List<Skill> skills;
-
+final class MemorySkillCatalog(final List<Skill> skills)
+    implements SkillCatalog {
   @override
   List<SkillSummary> get summaries => [
     for (final skill in skills)
@@ -244,10 +229,8 @@ final class MemorySkillCatalog implements SkillCatalog {
   }
 }
 
-final class MemoryTools implements ToolRegistry {
-  MemoryTools({required this.result});
-
-  final ToolResult result;
+final class MemoryTools({required final ToolResult result})
+    implements ToolRegistry {
   final contexts = <ToolContext>[];
   final calls = <ToolCall>[];
 

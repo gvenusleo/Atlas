@@ -15,57 +15,45 @@ enum PermissionReply {
 }
 
 /// One selectable option offered by an agent for a permission request.
-final class PermissionOption {
-  /// Creates a permission option.
-  const PermissionOption({
-    required this.optionId,
-    required this.kind,
-    required this.name,
-  });
-
+final class const PermissionOption({
   /// The option identifier sent back to the agent.
-  final String optionId;
+  required final String optionId,
 
   /// The reply kind this option maps to.
-  final PermissionReply kind;
+  required final PermissionReply kind,
 
   /// Human-readable option label.
-  final String name;
+  required final String name,
+}) {
+  /// Creates a permission option.
+  this;
 }
 
 /// A tool permission request raised by an agent, awaiting a user decision.
-final class PermissionRequest {
-  /// Creates a permission request.
-  const PermissionRequest({
-    required this.sessionId,
-    required this.requestId,
-    required this.toolCallId,
-    required this.toolName,
-    required this.title,
-    required this.input,
-    required this.options,
-  });
-
+final class const PermissionRequest({
   /// The session the tool call belongs to.
-  final SessionId sessionId;
+  required final SessionId sessionId,
 
   /// Opaque correlation id used to respond to this request.
-  final Object requestId;
+  required final Object requestId,
 
   /// The tool call identifier reported by the agent.
-  final String toolCallId;
+  required final String toolCallId,
 
   /// The tool name requesting permission.
-  final String toolName;
+  required final String toolName,
 
   /// Human-readable description of the requested action.
-  final String title;
+  required final String title,
 
   /// The raw tool arguments, for display.
-  final Map<String, Object?> input;
+  required final Map<String, Object?> input,
 
   /// The reply options offered by the agent.
-  final List<PermissionOption> options;
+  required final List<PermissionOption> options,
+}) {
+  /// Creates a permission request.
+  this;
 }
 
 /// An optional runtime capability for surfacing agent permission requests.

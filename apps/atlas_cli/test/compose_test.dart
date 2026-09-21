@@ -175,9 +175,7 @@ DriftSessionStore _testStore() {
   return store;
 }
 
-final class _FakeProvider implements ModelProvider {
-  _FakeProvider();
-
+final class _FakeProvider() implements ModelProvider {
   /// The system prompts received per model request.
   final prompts = <String>[];
 

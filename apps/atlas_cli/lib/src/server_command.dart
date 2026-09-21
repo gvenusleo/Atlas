@@ -9,17 +9,24 @@ import 'runtime_resources.dart';
 import 'termination_signals.dart';
 
 /// Parsed `atlas server` options.
-final class ServerOptions {
+final class const ServerOptions({
+  /// The interface to bind; null means loopback only.
+  final InternetAddress? address,
+
+  /// The listening TCP port.
+  final int port = 8765,
+
+  /// The token file path; defaults to `~/.atlas/remote_token`.
+  final String? tokenFile,
+
+  /// Rotates the token and exits without serving.
+  final bool rotateToken = false,
+}) {
   /// Creates server options.
-  const ServerOptions({
-    this.address,
-    this.port = 8765,
-    this.tokenFile,
-    this.rotateToken = false,
-  });
+  this;
 
   /// Validates parsed server options before configuration or token access.
-  factory ServerOptions.fromResults(ArgResults results) {
+  factory fromResults(ArgResults results) {
     if (results.rest.isNotEmpty) {
       throw const FormatException('server does not take positional arguments');
     }
@@ -35,18 +42,6 @@ final class ServerOptions {
       rotateToken: results.flag('rotate-token'),
     );
   }
-
-  /// The interface to bind; null means loopback only.
-  final InternetAddress? address;
-
-  /// The listening TCP port.
-  final int port;
-
-  /// The token file path; defaults to `~/.atlas/remote_token`.
-  final String? tokenFile;
-
-  /// Rotates the token and exits without serving.
-  final bool rotateToken;
 }
 
 /// Parses `atlas server` arguments.
@@ -191,9 +186,8 @@ String lanReachabilityHint({
               'Serve) to let phones connect.'
         : '';
   }
-  final urls = [
-    for (final address in lanAddresses) '  ws://$address:$port/acp',
-  ].join('\n');
+  final urls = [for (final address in lanAddresses) '  ws://$address:$port/acp']
+      .join('\n');
   if (bound.isLoopback) {
     return 'Phone-accessible addresses (reachable after restarting with '
         '--listen 0.0.0.0:$port, or over Tailscale):\n$urls';

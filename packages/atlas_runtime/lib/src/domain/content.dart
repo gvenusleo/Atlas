@@ -11,52 +11,48 @@ enum ImageDetail {
 }
 
 /// A model-visible content segment.
-sealed class ContentPart {
+sealed class const ContentPart() {
   /// Creates a content segment.
-  const ContentPart();
+  this;
 }
 
 /// A plain text content segment.
-final class TextContent extends ContentPart {
-  /// Creates a text segment.
-  const TextContent(this.text);
-
+final class const TextContent(
   /// The text value.
-  final String text;
+  final String text,
+) extends ContentPart {
+  /// Creates a text segment.
+  this;
 }
 
 /// An image content segment.
-final class ImageContent extends ContentPart {
-  /// Creates an image segment from a URI or a data URL.
-  const ImageContent({
-    required this.source,
-    this.mimeType,
-    this.detail = ImageDetail.auto,
-  });
-
+final class const ImageContent({
   /// A URI or data URL accepted by the selected provider.
-  final String source;
+  required final String source,
 
   /// The MIME type when known.
-  final String? mimeType;
+  final String? mimeType,
 
   /// The requested image detail.
-  final ImageDetail detail;
+  final ImageDetail detail = ImageDetail.auto,
+}) extends ContentPart {
+  /// Creates an image segment from a URI or a data URL.
+  this;
 }
 
 /// An embedded resource content segment (text payload).
-final class ResourceContent extends ContentPart {
-  /// Creates a resource segment.
-  const ResourceContent({required this.uri, this.mimeType, this.text = ''});
-
+final class const ResourceContent({
   /// The resource URI.
-  final String uri;
+  required final String uri,
 
   /// The MIME type when known.
-  final String? mimeType;
+  final String? mimeType,
 
   /// The embedded text payload.
-  final String text;
+  final String text = '',
+}) extends ContentPart {
+  /// Creates a resource segment.
+  this;
 }
 
 /// Returns the text content from a list of parts.

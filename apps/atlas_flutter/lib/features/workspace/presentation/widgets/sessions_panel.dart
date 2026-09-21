@@ -21,13 +21,12 @@ final directoryPickerProvider = Provider<Future<String?> Function()>(
 );
 
 /// Sessions sidebar used by desktop panels and compact drawers.
-class SessionsPanel extends ConsumerWidget {
-  /// Creates a session list.
-  const SessionsPanel({super.key, this.onClose});
+class const SessionsPanel({
+  super.key,
 
   /// Closes the compact drawer when present.
-  final VoidCallback? onClose;
-
+  final VoidCallback? onClose,
+}) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
@@ -54,9 +53,7 @@ class SessionsPanel extends ConsumerWidget {
 }
 
 /// Bottom toolbar of the sessions panel holding the settings entry.
-class _SessionsPanelToolbar extends StatelessWidget {
-  const _SessionsPanelToolbar();
-
+class const _SessionsPanelToolbar() extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -74,16 +71,13 @@ class _SessionsPanelToolbar extends StatelessWidget {
 }
 
 /// A time-bucketed group of sessions ordered newest first.
-final class SessionGroup {
-  /// Creates a session group.
-  const SessionGroup({required this.label, required this.sessions});
-
+final class const SessionGroup({
   /// The relative time label shared by the group.
-  final String label;
+  required final String label,
 
   /// Sessions in descending update order.
-  final List<SessionSummary> sessions;
-}
+  required final List<SessionSummary> sessions,
+});
 
 /// Groups sessions by recency, newest first, in fixed time buckets.
 List<SessionGroup> groupSessionsByTime(List<SessionSummary> sessions) {
@@ -128,11 +122,8 @@ List<SessionGroup> groupSessionsByTime(List<SessionSummary> sessions) {
   ];
 }
 
-class _SessionList extends ConsumerStatefulWidget {
-  const _SessionList({this.onClose});
-
-  final VoidCallback? onClose;
-
+class const _SessionList({final VoidCallback? onClose})
+    extends ConsumerStatefulWidget {
   @override
   ConsumerState<_SessionList> createState() => _SessionListState();
 }
@@ -404,17 +395,11 @@ class _SessionListState extends ConsumerState<_SessionList> {
 }
 
 /// Directory header above a group of sessions.
-class _SessionGroupHeader extends StatelessWidget {
-  const _SessionGroupHeader({
-    required this.label,
-    required this.collapsed,
-    required this.onToggle,
-  });
-
-  final String label;
-  final bool collapsed;
-  final VoidCallback onToggle;
-
+class const _SessionGroupHeader({
+  required final String label,
+  required final bool collapsed,
+  required final VoidCallback onToggle,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -457,25 +442,15 @@ class _SessionGroupHeader extends StatelessWidget {
 }
 
 /// One selectable session row inside a directory group.
-class _SessionTile extends StatefulWidget {
-  const _SessionTile({
-    required this.session,
-    required this.selected,
-    required this.running,
-    required this.completed,
-    required this.onTap,
-    required this.onRename,
-    required this.onDelete,
-  });
-
-  final SessionSummary session;
-  final bool selected;
-  final bool running;
-  final bool completed;
-  final VoidCallback onTap;
-  final VoidCallback onRename;
-  final VoidCallback onDelete;
-
+class const _SessionTile({
+  required final SessionSummary session,
+  required final bool selected,
+  required final bool running,
+  required final bool completed,
+  required final VoidCallback onTap,
+  required final VoidCallback onRename,
+  required final VoidCallback onDelete,
+}) extends StatefulWidget {
   @override
   State<_SessionTile> createState() => _SessionTileState();
 }
@@ -639,12 +614,10 @@ class _SessionTileState extends State<_SessionTile> {
 }
 
 /// Quiet status mark to the right of a session title.
-class _SessionStatusMark extends StatelessWidget {
-  const _SessionStatusMark({required this.sessionId, required this.running});
-
-  final SessionId sessionId;
-  final bool running;
-
+class const _SessionStatusMark({
+  required final SessionId sessionId,
+  required final bool running,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -674,12 +647,10 @@ class _SessionStatusMark extends StatelessWidget {
 enum _NewSessionAction { here, folder }
 
 /// One row of the new-session menu.
-class _NewSessionMenuItem extends StatelessWidget {
-  const _NewSessionMenuItem({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
+class const _NewSessionMenuItem({
+  required final IconData icon,
+  required final String label,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -699,18 +670,12 @@ class _NewSessionMenuItem extends StatelessWidget {
 }
 
 /// Sidebar action row with an icon and label, hover-highlighted.
-class _SidebarActionButton extends StatelessWidget {
-  const _SidebarActionButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
+class const _SidebarActionButton({
+  super.key,
+  required final IconData icon,
+  required final String label,
+  final VoidCallback? onTap,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

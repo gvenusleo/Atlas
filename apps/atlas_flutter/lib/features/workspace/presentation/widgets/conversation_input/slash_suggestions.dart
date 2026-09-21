@@ -11,22 +11,14 @@ const maxSlashPopupRows = 5;
 ///
 /// Rows come from the commands the agent advertises for the session, so the
 /// client never keeps its own copy of the command catalog.
-class SlashSuggestions extends StatelessWidget {
-  /// Creates a slash suggestion popup.
-  const SlashSuggestions({
-    super.key,
-    required this.suggestions,
-    required this.selected,
-    required this.onHighlighted,
-    required this.onSelected,
-  });
-
+class const SlashSuggestions({
+  super.key,
+  required final List<(String, String)> suggestions,
+  required final int selected,
+  required final ValueChanged<int> onHighlighted,
+  required final ValueChanged<(String, String)> onSelected,
+}) extends StatelessWidget {
   static const _rowHeight = 30.0;
-
-  final List<(String, String)> suggestions;
-  final int selected;
-  final ValueChanged<int> onHighlighted;
-  final ValueChanged<(String, String)> onSelected;
 
   @override
   Widget build(BuildContext context) {

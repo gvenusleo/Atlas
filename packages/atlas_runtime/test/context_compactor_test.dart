@@ -368,11 +368,10 @@ void main() {
 }
 
 /// Streams scripted responses and records every model request.
-final class _ScriptedProvider implements ModelProvider {
-  _ScriptedProvider(this.responses, {this.contextWindow = 0});
-
-  final List<ModelResponse> responses;
-  final int contextWindow;
+final class _ScriptedProvider(
+  final List<ModelResponse> responses, {
+  final int contextWindow = 0,
+}) implements ModelProvider {
   final requests = <ModelRequest>[];
   var _index = 0;
 

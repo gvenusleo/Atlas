@@ -152,8 +152,8 @@ final _write = _libc
       int Function(int, Pointer<Uint8>, int)
     >('write');
 
-class _Terminal {
-  _Terminal() {
+class _Terminal() {
+  this {
     using((arena) {
       final master = arena<Int32>();
       final slave = arena<Int32>();

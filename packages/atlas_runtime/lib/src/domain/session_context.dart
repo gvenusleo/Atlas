@@ -3,20 +3,16 @@ import '../skills/skill_catalog.dart';
 
 /// The filesystem-backed context of one session, loaded once when the
 /// session working directory is fixed.
-final class SessionContext {
-  /// Creates a session context.
-  const SessionContext({
-    required this.workingDirectory,
-    required this.instructions,
-    required this.skills,
-  });
-
+final class const SessionContext({
   /// The immutable session working directory.
-  final String workingDirectory;
+  required final String workingDirectory,
 
   /// The AGENTS.md instruction files scoped to [workingDirectory].
-  final List<InstructionFile> instructions;
+  required final List<InstructionFile> instructions,
 
   /// The skills scoped to [workingDirectory].
-  final SkillCatalog skills;
+  required final SkillCatalog skills,
+}) {
+  /// Creates a session context.
+  this;
 }

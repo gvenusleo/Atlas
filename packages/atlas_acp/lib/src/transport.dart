@@ -27,13 +27,15 @@ StreamChannel<String> ndjsonChannel(
 /// [TransportFrame] and each outgoing frame is serialized to a line. Used by
 /// the in-process and test transports where a raw stdio channel is not
 /// available.
-final class ChannelTransport implements Transport {
+final class ChannelTransport(
+  final StreamChannel<String> _channel, {
+
+  /// Called with each outgoing line before it is written.
+  final void Function(String line)? onSend,
+  void Function(String line)? onReceive,
+}) implements Transport {
   /// Creates a transport over [channel].
-  ChannelTransport(
-    this._channel, {
-    this.onSend,
-    void Function(String line)? onReceive,
-  }) {
+  this {
     _subscription = _channel.stream.listen(
       (line) {
         onReceive?.call(line);
@@ -44,10 +46,6 @@ final class ChannelTransport implements Transport {
     );
   }
 
-  final StreamChannel<String> _channel;
-
-  /// Called with each outgoing line before it is written.
-  final void Function(String line)? onSend;
   final _incoming = StreamController<TransportFrame>.broadcast();
   late final StreamSubscription<String> _subscription;
   bool _closed = false;
@@ -84,11 +82,10 @@ final class ChannelTransport implements Transport {
 /// transport stream ends, which would drop responses still being computed
 /// when the peer closes its input (EOF). Wrapping the incoming stream keeps
 /// the connection alive until every in-flight request handler completes.
-final class InFlightTransport implements Transport {
+final class InFlightTransport(final Transport _inner) implements Transport {
   /// Creates a wrapper over [inner].
-  InFlightTransport(this._inner);
+  this;
 
-  final Transport _inner;
   final _controller = StreamController<TransportFrame>.broadcast();
   StreamSubscription<TransportFrame>? _sub;
   int _pending = 0;
@@ -148,9 +145,9 @@ final class InFlightTransport implements Transport {
 /// agent and a client can run in the same process with full protocol
 /// semantics. This is the transport used when Flutter connects to the
 /// in-process Atlas agent.
-final class MemoryTransportPair {
+final class MemoryTransportPair() {
   /// Creates the pair.
-  MemoryTransportPair() {
+  this {
     left = _MemoryTransport('client', _rightToLeft.sink, _leftToRight.stream);
     right = _MemoryTransport('agent', _leftToRight.sink, _rightToLeft.stream);
   }
@@ -171,12 +168,11 @@ final class MemoryTransportPair {
   }
 }
 
-class _MemoryTransport implements Transport {
-  _MemoryTransport(this.name, this._sink, this._source);
-
-  final String name;
-  final StreamSink<TransportFrame> _sink;
-  final Stream<TransportFrame> _source;
+class _MemoryTransport(
+  final String name,
+  final StreamSink<TransportFrame> _sink,
+  final Stream<TransportFrame> _source,
+) implements Transport {
   final _controller = StreamController<TransportFrame>.broadcast();
   StreamSubscription<TransportFrame>? _sub;
   bool _closed = false;

@@ -78,9 +78,7 @@ void _unmount(Element element) {
   element.unmount();
 }
 
-class _AtlasTerminalBinding extends TerminalBinding {
-  _AtlasTerminalBinding(super.terminal);
-
+class _AtlasTerminalBinding(super.terminal) extends TerminalBinding {
   @override
   void scheduleFrameImpl() {
     if (!shouldExit) super.scheduleFrameImpl();

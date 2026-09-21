@@ -19,24 +19,28 @@ import 'transport.dart';
 /// Inbound agent requests (such as `session/request_permission`) are surfaced
 /// through [PermissionPort] so presentation code can ask the user before
 /// replying.
-final class AcpClient
-    implements
-        rt.PresentationAgentSession,
-        rt.PermissionPort,
-        rt.AgentCapabilityProvider {
+final class AcpClient._(
+  /// The transport channel.
+  final Transport _transport, {
+  List<rt.ModelDescriptor> catalog = const [],
+  rt.ModelRef? defaultModel,
+}) implements
+    rt.PresentationAgentSession,
+    rt.PermissionPort,
+    rt.AgentCapabilityProvider {
   /// Creates an ACP client over [transport].
   ///
   /// [catalog] and [defaultModel] seed the model list before the first
   /// `session/new`. Local Flutter bootstrap uses this so the composer shows
   /// the configured default instead of the synthetic `acp/default` placeholder.
-  AcpClient(
+  new(
     Transport transport, {
     List<rt.ModelDescriptor> catalog = const [],
     rt.ModelRef? defaultModel,
   }) : this._(transport, catalog: catalog, defaultModel: defaultModel);
 
   /// Creates an ACP client over a string channel, used by tests.
-  AcpClient.channel(
+  new channel(
     StreamChannel<String> channel, {
     List<rt.ModelDescriptor> catalog = const [],
     rt.ModelRef? defaultModel,
@@ -46,21 +50,16 @@ final class AcpClient
          defaultModel: defaultModel,
        );
 
-  AcpClient._(
-    this._transport, {
-    List<rt.ModelDescriptor> catalog = const [],
-    rt.ModelRef? defaultModel,
-  }) : _catalog = List.unmodifiable(catalog),
-       _defaultModelRef = defaultModel ?? _syntheticDefaultModel.ref {
+  /// Seeds the catalog and model selection before connecting.
+  this
+    : _catalog = List.unmodifiable(catalog),
+      _defaultModelRef = defaultModel ?? _syntheticDefaultModel.ref {
     for (final model in catalog) {
       if (model.reasoningEfforts.isNotEmpty) {
         _effortsByModel[model.ref] = model.reasoningEfforts;
       }
     }
   }
-
-  /// The transport channel.
-  final Transport _transport;
 
   final _updates = StreamController<SessionUpdateNotification>.broadcast(
     sync: true,
@@ -981,8 +980,8 @@ final class AcpClient
 
 // Keep only the latest replacement snapshot while presentation is paused.
 // Other events flush the pending snapshot first, preserving occurrence order.
-final class _TurnEventBuffer {
-  _TurnEventBuffer() {
+final class _TurnEventBuffer() {
+  this {
     _controller.onListen = _scheduleFlush;
     _controller.onResume = _scheduleFlush;
     _controller.onCancel = () {

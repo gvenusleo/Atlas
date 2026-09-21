@@ -103,11 +103,10 @@ List<ModelResponse> defaultWireResponses() => [
 ];
 
 /// A JSON-RPC wire harness driving an [AcpServer] over an in-memory channel.
-final class Wire {
-  Wire._(this._requests, this._provider);
-
-  final StreamController<String> _requests;
-  final ModelProvider _provider;
+final class Wire._(
+  final StreamController<String> _requests,
+  final ModelProvider _provider,
+) {
   final _pending = <Object?, Completer<Map<String, Object?>>>{};
   final _notifications = StreamController<Map<String, Object?>>.broadcast();
   final _clientRequests = StreamController<Map<String, Object?>>.broadcast();
@@ -260,20 +259,15 @@ final class Wire {
   }
 }
 
-final class ScriptedProvider implements ModelProvider {
-  ScriptedProvider(
-    this.responses, {
-    this.delay = Duration.zero,
-    this.delayedResponseIndex,
-  });
-
-  final List<ModelResponse> responses;
+final class ScriptedProvider(
+  final List<ModelResponse> responses, {
 
   /// Artificial latency so a turn is still running when a test closes EOF.
-  final Duration delay;
+  final Duration delay = Duration.zero,
 
   /// Limits [delay] to one response index when set.
-  final int? delayedResponseIndex;
+  final int? delayedResponseIndex,
+}) implements ModelProvider {
   var _index = 0;
 
   /// The most recent model request, captured for assertions.
@@ -330,11 +324,12 @@ final class BlockingProvider implements ModelProvider {
 }
 
 /// An in-memory skill catalog returning the injected summaries and skills.
-final class MemorySkillCatalog implements SkillCatalog {
-  MemorySkillCatalog(Iterable<SkillSummary> summaries, {this.skills = const []})
-    : _summaries = List.unmodifiable(summaries);
+final class MemorySkillCatalog(
+  Iterable<SkillSummary> summaries, {
+  final List<Skill> skills = const [],
+}) implements SkillCatalog {
+  this : _summaries = List.unmodifiable(summaries);
 
-  final List<Skill> skills;
   final List<SkillSummary> _summaries;
 
   @override

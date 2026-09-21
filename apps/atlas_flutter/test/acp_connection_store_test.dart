@@ -26,9 +26,8 @@ void main() {
 
   test('malformed configuration produces an empty list', () async {
     await store.save([]);
-    await File(
-      '${home.path}/.atlas/acp_connections.json',
-    ).writeAsString('not json');
+    await File('${home.path}/.atlas/acp_connections.json')
+        .writeAsString('not json');
     expect(await store.load(), isEmpty);
     await store.save([atlasPreset]);
     expect(await store.load(), hasLength(1));
@@ -44,4 +43,45 @@ void main() {
       );
     },
   );
+
+  test('fromJson requires the name and command keys to hold strings', () {
+    for (final json in <Object?>[
+      null,
+      'nope',
+      <String, Object?>{'command': 'atlas'},
+      <String, Object?>{'name': 'Atlas'},
+      <String, Object?>{'name': 'Atlas', 'command': null},
+      <String, Object?>{'name': 1, 'command': 'atlas'},
+      <String, Object?>{'name': 'Atlas', 'command': ''},
+      <String, Object?>{'name': '', 'command': 'atlas'},
+    ]) {
+      expect(AcpConnection.fromJson(json), isNull, reason: 'for $json');
+    }
+  });
+
+  test('fromJson defaults arguments and ignores non-string entries', () {
+    expect(
+      AcpConnection.fromJson(<String, Object?>{
+        'name': 'Atlas',
+        'command': 'atlas',
+      })!.arguments,
+      isEmpty,
+    );
+    expect(
+      AcpConnection.fromJson(<String, Object?>{
+        'name': 'Atlas',
+        'command': 'atlas',
+        'arguments': 'acp',
+      })!.arguments,
+      isEmpty,
+    );
+    expect(
+      AcpConnection.fromJson(<String, Object?>{
+        'name': 'Atlas',
+        'command': 'atlas',
+        'arguments': ['acp', 7, null],
+      })!.arguments,
+      ['acp'],
+    );
+  });
 }

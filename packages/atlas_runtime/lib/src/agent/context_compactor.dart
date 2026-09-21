@@ -31,50 +31,39 @@ const _compactionInstruction =
     'Summarize only the supplied history; recent messages are retained verbatim.';
 
 /// The inputs for one compaction attempt over a session timeline.
-final class CompactionJob {
-  /// Creates a compaction job.
-  const CompactionJob({
-    required this.session,
-    required this.timeline,
-    required this.systemPrompt,
-    required this.model,
-    required this.turnId,
-    required this.latestUsage,
-    required this.nextSequence,
-    this.enforceThreshold = true,
-    this.instruction,
-    this.cancellation,
-  });
-
+final class const CompactionJob({
   /// The session being compacted; its checkpoint chains prior summaries.
-  final Session session;
+  required final Session session,
 
   /// The full known timeline, including items before prior boundaries.
-  final List<TimelineItem> timeline;
+  required final List<TimelineItem> timeline,
 
   /// The system prompt as sent to the model; used for token estimation.
-  final String systemPrompt;
+  required final String systemPrompt,
 
   /// The model that generates the summary.
-  final ModelRef model;
+  required final ModelRef model,
 
   /// The turn the emitted events are attached to.
-  final TurnId turnId;
+  required final TurnId turnId,
 
   /// The most recent token usage; drives the threshold comparison.
-  final TokenUsage latestUsage;
+  required final TokenUsage latestUsage,
 
   /// Allocates event sequences continuing the caller's ordering.
-  final int Function() nextSequence;
+  required final int Function() nextSequence,
 
   /// When true, compaction runs only above the configured token threshold.
-  final bool enforceThreshold;
+  final bool enforceThreshold = true,
 
   /// Optional user-provided direction included in the summary request.
-  final String? instruction;
+  final String? instruction,
 
   /// Cooperative cancellation for the summary model requests.
-  final CancellationToken? cancellation;
+  final CancellationToken? cancellation,
+}) {
+  /// Creates a compaction job.
+  this;
 }
 
 /// Plans and executes context compaction before or after model turns.
@@ -82,35 +71,28 @@ final class CompactionJob {
 /// Compaction summarizes the timeline prefix before a message boundary, keeps
 /// the newest token window verbatim, and persists the resulting checkpoint
 /// through the session store.
-final class ContextCompactor {
-  /// Creates a compactor with injected provider and storage ports.
-  ContextCompactor({
-    required this.provider,
-    required this.store,
-    required this.threshold,
-    this.keepRecentTokens,
-    this.keptRecentTurns = 5,
-    this.reserveTokens = 16384,
-    DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
-
+final class ContextCompactor({
   /// The model provider adapter used for summary generation.
-  final ModelProvider provider;
+  required final ModelProvider provider,
 
   /// The session persistence adapter receiving checkpoints.
-  final SessionStore store;
+  required final SessionStore store,
 
   /// Context window fraction that triggers compaction after a turn.
-  final double threshold;
+  required final double threshold,
 
   /// The approximate number of newest tokens kept verbatim.
-  final int? keepRecentTokens;
+  final int? keepRecentTokens,
 
   /// The legacy turn count used only as a fallback for small sessions.
-  final int keptRecentTurns;
+  final int keptRecentTurns = 5,
 
   /// Tokens reserved for the next model response.
-  final int reserveTokens;
+  final int reserveTokens = 16384,
+  DateTime Function()? now,
+}) {
+  /// Creates a compactor with injected provider and storage ports.
+  this : _now = now ?? DateTime.now;
 
   final DateTime Function() _now;
 
@@ -163,9 +145,10 @@ final class ContextCompactor {
             );
       firstKeptIndex = math.max(1, timeline.length - kept.length);
     } else {
-      final keepBudget =
-          keepRecentTokens!.clamp(1, math.max(1, descriptor.contextWindow ~/ 3))
-              as int;
+      final keepBudget = keepRecentTokens!.clamp(
+        1,
+        math.max(1, descriptor.contextWindow ~/ 3),
+      ) as int;
       firstKeptIndex = _firstKeptIndex(timeline, keepBudget);
       kept = timeline.sublist(firstKeptIndex);
     }

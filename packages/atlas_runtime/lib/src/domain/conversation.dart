@@ -1,66 +1,58 @@
 import 'content.dart';
 
 /// A presentation-safe conversation item without persistence identities.
-sealed class ConversationItem {
+sealed class const ConversationItem() {
   /// Creates a conversation item.
-  const ConversationItem();
+  this;
 }
 
 /// A user message reconstructed for display.
-final class ConversationUserMessage extends ConversationItem {
-  /// Creates a user message.
-  const ConversationUserMessage(this.content);
-
+final class const ConversationUserMessage(
   /// Message content.
-  final List<ContentPart> content;
+  final List<ContentPart> content,
+) extends ConversationItem {
+  /// Creates a user message.
+  this;
 }
 
 /// An assistant message reconstructed for display.
-final class ConversationAssistantMessage extends ConversationItem {
-  /// Creates an assistant message.
-  const ConversationAssistantMessage(this.content, {this.reasoning = ''});
-
+final class const ConversationAssistantMessage(
   /// Message content.
-  final List<ContentPart> content;
+  final List<ContentPart> content, {
 
   /// Provider-neutral reasoning text.
-  final String reasoning;
+  final String reasoning = '',
+}) extends ConversationItem {
+  /// Creates an assistant message.
+  this;
 }
 
 /// A displayed tool call.
-final class ConversationToolCall extends ConversationItem {
-  /// Creates a tool call.
-  const ConversationToolCall({
-    required this.callId,
-    required this.name,
-    required this.arguments,
-  });
-
+final class const ConversationToolCall({
   /// Protocol-level call identity used only for display pairing.
-  final String callId;
+  required final String callId,
 
   /// Tool name.
-  final String name;
+  required final String name,
 
   /// Tool arguments.
-  final Map<String, Object?> arguments;
+  required final Map<String, Object?> arguments,
+}) extends ConversationItem {
+  /// Creates a tool call.
+  this;
 }
 
 /// A displayed tool result.
-final class ConversationToolResult extends ConversationItem {
-  /// Creates a tool result.
-  const ConversationToolResult({
-    required this.callId,
-    required this.content,
-    this.isError = false,
-  });
-
+final class const ConversationToolResult({
   /// Call identity paired with [ConversationToolCall.callId].
-  final String callId;
+  required final String callId,
 
   /// Rendered result content.
-  final String content;
+  required final String content,
 
   /// Whether the tool failed or was cancelled.
-  final bool isError;
+  final bool isError = false,
+}) extends ConversationItem {
+  /// Creates a tool result.
+  this;
 }

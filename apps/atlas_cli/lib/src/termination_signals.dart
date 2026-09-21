@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 /// Owns termination listeners for a single command invocation.
-final class TerminationSignals {
+final class TerminationSignals() {
   /// Starts watching the signals supported by this platform.
-  TerminationSignals() {
+  this {
     for (final signal in [
       ProcessSignal.sigint,
       if (!Platform.isWindows) ProcessSignal.sigterm,

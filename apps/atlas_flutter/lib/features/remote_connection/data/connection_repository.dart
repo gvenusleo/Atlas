@@ -8,9 +8,9 @@ abstract interface class ConnectionStore<T> {
 }
 
 /// Owns an immutable connection list and serializes read-modify-write updates.
-final class ConnectionRepository<T> {
+final class ConnectionRepository<T>(ConnectionStore<T> store) {
   /// Creates a repository backed by [store].
-  ConnectionRepository(ConnectionStore<T> store) : _store = store;
+  this : _store = store;
 
   final ConnectionStore<T> _store;
   List<T>? _cached;

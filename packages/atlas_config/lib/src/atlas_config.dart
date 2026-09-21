@@ -2,125 +2,110 @@ import 'package:atlas_provider/atlas_provider.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// The application configuration loaded from `~/.atlas/config.yaml`.
-final class AtlasConfig {
-  /// Creates application configuration.
-  const AtlasConfig({
-    required this.defaultModel,
-    required this.providers,
-    required this.agent,
-    required this.session,
-    this.logging = const LoggingConfig(),
-  });
-
+final class const AtlasConfig({
   /// The model used when a turn does not provide an override.
-  final ModelRef defaultModel;
+  required final ModelRef defaultModel,
 
   /// Configured model providers in file order.
-  final List<ConfiguredProvider> providers;
+  required final List<ConfiguredProvider> providers,
 
   /// Agent loop parameters.
-  final AgentConfig agent;
+  required final AgentConfig agent,
 
   /// Local session storage settings.
-  final SessionConfig session;
+  required final SessionConfig session,
 
   /// Structured file logging settings.
-  final LoggingConfig logging;
+  final LoggingConfig logging = const LoggingConfig(),
+}) {
+  /// Creates application configuration.
+  this;
 }
 
 /// Local structured logging settings.
-final class LoggingConfig {
-  /// Creates logging settings.
-  const LoggingConfig({
-    this.level = 'info',
-    this.directory,
-    this.retainDays = 7,
-  });
-
+final class const LoggingConfig({
   /// Minimum level written by file sinks (`debug`, `info`, `warn`, or `error`).
-  final String level;
+  final String level = 'info',
 
   /// Optional log directory. A null value leaves logging disabled by default.
-  final String? directory;
+  final String? directory,
 
   /// Number of daily log files to retain.
-  final int retainDays;
+  final int retainDays = 7,
+}) {
+  /// Creates logging settings.
+  this;
 }
 
 /// A configured model provider in its original file order.
-sealed class ConfiguredProvider {
-  /// Creates a configured provider.
-  const ConfiguredProvider({required this.id});
-
+sealed class const ConfiguredProvider({
   /// The provider identifier used by configured model references.
-  final ProviderId id;
+  required final ProviderId id,
+}) {
+  /// Creates a configured provider.
+  this;
 }
 
 /// An OpenAI-compatible provider configuration.
-final class ConfiguredOpenAI extends ConfiguredProvider {
-  /// Creates an OpenAI-compatible provider configuration.
-  const ConfiguredOpenAI({required super.id, required this.configuration});
+final class const ConfiguredOpenAI({
+  required super.id,
 
   /// The ready-to-use provider configuration object.
-  final OpenAIProviderConfiguration configuration;
+  required final OpenAIProviderConfiguration configuration,
+}) extends ConfiguredProvider {
+  /// Creates an OpenAI-compatible provider configuration.
+  this;
 }
 
 /// An Anthropic provider configuration.
-final class ConfiguredAnthropic extends ConfiguredProvider {
-  /// Creates an Anthropic provider configuration.
-  const ConfiguredAnthropic({required super.id, required this.configuration});
+final class const ConfiguredAnthropic({
+  required super.id,
 
   /// The ready-to-use provider configuration object.
-  final AnthropicProviderConfiguration configuration;
+  required final AnthropicProviderConfiguration configuration,
+}) extends ConfiguredProvider {
+  /// Creates an Anthropic provider configuration.
+  this;
 }
 
 /// Agent loop parameters.
-final class AgentConfig {
-  /// Creates agent parameters.
-  const AgentConfig({
-    this.maxSteps = 20,
-    this.maxOutputTokens = 0,
-    this.temperature,
-    this.compaction = const CompactionConfig(),
-  });
-
+final class const AgentConfig({
   /// Maximum model/tool steps for one turn.
-  final int maxSteps;
+  final int maxSteps = 20,
 
   /// Maximum model output tokens for one step; zero uses provider defaults.
-  final int maxOutputTokens;
+  final int maxOutputTokens = 0,
 
   /// Optional model sampling temperature.
-  final double? temperature;
+  final double? temperature,
 
   /// Automatic context compaction settings.
-  final CompactionConfig compaction;
+  final CompactionConfig compaction = const CompactionConfig(),
+}) {
+  /// Creates agent parameters.
+  this;
 }
 
 /// Automatic context compaction settings.
-final class CompactionConfig {
-  /// Creates compaction settings.
-  const CompactionConfig({
-    this.threshold = 0.8,
-    this.keepRecentTokens = 20000,
-    this.reserveTokens = 16384,
-  });
-
+final class const CompactionConfig({
   /// Legacy fraction retained for compatibility with existing config files.
-  final double threshold;
+  final double threshold = 0.8,
 
   /// Approximate number of newest tokens retained verbatim.
-  final int keepRecentTokens;
+  final int keepRecentTokens = 20000,
 
   /// Tokens reserved for the next model response.
-  final int reserveTokens;
+  final int reserveTokens = 16384,
+}) {
+  /// Creates compaction settings.
+  this;
 }
 
 /// Local session storage settings.
-final class SessionConfig {
-  /// Creates session settings.
-  const SessionConfig(this.dbPath);
-
+final class const SessionConfig(
   /// The expanded SQLite database path.
-  final String dbPath;
+  final String dbPath,
+) {
+  /// Creates session settings.
+  this;
 }

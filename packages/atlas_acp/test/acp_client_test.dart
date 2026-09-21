@@ -329,21 +329,18 @@ void main() {
     await wire.close();
   });
 
-  test(
-    'renameSession keeps a local title overlay when the agent has no rename method',
-    () async {
-      final wire = await _FakeServer.open();
-      final client = AcpClient.channel(wire.clientChannel);
-      await client.connect();
-      addTearDown(client.close);
+  test('renameSession keeps a local title overlay when the agent has no rename method', () async {
+    final wire = await _FakeServer.open();
+    final client = AcpClient.channel(wire.clientChannel);
+    await client.connect();
+    addTearDown(client.close);
 
-      final session = await client.createSession(workingDirectory: '/tmp');
-      await client.renameSession(session.id, 'new title');
-      expect(client.titleFor(session.id), 'new title');
-      expect(wire.methods, isNot(contains(acpSessionSetTitleMethod)));
-      await wire.close();
-    },
-  );
+    final session = await client.createSession(workingDirectory: '/tmp');
+    await client.renameSession(session.id, 'new title');
+    expect(client.titleFor(session.id), 'new title');
+    expect(wire.methods, isNot(contains(acpSessionSetTitleMethod)));
+    await wire.close();
+  });
 
   test('surfaces permission requests and replies to the agent', () async {
     final wire = await _FakeServer.open();
@@ -543,20 +540,15 @@ Future<void> pumpEventQueue() async {
   }
 }
 
-class _Recorded {
-  _Recorded(this.method, this.params);
-  final String method;
-  final Object? params;
-}
+class _Recorded(final String method, final Object? params) {}
 
 /// A scripted ACP agent implemented with acpd's AgentRole, exercising the
 /// client without a real runtime. Emits the ACP subset the client relies on
 /// and can inject unknown update kinds.
-final class _FakeServer {
-  _FakeServer._({required this.deleteUnsupported, required this.promptDelay});
-
-  final bool deleteUnsupported;
-  final Duration promptDelay;
+final class _FakeServer._({
+  required final bool deleteUnsupported,
+  required final Duration promptDelay,
+}) {
   final _controller = StreamChannelController<String>();
   final _requests = <_Recorded>[];
   final _cancelled = <String>[];

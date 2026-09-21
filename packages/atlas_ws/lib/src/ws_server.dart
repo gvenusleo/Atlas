@@ -23,42 +23,34 @@ typedef WsAuthorizer = Future<bool> Function(String? authorization);
 /// Binary frames, oversized frames, and connections beyond [maxConnections]
 /// are closed. Connections do not own the runtime: closing a socket leaves
 /// running turns untouched so they finish and persist.
-final class AtlasWsServer {
+final class AtlasWsServer({
+  /// The shared runtime serving every connection.
+  required final rt.AgentEngine runtime,
+
+  /// The configured model catalog, in display priority order.
+  final List<rt.ModelDescriptor> models = const [],
+
+  /// Guards the HTTP upgrade of every connection.
+  required final WsAuthorizer authorize,
+
+  /// Maximum simultaneous WebSocket connections.
+  final int maxConnections = 4,
+
+  /// Maximum accepted text frame length in characters.
+  final int maxFrameLength = 8 * 1024 * 1024,
+
+  /// How often the server pings clients to detect dead connections.
+  final Duration pingInterval = const Duration(seconds: 30),
+
+  /// Receives lifecycle events; never receives token material.
+  final void Function(String message)? log,
+}) {
   /// Creates a WebSocket ACP server over [runtime].
   ///
   /// [models] is the configured model catalog offered through session
   /// `configOptions`, as with the stdio `AcpServer`. [authorize] guards the
   /// HTTP upgrade; [log] receives lifecycle events (never token material).
-  AtlasWsServer({
-    required this.runtime,
-    this.models = const [],
-    required this.authorize,
-    this.maxConnections = 4,
-    this.maxFrameLength = 8 * 1024 * 1024,
-    this.pingInterval = const Duration(seconds: 30),
-    this.log,
-  });
-
-  /// The shared runtime serving every connection.
-  final rt.AgentEngine runtime;
-
-  /// The configured model catalog, in display priority order.
-  final List<rt.ModelDescriptor> models;
-
-  /// Guards the HTTP upgrade of every connection.
-  final WsAuthorizer authorize;
-
-  /// Maximum simultaneous WebSocket connections.
-  final int maxConnections;
-
-  /// Maximum accepted text frame length in characters.
-  final int maxFrameLength;
-
-  /// How often the server pings clients to detect dead connections.
-  final Duration pingInterval;
-
-  /// Receives lifecycle events; never receives token material.
-  final void Function(String message)? log;
+  this;
 
   final _connections = <WebSocketChannel>{};
   final _serving = <Future<void>>{};

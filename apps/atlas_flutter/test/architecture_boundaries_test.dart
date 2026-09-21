@@ -56,8 +56,9 @@ void main() {
   });
 }
 
-List<File> _sources(String path) => Directory(path)
-    .listSync(recursive: true)
-    .whereType<File>()
-    .where((file) => file.path.endsWith('.dart'))
-    .toList();
+List<File> _sources(String path) =>
+    Directory(path)
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'))
+        .toList();

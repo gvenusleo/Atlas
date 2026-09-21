@@ -25,60 +25,48 @@ import 'model_request_composer.dart';
 /// emitted events preserve occurrence order, and every durable boundary is
 /// persisted before the matching event is emitted. Locking and context
 /// caching stay with the composing facade.
-final class TurnExecutor {
-  /// Creates an executor with injected ports and loop configuration.
-  TurnExecutor({
-    required this.store,
-    required this.provider,
-    required this.tools,
-    required this.ids,
-    required this.logger,
-    required this.defaultModel,
-    required this.compactor,
-    required this.sessionContextOf,
-    required this.systemPromptBuilder,
-    DateTime Function()? now,
-    this.maxSteps = 20,
-    this.maxOutputTokens = 0,
-    this.temperature,
-  }) : _now = now ?? DateTime.now;
-
+final class TurnExecutor({
   /// The session persistence adapter.
-  final SessionStore store;
+  required final SessionStore store,
 
   /// The model provider adapter.
-  final ModelProvider provider;
+  required final ModelProvider provider,
 
   /// The registered local tools.
-  final ToolRegistry tools;
+  required final ToolRegistry tools,
 
   /// The ID generator used for new records.
-  final IdGenerator ids;
+  required final IdGenerator ids,
 
   /// Structured diagnostic logger.
-  final AtlasLogger logger;
+  required final AtlasLogger logger,
 
   /// The model used when a turn does not provide an override.
-  final ModelRef defaultModel;
+  required final ModelRef defaultModel,
 
   /// The compactor invoked before model requests, after terminal turns, and
   /// by manual compaction.
-  final ContextCompactor compactor;
+  required final ContextCompactor compactor,
 
   /// Resolves the session context for a working directory; may throw.
-  final SessionContext Function(String workingDirectory) sessionContextOf;
+  required final SessionContext Function(String workingDirectory)
+  sessionContextOf,
 
   /// Builds the system prompt for a session and turn.
-  final String Function(SessionContext context) systemPromptBuilder;
+  required final String Function(SessionContext context) systemPromptBuilder,
+  DateTime Function()? now,
 
   /// Maximum model/tool steps for one turn.
-  final int maxSteps;
+  final int maxSteps = 20,
 
   /// Model output token limit.
-  final int maxOutputTokens;
+  final int maxOutputTokens = 0,
 
   /// Optional model temperature.
-  final double? temperature;
+  final double? temperature,
+}) {
+  /// Creates an executor with injected ports and loop configuration.
+  this : _now = now ?? DateTime.now;
 
   final DateTime Function() _now;
 

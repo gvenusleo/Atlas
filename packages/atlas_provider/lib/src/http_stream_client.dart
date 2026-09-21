@@ -6,22 +6,18 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:dio/dio.dart';
 
 /// An established streaming HTTP response with cancellation wiring.
-final class ActiveHttpStream {
-  /// Creates an active stream.
-  const ActiveHttpStream({
-    required this.response,
-    required this.cancelToken,
-    required this.finished,
-  });
-
+final class const ActiveHttpStream({
   /// The established Dio stream response.
-  final Response<ResponseBody> response;
+  required final Response<ResponseBody> response,
 
   /// The token used to cancel the underlying request.
-  final CancelToken cancelToken;
+  required final CancelToken cancelToken,
 
   /// Completes when the caller stops using the stream.
-  final Completer<void> finished;
+  required final Completer<void> finished,
+}) {
+  /// Creates an active stream.
+  this;
 
   /// Releases the request; cancelling an established response is a no-op.
   void close() {
@@ -33,22 +29,18 @@ final class ActiveHttpStream {
 }
 
 /// A provider-safe streaming request failure.
-final class HttpStreamException implements SafeMessageException {
-  /// Creates a stream failure.
-  const HttpStreamException({
-    required this.message,
-    this.statusCode,
-    this.detail,
-  });
-
+final class const HttpStreamException({
   /// A redacted, provider-safe error message.
-  final String message;
+  required final String message,
 
   /// The HTTP status when the server returned one.
-  final int? statusCode;
+  final int? statusCode,
 
   /// A bounded, provider-supplied diagnostic detail safe for display.
-  final String? detail;
+  final String? detail,
+}) implements SafeMessageException {
+  /// Creates a stream failure.
+  this;
 
   @override
   String get safeMessage =>
@@ -80,9 +72,14 @@ abstract interface class HttpStreamClient {
 }
 
 /// Dio-backed [HttpStreamClient] with bounded retries and timeouts.
-final class DioHttpStreamClient implements HttpStreamClient {
+final class DioHttpStreamClient({
+  Dio? dio,
+
+  /// Maximum request attempts before streaming starts.
+  final int maxAttempts = 4,
+}) implements HttpStreamClient {
   /// Creates a client with an optional injected [Dio] instance.
-  DioHttpStreamClient({Dio? dio, this.maxAttempts = 4})
+  this
     : _dio =
           dio ??
           Dio(
@@ -94,9 +91,6 @@ final class DioHttpStreamClient implements HttpStreamClient {
           );
 
   final Dio _dio;
-
-  /// Maximum request attempts before streaming starts.
-  final int maxAttempts;
 
   /// Closes idle connections and cancels outstanding HTTP requests.
   ///

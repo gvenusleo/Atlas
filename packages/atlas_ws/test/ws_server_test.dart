@@ -164,8 +164,8 @@ void main() {
 }
 
 /// A single-listener JSON-RPC client over one WebSocket channel.
-final class _TestClient {
-  _TestClient(this._channel) {
+final class _TestClient(final WebSocketChannel _channel) {
+  this {
     final done = Completer<void>();
     _subscription = _channel.stream.listen(
       (frame) {
@@ -183,7 +183,6 @@ final class _TestClient {
     _done = done.future;
   }
 
-  final WebSocketChannel _channel;
   final _pending = <Object?, Completer<Map<String, Object?>>>{};
   late final StreamSubscription<dynamic> _subscription;
   late final Future<void> _done;

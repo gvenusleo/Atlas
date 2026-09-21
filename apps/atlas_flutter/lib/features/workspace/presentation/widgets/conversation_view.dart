@@ -17,9 +17,9 @@ import '../workspace_metrics.dart';
 
 /// Keeps one conversation pane per session so transcript and composer state
 /// survive focus changes.
-class SessionPaneHost extends ConsumerWidget {
+class const SessionPaneHost({super.key}) extends ConsumerWidget {
   /// Creates a host for the focused session's transcript and composer.
-  const SessionPaneHost({super.key});
+  this;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -44,16 +44,11 @@ class SessionPaneHost extends ConsumerWidget {
   }
 }
 
-class _SessionPane extends ConsumerWidget {
-  const _SessionPane({
-    super.key,
-    required this.sessionKey,
-    required this.active,
-  });
-
-  final String sessionKey;
-  final bool active;
-
+class const _SessionPane({
+  super.key,
+  required final String sessionKey,
+  required final bool active,
+}) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(
@@ -96,12 +91,14 @@ class _SessionPane extends ConsumerWidget {
 }
 
 /// Scrollable conversation transcript with streaming Markdown and disclosures.
-class ConversationView extends ConsumerStatefulWidget {
-  /// Creates a transcript bound to [sessionKey], or the focused session.
-  const ConversationView({super.key, this.sessionKey});
+class const ConversationView({
+  super.key,
 
   /// Cache key of the session to render. Null follows the focused session.
-  final String? sessionKey;
+  final String? sessionKey,
+}) extends ConsumerStatefulWidget {
+  /// Creates a transcript bound to [sessionKey], or the focused session.
+  this;
 
   @override
   ConsumerState<ConversationView> createState() => _ConversationViewState();
@@ -214,9 +211,7 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
   }
 }
 
-class _ConversationEmptyState extends StatelessWidget {
-  const _ConversationEmptyState();
-
+class const _ConversationEmptyState() extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -246,11 +241,8 @@ class _ConversationEmptyState extends StatelessWidget {
   }
 }
 
-class _MessageView extends StatelessWidget {
-  const _MessageView({required this.message, super.key});
-
-  final WorkspaceMessage message;
-
+class const _MessageView({required final WorkspaceMessage message, super.key})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SelectionArea(
@@ -267,11 +259,8 @@ class _MessageView extends StatelessWidget {
   }
 }
 
-class _UserMessage extends StatelessWidget {
-  const _UserMessage(this.message);
-
-  final WorkspaceMessage message;
-
+class const _UserMessage(final WorkspaceMessage message)
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -315,11 +304,8 @@ class _UserMessage extends StatelessWidget {
   }
 }
 
-class _UserImageThumb extends StatelessWidget {
-  const _UserImageThumb({required this.source});
-
-  final String source;
-
+class const _UserImageThumb({required final String source})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bytes = bytesFromImageSource(source);
@@ -341,11 +327,7 @@ class _UserImageThumb extends StatelessWidget {
   }
 }
 
-class _AssistantMessage extends StatelessWidget {
-  const _AssistantMessage(this.text);
-
-  final String text;
-
+class const _AssistantMessage(final String text) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -359,21 +341,13 @@ class _AssistantMessage extends StatelessWidget {
 }
 
 /// Collapsed activity row for reasoning and tool results.
-class _ActivityDisclosure extends StatefulWidget {
-  const _ActivityDisclosure({
-    required this.icon,
-    required this.title,
-    required this.child,
-    this.isRunning = false,
-    this.isError = false,
-  });
-
-  final IconData icon;
-  final Widget title;
-  final Widget child;
-  final bool isRunning;
-  final bool isError;
-
+class const _ActivityDisclosure({
+  required final IconData icon,
+  required final Widget title,
+  required final Widget child,
+  final bool isRunning = false,
+  final bool isError = false,
+}) extends StatefulWidget {
   @override
   State<_ActivityDisclosure> createState() => _ActivityDisclosureState();
 }
@@ -566,11 +540,8 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
   }
 }
 
-class _ReasoningMessage extends StatelessWidget {
-  const _ReasoningMessage(this.message);
-
-  final WorkspaceMessage message;
-
+class const _ReasoningMessage(final WorkspaceMessage message)
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -595,11 +566,8 @@ class _ReasoningMessage extends StatelessWidget {
   }
 }
 
-class _ToolMessage extends ConsumerWidget {
-  const _ToolMessage(this.message);
-
-  final WorkspaceMessage message;
-
+class const _ToolMessage(final WorkspaceMessage message)
+    extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = AtlasColors.of(context);
@@ -638,11 +606,8 @@ class _ToolMessage extends ConsumerWidget {
   }
 }
 
-class _PlanResult extends StatelessWidget {
-  const _PlanResult({required this.arguments});
-
-  final JsonObject? arguments;
-
+class const _PlanResult({required final JsonObject? arguments})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -686,12 +651,10 @@ class _PlanResult extends StatelessWidget {
   }
 }
 
-final class _PlanStep {
-  const _PlanStep({required this.step, required this.status});
-
-  final String step;
-  final String status;
-}
+final class const _PlanStep({
+  required final String step,
+  required final String status,
+}) {}
 
 List<_PlanStep> _planSteps(JsonObject? arguments) {
   final raw = arguments?['plan'];
@@ -724,17 +687,11 @@ IconData _toolIcon(String? toolName) => switch (toolName) {
   _ => LucideIcons.wrench,
 };
 
-class _ToolTitle extends StatelessWidget {
-  const _ToolTitle({
-    required this.name,
-    required this.detail,
-    required this.isError,
-  });
-
-  final String name;
-  final String? detail;
-  final bool isError;
-
+class const _ToolTitle({
+  required final String name,
+  required final String? detail,
+  required final bool isError,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -813,11 +770,7 @@ String _relativePath(String path, String workingDirectory) {
   return path;
 }
 
-class _NoticeMessage extends StatelessWidget {
-  const _NoticeMessage(this.text);
-
-  final String text;
-
+class const _NoticeMessage(final String text) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -831,11 +784,7 @@ class _NoticeMessage extends StatelessWidget {
   }
 }
 
-class _PlanMessage extends StatelessWidget {
-  const _PlanMessage(this.text);
-
-  final String text;
-
+class const _PlanMessage(final String text) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -860,11 +809,7 @@ class _PlanMessage extends StatelessWidget {
   }
 }
 
-class _ErrorMessage extends StatelessWidget {
-  const _ErrorMessage(this.text);
-
-  final String text;
-
+class const _ErrorMessage(final String text) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -879,16 +824,12 @@ class _ErrorMessage extends StatelessWidget {
 }
 
 /// Lets transcript items keep their on-screen position while they grow.
-class _ConversationScrollAnchor extends InheritedWidget {
-  const _ConversationScrollAnchor({
-    required this.onGrowth,
-    required super.child,
-  });
-
+class const _ConversationScrollAnchor({
   /// Called with the height change of an animating disclosure; positive when
   /// it grows.
-  final ValueChanged<double> onGrowth;
-
+  required final ValueChanged<double> onGrowth,
+  required super.child,
+}) extends InheritedWidget {
   @override
   bool updateShouldNotify(_ConversationScrollAnchor oldWidget) => false;
 }

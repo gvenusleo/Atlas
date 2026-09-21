@@ -9,12 +9,14 @@ import '../../../shared/widgets/animated_caret.dart';
 /// [workingDirectory] is optional: it is only needed once the first message
 /// is sent, and the app asks for it then (an absolute path on the computer,
 /// for example `/home/you/projects`).
-class RemoteProfileFormDialog extends StatefulWidget {
-  /// Creates the form; [profile] pre-fills an existing connection.
-  const RemoteProfileFormDialog({super.key, this.profile});
+class const RemoteProfileFormDialog({
+  super.key,
 
   /// The profile being edited, or null for a new connection.
-  final RemoteConnectionProfile? profile;
+  final RemoteConnectionProfile? profile,
+}) extends StatefulWidget {
+  /// Creates the form; [profile] pre-fills an existing connection.
+  this;
 
   @override
   State<RemoteProfileFormDialog> createState() =>

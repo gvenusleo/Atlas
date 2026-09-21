@@ -10,22 +10,22 @@ import '../mappers/row_mappers.dart';
 import '../turn_usage.dart';
 
 /// Drift-backed implementation of the runtime session persistence port.
-final class DriftSessionStore
+final class DriftSessionStore._(final AtlasDatabase _database)
     implements
         runtime.SessionStore,
         runtime.SessionConfigStore,
         runtime.SessionMetadataStore {
-  DriftSessionStore._(this._database) : _mappers = RowMappers();
+  /// Creates a store around its owned database.
+  this : _mappers = RowMappers();
 
   /// Opens a persistent store backed by [file].
-  factory DriftSessionStore.openFile(File file) =>
+  factory openFile(File file) =>
       DriftSessionStore._(AtlasDatabase.openFile(file));
 
   /// Creates an in-memory store for tests and local ephemeral sessions.
-  factory DriftSessionStore.inMemory() =>
+  factory inMemory() =>
       DriftSessionStore._(AtlasDatabase(NativeDatabase.memory()));
 
-  final AtlasDatabase _database;
   final RowMappers _mappers;
 
   /// Loads the most recent [limit] turns, newest first, for picking a sample.

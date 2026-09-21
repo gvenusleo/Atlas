@@ -28,7 +28,7 @@ The root Pub workspace owns the only `pubspec.lock`. Workspace members use `reso
 
 ## Toolchain
 
-The root `mise.toml` pins Flutter 3.47.0, which provides Dart 3.13.0.
+The root `mise.toml` pins Flutter 3.47.0, which provides Dart 3.13.0. Every package declares `sdk: ^3.13.0`, so the Dart 3.13 language features the codebase relies on (primary constructors, exhaustive switch statements over sealed types) are available without an experiment flag.
 
 ```sh
 mise install

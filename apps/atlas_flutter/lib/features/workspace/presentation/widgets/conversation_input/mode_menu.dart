@@ -7,19 +7,12 @@ import '../workspace_controls.dart';
 import 'floating_menu_card.dart';
 
 /// Toolbar trigger that opens the session-mode picker.
-class ModeMenu extends StatelessWidget {
-  /// Creates a session-mode picker trigger.
-  const ModeMenu({
-    super.key,
-    required this.modes,
-    required this.value,
-    required this.onTap,
-  });
-
-  final List<ModeOption> modes;
-  final String? value;
-  final VoidCallback onTap;
-
+class const ModeMenu({
+  super.key,
+  required final List<ModeOption> modes,
+  required final String? value,
+  required final VoidCallback onTap,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -60,28 +53,19 @@ class ModeMenu extends StatelessWidget {
 }
 
 /// Floating session-mode picker card with a gliding highlight.
-class ModeMenuCard extends StatelessWidget {
-  /// Creates a session-mode picker card.
-  const ModeMenuCard({
-    super.key,
-    required this.modes,
-    required this.value,
-    required this.highlighted,
-    required this.onHighlighted,
-    required this.onSelected,
-  });
-
+class const ModeMenuCard({
+  super.key,
+  required final List<ModeOption> modes,
+  required final String? value,
+  required final int highlighted,
+  required final ValueChanged<int> onHighlighted,
+  required final ValueChanged<ModeOption> onSelected,
+}) extends StatelessWidget {
   /// Row height used to size and position the floating card.
   static const rowHeight = 30.0;
 
   /// Vertical padding around the row list, used to size the floating card.
   static const cardPadding = 8.0;
-
-  final List<ModeOption> modes;
-  final String? value;
-  final int highlighted;
-  final ValueChanged<int> onHighlighted;
-  final ValueChanged<ModeOption> onSelected;
 
   @override
   Widget build(BuildContext context) {

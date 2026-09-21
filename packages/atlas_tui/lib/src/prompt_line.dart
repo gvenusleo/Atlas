@@ -4,12 +4,14 @@ import 'package:nocterm/nocterm.dart';
 ///
 /// Used by the input bar and by user messages so both share the same visual
 /// language: a subtly gray-shaded background, a `›` prefix, and content.
-final class PromptLine extends StatelessComponent {
-  /// Creates a prompt line.
-  const PromptLine({super.key, required this.child});
+final class const PromptLine({
+  super.key,
 
   /// The line content.
-  final Component child;
+  required final Component child,
+}) extends StatelessComponent {
+  /// Creates a prompt line.
+  this;
 
   @override
   Component build(BuildContext context) {

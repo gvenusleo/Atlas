@@ -5,9 +5,9 @@ typedef JsonValue = Object?;
 typedef JsonObject = Map<String, Object?>;
 
 /// Identifies a durable Atlas session.
-final class SessionId {
+final class SessionId(String value) {
   /// Creates a session identifier from a non-empty value.
-  SessionId(String value) : value = _requireId(value);
+  this : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -23,9 +23,9 @@ final class SessionId {
 }
 
 /// Identifies one user turn within a session.
-final class TurnId {
+final class TurnId(String value) {
   /// Creates a turn identifier from a non-empty value.
-  TurnId(String value) : value = _requireId(value);
+  this : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -41,9 +41,9 @@ final class TurnId {
 }
 
 /// Identifies one persisted timeline item.
-final class TimelineItemId {
+final class TimelineItemId(String value) {
   /// Creates a timeline item identifier from a non-empty value.
-  TimelineItemId(String value) : value = _requireId(value);
+  this : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -60,9 +60,9 @@ final class TimelineItemId {
 }
 
 /// Identifies a model-requested tool call.
-final class ToolCallId {
+final class ToolCallId(String value) {
   /// Creates a tool call identifier from a non-empty value.
-  ToolCallId(String value) : value = _requireId(value);
+  this : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -78,9 +78,9 @@ final class ToolCallId {
 }
 
 /// Identifies a configured model provider.
-final class ProviderId {
+final class ProviderId(String value) {
   /// Creates a provider identifier from a non-empty value.
-  ProviderId(String value) : value = _requireId(value);
+  this : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -96,9 +96,9 @@ final class ProviderId {
 }
 
 /// Identifies a model within a provider.
-final class ModelId {
+final class ModelId(String value) {
   /// Creates a model identifier from a non-empty value.
-  ModelId(String value) : value = _requireId(value);
+  this : value = _requireId(value);
 
   /// The serialized identifier.
   final String value;
@@ -114,15 +114,15 @@ final class ModelId {
 }
 
 /// Identifies a model together with its owning provider.
-final class ModelRef {
-  /// Creates a model reference.
-  const ModelRef({required this.providerId, required this.modelId});
-
+final class const ModelRef({
   /// The provider that owns the model.
-  final ProviderId providerId;
+  required final ProviderId providerId,
 
   /// The provider-local model identifier.
-  final ModelId modelId;
+  required final ModelId modelId,
+}) {
+  /// Creates a model reference.
+  this;
 
   @override
   String toString() => '${providerId.value}/${modelId.value}';

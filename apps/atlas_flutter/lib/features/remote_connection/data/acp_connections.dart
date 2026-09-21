@@ -4,23 +4,16 @@ import 'dart:io';
 import 'connection_repository.dart';
 
 /// A configured ACP server connection for the remote client mode.
-final class AcpConnection {
-  /// Creates an ACP connection.
-  const AcpConnection({
-    required this.name,
-    required this.command,
-    this.arguments = const <String>[],
-  });
-
+final class const AcpConnection({
   /// Display name shown in the client.
-  final String name;
+  required final String name,
 
   /// The executable that serves ACP over stdio (for example `atlas acp`).
-  final String command;
+  required final String command,
 
   /// Extra arguments passed to [command].
-  final List<String> arguments;
-
+  final List<String> arguments = const <String>[],
+}) {
   /// Serializes this connection for storage.
   Map<String, Object?> toJson() => {
     'name': name,
@@ -30,32 +23,25 @@ final class AcpConnection {
 
   /// Parses a connection from [json], or returns null when malformed.
   static AcpConnection? fromJson(Object? json) {
-    if (json is! Map) {
-      return null;
+    if (json case {'name': String name, 'command': String command}
+        when name.isNotEmpty && command.isNotEmpty) {
+      final rawArguments = json['arguments'];
+      final arguments = rawArguments is List
+          ? rawArguments.whereType<String>().toList()
+          : const <String>[];
+      return AcpConnection(name: name, command: command, arguments: arguments);
     }
-    final name = json['name'];
-    final command = json['command'];
-    if (name is! String ||
-        name.isEmpty ||
-        command is! String ||
-        command.isEmpty) {
-      return null;
-    }
-    final rawArguments = json['arguments'];
-    final arguments = rawArguments is List
-        ? rawArguments.whereType<String>().toList()
-        : const <String>[];
-    return AcpConnection(name: name, command: command, arguments: arguments);
+    return null;
   }
 }
 
 /// Asynchronous file adapter for saved ACP subprocess connections.
-final class AcpConnectionStore implements ConnectionStore<AcpConnection> {
-  /// Creates a store, optionally rooted at [home] for tests.
-  const AcpConnectionStore({this.home});
-
+final class const AcpConnectionStore({
   /// Home directory override; null uses the process environment.
-  final String? home;
+  final String? home,
+}) implements ConnectionStore<AcpConnection> {
+  /// Creates a store, optionally rooted at [home] for tests.
+  this;
 
   @override
   Future<List<AcpConnection>> load() async {

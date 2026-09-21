@@ -17,18 +17,18 @@ import 'update_mapper.dart';
 /// stdio. The adapter maps protocol methods to runtime calls and streams
 /// runtime events back as `session/update` notifications. The JSON-RPC
 /// engine is provided by acpd; Atlas owns the runtime mapping.
-final class AcpServer {
+final class AcpServer(
+  /// The runtime serving ACP sessions.
+  final rt.AgentEngine runtime, {
+
+  /// The configured model catalog, in display priority order.
+  final List<rt.ModelDescriptor> models = const <rt.ModelDescriptor>[],
+}) {
   /// Creates an ACP server over [runtime].
   ///
   /// [models] is the configured model catalog offered through session
   /// `configOptions`; when empty, only the runtime default model is shown.
-  AcpServer(this.runtime, {this.models = const <rt.ModelDescriptor>[]});
-
-  /// The runtime serving ACP sessions.
-  final rt.AgentEngine runtime;
-
-  /// The configured model catalog, in display priority order.
-  final List<rt.ModelDescriptor> models;
+  this;
 
   /// Last title reported to the client per session, used to emit
   /// `session_info_update` when the runtime auto-generates a title.
@@ -136,14 +136,11 @@ final class AcpServer {
           rt.SessionId(sessionId),
           instruction: instruction,
         )) {
-          switch (event) {
-            case rt.CompactionFinished(:final checkpoint):
-              kept = checkpoint.keptRecentMessages;
-              before = checkpoint.inputTokensBefore;
-              after = checkpoint.inputTokensAfter;
-              summaryPresent = checkpoint.summary.isNotEmpty;
-            default:
-              break;
+          if (event case rt.CompactionFinished(:final checkpoint)) {
+            kept = checkpoint.keptRecentMessages;
+            before = checkpoint.inputTokensBefore;
+            after = checkpoint.inputTokensAfter;
+            summaryPresent = checkpoint.summary.isNotEmpty;
           }
         }
         return <String, Object?>{
@@ -400,9 +397,8 @@ final class AcpServer {
         cancellation: cancellation,
       ),
     )) {
-      if (event case rt.ModelResponseReceived(
-        :final usage,
-      ) when usage.contextTokens > 0) {
+      if (event case rt.ModelResponseReceived(:final usage)
+          when usage.contextTokens > 0) {
         await _bestEffort(() => _sendUsageUpdate(session, usage.contextTokens));
       }
       for (final update in mapper.map(event)) {
@@ -986,22 +982,21 @@ final class AcpServer {
           );
         case ResourceLink(:final name, :final uri):
           parts.add(rt.TextContent('<resource name="$name" uri="$uri"/>'));
-        case EmbeddedResource(:final resource):
-          switch (resource) {
-            case TextResourceContents(:final uri, :final text):
-              parts.add(
-                rt.ResourceContent(
-                  uri: uri,
-                  mimeType: resource.mimeType,
-                  text: text,
-                ),
-              );
-            default:
-              throw RpcError(
-                code: -32602,
-                message: 'only text resource blocks are supported',
-              );
-          }
+        case EmbeddedResource(
+          resource: TextResourceContents(
+            :final uri,
+            :final mimeType,
+            :final text,
+          ),
+        ):
+          parts.add(
+            rt.ResourceContent(uri: uri, mimeType: mimeType, text: text),
+          );
+        case EmbeddedResource():
+          throw RpcError(
+            code: -32602,
+            message: 'only text resource blocks are supported',
+          );
         default:
           throw RpcError(
             code: -32602,
@@ -1052,20 +1047,16 @@ final class AcpServer {
 }
 
 /// The per-session model, reasoning effort, and working directory selection.
-final class _SessionConfig {
-  /// Creates a session config.
-  const _SessionConfig({
-    required this.cwd,
-    required this.model,
-    required this.effort,
-  });
-
+final class const _SessionConfig({
   /// The session working directory, used to resolve local skills.
-  final String cwd;
+  required final String cwd,
 
   /// The selected model.
-  final rt.ModelRef model;
+  required final rt.ModelRef model,
 
   /// The selected reasoning effort, or null when the model has none.
-  final String? effort;
+  required final String? effort,
+}) {
+  /// Creates a session config.
+  this;
 }

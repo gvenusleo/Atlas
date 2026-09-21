@@ -18,62 +18,49 @@ enum TurnPhase {
 }
 
 /// Cached transcript and turn status for one workspace session or draft.
-final class SessionWorkspace {
-  /// Creates a session workspace cache.
-  SessionWorkspace({
-    required this.workingDirectory,
-    required this.activeModel,
-    List<WorkspaceMessage> messages = const [],
-    this.sessionId,
-    this.busy = false,
-    this.turnPhase = TurnPhase.idle,
-    this.turnStartedAt,
-    this.hasCompletedTurn = false,
-    this.contextTokens = 0,
-    this.hasImages = false,
-    this.showTerminal = false,
-    this.reasoningEffort,
-    this.mode,
-  }) : messages = List.unmodifiable(messages);
+final class SessionWorkspace({
+  /// Working directory used by tools, the file browser, and the terminal.
+  required final String workingDirectory,
+
+  /// Model used by subsequent turns on this session.
+  required final ModelDescriptor activeModel,
+  List<WorkspaceMessage> messages = const [],
 
   /// Persisted session id, or null for a draft that has not started a turn.
-  final SessionId? sessionId;
+  final SessionId? sessionId,
 
-  /// Working directory used by tools, the file browser, and the terminal.
-  final String workingDirectory;
+  /// Whether a turn or compaction is active on this session.
+  final bool busy = false,
+
+  /// Activity phase of the active turn or compaction.
+  final TurnPhase turnPhase = TurnPhase.idle,
+
+  /// When the active turn or compaction started, used for elapsed time.
+  final DateTime? turnStartedAt,
+
+  /// Whether this session finished a turn in the current app session.
+  final bool hasCompletedTurn = false,
+
+  /// Token usage reported by the most recently completed turn.
+  final int contextTokens = 0,
+
+  /// Whether the loaded conversation contains image content.
+  final bool hasImages = false,
+
+  /// Whether the workspace tools sidebar shows the terminal for this session.
+  final bool showTerminal = false,
+
+  /// Provider-local reasoning effort for subsequent turns on this session.
+  final String? reasoningEffort,
+
+  /// Agent session mode for subsequent turns, when the agent offers modes.
+  final String? mode,
+}) {
+  /// Creates a session workspace cache.
+  this : messages = List.unmodifiable(messages);
 
   /// Conversation items in occurrence order.
   final List<WorkspaceMessage> messages;
-
-  /// Whether a turn or compaction is active on this session.
-  final bool busy;
-
-  /// Activity phase of the active turn or compaction.
-  final TurnPhase turnPhase;
-
-  /// When the active turn or compaction started, used for elapsed time.
-  final DateTime? turnStartedAt;
-
-  /// Whether this session finished a turn in the current app session.
-  final bool hasCompletedTurn;
-
-  /// Token usage reported by the most recently completed turn.
-  final int contextTokens;
-
-  /// Whether the loaded conversation contains image content.
-  final bool hasImages;
-
-  /// Whether the workspace tools sidebar shows the terminal for this session.
-  final bool showTerminal;
-
-  /// Model used by subsequent turns on this session.
-  final ModelDescriptor activeModel;
-
-  /// Provider-local reasoning effort for subsequent turns on this session.
-  final String? reasoningEffort;
-
-  /// Agent session mode for subsequent turns, when the agent offers modes.
-  final String? mode;
 
   /// Returns a copy with the given fields replaced.
   SessionWorkspace copyWith({
@@ -114,29 +101,27 @@ final class SessionWorkspace {
 }
 
 /// Immutable state of one Flutter workspace, exposed by [WorkspaceController].
-final class WorkspaceState {
-  /// Creates a workspace state.
-  WorkspaceState({
-    required this.activeKey,
-    required Map<String, SessionWorkspace> workspaces,
-    required List<SessionSummary> sessions,
-    this.loadingSessions = false,
-    List<PermissionRequest> pendingPermissions = const [],
-  }) : workspaces = Map<String, SessionWorkspace>.unmodifiable(workspaces),
-       sessions = List.unmodifiable(sessions),
-       pendingPermissions = List.unmodifiable(pendingPermissions);
-
+final class WorkspaceState({
   /// Cache key of the focused session or draft.
-  final String activeKey;
+  required final String activeKey,
+  required Map<String, SessionWorkspace> workspaces,
+  required List<SessionSummary> sessions,
+
+  /// Whether the session sidebar is refreshing.
+  final bool loadingSessions = false,
+  List<PermissionRequest> pendingPermissions = const [],
+}) {
+  /// Creates a workspace state.
+  this
+    : workspaces = Map<String, SessionWorkspace>.unmodifiable(workspaces),
+      sessions = List.unmodifiable(sessions),
+      pendingPermissions = List.unmodifiable(pendingPermissions);
 
   /// Per-session transcripts and turn status, including background runs.
   final Map<String, SessionWorkspace> workspaces;
 
   /// Sessions for the sidebar, newest first.
   final List<SessionSummary> sessions;
-
-  /// Whether the session sidebar is refreshing.
-  final bool loadingSessions;
 
   /// Agent permission requests awaiting a user decision, in arrival order.
   final List<PermissionRequest> pendingPermissions;

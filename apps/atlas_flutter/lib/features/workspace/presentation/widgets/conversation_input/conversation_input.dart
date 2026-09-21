@@ -26,15 +26,17 @@ import 'slash_suggestions.dart';
 import '../workspace_controls.dart';
 
 /// Composer with model, reasoning effort, slash completion, send, and cancel.
-class ConversationInput extends ConsumerStatefulWidget {
-  /// Creates a composer bound to [sessionKey], or the focused session.
-  const ConversationInput({super.key, this.sessionKey, this.active = true});
+class const ConversationInput({
+  super.key,
 
   /// Cache key of the session to compose. Null follows the focused session.
-  final String? sessionKey;
+  final String? sessionKey,
 
   /// Whether this composer is the focused session's input.
-  final bool active;
+  final bool active = true,
+}) extends ConsumerStatefulWidget {
+  /// Creates a composer bound to [sessionKey], or the focused session.
+  this;
 
   @override
   ConsumerState<ConversationInput> createState() => _ConversationInputState();

@@ -123,10 +123,10 @@ class _Backend extends TerminalBackend {
   }
 }
 
-class _Lifecycle extends StatefulComponent {
-  _Lifecycle({required this.onMount, required this.onDispose});
-  final void Function() onMount;
-  final void Function() onDispose;
+class _Lifecycle({
+  required final void Function() onMount,
+  required final void Function() onDispose,
+}) extends StatefulComponent {
   @override
   State<_Lifecycle> createState() => _LifecycleState();
 }

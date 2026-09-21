@@ -17,23 +17,20 @@ import 'file_browser_menu.dart';
 import 'workspace_controls.dart';
 
 /// Keeps one [FileBrowser] per session so expand/preview state survives focus changes.
-class FileBrowserHost extends ConsumerStatefulWidget {
-  /// Creates a host for the focused session's file tree.
-  const FileBrowserHost({
-    super.key,
-    required this.sessionKey,
-    required this.workingDirectory,
-    this.service = const FileBrowserService(),
-  });
+class const FileBrowserHost({
+  super.key,
 
   /// Cache key of the focused session or draft.
-  final String sessionKey;
+  required final String sessionKey,
 
   /// Working directory of the focused session.
-  final String workingDirectory;
+  required final String workingDirectory,
 
   /// Filesystem adapter used by each browser.
-  final FileBrowserService service;
+  final FileBrowserService service = const FileBrowserService(),
+}) extends ConsumerStatefulWidget {
+  /// Creates a host for the focused session's file tree.
+  this;
 
   @override
   ConsumerState<FileBrowserHost> createState() => _FileBrowserHostState();
@@ -71,19 +68,17 @@ class _FileBrowserHostState extends ConsumerState<FileBrowserHost> {
 }
 
 /// Renders a lazy file tree and text preview controlled by Riverpod.
-class FileBrowser extends ConsumerStatefulWidget {
-  /// Creates a browser rooted at [workingDirectory].
-  const FileBrowser({
-    super.key,
-    required this.workingDirectory,
-    this.service = const FileBrowserService(),
-  });
+class const FileBrowser({
+  super.key,
 
   /// Directory that users cannot navigate above.
-  final String workingDirectory;
+  required final String workingDirectory,
 
   /// Filesystem adapter injected into the browser controller.
-  final FileBrowserService service;
+  final FileBrowserService service = const FileBrowserService(),
+}) extends ConsumerStatefulWidget {
+  /// Creates a browser rooted at [workingDirectory].
+  this;
 
   @override
   ConsumerState<FileBrowser> createState() => _FileBrowserState();
@@ -519,9 +514,8 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
       await command();
     } on FileSystemException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 }
@@ -531,11 +525,8 @@ bool _isMarkdownFile(File file) {
   return extension == 'md' || extension == 'markdown';
 }
 
-class _GuideLinePainter extends CustomPainter {
-  const _GuideLinePainter({required this.color});
-
-  final Color color;
-
+class const _GuideLinePainter({required final Color color})
+    extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()

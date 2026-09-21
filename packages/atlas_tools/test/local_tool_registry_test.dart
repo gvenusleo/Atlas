@@ -6,11 +6,7 @@ import 'tool_test_utils.dart';
 
 Tool _named(String name) => _FakeTool(name);
 
-final class _FakeTool implements Tool {
-  _FakeTool(this.name);
-
-  final String name;
-
+final class _FakeTool(final String name) implements Tool {
   @override
   ToolDescriptor get descriptor => ToolDescriptor(
     name: name,

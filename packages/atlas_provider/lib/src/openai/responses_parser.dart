@@ -8,18 +8,19 @@ import '../stream_runner.dart';
 import 'openai_configuration.dart';
 
 /// Parses an OpenAI Responses streaming response.
-final class ResponsesParser implements StreamParser {
-  /// Creates a responses parser for [providerId] and [modelId].
-  ResponsesParser(this.providerId, this.modelId, this.hasOutputLimit);
-
+final class ResponsesParser(
   /// The provider that owns this stream.
-  final ProviderId providerId;
+  final ProviderId providerId,
 
   /// The provider-local model identifier.
-  final String modelId;
+  final String modelId,
 
   /// Whether the request carried an explicit output token limit.
-  final bool hasOutputLimit;
+  final bool hasOutputLimit,
+) implements StreamParser {
+  /// Creates a responses parser for [providerId] and [modelId].
+  this;
+
   final _reasoning = StringBuffer();
   final _content = StringBuffer();
   final _fallbackContent = StringBuffer();
@@ -39,39 +40,36 @@ final class ResponsesParser implements StreamParser {
     if (event.data == '[DONE]') return;
     final value = asJsonMap(jsonDecode(event.data));
     final type = value['type'] as String? ?? event.name;
-    final delta = value['delta'];
-    if (type == 'response.output_text.delta' && delta is String) {
-      _content.write(delta);
-      yield TextDeltaEvent(delta);
-    } else if ((type == 'response.reasoning_summary_text.delta' ||
-            type == 'response.reasoning.delta') &&
-        delta is String) {
-      _reasoning.write(delta);
-      yield ReasoningDeltaEvent(delta);
-    } else if (type == 'response.output_item.done') {
-      _captureOutput(asJsonMap(value['item']));
-    } else if (type == 'response.completed' || type == 'response.incomplete') {
-      final response = asJsonMap(value['response']);
-      _status =
-          response['status'] as String? ??
-          (type == 'response.completed' ? 'completed' : 'incomplete');
-      _incompleteReason =
-          asJsonMap(response['incomplete_details'])['reason'] as String?;
-      _usage = _responsesUsage(asJsonMap(response['usage']));
-      final output = response['output'];
-      if (output is List) {
-        for (final item in output) {
-          _captureOutput(asJsonMap(item));
+    switch ((type, value)) {
+      case ('response.output_text.delta', {'delta': String delta}):
+        _content.write(delta);
+        yield TextDeltaEvent(delta);
+      case (
+        'response.reasoning_summary_text.delta' || 'response.reasoning.delta',
+        {'delta': String delta},
+      ):
+        _reasoning.write(delta);
+        yield ReasoningDeltaEvent(delta);
+      case ('response.output_item.done', _):
+        _captureOutput(asJsonMap(value['item']));
+      case ('response.completed' || 'response.incomplete', _):
+        final response = asJsonMap(value['response']);
+        _status =
+            response['status'] as String? ??
+            (type == 'response.completed' ? 'completed' : 'incomplete');
+        _incompleteReason =
+            asJsonMap(response['incomplete_details'])['reason'] as String?;
+        _usage = _responsesUsage(asJsonMap(response['usage']));
+        final output = response['output'];
+        if (output is List) {
+          for (final item in output) {
+            _captureOutput(asJsonMap(item));
+          }
         }
-      }
-    } else if (type == 'response.failed') {
-      _failure = 'responses request failed';
-      _failureDetail = _errorMessage(value);
-      _status = 'failed';
-    } else if (type == 'error') {
-      _failure = 'responses request failed';
-      _failureDetail = _errorMessage(value);
-      _status = 'failed';
+      case ('response.failed' || 'error', _):
+        _failure = 'responses request failed';
+        _failureDetail = _errorMessage(value);
+        _status = 'failed';
     }
   }
 
@@ -98,14 +96,12 @@ final class ResponsesParser implements StreamParser {
     }
     final reason = _calls.isNotEmpty
         ? StopReason.toolUse
-        : _status == 'completed'
-        ? StopReason.endTurn
-        : _status == 'incomplete'
-        ? _incompleteReason == 'max_output_tokens' ||
-                  (_incompleteReason == null && hasOutputLimit)
-              ? StopReason.maxTokens
-              : StopReason.unknown
-        : StopReason.unknown;
+        : switch ((_status, _incompleteReason)) {
+            ('completed', _) => StopReason.endTurn,
+            ('incomplete', 'max_output_tokens') => StopReason.maxTokens,
+            ('incomplete', null) when hasOutputLimit => StopReason.maxTokens,
+            _ => StopReason.unknown,
+          };
     return ModelResponse(
       content: (_content.isEmpty ? _fallbackContent : _content).isEmpty
           ? const []

@@ -1,27 +1,22 @@
 import 'slash_commands.dart';
 
 /// Describes the slash token at the cursor in an editing buffer.
-final class SlashToken {
-  /// Creates a slash token descriptor.
-  const SlashToken({
-    required this.start,
-    required this.end,
-    required this.query,
-    required this.skillsOnly,
-  });
-
+final class const SlashToken({
   /// Start offset of the token (including the `/`).
-  final int start;
+  required final int start,
 
   /// End offset of the token (exclusive).
-  final int end;
+  required final int end,
 
   /// The token text without the leading `/`.
-  final String query;
+  required final String query,
 
   /// Whether the buffer holds content besides this token, in which case only
   /// skill commands complete (built-ins are whole-line commands).
-  final bool skillsOnly;
+  required final bool skillsOnly,
+}) {
+  /// Creates a slash token descriptor.
+  this;
 
   @override
   bool operator ==(Object other) =>
@@ -43,10 +38,9 @@ final class SlashToken {
 /// Owns command matching, selection, and token replacement while the cursor
 /// sits on a `/`-prefixed token. It is pure Dart so terminal behavior can be
 /// tested without a rendering surface.
-final class SlashCompleter {
+final class SlashCompleter({List<SlashCommand> commands = slashCommands}) {
   /// Creates a completer over [commands] (defaults to the built-in catalog).
-  SlashCompleter({List<SlashCommand> commands = slashCommands})
-    : _commands = List.unmodifiable(commands);
+  this : _commands = List.unmodifiable(commands);
 
   final List<SlashCommand> _commands;
   List<SlashCommand> _matches = const [];

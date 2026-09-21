@@ -507,11 +507,8 @@ Future<void> _pumpToolConversation(
   await tester.pumpAndSettle();
 }
 
-final class _CheckboxFakeProvider implements ModelProvider {
-  _CheckboxFakeProvider(this.model);
-
-  final ModelRef model;
-
+final class _CheckboxFakeProvider(final ModelRef model)
+    implements ModelProvider {
   @override
   Future<ModelDescriptor> describe(ModelRef requested) async =>
       ModelDescriptor(ref: requested);
@@ -529,10 +526,7 @@ final class _CheckboxFakeProvider implements ModelProvider {
   }
 }
 
-final class _ToolFakeProvider implements ModelProvider {
-  _ToolFakeProvider(this.model);
-
-  final ModelRef model;
+final class _ToolFakeProvider(final ModelRef model) implements ModelProvider {
   var _calls = 0;
 
   @override
@@ -580,12 +574,11 @@ final class _FakeTool implements Tool {
       const ToolResult(content: 'file list');
 }
 
-final class _NamedToolFakeProvider implements ModelProvider {
-  _NamedToolFakeProvider(this.model, this.toolName, this.arguments);
-
-  final ModelRef model;
-  final String toolName;
-  final JsonObject arguments;
+final class _NamedToolFakeProvider(
+  final ModelRef model,
+  final String toolName,
+  final JsonObject arguments,
+) implements ModelProvider {
   var _calls = 0;
 
   @override
@@ -620,12 +613,8 @@ final class _NamedToolFakeProvider implements ModelProvider {
   }
 }
 
-final class _NamedFakeTool implements Tool {
-  _NamedFakeTool(this.name, this.result);
-
-  final String name;
-  final String result;
-
+final class _NamedFakeTool(final String name, final String result)
+    implements Tool {
   @override
   ToolDescriptor get descriptor => ToolDescriptor(
     name: name,
@@ -638,11 +627,8 @@ final class _NamedFakeTool implements Tool {
       ToolResult(content: result);
 }
 
-final class _FixedWorkingDirectory extends WorkspaceWorkingDirectory {
-  _FixedWorkingDirectory(this.path);
-
-  final String path;
-
+final class _FixedWorkingDirectory(final String path)
+    extends WorkspaceWorkingDirectory {
   @override
   String build() => path;
 }

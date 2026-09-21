@@ -7,9 +7,9 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 
 /// Owns the runtime adapters for one CLI invocation.
-final class CliRuntimeResources {
+final class CliRuntimeResources(AtlasConfig config) {
   /// Composes a runtime whose storage and HTTP connections can be closed.
-  CliRuntimeResources(AtlasConfig config)
+  this
     : _store = DriftSessionStore.openFile(File(config.session.dbPath)),
       _http = DioHttpStreamClient() {
     runtime = composeRuntime(config, store: _store, httpClient: _http);

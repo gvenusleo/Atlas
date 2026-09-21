@@ -6,33 +6,22 @@ import 'workspace_controls.dart';
 
 /// Shared scaffolding for the workspace side panels: a labeled toolbar row
 /// above a scrolling body.
-class SidePanel extends StatelessWidget {
-  /// Creates a side panel.
-  const SidePanel({
-    super.key,
-    required this.semanticLabel,
-    required this.child,
-    this.compact = false,
-    this.title,
-    this.action,
-    this.footer,
-    this.useCanvasColor = false,
-  });
+class const SidePanel({
+  super.key,
 
   /// Accessibility label describing the panel contents.
-  final String semanticLabel;
-  final Widget child;
+  required final String semanticLabel,
+  required final Widget child,
 
   /// Whether the panel is presented inside a compact drawer.
-  final bool compact;
-  final Widget? title;
-  final Widget? action;
+  final bool compact = false,
+  final Widget? title,
+  final Widget? action,
 
   /// Optional toolbar pinned below the scrolling content.
-  final Widget? footer;
-
-  final bool useCanvasColor;
-
+  final Widget? footer,
+  final bool useCanvasColor = false,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
@@ -70,7 +59,7 @@ class SidePanel extends StatelessWidget {
             ),
             const Divider(),
             Expanded(child: child),
-            if (footer != null) footer!,
+            ?footer,
           ],
         ),
       ),
@@ -79,13 +68,11 @@ class SidePanel extends StatelessWidget {
 }
 
 /// Centered placeholder shown when a panel has nothing to display.
-class PanelEmptyState extends StatelessWidget {
-  /// Creates an empty state.
-  const PanelEmptyState({super.key, required this.icon, required this.message});
-
-  final IconData icon;
-  final String message;
-
+class const PanelEmptyState({
+  super.key,
+  required final IconData icon,
+  required final String message,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);

@@ -7,19 +7,13 @@ import '../data/file_browser_service.dart';
 import 'file_browser_state.dart';
 
 /// Owns a browser's cached tree, filesystem subscriptions, and file commands.
-final class FileBrowserController extends Notifier<FileBrowserState> {
-  /// Creates a browser over the injected filesystem adapter.
-  FileBrowserController({
-    required this.workingDirectory,
-    required this.service,
-  });
-
+final class FileBrowserController({
   /// Root path for this browser's lifetime.
-  final String workingDirectory;
+  required final String workingDirectory,
 
   /// Adapter for all filesystem access, including watches.
-  final FileBrowserService service;
-
+  required final FileBrowserService service,
+}) extends Notifier<FileBrowserState> {
   static const _reloadDebounce = Duration(milliseconds: 300);
   late _TreeNode _root;
   final _watchers = <String, StreamSubscription<FileSystemEvent>>{};
@@ -351,11 +345,7 @@ final class FileBrowserController extends Notifier<FileBrowserState> {
   }
 }
 
-class _TreeNode {
-  _TreeNode(this.entity, this.depth);
-
-  final FileSystemEntity entity;
-  final int depth;
+class _TreeNode(final FileSystemEntity entity, final int depth) {
   bool expanded = false;
   bool loading = false;
   int version = 0;

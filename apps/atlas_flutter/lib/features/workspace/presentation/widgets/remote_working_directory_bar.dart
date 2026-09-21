@@ -14,10 +14,8 @@ import '../../application/workspace_controller.dart';
 /// history and model selection work without it. This bar appears above the
 /// composer while the focused remote draft has no directory yet, and stores
 /// the choice back into the profile so later connections skip the prompt.
-class RemoteWorkingDirectoryBar extends ConsumerStatefulWidget {
-  /// Creates a directory prompt bound to the focused workspace draft.
-  const RemoteWorkingDirectoryBar({super.key});
-
+class const RemoteWorkingDirectoryBar({super.key})
+    extends ConsumerStatefulWidget {
   @override
   ConsumerState<RemoteWorkingDirectoryBar> createState() =>
       _RemoteWorkingDirectoryBarState();
@@ -117,9 +115,7 @@ class _RemoteWorkingDirectoryBarState
   }
 }
 
-class _RemoteDirectoryDialog extends StatefulWidget {
-  const _RemoteDirectoryDialog();
-
+class const _RemoteDirectoryDialog() extends StatefulWidget {
   @override
   State<_RemoteDirectoryDialog> createState() => _RemoteDirectoryDialogState();
 }

@@ -4,22 +4,18 @@ import 'dart:io';
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// Writes redacted structured events as JSON lines to a local file.
-final class FileLogSink implements AtlasLogger {
-  /// Creates a sink at [directory], creating it on first write.
-  FileLogSink(
-    this.directory, {
-    this.minimumLevel = LogLevel.info,
-    this.retainDays = 7,
-  });
-
+final class FileLogSink(
   /// Directory containing the log file.
-  final Directory directory;
+  final Directory directory, {
 
   /// Events below this level are ignored.
-  final LogLevel minimumLevel;
+  final LogLevel minimumLevel = LogLevel.info,
 
   /// Number of daily files to retain after a write.
-  final int retainDays;
+  final int retainDays = 7,
+}) implements AtlasLogger {
+  /// Creates a sink at [directory], creating it on first write.
+  this;
 
   @override
   void log(LogEvent event) {
@@ -36,14 +32,12 @@ final class FileLogSink implements AtlasLogger {
   }
 
   void _prune(String today) {
-    final cutoff = DateTime.parse(
-      today,
-    ).subtract(Duration(days: retainDays - 1));
+    final cutoff = DateTime.parse(today)
+        .subtract(Duration(days: retainDays - 1));
     for (final entity in directory.listSync()) {
       if (entity is! File) continue;
-      final match = RegExp(
-        r'atlas-(\d{4}-\d{2}-\d{2})\.log$',
-      ).firstMatch(entity.path);
+      final match = RegExp(r'atlas-(\d{4}-\d{2}-\d{2})\.log$')
+          .firstMatch(entity.path);
       if (match == null) continue;
       final date = DateTime.tryParse(match.group(1)!);
       if (date != null && date.isBefore(cutoff)) entity.deleteSync();

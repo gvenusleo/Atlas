@@ -6,62 +6,46 @@ import 'package:material_ui/material_ui.dart';
 /// them onto one upstream color role. Values live in [AtlasPalette], never
 /// in widgets.
 @immutable
-class AtlasColors extends ThemeExtension<AtlasColors> {
-  const AtlasColors({
-    required this.canvas,
-    required this.panel,
-    required this.overlay,
-    required this.raised,
-    required this.divider,
-    required this.textPrimary,
-    required this.textSecondary,
-    required this.accent,
-    required this.onAccent,
-    required this.success,
-    required this.warning,
-    required this.error,
-    required this.scrim,
-  });
-
+class const AtlasColors({
   /// App background behind the content column.
-  final Color canvas;
+  required final Color canvas,
 
   /// Side panels and docked surfaces layered onto the canvas.
-  final Color panel;
+  required final Color panel,
 
   /// Floating surfaces such as menus, dialogs, and tooltips.
-  final Color overlay;
+  required final Color overlay,
 
   /// Hover fills and other transient surface tints (may be translucent).
-  final Color raised;
+  required final Color raised,
 
   /// Hairline separators and control borders.
-  final Color divider;
+  required final Color divider,
 
   /// Primary text and icons.
-  final Color textPrimary;
+  required final Color textPrimary,
 
   /// Secondary text, placeholders, and inactive icons.
-  final Color textSecondary;
+  required final Color textSecondary,
 
   /// Accent for links, focus rings, active states, and filled controls.
-  final Color accent;
+  required final Color accent,
 
   /// Text and icons placed on [accent] or status emphasis fills.
-  final Color onAccent;
+  required final Color onAccent,
 
   /// Success accent for connected or completed states.
-  final Color success;
+  required final Color success,
 
   /// Warning accent for pending or degraded states.
-  final Color warning;
+  required final Color warning,
 
   /// Error accent for failures and destructive actions.
-  final Color error;
+  required final Color error,
 
   /// Scrim behind drawers and modal surfaces.
-  final Color scrim;
-
+  required final Color scrim,
+}) extends ThemeExtension<AtlasColors> {
   /// Returns the active Atlas palette from the nearest theme.
   static AtlasColors of(BuildContext context) {
     final theme = Theme.of(context);
@@ -130,87 +114,51 @@ class AtlasColors extends ThemeExtension<AtlasColors> {
 /// The sixteen ANSI slots use upstream terminal values; the remaining roles
 /// follow the editor so the terminal reads as part of the shell.
 @immutable
-class AtlasTerminalColors {
-  const AtlasTerminalColors({
-    required this.background,
-    required this.foreground,
-    required this.cursor,
-    required this.selection,
-    required this.black,
-    required this.red,
-    required this.green,
-    required this.yellow,
-    required this.blue,
-    required this.magenta,
-    required this.cyan,
-    required this.white,
-    required this.brightBlack,
-    required this.brightRed,
-    required this.brightGreen,
-    required this.brightYellow,
-    required this.brightBlue,
-    required this.brightMagenta,
-    required this.brightCyan,
-    required this.brightWhite,
-    required this.searchHitBackground,
-    required this.searchHitBackgroundCurrent,
-    required this.searchHitForeground,
-  });
-
-  final Color background;
-  final Color foreground;
-  final Color cursor;
-  final Color selection;
-  final Color black;
-  final Color red;
-  final Color green;
-  final Color yellow;
-  final Color blue;
-  final Color magenta;
-  final Color cyan;
-  final Color white;
-  final Color brightBlack;
-  final Color brightRed;
-  final Color brightGreen;
-  final Color brightYellow;
-  final Color brightBlue;
-  final Color brightMagenta;
-  final Color brightCyan;
-  final Color brightWhite;
+class const AtlasTerminalColors({
+  required final Color background,
+  required final Color foreground,
+  required final Color cursor,
+  required final Color selection,
+  required final Color black,
+  required final Color red,
+  required final Color green,
+  required final Color yellow,
+  required final Color blue,
+  required final Color magenta,
+  required final Color cyan,
+  required final Color white,
+  required final Color brightBlack,
+  required final Color brightRed,
+  required final Color brightGreen,
+  required final Color brightYellow,
+  required final Color brightBlue,
+  required final Color brightMagenta,
+  required final Color brightCyan,
+  required final Color brightWhite,
 
   /// Fill behind non-current search matches.
-  final Color searchHitBackground;
+  required final Color searchHitBackground,
 
   /// Fill behind the active search match.
-  final Color searchHitBackgroundCurrent;
+  required final Color searchHitBackgroundCurrent,
 
   /// Text color inside search matches.
-  final Color searchHitForeground;
-}
+  required final Color searchHitForeground,
+}) {}
 
 /// A named light/dark pair of Atlas colors that can be selected by users.
 @immutable
-class AtlasPalette {
-  const AtlasPalette({
-    required this.id,
-    required this.label,
-    required this.light,
-    required this.dark,
-    required this.terminalLight,
-    required this.terminalDark,
-  });
-
+class const AtlasPalette({
   /// Stable identifier used when persisting a user choice.
-  final String id;
+  required final String id,
 
   /// Human-readable name for a theme picker.
-  final String label;
-
-  final AtlasColors light;
-  final AtlasColors dark;
-  final AtlasTerminalColors terminalLight;
-  final AtlasTerminalColors terminalDark;
-
+  required final String label,
+  required final AtlasColors light,
+  required final AtlasColors dark,
+  required final AtlasTerminalColors terminalLight,
+  required final AtlasTerminalColors terminalDark,
+}) {
   /// Returns the UI colors for [brightness].
   AtlasColors colors(Brightness brightness) =>
       brightness == Brightness.light ? light : dark;

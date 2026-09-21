@@ -166,122 +166,191 @@ void main() {
     expect(blocks.last, {'type': 'redacted_thinking', 'data': 'opaque-data'});
   });
 
-  test('replays empty and redacted thinking blocks on the next request', () async {
-    final requests = <Map<String, Object?>>[];
+  test('ignores unknown content block and delta types', () async {
     final server = await _startServer((request) async {
-      requests.add(
-        jsonDecode(await utf8.decoder.bind(request).join())
-            as Map<String, Object?>,
-      );
       await _sendSse(request.response, [
         '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu"}}',
+        '{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}',
+        '{"type":"content_block_delta","index":1,"delta":{"type":"citations_delta","citation":{"type":"web"}}}',
+        '{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Kept"}}',
+        '{"type":"content_block_delta","index":1,"delta":{"type":"signature_delta"}}',
+        '{"type":"content_block_stop","index":1}',
         '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
         '{"type":"message_stop"}',
       ]);
     });
     addTearDown(server.close);
 
-    final provider = _provider(server);
-    await provider
-        .stream(
-          _request(
-            messages: [
-              ModelMessage(
-                role: ModelMessageRole.assistant,
-                content: const [TextContent('Done')],
-                continuation: ModelContinuation(
-                  providerId: _modelRef.providerId,
-                  reasoningSummary: 'thought',
-                  opaquePayload: const <String, Object?>{
-                    'thinking_blocks': [
-                      {
-                        'type': 'thinking',
-                        'thinking': '',
-                        'signature': 'sig-1',
-                      },
-                      {'type': 'redacted_thinking', 'data': 'opaque-data'},
-                    ],
-                  },
-                ),
-              ),
-              const ModelMessage(
-                role: ModelMessageRole.user,
-                content: [TextContent('again')],
-              ),
-            ],
-          ),
-        )
-        .toList();
-
-    final messages = (requests.single['messages'] as List)
-        .cast<Map<String, Object?>>();
-    final content = (messages.first['content'] as List)
-        .cast<Map<String, Object?>>();
-    expect(content.first['type'], 'thinking');
-    expect(content.first['signature'], 'sig-1');
-    expect(content.first['thinking'], '');
-    expect(content[1], {'type': 'redacted_thinking', 'data': 'opaque-data'});
-    expect(content.first.containsKey('cache_control'), isFalse);
-    final trailing = (messages.last['content'] as List)
-        .cast<Map<String, Object?>>();
-    expect(trailing.single['cache_control'], {'type': 'ephemeral'});
+    final events = await _provider(server).stream(_request()).toList();
+    expect(events.whereType<TextDeltaEvent>().map((event) => event.delta), [
+      'Kept',
+    ]);
+    final response = (events.last as ModelCompletedEvent).response;
+    expect((response.content.single as TextContent).text, 'Kept');
+    expect(response.continuation, isNull);
   });
 
-  test('marks the trailing breakpoint on the last non-thinking block', () async {
-    final requests = <Map<String, Object?>>[];
+  test('skips redacted thinking blocks without opaque data', () async {
     final server = await _startServer((request) async {
-      requests.add(
-        jsonDecode(await utf8.decoder.bind(request).join())
-            as Map<String, Object?>,
-      );
       await _sendSse(request.response, [
         '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
-        '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
-        '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
-        '{"type":"content_block_stop","index":0}',
-        '{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"redacted_thinking","data":""}}',
+        '{"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":42}}',
+        '{"type":"content_block_start","index":2,"content_block":{"type":"text","text":""}}',
+        '{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"Done"}}',
+        '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
         '{"type":"message_stop"}',
       ]);
     });
     addTearDown(server.close);
 
-    await _provider(server)
-        .stream(
-          _request(
-            messages: [
-              const ModelMessage(
-                role: ModelMessageRole.user,
-                content: [TextContent('Hi')],
-              ),
-              ModelMessage(
-                role: ModelMessageRole.assistant,
-                content: [TextContent('done')],
-                continuation: ModelContinuation(
-                  providerId: ProviderId('anthropic'),
-                  opaquePayload: {
-                    'thinking_blocks': [
-                      {
-                        'type': 'thinking',
-                        'thinking': 'hmm',
-                        'signature': 'sig-1',
-                      },
-                    ],
-                  },
-                ),
-              ),
-            ],
-          ),
-        )
-        .toList();
-
-    final messages = (requests.single['messages'] as List)
-        .cast<Map<String, Object?>>();
-    final assistant = (messages.last['content'] as List)
-        .cast<Map<String, Object?>>();
-    expect(assistant.map((block) => block['type']), ['thinking', 'text']);
-    expect(assistant.first.containsKey('cache_control'), isFalse);
-    expect(assistant.last['cache_control'], {'type': 'ephemeral'});
+    final events = await _provider(server).stream(_request()).toList();
+    final response = (events.last as ModelCompletedEvent).response;
+    expect(response.continuation, isNull);
   });
+
+  test('accepts a tool block that never streams input json', () async {
+    final server = await _startServer((request) async {
+      await _sendSse(request.response, [
+        '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+        '{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool-1","name":"noop"}}',
+        '{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta"}}',
+        '{"type":"content_block_stop","index":0}',
+        '{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}',
+        '{"type":"message_stop"}',
+      ]);
+    });
+    addTearDown(server.close);
+
+    final events = await _provider(server).stream(_request()).toList();
+    final call = (events.last as ModelCompletedEvent).response.toolCalls.single;
+    expect(call.name, 'noop');
+    expect(call.arguments, isEmpty);
+  });
+
+  test(
+    'replays empty and redacted thinking blocks on the next request',
+    () async {
+      final requests = <Map<String, Object?>>[];
+      final server = await _startServer((request) async {
+        requests.add(
+          jsonDecode(await utf8.decoder.bind(request).join())
+              as Map<String, Object?>,
+        );
+        await _sendSse(request.response, [
+          '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+          '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
+          '{"type":"message_stop"}',
+        ]);
+      });
+      addTearDown(server.close);
+
+      final provider = _provider(server);
+      await provider
+          .stream(
+            _request(
+              messages: [
+                ModelMessage(
+                  role: ModelMessageRole.assistant,
+                  content: const [TextContent('Done')],
+                  continuation: ModelContinuation(
+                    providerId: _modelRef.providerId,
+                    reasoningSummary: 'thought',
+                    opaquePayload: const <String, Object?>{
+                      'thinking_blocks': [
+                        {
+                          'type': 'thinking',
+                          'thinking': '',
+                          'signature': 'sig-1',
+                        },
+                        {'type': 'redacted_thinking', 'data': 'opaque-data'},
+                      ],
+                    },
+                  ),
+                ),
+                const ModelMessage(
+                  role: ModelMessageRole.user,
+                  content: [TextContent('again')],
+                ),
+              ],
+            ),
+          )
+          .toList();
+
+      final messages = (requests.single['messages'] as List)
+          .cast<Map<String, Object?>>();
+      final content = (messages.first['content'] as List)
+          .cast<Map<String, Object?>>();
+      expect(content.first['type'], 'thinking');
+      expect(content.first['signature'], 'sig-1');
+      expect(content.first['thinking'], '');
+      expect(content[1], {'type': 'redacted_thinking', 'data': 'opaque-data'});
+      expect(content.first.containsKey('cache_control'), isFalse);
+      final trailing = (messages.last['content'] as List)
+          .cast<Map<String, Object?>>();
+      expect(trailing.single['cache_control'], {'type': 'ephemeral'});
+    },
+  );
+
+  test(
+    'marks the trailing breakpoint on the last non-thinking block',
+    () async {
+      final requests = <Map<String, Object?>>[];
+      final server = await _startServer((request) async {
+        requests.add(
+          jsonDecode(await utf8.decoder.bind(request).join())
+              as Map<String, Object?>,
+        );
+        await _sendSse(request.response, [
+          '{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}',
+          '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+          '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+          '{"type":"content_block_stop","index":0}',
+          '{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}',
+          '{"type":"message_stop"}',
+        ]);
+      });
+      addTearDown(server.close);
+
+      await _provider(server)
+          .stream(
+            _request(
+              messages: [
+                const ModelMessage(
+                  role: ModelMessageRole.user,
+                  content: [TextContent('Hi')],
+                ),
+                ModelMessage(
+                  role: ModelMessageRole.assistant,
+                  content: [TextContent('done')],
+                  continuation: ModelContinuation(
+                    providerId: ProviderId('anthropic'),
+                    opaquePayload: {
+                      'thinking_blocks': [
+                        {
+                          'type': 'thinking',
+                          'thinking': 'hmm',
+                          'signature': 'sig-1',
+                        },
+                      ],
+                    },
+                  ),
+                ),
+              ],
+            ),
+          )
+          .toList();
+
+      final messages = (requests.single['messages'] as List)
+          .cast<Map<String, Object?>>();
+      final assistant = (messages.last['content'] as List)
+          .cast<Map<String, Object?>>();
+      expect(assistant.map((block) => block['type']), ['thinking', 'text']);
+      expect(assistant.first.containsKey('cache_control'), isFalse);
+      expect(assistant.last['cache_control'], {'type': 'ephemeral'});
+    },
+  );
 
   test('sends Anthropic headers, tools, and thinking configuration', () async {
     final requests = <Map<String, Object?>>[];

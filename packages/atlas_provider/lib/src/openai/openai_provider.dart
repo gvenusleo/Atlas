@@ -11,13 +11,14 @@ import 'openai_configuration.dart';
 import 'responses_parser.dart';
 
 /// Streams configured models through the OpenAI Chat Completions or Responses API.
-final class OpenAICompatibleProvider implements ModelProvider {
+final class OpenAICompatibleProvider(
+  List<OpenAIProviderConfiguration> configurations, {
+  HttpStreamClient? httpClient,
+}) implements ModelProvider {
   /// Creates a provider from endpoint configurations and an optional HTTP client.
-  OpenAICompatibleProvider(
-    List<OpenAIProviderConfiguration> configurations, {
-    HttpStreamClient? httpClient,
-  }) : _entries = _indexConfigurations(configurations),
-       _httpClient = httpClient ?? DioHttpStreamClient();
+  this
+    : _entries = _indexConfigurations(configurations),
+      _httpClient = httpClient ?? DioHttpStreamClient();
 
   final Map<ModelRef, _ModelEntry> _entries;
   final HttpStreamClient _httpClient;
@@ -112,12 +113,10 @@ final class OpenAICompatibleProvider implements ModelProvider {
   }
 }
 
-final class _ModelEntry {
-  const _ModelEntry(this.provider, this.configuration);
-
-  final OpenAIProviderConfiguration provider;
-  final OpenAIModelConfiguration configuration;
-}
+final class const _ModelEntry(
+  final OpenAIProviderConfiguration provider,
+  final OpenAIModelConfiguration configuration,
+) {}
 
 Map<ModelRef, _ModelEntry> _indexConfigurations(
   List<OpenAIProviderConfiguration> configurations,

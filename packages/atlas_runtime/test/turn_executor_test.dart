@@ -290,11 +290,10 @@ void main() {
   });
 }
 
-final class _ScriptedProvider implements ModelProvider {
-  _ScriptedProvider(this.responses, {this.contextWindow = 0});
-
-  final List<ModelResponse> responses;
-  final int contextWindow;
+final class _ScriptedProvider(
+  final List<ModelResponse> responses, {
+  final int contextWindow = 0,
+}) implements ModelProvider {
   final requests = <ModelRequest>[];
   var _index = 0;
 
@@ -313,11 +312,8 @@ final class _ScriptedProvider implements ModelProvider {
   }
 }
 
-final class _MemoryTools implements ToolRegistry {
-  _MemoryTools({required this.result});
-
-  final ToolResult result;
-
+final class _MemoryTools({required final ToolResult result})
+    implements ToolRegistry {
   @override
   List<ToolDescriptor> get descriptors => const [
     ToolDescriptor(

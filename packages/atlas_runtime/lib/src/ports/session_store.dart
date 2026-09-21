@@ -5,68 +5,60 @@ import '../domain/timeline.dart';
 import '../domain/turn.dart';
 
 /// Thrown when a requested session does not exist.
-final class SessionNotFoundException implements Exception {
-  /// Creates a missing-session error.
-  const SessionNotFoundException(this.sessionId);
-
+final class const SessionNotFoundException(
   /// The missing identifier.
-  final SessionId sessionId;
+  final SessionId sessionId,
+) implements Exception {
+  /// Creates a missing-session error.
+  this;
 
   @override
   String toString() => 'Session not found: $sessionId';
 }
 
 /// Options for listing sessions.
-final class SessionQuery {
-  /// Creates a session query.
-  const SessionQuery({this.workingDirectory, this.cursor, this.limit = 20});
-
+final class const SessionQuery({
   /// Restricts results to a working directory.
-  final String? workingDirectory;
+  final String? workingDirectory,
 
   /// The opaque pagination cursor.
-  final String? cursor;
+  final String? cursor,
 
   /// The requested page size.
-  final int limit;
+  final int limit = 20,
+}) {
+  /// Creates a session query.
+  this;
 }
 
 /// The initial metadata and user item for a new turn.
-final class BeginTurn {
-  /// Creates a begin-turn operation.
-  const BeginTurn({
-    required this.session,
-    required this.turn,
-    required this.userMessage,
-  });
-
+final class const BeginTurn({
   /// The session to create or update.
-  final Session session;
+  required final Session session,
 
   /// The running turn to persist.
-  final Turn turn;
+  required final Turn turn,
 
   /// The first timeline item for the turn.
-  final UserMessageItem userMessage;
+  required final UserMessageItem userMessage,
+}) {
+  /// Creates a begin-turn operation.
+  this;
 }
 
 /// A model step and its generated continuation state.
-final class PersistedModelStep {
-  /// Creates a model-step persistence operation.
-  const PersistedModelStep({
-    required this.assistantMessage,
-    required this.toolCalls,
-    this.checkpoint,
-  });
-
+final class const PersistedModelStep({
   /// The completed assistant item.
-  final AssistantMessageItem assistantMessage;
+  required final AssistantMessageItem assistantMessage,
 
   /// Tool calls requested by this assistant item.
-  final List<ToolCallItem> toolCalls;
+  required final List<ToolCallItem> toolCalls,
 
   /// Provider continuation state, if returned.
-  final ModelCheckpoint? checkpoint;
+  final ModelCheckpoint? checkpoint,
+}) {
+  /// Creates a model-step persistence operation.
+  this;
 }
 
 /// Persists session state and ordered turn history.

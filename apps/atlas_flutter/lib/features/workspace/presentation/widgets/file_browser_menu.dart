@@ -8,51 +8,37 @@ import '../../../../shared/widgets/animated_caret.dart';
 import 'workspace_controls.dart';
 
 /// Actions invoked from a file-browser context menu.
-final class FileBrowserMenuActions {
-  /// Creates the action callbacks.
-  const FileBrowserMenuActions({
-    required this.onNewFile,
-    required this.onNewFolder,
-    required this.onCopy,
-    required this.onCut,
-    required this.onPaste,
-    required this.onCopyPath,
-    required this.onCopyRelativePath,
-    required this.onRename,
-    required this.onReveal,
-    required this.onTrash,
-  });
-
+final class const FileBrowserMenuActions({
   /// Creates a file in the current target directory.
-  final VoidCallback onNewFile;
+  required final VoidCallback onNewFile,
 
   /// Creates a folder in the current target directory.
-  final VoidCallback onNewFolder;
+  required final VoidCallback onNewFolder,
 
   /// Copies the current entry.
-  final VoidCallback onCopy;
+  required final VoidCallback onCopy,
 
   /// Cuts the current entry.
-  final VoidCallback onCut;
+  required final VoidCallback onCut,
 
   /// Pastes into the current target directory.
-  final VoidCallback onPaste;
+  required final VoidCallback onPaste,
 
   /// Copies the absolute path.
-  final VoidCallback onCopyPath;
+  required final VoidCallback onCopyPath,
 
   /// Copies the path relative to the workspace root.
-  final VoidCallback onCopyRelativePath;
+  required final VoidCallback onCopyRelativePath,
 
   /// Renames the current entry.
-  final VoidCallback onRename;
+  required final VoidCallback onRename,
 
   /// Reveals the current entry in the file manager.
-  final VoidCallback onReveal;
+  required final VoidCallback onReveal,
 
   /// Moves the current entry to the trash.
-  final VoidCallback onTrash;
-}
+  required final VoidCallback onTrash,
+});
 
 /// Builds menu rows for the workspace file browser.
 List<Widget> fileBrowserRootMenu({
@@ -246,28 +232,21 @@ String get revealInFileManagerLabel {
 }
 
 /// Context menu wrapper that opens on secondary tap.
-class FileRowMenu extends StatefulWidget {
-  /// Creates a row menu.
-  const FileRowMenu({
-    super.key,
-    required this.registry,
-    required this.onOpen,
-    required this.items,
-    required this.child,
-  });
+class const FileRowMenu({
+  super.key,
 
   /// Open row-menu controllers owned by the browser.
-  final List<MenuController> registry;
+  required final List<MenuController> registry,
 
   /// Closes any already-open menu before this one opens.
-  final VoidCallback onOpen;
+  required final VoidCallback onOpen,
 
   /// Menu rows.
-  final List<Widget> items;
+  required final List<Widget> items,
 
   /// The file-tree row.
-  final Widget child;
-
+  required final Widget child,
+}) extends StatefulWidget {
   @override
   State<FileRowMenu> createState() => _FileRowMenuState();
 }
