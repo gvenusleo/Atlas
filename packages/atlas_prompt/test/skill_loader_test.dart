@@ -170,6 +170,76 @@ void main() {
     expect(catalog.lookup('folded')!.description, 'Folded into one line.');
   });
 
+  for (final marker in ['>-', '>+', '|-', '|+']) {
+    test('loads multi-line descriptions with `$marker` chomping', () {
+      final content =
+          '---\n'
+          'name: chomped\n'
+          'description: $marker\n'
+          '  First line without a colon.\n'
+          '  Second line with package:args.\n'
+          '\n'
+          'metadata:\n'
+          '  model: example\n'
+          '---\n'
+          'Body';
+      writeSkill(userAgents.path, 'chomped', content);
+
+      final catalog = load();
+      final separator = marker.startsWith('>') ? ' ' : '\n';
+      final expected =
+          'First line without a colon.${separator}Second line '
+          'with package:args.';
+      expect(catalog.lookup('chomped')?.description, expected);
+      expect(catalog.summaries.single.description, expected);
+      expect(catalog.lookup('chomped')?.content, content);
+    });
+
+    test('does not expose `$marker` as a colon-containing description', () {
+      writeSkill(
+        userAgents.path,
+        'colons',
+        '---\n'
+            'name: colons\n'
+            'description: $marker\n'
+            '  Use package:args for CLI parsing.\n'
+            '---\nBody',
+      );
+
+      expect(
+        load().lookup('colons')?.description,
+        'Use package:args for CLI parsing.',
+      );
+    });
+
+    test('skips empty descriptions with `$marker` chomping', () {
+      writeSkill(
+        userAgents.path,
+        'empty',
+        '---\nname: empty\ndescription: $marker\n\n---\nBody',
+      );
+      writeSkill(
+        userAgents.path,
+        'good',
+        '---\nname: good\ndescription: Still available.\n---\nBody',
+      );
+
+      final catalog = load();
+      expect(catalog.lookup('empty'), isNull);
+      expect(catalog.summaries.map((skill) => skill.name), ['good']);
+    });
+  }
+
+  test('quoted block markers remain literal descriptions', () {
+    writeSkill(
+      userAgents.path,
+      'quoted-marker',
+      '---\nname: quoted-marker\ndescription: ">-"\n---\nBody',
+    );
+
+    expect(load().lookup('quoted-marker')?.description, '>-');
+  });
+
   test('block scalars accept tab indentation', () {
     writeSkill(
       userAgents.path,

@@ -170,12 +170,18 @@ Map<String, String> _parseFrontmatter(String path, String text) {
     }
     final key = trimmed.substring(0, colon).trim();
     final value = trimmed.substring(colon + 1).trim();
-    if (value == '|' || value == '>') {
+    final blockStyle = switch (value) {
+      '|' || '|-' || '|+' => '|',
+      '>' || '>-' || '>+' => '>',
+      _ => null,
+    };
+    if (blockStyle != null) {
       // YAML block scalar: collect the indented lines that follow until the
       // next non-indented line or the end of the frontmatter, dedented to
       // their common indentation. `|` keeps line breaks; `>` folds adjacent
       // lines into spaces (a simplified fold: blank lines become spaces
-      // too), which is enough for descriptions.
+      // too), which is enough for descriptions. Chomping suffixes only
+      // affect trailing newlines, which skill descriptions trim on load.
       final block = <String>[];
       while (i + 1 < end) {
         final next = lines[i + 1];
@@ -186,7 +192,7 @@ Map<String, String> _parseFrontmatter(String path, String text) {
           break;
         }
       }
-      meta[key] = value == '>'
+      meta[key] = blockStyle == '>'
           ? _dedentBlock(block).replaceAll('\n', ' ').trim()
           : _dedentBlock(block);
       continue;
