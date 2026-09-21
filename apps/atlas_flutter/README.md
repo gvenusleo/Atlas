@@ -55,10 +55,15 @@ lib/app                                  application root, routing, platform win
 lib/features/<feature>/application       feature controllers and state
 lib/features/<feature>/data              local filesystem, terminal, and preference access
 lib/features/<feature>/presentation      feature pages, layouts, and widgets
-lib/shared                               application-wide theme and shared UI
+lib/shared                               shared application state, theme, and UI
 ```
 
-Client-local preferences live in `lib/app`: `theme_mode.dart` reads and
+Connection controllers and saved-profile repositories live in
+`features/remote_connection`; `app` injects the process and WebSocket connectors.
+The file browser delegates filesystem state and operations to its own Riverpod
+controller. See [architecture](../../docs/architecture.md#flutter-client-state).
+
+The client-local theme preference lives in `lib/app`: `theme_mode.dart` reads and
 persists the theme mode with `shared_preferences`, and `atlas_app.dart`
 applies it. The settings page (`/settings`) owns appearance preferences and
 ACP connection management, and reuses the workspace window chrome.

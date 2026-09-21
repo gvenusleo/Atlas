@@ -23,7 +23,7 @@ final class FileClipboard {
 }
 
 /// Performs bounded filesystem reads and writes for the workspace file browser.
-final class FileBrowserService {
+class FileBrowserService {
   /// Creates a filesystem browser service.
   const FileBrowserService({
     this.trash = moveToTrash,
@@ -35,6 +35,19 @@ final class FileBrowserService {
 
   /// Reveals a path in the platform file manager.
   final Future<void> Function(String path) reveal;
+
+  /// Watches one directory for external changes.
+  Stream<FileSystemEvent> watchDirectory(String path) =>
+      Directory(path).watch();
+
+  /// Resolves a clipboard path to a file or directory.
+  Future<FileSystemEntity> entityAt(String path) async =>
+      await FileSystemEntity.type(path) == FileSystemEntityType.directory
+      ? Directory(path)
+      : File(path);
+
+  /// Whether a previewed file still exists.
+  Future<bool> fileExists(File file) => file.exists();
 
   /// Lists one directory without following symbolic links.
   Future<List<FileSystemEntity>> listDirectory(Directory directory) async {

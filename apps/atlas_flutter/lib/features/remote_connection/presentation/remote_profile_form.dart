@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../../app/remote_connections.dart';
+import '../data/remote_connections.dart';
 import '../../../shared/theme/atlas_theme.dart';
 import '../../../shared/widgets/animated_caret.dart';
 

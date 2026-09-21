@@ -104,6 +104,21 @@ returns naturally instead of allowing Nocterm to terminate the process.
 - `atlas_cli` and `atlas_flutter` are separate process composition roots and share construction code, not runtime instances.
 - ACP owns its protocol lifecycle through `acpd`; `atlas server` reuses the same `AcpServer` per WebSocket connection. MCP is Planned and has no implementation package yet.
 
+## Flutter Client State
+
+Flutter keeps Riverpod controllers under each feature's `application` directory.
+The `remote_connection` controller receives ACP subprocess and WebSocket connector
+functions from `app`; feature code does not import the runtime bootstrap. The
+working-directory provider lives in `shared/application`, so connection selection
+and workspace drafts do not depend on each other's controllers.
+
+Saved ACP and remote profiles use shared repositories that serialize list updates
+and publish immutable snapshots after successful writes. Views call controller
+commands rather than reading or replacing stored lists. Each file browser has its
+own auto-disposed controller for directory caches, debounced watches, previews,
+and file operations. `FileBrowserService` owns filesystem access; widgets keep
+menus, dialogs, and the Markdown preview toggle.
+
 ## Runtime Contracts
 
 The runtime implementation and remaining adapters must preserve these

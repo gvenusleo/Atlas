@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../app/remote_connections.dart';
-import '../../../app/runtime_environment.dart';
+import '../data/remote_connections.dart';
+import '../application/runtime_controller.dart';
+import '../application/connection_profiles_controller.dart';
 import '../../../shared/theme/atlas_theme.dart';
 import '../../workspace/presentation/widgets/workspace_controls.dart';
 import 'remote_profile_form.dart';
@@ -21,41 +22,7 @@ class RemoteConnectView extends ConsumerStatefulWidget {
 }
 
 class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
-  final _store = RemoteConnectionStore();
-  List<RemoteConnectionProfile>? _profiles;
-  String? _loadError;
   bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_reload());
-  }
-
-  Future<void> _reload() async {
-    try {
-      final profiles = await _store.load();
-      if (mounted) {
-        setState(() {
-          _profiles = profiles;
-          _loadError = null;
-        });
-      }
-    } on Object catch (error) {
-      if (mounted) {
-        setState(() => _loadError = '$error');
-      }
-    }
-  }
-
-  Future<void> _saveProfiles(List<RemoteConnectionProfile> profiles) async {
-    try {
-      await _store.save(profiles);
-      await _reload();
-    } on Object catch (error) {
-      await _showSaveError(error);
-    }
-  }
 
   /// Surfaces a persistence failure; without this the dialog closes and the
   /// list stays unchanged with no explanation (for example a locked system
@@ -84,40 +51,21 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
       context: context,
       builder: (context) => RemoteProfileFormDialog(profile: profile),
     );
-    if (result == null) {
+    if (result == null || !mounted) {
       return;
     }
-    // Merge into the latest stored list: the in-session directory prompt may
-    // have updated this profile since the view loaded it.
     try {
-      final profiles = await _store.load();
-      final index = profiles.indexWhere(
-        (entry) => entry.name == result.name && entry.wsUrl == result.wsUrl,
-      );
-      if (index < 0) {
-        profiles.add(result);
-      } else {
-        profiles[index] = result;
-      }
-      await _saveProfiles(profiles);
+      await ref
+          .read(remoteProfilesProvider.notifier)
+          .saveProfile(result, previous: profile);
     } on Object catch (error) {
       await _showSaveError(error);
     }
   }
 
   Future<void> _remove(RemoteConnectionProfile profile) async {
-    final state = ref.read(runtimeEnvironmentProvider);
-    if (state.remoteProfile != null &&
-        state.remoteProfile!.name == profile.name &&
-        state.remoteProfile!.wsUrl == profile.wsUrl) {
-      await ref.read(runtimeEnvironmentProvider.notifier).disconnectRemote();
-    }
     try {
-      final profiles = await _store.load()
-        ..removeWhere(
-          (entry) => entry.name == profile.name && entry.wsUrl == profile.wsUrl,
-        );
-      await _saveProfiles(profiles);
+      await ref.read(remoteProfilesProvider.notifier).removeProfile(profile);
     } on Object catch (error) {
       await _showSaveError(error);
     }
@@ -132,10 +80,7 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
       await controller.activateRemote(profile);
     } catch (error) {
       if (mounted) {
-        setState(() {
-          _busy = false;
-          _loadError = null;
-        });
+        setState(() => _busy = false);
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
@@ -165,7 +110,9 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final runtimeState = ref.watch(runtimeEnvironmentProvider);
-    final profiles = _profiles ?? const <RemoteConnectionProfile>[];
+    final savedProfiles = ref.watch(remoteProfilesProvider);
+    final profiles = savedProfiles.value ?? const <RemoteConnectionProfile>[];
+    final loadError = savedProfiles.error;
     final status = runtimeState.remoteStatus;
 
     return Center(
@@ -206,9 +153,9 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (_loadError != null) ...[
+              if (loadError != null) ...[
                 Text(
-                  _loadError!,
+                  '$loadError',
                   style: TextStyle(color: colors.error, fontSize: 12),
                 ),
                 const SizedBox(height: 8),

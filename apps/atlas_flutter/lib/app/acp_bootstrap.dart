@@ -5,7 +5,7 @@ import 'package:acpd_io/acpd_io.dart';
 import 'package:atlas_acp/atlas_acp.dart';
 
 import 'acp_connections.dart';
-import 'runtime_environment.dart';
+import '../features/remote_connection/application/runtime_controller.dart';
 
 /// Starts [connection] as a child process and wraps it in an [AcpClient].
 ///

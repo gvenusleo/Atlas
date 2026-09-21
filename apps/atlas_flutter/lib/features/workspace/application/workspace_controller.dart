@@ -1,39 +1,15 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/runtime_environment.dart';
+import '../../remote_connection/application/runtime_controller.dart';
+import '../../remote_connection/application/connection_profiles_controller.dart';
+import '../../../shared/application/working_directory.dart';
 import 'workspace_message.dart';
 import 'workspace_state.dart';
 
-/// Working directory for the workspace, overridable in tests.
-final workspaceWorkingDirectoryProvider =
-    NotifierProvider<WorkspaceWorkingDirectory, String>(
-      WorkspaceWorkingDirectory.new,
-    );
-
-/// Holds the workspace working directory.
-///
-/// Cold start uses the user home directory so a packaged app does not inherit
-/// the process current directory (`/` when launched from Finder).
-class WorkspaceWorkingDirectory extends Notifier<String> {
-  @override
-  String build() => _homeDirectory() ?? Directory.current.path;
-
-  /// Switches the working directory for subsequent sessions.
-  void set(String directory) => state = directory;
-}
-
-String? _homeDirectory() {
-  final home =
-      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
-  if (home == null || home.isEmpty) {
-    return null;
-  }
-  return home;
-}
+export '../../../shared/application/working_directory.dart';
 
 /// Coordinates one Flutter workspace with the injected shared runtime.
 final class WorkspaceController extends Notifier<WorkspaceState> {
@@ -231,6 +207,26 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         'Cannot load sessions: $error',
       );
       state = state.copyWith(loadingSessions: false);
+    }
+  }
+
+  /// Applies a remote directory immediately and saves it for later connections.
+  Future<void> setRemoteWorkingDirectory(String directory) async {
+    final connection = ref.read(runtimeEnvironmentProvider.notifier);
+    connection.setRemoteWorkingDirectory(directory);
+    final profile = ref.read(runtimeEnvironmentProvider).remoteProfile;
+    if (profile == null) return;
+    newSession(workingDirectory: directory);
+    try {
+      await ref
+          .read(remoteProfilesProvider.notifier)
+          .setWorkingDirectory(profile, directory);
+    } on Object {
+      if (ref.mounted) {
+        notify(
+          'The directory is active but could not be saved for the next connection.',
+        );
+      }
     }
   }
 

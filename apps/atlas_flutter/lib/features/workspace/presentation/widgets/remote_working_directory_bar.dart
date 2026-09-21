@@ -2,8 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../app/remote_connections.dart';
-import '../../../../app/runtime_environment.dart';
+import '../../../remote_connection/application/runtime_controller.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import '../../application/workspace_controller.dart';
@@ -26,7 +25,6 @@ class RemoteWorkingDirectoryBar extends ConsumerStatefulWidget {
 
 class _RemoteWorkingDirectoryBarState
     extends ConsumerState<RemoteWorkingDirectoryBar> {
-  final _store = RemoteConnectionStore();
   bool _saving = false;
 
   @override
@@ -106,44 +104,15 @@ class _RemoteWorkingDirectoryBarState
     if (path == null || !mounted) {
       return;
     }
-    final controller = ref.read(runtimeEnvironmentProvider.notifier);
-    controller.setRemoteWorkingDirectory(path);
     setState(() => _saving = true);
     try {
-      await _persist(path);
+      await ref
+          .read(workspaceProvider.notifier)
+          .setRemoteWorkingDirectory(path);
     } finally {
       if (mounted) {
         setState(() => _saving = false);
       }
-    }
-    if (!mounted) {
-      return;
-    }
-    // Fresh draft rooted at the chosen directory; identical to switching
-    // directories on the desktop.
-    ref.read(workspaceProvider.notifier).newSession(workingDirectory: path);
-  }
-
-  /// Stores the directory on the matching stored profile (best effort: the
-  /// in-memory profile is already updated, persistence failures only cost a
-  /// repeated prompt on the next connection).
-  Future<void> _persist(String directory) async {
-    final profile = ref.read(runtimeEnvironmentProvider).remoteProfile;
-    if (profile == null) {
-      return;
-    }
-    try {
-      final profiles = await _store.load();
-      final index = profiles.indexWhere(
-        (entry) => entry.name == profile.name && entry.wsUrl == profile.wsUrl,
-      );
-      if (index < 0) {
-        return;
-      }
-      profiles[index] = profiles[index].copyWith(workingDirectory: directory);
-      await _store.save(profiles);
-    } on Object catch (error) {
-      debugPrint('Cannot persist remote working directory: $error');
     }
   }
 }

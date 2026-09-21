@@ -95,6 +95,18 @@ compact，等待协议 handler 完成后关闭适配器资源。关闭期间事�
 - `atlas_cli` 与 `atlas_flutter` 是独立的进程组合根，共享构造代码而不共享 runtime 实例。
 - ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个 WebSocket 连接复用同一 `AcpServer`。MCP 为 Planned，当前没有实现包。
 
+## Flutter 客户端状态
+
+Flutter 的 Riverpod controller 放在各 feature 的 `application` 目录中。
+`remote_connection` controller 接收 `app` 注入的 ACP 子进程与 WebSocket
+连接函数；feature 代码不导入 runtime bootstrap。工作目录 provider 放在
+`shared/application`，连接选择与 workspace 草稿不需要相互依赖对方的 controller。
+
+已保存的 ACP 与远程连接配置使用共享 repository，串行处理列表更新，并在写入成功后
+发布不可变快照。视图调用 controller 命令，不直接读取或覆盖存储列表。每个文件浏览器
+都有独立、自动释放的 controller，管理目录缓存、文件监听防抖、预览和文件操作。
+`FileBrowserService` 负责文件系统访问；菜单、对话框和 Markdown 预览开关保留在 Widget 中。
+
 ## Runtime 行为契约
 
 当前 runtime 实现与后续适配器必须共同遵守以下产品级行为契约：

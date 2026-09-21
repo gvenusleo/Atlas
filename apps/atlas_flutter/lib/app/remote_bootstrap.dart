@@ -7,20 +7,7 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'remote_connections.dart';
-import 'runtime_environment.dart';
-
-/// A connected remote session and its disconnect notification.
-final class RemoteSessionHandle {
-  /// Creates a handle.
-  const RemoteSessionHandle({required this.environment, required this.closed});
-
-  /// The runtime environment backed by the remote `atlas server`.
-  final RuntimeEnvironment environment;
-
-  /// Completes when the underlying WebSocket connection ends, for any reason
-  /// (server shutdown, network loss, or an explicit close).
-  final Future<void> closed;
-}
+import '../features/remote_connection/application/runtime_controller.dart';
 
 /// Connects to a remote `atlas server` over WebSocket and wraps it in an
 /// [AcpClient], exactly like the local in-process ACP bootstrap.

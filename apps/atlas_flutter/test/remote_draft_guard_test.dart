@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:atlas_flutter/app/remote_connections.dart';
 import 'package:atlas_flutter/app/runtime_environment.dart';
+import 'package:atlas_flutter/features/remote_connection/application/connection_profiles_controller.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
@@ -10,6 +11,7 @@ import 'package:atlas_tools/atlas_tools.dart';
 import 'package:atlas_ws/atlas_ws.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'workspace_support.dart';
 
@@ -18,6 +20,7 @@ import 'workspace_support.dart';
 /// computer-side directory, and the chosen directory reaches the server as
 /// the session `cwd`.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory temp;
   late RemoteTokenFile tokens;
   late AtlasWsServer server;
@@ -26,6 +29,7 @@ void main() {
   late ModelDescriptor model;
 
   setUp(() async {
+    FlutterSecureStorage.setMockInitialValues({});
     temp = await Directory.systemTemp.createTemp('atlas_remote_guard_test');
     tokens = RemoteTokenFile(File('${temp.path}/token'));
     await tokens.loadOrCreate();
@@ -42,7 +46,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
-          RuntimeEnvironmentController.new,
+          createRuntimeEnvironmentController,
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
           () => FixedWorkingDirectory('/before'),
@@ -109,15 +113,24 @@ void main() {
 
   test('the chosen directory flows into the created session', () async {
     await connectWithoutDirectory();
-    container
-        .read(runtimeEnvironmentProvider.notifier)
-        .setRemoteWorkingDirectory('/remote-project');
-    // The bar starts a fresh draft rooted at the chosen directory, exactly
-    // like switching directories on the desktop.
+    final profile = container.read(runtimeEnvironmentProvider).remoteProfile!;
+    await container.read(remoteProfilesProvider.notifier).saveProfile(profile);
     _keepWorkspaceAlive(container);
-    container
+    await container
         .read(workspaceProvider.notifier)
-        .newSession(workingDirectory: '/remote-project');
+        .setRemoteWorkingDirectory('/remote-project');
+    expect(
+      container
+          .read(remoteProfilesProvider)
+          .requireValue
+          .single
+          .workingDirectory,
+      '/remote-project',
+    );
+    expect(
+      (await RemoteConnectionStore().load()).single.workingDirectory,
+      '/remote-project',
+    );
     expect(
       container.read(workspaceWorkingDirectoryProvider),
       '/remote-project',

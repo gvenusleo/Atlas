@@ -30,7 +30,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         runtimeEnvironmentProvider.overrideWith(
-          RuntimeEnvironmentController.new,
+          createRuntimeEnvironmentController,
         ),
         workspaceWorkingDirectoryProvider.overrideWith(
           () => FixedWorkingDirectory('/before'),

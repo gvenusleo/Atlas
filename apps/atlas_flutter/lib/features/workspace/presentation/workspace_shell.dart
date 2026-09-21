@@ -7,7 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../app/runtime_environment.dart';
+import '../../remote_connection/application/runtime_controller.dart';
 import '../../../shared/theme/atlas_theme.dart';
 import '../application/workspace_controller.dart';
 import 'widgets/workspace_controls.dart';

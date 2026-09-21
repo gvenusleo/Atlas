@@ -9,7 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
 
-import '../../../../../app/runtime_environment.dart';
+import '../../../../remote_connection/application/runtime_controller.dart';
 import '../../../../../shared/theme/atlas_theme.dart';
 import '../../../../../shared/widgets/animated_caret.dart';
 import '../../../application/workspace_controller.dart';

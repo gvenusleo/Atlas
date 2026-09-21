@@ -37,9 +37,9 @@ Future<void> main() async {
     await FilePicker.skipEntitlementsChecks();
   }
   final bootstrap = isMobileClient ? null : await bootstrapRuntime();
-  final controller = isMobileClient
-      ? RuntimeEnvironmentController()
-      : RuntimeEnvironmentController(local: bootstrap!.environment);
+  final controller = createRuntimeEnvironmentController(
+    local: bootstrap?.environment,
+  );
   runApp(
     ProviderScope(
       overrides: [

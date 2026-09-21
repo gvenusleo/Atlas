@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../app/acp_connections.dart';
-import '../../../../app/runtime_environment.dart';
+import '../../../remote_connection/data/acp_connections.dart';
+import '../../../remote_connection/application/runtime_controller.dart';
+import '../../../remote_connection/application/connection_profiles_controller.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import '../../../remote_connection/presentation/remote_connect_view.dart';
@@ -26,30 +27,33 @@ class ConnectionsSettings extends ConsumerStatefulWidget {
 }
 
 class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
-  final _connections = <AcpConnection>[];
-
-  @override
-  void initState() {
-    super.initState();
-    _connections.addAll(loadAcpConnections());
-  }
-
-  void _save() => saveAcpConnections(_connections);
-
   Future<void> _addConnection() async {
     final connection = await showDialog<AcpConnection>(
       context: context,
       builder: (context) => const _ConnectionFormDialog(),
     );
-    if (connection != null) {
-      setState(() => _connections.add(connection));
-      _save();
+    if (connection != null && mounted) {
+      await _save(
+        () => ref.read(acpConnectionsProvider.notifier).add(connection),
+      );
     }
   }
 
   Future<void> _removeConnection(AcpConnection connection) async {
-    setState(() => _connections.remove(connection));
-    _save();
+    await _save(
+      () => ref.read(acpConnectionsProvider.notifier).remove(connection),
+    );
+  }
+
+  Future<void> _save(Future<void> Function() action) async {
+    try {
+      await action();
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save the connection: $error')),
+      );
+    }
   }
 
   Future<void> _manageRemote() async {
@@ -112,7 +116,9 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
     final colors = AtlasColors.of(context);
     final runtimeState = ref.watch(runtimeEnvironmentProvider);
     final status = runtimeState.status;
-    final error = runtimeState.activationError;
+    final saved = ref.watch(acpConnectionsProvider);
+    final connections = saved.value ?? const <AcpConnection>[];
+    final error = runtimeState.activationError ?? saved.error?.toString();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -123,7 +129,7 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
               'external ACP server.',
         ),
         const Divider(height: 1),
-        if (_connections.isEmpty)
+        if (connections.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Text(
@@ -132,7 +138,7 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
             ),
           )
         else
-          for (final connection in _connections)
+          for (final connection in connections)
             _ConnectionRow(
               connection: connection,
               active: _isActive(runtimeState, connection),

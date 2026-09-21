@@ -45,12 +45,14 @@ void main() {
     FileBrowserService? service,
   }) async {
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
-        home: Scaffold(
-          body: FileBrowser(
-            workingDirectory: tempDir.path,
-            service: service ?? const FileBrowserService(),
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
+          home: Scaffold(
+            body: FileBrowser(
+              workingDirectory: tempDir.path,
+              service: service ?? const FileBrowserService(),
+            ),
           ),
         ),
       ),

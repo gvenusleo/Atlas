@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
 import 'package:clipboard/clipboard.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -9,10 +8,13 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/markdown/atlas_markdown.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../application/file_browser_controller.dart';
+import '../../application/file_browser_state.dart';
 import '../../application/workspace_controller.dart';
 import '../../data/file_browser_service.dart';
 import '../workspace_metrics.dart';
 import 'file_browser_menu.dart';
+import 'workspace_controls.dart';
 
 /// Keeps one [FileBrowser] per session so expand/preview state survives focus changes.
 class FileBrowserHost extends ConsumerStatefulWidget {
@@ -68,9 +70,8 @@ class _FileBrowserHostState extends ConsumerState<FileBrowserHost> {
   }
 }
 
-/// Browses a working directory as a lazy-loading file tree and previews
-/// UTF-8 text files.
-class FileBrowser extends StatefulWidget {
+/// Renders a lazy file tree and text preview controlled by Riverpod.
+class FileBrowser extends ConsumerStatefulWidget {
   /// Creates a browser rooted at [workingDirectory].
   const FileBrowser({
     super.key,
@@ -81,91 +82,67 @@ class FileBrowser extends StatefulWidget {
   /// Directory that users cannot navigate above.
   final String workingDirectory;
 
-  /// Filesystem adapter used by the browser.
+  /// Filesystem adapter injected into the browser controller.
   final FileBrowserService service;
 
   @override
-  State<FileBrowser> createState() => _FileBrowserState();
+  ConsumerState<FileBrowser> createState() => _FileBrowserState();
 }
 
-/// A directory node in the lazy-loading file tree.
-class _TreeNode {
-  _TreeNode({required this.entity, required this.depth});
-
-  final FileSystemEntity entity;
-  final int depth;
-  bool expanded = false;
-
-  /// Children once loaded; null while not yet read.
-  List<_TreeNode>? children;
-  bool loading = false;
-  String? error;
-}
-
-class _FileBrowserState extends State<FileBrowser> {
-  /// How long filesystem events are coalesced before reloading.
-  static const _reloadDebounce = Duration(milliseconds: 300);
-
-  late Directory _root;
-  late _TreeNode _rootNode;
-  List<_TreeNode> _visibleNodes = const [];
-  File? _selectedFile;
-  String? _preview;
-  String? _error;
+class _FileBrowserState extends ConsumerState<FileBrowser> {
+  late NotifierProvider<FileBrowserController, FileBrowserState> _provider;
   var _markdownPreview = false;
-  FileClipboard? _clipboard;
   final _rootMenu = MenuController();
   final _rowMenus = <MenuController>[];
 
-  /// Watches one loaded directory so external changes reload its rows.
-  final _watchers = <String, StreamSubscription<FileSystemEvent>>{};
-
-  /// Pending reload debounce, keyed by watched directory path.
-  final _debounce = <String, Timer>{};
-
-  /// Pending debounce for re-reading the previewed file.
-  Timer? _previewDebounce;
-
-  void _dismissMenus() {
-    if (_rootMenu.isOpen) {
-      _rootMenu.close();
-    }
-    for (final menu in _rowMenus) {
-      if (menu.isOpen) {
-        menu.close();
-      }
-    }
-  }
+  FileBrowserController get _controller => ref.read(_provider.notifier);
+  FileBrowserState get _browser => ref.read(_provider);
 
   @override
   void initState() {
     super.initState();
-    _resetRoot();
+    _createProvider();
+  }
+
+  void _createProvider() {
+    final directory = widget.workingDirectory;
+    final service = widget.service;
+    _provider =
+        NotifierProvider.autoDispose<FileBrowserController, FileBrowserState>(
+          () => FileBrowserController(
+            workingDirectory: directory,
+            service: service,
+          ),
+        );
+    _markdownPreview = false;
   }
 
   @override
   void didUpdateWidget(covariant FileBrowser oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.workingDirectory != widget.workingDirectory) {
-      _resetRoot();
+    if (oldWidget.workingDirectory != widget.workingDirectory ||
+        oldWidget.service != widget.service) {
+      _createProvider();
+    }
+  }
+
+  void _dismissMenus() {
+    if (_rootMenu.isOpen) _rootMenu.close();
+    for (final menu in _rowMenus) {
+      if (menu.isOpen) menu.close();
     }
   }
 
   @override
-  void dispose() {
-    _cancelWatchers();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final browser = ref.watch(_provider);
     final colors = AtlasColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
           height: 38,
-          child: _selectedFile == null
+          child: browser.selectedFile == null
               ? _buildToolbar(colors)
               : _buildPreviewToolbar(colors),
         ),
@@ -193,7 +170,7 @@ class _FileBrowserState extends State<FileBrowser> {
           child: Padding(
             padding: const EdgeInsets.only(left: 4),
             child: Text(
-              '../${_root.path.split(Platform.pathSeparator).last}',
+              '../${_browser.root.path.split(Platform.pathSeparator).last}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: colors.textSecondary, fontSize: 11.5),
@@ -203,7 +180,7 @@ class _FileBrowserState extends State<FileBrowser> {
         WorkspaceToolbarButton(
           icon: LucideIcons.refreshCw,
           tooltip: 'Refresh files',
-          onPressed: _refresh,
+          onPressed: () => unawaited(_controller.refresh()),
         ),
         const SizedBox(width: 6),
       ],
@@ -211,7 +188,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Widget _buildPreviewToolbar(AtlasColors colors) {
-    final selected = _selectedFile;
+    final selected = _browser.selectedFile;
     final markdown = selected != null && _isMarkdownFile(selected);
     return Row(
       children: [
@@ -237,9 +214,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 : LucideIcons.bookOpenText,
             tooltip: 'Toggle markdown preview',
             onPressed: () {
-              if (_preview == null) {
-                return;
-              }
+              if (_browser.preview == null) return;
               setState(() => _markdownPreview = !_markdownPreview);
             },
           ),
@@ -248,7 +223,7 @@ class _FileBrowserState extends State<FileBrowser> {
         WorkspaceToolbarButton(
           icon: LucideIcons.x,
           tooltip: 'Back to files',
-          onPressed: _closePreview,
+          onPressed: _controller.closePreview,
         ),
         const SizedBox(width: 6),
       ],
@@ -256,22 +231,23 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Widget _buildContent(AtlasColors colors) {
-    if (_selectedFile != null) {
-      if (_error != null) {
+    final browser = _browser;
+    if (browser.selectedFile != null) {
+      if (browser.previewError != null) {
         return Padding(
           padding: const EdgeInsets.all(14),
           child: Text(
-            _error!,
+            browser.previewError!,
             style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
           ),
         );
       }
-      if (_markdownPreview && _isMarkdownFile(_selectedFile!)) {
+      if (_markdownPreview && _isMarkdownFile(browser.selectedFile!)) {
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
           child: SelectionArea(
             child: AtlasMarkdown(
-              data: _preview ?? '',
+              data: browser.preview ?? '',
               fontFamily: WorkspaceMetrics.monospaceFontFamily,
             ),
           ),
@@ -280,7 +256,7 @@ class _FileBrowserState extends State<FileBrowser> {
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
         child: SelectableText(
-          _preview ?? '',
+          browser.preview ?? '',
           style: TextStyle(
             color: colors.textPrimary,
             fontFamily: WorkspaceMetrics.monospaceFontFamily,
@@ -290,7 +266,7 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       );
     }
-    if (_rootNode.loading && _rootNode.children == null) {
+    if (browser.loading && !browser.loaded) {
       return Center(
         child: SizedBox.square(
           dimension: 18,
@@ -301,22 +277,26 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       );
     }
-    if (_rootNode.error != null && _rootNode.children == null) {
+    if (browser.rootError != null && !browser.loaded) {
       return Padding(
         padding: const EdgeInsets.all(14),
         child: Text(
-          _rootNode.error!,
+          browser.rootError!,
           style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
         ),
       );
     }
-    final empty = _rootNode.children?.isEmpty ?? false;
+    final empty = browser.entries.isEmpty;
     return Stack(
       children: [
         MenuAnchor(
           controller: _rootMenu,
           consumeOutsideTap: true,
-          menuChildren: _rootMenuItems(colors),
+          menuChildren: fileBrowserRootMenu(
+            colors: colors,
+            canPaste: browser.clipboard != null,
+            actions: _menuActions(directory: browser.root),
+          ),
           child: const SizedBox.shrink(),
         ),
         Positioned.fill(
@@ -342,22 +322,30 @@ class _FileBrowserState extends State<FileBrowser> {
         if (!empty)
           ListView.builder(
             padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
-            itemCount: _visibleNodes.length,
+            itemCount: browser.entries.length,
             itemBuilder: (context, index) =>
-                _buildRow(_visibleNodes[index], colors),
+                _buildRow(browser.entries[index], colors),
           ),
       ],
     );
   }
 
-  Widget _buildRow(_TreeNode node, AtlasColors colors) {
+  Widget _buildRow(FileBrowserEntry node, AtlasColors colors) {
     final isDirectory = node.entity is Directory;
+    final actions = _menuActions(
+      entity: node.entity,
+      directory: isDirectory ? node.entity as Directory : null,
+    );
     return FileRowMenu(
       registry: _rowMenus,
       onOpen: _dismissMenus,
       items: isDirectory
-          ? _folderMenuItems(node, colors)
-          : _fileMenuItems(node, colors),
+          ? fileBrowserFolderMenu(
+              colors: colors,
+              canPaste: _browser.clipboard != null,
+              actions: actions,
+            )
+          : fileBrowserFileMenu(colors: colors, actions: actions),
       child: WorkspaceHoverSurface(
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         child: GestureDetector(
@@ -365,9 +353,10 @@ class _FileBrowserState extends State<FileBrowser> {
           onTap: () {
             _dismissMenus();
             if (isDirectory) {
-              _toggleNode(node);
+              unawaited(_controller.toggle(node));
             } else {
-              _openFile(node.entity as File);
+              setState(() => _markdownPreview = false);
+              unawaited(_controller.openFile(node.entity as File));
             }
           },
           child: SizedBox(
@@ -376,7 +365,6 @@ class _FileBrowserState extends State<FileBrowser> {
               padding: const EdgeInsets.only(left: 6, right: 8),
               child: Row(
                 children: [
-                  // One guide line per ancestor level, running the full row.
                   for (var depth = 0; depth < node.depth; depth++)
                     SizedBox(
                       width: 12,
@@ -431,9 +419,8 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
-  /// Returns [path] relative to the browser root directory for display.
   String _relativePath(String path) {
-    final rootSegments = _root.path.split(Platform.pathSeparator);
+    final rootSegments = _browser.root.path.split(Platform.pathSeparator);
     final pathSegments = path.split(Platform.pathSeparator);
     var common = 0;
     while (common < rootSegments.length &&
@@ -441,568 +428,109 @@ class _FileBrowserState extends State<FileBrowser> {
         rootSegments[common] == pathSegments[common]) {
       common++;
     }
-    final up = List.filled(rootSegments.length - common, '..');
     return [
-      ...up,
+      ...List.filled(rootSegments.length - common, '..'),
       ...pathSegments.sublist(common),
     ].join(Platform.pathSeparator);
   }
 
-  void _resetRoot() {
-    _cancelWatchers();
-    _root = Directory(widget.workingDirectory).absolute;
-    _rootNode = _TreeNode(entity: _root, depth: 0)..expanded = true;
-    _visibleNodes = const [];
-    _selectedFile = null;
-    _preview = null;
-    _error = null;
-    unawaited(_loadChildren(_rootNode));
-  }
-
-  Future<void> _toggleNode(_TreeNode node) async {
-    if (node.expanded) {
-      node.expanded = false;
-      _rebuildVisible();
-      return;
-    }
-    node.expanded = true;
-    if (node.children == null) {
-      await _loadChildren(node);
-    }
-    _rebuildVisible();
-  }
-
-  /// Loads the children of [node] from disk.
-  ///
-  /// Watch-driven reloads pass [auto]: they keep the row spinner off and skip
-  /// the rebuild when the listing did not change.
-  Future<void> _loadChildren(_TreeNode node, {bool auto = false}) async {
-    if (!auto) {
-      node.loading = true;
-      _rebuildVisible();
-    }
-    var changed = false;
-    try {
-      final entries = await widget.service.listDirectory(
-        node.entity as Directory,
-      );
-      if (!_sameEntries(node.children, entries)) {
-        // Reuse existing child nodes by path so expanded state survives
-        // reloads.
-        final existing = {
-          for (final child in node.children ?? const <_TreeNode>[])
-            child.entity.path: child,
-        };
-        final childDepth = node == _rootNode ? 0 : node.depth + 1;
-        node.children = entries
-            .map(
-              (entry) =>
-                  existing[entry.path] ??
-                  _TreeNode(entity: entry, depth: childDepth),
-            )
-            .toList();
-        changed = true;
-      }
-      changed = changed || node.error != null;
-      node.error = null;
-      _watchDirectory(node.entity.path);
-    } on FileSystemException catch (error) {
-      changed = true;
-      node.error = error.message;
-    } finally {
-      if (!auto) {
-        node.loading = false;
-      }
-      if (mounted && (!auto || changed)) {
-        _rebuildVisible();
-      }
-    }
-    _pruneWatchers();
-  }
-
-  /// Reloads every expanded folder so newly created files appear.
-  Future<void> _refresh() async {
-    await _reloadExpanded(_rootNode);
-  }
-
-  /// Reloads [node] and, when expanded, its expanded descendants.
-  Future<void> _reloadExpanded(_TreeNode node) async {
-    if (!node.expanded) {
-      return;
-    }
-    await _loadChildren(node);
-    for (final child in node.children ?? const <_TreeNode>[]) {
-      await _reloadExpanded(child);
-    }
-  }
-
-  /// Watches [path] so external changes reload the tree without the manual
-  /// refresh button.
-  ///
-  /// Watching is best effort: unsupported platforms, network mounts, and
-  /// folders that already disappeared keep manual refresh as the only reload
-  /// path.
-  void _watchDirectory(String path) {
-    if (!mounted || _watchers.containsKey(path)) {
-      return;
-    }
-    try {
-      _watchers[path] = Directory(path).watch().listen(
-        (event) => _onFileSystemEvent(path, event),
-        onError: (Object _) => _unwatch(path),
-        cancelOnError: true,
-      );
-    } catch (_) {
-      // This folder cannot be watched on this platform; manual refresh still
-      // works.
-    }
-  }
-
-  /// Routes one filesystem event to the reloads it affects.
-  void _onFileSystemEvent(String directory, FileSystemEvent event) {
-    if (event.path == directory) {
-      // The watched folder itself was deleted or moved; the parent's watcher
-      // reports the entry change that removes it from the tree.
-      _unwatch(directory);
-      return;
-    }
-    final selected = _selectedFile;
-    if (selected != null && selected.path == event.path) {
-      _schedulePreviewReload(selected.path);
-    }
-    _scheduleReload(directory);
-  }
-
-  /// Debounces reloads of [path] into one directory listing.
-  void _scheduleReload(String path) {
-    if (!mounted) {
-      return;
-    }
-    _debounce[path]?.cancel();
-    _debounce[path] = Timer(_reloadDebounce, () {
-      _debounce.remove(path);
-      final node = _findNode(path);
-      if (node == null) {
-        _unwatch(path);
-        return;
-      }
-      unawaited(_loadChildren(node, auto: true));
-    });
-  }
-
-  /// Debounces re-reading the previewed file after it changed on disk.
-  void _schedulePreviewReload(String path) {
-    if (!mounted) {
-      return;
-    }
-    _previewDebounce?.cancel();
-    _previewDebounce = Timer(_reloadDebounce, () {
-      _previewDebounce = null;
-      if (_selectedFile?.path != path) {
-        return;
-      }
-      unawaited(_loadPreview());
-    });
-  }
-
-  /// Stops watching [path] and cancels its pending reload.
-  void _unwatch(String path) {
-    _debounce.remove(path)?.cancel();
-    _watchers.remove(path)?.cancel();
-  }
-
-  /// Stops watching folders that are no longer part of the tree.
-  void _pruneWatchers() {
-    if (_watchers.isEmpty) {
-      return;
-    }
-    final live = <String>{};
-    void visit(_TreeNode node) {
-      live.add(node.entity.path);
-      for (final child in node.children ?? const <_TreeNode>[]) {
-        visit(child);
-      }
-    }
-
-    visit(_rootNode);
-    for (final path in _watchers.keys.toList()) {
-      if (!live.contains(path)) {
-        _unwatch(path);
-      }
-    }
-  }
-
-  /// Stops all watchers and pending reloads.
-  void _cancelWatchers() {
-    for (final timer in _debounce.values) {
-      timer.cancel();
-    }
-    _debounce.clear();
-    _previewDebounce?.cancel();
-    _previewDebounce = null;
-    for (final subscription in _watchers.values) {
-      subscription.cancel();
-    }
-    _watchers.clear();
-  }
-
-  /// Whether [children] already holds exactly the [entries] listed on disk.
-  bool _sameEntries(List<_TreeNode>? children, List<FileSystemEntity> entries) {
-    if (children == null || children.length != entries.length) {
-      return false;
-    }
-    for (var i = 0; i < entries.length; i++) {
-      if (children[i].entity.path != entries[i].path) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  void _rebuildVisible() {
-    final nodes = <_TreeNode>[];
-    void visit(_TreeNode node) {
-      nodes.add(node);
-      if (node.expanded && node.children != null) {
-        for (final child in node.children!) {
-          visit(child);
-        }
-      }
-    }
-
-    // The root directory itself is not shown; its children are the top level.
-    for (final child in _rootNode.children ?? const <_TreeNode>[]) {
-      visit(child);
-    }
-    setState(() => _visibleNodes = nodes);
-  }
-
-  void _openFile(File file) {
-    setState(() {
-      _selectedFile = file;
-      _preview = null;
-      _error = null;
-      _markdownPreview = false;
-    });
-    _loadPreview();
-  }
-
-  void _closePreview() {
-    setState(() {
-      _selectedFile = null;
-      _preview = null;
-      _error = null;
-      _markdownPreview = false;
-    });
-  }
-
-  Future<void> _loadPreview() async {
-    final file = _selectedFile;
-    if (file == null) {
-      return;
-    }
-    setState(() {
-      _error = null;
-    });
-    try {
-      final preview = await widget.service.readPreview(file);
-      if (mounted) {
-        setState(() => _preview = preview);
-      }
-    } on FileSystemException catch (error) {
-      if (mounted) {
-        setState(() {
-          // Auto-refresh can outlive the file itself; do not surface a raw
-          // operating-system error for that case.
-          _error = file.existsSync()
-              ? error.message
-              : 'This file no longer exists.';
-        });
-      }
-    } on FormatException catch (error) {
-      if (mounted) {
-        setState(() => _error = error.message);
-      }
-    }
-  }
-
-  List<Widget> _rootMenuItems(AtlasColors colors) => fileBrowserRootMenu(
-    colors: colors,
-    canPaste: _clipboard != null,
-    actions: _menuActions(directory: _root),
-  );
-
-  List<Widget> _fileMenuItems(_TreeNode node, AtlasColors colors) =>
-      fileBrowserFileMenu(
-        colors: colors,
-        actions: _menuActions(entity: node.entity, node: node),
-      );
-
-  List<Widget> _folderMenuItems(_TreeNode node, AtlasColors colors) =>
-      fileBrowserFolderMenu(
-        colors: colors,
-        canPaste: _clipboard != null,
-        actions: _menuActions(
-          entity: node.entity,
-          node: node,
-          directory: node.entity as Directory,
-        ),
-      );
-
   FileBrowserMenuActions _menuActions({
     FileSystemEntity? entity,
-    _TreeNode? node,
     Directory? directory,
   }) {
-    final target = directory ?? _root;
+    final target = directory ?? _browser.root;
     return FileBrowserMenuActions(
-      onNewFile: () => unawaited(_createFile(target, parent: node)),
-      onNewFolder: () => unawaited(_createFolder(target, parent: node)),
+      onNewFile: () => unawaited(_create(target, folder: false)),
+      onNewFolder: () => unawaited(_create(target, folder: true)),
       onCopy: () {
-        if (entity != null) {
-          _copy(entity, cut: false);
-        }
+        if (entity != null) _controller.copy(entity, cut: false);
       },
       onCut: () {
-        if (entity != null) {
-          _copy(entity, cut: true);
-        }
+        if (entity != null) _controller.copy(entity, cut: true);
       },
-      onPaste: () => unawaited(_pasteInto(target, parent: node)),
+      onPaste: () => unawaited(_run(() => _controller.pasteInto(target))),
       onCopyPath: () {
-        if (entity != null) {
-          unawaited(_copyPath(entity.path));
-        }
+        if (entity != null) unawaited(FlutterClipboard.copy(entity.path));
       },
       onCopyRelativePath: () {
         if (entity != null) {
-          unawaited(_copyPath(_relativePath(entity.path)));
+          unawaited(FlutterClipboard.copy(_relativePath(entity.path)));
         }
       },
       onRename: () {
-        if (node != null) {
-          unawaited(_rename(node));
-        }
+        if (entity != null) unawaited(_rename(entity));
       },
       onReveal: () {
         if (entity != null) {
-          unawaited(_reveal(entity.path));
+          unawaited(_run(() => _controller.reveal(entity.path)));
         }
       },
       onTrash: () {
-        if (node != null) {
-          unawaited(_trash(node));
-        }
+        if (entity != null) unawaited(_trash(entity));
       },
     );
   }
 
-  void _copy(FileSystemEntity entity, {required bool cut}) {
-    setState(() => _clipboard = FileClipboard(path: entity.path, cut: cut));
-  }
-
-  Future<void> _copyPath(String path) async {
-    await FlutterClipboard.copy(path);
-  }
-
-  Future<void> _pasteInto(Directory directory, {_TreeNode? parent}) async {
-    final clip = _clipboard;
-    if (clip == null) {
-      return;
-    }
-    final source =
-        FileSystemEntity.typeSync(clip.path) == FileSystemEntityType.directory
-        ? Directory(clip.path)
-        : File(clip.path);
-    try {
-      if (clip.cut) {
-        await widget.service.moveInto(
-          source: source,
-          directory: directory,
-          root: _root.path,
-        );
-        if (mounted) {
-          setState(() => _clipboard = null);
-        }
-      } else {
-        await widget.service.copyInto(
-          source: source,
-          directory: directory,
-          root: _root.path,
-        );
-      }
-      await _reloadAfterWrite(parent);
-    } on FileSystemException catch (error) {
-      _showNotice(error.message);
-    }
-  }
-
-  Future<void> _createFile(Directory directory, {_TreeNode? parent}) async {
+  Future<void> _create(Directory directory, {required bool folder}) async {
+    final controller = _controller;
     final name = await promptFileName(
       context,
-      title: 'New File',
+      title: folder ? 'New Folder' : 'New File',
       hint: 'Name',
-      initial: 'untitled.md',
+      initial: folder ? 'untitled' : 'untitled.md',
     );
-    if (name == null) {
-      return;
-    }
-    try {
-      final file = await widget.service.createFile(
-        directory: directory,
-        name: name,
-        root: _root.path,
-      );
-      await _reloadAfterWrite(parent);
-      if (mounted) {
-        _openFile(file);
-      }
-    } on FileSystemException catch (error) {
-      _showNotice(error.message);
-    }
+    if (name == null || !mounted || !identical(controller, _controller)) return;
+    if (!folder) setState(() => _markdownPreview = false);
+    await _run(
+      () => folder
+          ? controller.createFolder(directory, name)
+          : controller.createFile(directory, name),
+    );
   }
 
-  Future<void> _createFolder(Directory directory, {_TreeNode? parent}) async {
-    final name = await promptFileName(
-      context,
-      title: 'New Folder',
-      hint: 'Name',
-      initial: 'untitled',
-    );
-    if (name == null) {
-      return;
-    }
-    try {
-      await widget.service.createDirectory(
-        directory: directory,
-        name: name,
-        root: _root.path,
-      );
-      await _reloadAfterWrite(parent);
-    } on FileSystemException catch (error) {
-      _showNotice(error.message);
-    }
-  }
-
-  Future<void> _rename(_TreeNode node) async {
-    final current = node.entity.path.split(Platform.pathSeparator).last;
+  Future<void> _rename(FileSystemEntity entity) async {
+    final controller = _controller;
+    final current = entity.path.split(Platform.pathSeparator).last;
     final name = await promptFileName(
       context,
       title: 'Rename',
       hint: 'Name',
       initial: current,
     );
-    if (name == null || name == current) {
+    if (name == null ||
+        name == current ||
+        !mounted ||
+        !identical(controller, _controller)) {
       return;
     }
-    try {
-      final renamed = await widget.service.rename(
-        entity: node.entity,
-        name: name,
-        root: _root.path,
-      );
-      if (_selectedFile?.path == node.entity.path) {
-        if (renamed is File) {
-          _openFile(renamed);
-        } else {
-          _closePreview();
-        }
-      }
-      await _reloadParent(node);
-    } on FileSystemException catch (error) {
-      _showNotice(error.message);
-    }
+    await _run(() => controller.rename(entity, name));
   }
 
-  Future<void> _trash(_TreeNode node) async {
-    final name = node.entity.path.split(Platform.pathSeparator).last;
+  Future<void> _trash(FileSystemEntity entity) async {
+    final controller = _controller;
+    final name = entity.path.split(Platform.pathSeparator).last;
     final confirmed = await confirmMoveToTrash(context, name);
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed || !mounted || !identical(controller, _controller)) return;
+    await _run(() => controller.trash(entity));
+  }
+
+  Future<void> _run(Future<void> Function() command) async {
     try {
-      await widget.service.trashPath(node.entity.path, _root.path);
-      if (_selectedFile?.path == node.entity.path ||
-          (_selectedFile != null &&
-              _selectedFile!.path.startsWith(
-                '${node.entity.path}${Platform.pathSeparator}',
-              ))) {
-        _closePreview();
-      }
-      if (_clipboard?.path == node.entity.path) {
-        setState(() => _clipboard = null);
-      }
-      await _reloadParent(node);
+      await command();
     } on FileSystemException catch (error) {
-      _showNotice(error.message);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     }
-  }
-
-  Future<void> _reveal(String path) async {
-    try {
-      await widget.service.revealPath(path, _root.path);
-    } on FileSystemException catch (error) {
-      _showNotice(error.message);
-    }
-  }
-
-  Future<void> _reloadAfterWrite(_TreeNode? parent) async {
-    if (parent == null) {
-      await _loadChildren(_rootNode);
-      return;
-    }
-    parent.expanded = true;
-    await _loadChildren(parent);
-  }
-
-  Future<void> _reloadParent(_TreeNode node) async {
-    final parentPath = node.entity.parent.path;
-    if (parentPath == _root.path) {
-      await _loadChildren(_rootNode);
-      return;
-    }
-    final parent = _findNode(parentPath);
-    if (parent != null) {
-      await _loadChildren(parent);
-    } else {
-      await _refresh();
-    }
-  }
-
-  _TreeNode? _findNode(String path) {
-    _TreeNode? visit(_TreeNode node) {
-      if (node.entity.path == path) {
-        return node;
-      }
-      for (final child in node.children ?? const <_TreeNode>[]) {
-        final match = visit(child);
-        if (match != null) {
-          return match;
-        }
-      }
-      return null;
-    }
-
-    return visit(_rootNode);
-  }
-
-  void _showNotice(String message) {
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
-/// Whether [file] is a Markdown document that can be previewed.
 bool _isMarkdownFile(File file) {
   final extension = file.path.split('.').last.toLowerCase();
   return extension == 'md' || extension == 'markdown';
 }
 
-/// Paints a vertical tree guide line spanning the full row height.
 class _GuideLinePainter extends CustomPainter {
   const _GuideLinePainter({required this.color});
 
