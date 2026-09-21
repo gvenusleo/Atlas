@@ -299,7 +299,7 @@ class const WorkspaceToolbarButton({
   final bool active = false,
 
   /// Square side length; use a larger value for touch layouts.
-  final double size = WorkspaceMetrics.desktopToolbarButtonSize,
+  final double? size,
 }) extends StatefulWidget {
   @override
   State<WorkspaceToolbarButton> createState() => _WorkspaceToolbarButtonState();
@@ -319,8 +319,8 @@ class _WorkspaceToolbarButtonState extends State<WorkspaceToolbarButton> {
         child: IconButton(
           padding: EdgeInsets.zero,
           constraints: BoxConstraints.tightFor(
-            width: widget.size,
-            height: widget.size,
+            width: widget.size ?? WorkspaceMetrics.desktopToolbarButtonSize,
+            height: widget.size ?? WorkspaceMetrics.desktopToolbarButtonSize,
           ),
           style: IconButton.styleFrom(
             // The outer surface paints the hover/active background as a

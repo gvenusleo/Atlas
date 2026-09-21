@@ -119,6 +119,22 @@ own auto-disposed controller for directory caches, debounced watches, previews,
 and file operations. `FileBrowserService` owns filesystem access; widgets keep
 menus, dialogs, and the Markdown preview toggle.
 
+Workspace and settings navigation adapt to the available width: windows at
+least 960 logical pixels wide show side panels or a section rail, including on
+Android and iOS. Smaller windows use drawers or a section strip. Touch targets
+remain larger on mobile platforms independently of the chosen layout. Session
+history and remote profiles build rows lazily; the session sidebar supports Tab,
+Enter/Space, and Shift+F10 for its context menu (also available by right-click or
+long press).
+
+The app owns a `go_router` route tree with `/settings` nested under `/`, so direct
+settings entry retains a workspace page to return to. Android and iOS use
+Flutter's built-in deep link handler and register `atlas:///` and
+`atlas:///settings`. HTTPS App Links / Universal Links are Planned: they require
+a confirmed domain, Android release certificate fingerprints, associated-domain
+entitlements on iOS, and hosted `assetlinks.json` / `apple-app-site-association`
+files. Custom-scheme links do not provide verified domain ownership.
+
 ## Runtime Contracts
 
 The runtime implementation and remaining adapters must preserve these

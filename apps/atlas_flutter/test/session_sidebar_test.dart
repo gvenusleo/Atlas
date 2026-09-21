@@ -10,6 +10,7 @@ import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -146,8 +147,13 @@ void main() {
         findsOneWidget,
       );
 
-      // Collapsing a group hides its sessions; expanding restores them.
-      await tester.tap(find.byKey(const ValueKey('session-group-Today')));
+      // Headers participate in Tab traversal and support Enter/Space.
+      final header = find.ancestor(
+        of: find.byKey(const ValueKey('session-group-Today')),
+        matching: find.byType(InkWell),
+      );
+      await _tabTo(tester, header);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();
       expect(
         find.descendant(of: leftPanel, matching: find.text('first session')),
@@ -158,15 +164,99 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(find.byKey(const ValueKey('session-group-Today')));
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pump();
       expect(
         find.descendant(of: leftPanel, matching: find.text('first session')),
         findsOneWidget,
       );
+      final firstSession = container
+          .read(workspaceProvider)
+          .sessions
+          .firstWhere((session) => session.title == 'first session')
+          .id;
+      await _tabTo(
+        tester,
+        find.ancestor(
+          of: find.descendant(
+            of: leftPanel,
+            matching: find.text('first session'),
+          ),
+          matching: find.byType(InkWell),
+        ),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(container.read(workspaceProvider).sessionId, firstSession);
+      // Resuming focuses the composer; Tab can return to the session action.
+      await _tabTo(
+        tester,
+        find.ancestor(
+          of: find.descendant(
+            of: leftPanel,
+            matching: find.text('first session'),
+          ),
+          matching: find.byType(InkWell),
+        ),
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f10);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Rename'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('long session history builds only visible rows', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(300, 500);
+    addTearDown(tester.view.reset);
+    final model = ModelDescriptor(
+      ref: ModelRef(providerId: ProviderId('test'), modelId: ModelId('lazy')),
+    );
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: _FakeProvider(model.ref),
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    addTearDown(store.close);
+    for (var i = 0; i < 100; i++) {
+      final session = await runtime.createSession(workingDirectory: '/tmp');
+      await runtime.renameSession(session.id, 'Session $i');
+    }
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(workspaceProvider.notifier).refreshSessions();
+    final lastTitle = container.read(workspaceProvider).sessions.last.title;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
+          home: const Scaffold(body: SessionsPanel()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(lastTitle), findsNothing);
+    await tester.scrollUntilVisible(find.text(lastTitle), 300);
+    expect(find.text(lastTitle), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('new task menu offers here and folder actions', (tester) async {
@@ -225,7 +315,11 @@ void main() {
 
       final button = find.byKey(const ValueKey('atlas-new-session-button'));
       expect(button, findsOneWidget);
-      await tester.tap(button);
+      await _tabTo(
+        tester,
+        find.descendant(of: button, matching: find.byType(InkWell)),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('New session here'), findsOneWidget);
       expect(find.text('New session in folder...'), findsOneWidget);
@@ -449,4 +543,21 @@ final class _BlockingProvider(final ModelRef model) implements ModelProvider {
       ),
     );
   }
+}
+
+Future<void> _tabTo(WidgetTester tester, Finder target) async {
+  for (var i = 0; i < 50; i++) {
+    final element = tester.element(target);
+    var focused = false;
+    FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
+      ancestor,
+    ) {
+      if (identical(ancestor, element)) focused = true;
+      return !focused;
+    });
+    if (focused) return;
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+  }
+  fail('The sidebar control could not be reached with Tab.');
 }

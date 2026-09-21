@@ -107,6 +107,17 @@ Flutter 的 Riverpod controller 放在各 feature 的 `application` 目录中。
 都有独立、自动释放的 controller，管理目录缓存、文件监听防抖、预览和文件操作。
 `FileBrowserService` 负责文件系统访问；菜单、对话框和 Markdown 预览开关保留在 Widget 中。
 
+工作区和设置页按可用宽度切换导航：宽度至少为 960 个逻辑像素时显示侧栏或分区导航栏，
+Android 与 iOS 也遵循此规则；较窄窗口使用抽屉或横向分区选择器。移动平台的控件保留较大的
+触控区域，与布局选择分开处理。会话历史和远程连接列表按需构建；会话侧栏支持 Tab、
+Enter/空格，以及 Shift+F10 打开上下文菜单，也可通过右键或长按打开菜单。
+
+应用在 `go_router` 中将 `/settings` 嵌套在 `/` 下，直接进入设置页也保留可返回的工作区页面。
+Android 与 iOS 使用 Flutter 内置深链处理器，注册 `atlas:///` 和 `atlas:///settings`。
+HTTPS App Links / Universal Links 仍为 Planned：需要确认域名、提供 Android 发布证书指纹、
+配置 iOS 关联域名 entitlement，并托管 `assetlinks.json` / `apple-app-site-association` 文件。
+自定义 scheme 链接不提供经过验证的域名归属。
+
 ## Runtime 行为契约
 
 当前 runtime 实现与后续适配器必须共同遵守以下产品级行为契约：

@@ -290,7 +290,7 @@ class const _SettingsPane({
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    final compact = WorkspaceMetrics.usesCompactNavigation;
+    final compact = !showRail;
     final showsControls = usesCaptionControls(
       desktop: Platform.environment['XDG_CURRENT_DESKTOP'] ?? '',
       sessionType: Platform.environment['XDG_SESSION_TYPE'] ?? '',

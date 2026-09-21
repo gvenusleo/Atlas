@@ -1,4 +1,6 @@
 import 'package:atlas_flutter/app/runtime_environment.dart';
+import 'package:atlas_flutter/features/remote_connection/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/features/remote_connection/data/remote_connections.dart';
 import 'package:atlas_flutter/features/remote_connection/presentation/remote_connect_view.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/details_panel.dart';
@@ -39,6 +41,60 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('remote profiles are lazy and reachable in a short window', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          remoteProfilesProvider.overrideWith(
+            () => _SavedProfiles([
+              for (var i = 0; i < 100; i++)
+                RemoteConnectionProfile(
+                  name: 'Computer $i',
+                  wsUrl: 'ws://localhost:9000/acp',
+                  token: '',
+                ),
+            ]),
+          ),
+        ],
+        child: const _Host(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Computer 99'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(find.text('Computer 99'), 600);
+    expect(find.text('Computer 99'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('remote entry scrolls at landscape and large text sizes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 200);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          remoteProfilesProvider.overrideWith(() => _SavedProfiles([])),
+        ],
+        child: const _Host(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(find.text('Add connection'), 150);
+    expect(find.text('Add connection').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('mobile without a runtime shows the remote connect view', (
@@ -117,4 +173,10 @@ class const _Host() extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       const MaterialApp(home: Scaffold(body: RemoteConnectView()));
+}
+
+class _SavedProfiles(final List<RemoteConnectionProfile> profiles)
+    extends RemoteProfilesController {
+  @override
+  Future<List<RemoteConnectionProfile>> build() async => profiles;
 }

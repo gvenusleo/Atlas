@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,7 +43,7 @@ class const SessionsPanel({
               onPressed: onClose!,
             )
           : const SizedBox(width: 40),
-      footer: const _SessionsPanelToolbar(),
+      footer: _SessionsPanelToolbar(compact: onClose != null),
       child: environment == null
           ? const PanelEmptyState(
               icon: LucideIcons.triangleAlert,
@@ -53,7 +55,8 @@ class const SessionsPanel({
 }
 
 /// Bottom toolbar of the sessions panel holding the settings entry.
-class const _SessionsPanelToolbar() extends StatelessWidget {
+class const _SessionsPanelToolbar({required final bool compact})
+    extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -63,6 +66,7 @@ class const _SessionsPanelToolbar() extends StatelessWidget {
         child: WorkspaceToolbarButton(
           icon: LucideIcons.settings,
           tooltip: 'Settings',
+          size: compact ? 44 : null,
           onPressed: () => context.push('/settings'),
         ),
       ),
@@ -270,6 +274,23 @@ class _SessionListState extends ConsumerState<_SessionList> {
     );
     final sessionId = ref.watch(workspaceProvider.select((s) => s.sessionId));
     final controller = ref.read(workspaceProvider.notifier);
+    final rows = [
+      for (final group in groupSessionsByTime(sessions)) ...[
+        (group: group.label, session: null),
+        if (!_collapsed.contains(group.label))
+          for (final session in group.sessions)
+            (group: group.label, session: session),
+      ],
+    ];
+    final keys = [
+      for (final row in rows)
+        ValueKey(
+          row.session == null
+              ? 'group-${row.group}'
+              : 'session-${row.session!.id.value}',
+        ),
+    ];
+    final indexByKey = {for (var i = 0; i < keys.length; i++) keys[i]: i};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -352,40 +373,44 @@ class _SessionListState extends ConsumerState<_SessionList> {
                 )
               : RefreshIndicator(
                   onRefresh: controller.refreshSessions,
-                  child: ListView(
+                  child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(8, 0, 4, 12),
-                    children: [
-                      for (final group in groupSessionsByTime(sessions)) ...[
-                        const SizedBox(height: 8),
-                        _SessionGroupHeader(
-                          label: group.label,
-                          collapsed: _collapsed.contains(group.label),
-                          onToggle: () => setState(() {
-                            if (!_collapsed.add(group.label)) {
-                              _collapsed.remove(group.label);
-                            }
-                          }),
-                        ),
-                        if (!_collapsed.contains(group.label))
-                          for (final session in group.sessions)
-                            _SessionTile(
-                              session: session,
-                              selected: session.id == sessionId,
-                              running: runningIds.contains(session.id),
-                              completed:
-                                  session.id != sessionId &&
-                                  completedIds.contains(session.id),
-                              onTap: () async {
-                                await controller.resume(session.id);
-                                widget.onClose?.call();
-                              },
-                              onRename: () =>
-                                  unawaited(_renameSession(session)),
-                              onDelete: () =>
-                                  unawaited(_deleteSession(session)),
-                            ),
-                      ],
-                    ],
+                    itemCount: rows.length,
+                    findChildIndexCallback: (key) => indexByKey[key],
+                    itemBuilder: (context, index) {
+                      final row = rows[index];
+                      final session = row.session;
+                      if (session == null) {
+                        return Padding(
+                          key: keys[index],
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _SessionGroupHeader(
+                            label: row.group,
+                            collapsed: _collapsed.contains(row.group),
+                            onToggle: () => setState(() {
+                              if (!_collapsed.add(row.group)) {
+                                _collapsed.remove(row.group);
+                              }
+                            }),
+                          ),
+                        );
+                      }
+                      return _SessionTile(
+                        key: keys[index],
+                        session: session,
+                        selected: session.id == sessionId,
+                        running: runningIds.contains(session.id),
+                        completed:
+                            session.id != sessionId &&
+                            completedIds.contains(session.id),
+                        onTap: () async {
+                          await controller.resume(session.id);
+                          widget.onClose?.call();
+                        },
+                        onRename: () => unawaited(_renameSession(session)),
+                        onDelete: () => unawaited(_deleteSession(session)),
+                      );
+                    },
                   ),
                 ),
         ),
@@ -405,35 +430,39 @@ class const _SessionGroupHeader({
     final colors = AtlasColors.of(context);
     return WorkspaceHoverSurface(
       borderRadius: BorderRadius.circular(AtlasRadii.control),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onToggle,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                label,
-                key: ValueKey('session-group-$label'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: colors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          focusColor: colors.raised,
+          borderRadius: BorderRadius.circular(AtlasRadii.control),
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  key: ValueKey('session-group-$label'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: colors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              if (collapsed) ...[
-                const SizedBox(width: 2),
-                Icon(
-                  LucideIcons.chevronRight,
-                  size: 12,
-                  color: colors.textSecondary,
-                ),
+                if (collapsed) ...[
+                  const SizedBox(width: 2),
+                  Icon(
+                    LucideIcons.chevronRight,
+                    size: 12,
+                    color: colors.textSecondary,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -443,6 +472,7 @@ class const _SessionGroupHeader({
 
 /// One selectable session row inside a directory group.
 class const _SessionTile({
+  super.key,
   required final SessionSummary session,
   required final bool selected,
   required final bool running,
@@ -457,137 +487,165 @@ class const _SessionTile({
 
 class _SessionTileState extends State<_SessionTile> {
   final _menuController = MenuController();
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final session = widget.session;
-    return MenuAnchor(
-      controller: _menuController,
-      menuChildren: [
-        WorkspaceHoverSurface(
-          borderRadius: BorderRadius.circular(AtlasRadii.control),
-          child: MenuItemButton(
-            style: const ButtonStyle(
-              overlayColor: WidgetStatePropertyAll(Colors.transparent),
-            ),
-            onPressed: () {
-              _menuController.close();
-              widget.onRename();
-            },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.pencil, size: 14, color: colors.textSecondary),
-                const SizedBox(width: 8),
-                Text(
-                  'Rename',
-                  style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
-                ),
-              ],
-            ),
-          ),
-        ),
-        WorkspaceHoverSurface(
-          borderRadius: BorderRadius.circular(AtlasRadii.control),
-          child: MenuItemButton(
-            style: const ButtonStyle(
-              overlayColor: WidgetStatePropertyAll(Colors.transparent),
-            ),
-            onPressed: () {
-              _menuController.close();
-              widget.onDelete();
-            },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.trash2, size: 14, color: colors.textSecondary),
-                const SizedBox(width: 8),
-                Text(
-                  'Delete',
-                  style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
-                ),
-              ],
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.f10, shift: true): () =>
+            _menuController.open(),
+      },
+      child: MenuAnchor(
+        controller: _menuController,
+        childFocusNode: _focusNode,
+        menuChildren: [
+          WorkspaceHoverSurface(
+            borderRadius: BorderRadius.circular(AtlasRadii.control),
+            child: MenuItemButton(
+              style: const ButtonStyle(
+                overlayColor: WidgetStatePropertyAll(Colors.transparent),
+              ),
+              onPressed: () {
+                _menuController.close();
+                widget.onRename();
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.pencil,
+                    size: 14,
+                    color: colors.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Rename',
+                    style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
-      child: WorkspaceHoverSurface(
-        // Selected rows keep the highlight while not hovered.
-        color: widget.selected ? colors.raised : null,
-        borderRadius: BorderRadius.circular(AtlasRadii.control),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onTap,
-          onSecondaryTapUp: (details) {
-            _menuController.open(position: details.localPosition);
-          },
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
+          WorkspaceHoverSurface(
+            borderRadius: BorderRadius.circular(AtlasRadii.control),
+            child: MenuItemButton(
+              style: const ButtonStyle(
+                overlayColor: WidgetStatePropertyAll(Colors.transparent),
+              ),
+              onPressed: () {
+                _menuController.close();
+                widget.onDelete();
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.trash2,
+                    size: 14,
+                    color: colors.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Delete',
+                    style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        child: WorkspaceHoverSurface(
+          // Selected rows keep the highlight while not hovered.
+          color: widget.selected ? colors.raised : null,
+          borderRadius: BorderRadius.circular(AtlasRadii.control),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              focusColor: colors.raised,
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
+              focusNode: _focusNode,
+              onTap: widget.onTap,
+              onLongPress: () => _menuController.open(),
+              onSecondaryTapUp: (details) {
+                _menuController.open(position: details.localPosition);
+              },
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 52),
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Expanded(
-                      child: Text(
-                        session.title.isEmpty
-                            ? 'Untitled session'
-                            : session.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            session.title.isEmpty
+                                ? 'Untitled session'
+                                : session.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (widget.running || widget.completed) ...[
+                          const SizedBox(width: 6),
+                          _SessionStatusMark(
+                            sessionId: session.id,
+                            running: widget.running,
+                          ),
+                        ],
+                      ],
                     ),
-                    if (widget.running || widget.completed) ...[
-                      const SizedBox(width: 6),
-                      _SessionStatusMark(
-                        sessionId: session.id,
-                        running: widget.running,
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      LucideIcons.folder,
-                      size: 12,
-                      color: colors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      fit: FlexFit.tight,
-                      child: Text(
-                        WorkspaceMetrics.directoryLabel(
-                          session.workingDirectory,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                    const SizedBox(height: 2),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          LucideIcons.folder,
+                          size: 12,
                           color: colors.textSecondary,
-                          fontSize: 12,
                         ),
-                      ),
-                    ),
-                    Text(
-                      _relativeTime(session.updatedAt),
-                      style: TextStyle(
-                        color: colors.textSecondary,
-                        fontSize: 12,
-                      ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          fit: FlexFit.tight,
+                          child: Text(
+                            WorkspaceMetrics.directoryLabel(
+                              session.workingDirectory,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _relativeTime(session.updatedAt),
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -681,24 +739,28 @@ class const _SidebarActionButton({
     final colors = AtlasColors.of(context);
     return WorkspaceHoverSurface(
       borderRadius: BorderRadius.circular(AtlasRadii.control),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            children: [
-              Icon(icon, size: 14, color: colors.textPrimary),
-              const SizedBox(width: 12),
-              Text(
-                label,
-                style: TextStyle(
-                  color: colors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          focusColor: colors.raised,
+          borderRadius: BorderRadius.circular(AtlasRadii.control),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Icon(icon, size: 14, color: colors.textPrimary),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

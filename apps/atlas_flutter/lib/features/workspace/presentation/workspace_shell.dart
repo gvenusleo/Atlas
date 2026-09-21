@@ -78,8 +78,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (!WorkspaceMetrics.usesCompactNavigation &&
-            constraints.maxWidth >= WorkspaceMetrics.desktopBreakpoint) {
+        if (constraints.maxWidth >= WorkspaceMetrics.desktopBreakpoint) {
           return _buildDesktop(constraints.maxWidth);
         }
         return _buildCompact(constraints.maxWidth);

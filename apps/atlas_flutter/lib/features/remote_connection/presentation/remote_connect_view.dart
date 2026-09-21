@@ -115,99 +115,107 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Icon(LucideIcons.monitorSmartphone, color: colors.accent),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Connect to the Atlas on your computer',
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          LucideIcons.monitorSmartphone,
+                          color: colors.accent,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Connect to the Atlas on your computer',
+                            style: TextStyle(
+                              color: colors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Run `atlas server` on the computer and enter its address '
+                      'and token below. Models and commands run on the computer; '
+                      'the working directory for new sessions is chosen right '
+                      'before the first message.',
                       style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                        color: colors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.5,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Run `atlas server` on the computer and enter its address '
-                'and token below. Models and commands run on the computer; '
-                'the working directory for new sessions is chosen right '
-                'before the first message.',
-                style: TextStyle(
-                  color: colors.textSecondary,
-                  fontSize: 12.5,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (loadError != null) ...[
-                Text(
-                  '$loadError',
-                  style: TextStyle(color: colors.error, fontSize: 12),
-                ),
-                const SizedBox(height: 8),
-              ],
-              if (profiles.isEmpty && !_busy)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    'No connections yet.',
-                    style: TextStyle(
-                      color: colors.textSecondary,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                )
-              else
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final profile in profiles)
-                        _ProfileTile(
-                          profile: profile,
-                          active:
-                              runtimeState.remoteProfile?.wsUrl ==
-                                  profile.wsUrl &&
-                              runtimeState.remoteProfile?.name == profile.name,
-                          status:
-                              runtimeState.remoteProfile?.wsUrl ==
-                                      profile.wsUrl &&
-                                  runtimeState.remoteProfile?.name ==
-                                      profile.name
-                              ? status
-                              : RemoteConnectionStatus.disconnected,
-                          error:
-                              runtimeState.remoteProfile?.wsUrl == profile.wsUrl
-                              ? runtimeState.remoteError
-                              : null,
-                          busy: _busy,
-                          onConnect: () => unawaited(_connect(profile)),
-                          onDisconnect: () => unawaited(_disconnect()),
-                          onEdit: () => unawaited(_addOrEdit(profile)),
-                          onRemove: () => unawaited(_remove(profile)),
-                        ),
+                    const SizedBox(height: 16),
+                    if (loadError != null) ...[
+                      Text(
+                        '$loadError',
+                        style: TextStyle(color: colors.error, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
                     ],
-                  ),
+                    if (profiles.isEmpty && !_busy)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'No connections yet.',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => unawaited(_addOrEdit()),
-                icon: const Icon(LucideIcons.plus, size: 16),
-                label: const Text('Add connection'),
               ),
-            ],
-          ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              sliver: SliverList.builder(
+                itemCount: profiles.length,
+                itemBuilder: (context, index) {
+                  final profile = profiles[index];
+                  return _ProfileTile(
+                    profile: profile,
+                    active:
+                        runtimeState.remoteProfile?.wsUrl == profile.wsUrl &&
+                        runtimeState.remoteProfile?.name == profile.name,
+                    status:
+                        runtimeState.remoteProfile?.wsUrl == profile.wsUrl &&
+                            runtimeState.remoteProfile?.name == profile.name
+                        ? status
+                        : RemoteConnectionStatus.disconnected,
+                    error: runtimeState.remoteProfile?.wsUrl == profile.wsUrl
+                        ? runtimeState.remoteError
+                        : null,
+                    busy: _busy,
+                    onConnect: () => unawaited(_connect(profile)),
+                    onDisconnect: () => unawaited(_disconnect()),
+                    onEdit: () => unawaited(_addOrEdit(profile)),
+                    onRemove: () => unawaited(_remove(profile)),
+                  );
+                },
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              sliver: SliverToBoxAdapter(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => unawaited(_addOrEdit()),
+                  icon: const Icon(LucideIcons.plus, size: 16),
+                  label: const Text('Add connection'),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

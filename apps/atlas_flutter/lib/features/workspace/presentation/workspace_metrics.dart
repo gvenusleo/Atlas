@@ -32,10 +32,10 @@ abstract final class WorkspaceMetrics {
   static const resizeHandleWidth = 8.0;
 
   /// Toolbar height used by desktop panels.
-  static const desktopToolbarHeight = 38.0;
+  static double get desktopToolbarHeight => usesTouchTargets ? 56.0 : 38.0;
 
   /// Square side length of desktop toolbar buttons.
-  static const desktopToolbarButtonSize = 26.0;
+  static double get desktopToolbarButtonSize => usesTouchTargets ? 44.0 : 26.0;
 
   /// Toolbar height used by compact layouts.
   static const compactToolbarHeight = 48.0;
@@ -59,8 +59,9 @@ abstract final class WorkspaceMetrics {
   static bool get showsTrafficLights =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
-  /// Whether the platform uses touch-first navigation with drawers.
-  static bool get usesCompactNavigation =>
+  /// Whether controls need touch-sized targets, independent of navigation
+  /// layout. Wide touch windows still use the side-by-side workspace.
+  static bool get usesTouchTargets =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);

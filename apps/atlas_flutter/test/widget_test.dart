@@ -25,6 +25,40 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, '/');
   });
 
+  testWidgets('a cold settings deep link returns to the workspace', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.defaultRouteNameTestValue =
+        'atlas:///settings';
+    addTearDown(
+      tester.binding.platformDispatcher.clearDefaultRouteNameTestValue,
+    );
+    await tester.pumpWidget(const ProviderScope(child: AtlasApp()));
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsPage), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('atlas-settings-back')));
+    await tester.pumpAndSettle();
+    expect(find.byType(WorkspacePage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // A platform URL delivered to the running app uses the same route tree.
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      'flutter/navigation',
+      const JSONMethodCodec().encodeMethodCall(
+        const MethodCall('pushRouteInformation', {
+          'location': 'atlas:///settings',
+        }),
+      ),
+      (_) {},
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsPage), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(WorkspacePage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('light and dark themes expose their semantic palettes', () {
     final palette = AtlasPalette.standard;
     final light = buildAtlasTheme(palette, Brightness.light);
@@ -139,7 +173,7 @@ void main() {
         );
         expect(
           tester.getSize(button),
-          const Size.square(WorkspaceMetrics.desktopToolbarButtonSize),
+          Size.square(WorkspaceMetrics.desktopToolbarButtonSize),
         );
       }
       expect(
@@ -426,22 +460,60 @@ void main() {
     },
   );
 
-  testShell(
-    'mobile platforms always use the compact layout',
-    const Size(1200, 760),
-    platform: TargetPlatform.android,
-    (tester) async {
-      expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
-      expect(find.byKey(const ValueKey('atlas-right-panel')), findsNothing);
-      expect(find.byTooltip('Open sessions'), findsOneWidget);
-      expect(find.byTooltip('Open workspace tools'), findsOneWidget);
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testShell(
+      'wide $platform windows use side panels and adapt when resized',
+      const Size(1200, 760),
+      platform: platform,
+      (tester) async {
+        expect(find.byKey(const ValueKey('atlas-left-panel')), findsOneWidget);
+        expect(find.byKey(const ValueKey('atlas-right-panel')), findsOneWidget);
+        final toggle = find.byKey(const ValueKey('atlas-left-toggle'));
+        expect(tester.getSize(toggle).shortestSide, greaterThanOrEqualTo(44));
 
-      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+        tester.view.physicalSize = const Size(600, 760);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('atlas-left-panel')), findsNothing);
+        await tester.tap(find.byTooltip('Open sessions'));
+        await tester.pumpAndSettle();
+        expect(find.byTooltip('Close sessions'), findsOneWidget);
+        await tester.tap(find.byTooltip('Close sessions'));
+        await tester.pumpAndSettle();
+
+        tester.view.physicalSize = const Size(1200, 760);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('atlas-left-panel')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final size in [const Size(390, 844), const Size(1200, 760)]) {
+    testShell('direct settings entry at $size returns to the workspace', size, (
+      tester,
+    ) async {
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(AtlasApp)),
+      );
+      final router = container.read(appRouterProvider);
+      router.go('/settings');
       await tester.pumpAndSettle();
-      expect(find.text('Runtime unavailable'), findsOneWidget);
-      expect(find.byTooltip('Close sessions'), findsOneWidget);
-    },
-  );
+      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(router.canPop(), isTrue);
+      await tester.tap(find.byKey(const ValueKey('atlas-settings-back')));
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/');
+      expect(find.byType(WorkspacePage), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      router.go('/settings');
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/');
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testShell(
     'desktop visibility survives compact layout transitions',

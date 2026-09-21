@@ -5,7 +5,7 @@ The desktop and mobile client for Atlas.
 ## Status
 
 The current implementation provides a responsive workspace shell, resizable
-desktop sidebars, compact mobile drawers, GitHub light and dark-dimmed
+sidebars on wide windows, compact drawers on narrow windows, GitHub light and dark-dimmed
 palettes that follow the system theme, a local runtime bootstrap with
 sessions and agent turns, a file browser, an embedded terminal, and a remote
 connection screen
@@ -67,6 +67,12 @@ The client-local theme preference lives in `lib/app`: `theme_mode.dart` reads an
 persists the theme mode with `shared_preferences`, and `atlas_app.dart`
 applies it. The settings page (`/settings`) owns appearance preferences and
 ACP connection management, and reuses the workspace window chrome.
+Android and iOS register `atlas:///` for the workspace and `atlas:///settings`
+for settings. Settings retains the workspace beneath it when opened directly,
+so both the page back button and system back return to the workspace.
+HTTPS App Links / Universal Links remain Planned until a domain and Android
+release certificate fingerprints are supplied and the domain association files
+are hosted.
 
 ## Run and Verify
 
@@ -78,3 +84,14 @@ mise run ci
 ```
 
 Platform release builds remain available through the `mise run app-build-*` tasks. Install a locally built macOS app with `mise run app-install-macos`.
+
+With the app installed on an Android device or iOS simulator, check both a cold
+launch and delivery while the app is already open:
+
+```sh
+adb shell am start -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d 'atlas:///settings' xin.liuyu.atlas_app
+xcrun simctl openurl booted 'atlas:///settings'
+```
+
+The three slashes keep `settings` in the URL path. Verify that settings opens and
+that its back button returns to the workspace; on Android also verify system back.

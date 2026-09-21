@@ -8,10 +8,15 @@ import '../features/workspace/presentation/workspace_page.dart';
 final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     routes: [
-      GoRoute(path: '/', builder: (context, state) => const WorkspacePage()),
       GoRoute(
-        path: '/settings',
-        builder: (context, state) => const SettingsPage(),
+        path: '/',
+        builder: (context, state) => const WorkspacePage(),
+        routes: [
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) => const SettingsPage(),
+          ),
+        ],
       ),
     ],
   );
