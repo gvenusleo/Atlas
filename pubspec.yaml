@@ -3,7 +3,7 @@ description: The Atlas Dart and Flutter monorepo.
 publish_to: none
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.13.0
 
 workspace:
   - packages/atlas_runtime
