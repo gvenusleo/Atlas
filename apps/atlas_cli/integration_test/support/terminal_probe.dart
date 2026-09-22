@@ -5,6 +5,8 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+import 'quit_interaction.dart';
+
 /// Exercises the native CLI in a POSIX PTY and prints measured state as JSON.
 Future<void> main(List<String> args) async {
   final [binary, home, action] = args;
@@ -31,17 +33,18 @@ providers:
     });
     final output = <int>[];
     var sent = false;
+    final quit = action == 'quit' || action == 'quit_fragmented'
+        ? QuitInteraction(fragmented: action == 'quit_fragmented')
+        : null;
     final deadline = Stopwatch()..start();
     while (!exited && deadline.elapsed < const Duration(seconds: 15)) {
       output.addAll(terminal.read());
       final text = utf8.decode(output, allowMalformed: true);
-      if (!sent && text.contains('Message Atlas')) {
-        if (action == 'quit') {
-          terminal.write('/quit\r');
-          // First Enter accepts slash completion, second submits it.
-          await Future<void>.delayed(const Duration(milliseconds: 200));
-          terminal.write('\r');
-        } else if (action == 'sigint' || action == 'sigterm') {
+      if (quit != null) {
+        final input = quit.advance(text);
+        if (input != null) terminal.write(input);
+      } else if (!sent && text.contains('Message Atlas')) {
+        if (action == 'sigint' || action == 'sigterm') {
           if (!process.kill(
             action == 'sigint' ? ProcessSignal.sigint : ProcessSignal.sigterm,
           )) {
@@ -62,6 +65,7 @@ providers:
       jsonEncode({
         'exitCode': code,
         'timedOut': timedOut,
+        if (quit != null) 'inputStage': quit.stage,
         'restored': before == after,
         'before': before,
         'after': after,
@@ -188,6 +192,9 @@ class _Terminal() {
       final environment = Map<String, String>.of(Platform.environment)
         ..remove('NO_COLOR')
         ..['HOME'] = home
+        // The PTY does not answer OSC 11. Use the same brightness fallback on
+        // macOS and Linux rather than consulting the macOS desktop appearance.
+        ..['COLORFGBG'] = '15;0'
         ..['TERM'] = action == 'dumb' ? 'dumb' : 'xterm-256color';
       if (action == 'no_color') environment['NO_COLOR'] = '';
       // Only this short-lived probe's descriptors are changed. The Dart test

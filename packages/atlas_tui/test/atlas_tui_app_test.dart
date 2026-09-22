@@ -4,10 +4,52 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:atlas_tui/atlas_tui.dart';
+import 'package:atlas_tui/src/terminal_theme.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:test/test.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    test(
+      'theme detection preserves early input and /quit for $brightness',
+      () async {
+        await testNocterm('theme preserves session', (tester) async {
+          final detected = Completer<Brightness>();
+          var quitCount = 0;
+          final runtime = AgentRuntime(
+            store: _testStore(),
+            provider: _ScriptedProvider(),
+            tools: LocalToolRegistry(const []),
+            ids: SecureIdGenerator(),
+            defaultModel: _testModels.first.ref,
+          );
+          await tester.pumpComponent(
+            TerminalTheme(
+              brightness: detected.future,
+              child: AtlasTuiApp(
+                runtime: runtime,
+                models: _testModels,
+                workingDirectory: '/tmp',
+                onQuit: () => quitCount++,
+              ),
+            ),
+          );
+          await tester.enterText('/quit ');
+          await tester.pump();
+          expect(tester.terminalState, containsText('/quit'));
+          detected.complete(brightness);
+          await tester.pump();
+          await tester.pump();
+          expect(tester.terminalState, containsText('/quit'));
+          expect(tester.terminalState, isNot(containsText('Message Atlas')));
+          await tester.sendEnter();
+          await tester.pump();
+          expect(quitCount, 1);
+        });
+      },
+    );
+  }
+
   test('renders the chat surface and submits a turn', () async {
     await testNocterm('chat app', (tester) async {
       final provider = _ScriptedProvider();

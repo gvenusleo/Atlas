@@ -392,7 +392,14 @@ session:
     );
   }
 
-  for (final action in ['quit', 'sigint', 'sigterm', 'no_color', 'dumb']) {
+  for (final action in [
+    'quit',
+    'quit_fragmented',
+    'sigint',
+    'sigterm',
+    'no_color',
+    'dumb',
+  ]) {
     test(
       'real PTY: $action restores terminal modes and exits',
       () async {
@@ -407,7 +414,7 @@ session:
         expect(lines, hasLength(1));
         final result = jsonDecode(lines.single) as Map<String, Object?>;
         final errors = (await probe.stderr.rest.toList()).join('\n');
-        expect(result['timedOut'], isFalse);
+        expect(result['timedOut'], isFalse, reason: jsonEncode(result));
         expect(
           result['restored'],
           isTrue,

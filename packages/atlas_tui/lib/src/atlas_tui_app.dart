@@ -13,6 +13,7 @@ import 'slash_popup.dart';
 import 'session_status_line.dart';
 import 'turn_status_line.dart';
 import 'terminal_session.dart';
+import 'terminal_theme.dart';
 
 /// The root Nocterm application for Atlas.
 ///
@@ -548,9 +549,6 @@ final class _AtlasTuiAppState extends State<AtlasTuiApp> {
       ),
     );
     final background = _background;
-    if (background == null) {
-      return content;
-    }
     final preset = TuiTheme.of(context);
     final theme = preset.copyWith(background: background, surface: background);
     return SizedBox.expand(
@@ -577,7 +575,8 @@ Future<void> runAtlasTui({
   void Function()? onQuit,
 }) {
   return runTerminalSession(
-    (quit) => NoctermApp(
+    (quit) => TerminalTheme(
+      brightness: detectTerminalBrightness(TerminalBinding.instance.terminal),
       child: AtlasTuiApp(
         runtime: runtime,
         models: models,

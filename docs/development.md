@@ -94,8 +94,12 @@ isolated native bundle under `.dart_tool/atlas_cli/`, then checks real process
 output, exit codes, ACP EOF, and teardown. Set `ATLAS_TEST_BINARY` to an absolute
 executable path to test an existing bundle instead. On macOS/Linux, a Dart FFI
 probe creates a real PTY and uses the system `stty` utility to compare terminal
-state before and after exit. It tests `/quit`, signals, terminal restoration,
-and `NO_COLOR` without Python. POSIX-only cases are skipped on Windows. Release
+state before and after exit. It tests `/quit` with both batched and fragmented
+text input, signals, terminal restoration, and `NO_COLOR` without Python. The
+quit probe waits for the input caret to acknowledge the command before sending
+Enter separately; timeout diagnostics report the last input stage. Theme
+detection must preserve drafts entered before its result arrives. POSIX-only
+cases are skipped on Windows. Release
 jobs run the same process suite against each platform's built artifact.
 
 ### Reading `atlas cache`

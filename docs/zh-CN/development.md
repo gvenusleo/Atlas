@@ -86,8 +86,10 @@ CLI package 声明了 `atlas` 可执行入口；在 workspace 根目录可运行
 `.dart_tool/atlas_cli/` 下构建隔离的原生 bundle，再检查真实进程输出、退出码、
 ACP EOF 与资源清理。设置 `ATLAS_TEST_BINARY` 为可执行文件的绝对路径，可直接
 验证已有产物。macOS/Linux 使用 Dart FFI 探针创建真实 PTY，并通过系统
-`stty` 工具比较退出前后的终端状态，覆盖 `/quit`、信号、终端恢复和
-`NO_COLOR`，不再需要 Python。Windows 跳过 POSIX 专属用例。Release job
+`stty` 工具比较退出前后的终端状态，覆盖整段与逐字符输入的 `/quit`、信号、终端恢复和
+`NO_COLOR`，不再需要 Python。退出探针等待输入光标确认命令已经显示，再单独发送回车；
+超时诊断包含最后的输入阶段。主题探测结果到达时必须保留此前输入的草稿。
+Windows 跳过 POSIX 专属用例。Release job
 会对各平台构建产物运行同一套进程测试。
 
 ### 阅读 `atlas cache`

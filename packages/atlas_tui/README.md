@@ -15,6 +15,8 @@ The Nocterm presentation package for Atlas.
   the rendering library directly. Bootstrap checks terminal/ANSI support and
   `NO_COLOR`, restores input modes before closing stdin, disposes the component
   tree and backend, and returns without exiting the process.
+- Keeps the theme container mounted from the first frame so asynchronous
+  terminal brightness/background detection preserves early input and sessions.
 
 ## Allowed dependencies
 
