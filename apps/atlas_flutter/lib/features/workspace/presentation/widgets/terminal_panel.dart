@@ -8,6 +8,7 @@ import '../../application/terminal_registry.dart';
 import '../../application/workspace_controller.dart';
 import '../../data/terminal_session.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../workspace_metrics.dart';
 
 /// Keeps one [TerminalPanel] per session so the shell survives focus changes.
@@ -78,6 +79,7 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
   final _session = TerminalSession();
   late final TerminalSessionRegistry _registry;
   bool _starting = false;
+  bool _started = false;
 
   @override
   void initState() {
@@ -89,7 +91,15 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
     _registry.track(_session);
     _terminal.onOutput = _writeToPty;
     _terminal.onResize = _resizePty;
-    unawaited(_startShell());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started) {
+      _started = true;
+      unawaited(_startShell());
+    }
   }
 
   @override
@@ -121,6 +131,7 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
     if (_starting) {
       return;
     }
+    final l10n = context.l10n;
     _starting = true;
     try {
       await _session.start(
@@ -128,23 +139,24 @@ class _TerminalPanelState extends ConsumerState<TerminalPanel> {
         onOutput: _terminal.write,
         onExit: (code) {
           if (mounted) {
-            _terminal.write('\r\n[Process exited with code $code]\r\n');
+            _terminal.write('\r\n[${l10n.processExited(code)}]\r\n');
             setState(() {});
           }
         },
       );
     } catch (error) {
-      _terminal.write('Cannot start shell: $error\r\n');
+      _terminal.write('${l10n.cannotStartShell('$error')}\r\n');
     } finally {
       _starting = false;
     }
   }
 
   Future<void> _restartShell() async {
-    await _session.close();
-    _terminal.write(
-      '\r\nWorking directory changed to ${widget.workingDirectory}.\r\n',
+    final changedMessage = context.l10n.workingDirectoryChanged(
+      widget.workingDirectory,
     );
+    await _session.close();
+    _terminal.write('\r\n$changedMessage\r\n');
     await _startShell();
   }
 

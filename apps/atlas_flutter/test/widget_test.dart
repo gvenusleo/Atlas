@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:atlas_flutter/app/app_router.dart';
 import 'package:atlas_flutter/app/atlas_app.dart';
+import 'package:atlas_flutter/app/locale_mode.dart';
 import 'package:atlas_flutter/app/theme_mode.dart';
 import 'package:atlas_flutter/features/workspace/presentation/settings_page.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_page.dart';
@@ -599,6 +600,48 @@ void main() {
   );
 
   testShell(
+    'the settings page switches the running language',
+    const Size(1200, 760),
+    child: ProviderScope(
+      overrides: [
+        languageProvider.overrideWith(
+          () => LanguageController(initial: AppLanguage.english),
+        ),
+      ],
+      child: const AtlasApp(),
+    ),
+    (tester) async {
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Language'), findsOneWidget);
+
+      final themeSelector = find.byType(SegmentedButton<ThemeMode>);
+      final languageSelector = find.byType(SegmentedButton<AppLanguage>);
+      expect(
+        tester.getSize(languageSelector).height,
+        tester.getSize(themeSelector).height,
+      );
+      expect(
+        tester.getTopRight(languageSelector).dx,
+        tester.getTopRight(themeSelector).dx,
+      );
+
+      await tester.tap(find.text('简体中文'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('设置'), findsOneWidget);
+      expect(find.text('主题'), findsOneWidget);
+      expect(find.byTooltip('返回'), findsOneWidget);
+
+      await tester.tap(find.text('English'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('Theme'), findsOneWidget);
+    },
+  );
+
+  testShell(
     'the settings page is a section rail beside a content pane',
     const Size(1200, 760),
     (tester) async {
@@ -689,6 +732,15 @@ void main() {
       expect(
         tester.getTopLeft(selector).dx,
         tester.getTopLeft(find.text('Theme')).dx,
+      );
+      final languageSelector = find.byType(SegmentedButton<AppLanguage>);
+      expect(
+        tester.getTopLeft(languageSelector).dy,
+        greaterThan(tester.getBottomLeft(find.text('Language')).dy),
+      );
+      expect(
+        tester.getTopLeft(languageSelector).dx,
+        tester.getTopLeft(find.text('Language')).dx,
       );
 
       // The rail is gone, so the pane carries the section strip instead.

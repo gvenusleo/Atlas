@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
 
 import '../../../../shared/markdown/atlas_markdown.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/workspace_controller.dart';
 import '../../application/workspace_message.dart';
@@ -231,7 +232,7 @@ class const _ConversationEmptyState() extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Start a conversation',
+              context.l10n.startConversation,
               style: TextStyle(color: colors.textSecondary, fontSize: 12),
             ),
           ],
@@ -252,11 +253,53 @@ class const _MessageView({required final WorkspaceMessage message, super.key})
         WorkspaceMessageKind.reasoning => _ReasoningMessage(message),
         WorkspaceMessageKind.tool => _ToolMessage(message),
         WorkspaceMessageKind.plan => _PlanMessage(message.text),
-        WorkspaceMessageKind.notice => _NoticeMessage(message.text),
-        WorkspaceMessageKind.error => _ErrorMessage(message.text),
+        WorkspaceMessageKind.notice => _NoticeMessage(
+          _localizedMessage(context, message),
+        ),
+        WorkspaceMessageKind.error => _ErrorMessage(
+          _localizedMessage(context, message),
+        ),
       },
     );
   }
+}
+
+String _localizedMessage(BuildContext context, WorkspaceMessage message) {
+  final arguments = message.localArguments;
+  final error = arguments.isEmpty ? '' : '${arguments.first}';
+  return switch (message.localMessage) {
+    WorkspaceLocalMessage.cannotLoadSessions => context.l10n.cannotLoadSessions(
+      error,
+    ),
+    WorkspaceLocalMessage.directorySaveFailed =>
+      context.l10n.directorySaveFailed,
+    WorkspaceLocalMessage.cannotResumeSession =>
+      context.l10n.cannotResumeSession(error),
+    WorkspaceLocalMessage.cannotRenameSession =>
+      context.l10n.cannotRenameSession(error),
+    WorkspaceLocalMessage.cannotDeleteSession =>
+      context.l10n.cannotDeleteSession(error),
+    WorkspaceLocalMessage.cannotSetMode => context.l10n.cannotSetMode(error),
+    WorkspaceLocalMessage.slashCommandsNoImages =>
+      context.l10n.slashCommandsNoImages,
+    WorkspaceLocalMessage.modelImagesOmitted => context.l10n.modelImagesOmitted(
+      error,
+    ),
+    WorkspaceLocalMessage.modelImageInputUnsupported =>
+      context.l10n.modelImageInputUnsupported(error),
+    WorkspaceLocalMessage.chooseRemoteDirectoryFirst =>
+      context.l10n.chooseRemoteDirectoryFirst,
+    WorkspaceLocalMessage.turnCancelled => context.l10n.turnCancelled,
+    WorkspaceLocalMessage.turnFailed => context.l10n.turnFailed(error),
+    WorkspaceLocalMessage.noSessionToCompact => context.l10n.noSessionToCompact,
+    WorkspaceLocalMessage.compactionFailed => context.l10n.compactionFailed(
+      error,
+    ),
+    WorkspaceLocalMessage.contextCompacted => context.l10n.contextCompacted(
+      arguments.first as int,
+    ),
+    null => message.text,
+  };
 }
 
 class const _UserMessage(final WorkspaceMessage message)
@@ -493,7 +536,7 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
                         icon: _expanded ? LucideIcons.chevronDown : widget.icon,
                         size: 14,
                         color: titleColor,
-                        semanticLabel: 'Toggle activity details',
+                        semanticLabel: context.l10n.toggleActivityDetails,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -548,7 +591,7 @@ class const _ReasoningMessage(final WorkspaceMessage message)
     return _ActivityDisclosure(
       icon: LucideIcons.sparkle,
       title: Text(
-        'Thinking',
+        context.l10n.thinking,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: colors.textSecondary, fontSize: 12),
@@ -577,8 +620,8 @@ class const _ToolMessage(final WorkspaceMessage message)
     return _ActivityDisclosure(
       icon: _toolIcon(message.toolName),
       title: _ToolTitle(
-        name: _displayToolName(message.toolName),
-        detail: _toolDetail(message, workingDirectory),
+        name: _displayToolName(context, message.toolName),
+        detail: _toolDetail(context, message, workingDirectory),
         isError: message.isError,
       ),
       isRunning: message.isRunning,
@@ -720,7 +763,11 @@ class const _ToolTitle({
   }
 }
 
-String? _toolDetail(WorkspaceMessage message, String workingDirectory) {
+String? _toolDetail(
+  BuildContext context,
+  WorkspaceMessage message,
+  String workingDirectory,
+) {
   final arguments = message.arguments ?? const <String, Object?>{};
   switch (message.toolName) {
     case 'read':
@@ -741,16 +788,16 @@ String? _toolDetail(WorkspaceMessage message, String workingDirectory) {
         final completed = steps
             .where((step) => step.status == 'completed')
             .length;
-        return '$completed/${steps.length} completed';
+        return context.l10n.stepsCompleted(completed, steps.length);
       }
   }
   return null;
 }
 
-String _displayToolName(String? toolName) {
-  final name = toolName ?? 'Tool';
+String _displayToolName(BuildContext context, String? toolName) {
+  final name = toolName ?? context.l10n.tool;
   if (name.isEmpty) {
-    return 'Tool';
+    return context.l10n.tool;
   }
   return name[0].toUpperCase() + name.substring(1);
 }

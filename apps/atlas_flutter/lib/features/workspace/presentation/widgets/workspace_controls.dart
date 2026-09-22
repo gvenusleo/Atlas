@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
+
+import '../../../../l10n/localizations.dart';
+
 import 'package:morphnext/morphnext.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -124,12 +127,12 @@ class _AtlasWindowControlsState extends State<AtlasWindowControls>
       children: [
         WorkspaceToolbarButton(
           icon: LucideIcons.minus,
-          tooltip: 'Minimize',
+          tooltip: context.l10n.minimize,
           onPressed: windowManager.minimize,
         ),
         WorkspaceToolbarButton(
           icon: _maximized ? LucideIcons.copy : LucideIcons.square,
-          tooltip: _maximized ? 'Restore' : 'Maximize',
+          tooltip: _maximized ? context.l10n.restore : context.l10n.maximize,
           onPressed: () async {
             await _toggleMaximize();
             await _refreshMaximized();
@@ -137,7 +140,7 @@ class _AtlasWindowControlsState extends State<AtlasWindowControls>
         ),
         WorkspaceToolbarButton(
           icon: LucideIcons.x,
-          tooltip: 'Close',
+          tooltip: context.l10n.close,
           onPressed: windowManager.close,
         ),
       ],

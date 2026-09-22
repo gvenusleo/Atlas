@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/markdown/atlas_markdown.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import '../../application/file_browser_controller.dart';
 import '../../application/file_browser_state.dart';
@@ -174,7 +175,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
         ),
         WorkspaceToolbarButton(
           icon: LucideIcons.refreshCw,
-          tooltip: 'Refresh files',
+          tooltip: context.l10n.refreshFiles,
           onPressed: () => unawaited(_controller.refresh()),
         ),
         const SizedBox(width: 6),
@@ -207,7 +208,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
             icon: _markdownPreview
                 ? LucideIcons.fileText
                 : LucideIcons.bookOpenText,
-            tooltip: 'Toggle markdown preview',
+            tooltip: context.l10n.toggleMarkdownPreview,
             onPressed: () {
               if (_browser.preview == null) return;
               setState(() => _markdownPreview = !_markdownPreview);
@@ -217,7 +218,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
         ],
         WorkspaceToolbarButton(
           icon: LucideIcons.x,
-          tooltip: 'Back to files',
+          tooltip: context.l10n.backToFiles,
           onPressed: _controller.closePreview,
         ),
         const SizedBox(width: 6),
@@ -232,7 +233,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
         return Padding(
           padding: const EdgeInsets.all(14),
           child: Text(
-            browser.previewError!,
+            context.localizeAtlasError(browser.previewError!),
             style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
           ),
         );
@@ -276,7 +277,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
       return Padding(
         padding: const EdgeInsets.all(14),
         child: Text(
-          browser.rootError!,
+          context.localizeAtlasError(browser.rootError!),
           style: TextStyle(color: colors.error, fontSize: 12, height: 1.45),
         ),
       );
@@ -288,6 +289,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
           controller: _rootMenu,
           consumeOutsideTap: true,
           menuChildren: fileBrowserRootMenu(
+            context: context,
             colors: colors,
             canPaste: browser.clipboard != null,
             actions: _menuActions(directory: browser.root),
@@ -304,7 +306,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
             child: empty
                 ? Center(
                     child: Text(
-                      'Empty folder',
+                      context.l10n.emptyFolder,
                       style: TextStyle(
                         color: colors.textSecondary,
                         fontSize: 12,
@@ -336,11 +338,16 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
       onOpen: _dismissMenus,
       items: isDirectory
           ? fileBrowserFolderMenu(
+              context: context,
               colors: colors,
               canPaste: _browser.clipboard != null,
               actions: actions,
             )
-          : fileBrowserFileMenu(colors: colors, actions: actions),
+          : fileBrowserFileMenu(
+              context: context,
+              colors: colors,
+              actions: actions,
+            ),
       child: WorkspaceHoverSurface(
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         child: GestureDetector(
@@ -398,7 +405,7 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
                     )
                   else if (node.error != null)
                     Tooltip(
-                      message: node.error!,
+                      message: context.localizeAtlasError(node.error!),
                       child: Icon(
                         LucideIcons.triangleAlert,
                         size: 14,
@@ -470,8 +477,8 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
     final controller = _controller;
     final name = await promptFileName(
       context,
-      title: folder ? 'New Folder' : 'New File',
-      hint: 'Name',
+      title: folder ? context.l10n.newFolder : context.l10n.newFile,
+      hint: context.l10n.name,
       initial: folder ? 'untitled' : 'untitled.md',
     );
     if (name == null || !mounted || !identical(controller, _controller)) return;
@@ -488,8 +495,8 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
     final current = entity.path.split(Platform.pathSeparator).last;
     final name = await promptFileName(
       context,
-      title: 'Rename',
-      hint: 'Name',
+      title: context.l10n.rename,
+      hint: context.l10n.name,
       initial: current,
     );
     if (name == null ||
@@ -514,8 +521,9 @@ class _FileBrowserState extends ConsumerState<FileBrowser> {
       await command();
     } on FileSystemException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.localizeAtlasError(error.message))),
+      );
     }
   }
 }

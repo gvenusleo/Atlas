@@ -2,6 +2,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../../shared/theme/atlas_theme.dart';
+import '../../../../../l10n/localizations.dart';
 import '../../../data/image_attachment.dart';
 import '../workspace_controls.dart';
 
@@ -16,9 +17,7 @@ class const AttachImageButton({
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     return Tooltip(
-      message: enabled
-          ? 'Attach image'
-          : 'Current model does not support images',
+      message: enabled ? context.l10n.attachImage : context.l10n.modelNoImages,
       child: WorkspaceHoverSurface(
         enabled: enabled && !attaching,
         borderRadius: BorderRadius.circular(AtlasRadii.control),
@@ -93,7 +92,7 @@ class const PendingImageChip({
             top: -4,
             right: -4,
             child: Tooltip(
-              message: 'Remove image',
+              message: context.l10n.removeImage,
               child: Material(
                 color: colors.canvas,
                 shape: const CircleBorder(),

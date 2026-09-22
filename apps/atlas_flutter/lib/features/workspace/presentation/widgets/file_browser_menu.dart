@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import 'workspace_controls.dart';
 
@@ -42,6 +43,7 @@ final class const FileBrowserMenuActions({
 
 /// Builds menu rows for the workspace file browser.
 List<Widget> fileBrowserRootMenu({
+  required BuildContext context,
   required AtlasColors colors,
   required bool canPaste,
   required FileBrowserMenuActions actions,
@@ -50,20 +52,20 @@ List<Widget> fileBrowserRootMenu({
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.filePlus,
-      label: 'New File',
+      label: context.l10n.newFile,
       onPressed: actions.onNewFile,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.folderPlus,
-      label: 'New Folder',
+      label: context.l10n.newFolder,
       onPressed: actions.onNewFolder,
     ),
     if (canPaste)
       fileBrowserMenuItem(
         colors,
         icon: LucideIcons.clipboard,
-        label: 'Paste',
+        label: context.l10n.paste,
         onPressed: actions.onPaste,
       ),
   ];
@@ -71,6 +73,7 @@ List<Widget> fileBrowserRootMenu({
 
 /// Builds the context menu for a file row.
 List<Widget> fileBrowserFileMenu({
+  required BuildContext context,
   required AtlasColors colors,
   required FileBrowserMenuActions actions,
 }) {
@@ -78,43 +81,43 @@ List<Widget> fileBrowserFileMenu({
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.copy,
-      label: 'Copy',
+      label: context.l10n.copy,
       onPressed: actions.onCopy,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.scissors,
-      label: 'Cut',
+      label: context.l10n.cut,
       onPressed: actions.onCut,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.clipboardCopy,
-      label: 'Copy Path',
+      label: context.l10n.copyPath,
       onPressed: actions.onCopyPath,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.clipboardCopy,
-      label: 'Copy Relative Path',
+      label: context.l10n.copyRelativePath,
       onPressed: actions.onCopyRelativePath,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.pencil,
-      label: 'Rename',
+      label: context.l10n.rename,
       onPressed: actions.onRename,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.folderOpen,
-      label: revealInFileManagerLabel,
+      label: revealInFileManagerLabel(context),
       onPressed: actions.onReveal,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.trash2,
-      label: 'Move to Trash',
+      label: context.l10n.moveToTrash,
       onPressed: actions.onTrash,
     ),
   ];
@@ -122,6 +125,7 @@ List<Widget> fileBrowserFileMenu({
 
 /// Builds the context menu for a folder row.
 List<Widget> fileBrowserFolderMenu({
+  required BuildContext context,
   required AtlasColors colors,
   required bool canPaste,
   required FileBrowserMenuActions actions,
@@ -130,62 +134,62 @@ List<Widget> fileBrowserFolderMenu({
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.filePlus,
-      label: 'New File',
+      label: context.l10n.newFile,
       onPressed: actions.onNewFile,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.folderPlus,
-      label: 'New Folder',
+      label: context.l10n.newFolder,
       onPressed: actions.onNewFolder,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.copy,
-      label: 'Copy',
+      label: context.l10n.copy,
       onPressed: actions.onCopy,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.scissors,
-      label: 'Cut',
+      label: context.l10n.cut,
       onPressed: actions.onCut,
     ),
     if (canPaste)
       fileBrowserMenuItem(
         colors,
         icon: LucideIcons.clipboard,
-        label: 'Paste',
+        label: context.l10n.paste,
         onPressed: actions.onPaste,
       ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.clipboardCopy,
-      label: 'Copy Path',
+      label: context.l10n.copyPath,
       onPressed: actions.onCopyPath,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.clipboardCopy,
-      label: 'Copy Relative Path',
+      label: context.l10n.copyRelativePath,
       onPressed: actions.onCopyRelativePath,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.pencil,
-      label: 'Rename',
+      label: context.l10n.rename,
       onPressed: actions.onRename,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.folderOpen,
-      label: revealInFileManagerLabel,
+      label: revealInFileManagerLabel(context),
       onPressed: actions.onReveal,
     ),
     fileBrowserMenuItem(
       colors,
       icon: LucideIcons.trash2,
-      label: 'Move to Trash',
+      label: context.l10n.moveToTrash,
       onPressed: actions.onTrash,
     ),
   ];
@@ -221,14 +225,14 @@ Widget fileBrowserMenuItem(
 }
 
 /// Platform label for revealing a path in the file manager.
-String get revealInFileManagerLabel {
+String revealInFileManagerLabel(BuildContext context) {
   if (Platform.isMacOS) {
-    return 'Reveal in Finder';
+    return context.l10n.revealInFinder;
   }
   if (Platform.isWindows) {
-    return 'Reveal in Explorer';
+    return context.l10n.revealInExplorer;
   }
-  return 'Reveal in File Manager';
+  return context.l10n.revealInFileManager;
 }
 
 /// Context menu wrapper that opens on secondary tap.
@@ -315,7 +319,7 @@ Future<String?> promptFileName(
                 overlayColor: WidgetStatePropertyAll(Colors.transparent),
               ),
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.cancel),
             ),
           ),
           WorkspaceHoverSurface(
@@ -326,7 +330,10 @@ Future<String?> promptFileName(
               ),
               onPressed: () =>
                   Navigator.pop(context, textController.text.trim()),
-              child: Text('Save', style: TextStyle(color: colors.accent)),
+              child: Text(
+                context.l10n.save,
+                style: TextStyle(color: colors.accent),
+              ),
             ),
           ),
         ],
@@ -349,8 +356,8 @@ Future<bool> confirmMoveToTrash(BuildContext context, String name) async {
     builder: (context) {
       final colors = AtlasColors.of(context);
       return AlertDialog(
-        title: const Text('Move to Trash'),
-        content: Text('Move “$name” to the Trash?'),
+        title: Text(context.l10n.moveToTrash),
+        content: Text(context.l10n.trashQuestion(name)),
         actions: [
           WorkspaceHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
@@ -359,7 +366,7 @@ Future<bool> confirmMoveToTrash(BuildContext context, String name) async {
                 overlayColor: WidgetStatePropertyAll(Colors.transparent),
               ),
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.cancel),
             ),
           ),
           WorkspaceHoverSurface(
@@ -370,7 +377,7 @@ Future<bool> confirmMoveToTrash(BuildContext context, String name) async {
               ),
               onPressed: () => Navigator.pop(context, true),
               child: Text(
-                'Move to Trash',
+                context.l10n.moveToTrash,
                 style: TextStyle(color: colors.error),
               ),
             ),

@@ -11,6 +11,7 @@ import 'package:morphnext/morphnext.dart';
 
 import '../../../../remote_connection/application/runtime_controller.dart';
 import '../../../../../shared/theme/atlas_theme.dart';
+import '../../../../../l10n/localizations.dart';
 import '../../../../../shared/widgets/animated_caret.dart';
 import '../../../application/workspace_controller.dart';
 import '../../../application/workspace_state.dart';
@@ -202,8 +203,8 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                               ),
                               decoration: InputDecoration(
                                 hintText: _images.isEmpty
-                                    ? 'Message Atlas'
-                                    : 'Add a caption, or send the image',
+                                    ? context.l10n.messageAtlas
+                                    : context.l10n.addCaptionOrSendImage,
                                 hintStyle: TextStyle(
                                   color: colors.textSecondary,
                                 ),
@@ -256,7 +257,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                 ),
                               ),
                             Tooltip(
-                              message: busy ? 'Stop' : 'Send',
+                              message: busy
+                                  ? context.l10n.stop
+                                  : context.l10n.send,
                               child: WorkspaceHoverSurface(
                                 key: const ValueKey('atlas-send-button'),
                                 // Sending shifts to the accent color on hover.
@@ -286,7 +289,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                       color: _canSend
                                           ? colors.canvas
                                           : colors.textSecondary,
-                                      semanticLabel: busy ? 'Stop' : 'Send',
+                                      semanticLabel: busy
+                                          ? context.l10n.stop
+                                          : context.l10n.send,
                                     ),
                                   ),
                                 ),
@@ -781,7 +786,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     final remaining = ImageAttachmentLimits.maxCount - _images.length;
     if (remaining <= 0) {
       controller.notify(
-        'You can attach up to ${ImageAttachmentLimits.maxCount} images.',
+        context.l10n.tooManyImages(ImageAttachmentLimits.maxCount),
         sessionKey: widget.sessionKey,
       );
       return;
@@ -805,12 +810,12 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
     }
     if (skippedCount) {
       controller.notify(
-        'You can attach up to ${ImageAttachmentLimits.maxCount} images.',
+        context.l10n.tooManyImages(ImageAttachmentLimits.maxCount),
         sessionKey: widget.sessionKey,
       );
     } else if (skippedLarge) {
       controller.notify(
-        'Images larger than 10 MB were skipped.',
+        context.l10n.imagesTooLarge,
         sessionKey: widget.sessionKey,
       );
     }

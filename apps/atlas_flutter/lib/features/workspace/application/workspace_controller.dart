@@ -200,10 +200,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       }
       state = state.copyWith(sessions: sessions, loadingSessions: false);
     } catch (error) {
-      _append(
+      _appendLocal(
         state.activeKey,
         WorkspaceMessageKind.error,
-        'Cannot load sessions: $error',
+        WorkspaceLocalMessage.cannotLoadSessions,
+        ['$error'],
       );
       state = state.copyWith(loadingSessions: false);
     }
@@ -222,9 +223,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           .setWorkingDirectory(profile, directory);
     } on Object {
       if (ref.mounted) {
-        notify(
-          'The directory is active but could not be saved for the next connection.',
-        );
+        notifyLocal(WorkspaceLocalMessage.directorySaveFailed);
       }
     }
   }
@@ -287,10 +286,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           .read(workspaceWorkingDirectoryProvider.notifier)
           .set(snapshot.session.workingDirectory);
     } catch (error) {
-      _append(
+      _appendLocal(
         state.activeKey,
         WorkspaceMessageKind.error,
-        'Cannot resume session: $error',
+        WorkspaceLocalMessage.cannotResumeSession,
+        ['$error'],
       );
     }
   }
@@ -301,10 +301,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       await _environment.runtime.renameSession(id, title);
       await refreshSessions();
     } catch (error) {
-      _append(
+      _appendLocal(
         state.activeKey,
         WorkspaceMessageKind.error,
-        'Cannot rename session: $error',
+        WorkspaceLocalMessage.cannotRenameSession,
+        ['$error'],
       );
     }
   }
@@ -326,10 +327,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       state = state.copyWith(activeKey: activeKey, workspaces: workspaces);
       await refreshSessions();
     } catch (error) {
-      _append(
+      _appendLocal(
         state.activeKey,
         WorkspaceMessageKind.error,
-        'Cannot delete session: $error',
+        WorkspaceLocalMessage.cannotDeleteSession,
+        ['$error'],
       );
     }
   }
@@ -351,10 +353,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         workspace.hasImages &&
         !model.inputCapabilities.contains(ModelInputCapability.image)) {
       final label = model.name.isEmpty ? model.ref.modelId.value : model.name;
-      _append(
+      _appendLocal(
         key,
         WorkspaceMessageKind.notice,
-        '$label does not support images; images in this conversation will be omitted.',
+        WorkspaceLocalMessage.modelImagesOmitted,
+        [label],
       );
     }
   }
@@ -382,7 +385,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       try {
         await _environment.runtime.setMode(sessionId, mode);
       } catch (error) {
-        _append(key, WorkspaceMessageKind.error, 'Cannot set mode: $error');
+        _appendLocal(
+          key,
+          WorkspaceMessageKind.error,
+          WorkspaceLocalMessage.cannotSetMode,
+          ['$error'],
+        );
       }
     }
   }
@@ -392,6 +400,20 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
   /// Defaults to the focused session when [sessionKey] is omitted.
   void notify(String text, {String? sessionKey}) {
     _append(sessionKey ?? state.activeKey, WorkspaceMessageKind.notice, text);
+  }
+
+  /// Appends an application message resolved in the active UI locale.
+  void notifyLocal(
+    WorkspaceLocalMessage message, {
+    List<Object> arguments = const [],
+    String? sessionKey,
+  }) {
+    _appendLocal(
+      sessionKey ?? state.activeKey,
+      WorkspaceMessageKind.notice,
+      message,
+      arguments,
+    );
   }
 
   /// Shows the terminal or file browser for the focused session.
@@ -422,10 +444,10 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     }
     if (text.startsWith('/')) {
       if (images.isNotEmpty) {
-        _append(
+        _appendLocal(
           key,
           WorkspaceMessageKind.notice,
-          'Slash commands do not support images.',
+          WorkspaceLocalMessage.slashCommandsNoImages,
         );
         return false;
       }
@@ -440,10 +462,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       final label = workspace.activeModel.name.isEmpty
           ? workspace.activeModel.ref.modelId.value
           : workspace.activeModel.name;
-      _append(
+      _appendLocal(
         key,
         WorkspaceMessageKind.notice,
-        '$label does not support image input.',
+        WorkspaceLocalMessage.modelImageInputUnsupported,
+        [label],
       );
       return false;
     }
@@ -455,11 +478,10 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         workspace.sessionId == null &&
         (_remoteProfileWorkingDirectory == null ||
             _remoteProfileWorkingDirectory!.isEmpty)) {
-      _append(
+      _appendLocal(
         key,
         WorkspaceMessageKind.notice,
-        'Choose the working directory on the computer before sending the '
-        'first message.',
+        WorkspaceLocalMessage.chooseRemoteDirectoryFirst,
       );
       return false;
     }
@@ -503,9 +525,18 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         key = _applyEvent(key, event);
       }
     } on TurnCancelledException {
-      _append(key, WorkspaceMessageKind.notice, 'Turn cancelled');
+      _appendLocal(
+        key,
+        WorkspaceMessageKind.notice,
+        WorkspaceLocalMessage.turnCancelled,
+      );
     } catch (error) {
-      _append(key, WorkspaceMessageKind.error, 'Turn failed: $error');
+      _appendLocal(
+        key,
+        WorkspaceMessageKind.error,
+        WorkspaceLocalMessage.turnFailed,
+        ['$error'],
+      );
     } finally {
       _cancellations.remove(key);
       _streamOpen[key] = false;
@@ -542,7 +573,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     final workspace = state.workspaces[key];
     final id = workspace?.sessionId;
     if (id == null || workspace == null || workspace.busy) {
-      _append(key, WorkspaceMessageKind.notice, 'No session to compact.');
+      _appendLocal(
+        key,
+        WorkspaceMessageKind.notice,
+        WorkspaceLocalMessage.noSessionToCompact,
+      );
       return;
     }
     final cancellation = CancellationToken();
@@ -564,7 +599,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         key = _applyEvent(key, event);
       }
     } catch (error) {
-      _append(key, WorkspaceMessageKind.error, 'Compaction failed: $error');
+      _appendLocal(
+        key,
+        WorkspaceMessageKind.error,
+        WorkspaceLocalMessage.compactionFailed,
+        ['$error'],
+      );
     } finally {
       _cancellations.remove(key);
       _patch(
@@ -704,7 +744,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         _finishRunningReasoning(target);
         _streamOpen[target] = false;
         if (outcome.status == TurnStatus.cancelled) {
-          _append(target, WorkspaceMessageKind.notice, 'Turn cancelled');
+          _appendLocal(
+            target,
+            WorkspaceMessageKind.notice,
+            WorkspaceLocalMessage.turnCancelled,
+          );
         } else if (outcome.failure != null) {
           _append(target, WorkspaceMessageKind.error, outcome.failure!.message);
         }
@@ -731,20 +775,22 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
             contextTokens: checkpoint.inputTokensAfter,
           ),
         );
-        _append(
+        _appendLocal(
           target,
           WorkspaceMessageKind.notice,
-          'Context compacted, kept ${checkpoint.keptRecentMessages} recent messages.',
+          WorkspaceLocalMessage.contextCompacted,
+          [checkpoint.keptRecentMessages],
         );
       case CompactionFailed(:final message):
         _patch(
           target,
           (workspace) => workspace.copyWith(turnPhase: TurnPhase.idle),
         );
-        _append(
+        _appendLocal(
           target,
           WorkspaceMessageKind.error,
-          'Compaction failed: $message',
+          WorkspaceLocalMessage.compactionFailed,
+          [message],
         );
       default:
         break;
@@ -780,6 +826,29 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       );
     });
     _streamOpen[key] = true;
+  }
+
+  void _appendLocal(
+    String key,
+    WorkspaceMessageKind kind,
+    WorkspaceLocalMessage message, [
+    List<Object> arguments = const [],
+  ]) {
+    _streamOpen[key] = false;
+    _patch(key, (workspace) {
+      return workspace.copyWith(
+        messages: [
+          ...workspace.messages,
+          WorkspaceMessage(
+            id: _nextId(),
+            kind: kind,
+            text: workspaceLocalMessageEnglish(message, arguments),
+            localMessage: message,
+            localArguments: arguments,
+          ),
+        ],
+      );
+    });
   }
 
   void _append(

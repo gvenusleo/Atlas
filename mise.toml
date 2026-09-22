@@ -21,11 +21,12 @@ run = "dart format packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flu
 
 [tasks.fmt-check]
 description = "Check formatting without rewriting"
+depends = ["app-l10n"]
 run = "dart format --output=none --set-exit-if-changed packages apps/atlas_cli apps/atlas_flutter/lib apps/atlas_flutter/test scripts"
 
 [tasks.analyze]
 description = "Analyze the workspace"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "dart analyze"
 
 [tasks.dart-test]
@@ -40,10 +41,22 @@ for package in packages/* apps/atlas_cli; do
 done
 '''
 
+[tasks.app-l10n]
+description = "Generate Flutter localization sources"
+dir = "apps/atlas_flutter"
+depends = ["deps"]
+run = "flutter gen-l10n"
+
+[tasks.app-l10n-check]
+description = "Verify generated Flutter localization sources are current"
+dir = "apps/atlas_flutter"
+depends = ["app-l10n"]
+run = "git diff --exit-code -- lib/l10n/app_localizations.dart lib/l10n/app_localizations_en.dart lib/l10n/app_localizations_zh.dart"
+
 [tasks.app-test]
 description = "Run Flutter tests"
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "flutter test --no-pub"
 
 [tasks.cli-integration-test]
@@ -57,8 +70,8 @@ description = "Run all Dart and Flutter tests"
 depends = ["dart-test", "app-test", "cli-integration-test"]
 
 [tasks.ci]
-description = "Complete repository verification (fmt-check + analyze + test)"
-depends = ["fmt-check", "analyze", "test"]
+description = "Complete repository verification (l10n + fmt-check + analyze + test)"
+depends = ["app-l10n-check", "fmt-check", "analyze", "test"]
 
 [tasks.cli-debug]
 description = "Run the TUI with the Dart VM service enabled for debugging"
@@ -91,7 +104,7 @@ usage = '''
 flag "--device <device>" help="Target device (defaults to the only attached device)"
 '''
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 shell = "bash -eu -o pipefail -c"
 run = '''
 if [ -n "{{ usage.device }}" ]; then
@@ -104,13 +117,13 @@ fi
 [tasks.app-build-linux]
 description = "Build the Flutter app for Linux"
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "flutter build linux --release --no-pub"
 
 [tasks.app-build-macos]
 description = "Build the Flutter app for macOS"
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "flutter build macos --release --no-pub"
 
 [tasks.app-install-macos]
@@ -126,19 +139,19 @@ run = [
 [tasks.app-build-windows]
 description = "Build the Flutter app for Windows"
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "flutter build windows --release --no-pub"
 
 [tasks.app-build-android]
 description = "Build the Flutter app for Android"
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "flutter build apk --release --no-pub"
 
 [tasks.app-build-ios]
 description = "Build the Flutter app for iOS"
 dir = "apps/atlas_flutter"
-depends = ["deps"]
+depends = ["app-l10n"]
 run = "flutter build ios --release --no-codesign --no-pub"
 
 [tasks.clean]

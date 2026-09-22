@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../remote_connection/application/runtime_controller.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
@@ -33,21 +34,21 @@ class const SessionsPanel({
   Widget build(BuildContext context, WidgetRef ref) {
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
     return SidePanel(
-      semanticLabel: 'Sessions',
+      semanticLabel: context.l10n.sessions,
       compact: onClose != null,
       action: onClose != null
           ? WorkspaceToolbarButton(
               icon: LucideIcons.x,
-              tooltip: 'Close sessions',
+              tooltip: context.l10n.closeSessions,
               size: 44,
               onPressed: onClose!,
             )
           : const SizedBox(width: 40),
       footer: _SessionsPanelToolbar(compact: onClose != null),
       child: environment == null
-          ? const PanelEmptyState(
+          ? PanelEmptyState(
               icon: LucideIcons.triangleAlert,
-              message: 'Runtime unavailable',
+              message: context.l10n.runtimeUnavailable,
             )
           : _SessionList(onClose: onClose),
     );
@@ -65,7 +66,7 @@ class const _SessionsPanelToolbar({required final bool compact})
         alignment: Alignment.bottomLeft,
         child: WorkspaceToolbarButton(
           icon: LucideIcons.settings,
-          tooltip: 'Settings',
+          tooltip: context.l10n.settings,
           size: compact ? 44 : null,
           onPressed: () => context.push('/settings'),
         ),
@@ -126,6 +127,14 @@ List<SessionGroup> groupSessionsByTime(List<SessionSummary> sessions) {
   ];
 }
 
+String _localizedGroup(BuildContext context, String group) => switch (group) {
+  'Today' => context.l10n.today,
+  'Yesterday' => context.l10n.yesterday,
+  'This Week' => context.l10n.thisWeek,
+  'This Month' => context.l10n.thisMonth,
+  _ => context.l10n.earlier,
+};
+
 class const _SessionList({final VoidCallback? onClose})
     extends ConsumerStatefulWidget {
   @override
@@ -174,14 +183,14 @@ class _SessionListState extends ConsumerState<_SessionList> {
     final title = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename session'),
+        title: Text(context.l10n.renameSession),
         content: AnimatedCaret(
           controller: textController,
           child: TextField(
             showCursor: false,
             controller: textController,
             autofocus: true,
-            decoration: const InputDecoration(hintText: 'Title'),
+            decoration: InputDecoration(hintText: context.l10n.title),
             onSubmitted: (value) => Navigator.pop(context, value.trim()),
           ),
         ),
@@ -193,7 +202,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
                 overlayColor: WidgetStatePropertyAll(Colors.transparent),
               ),
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.cancel),
             ),
           ),
           WorkspaceHoverSurface(
@@ -204,7 +213,10 @@ class _SessionListState extends ConsumerState<_SessionList> {
               ),
               onPressed: () =>
                   Navigator.pop(context, textController.text.trim()),
-              child: Text('Save', style: TextStyle(color: colors.accent)),
+              child: Text(
+                context.l10n.save,
+                style: TextStyle(color: colors.accent),
+              ),
             ),
           ),
         ],
@@ -220,12 +232,14 @@ class _SessionListState extends ConsumerState<_SessionList> {
   /// Deletes a session after confirmation.
   Future<void> _deleteSession(SessionSummary session) async {
     final colors = AtlasColors.of(context);
-    final label = session.title.isEmpty ? 'Untitled session' : session.title;
+    final label = session.title.isEmpty
+        ? context.l10n.untitledSession
+        : session.title;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete session'),
-        content: Text('Delete "$label"?'),
+        title: Text(context.l10n.deleteSession),
+        content: Text(context.l10n.deleteSessionQuestion(label)),
         actions: [
           WorkspaceHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
@@ -235,7 +249,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
               ),
               onPressed: () => Navigator.pop(context, false),
               child: Text(
-                'Cancel',
+                context.l10n.cancel,
                 style: TextStyle(color: colors.textPrimary),
               ),
             ),
@@ -247,7 +261,10 @@ class _SessionListState extends ConsumerState<_SessionList> {
                 overlayColor: WidgetStatePropertyAll(Colors.transparent),
               ),
               onPressed: () => Navigator.pop(context, true),
-              child: Text('Delete', style: TextStyle(color: colors.error)),
+              child: Text(
+                context.l10n.delete,
+                style: TextStyle(color: colors.error),
+              ),
             ),
           ),
         ],
@@ -315,9 +332,9 @@ class _SessionListState extends ConsumerState<_SessionList> {
                         _newSessionMenu.close();
                         _handleNewSessionAction(_NewSessionAction.here);
                       },
-                      child: const _NewSessionMenuItem(
+                      child: _NewSessionMenuItem(
                         icon: LucideIcons.plus,
-                        label: 'New session here',
+                        label: context.l10n.newSessionHere,
                       ),
                     ),
                   ),
@@ -333,23 +350,23 @@ class _SessionListState extends ConsumerState<_SessionList> {
                         _newSessionMenu.close();
                         _handleNewSessionAction(_NewSessionAction.folder);
                       },
-                      child: const _NewSessionMenuItem(
+                      child: _NewSessionMenuItem(
                         icon: LucideIcons.folderOpen,
-                        label: 'New session in folder...',
+                        label: context.l10n.newSessionInFolder,
                       ),
                     ),
                   ),
                 ],
                 child: _SidebarActionButton(
                   icon: LucideIcons.pencil,
-                  label: 'New Session',
+                  label: context.l10n.newSession,
                   onTap: () => _newSessionMenu.open(),
                 ),
               ),
-              const _SidebarActionButton(
-                key: ValueKey('atlas-search-session'),
+              _SidebarActionButton(
+                key: const ValueKey('atlas-search-session'),
                 icon: LucideIcons.search,
-                label: 'Search',
+                label: context.l10n.search,
               ),
             ],
           ),
@@ -367,9 +384,9 @@ class _SessionListState extends ConsumerState<_SessionList> {
                   ),
                 )
               : sessions.isEmpty
-              ? const PanelEmptyState(
+              ? PanelEmptyState(
                   icon: LucideIcons.messageCircle,
-                  message: 'No sessions yet',
+                  message: context.l10n.noSessionsYet,
                 )
               : RefreshIndicator(
                   onRefresh: controller.refreshSessions,
@@ -385,7 +402,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
                           key: keys[index],
                           padding: const EdgeInsets.only(top: 8),
                           child: _SessionGroupHeader(
-                            label: row.group,
+                            label: _localizedGroup(context, row.group),
                             collapsed: _collapsed.contains(row.group),
                             onToggle: () => setState(() {
                               if (!_collapsed.add(row.group)) {
@@ -528,7 +545,7 @@ class _SessionTileState extends State<_SessionTile> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Rename',
+                    context.l10n.rename,
                     style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
                   ),
                 ],
@@ -555,7 +572,7 @@ class _SessionTileState extends State<_SessionTile> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Delete',
+                    context.l10n.delete,
                     style: TextStyle(color: colors.textPrimary, fontSize: 12.5),
                   ),
                 ],
@@ -590,7 +607,7 @@ class _SessionTileState extends State<_SessionTile> {
                         Expanded(
                           child: Text(
                             session.title.isEmpty
-                                ? 'Untitled session'
+                                ? context.l10n.untitledSession
                                 : session.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -635,7 +652,7 @@ class _SessionTileState extends State<_SessionTile> {
                           ),
                         ),
                         Text(
-                          _relativeTime(session.updatedAt),
+                          _relativeTime(context, session.updatedAt),
                           style: TextStyle(
                             color: colors.textSecondary,
                             fontSize: 12,
@@ -653,10 +670,10 @@ class _SessionTileState extends State<_SessionTile> {
     );
   }
 
-  static String _relativeTime(DateTime value) {
+  static String _relativeTime(BuildContext context, DateTime value) {
     final elapsed = DateTime.now().toUtc().difference(value.toUtc());
     if (elapsed.inMinutes < 1) {
-      return 'Now';
+      return context.l10n.now;
     }
     if (elapsed.inHours < 1) {
       return '${elapsed.inMinutes}m';

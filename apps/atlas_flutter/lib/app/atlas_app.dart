@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../features/workspace/application/terminal_registry.dart';
+import '../l10n/app_localizations.dart';
 import '../shared/theme/atlas_theme.dart';
 import 'app_router.dart';
+import 'locale_mode.dart';
 import 'platform_window.dart';
 import 'runtime_environment.dart';
 import 'theme_mode.dart';
@@ -55,6 +57,13 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
       theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
       darkTheme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
       themeMode: ref.watch(themeModeProvider),
+      locale: localeForLanguage(ref.watch(languageProvider)),
+      localizationsDelegates: [
+        AppLocalizations.delegate,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
+      supportedLocales: atlasSupportedLocales,
+      localeResolutionCallback: resolveAtlasLocale,
       routerConfig: ref.watch(appRouterProvider),
       builder: (context, child) {
         // The window chrome follows the resolved appearance, not the platform:

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../remote_connection/application/runtime_controller.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import '../../application/workspace_controller.dart';
 
@@ -61,7 +62,7 @@ class _RemoteWorkingDirectoryBarState
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                'Sessions run in a directory on your computer',
+                context.l10n.remoteSessionsDirectory,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: colors.textSecondary, fontSize: 12),
@@ -86,7 +87,7 @@ class _RemoteWorkingDirectoryBarState
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                child: const Text('Choose directory'),
+                child: Text(context.l10n.chooseDirectory),
               ),
           ],
         ),
@@ -122,7 +123,7 @@ class const _RemoteDirectoryDialog() extends StatefulWidget {
 
 class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
   final _controller = TextEditingController();
-  String? _error;
+  int? _error;
 
   @override
   void dispose() {
@@ -133,11 +134,11 @@ class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
   void _submit() {
     final path = _controller.text.trim();
     if (path.isEmpty) {
-      setState(() => _error = 'Enter an absolute path such as /home/you.');
+      setState(() => _error = 1);
       return;
     }
     if (!path.startsWith('/')) {
-      setState(() => _error = 'Absolute paths start with a /.');
+      setState(() => _error = 2);
       return;
     }
     Navigator.of(context).pop(path);
@@ -147,7 +148,7 @@ class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     return AlertDialog(
-      title: const Text('Working directory on the computer'),
+      title: Text(context.l10n.remoteDirectoryTitle),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Column(
@@ -155,8 +156,7 @@ class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'New sessions run in this directory on the computer (for '
-              'example /home/you/projects).',
+              context.l10n.remoteDirectoryDescription,
               style: TextStyle(
                 color: colors.textSecondary,
                 fontSize: 12.5,
@@ -171,9 +171,13 @@ class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
                 controller: _controller,
                 autofocus: true,
                 decoration: InputDecoration(
-                  labelText: 'Directory',
+                  labelText: context.l10n.directory,
                   hintText: '/home/you/projects',
-                  errorText: _error,
+                  errorText: switch (_error) {
+                    1 => context.l10n.absolutePathExample,
+                    2 => context.l10n.absolutePathRequired,
+                    _ => null,
+                  },
                   isDense: true,
                   border: const OutlineInputBorder(),
                 ),
@@ -186,9 +190,12 @@ class _RemoteDirectoryDialogState extends State<_RemoteDirectoryDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.cancel),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Use directory')),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(context.l10n.useDirectory),
+        ),
       ],
     );
   }

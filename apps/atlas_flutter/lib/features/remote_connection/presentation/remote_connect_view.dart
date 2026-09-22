@@ -8,6 +8,7 @@ import '../data/remote_connections.dart';
 import '../application/runtime_controller.dart';
 import '../application/connection_profiles_controller.dart';
 import '../../../shared/theme/atlas_theme.dart';
+import '../../../l10n/localizations.dart';
 import '../../workspace/presentation/widgets/workspace_controls.dart';
 import 'remote_profile_form.dart';
 
@@ -31,12 +32,12 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Could not save the connection'),
+        title: Text(context.l10n.couldNotSaveConnectionTitle),
         content: Text('$error'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            child: Text(context.l10n.ok),
           ),
         ],
       ),
@@ -81,12 +82,12 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Connection failed'),
+            title: Text(context.l10n.connectionFailed),
             content: Text('$error'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
+                child: Text(context.l10n.ok),
               ),
             ],
           ),
@@ -132,7 +133,7 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Connect to the Atlas on your computer',
+                            context.l10n.connectToComputer,
                             style: TextStyle(
                               color: colors.textPrimary,
                               fontSize: 16,
@@ -144,10 +145,7 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Run `atlas server` on the computer and enter its address '
-                      'and token below. Models and commands run on the computer; '
-                      'the working directory for new sessions is chosen right '
-                      'before the first message.',
+                      context.l10n.remoteConnectInstructions,
                       style: TextStyle(
                         color: colors.textSecondary,
                         fontSize: 12.5,
@@ -166,7 +164,7 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
-                          'No connections yet.',
+                          context.l10n.noSavedConnections,
                           style: TextStyle(
                             color: colors.textSecondary,
                             fontSize: 12.5,
@@ -211,7 +209,7 @@ class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
                 child: OutlinedButton.icon(
                   onPressed: _busy ? null : () => unawaited(_addOrEdit()),
                   icon: const Icon(LucideIcons.plus, size: 16),
-                  label: const Text('Add connection'),
+                  label: Text(context.l10n.addConnection),
                 ),
               ),
             ),
@@ -238,12 +236,24 @@ class const _ProfileTile({
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final (label, color) = switch (status) {
-      RemoteConnectionStatus.connecting => ('Connecting…', colors.accent),
-      RemoteConnectionStatus.connected => ('Connected', colors.success),
-      RemoteConnectionStatus.reconnecting => ('Reconnecting…', colors.warning),
-      RemoteConnectionStatus.error => ('Connection failed', colors.error),
+      RemoteConnectionStatus.connecting => (
+        context.l10n.connecting,
+        colors.accent,
+      ),
+      RemoteConnectionStatus.connected => (
+        context.l10n.connected,
+        colors.success,
+      ),
+      RemoteConnectionStatus.reconnecting => (
+        context.l10n.reconnecting,
+        colors.warning,
+      ),
+      RemoteConnectionStatus.error => (
+        context.l10n.connectionFailed,
+        colors.error,
+      ),
       RemoteConnectionStatus.disconnected => (
-        'Not connected',
+        context.l10n.notConnected,
         colors.textSecondary,
       ),
     };
@@ -279,13 +289,13 @@ class const _ProfileTile({
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Edit',
+                  tooltip: context.l10n.edit,
                   icon: const Icon(LucideIcons.pencil, size: 14),
                   onPressed: busy ? null : onEdit,
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Remove',
+                  tooltip: context.l10n.remove,
                   icon: const Icon(LucideIcons.trash, size: 14),
                   onPressed: busy ? null : onRemove,
                 ),
@@ -327,14 +337,14 @@ class const _ProfileTile({
               child: active && status == RemoteConnectionStatus.connected
                   ? TextButton(
                       onPressed: busy ? null : onDisconnect,
-                      child: const Text('Disconnect'),
+                      child: Text(context.l10n.disconnect),
                     )
                   : TextButton(
                       onPressed: busy ? null : onConnect,
                       child: Text(
                         status == RemoteConnectionStatus.error
-                            ? 'Retry'
-                            : 'Connect',
+                            ? context.l10n.retry
+                            : context.l10n.connect,
                       ),
                     ),
             ),

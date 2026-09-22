@@ -7,26 +7,31 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../app/theme_mode.dart';
+import '../../../../app/locale_mode.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/theme/atlas_theme.dart';
 import 'widgets/connections_settings.dart';
+import 'widgets/language_selector.dart';
 import 'widgets/settings_controls.dart';
 import 'widgets/side_panel.dart';
 import 'widgets/workspace_controls.dart';
 import 'workspace_metrics.dart';
 
 /// Sections offered by the settings surface.
-enum const SettingsSection(
-  /// Rail and strip label.
-  final String label,
-
-  /// Rail and strip icon.
-  final IconData icon,
-) {
-  /// Client-local appearance preferences.
-  appearance('Appearance', LucideIcons.sunMoon),
+enum SettingsSection {
+  /// Client-local appearance and language preferences.
+  appearance(LucideIcons.sunMoon),
 
   /// ACP server connections and runtime switching.
-  connections('Connections', LucideIcons.plug),
+  connections(LucideIcons.plug);
+
+  const SettingsSection(this.icon);
+  final IconData icon;
+
+  String label(BuildContext context) => switch (this) {
+    SettingsSection.appearance => context.l10n.appearance,
+    SettingsSection.connections => context.l10n.connections,
+  };
 }
 
 /// Settings page for client-local preferences and ACP connections.
@@ -105,7 +110,7 @@ class const _SectionRail({
       key: const ValueKey('atlas-settings-rail'),
       width: SettingsPage.railWidth,
       child: SidePanel(
-        semanticLabel: 'Settings',
+        semanticLabel: context.l10n.settings,
         // The panel header already pads 4px; the rest of the traffic-light
         // inset keeps the back button clear of the native controls.
         title: Padding(
@@ -120,12 +125,12 @@ class const _SectionRail({
               WorkspaceToolbarButton(
                 key: const ValueKey('atlas-settings-back'),
                 icon: LucideIcons.arrowLeft,
-                tooltip: 'Back',
+                tooltip: context.l10n.back,
                 onPressed: () => context.pop(),
               ),
               const SizedBox(width: 8),
               Text(
-                'Settings',
+                context.l10n.settings,
                 style: TextStyle(
                   color: colors.textPrimary,
                   fontSize: 13,
@@ -187,7 +192,7 @@ class const _SectionEntry({
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    section.label,
+                    section.label(context),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -255,7 +260,7 @@ class const _SectionStrip({
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          item.label,
+                          item.label(context),
                           style: TextStyle(
                             color: item == section
                                 ? colors.textPrimary
@@ -316,7 +321,7 @@ class const _SettingsPane({
                     WorkspaceToolbarButton(
                       key: const ValueKey('atlas-settings-back'),
                       icon: LucideIcons.arrowLeft,
-                      tooltip: 'Back',
+                      tooltip: context.l10n.back,
                       size: compact
                           ? 44
                           : WorkspaceMetrics.desktopToolbarButtonSize,
@@ -324,7 +329,7 @@ class const _SettingsPane({
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Settings',
+                      context.l10n.settings,
                       style: TextStyle(
                         color: colors.textPrimary,
                         fontSize: 15,
@@ -377,19 +382,29 @@ class const _AppearanceSection() extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SettingsSectionHeader(
-          title: 'Appearance',
-          description: 'How Atlas looks on this device.',
+        SettingsSectionHeader(
+          title: context.l10n.appearance,
+          description: context.l10n.appearanceDescription,
         ),
         const Divider(height: 1),
         _SettingRow(
-          label: 'Theme',
-          description: 'Light, dark, or follow the system.',
+          label: context.l10n.theme,
+          description: context.l10n.themeDescription,
           control: _ThemeModeSelector(
             mode: mode,
             onChanged: (selected) => unawaited(
               ref.read(themeModeProvider.notifier).select(selected),
             ),
+          ),
+        ),
+        const Divider(height: 1),
+        _SettingRow(
+          label: context.l10n.language,
+          description: context.l10n.languageDescription,
+          control: LanguageSelector(
+            language: ref.watch(languageProvider),
+            onChanged: (selected) =>
+                unawaited(ref.read(languageProvider.notifier).select(selected)),
           ),
         ),
       ],
@@ -462,60 +477,26 @@ class const _ThemeModeSelector({
 }) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final colors = AtlasColors.of(context);
-    return SegmentedButton<ThemeMode>(
-      segments: const [
+    return SettingsSegmentedButton<ThemeMode>(
+      segments: [
         ButtonSegment(
           value: ThemeMode.light,
-          label: Text('Light'),
-          tooltip: 'Always use the light appearance',
+          label: Text(context.l10n.light),
+          tooltip: context.l10n.lightTooltip,
         ),
         ButtonSegment(
           value: ThemeMode.dark,
-          label: Text('Dark'),
-          tooltip: 'Always use the dark appearance',
+          label: Text(context.l10n.dark),
+          tooltip: context.l10n.darkTooltip,
         ),
         ButtonSegment(
           value: ThemeMode.system,
-          label: Text('System'),
-          tooltip: 'Follow the system appearance',
+          label: Text(context.l10n.system),
+          tooltip: context.l10n.systemThemeTooltip,
         ),
       ],
-      selected: {mode},
-      showSelectedIcon: false,
-      onSelectionChanged: (selection) => onChanged(selection.first),
-      style: ButtonStyle(
-        minimumSize: const WidgetStatePropertyAll(Size(0, 26)),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 10),
-        ),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        // The Material defaults paint the selected segment with the secondary
-        // container role, which the Atlas palette leaves unused, and set a
-        // label size that outweighs the surrounding row text.
-        backgroundColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? colors.raised
-              : Colors.transparent,
-        ),
-        foregroundColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? colors.textPrimary
-              : colors.textSecondary,
-        ),
-        side: WidgetStateProperty.all(BorderSide(color: colors.divider)),
-        shape: WidgetStateProperty.all(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AtlasRadii.control),
-          ),
-        ),
-        textStyle: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)
-              : const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
-        ),
-        visualDensity: VisualDensity.compact,
-      ),
+      selected: mode,
+      onChanged: onChanged,
     );
   }
 }

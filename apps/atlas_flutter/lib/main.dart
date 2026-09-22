@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app/atlas_app.dart';
+import 'app/locale_mode.dart';
 import 'app/platform_window.dart';
 import 'app/runtime_environment.dart';
 import 'app/shell_environment.dart';
@@ -29,6 +30,7 @@ Future<void> main() async {
   // the stored appearance instead of flashing the platform default.
   final preferences = await openThemePreferences();
   final themeMode = loadThemeMode(preferences);
+  final language = loadAppLanguage(preferences);
   if (!isMobileClient) {
     await initializePlatformWindow(
       initialBrightness: _effectiveBrightness(themeMode),
@@ -60,6 +62,9 @@ Future<void> main() async {
         themeModeProvider.overrideWith(
           () =>
               ThemeModeController(initial: themeMode, preferences: preferences),
+        ),
+        languageProvider.overrideWith(
+          () => LanguageController(initial: language, preferences: preferences),
         ),
         if (!isMobileClient)
           runtimeStartupErrorProvider.overrideWithValue(bootstrap!.error),

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../application/workspace_controller.dart';
 
 /// Hosts permission dialogs for the current workspace.
@@ -83,7 +84,7 @@ class const PermissionDialog({
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Allow ${request.toolName}?',
+              context.l10n.allowTool(request.toolName),
               style: const TextStyle(fontSize: 15),
             ),
           ),
@@ -127,19 +128,19 @@ class const PermissionDialog({
         TextButton(
           onPressed: () => Navigator.of(context).pop(PermissionReply.reject),
           child: Text(
-            _optionLabel(allowOnce, 'Reject'),
+            _optionLabel(allowOnce, context.l10n.reject),
             style: TextStyle(color: colors.textSecondary),
           ),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(PermissionReply.allowOnce),
-          child: Text(_optionLabel(allowOnce, 'Allow once')),
+          child: Text(_optionLabel(allowOnce, context.l10n.allowOnce)),
         ),
         if (allowAlways != null)
           FilledButton(
             onPressed: () =>
                 Navigator.of(context).pop(PermissionReply.allowAlways),
-            child: Text(_optionLabel(allowAlways, 'Always allow')),
+            child: Text(_optionLabel(allowAlways, context.l10n.alwaysAllow)),
           ),
       ],
     );

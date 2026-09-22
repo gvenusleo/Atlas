@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../application/workspace_state.dart';
 
 /// Transient working indicator shown above the conversation input.
@@ -71,9 +72,9 @@ class _TurnStatusBannerState extends State<TurnStatusBanner>
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     final label = switch (widget.phase) {
-      TurnPhase.thinking => 'Thinking',
-      TurnPhase.compacting => 'Compacting',
-      _ => 'Working',
+      TurnPhase.thinking => context.l10n.thinking,
+      TurnPhase.compacting => context.l10n.compacting,
+      _ => context.l10n.working,
     };
     final style = TextStyle(color: colors.textSecondary, fontSize: 12.5);
     return Row(

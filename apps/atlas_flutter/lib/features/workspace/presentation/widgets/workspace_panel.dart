@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../remote_connection/application/runtime_controller.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../remote_connection/presentation/remote_connect_view.dart';
 import '../../application/workspace_controller.dart';
 import '../workspace_metrics.dart';
@@ -34,9 +35,18 @@ class const WorkspacePanel({
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = AtlasColors.of(context);
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
-    final sessionTitle = environment == null
-        ? 'New session'
-        : ref.watch(workspaceProvider.select((s) => s.sessionTitle));
+    final workspace = ref.watch(workspaceProvider);
+    final sessionTitle = environment == null || workspace.sessionId == null
+        ? context.l10n.newSession
+        : workspace.sessions
+                  .where((session) => session.id == workspace.sessionId)
+                  .map(
+                    (session) => session.title.isEmpty
+                        ? context.l10n.untitledSession
+                        : session.title,
+                  )
+                  .firstOrNull ??
+              context.l10n.session;
     final leftToolbarInset =
         WorkspaceMetrics.showsTrafficLights && (compact || !leftActive)
         ? WorkspaceMetrics.macOSTrafficLightInset
@@ -69,7 +79,7 @@ class const WorkspacePanel({
                         WorkspaceToolbarButton(
                           key: const ValueKey('atlas-left-toggle'),
                           icon: LucideIcons.panelLeft,
-                          tooltip: 'Open sessions',
+                          tooltip: context.l10n.openSessions,
                           size: 44,
                           onPressed: onLeftPressed,
                         ),
@@ -109,7 +119,7 @@ class const WorkspacePanel({
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                'Reconnecting…',
+                                context.l10n.reconnecting,
                                 style: TextStyle(
                                   color: colors.textSecondary,
                                   fontSize: 11.5,
@@ -122,7 +132,7 @@ class const WorkspacePanel({
                         WorkspaceToolbarButton(
                           key: const ValueKey('atlas-right-toggle'),
                           icon: LucideIcons.panelRight,
-                          tooltip: 'Open workspace tools',
+                          tooltip: context.l10n.openWorkspaceTools,
                           size: 44,
                           onPressed: onRightPressed,
                         ),
@@ -150,9 +160,7 @@ class const _WorkspaceBody({final String? error}) extends ConsumerWidget {
       if (error == null) {
         return const RemoteConnectView();
       }
-      return _StartupFailure(
-        message: error ?? 'Atlas runtime is not configured.',
-      );
+      return _StartupFailure(message: context.localizeAtlasError(error!));
     }
     return const SessionPaneHost();
   }

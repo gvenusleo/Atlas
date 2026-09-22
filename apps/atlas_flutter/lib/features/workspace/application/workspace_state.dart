@@ -180,20 +180,6 @@ final class WorkspaceState({
         workspace.sessionId!,
   };
 
-  /// Display title for the central workspace.
-  String get sessionTitle {
-    final activeId = sessionId;
-    if (activeId == null) {
-      return 'New session';
-    }
-    for (final session in sessions) {
-      if (session.id == activeId) {
-        return session.title.isEmpty ? 'Untitled session' : session.title;
-      }
-    }
-    return 'Session';
-  }
-
   /// Returns a copy with the given fields replaced.
   WorkspaceState copyWith({
     String? activeKey,

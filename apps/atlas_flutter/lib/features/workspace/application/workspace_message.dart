@@ -1,6 +1,56 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
 /// Message kinds rendered in the Flutter conversation timeline.
+enum WorkspaceLocalMessage {
+  cannotLoadSessions,
+  directorySaveFailed,
+  cannotResumeSession,
+  cannotRenameSession,
+  cannotDeleteSession,
+  cannotSetMode,
+  slashCommandsNoImages,
+  modelImagesOmitted,
+  modelImageInputUnsupported,
+  chooseRemoteDirectoryFirst,
+  turnCancelled,
+  turnFailed,
+  noSessionToCompact,
+  compactionFailed,
+  contextCompacted,
+}
+
+String workspaceLocalMessageEnglish(
+  WorkspaceLocalMessage message,
+  List<Object> arguments,
+) {
+  final error = arguments.isEmpty ? '' : '${arguments.first}';
+  return switch (message) {
+    WorkspaceLocalMessage.cannotLoadSessions => 'Cannot load sessions: $error',
+    WorkspaceLocalMessage.directorySaveFailed =>
+      'The directory is active but could not be saved for the next connection.',
+    WorkspaceLocalMessage.cannotResumeSession =>
+      'Cannot resume session: $error',
+    WorkspaceLocalMessage.cannotRenameSession =>
+      'Cannot rename session: $error',
+    WorkspaceLocalMessage.cannotDeleteSession =>
+      'Cannot delete session: $error',
+    WorkspaceLocalMessage.cannotSetMode => 'Cannot set mode: $error',
+    WorkspaceLocalMessage.slashCommandsNoImages =>
+      'Slash commands do not support images.',
+    WorkspaceLocalMessage.modelImagesOmitted =>
+      '${arguments.first} does not support images; images in this conversation will be omitted.',
+    WorkspaceLocalMessage.modelImageInputUnsupported =>
+      '${arguments.first} does not support image input.',
+    WorkspaceLocalMessage.chooseRemoteDirectoryFirst => 'Choose the working directory on the computer before sending the first message.',
+    WorkspaceLocalMessage.turnCancelled => 'Turn cancelled',
+    WorkspaceLocalMessage.turnFailed => 'Turn failed: $error',
+    WorkspaceLocalMessage.noSessionToCompact => 'No session to compact.',
+    WorkspaceLocalMessage.compactionFailed => 'Compaction failed: $error',
+    WorkspaceLocalMessage.contextCompacted =>
+      'Context compacted, kept ${arguments.first} recent messages.',
+  };
+}
+
 enum WorkspaceMessageKind {
   /// User-submitted text.
   user,
@@ -35,6 +85,12 @@ final class const WorkspaceMessage({
   /// Markdown text or tool output.
   required final String text,
 
+  /// A local UI message resolved against the current locale at render time.
+  final WorkspaceLocalMessage? localMessage,
+
+  /// Values used by parameterized local messages.
+  final List<Object> localArguments = const [],
+
   /// Data URLs or remote URIs for user-attached images.
   final List<String> imageSources = const [],
 
@@ -59,6 +115,8 @@ final class const WorkspaceMessage({
         id: id,
         kind: kind,
         text: text ?? this.text,
+        localMessage: localMessage,
+        localArguments: localArguments,
         imageSources: imageSources,
         toolName: toolName,
         arguments: arguments,

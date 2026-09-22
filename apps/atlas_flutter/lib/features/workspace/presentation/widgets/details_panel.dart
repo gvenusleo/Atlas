@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../remote_connection/application/runtime_controller.dart';
+import '../../../../l10n/localizations.dart';
 import '../../application/workspace_controller.dart';
 import 'file_browser.dart';
 import 'side_panel.dart';
@@ -28,19 +29,19 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
     if (environment == null) {
       return SidePanel(
-        semanticLabel: 'Workspace tools',
+        semanticLabel: context.l10n.workspaceTools,
         compact: widget.onClose != null,
         action: widget.onClose != null
             ? WorkspaceToolbarButton(
                 icon: LucideIcons.x,
-                tooltip: 'Close workspace tools',
+                tooltip: context.l10n.closeWorkspaceTools,
                 size: 44,
                 onPressed: widget.onClose!,
               )
             : const SizedBox(width: 40),
-        child: const PanelEmptyState(
+        child: PanelEmptyState(
           icon: LucideIcons.triangleAlert,
-          message: 'Runtime unavailable',
+          message: context.l10n.runtimeUnavailable,
         ),
       );
     }
@@ -53,22 +54,20 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       // Files and terminals belong to the computer; remote sessions surface
       // file diffs and shell output through the conversation instead.
       return SidePanel(
-        semanticLabel: 'Workspace tools',
+        semanticLabel: context.l10n.workspaceTools,
         compact: widget.onClose != null,
         useCanvasColor: true,
         action: widget.onClose != null
             ? WorkspaceToolbarButton(
                 icon: LucideIcons.x,
-                tooltip: 'Close workspace tools',
+                tooltip: context.l10n.closeWorkspaceTools,
                 size: 44,
                 onPressed: widget.onClose!,
               )
             : const SizedBox(width: 40),
-        child: const PanelEmptyState(
+        child: PanelEmptyState(
           icon: LucideIcons.monitorSmartphone,
-          message:
-              'Remote session: files and terminal run on the computer. '
-              'Ask the agent to read or modify files and watch the diffs.',
+          message: context.l10n.remoteToolsHint,
         ),
       );
     }
@@ -80,14 +79,14 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       });
     }
     return SidePanel(
-      semanticLabel: 'Workspace tools',
+      semanticLabel: context.l10n.workspaceTools,
       compact: widget.onClose != null,
       useCanvasColor: true,
       title: _ToolTabs(terminal: terminal, onChanged: _onToolTabChanged),
       action: widget.onClose != null
           ? WorkspaceToolbarButton(
               icon: LucideIcons.x,
-              tooltip: 'Close workspace tools',
+              tooltip: context.l10n.closeWorkspaceTools,
               size: 44,
               onPressed: widget.onClose!,
             )
@@ -130,14 +129,14 @@ class const _ToolTabs({
       children: [
         WorkspaceToolbarButton(
           icon: LucideIcons.folder,
-          tooltip: 'Files',
+          tooltip: context.l10n.files,
           active: !terminal,
           onPressed: () => onChanged(false),
         ),
         const SizedBox(width: 4),
         WorkspaceToolbarButton(
           icon: LucideIcons.terminal,
-          tooltip: 'Terminal',
+          tooltip: context.l10n.terminal,
           active: terminal,
           onPressed: () => onChanged(true),
         ),

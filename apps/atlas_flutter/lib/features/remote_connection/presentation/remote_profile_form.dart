@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../data/remote_connections.dart';
 import '../../../shared/theme/atlas_theme.dart';
+import '../../../l10n/localizations.dart';
 import '../../../shared/widgets/animated_caret.dart';
 
 /// Form for creating or editing a remote connection profile.
@@ -28,7 +29,7 @@ class _RemoteProfileFormDialogState extends State<RemoteProfileFormDialog> {
   final _wsUrl = TextEditingController();
   final _token = TextEditingController();
   final _workingDirectory = TextEditingController();
-  String? _error;
+  int? _error;
 
   @override
   void initState() {
@@ -57,8 +58,8 @@ class _RemoteProfileFormDialogState extends State<RemoteProfileFormDialog> {
     return AlertDialog(
       title: Text(
         widget.profile == null
-            ? 'Add remote connection'
-            : 'Edit remote connection',
+            ? context.l10n.addRemoteConnection
+            : context.l10n.editRemoteConnection,
       ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
@@ -67,23 +68,28 @@ class _RemoteProfileFormDialogState extends State<RemoteProfileFormDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _field(_name, 'Name', 'My computer'),
+              _field(_name, context.l10n.name, context.l10n.myComputer),
               const SizedBox(height: 10),
-              _field(_wsUrl, 'WebSocket URL', 'ws://my-computer:8765/acp'),
+              _field(
+                _wsUrl,
+                context.l10n.webSocketUrl,
+                'ws://my-computer:8765/acp',
+              ),
               const SizedBox(height: 10),
-              _field(_token, 'Token', 'printed by `atlas server` on startup'),
+              _field(_token, context.l10n.token, context.l10n.tokenHint),
               const SizedBox(height: 10),
               _field(
                 _workingDirectory,
-                'Working directory on the computer (optional)',
+                context.l10n.remoteWorkingDirectoryOptional,
                 '/home/you/projects — needed for the first message',
               ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  style: TextStyle(color: colors.error, fontSize: 12),
-                ),
+                Text(switch (_error) {
+                  1 => context.l10n.nameRequired,
+                  2 => context.l10n.urlRequired,
+                  _ => context.l10n.tokenRequired,
+                }, style: TextStyle(color: colors.error, fontSize: 12)),
               ],
             ],
           ),
@@ -92,9 +98,9 @@ class _RemoteProfileFormDialogState extends State<RemoteProfileFormDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.cancel),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Save')),
+        FilledButton(onPressed: _submit, child: Text(context.l10n.save)),
       ],
     );
   }
@@ -121,15 +127,15 @@ class _RemoteProfileFormDialogState extends State<RemoteProfileFormDialog> {
     final token = _token.text.trim();
     final workingDirectory = _workingDirectory.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Name is required.');
+      setState(() => _error = 1);
       return;
     }
     if (wsUrl.isEmpty) {
-      setState(() => _error = 'WebSocket URL is required.');
+      setState(() => _error = 2);
       return;
     }
     if (token.isEmpty) {
-      setState(() => _error = 'Token is required.');
+      setState(() => _error = 3);
       return;
     }
     Navigator.of(context).pop(

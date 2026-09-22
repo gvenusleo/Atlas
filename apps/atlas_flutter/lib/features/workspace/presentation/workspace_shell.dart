@@ -7,6 +7,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../l10n/localizations.dart';
+
 import '../../remote_connection/application/runtime_controller.dart';
 import '../../../shared/theme/atlas_theme.dart';
 import '../application/workspace_controller.dart';
@@ -164,7 +166,9 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                   icon: _leftVisible
                       ? LucideIcons.panelLeft
                       : LucideIcons.panelLeftOpen,
-                  tooltip: _leftVisible ? 'Hide sessions' : 'Show sessions',
+                  tooltip: _leftVisible
+                      ? context.l10n.hideSessions
+                      : context.l10n.showSessions,
                   onPressed: () =>
                       _setLeftVisible(!_leftVisible, leftPanelWidth),
                 ),
@@ -178,7 +182,9 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                   icon: _rightVisible
                       ? LucideIcons.panelRight
                       : LucideIcons.panelRightOpen,
-                  tooltip: _rightVisible ? 'Hide details' : 'Show details',
+                  tooltip: _rightVisible
+                      ? context.l10n.hideDetails
+                      : context.l10n.showDetails,
                   onPressed: () =>
                       _setRightVisible(!_rightVisible, rightPanelWidth),
                 ),

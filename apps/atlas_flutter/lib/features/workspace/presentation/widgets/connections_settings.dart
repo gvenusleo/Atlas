@@ -8,6 +8,7 @@ import '../../../remote_connection/data/acp_connections.dart';
 import '../../../remote_connection/application/runtime_controller.dart';
 import '../../../remote_connection/application/connection_profiles_controller.dart';
 import '../../../../shared/theme/atlas_theme.dart';
+import '../../../../l10n/localizations.dart';
 import '../../../../shared/widgets/animated_caret.dart';
 import '../../../remote_connection/presentation/remote_connect_view.dart';
 import 'settings_controls.dart';
@@ -48,7 +49,7 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
     } on Object catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save the connection: $error')),
+        SnackBar(content: Text(context.l10n.couldNotSaveConnection('$error'))),
       );
     }
   }
@@ -66,7 +67,7 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text(context.l10n.close),
           ),
         ],
       ),
@@ -119,18 +120,16 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SettingsSectionHeader(
-          title: 'ACP connections',
-          description:
-              'Run the agent on this computer, or switch to an '
-              'external ACP server.',
+        SettingsSectionHeader(
+          title: context.l10n.acpConnections,
+          description: context.l10n.acpConnectionsDescription,
         ),
         const Divider(height: 1),
         if (connections.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Text(
-              'No connections yet. Add one to use an external agent.',
+              context.l10n.noConnectionsYet,
               style: TextStyle(color: colors.textSecondary, fontSize: 12),
             ),
           )
@@ -146,7 +145,7 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
           Padding(
             padding: const EdgeInsets.only(top: 10),
             child: Text(
-              error,
+              context.localizeAtlasError(error),
               style: TextStyle(color: colors.error, fontSize: 12),
             ),
           ),
@@ -159,18 +158,18 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
             TextButton.icon(
               onPressed: () => unawaited(_addConnection()),
               icon: const Icon(LucideIcons.plus, size: 14),
-              label: const Text('Add connection'),
+              label: Text(context.l10n.addConnection),
             ),
             TextButton.icon(
               onPressed: () => unawaited(_manageRemote()),
               icon: const Icon(LucideIcons.monitorSmartphone, size: 14),
-              label: const Text('Remote connections'),
+              label: Text(context.l10n.remoteConnections),
             ),
             if (status == AcpConnectionStatus.connected)
               TextButton.icon(
                 onPressed: () => unawaited(_deactivate()),
                 icon: const Icon(LucideIcons.rotateCcw, size: 14),
-                label: const Text('Back to local runtime'),
+                label: Text(context.l10n.backToLocalRuntime),
               ),
           ],
         ),
@@ -222,10 +221,13 @@ class const _ConnectionRow({
             ),
           ),
           if (!active)
-            TextButton(onPressed: onActivate, child: const Text('Activate')),
+            TextButton(
+              onPressed: onActivate,
+              child: Text(context.l10n.activate),
+            ),
           IconButton(
             icon: const Icon(LucideIcons.trash2, size: 14),
-            tooltip: 'Remove connection',
+            tooltip: context.l10n.removeConnection,
             onPressed: onRemove,
           ),
         ],
@@ -283,7 +285,7 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     return AlertDialog(
-      title: const Text('Add ACP Connection'),
+      title: Text(context.l10n.addAcpConnection),
       content: SizedBox(
         width: 380,
         child: Column(
@@ -291,7 +293,7 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Presets',
+              context.l10n.presets,
               style: TextStyle(color: colors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 6),
@@ -313,7 +315,7 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
                 showCursor: false,
                 controller: _name,
                 autofocus: true,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(labelText: context.l10n.name),
               ),
             ),
             const SizedBox(height: 8),
@@ -322,7 +324,7 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
               child: TextField(
                 showCursor: false,
                 controller: _command,
-                decoration: const InputDecoration(labelText: 'Command'),
+                decoration: InputDecoration(labelText: context.l10n.command),
               ),
             ),
             const SizedBox(height: 8),
@@ -331,9 +333,7 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
               child: TextField(
                 showCursor: false,
                 controller: _arguments,
-                decoration: const InputDecoration(
-                  labelText: 'Arguments (space separated)',
-                ),
+                decoration: InputDecoration(labelText: context.l10n.arguments),
               ),
             ),
           ],
@@ -342,11 +342,11 @@ class _ConnectionFormDialogState extends ConsumerState<_ConnectionFormDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.cancel),
         ),
         TextButton(
           onPressed: _submit,
-          child: Text('Add', style: TextStyle(color: colors.accent)),
+          child: Text(context.l10n.add, style: TextStyle(color: colors.accent)),
         ),
       ],
     );
