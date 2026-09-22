@@ -12,18 +12,27 @@ import '../features/remote_connection/application/runtime_controller.dart';
 /// The returned environment injects the ACP client as the runtime, so
 /// presentation code consumes a remote agent exactly like the local runtime.
 /// The model catalog is discovered from a temporary session's config options
-/// and the temporary session is removed again.
-Future<RuntimeBootstrap> bootstrapAcpClient(AcpConnection connection) async {
+/// and the temporary session is removed again. [environment] supplies the
+/// startup exports used by the child process and its home-directory probe.
+Future<RuntimeBootstrap> bootstrapAcpClient(
+  AcpConnection connection, {
+  Map<String, String>? environment,
+}) async {
+  final values = Map<String, String>.unmodifiable(
+    environment ?? Platform.environment,
+  );
   try {
     final agent = await AcpAgent.start(
-      AcpAgentConfig(command: connection.command, args: connection.arguments),
+      AcpAgentConfig(
+        command: connection.command,
+        args: connection.arguments,
+        env: values,
+      ),
     );
     final client = AcpClient(agent.transport);
     await client.connect();
     final home =
-        Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        Directory.current.path;
+        values['HOME'] ?? values['USERPROFILE'] ?? Directory.current.path;
     final probe = await client.createSession(workingDirectory: home);
     final catalog = client.catalog;
     try {

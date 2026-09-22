@@ -112,6 +112,32 @@ functions from `app`; feature code does not import the runtime bootstrap. The
 working-directory provider lives in `shared/application`, so connection selection
 and workspace drafts do not depend on each other's controllers.
 
+On macOS, `app/shell_environment.dart` resolves the user's exported environment
+once before local bootstrap. It starts the absolute `SHELL` (zsh, bash, or sh;
+`/bin/zsh` when absent) as an interactive login shell in `HOME`. A randomly framed,
+NUL-delimited environment capture separates variables from startup output and
+preserves embedded newlines and equals signs. The immutable snapshot overlays
+the inherited environment while preserving `PWD`, `OLDPWD`, `SHLVL`, and `_`.
+Configuration `${VAR}` substitutions, the composed shell tool, and ACP subprocess
+connections all receive this snapshot explicitly; `Platform.environment` is not
+mutated. Shell commands still run under `/bin/sh -c`.
+
+Resolution has a 10-second deadline and a combined stdout/stderr limit of 1 MiB.
+Unsupported shells, launch failures, nonzero exits, malformed output, excessive
+output, or timeout retain the entire original environment. The app logs only a
+failure category, never variable values or shell output. When the probe is still
+running, cleanup stops its root, takes a bounded `/bin/ps` parent/PID snapshot,
+and kills discovered descendants before the root, including foreground commands
+that ignore TERM. Enumeration has a 500 ms deadline and a 1 MiB output limit;
+process exit and pipe cleanup are also bounded. If enumeration fails, cleanup
+still kills the root. Descendants already reparented before the snapshot (for
+example after an early shell exit), newly spawned during enumeration, or
+deliberately detached cannot be guaranteed cleaned up. Other platforms and CLI/TUI keep
+inheriting their existing environment, and the embedded terminal still starts
+its own login shell. Restart the app after changing shell configuration. The
+snapshot contains exported variables, not aliases or functions, and does not
+reselect mise project versions when the session directory changes.
+
 Saved ACP and remote profiles use shared repositories that serialize list updates
 and publish immutable snapshots after successful writes. Views call controller
 commands rather than reading or replacing stored lists. Each file browser has its

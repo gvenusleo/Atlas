@@ -68,15 +68,15 @@ LoggingConfig _logging(
   );
 }
 
-/// Reads and parses the configuration file at [file].
-AtlasConfig loadConfig(File file) {
+/// Reads [file], resolving variable references against [environment] when set.
+AtlasConfig loadConfig(File file, {Map<String, String>? environment}) {
   final String yamlText;
   try {
     yamlText = file.readAsStringSync();
   } on FileSystemException catch (error) {
     throw ConfigLoadException('cannot read ${file.path}: ${error.message}');
   }
-  return parseConfig(yamlText);
+  return parseConfig(yamlText, environment: environment);
 }
 
 Object? _loadDocument(String yamlText) {

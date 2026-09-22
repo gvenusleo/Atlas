@@ -102,6 +102,25 @@ Flutter 的 Riverpod controller 放在各 feature 的 `application` 目录中。
 连接函数；feature 代码不导入 runtime bootstrap。工作目录 provider 放在
 `shared/application`，连接选择与 workspace 草稿不需要相互依赖对方的 controller。
 
+macOS 上，`app/shell_environment.dart` 在本地 bootstrap 前读取一次用户导出的环境。
+它在 `HOME` 中以交互式登录模式启动绝对路径的 `SHELL`，支持 zsh、bash 和 sh，
+未设置时使用 `/bin/zsh`。随机边界标记与 NUL 分隔的数据将环境变量和启动输出分开，
+保留值中的换行及等号。不可变快照覆盖继承环境中的同名变量，但保留原始的
+`PWD`、`OLDPWD`、`SHLVL` 和 `_`。配置中的 `${VAR}`、组装后的 shell 工具及
+ACP 子进程连接显式接收同一快照，不修改 `Platform.environment`。
+shell 工具仍使用 `/bin/sh -c` 执行命令。
+
+解析限时 10 秒，stdout/stderr 合计最多接收 1 MiB。不支持的 shell、启动失败、非零退出、
+数据格式错误、输出超限或超时都会完整保留原始环境。应用只记录失败类别，不记录变量值或
+shell 输出。探测仍在运行时，清理先暂停根进程，通过 `/bin/ps` 获取有界的父子 PID 快照，
+再先终止已发现的后代、最后终止根进程，包括忽略 TERM 的前台命令。
+枚举限时 500 ms、输出上限 1 MiB，进程退出等待及管道清理也都有界。枚举失败仍会终止
+根进程。快照前已经重新归属的后代（例如 shell 提前退出后）、枚举期间新启动的后代，
+以及主动分离的进程无法保证清理。
+其他平台和 CLI/TUI 继续继承既有环境，内置终端仍自行启动登录 shell。
+修改 shell 配置后需要重启 App；快照只包含导出变量，不包含 alias 或函数，也不会随会话
+目录变化重新选择 mise 项目版本。
+
 已保存的 ACP 与远程连接配置使用共享 repository，串行处理列表更新，并在写入成功后
 发布不可变快照。视图调用 controller 命令，不直接读取或覆盖存储列表。每个文件浏览器
 都有独立、自动释放的 controller，管理目录缓存、文件监听防抖、预览和文件操作。

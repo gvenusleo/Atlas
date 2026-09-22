@@ -82,6 +82,44 @@ providers:
     ]);
   });
 
+  test(
+    'composeRuntime passes startup exports to its default shell tool',
+    () async {
+      final config = parseConfig('''default_model: oa/test
+providers:
+  - name: oa
+    type: responses
+    base_url: https://example.com
+    api_key: k
+    models:
+      - value: test
+''');
+      final runtime = composeRuntime(
+        config,
+        store: _testStore(),
+        shellEnvironment: {'ATLAS_COMPOSE_ENV_TEST': 'composed'},
+      );
+      final result = await runtime.tools.execute(
+        ToolContext(
+          sessionId: SessionId('test'),
+          turnId: TurnId('test'),
+          workingDirectory: Directory.current.path,
+        ),
+        ToolCall(
+          id: ToolCallId('env'),
+          name: 'shell',
+          arguments: {
+            'command': Platform.isWindows
+                ? r'Write-Output $env:ATLAS_COMPOSE_ENV_TEST'
+                : r'printf "%s" "$ATLAS_COMPOSE_ENV_TEST"',
+          },
+        ),
+      );
+      expect(result.metadata['exit_code'], 0);
+      expect(result.content.trim(), 'composed');
+    },
+  );
+
   test('builds real providers and storage from config', () async {
     final config = parseConfig('''
 default_model: oa/gpt-4o

@@ -6,6 +6,8 @@ Shared process composition for Atlas applications.
 
 - Constructs the configured providers, tools, storage, prompt builder, and
   single `AgentRuntime` through `composeRuntime`.
+- Accepts an optional `shellEnvironment` snapshot from the composition root
+  for its default shell tool; shell initialization belongs to the application.
 - Exposes `composeModels` so CLI and Flutter entry points can present the
   configured model catalog without duplicating provider mapping.
 

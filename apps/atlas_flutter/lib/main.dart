@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'app/atlas_app.dart';
 import 'app/platform_window.dart';
 import 'app/runtime_environment.dart';
+import 'app/shell_environment.dart';
 import 'app/theme_mode.dart';
 
 /// Whether this build targets a phone or tablet.
@@ -36,9 +37,21 @@ Future<void> main() async {
     // file-access entitlements; without this the picker refuses to open.
     await FilePicker.skipEntitlementsChecks();
   }
-  final bootstrap = isMobileClient ? null : await bootstrapRuntime();
+  final shellEnvironment = isMobileClient
+      ? null
+      : await resolveShellEnvironment();
+  if (shellEnvironment?.failure case final failure?) {
+    debugPrint(
+      'Atlas shell environment: ${failure.name}; using inherited environment.',
+    );
+  }
+  final environment = shellEnvironment?.environment;
+  final bootstrap = isMobileClient
+      ? null
+      : await bootstrapRuntime(environment: environment);
   final controller = createRuntimeEnvironmentController(
     local: bootstrap?.environment,
+    environment: environment,
   );
   runApp(
     ProviderScope(

@@ -12,23 +12,33 @@ import 'remote_bootstrap.dart';
 
 export '../features/remote_connection/application/runtime_controller.dart';
 
-/// Creates the application's connection controller with process adapters.
+/// Creates process adapters that reuse the startup [environment] snapshot.
 RuntimeEnvironmentController createRuntimeEnvironmentController({
   RuntimeEnvironment? local,
-}) => RuntimeEnvironmentController(
-  local: local,
-  connectAcp: bootstrapAcpClient,
-  connectRemote: bootstrapRemoteConnection,
-);
+  Map<String, String>? environment,
+}) {
+  final snapshot = environment == null
+      ? null
+      : Map<String, String>.unmodifiable(environment);
+  return RuntimeEnvironmentController(
+    local: local,
+    connectAcp: (connection) =>
+        bootstrapAcpClient(connection, environment: snapshot),
+    connectRemote: bootstrapRemoteConnection,
+  );
+}
 
 /// Loads `~/.atlas/config.yaml` and composes the Flutter process runtime.
 ///
 /// The local runtime is exposed through an in-process ACP server and consumed
 /// through an [AcpClient]. Mobile clients skip local composition.
+/// [environment] supplies both configuration substitutions and shell exports.
 Future<RuntimeBootstrap> bootstrapRuntime({
   Map<String, String>? environment,
 }) async {
-  final values = environment ?? Platform.environment;
+  final values = Map<String, String>.unmodifiable(
+    environment ?? Platform.environment,
+  );
   final home = values['HOME'] ?? values['USERPROFILE'];
   if (home == null || home.isEmpty) {
     return const RuntimeBootstrap.failed(
@@ -39,9 +49,13 @@ Future<RuntimeBootstrap> bootstrapRuntime({
   final configFile = File('$home/.atlas/config.yaml');
   DriftSessionStore? store;
   try {
-    final config = loadConfig(configFile);
+    final config = loadConfig(configFile, environment: values);
     store = DriftSessionStore.openFile(File(config.session.dbPath));
-    final runtime = composeRuntime(config, store: store);
+    final runtime = composeRuntime(
+      config,
+      store: store,
+      shellEnvironment: values,
+    );
     final models = List<ModelDescriptor>.unmodifiable(composeModels(config));
     final server = AcpServer(runtime, models: models);
     final (serverDone, clientTransport) = server.serveMemory();

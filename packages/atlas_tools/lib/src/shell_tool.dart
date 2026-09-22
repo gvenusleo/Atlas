@@ -15,7 +15,13 @@ const defaultShellTimeoutSeconds = 30;
 const shellOutputLimit = 50 * 1024;
 
 /// Runs a command through /bin/sh on Unix or PowerShell on Windows.
-final class ShellTool implements Tool {
+final class ShellTool({Map<String, String>? environment}) implements Tool {
+  /// Copies optional child-process overrides; omitted values inherit normally.
+  this
+    : _environment = environment == null ? null : Map.unmodifiable(environment);
+
+  final Map<String, String>? _environment;
+
   @override
   ToolDescriptor get descriptor => const ToolDescriptor(
     name: 'shell',
@@ -79,6 +85,7 @@ final class ShellTool implements Tool {
     return _ShellExecution(
       context,
       Duration(seconds: seconds),
+      _environment,
     ).run(command, workingDirectory, input as String?);
   }
 
@@ -86,7 +93,11 @@ final class ShellTool implements Tool {
       ToolResult(content: message, isError: true);
 }
 
-final class _ShellExecution(final ToolContext context, final Duration timeout) {
+final class _ShellExecution(
+  final ToolContext context,
+  final Duration timeout,
+  final Map<String, String>? environment,
+) {
   final _buffer = ShellOutputBuffer(shellOutputLimit);
   final _completed = Completer<void>();
   final _interrupted = Completer<void>();
@@ -121,6 +132,7 @@ final class _ShellExecution(final ToolContext context, final Duration timeout) {
         Platform.isWindows ? 'powershell' : '/bin/sh',
         Platform.isWindows ? ['-Command', command] : ['-c', command],
         workingDirectory: cwd,
+        environment: environment,
       );
       _process = process;
       _listen(process.stdout);

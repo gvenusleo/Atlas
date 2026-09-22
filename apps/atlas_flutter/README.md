@@ -74,6 +74,12 @@ HTTPS App Links / Universal Links remain Planned until a domain and Android
 release certificate fingerprints are supplied and the domain association files
 are hosted.
 
+On macOS, startup imports exported variables from the user's interactive login
+shell once, so configuration values, local shell tools, and ACP subprocesses can
+find terminal-installed commands even when the app starts from Finder or Dock.
+Restart Atlas after editing shell configuration. Resolution failure falls back
+to the original environment; aliases and shell functions are not imported.
+
 ## Run and Verify
 
 From the repository root:

@@ -10,10 +10,13 @@ import 'package:atlas_tools/atlas_tools.dart';
 import 'logging.dart';
 
 /// Composes the configured runtime for one process.
+///
+/// [shellEnvironment] supplies exported variables to the default shell tool.
 AgentRuntime composeRuntime(
   AtlasConfig config, {
   SessionStore? store,
   ToolRegistry? tools,
+  Map<String, String>? shellEnvironment,
   ModelProvider? provider,
   HttpStreamClient? httpClient,
   SessionContext Function(String workingDirectory)? sessionContextBuilder,
@@ -26,7 +29,7 @@ AgentRuntime composeRuntime(
         ReadTool(),
         WriteTool(),
         EditTool(),
-        ShellTool(),
+        ShellTool(environment: shellEnvironment),
         PlanTool(),
       ]);
   final providers = <ProviderId, ModelProvider>{};

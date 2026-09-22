@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_tools/atlas_tools.dart';
@@ -20,6 +21,25 @@ void main() {
     expect(result.content, contains('hello'));
     expect(result.metadata['exit_code'], 0);
   });
+
+  test(
+    'copies child environment overrides and preserves inherited variables',
+    () async {
+      final dir = await tempDir();
+      final values = {'ATLAS_SHELL_ENV_TEST': 'initial'};
+      final configured = ShellTool(environment: values);
+      values['ATLAS_SHELL_ENV_TEST'] = 'mutated';
+      final command = Platform.isWindows
+          ? r'Write-Output $env:ATLAS_SHELL_ENV_TEST; Write-Output $env:PATH'
+          : r'printf "%s\n%s" "$ATLAS_SHELL_ENV_TEST" "$PATH"';
+      final result = await configured.execute(toolContext(dir), {
+        'command': command,
+      });
+      expect(result.metadata['exit_code'], 0);
+      expect(result.content, startsWith('initial'));
+      expect(result.content, contains(Platform.environment['PATH']!));
+    },
+  );
 
   test('passes stdin to the command', () async {
     final dir = await tempDir();

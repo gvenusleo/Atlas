@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:atlas_config/atlas_config.dart';
 import 'package:atlas_provider/atlas_provider.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
@@ -9,6 +11,42 @@ void main() {
     'OPENAI_API_KEY': 'sk-oa-test',
   };
   const home = '/home/test';
+
+  test(
+    'loadConfig uses supplied exports for keys, home, and logging',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('atlas_config_env_');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/config.yaml');
+      await file.writeAsString(r'''default_model: oa/test
+providers:
+  - name: oa
+    type: chat_completions
+    base_url: https://example.com
+    api_key: ${ATLAS_CONFIG_TEST_KEY}
+    models:
+      - value: test
+''');
+      final config = loadConfig(
+        file,
+        environment: {
+          'HOME': dir.path,
+          'ATLAS_CONFIG_TEST_KEY': 'injected-key',
+          'ATLAS_LOG_LEVEL': 'debug',
+        },
+      );
+      expect(
+        (config.providers.single as ConfiguredOpenAI).configuration.apiKey,
+        'injected-key',
+      );
+      expect(config.session.dbPath, '${dir.path}/.atlas/atlas.db');
+      expect(config.logging.level, 'debug');
+      expect(
+        () => loadConfig(file, environment: {'HOME': dir.path}),
+        throwsA(isA<ConfigLoadException>()),
+      );
+    },
+  );
 
   test('parses a full configuration with both provider types', () {
     final config = parseConfig(
