@@ -1,15 +1,157 @@
+import 'dart:io';
+
 import 'package:atlas_runtime/atlas_runtime.dart' as runtime;
 import 'package:atlas_storage/atlas_storage.dart';
+import 'package:atlas_storage/src/database/database.dart';
 import 'package:test/test.dart';
 
 void main() {
   late DriftSessionStore store;
+  var storeClosed = false;
 
   setUp(() {
     store = DriftSessionStore.inMemory();
+    storeClosed = false;
   });
 
-  tearDown(() => store.close());
+  tearDown(() async {
+    if (!storeClosed) await store.close();
+  });
+
+  test(
+    'stores all session, turn, and message times as Unix milliseconds',
+    () async {
+      await store.close();
+      storeClosed = true;
+      final directory = await Directory.systemTemp.createTemp(
+        'atlas-time-test-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}/atlas.db');
+      final fileStore = DriftSessionStore.openFile(file);
+      var fileStoreClosed = false;
+      addTearDown(() async {
+        if (!fileStoreClosed) await fileStore.close();
+      });
+
+      final created = DateTime.utc(2026, 1, 2, 3, 4, 5, 123);
+      final started = DateTime.utc(2026, 1, 2, 3, 4, 6, 234);
+      final occurred = DateTime.utc(2026, 1, 2, 3, 4, 7, 345);
+      final completed = DateTime.utc(2026, 1, 2, 3, 4, 8, 456);
+      final compacted = DateTime.utc(2026, 1, 2, 3, 4, 9, 567);
+      final session = _session('session-ms', updatedAt: created);
+      final turn = runtime.Turn(
+        id: runtime.TurnId('turn-ms'),
+        sessionId: session.id,
+        status: runtime.TurnStatus.running,
+        startedAt: started,
+      );
+      final user = runtime.UserMessageItem(
+        id: runtime.TimelineItemId('item-ms-user'),
+        sessionId: session.id,
+        turnId: turn.id,
+        sequence: 0,
+        occurredAt: occurred,
+        content: const [runtime.TextContent('hello')],
+      );
+      final assistant = runtime.AssistantMessageItem(
+        id: runtime.TimelineItemId('item-ms-assistant'),
+        sessionId: session.id,
+        turnId: turn.id,
+        sequence: 1,
+        occurredAt: completed,
+        content: const [runtime.TextContent('world')],
+        model: _model,
+        stopReason: runtime.StopReason.endTurn,
+      );
+
+      await fileStore.beginTurn(
+        runtime.BeginTurn(session: session, turn: turn, userMessage: user),
+      );
+      await fileStore.appendModelStep(
+        session.id,
+        runtime.PersistedModelStep(
+          assistantMessage: assistant,
+          toolCalls: const [],
+        ),
+      );
+      await fileStore.finishTurn(
+        session.id,
+        runtime.Turn(
+          id: turn.id,
+          sessionId: session.id,
+          status: runtime.TurnStatus.completed,
+          startedAt: started,
+          completedAt: completed,
+        ),
+      );
+
+      final loaded = await fileStore.loadSession(session.id);
+      expect(loaded.session.createdAt, created);
+      expect(loaded.turns.single.startedAt, started);
+      expect(loaded.turns.single.completedAt, completed);
+      expect(loaded.timeline.first.occurredAt, occurred);
+      expect(loaded.timeline.last.occurredAt, completed);
+
+      await fileStore.saveCompaction(
+        session.id,
+        runtime.CompactionCheckpoint(
+          sessionId: session.id,
+          compactedThroughSequence: 1,
+          summary: 'summary',
+          keptRecentMessages: 0,
+          inputTokensBefore: 10,
+          inputTokensAfter: 4,
+          createdAt: compacted,
+        ),
+      );
+      final afterCompaction = await fileStore.loadSession(session.id);
+      expect(afterCompaction.session.updatedAt, compacted);
+      expect(afterCompaction.session.compaction!.createdAt, compacted);
+
+      await fileStore.close();
+      fileStoreClosed = true;
+      final database = AtlasDatabase.openFile(file);
+      try {
+        final sessionRow = await database
+            .customSelect(
+              'SELECT created_at, updated_at, compaction_created_at FROM sessions',
+            )
+            .getSingle();
+        expect(
+          sessionRow.read<int>('created_at'),
+          created.millisecondsSinceEpoch,
+        );
+        expect(
+          sessionRow.read<int>('updated_at'),
+          compacted.millisecondsSinceEpoch,
+        );
+        expect(
+          sessionRow.read<int>('compaction_created_at'),
+          compacted.millisecondsSinceEpoch,
+        );
+        final turnRow = await database
+            .customSelect('SELECT started_at, completed_at FROM turns')
+            .getSingle();
+        expect(turnRow.read<int>('started_at'), started.millisecondsSinceEpoch);
+        expect(
+          turnRow.read<int>('completed_at'),
+          completed.millisecondsSinceEpoch,
+        );
+        final messageRow = await database
+            .customSelect(
+              "SELECT occurred_at FROM messages WHERE id = 'item-ms-user'",
+            )
+            .getSingle();
+        expect(
+          messageRow.read<int>('occurred_at'),
+          occurred.millisecondsSinceEpoch,
+        );
+      } finally {
+        await database.close();
+      }
+    },
+  );
 
   test('round trips typed timeline and model continuation', () async {
     final session = _session('session-1', updatedAt: DateTime.utc(2026, 1, 2));
@@ -140,8 +282,14 @@ void main() {
   });
 
   test('lists sessions with a stable cursor and deletes sessions', () async {
-    final first = _session('session-a', updatedAt: DateTime.utc(2026, 1, 1));
-    final second = _session('session-b', updatedAt: DateTime.utc(2026, 1, 2));
+    final first = _session(
+      'session-a',
+      updatedAt: DateTime.utc(2026, 1, 1, 0, 0, 0, 123),
+    );
+    final second = _session(
+      'session-b',
+      updatedAt: DateTime.utc(2026, 1, 1, 0, 0, 0, 456),
+    );
     await store.createSession(first);
     await store.createSession(second);
     final page = await store.listSessions(const runtime.SessionQuery(limit: 1));

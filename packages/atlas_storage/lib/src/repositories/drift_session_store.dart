@@ -150,10 +150,11 @@ final class DriftSessionStore._(final AtlasDatabase _database)
       );
     }
     if (cursor != null) {
+      final timestamp = cursor.updatedAt.millisecondsSinceEpoch;
       select.where(
         (table) =>
-            table.updatedAt.isSmallerThanValue(cursor.updatedAt) |
-            (table.updatedAt.equals(cursor.updatedAt) &
+            table.updatedAt.isSmallerThanValue(timestamp) |
+            (table.updatedAt.equals(timestamp) &
                 table.id.isSmallerThanValue(cursor.id)),
       );
     }

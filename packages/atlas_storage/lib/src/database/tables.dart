@@ -1,5 +1,19 @@
 import 'package:drift/drift.dart';
 
+/// Stores UTC instants as Unix milliseconds in SQLite INTEGER columns.
+final class const UnixMillisecondsConverter()
+    extends TypeConverter<DateTime, int> {
+  /// Creates a timestamp converter.
+  this;
+
+  @override
+  DateTime fromSql(int fromDb) =>
+      DateTime.fromMillisecondsSinceEpoch(fromDb, isUtc: true);
+
+  @override
+  int toSql(DateTime value) => value.toUtc().millisecondsSinceEpoch;
+}
+
 /// Durable session metadata and its latest compaction checkpoint.
 @DataClassName('SessionRow')
 class Sessions extends Table {
@@ -61,13 +75,14 @@ class Sessions extends Table {
       integer().withDefault(const Constant(0))();
 
   /// UTC checkpoint creation time; null when no checkpoint exists.
-  DateTimeColumn get compactionCreatedAt => dateTime().nullable()();
+  IntColumn get compactionCreatedAt =>
+      integer().map(const UnixMillisecondsConverter()).nullable()();
 
   /// UTC creation time.
-  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get createdAt => integer().map(const UnixMillisecondsConverter())();
 
   /// UTC last-update time.
-  DateTimeColumn get updatedAt => dateTime()();
+  IntColumn get updatedAt => integer().map(const UnixMillisecondsConverter())();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -88,10 +103,11 @@ class Turns extends Table {
   TextColumn get status => text()();
 
   /// UTC turn start time.
-  DateTimeColumn get startedAt => dateTime()();
+  IntColumn get startedAt => integer().map(const UnixMillisecondsConverter())();
 
   /// UTC terminal time.
-  DateTimeColumn get completedAt => dateTime().nullable()();
+  IntColumn get completedAt =>
+      integer().map(const UnixMillisecondsConverter()).nullable()();
 
   /// Selected provider identifier.
   TextColumn get providerId => text().nullable()();
@@ -164,7 +180,8 @@ class Messages extends Table {
   TextColumn get payloadJson => text()();
 
   /// UTC append time.
-  DateTimeColumn get occurredAt => dateTime()();
+  IntColumn get occurredAt =>
+      integer().map(const UnixMillisecondsConverter())();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
