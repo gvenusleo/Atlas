@@ -41,29 +41,58 @@ enum SettingsSection {
 /// titlebar drag areas, and the custom caption controls on platforms without
 /// native ones.
 ///
-/// Navigation lives in the rail, not in a toolbar above the whole window: the
-/// rail reuses the sessions sidebar skeleton, so its header carries the back
-/// button and the surface title while the pane starts at the same baseline.
-/// Compact layouts hide the rail and switch sections from a strip inside the
-/// pane instead.
+/// Navigation lives in the rail, with a back action at its foot. Compact
+/// layouts hide the rail and switch sections from a strip inside the pane.
 class const SettingsPage({super.key}) extends ConsumerStatefulWidget {
   /// Width of the section rail on desktop layouts.
-  static const railWidth = WorkspaceMetrics.leftDefaultWidth;
+  static const railWidth = 260.0;
 
   /// Maximum width of the settings rows inside the content pane.
   ///
-  /// Rows stop short of the pane edge so a label and its control stay in one
-  /// glance on a wide window.
-  static const columnWidth = 640.0;
+  /// The content stays centered without stretching rows across a wide window.
+  static const columnWidth = 820.0;
 
   @override
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends ConsumerState<SettingsPage> {
+class _SettingsPageState extends ConsumerState<SettingsPage>
+    with SingleTickerProviderStateMixin {
   var _section = SettingsSection.appearance;
+  var _railVisible = true;
+  late final AnimationController _railAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _railAnimation = AnimationController(
+      value: 1,
+      duration: WorkspaceMetrics.sidebarAnimationDuration,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _railAnimation.dispose();
+    super.dispose();
+  }
 
   void _select(SettingsSection section) => setState(() => _section = section);
+
+  void _toggleRail() {
+    setState(() => _railVisible = !_railVisible);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _railAnimation.value = _railVisible ? 1 : 0;
+    } else {
+      unawaited(
+        _railAnimation.animateTo(
+          _railVisible ? 1 : 0,
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,20 +103,66 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             builder: (context, constraints) {
               final desktop =
                   constraints.maxWidth >= WorkspaceMetrics.desktopBreakpoint;
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              return Stack(
                 children: [
-                  if (desktop) ...[
-                    _SectionRail(section: _section, onSelect: _select),
-                    const _VerticalHairline(),
-                  ],
-                  Expanded(
-                    child: _SettingsPane(
-                      section: _section,
-                      onSelect: _select,
-                      showRail: desktop,
+                  Positioned.fill(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (desktop)
+                          AnimatedBuilder(
+                            animation: _railAnimation,
+                            builder: (context, child) {
+                              if (_railAnimation.value == 0) {
+                                return const SizedBox.shrink();
+                              }
+                              return ClipRect(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  widthFactor: _railAnimation.value,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _SectionRail(
+                                  section: _section,
+                                  onSelect: _select,
+                                ),
+                                const _VerticalHairline(),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: _SettingsPane(
+                            section: _section,
+                            onSelect: _select,
+                            showRail: desktop,
+                            showBack: desktop && !_railVisible,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                  if (desktop)
+                    Positioned(
+                      top: 6,
+                      left: WorkspaceMetrics.showsTrafficLights
+                          ? WorkspaceMetrics.macOSTrafficLightInset
+                          : 6,
+                      child: WorkspaceToolbarButton(
+                        key: const ValueKey('atlas-settings-rail-toggle'),
+                        icon: _railVisible
+                            ? LucideIcons.panelLeft
+                            : LucideIcons.panelLeftOpen,
+                        tooltip: _railVisible
+                            ? context.l10n.hideSessions
+                            : context.l10n.showSessions,
+                        onPressed: _toggleRail,
+                      ),
+                    ),
                 ],
               );
             },
@@ -98,7 +173,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 }
 
-/// Section list with the surface navigation in its header.
+/// Section list with an exit action at the foot of the rail.
 class const _SectionRail({
   required final SettingsSection section,
   required final ValueChanged<SettingsSection> onSelect,
@@ -111,51 +186,58 @@ class const _SectionRail({
       width: SettingsPage.railWidth,
       child: SidePanel(
         semanticLabel: context.l10n.settings,
-        // The panel header already pads 4px; the rest of the traffic-light
-        // inset keeps the back button clear of the native controls.
-        title: Padding(
-          padding: EdgeInsets.only(
-            left: WorkspaceMetrics.showsTrafficLights
-                ? WorkspaceMetrics.macOSTrafficLightInset - 4
-                : 0,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              WorkspaceToolbarButton(
-                key: const ValueKey('atlas-settings-back'),
-                icon: LucideIcons.arrowLeft,
-                tooltip: context.l10n.back,
-                onPressed: () => context.pop(),
-              ),
-              const SizedBox(width: 8),
-              Text(
+        footer: const Padding(
+          padding: EdgeInsets.fromLTRB(10, 8, 10, 14),
+          child: _SettingsBackButton(),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              child: Text(
                 context.l10n.settings,
                 style: TextStyle(
-                  color: colors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  color: colors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            ],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final item in SettingsSection.values)
-                _SectionEntry(
+            ),
+            for (final item in SettingsSection.values)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: _SectionEntry(
                   key: ValueKey('atlas-settings-rail-${item.name}'),
                   section: item,
                   selected: item == section,
                   onSelect: onSelect,
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class const _SettingsBackButton() extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return TextButton.icon(
+      key: const ValueKey('atlas-settings-back'),
+      onPressed: () => context.pop(),
+      style: ButtonStyle(
+        alignment: Alignment.centerLeft,
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        foregroundColor: WidgetStatePropertyAll(colors.textSecondary),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        ),
+      ),
+      icon: const Icon(LucideIcons.arrowLeft, size: 15),
+      label: Text(context.l10n.back),
     );
   }
 }
@@ -291,6 +373,7 @@ class const _SettingsPane({
   required final SettingsSection section,
   required final ValueChanged<SettingsSection> onSelect,
   required final bool showRail,
+  required final bool showBack,
 }) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -353,9 +436,14 @@ class const _SettingsPane({
           ],
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(32, 28, 32, 40),
+              padding: EdgeInsets.fromLTRB(
+                compact ? 20 : 40,
+                compact ? 28 : 48,
+                compact ? 20 : 40,
+                40,
+              ),
               child: Align(
-                alignment: Alignment.topLeft,
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
                     maxWidth: SettingsPage.columnWidth,
@@ -368,6 +456,14 @@ class const _SettingsPane({
               ),
             ),
           ),
+          if (showBack)
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(10, 8, 10, 14),
+                child: _SettingsBackButton(),
+              ),
+            ),
         ],
       ),
     );
@@ -386,6 +482,7 @@ class const _AppearanceSection() extends ConsumerWidget {
           title: context.l10n.appearance,
           description: context.l10n.appearanceDescription,
         ),
+        const SizedBox(height: 28),
         const Divider(height: 1),
         _SettingRow(
           label: context.l10n.theme,
@@ -470,7 +567,7 @@ class const _SettingRow({
   }
 }
 
-/// Three-way selector for the client-local theme mode.
+/// Compact selector for the client-local theme mode.
 class const _ThemeModeSelector({
   required final ThemeMode mode,
   required final ValueChanged<ThemeMode> onChanged,
@@ -480,6 +577,11 @@ class const _ThemeModeSelector({
     return SettingsSegmentedButton<ThemeMode>(
       segments: [
         ButtonSegment(
+          value: ThemeMode.system,
+          label: Text(context.l10n.system),
+          tooltip: context.l10n.systemThemeTooltip,
+        ),
+        ButtonSegment(
           value: ThemeMode.light,
           label: Text(context.l10n.light),
           tooltip: context.l10n.lightTooltip,
@@ -488,11 +590,6 @@ class const _ThemeModeSelector({
           value: ThemeMode.dark,
           label: Text(context.l10n.dark),
           tooltip: context.l10n.darkTooltip,
-        ),
-        ButtonSegment(
-          value: ThemeMode.system,
-          label: Text(context.l10n.system),
-          tooltip: context.l10n.systemThemeTooltip,
         ),
       ],
       selected: mode,
