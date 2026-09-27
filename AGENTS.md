@@ -53,6 +53,10 @@
 
 ## Verification
 
+- Add a test only when it protects a specific behavior and can catch a plausible failure that existing tests would miss.
+- Prioritize boundaries, failures, state changes, and integration between components; use representative cases instead of many equivalent inputs.
+- Do not test trivial forwarding, repeat the same assertion at multiple layers, or mirror the implementation to compute expected results.
+- Assert observable outcomes with stable inputs; avoid locking tests to incidental layout, wording, timing, or internal call counts unless those are explicit requirements.
 - Run focused tests for changed behavior first.
 - Run `mise run ci` before delivery. It resolves the locked workspace, checks formatting, analyzes Dart and Flutter code, and runs available tests.
 - For Flutter platform integration changes, also run the matching `mise run app-build-*` task.
