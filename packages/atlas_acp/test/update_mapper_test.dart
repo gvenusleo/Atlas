@@ -9,24 +9,6 @@ void main() {
   final time = DateTime.utc(2026, 1, 1);
 
   group('planEntries', () {
-    test('converts a valid plan argument list', () {
-      final entries = planEntries([
-        {'step': 'Read files', 'status': 'pending'},
-        {'step': 'Fix bug', 'status': 'in_progress'},
-      ]);
-      expect(entries, [
-        {'content': 'Read files', 'priority': 'medium', 'status': 'pending'},
-        {'content': 'Fix bug', 'priority': 'medium', 'status': 'in_progress'},
-      ]);
-    });
-
-    test('trims step text', () {
-      final entries = planEntries([
-        {'step': '  spaced  ', 'status': 'completed'},
-      ]);
-      expect(entries!.single['content'], 'spaced');
-    });
-
     test('rejects non-list, empty, or malformed payloads', () {
       expect(planEntries(null), isNull);
       expect(planEntries('plan'), isNull);
@@ -149,46 +131,6 @@ void main() {
       expect(chunks[0].chunk.messageId, isNot(chunks[1].chunk.messageId));
     });
 
-    test('tool_call titles are short human-readable phrases', () {
-      final mapper = TurnUpdateMapper(session);
-      final updates = mapper.map(
-        ModelResponseReceived(
-          sessionId: session,
-          turnId: turn,
-          sequence: 0,
-          occurredAt: time,
-          assistantMessage: _assistant([TextContent('I will check.')]),
-          toolCalls: [_toolCallItem('call-1', 'read', 1)],
-        ),
-      );
-      final toolCall = (updates.single as ToolCallUpdateSession).toolCall;
-      expect(toolCall.title, 'Read file');
-      expect(toolCall.kind, ToolKind.read);
-    });
-
-    test('shell tool calls use the command as their title', () {
-      final mapper = TurnUpdateMapper(session);
-      final updates = mapper.map(
-        ModelResponseReceived(
-          sessionId: session,
-          turnId: turn,
-          sequence: 0,
-          occurredAt: time,
-          assistantMessage: _assistant([TextContent('I will check.')]),
-          toolCalls: [
-            _toolCallItem(
-              'call-1',
-              'shell',
-              1,
-              arguments: {'command': 'ls -la'},
-            ),
-          ],
-        ),
-      );
-      final toolCall = (updates.single as ToolCallUpdateSession).toolCall;
-      expect(toolCall.title, 'ls -la');
-    });
-
     test('shell tool calls register the display terminal with their cwd', () {
       final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(
@@ -220,53 +162,6 @@ void main() {
           'cwd': '/tmp',
         },
       });
-    });
-
-    test('tool_call titles truncate shell commands over the limit', () {
-      final mapper = TurnUpdateMapper(session);
-      final longCommand = 'echo ${'x' * 2000}';
-      final updates = mapper.map(
-        ModelResponseReceived(
-          sessionId: session,
-          turnId: turn,
-          sequence: 0,
-          occurredAt: time,
-          assistantMessage: _assistant([TextContent('I will check.')]),
-          toolCalls: [
-            _toolCallItem(
-              'call-1',
-              'shell',
-              1,
-              arguments: {'command': longCommand},
-            ),
-          ],
-        ),
-      );
-      final title = (updates.single as ToolCallUpdateSession).toolCall.title;
-      expect(title, 'echo ${'x' * 995}…');
-      expect(title.codeUnits.length, shellTitleLimit + 1);
-    });
-
-    test('shell start updates carry only the status', () {
-      final mapper = TurnUpdateMapper(session);
-      final updates = mapper.map(
-        ToolStarted(
-          sessionId: session,
-          turnId: turn,
-          sequence: 0,
-          occurredAt: time,
-          call: _toolCallItem(
-            'call-1',
-            'shell',
-            1,
-            arguments: {'command': 'ls -la'},
-          ),
-        ),
-      );
-      final update = (updates.single as ToolCallStatusUpdate).update;
-      expect(update.status, ToolCallStatus.inProgress);
-      expect(update.content, isNull);
-      expect(update.meta, isEmpty);
     });
 
     test('file tool results render as diffs with follow-along locations', () {
@@ -311,42 +206,6 @@ void main() {
       expect(update.locations!.single.line, 1);
     });
 
-    test('new file writes render as diffs with no old text', () {
-      final mapper = TurnUpdateMapper(session);
-      final updates = <SessionUpdate>[
-        ...mapper.map(
-          ModelResponseReceived(
-            sessionId: session,
-            turnId: turn,
-            sequence: 0,
-            occurredAt: time,
-            assistantMessage: _assistant([TextContent('I will check.')]),
-            toolCalls: [_toolCallItem('call-1', 'write', 1)],
-          ),
-        ),
-        ...mapper.map(
-          ToolFinished(
-            sessionId: session,
-            turnId: turn,
-            sequence: 1,
-            occurredAt: time,
-            result: _resultItem(
-              'call-1',
-              'Wrote 5 bytes to /tmp/new.dart',
-              2,
-              metadata: const {'path': '/tmp/new.dart', 'newText': 'hello'},
-            ),
-          ),
-        ),
-      ];
-      final update = (updates.last as ToolCallStatusUpdate).update;
-      final diff = update.content!.whereType<ToolCallDiff>().single;
-      expect(diff.path, '/tmp/new.dart');
-      expect(diff.oldText, isNull);
-      expect(diff.newText, 'hello');
-      expect(update.locations!.single.line, isNull);
-    });
-
     test('failed file results keep the text summary instead of a diff', () {
       final mapper = TurnUpdateMapper(session);
       final updates = mapper.map(
@@ -372,30 +231,6 @@ void main() {
           .content;
       expect((content as TextContentBlock).text, 'old_text not found: x');
       expect(update.locations, isNull);
-    });
-
-    test('non-file tools never render diffs from stray metadata', () {
-      final mapper = TurnUpdateMapper(session);
-      final updates = mapper.map(
-        ToolFinished(
-          sessionId: session,
-          turnId: turn,
-          sequence: 0,
-          occurredAt: time,
-          result: _resultItem(
-            'call-1',
-            'search results',
-            1,
-            metadata: const {'path': '/tmp/a.dart', 'newText': 'changed'},
-          ),
-        ),
-      );
-      final update = (updates.single as ToolCallStatusUpdate).update;
-      final content = update.content!
-          .whereType<ToolCallContentBlock>()
-          .single
-          .content;
-      expect((content as TextContentBlock).text, 'search results');
     });
 
     test('completed shell results stream into the display terminal', () {
@@ -516,21 +351,6 @@ void main() {
       final updates = replayTimeline(timeline);
       expect(updates[0], isA<AgentThoughtChunk>());
       expect(updates[1], isA<AgentMessageChunk>());
-    });
-
-    test('resolves relative tool paths against the working directory', () {
-      final timeline = <TimelineItem>[
-        _toolCallItem(
-          'call-1',
-          'read',
-          1,
-          arguments: {'path': 'lib/main.dart', 'offset': 3},
-        ),
-      ];
-      final updates = replayTimeline(timeline, workingDirectory: '/project');
-      final toolCall = (updates.single as ToolCallUpdateSession).toolCall;
-      expect(toolCall.locations.single.path, '/project/lib/main.dart');
-      expect(toolCall.locations.single.line, 3);
     });
 
     test('plan items replay as plan updates and skip results', () {

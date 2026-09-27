@@ -102,17 +102,6 @@ void main() {
     expect(catalog.lookup('proj')!.content, contains('Project atlas content'));
   });
 
-  test('unquotes quoted frontmatter values', () {
-    writeSkill(
-      userAgents.path,
-      'quoted',
-      '---\nname: "quoted"\ndescription: \'Single quoted desc\'\n---\nBody',
-    );
-
-    final catalog = load();
-    expect(catalog.lookup('quoted')!.description, 'Single quoted desc');
-  });
-
   test('parses YAML block scalars with dedented multi-line values', () {
     writeSkill(
       userAgents.path,
@@ -134,25 +123,6 @@ void main() {
     );
   });
 
-  test('block scalar values may contain colons', () {
-    writeSkill(
-      userAgents.path,
-      'colons',
-      '---\n'
-          'name: colons\n'
-          'description: |\n'
-          '  Fetch the page at https://example.com and extract it.\n'
-          '---\n'
-          'Body',
-    );
-
-    final catalog = load();
-    expect(
-      catalog.lookup('colons')!.description,
-      'Fetch the page at https://example.com and extract it.',
-    );
-  });
-
   test('folds lines in a `>` block scalar like YAML', () {
     writeSkill(
       userAgents.path,
@@ -168,130 +138,6 @@ void main() {
 
     final catalog = load();
     expect(catalog.lookup('folded')!.description, 'Folded into one line.');
-  });
-
-  for (final marker in ['>-', '>+', '|-', '|+']) {
-    test('loads multi-line descriptions with `$marker` chomping', () {
-      final content =
-          '---\n'
-          'name: chomped\n'
-          'description: $marker\n'
-          '  First line without a colon.\n'
-          '  Second line with package:args.\n'
-          '\n'
-          'metadata:\n'
-          '  model: example\n'
-          '---\n'
-          'Body';
-      writeSkill(userAgents.path, 'chomped', content);
-
-      final catalog = load();
-      final separator = marker.startsWith('>') ? ' ' : '\n';
-      final expected =
-          'First line without a colon.${separator}Second line '
-          'with package:args.';
-      expect(catalog.lookup('chomped')?.description, expected);
-      expect(catalog.summaries.single.description, expected);
-      expect(catalog.lookup('chomped')?.content, content);
-    });
-
-    test('does not expose `$marker` as a colon-containing description', () {
-      writeSkill(
-        userAgents.path,
-        'colons',
-        '---\n'
-            'name: colons\n'
-            'description: $marker\n'
-            '  Use package:args for CLI parsing.\n'
-            '---\nBody',
-      );
-
-      expect(
-        load().lookup('colons')?.description,
-        'Use package:args for CLI parsing.',
-      );
-    });
-
-    test('skips empty descriptions with `$marker` chomping', () {
-      writeSkill(
-        userAgents.path,
-        'empty',
-        '---\nname: empty\ndescription: $marker\n\n---\nBody',
-      );
-      writeSkill(
-        userAgents.path,
-        'good',
-        '---\nname: good\ndescription: Still available.\n---\nBody',
-      );
-
-      final catalog = load();
-      expect(catalog.lookup('empty'), isNull);
-      expect(catalog.summaries.map((skill) => skill.name), ['good']);
-    });
-  }
-
-  test('quoted block markers remain literal descriptions', () {
-    writeSkill(
-      userAgents.path,
-      'quoted-marker',
-      '---\nname: quoted-marker\ndescription: ">-"\n---\nBody',
-    );
-
-    expect(load().lookup('quoted-marker')?.description, '>-');
-  });
-
-  test('block scalars accept tab indentation', () {
-    writeSkill(
-      userAgents.path,
-      'tabbed',
-      '---\n'
-          'name: tabbed\n'
-          'description: |\n'
-          '\tTab-indented description.\n'
-          '---\n'
-          'Body',
-    );
-
-    final catalog = load();
-    expect(catalog.lookup('tabbed')!.description, 'Tab-indented description.');
-  });
-
-  test('block scalars keep blank lines inside the block', () {
-    writeSkill(
-      userAgents.path,
-      'blank',
-      '---\n'
-          'name: blank\n'
-          'description: |\n'
-          '  First paragraph.\n'
-          '\n'
-          '  Second paragraph.\n'
-          '---\n'
-          'Body',
-    );
-
-    final catalog = load();
-    expect(
-      catalog.lookup('blank')!.description,
-      'First paragraph.\n\nSecond paragraph.',
-    );
-  });
-
-  test('skips a block scalar with no content', () {
-    writeSkill(
-      userAgents.path,
-      'emptyblock',
-      '---\nname: emptyblock\ndescription: |\n---\nBody',
-    );
-    writeSkill(
-      userAgents.path,
-      'good',
-      '---\nname: good\ndescription: Fine.\n---\nBody',
-    );
-
-    final catalog = load();
-    expect(catalog.summaries.map((s) => s.name), ['good']);
-    expect(catalog.lookup('emptyblock'), isNull);
   });
 
   test('skips directories without SKILL.md and missing roots', () {

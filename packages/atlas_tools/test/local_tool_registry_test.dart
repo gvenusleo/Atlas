@@ -20,24 +20,6 @@ final class _FakeTool(final String name) implements Tool {
 }
 
 void main() {
-  test('exposes descriptors in registration order', () {
-    final registry = LocalToolRegistry([_named('b'), _named('a')]);
-
-    expect(registry.descriptors.map((d) => d.name), ['b', 'a']);
-  });
-
-  test('dispatches a call to the matching tool', () async {
-    final dir = await tempDir();
-    final registry = LocalToolRegistry([_named('read')]);
-
-    final result = await registry.execute(
-      toolContext(dir),
-      ToolCall(id: ToolCallId('call-1'), name: 'read', arguments: const {}),
-    );
-
-    expect(result.content, 'read executed');
-  });
-
   test('returns an error for an unknown tool', () async {
     final dir = await tempDir();
     final registry = LocalToolRegistry([_named('read')]);

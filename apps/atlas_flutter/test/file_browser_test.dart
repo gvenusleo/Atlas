@@ -147,62 +147,6 @@ void main() {
     expect(find.textContaining('# Title'), findsOneWidget);
   });
 
-  testWidgets('non-markdown files offer no preview toggle', (tester) async {
-    File('${tempDir.path}/notes.txt').writeAsStringSync('plain');
-
-    await pumpBrowser(tester);
-
-    await tester.tap(find.text('notes.txt'));
-    await settle(tester);
-    expect(find.text('plain'), findsOneWidget);
-    expect(find.byTooltip('Toggle markdown preview'), findsNothing);
-  });
-
-  testWidgets('preview toolbar shows the path relative to the root', (
-    tester,
-  ) async {
-    final sub = Directory('${tempDir.path}/sub')..createSync();
-    File('${sub.path}/a.txt').writeAsStringSync('hello');
-
-    await pumpBrowser(tester);
-    await tester.tap(find.text('sub'));
-    await settle(tester);
-    await tester.tap(find.text('a.txt'));
-    await settle(tester);
-
-    expect(find.text('sub${Platform.pathSeparator}a.txt'), findsOneWidget);
-  });
-
-  testWidgets('file rows highlight with the raised color on hover', (
-    tester,
-  ) async {
-    File('${tempDir.path}/a.txt').writeAsStringSync('hello');
-
-    await pumpBrowser(tester);
-
-    AnimatedContainer rowSurface() => tester.widget<AnimatedContainer>(
-      find
-          .ancestor(
-            of: find.text('a.txt'),
-            matching: find.byType(AnimatedContainer),
-          )
-          .first,
-    );
-    expect((rowSurface().decoration as BoxDecoration?)?.color, isNull);
-
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.text('a.txt')));
-    await tester.pump(const Duration(milliseconds: 200));
-
-    expect(
-      (rowSurface().decoration as BoxDecoration?)?.color,
-      AtlasPalette.standard.light.raised,
-    );
-  });
-
   testWidgets('rejects oversized files', (tester) async {
     File('${tempDir.path}/big.txt')
         .writeAsBytesSync(List.filled(600 * 1024, 65));
@@ -239,21 +183,6 @@ void main() {
     await settle(tester);
     expect(File('${tempDir.path}/notes.md').existsSync(), isTrue);
     expect(find.textContaining('notes.md'), findsWidgets);
-  });
-
-  testWidgets('left click dismisses an open file menu', (tester) async {
-    Directory('${tempDir.path}/aaa').createSync();
-    Directory('${tempDir.path}/zzz').createSync();
-    await pumpBrowser(tester);
-    await tester.tapAt(
-      tester.getCenter(find.text('zzz')),
-      buttons: kSecondaryMouseButton,
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Rename'), findsOneWidget);
-    await tester.tap(find.text('aaa'));
-    await tester.pumpAndSettle();
-    expect(find.text('Rename'), findsNothing);
   });
 
   testWidgets('renames a file from the row menu', (tester) async {

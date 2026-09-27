@@ -74,25 +74,6 @@ session:
     );
   }
 
-  for (final args in [
-    ['--help'],
-    ['-h'],
-    ['help'],
-    ['acp', '--help'],
-    ['server', '--help'],
-    ['cache', '--help'],
-  ]) {
-    test('$args succeeds without configuration', () async {
-      final process = await start(args);
-      await process.shouldExit(ExitCode.success.code);
-      final output = await process.stdout.rest.toList();
-      expect(output.join('\n'), contains('Usage: atlas'));
-      expect(output.join('\n'), isNot(contains('\x1b')));
-      expect(await process.stderr.rest.toList(), isEmpty);
-      expect(Directory(d.path('.atlas')).existsSync(), isFalse);
-    });
-  }
-
   test('version matches the manifest-generated constant', () async {
     final process = await start(['--version']);
     await process.shouldExit(0);

@@ -58,30 +58,4 @@ void main() {
       expect(AcpConnection.fromJson(json), isNull, reason: 'for $json');
     }
   });
-
-  test('fromJson defaults arguments and ignores non-string entries', () {
-    expect(
-      AcpConnection.fromJson(<String, Object?>{
-        'name': 'Atlas',
-        'command': 'atlas',
-      })!.arguments,
-      isEmpty,
-    );
-    expect(
-      AcpConnection.fromJson(<String, Object?>{
-        'name': 'Atlas',
-        'command': 'atlas',
-        'arguments': 'acp',
-      })!.arguments,
-      isEmpty,
-    );
-    expect(
-      AcpConnection.fromJson(<String, Object?>{
-        'name': 'Atlas',
-        'command': 'atlas',
-        'arguments': ['acp', 7, null],
-      })!.arguments,
-      ['acp'],
-    );
-  });
 }

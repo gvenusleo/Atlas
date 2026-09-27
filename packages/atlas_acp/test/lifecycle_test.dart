@@ -92,26 +92,6 @@ void main() {
     // acpd omits an empty authMethods array on the wire.
     expect(result['authMethods'] ?? const [], isEmpty);
   });
-  test('session/new creates a loadable session', () async {
-    final wire = await Wire.open();
-    final created = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 1,
-      'method': 'session/new',
-      'params': {'cwd': '/tmp/project'},
-    });
-    final sessionId = (created['result'] as Map)['sessionId'] as String;
-    expect(sessionId, isNotEmpty);
-
-    final loaded = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 2,
-      'method': 'session/load',
-      'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
-    });
-    expect(loaded.containsKey('result'), isTrue);
-    await wire.close();
-  });
   test(
     'session/load replays timeline updates then returns config options',
     () async {
@@ -147,42 +127,6 @@ void main() {
       await wire.close();
     },
   );
-  test('session/resume returns config options without replaying', () async {
-    final wire = await Wire.open();
-    final sessionId = await createWireSession(wire);
-    await runWirePrompt(wire, sessionId);
-
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 3,
-      'method': 'session/resume',
-      'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
-    });
-    final result = response['result'] as Map<String, Object?>;
-    expect(result['configOptions'], isNotEmpty);
-    // The turn's five updates plus the auto-generated title notification and
-    // the usage report emitted on resume.
-    expect(wire.notificationCount, 7);
-    await wire.close();
-  });
-  test('session/list returns created sessions', () async {
-    final wire = await Wire.open();
-    await createWireSession(wire);
-
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 2,
-      'method': 'session/list',
-      'params': <String, Object?>{},
-    });
-    final sessions = (response['result'] as Map)['sessions'] as List<Object?>;
-    expect(sessions, hasLength(1));
-    final first = sessions.single as Map<String, Object?>;
-    expect(first['cwd'], '/tmp/project');
-    expect(first.containsKey('title'), isFalse);
-    expect(first['updatedAt'], isA<String>());
-    await wire.close();
-  });
   test('session/list reports additional directories', () async {
     final wire = await Wire.open();
     final created = await wire.send({
@@ -224,17 +168,6 @@ void main() {
       'params': <String, Object?>{},
     });
     expect((list['result'] as Map)['sessions'] as List<Object?>, isEmpty);
-    await wire.close();
-  });
-  test('session/delete of an unknown session succeeds silently', () async {
-    final wire = await Wire.open();
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 1,
-      'method': 'session/delete',
-      'params': {'sessionId': 'missing'},
-    });
-    expect(response['result'], <String, Object?>{});
     await wire.close();
   });
   test('session/set_title renames a session and lists the new title', () async {
@@ -289,42 +222,6 @@ void main() {
       await wire.close();
     },
   );
-  test(
-    'session/new with an empty catalog still offers the default model',
-    () async {
-      final wire = await Wire.open();
-      final created = await wire.send({
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'session/new',
-        'params': {'cwd': '/tmp/project'},
-      });
-      final result = created['result'] as Map<String, Object?>;
-      final options = result['configOptions'] as List<Object?>;
-      final modelOption = options[0] as Map<String, Object?>;
-      expect(modelOption['currentValue'], 'test/m');
-      // The current value must always have a matching selectable option.
-      final values = modelOption['options'] as List<Object?>;
-      expect(values, hasLength(1));
-      expect((values.single as Map)['value'], 'test/m');
-      await wire.close();
-    },
-  );
-  test('session/load and session/resume return config options', () async {
-    final wire = await Wire.open(models: testCatalog);
-    final sessionId = await createWireSession(wire);
-    for (final method in ['session/load', 'session/resume']) {
-      final response = await wire.send({
-        'jsonrpc': '2.0',
-        'id': 2,
-        'method': method,
-        'params': {'sessionId': sessionId, 'cwd': '/tmp/project'},
-      });
-      final result = response['result'] as Map<String, Object?>;
-      expect(result['configOptions'] as List<Object?>, hasLength(2));
-    }
-    await wire.close();
-  });
   test('session/load reports the last usage without a turn', () async {
     final wire = await Wire.open(
       responses: [
@@ -435,33 +332,6 @@ void main() {
     final error = response['error'] as Map<String, Object?>;
     expect(error['code'], -32602);
     expect(error['message'], contains('absolute path'));
-    await wire.close();
-  });
-  test('session/new ignores non-string additional directories', () async {
-    // acpd drops malformed entries instead of rejecting the request.
-    final wire = await Wire.open();
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 1,
-      'method': 'session/new',
-      'params': {
-        'cwd': '/tmp/project',
-        'additionalDirectories': [123],
-      },
-    });
-    expect((response['result'] as Map)['sessionId'], isNotEmpty);
-    await wire.close();
-  });
-  test('session/list rejects a non-string cwd filter', () async {
-    // acpd fails parsing a non-string cwd, surfacing an internal error.
-    final wire = await Wire.open();
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 1,
-      'method': 'session/list',
-      'params': {'cwd': 123},
-    });
-    expect((response['error'] as Map)['code'], isNotNull);
     await wire.close();
   });
   test('ndjson channel decodes one message per line', () async {

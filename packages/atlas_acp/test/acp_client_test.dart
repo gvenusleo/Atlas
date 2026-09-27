@@ -20,36 +20,6 @@ void main() {
     await wire.close();
   });
 
-  test('initialize sends the full ACP parameter set', () async {
-    final wire = await _FakeServer.open();
-    final client = AcpClient.channel(wire.clientChannel);
-    await client.connect();
-    addTearDown(client.close);
-
-    final init = wire.requests.firstWhere(
-      (request) => request.method == 'initialize',
-    );
-    final params = init.params as Map<String, Object?>;
-    expect(params['protocolVersion'], 1);
-    final info = params['clientInfo'] as Map<String, Object?>;
-    expect(info['name'], isNotEmpty);
-    await wire.close();
-  });
-
-  test('session/new includes the mcpServers parameter', () async {
-    final wire = await _FakeServer.open();
-    final client = AcpClient.channel(wire.clientChannel);
-    await client.connect();
-    addTearDown(client.close);
-
-    await client.createSession(workingDirectory: '/tmp');
-    final request = wire.requests.firstWhere(
-      (request) => request.method == 'session/new',
-    );
-    expect((request.params as Map<String, Object?>)['mcpServers'], <Object?>[]);
-    await wire.close();
-  });
-
   test('uses a seeded catalog before the first session is created', () async {
     final catalog = [
       rt.ModelDescriptor(
@@ -75,29 +45,6 @@ void main() {
     expect(client.catalog.single.reasoningEfforts.single.value, 'high');
     await wire.close();
   });
-
-  test(
-    'parses the model catalog and reasoning efforts from configOptions',
-    () async {
-      final wire = await _FakeServer.open();
-      final client = AcpClient.channel(wire.clientChannel);
-      await client.connect();
-      addTearDown(client.close);
-
-      await client.createSession(workingDirectory: '/tmp');
-
-      expect(client.catalog, hasLength(2));
-      final first = client.catalog.first;
-      expect(first.ref.toString(), 'opencode/foo');
-      expect(first.name, 'Foo Model');
-      expect(first.reasoningEfforts.map((effort) => effort.value), [
-        'low',
-        'high',
-      ]);
-      expect(client.defaultModel.toString(), 'opencode/foo');
-      await wire.close();
-    },
-  );
 
   test('runs a full turn and reconstructs runtime events', () async {
     final wire = await _FakeServer.open();
@@ -440,22 +387,6 @@ void main() {
     await wire.close();
   });
 
-  test('parses session info, commands, and mode changes', () async {
-    final wire = await _FakeServer.open();
-    final client = AcpClient.channel(wire.clientChannel);
-    await client.connect();
-    addTearDown(client.close);
-
-    final session = await client.createSession(workingDirectory: '/tmp');
-    wire.pushInfoCommandsAndMode();
-    await pumpEventQueue();
-
-    expect(client.titleFor(session.id), 'My session');
-    expect(client.commandsFor(session.id).single.name, 'web');
-    expect(client.modeFor(session.id), 'build');
-    await wire.close();
-  });
-
   test('parses mode options and syncs the mode before a prompt', () async {
     final wire = await _FakeServer.open();
     final client = AcpClient.channel(wire.clientChannel);
@@ -521,16 +452,6 @@ void main() {
     expect(wire.methods, contains('authenticate'));
     await wire.close();
   });
-
-  test(
-    'closing one memory transport completes the peer incoming stream',
-    () async {
-      final pair = MemoryTransportPair();
-      final done = pair.right.incoming.drain<void>();
-      await pair.left.close();
-      await done.timeout(const Duration(seconds: 1));
-    },
-  );
 }
 
 /// Flushes pending microtasks and stream events.

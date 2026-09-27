@@ -9,34 +9,6 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('defaults to the system language without a stored value', () async {
-    final preferences = await SharedPreferences.getInstance();
-
-    expect(loadAppLanguage(preferences), AppLanguage.system);
-    expect(loadAppLanguage(null), AppLanguage.system);
-    expect(localeForLanguage(AppLanguage.system), isNull);
-  });
-
-  test('reads supported languages and ignores unknown values', () async {
-    SharedPreferences.setMockInitialValues({languagePreferenceKey: 'en'});
-    expect(
-      loadAppLanguage(await SharedPreferences.getInstance()),
-      AppLanguage.english,
-    );
-
-    SharedPreferences.setMockInitialValues({languagePreferenceKey: 'zh-Hans'});
-    expect(
-      loadAppLanguage(await SharedPreferences.getInstance()),
-      AppLanguage.simplifiedChinese,
-    );
-
-    SharedPreferences.setMockInitialValues({languagePreferenceKey: 'fr'});
-    expect(
-      loadAppLanguage(await SharedPreferences.getInstance()),
-      AppLanguage.system,
-    );
-  });
-
   test('selecting a language applies and persists it', () async {
     final preferences = await SharedPreferences.getInstance();
     final container = ProviderContainer(

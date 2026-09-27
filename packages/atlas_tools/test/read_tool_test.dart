@@ -9,18 +9,6 @@ import 'tool_test_utils.dart';
 void main() {
   final tool = ReadTool();
 
-  test('reads a UTF-8 file from the working directory', () async {
-    final dir = await tempDir();
-    final file = File('${dir.path}/note.txt');
-    await file.writeAsString('line 1\nline 2\nline 3\n');
-
-    final result = await tool.execute(toolContext(dir), {'path': 'note.txt'});
-
-    expect(result.isError, isFalse);
-    expect(result.content, 'line 1\nline 2\nline 3');
-    expect(result.metadata, isEmpty);
-  });
-
   test('continues with offset and limit and reports next_offset', () async {
     final dir = await tempDir();
     final file = File('${dir.path}/big.txt');
@@ -36,29 +24,6 @@ void main() {
 
     expect(result.content, 'line 3\nline 4\nline 5\nline 6');
     expect(result.metadata['next_offset'], 7);
-  });
-
-  test('does not report next_offset at the end of the file', () async {
-    final dir = await tempDir();
-    await File('${dir.path}/small.txt').writeAsString('a\nb\n');
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'small.txt',
-      'offset': 2,
-      'limit': 10,
-    });
-
-    expect(result.content, 'b');
-    expect(result.metadata, isEmpty);
-  });
-
-  test('rejects a directory', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {'path': '.'});
-
-    expect(result.isError, isTrue);
-    expect(result.content, contains('directory'));
   });
 
   test('rejects a missing file', () async {

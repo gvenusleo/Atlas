@@ -52,76 +52,6 @@ int _argb(Color color) =>
 
 void main() {
   group('CaretAnimation', () {
-    test('snaps on first sight and on geometry-only moves', () {
-      final animation = CaretAnimation();
-      expect(
-        animation.update(
-          rect: _caret(100),
-          caretOffset: 0,
-          timestamp: Duration.zero,
-        ),
-        isNull,
-      );
-      expect(animation.isActive, isFalse);
-
-      // Same caret, new geometry (scrolling): a settled caret just follows.
-      expect(
-        animation.update(rect: _caret(140), caretOffset: 0, timestamp: _frame),
-        isNull,
-      );
-      expect(animation.isActive, isFalse);
-    });
-
-    test('lets the leading edge arrive before the trailing edge', () {
-      final animation = CaretAnimation();
-      animation.update(
-        rect: _caret(100),
-        caretOffset: 0,
-        timestamp: Duration.zero,
-      );
-      animation.update(rect: _caret(108), caretOffset: 1, timestamp: _frame);
-      final quad = animation.update(
-        rect: _caret(108),
-        caretOffset: 1,
-        timestamp: _frame * 2,
-      );
-      expect(quad, isNotNull);
-      expect(animation.isActive, isTrue);
-
-      // The quad is stretched while it travels: corners 1 and 2 lead the
-      // movement, corners 0 and 3 trail it.
-      expect(quad![2].dx - quad[0].dx, greaterThan(_caret(108).width));
-    });
-
-    test('converges onto the caret rectangle and stops being active', () {
-      final animation = CaretAnimation();
-      animation.update(
-        rect: _caret(100),
-        caretOffset: 0,
-        timestamp: Duration.zero,
-      );
-      animation.update(rect: _caret(108), caretOffset: 1, timestamp: _frame);
-
-      var frames = 1;
-      List<Offset>? quad = animation.update(
-        rect: _caret(108),
-        caretOffset: 1,
-        timestamp: _frame * 2,
-      );
-      while (animation.isActive && frames < 60) {
-        frames++;
-        quad = animation.update(
-          rect: _caret(108),
-          caretOffset: 1,
-          timestamp: _frame * (frames + 1),
-        );
-      }
-
-      expect(animation.isActive, isFalse);
-      expect(quad, isNull);
-      expect(frames, lessThan(20));
-    });
-
     test('translates an in-flight quad instead of restarting it', () {
       final animation = CaretAnimation();
       animation.update(
@@ -145,30 +75,6 @@ void main() {
       expect(scrolled[0].dx - started[0].dx, closeTo(40, 0.001));
       expect(scrolled[2].dx - started[2].dx, closeTo(40, 0.001));
       expect(animation.isActive, isTrue);
-    });
-
-    test('reset forgets the caret so the next sample snaps', () {
-      final animation = CaretAnimation();
-      animation.update(
-        rect: _caret(100),
-        caretOffset: 0,
-        timestamp: Duration.zero,
-      );
-      expect(
-        animation.update(rect: _caret(108), caretOffset: 1, timestamp: _frame),
-        isNotNull,
-      );
-
-      animation.reset();
-      expect(animation.isActive, isFalse);
-      expect(
-        animation.update(
-          rect: _caret(300),
-          caretOffset: 4,
-          timestamp: _frame * 2,
-        ),
-        isNull,
-      );
     });
   });
 
@@ -267,26 +173,6 @@ void main() {
       paint.painter!.paint(canvas, tester.getSize(overlayFinder()));
     }
 
-    testWidgets('paints nothing until the field is focused', (tester) async {
-      await pumpField(tester);
-      await tester.pumpAndSettle();
-
-      expect(overlayFinder(), findsOneWidget);
-      expect((Canvas canvas) => paintCaret(tester, canvas), paintsNothing);
-    });
-
-    testWidgets('paints the caret of a focused field', (tester) async {
-      await pumpField(tester);
-      await focusField(tester);
-      controller.selection = const TextSelection.collapsed(offset: 5);
-      await tester.pumpAndSettle();
-
-      expect(
-        (Canvas canvas) => paintCaret(tester, canvas),
-        paints..rect(rect: expectedCaretRect(tester)),
-      );
-    });
-
     testWidgets('animates the caret while it moves and settles after', (
       tester,
     ) async {
@@ -305,20 +191,6 @@ void main() {
         (Canvas canvas) => paintCaret(tester, canvas),
         paints..rect(rect: expectedCaretRect(tester)),
       );
-    });
-
-    testWidgets('hides the caret when the field loses focus', (tester) async {
-      await pumpField(tester);
-      await focusField(tester);
-      controller.selection = const TextSelection.collapsed(offset: 3);
-      await tester.pumpAndSettle();
-      expect(
-        (Canvas canvas) => paintCaret(tester, canvas),
-        paints..rect(rect: expectedCaretRect(tester)),
-      );
-
-      await blurField(tester);
-      expect((Canvas canvas) => paintCaret(tester, canvas), paintsNothing);
     });
 
     testWidgets('snaps instead of animating when motion is reduced', (

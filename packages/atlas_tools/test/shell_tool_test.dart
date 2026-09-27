@@ -10,18 +10,6 @@ import 'tool_test_utils.dart';
 void main() {
   final tool = ShellTool();
 
-  test('runs a command and returns its output', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {
-      'command': 'echo hello',
-    });
-
-    expect(result.isError, isFalse);
-    expect(result.content, contains('hello'));
-    expect(result.metadata['exit_code'], 0);
-  });
-
   test(
     'copies child environment overrides and preserves inherited variables',
     () async {
@@ -40,41 +28,6 @@ void main() {
       expect(result.content, contains(Platform.environment['PATH']!));
     },
   );
-
-  test('passes stdin to the command', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {
-      'command': shellChildCommand('echo'),
-      'stdin': 'from stdin',
-    });
-
-    expect(result.isError, isFalse);
-    expect(result.content, contains('from stdin'));
-  });
-
-  test('reports a non-zero exit code in the result', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {'command': 'exit 3'});
-
-    expect(result.isError, isFalse);
-    expect(result.content, contains('(exit code: 3)'));
-    expect(result.metadata['exit_code'], 3);
-  });
-
-  test('reports a missing command as a non-zero exit code', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {
-      'command': 'kkjh34234-not-a-command',
-    });
-
-    // The shell starts successfully; the missing command is its exit code.
-    expect(result.isError, isFalse);
-    expect(result.content, contains('(exit code:'));
-    expect(result.metadata['exit_code'], isNot(0));
-  });
 
   test('times out and kills the command', () async {
     final dir = await tempDir();

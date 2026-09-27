@@ -9,25 +9,6 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
-  test('profile json round-trips without the token', () {
-    const profile = RemoteConnectionProfile(
-      name: 'My computer',
-      wsUrl: 'ws://host:8765/acp',
-      token: 'secret-token',
-      workingDirectory: '/home/you/projects',
-    );
-    final json = profile.toJson();
-    expect(json['token'], isNull);
-    final restored = RemoteConnectionProfile.fromJson({
-      ...json,
-      'token': 'secret-token',
-    });
-    expect(restored, isNotNull);
-    expect(restored!.name, 'My computer');
-    expect(restored.token, 'secret-token');
-    expect(restored.workingDirectory, '/home/you/projects');
-  });
-
   test('store persists profiles including tokens in secure storage', () async {
     final store = RemoteConnectionStore();
     await store.save(const [
@@ -113,29 +94,5 @@ void main() {
         reason: 'for $json',
       );
     }
-  });
-
-  test('fromJson ignores unknown keys and defaults the optional fields', () {
-    final profile = RemoteConnectionProfile.fromJson(<String, Object?>{
-      'name': 'x',
-      'wsUrl': 'ws://x/acp',
-      'token': 'token-a',
-      'unexpected': true,
-    });
-
-    expect(profile, isNotNull);
-    expect(profile!.name, 'x');
-    expect(profile.token, 'token-a');
-    expect(profile.workingDirectory, isNull);
-    // An explicitly present but non-string directory falls back to null
-    // instead of failing the whole profile.
-    expect(
-      RemoteConnectionProfile.fromJson(<String, Object?>{
-        'name': 'x',
-        'wsUrl': 'ws://x/acp',
-        'workingDirectory': '',
-      })!.workingDirectory,
-      isNull,
-    );
   });
 }

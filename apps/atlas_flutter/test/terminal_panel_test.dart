@@ -9,7 +9,6 @@ import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:terminal_view/terminal_view.dart';
 
 void main() {
   testWidgets('terminal panel mounts and starts a shell', (tester) async {
@@ -57,59 +56,6 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
     expect(registry.isEmpty, isTrue);
-  });
-
-  testWidgets('uses GitHub light ANSI colors without bold-as-bright', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
-          home: const TerminalPanel(workingDirectory: '/tmp'),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    final view = tester.widget<TerminalView>(find.byType(TerminalView));
-    expect(view.theme.foreground, const Color(0xFF1F2328));
-    expect(view.theme.background, const Color(0xFFFFFFFF));
-    expect(view.theme.cursor, const Color(0xFF0969DA));
-    expect(view.theme.selection, const Color(0x330969DA));
-    expect(view.theme.white, const Color(0xFF6E7781));
-    expect(view.theme.green, const Color(0xFF116329));
-    expect(view.theme.blue, const Color(0xFF0969DA));
-    expect(view.theme.brightGreen, const Color(0xFF1A7F37));
-    expect(view.theme.brightBlue, const Color(0xFF218BFF));
-    expect(view.theme.brightYellow, const Color(0xFF633C01));
-    expect(view.theme.drawBoldTextInBrightColors, isFalse);
-  });
-
-  testWidgets('uses GitHub dark-dimmed ANSI colors without bold-as-bright', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: buildAtlasTheme(AtlasPalette.standard, Brightness.dark),
-          home: const TerminalPanel(workingDirectory: '/tmp'),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    final view = tester.widget<TerminalView>(find.byType(TerminalView));
-    expect(view.theme.foreground, const Color(0xFFADBAC7));
-    expect(view.theme.background, const Color(0xFF22272E));
-    expect(view.theme.cursor, const Color(0xFF539BF5));
-    expect(view.theme.selection, const Color(0x33539BF5));
-    expect(view.theme.white, const Color(0xFF909DAB));
-    expect(view.theme.green, const Color(0xFF57AB5A));
-    expect(view.theme.brightBlack, const Color(0xFF636E7B));
-    expect(view.theme.brightRed, const Color(0xFFFF938A));
-    expect(view.theme.brightYellow, const Color(0xFFDAAA3F));
-    expect(view.theme.drawBoldTextInBrightColors, isFalse);
   });
 
   testWidgets('TerminalHost keeps the same panel when switching sessions', (

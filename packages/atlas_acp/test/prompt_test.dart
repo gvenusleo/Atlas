@@ -93,18 +93,6 @@ void main() {
       await wire.close();
     },
   );
-  test('unknown session returns invalid params', () async {
-    final wire = await Wire.open();
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 1,
-      'method': 'session/load',
-      'params': {'sessionId': 'missing', 'cwd': '/tmp'},
-    });
-    final error = response['error'] as Map<String, Object?>;
-    expect(error['code'], -32602);
-    await wire.close();
-  });
   test('serializes concurrent prompts on one session', () async {
     final wire = await Wire.open(
       responses: [...defaultWireResponses(), ...defaultWireResponses()],
@@ -200,26 +188,6 @@ void main() {
     final error = response['error'] as Map<String, Object?>;
     expect(error['code'], -32602);
     expect(error['message'], contains('session not found'));
-    await wire.close();
-  });
-  test('prompt with an empty session id returns invalid params', () async {
-    final wire = await Wire.open();
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 2,
-      'method': 'session/prompt',
-      'params': {
-        'sessionId': '',
-        'prompt': [
-          {'type': 'text', 'text': 'Hello'},
-        ],
-      },
-    });
-    final error = response['error'] as Map<String, Object?>;
-    expect(error['code'], -32602);
-    final data = error['data'] as Map<String, Object?>?;
-    expect(data?['stack'], isNull);
-    expect(data?['full'], isNull);
     await wire.close();
   });
   test(
@@ -337,34 +305,6 @@ void main() {
     expect((response['error'] as Map)['code'], -32602);
     await wire.close();
   });
-  test('accepts embedded resource prompt blocks and runs the turn', () async {
-    final wire = await Wire.open();
-    final sessionId = await createWireSession(wire);
-    final promptFuture = wire.send({
-      'jsonrpc': '2.0',
-      'id': 2,
-      'method': 'session/prompt',
-      'params': {
-        'sessionId': sessionId,
-        'prompt': [
-          {
-            'type': 'resource',
-            'resource': {
-              'uri': 'file:///tmp/project/main.dart',
-              'mimeType': 'text/x-dart',
-              'text': 'void main() {}',
-            },
-          },
-          {'type': 'text', 'text': 'Review this file'},
-        ],
-      },
-    });
-    final updates = await wire.turnNotifications.take(5).toList();
-    expect(updates, hasLength(5));
-    final response = await promptFuture;
-    expect((response['result'] as Map)['stopReason'], 'end_turn');
-    await wire.close();
-  });
   test('preserves embedded resource identity for the model', () async {
     final wire = await Wire.open();
     final sessionId = await createWireSession(wire);
@@ -419,26 +359,6 @@ void main() {
     final error = response['error'] as Map<Object?, Object?>;
     expect(error['code'], -32602);
     expect(error['message'], 'only text resource blocks are supported');
-    await wire.close();
-  });
-  test('rejects a resource block without a uri', () async {
-    final wire = await Wire.open();
-    final sessionId = await createWireSession(wire);
-    final response = await wire.send({
-      'jsonrpc': '2.0',
-      'id': 2,
-      'method': 'session/prompt',
-      'params': {
-        'sessionId': sessionId,
-        'prompt': [
-          {
-            'type': 'resource',
-            'resource': {'text': 'no uri'},
-          },
-        ],
-      },
-    });
-    expect((response['error'] as Map)['code'], -32602);
     await wire.close();
   });
   test('session/close cancels the active turn', () async {

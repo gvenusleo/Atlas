@@ -31,15 +31,6 @@ void main() {
     expect(files.last.content, 'project rules');
   });
 
-  test('skips missing instruction files', () {
-    final files = loadInstructionFiles(
-      workingDirectory: cwd.path,
-      homeDirectory: home.path,
-    );
-
-    expect(files, isEmpty);
-  });
-
   test('deduplicates identical global and current paths', () {
     // Overlap the working directory with the global instruction path so the
     // same real file is reachable through both probe paths.

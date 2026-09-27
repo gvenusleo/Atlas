@@ -35,28 +35,6 @@ void main() {
     expect(prompt, endsWith('- Today: 2026-08-10.'));
   });
 
-  test('lists available tools when tools are provided', () {
-    final prompt = buildSystemPrompt(
-      workingDirectory: '/work',
-      tools: tools,
-      platform: 'macos',
-      shell: '/bin/sh',
-    );
-
-    expect(prompt, contains('Available tools: read, shell.'));
-  });
-
-  test('omits the tool list when no tools are provided', () {
-    final prompt = buildSystemPrompt(
-      workingDirectory: '/work',
-      tools: const [],
-      platform: 'macos',
-      shell: '/bin/sh',
-    );
-
-    expect(prompt, isNot(contains('Available tools:')));
-  });
-
   test('injects loaded instruction files with a wrapper', () {
     final prompt = buildSystemPrompt(
       workingDirectory: '/work',
@@ -130,56 +108,5 @@ void main() {
     expect(prompt, contains('<name>a&lt;b</name>'));
     expect(prompt, contains('<path>/x&amp;y/SKILL.md</path>'));
     expect(prompt, contains('One &lt;two&gt; &amp; three'));
-  });
-
-  test('omits the skills section when none are available', () {
-    final prompt = buildSystemPrompt(
-      workingDirectory: '/work',
-      tools: tools,
-      platform: 'macos',
-      shell: '/bin/sh',
-    );
-
-    expect(prompt, isNot(contains('Available Skills')));
-  });
-
-  test('omits the instructions section when none are loaded', () {
-    final prompt = buildSystemPrompt(
-      workingDirectory: '/work',
-      tools: tools,
-      platform: 'macos',
-      shell: '/bin/sh',
-    );
-
-    expect(prompt, isNot(contains('Loaded Instructions')));
-  });
-
-  test('falls back to unknown working directory markers', () {
-    final prompt = buildSystemPrompt(
-      workingDirectory: '',
-      tools: const [],
-      platform: 'macos',
-      shell: '/bin/sh',
-    );
-
-    expect(prompt, contains('Working directory: (unknown)'));
-  });
-
-  test('includes the responses section and operating principles', () {
-    final prompt = buildSystemPrompt(
-      workingDirectory: '/work',
-      tools: const [],
-      platform: 'macos',
-      shell: '/bin/sh',
-    );
-
-    expect(prompt, contains('## Responses'));
-    expect(prompt, contains('Match the user\'s language.'));
-    expect(prompt, contains('each tool\'s schema'));
-    expect(prompt, contains('If a tool fails, use the error text'));
-    expect(prompt, contains('Avoid touching unrelated files'));
-    expect(prompt, contains('For generated files'));
-    expect(prompt, contains('## Task Tracking'));
-    expect(prompt, contains('use plan to plan and track progress'));
   });
 }

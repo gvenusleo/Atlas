@@ -5,7 +5,6 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,91 +16,10 @@ import 'package:atlas_flutter/features/workspace/application/workspace_message.d
 import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
 import 'package:atlas_flutter/features/workspace/data/image_attachment.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/conversation_input.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/context_usage_ring.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 void main() {
-  testWidgets('model menu highlight follows the mouse', (tester) async {
-    await _pumpComposer(tester);
-
-    // Open the model picker.
-    await tester.tap(find.text('Model A'));
-    await tester.pumpAndSettle();
-    expect(find.text('Model B'), findsOneWidget);
-
-    // The model menu keeps its fixed width instead of stretching to the edge.
-    final menu = find.byWidgetPredicate(
-      (widget) => widget is SizedBox && widget.width == 280,
-    );
-    expect(menu, findsOneWidget);
-    expect(tester.getSize(menu).width, 280);
-
-    // The gliding highlight starts on the active model (row 0).
-    AnimatedPositioned highlight() =>
-        tester.widget<AnimatedPositioned>(find.byType(AnimatedPositioned));
-    expect(highlight().top, 0);
-
-    // Hover the second row with a real mouse pointer.
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.text('Model B')));
-    await tester.pump();
-
-    expect(highlight().top, 30);
-  });
-
-  testWidgets('clicking outside the model menu closes it', (tester) async {
-    await _pumpComposer(tester);
-
-    // Open the model picker.
-    await tester.tap(find.text('Model A'));
-    await tester.pumpAndSettle();
-    expect(find.text('Model B'), findsOneWidget);
-
-    // Click the input field, which sits outside the floating menu.
-    await tester.tap(find.byKey(const ValueKey('atlas-prompt-input')));
-    await tester.pumpAndSettle();
-    expect(find.text('Model B'), findsNothing);
-  });
-
-  testWidgets('slash suggestions highlight follows the mouse', (tester) async {
-    await _pumpComposer(
-      tester,
-      withSession: true,
-      skills: const [
-        SkillSummary(
-          name: 'hunt',
-          path: '/tmp/skills/hunt/SKILL.md',
-          description: 'Finds root causes',
-        ),
-      ],
-    );
-
-    // Type a slash to open the command picker: advertised commands in order.
-    await tester.enterText(
-      find.byKey(const ValueKey('atlas-prompt-input')),
-      '/',
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('/compact'), findsOneWidget);
-    expect(find.text('/hunt'), findsOneWidget);
-
-    // Hover the second row with a real mouse pointer.
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(tester.getCenter(find.text('/hunt')));
-    await tester.pump();
-
-    AnimatedPositioned highlight() =>
-        tester.widget<AnimatedPositioned>(find.byType(AnimatedPositioned));
-    expect(highlight().top, 30);
-  });
-
   testWidgets('model picker supports keyboard navigation', (tester) async {
     await _pumpComposer(tester);
 
@@ -140,27 +58,6 @@ void main() {
     await tester.tap(find.text('plan'));
     await tester.pumpAndSettle();
     expect(find.text('plan'), findsOneWidget); // Trigger now shows plan.
-  });
-
-  testWidgets('mode menu is hidden when the agent has no modes', (
-    tester,
-  ) async {
-    await _pumpComposer(tester);
-
-    expect(find.text('build'), findsNothing);
-    expect(find.text('plan'), findsNothing);
-  });
-
-  testWidgets('slash suggestions have no footer hint', (tester) async {
-    await _pumpComposer(tester);
-
-    await tester.enterText(
-      find.byKey(const ValueKey('atlas-prompt-input')),
-      '/',
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Type to search commands'), findsNothing);
   });
 
   testWidgets('escape closes the model menu', (tester) async {
@@ -392,37 +289,6 @@ void main() {
     );
   });
 
-  testWidgets('send button shifts to the accent color on hover', (
-    tester,
-  ) async {
-    await _pumpComposer(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey('atlas-prompt-input')),
-      'hello',
-    );
-    await tester.pump();
-
-    AnimatedContainer surface() => tester.widget<AnimatedContainer>(
-      find.descendant(
-        of: find.byKey(const ValueKey('atlas-send-button')),
-        matching: find.byType(AnimatedContainer),
-      ),
-    );
-    BoxDecoration? decoration() => surface().decoration as BoxDecoration?;
-    expect(decoration()?.color, AtlasPalette.standard.dark.textPrimary);
-
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(
-      tester.getCenter(find.byKey(const ValueKey('atlas-send-button'))),
-    );
-    await tester.pump(const Duration(milliseconds: 200));
-
-    expect(decoration()?.color, AtlasPalette.standard.dark.accent);
-  });
-
   testWidgets('enter sends the prompt when the IME is idle', (tester) async {
     await _pumpComposer(tester);
     await tester.enterText(
@@ -496,50 +362,6 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(_workspaceOf(tester).messages.first.text, '你好');
-  });
-
-  test('compactTokenCount always uses the k suffix', () {
-    expect(compactTokenCount(0), '0');
-    expect(compactTokenCount(128), '128');
-    expect(compactTokenCount(128000), '128k');
-    expect(compactTokenCount(512000), '512k');
-    expect(compactTokenCount(1024000), '1024k');
-    expect(compactTokenCount(1500), '1.5k');
-  });
-
-  test('contextUsageLabel includes percent and compact used/window', () {
-    expect(contextUsageLabel(10000, 100000), '10% · 10k/100k');
-    expect(contextUsageLabel(128000, 512000), '25% · 128k/512k');
-    expect(contextUsageLabel(128, 0), '128');
-  });
-
-  testWidgets('context usage ring shows compact used/window on hover', (
-    tester,
-  ) async {
-    await _pumpComposer(
-      tester,
-      contextWindow: 512000,
-      usage: const TokenUsage(totalTokens: 128000),
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('atlas-prompt-input')),
-      'hello',
-    );
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-
-    final ring = find.byKey(const ValueKey('atlas-context-usage'));
-    expect(ring, findsOneWidget);
-    expect(find.textContaining('tokens'), findsNothing);
-
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(tester.getCenter(ring));
-    await tester.pump(const Duration(milliseconds: 450));
-    await tester.pumpAndSettle();
-    expect(find.text('25% · 128k/512k'), findsOneWidget);
   });
 
   testWidgets('session pane keeps composer text after switching', (

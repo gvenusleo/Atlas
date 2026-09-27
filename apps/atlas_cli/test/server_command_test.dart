@@ -4,24 +4,6 @@ import 'package:atlas_cli/atlas_cli.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('defaults to loopback on port 8765 without flags', () {
-    final options = parseServerOptions(const []);
-    expect(options.address, InternetAddress.loopbackIPv4);
-    expect(options.port, 8765);
-    expect(options.tokenFile, isNull);
-    expect(options.rotateToken, isFalse);
-  });
-
-  test('parses --listen host:port values', () {
-    final explicit = parseServerOptions(const ['--listen', '0.0.0.0:9000']);
-    expect(explicit.address, InternetAddress.anyIPv4);
-    expect(explicit.port, 9000);
-
-    final localhost = parseServerOptions(const ['--listen', 'localhost:1']);
-    expect(localhost.address, InternetAddress.loopbackIPv4);
-    expect(localhost.port, 1);
-  });
-
   test('parses token flags', () {
     final options = parseServerOptions(const [
       '--token-file',

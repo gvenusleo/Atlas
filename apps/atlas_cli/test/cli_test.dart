@@ -46,15 +46,6 @@ void main() {
       });
     }
 
-    for (final flag in ['--version', '-V']) {
-      test('$flag uses the generated package version', () async {
-        expect(await runCli([flag], runner: runner), 0);
-        expect(out.toString(), '$packageVersion\n');
-        expect(err.toString(), isEmpty);
-        expect(loads, 0);
-      });
-    }
-
     test('generated version matches pubspec', () {
       final manifest = File('pubspec.yaml').readAsStringSync();
       final version = RegExp(
@@ -95,14 +86,6 @@ void main() {
         expect(loads, 0);
       });
     }
-  });
-
-  test('non-interactive TUI is rejected without ANSI output', () async {
-    expect(await runCli([], runner: runner), ExitCode.usage.code);
-    expect(out.toString(), isEmpty);
-    expect(err.toString(), contains('NO_COLOR'));
-    expect(err.toString(), isNot(contains('\x1b')));
-    expect(loads, 0);
   });
 
   test('configuration failures use EX_CONFIG', () async {

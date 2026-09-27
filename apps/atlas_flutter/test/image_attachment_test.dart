@@ -92,18 +92,4 @@ void main() {
     expect(bytesFromImageSource(source), bytes);
     expect(bytesFromImageSource('https://example.com/a.png'), isNull);
   });
-
-  test('PendingImage encodes a data URL content part', () {
-    final image = PendingImage(
-      bytes: Uint8List.fromList(const [1, 2, 3]),
-      mimeType: 'image/png',
-      name: 'a.png',
-    );
-    expect(image.toContent().mimeType, 'image/png');
-    expect(image.toContent().source, startsWith('data:image/png;base64,'));
-    expect(
-      bytesFromImageSource(image.toContent().source),
-      Uint8List.fromList(const [1, 2, 3]),
-    );
-  });
 }

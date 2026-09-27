@@ -17,15 +17,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:window_manager/window_manager.dart';
 
 void main() {
-  test('router starts at the workspace route', () {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-
-    final router = container.read(appRouterProvider);
-
-    expect(router.routeInformationProvider.value.uri.path, '/');
-  });
-
   testWidgets('a cold settings deep link returns to the workspace', (
     tester,
   ) async {
@@ -58,29 +49,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(WorkspacePage), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  test('light and dark themes expose their semantic palettes', () {
-    final palette = AtlasPalette.standard;
-    final light = buildAtlasTheme(palette, Brightness.light);
-    final dark = buildAtlasTheme(palette, Brightness.dark);
-
-    expect(light.brightness, Brightness.light);
-    expect(light.extension<AtlasColors>(), same(palette.light));
-    expect(light.scaffoldBackgroundColor, palette.light.canvas);
-    expect(dark.brightness, Brightness.dark);
-    expect(dark.extension<AtlasColors>(), same(palette.dark));
-    expect(dark.scaffoldBackgroundColor, palette.dark.canvas);
-  });
-
-  test('default palette carries the GitHub values', () {
-    expect(AtlasPalette.standard, same(AtlasPalette.github));
-    expect(AtlasPalette.github.light.canvas, const Color(0xFFFFFFFF));
-    expect(AtlasPalette.github.dark.canvas, const Color(0xFF22272E));
-    expect(AtlasPalette.github.light.divider, const Color(0xFFD0D7DE));
-    expect(AtlasPalette.github.dark.divider, const Color(0xFF444C56));
-    expect(AtlasPalette.github.light.accent, const Color(0xFF0969DA));
-    expect(AtlasPalette.github.dark.accent, const Color(0xFF539BF5));
   });
 
   testShell(

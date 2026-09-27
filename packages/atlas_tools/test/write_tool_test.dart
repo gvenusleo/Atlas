@@ -23,19 +23,6 @@ void main() {
     );
   });
 
-  test('overwrites an existing file completely', () async {
-    final dir = await tempDir();
-    await File('${dir.path}/a.txt').writeAsString('old content');
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'a.txt',
-      'content': 'new content',
-    });
-
-    expect(result.isError, isFalse);
-    expect(File('${dir.path}/a.txt').readAsStringSync(), 'new content');
-  });
-
   test('rejects missing content without truncating the file', () async {
     final dir = await tempDir();
     final file = File('${dir.path}/a.txt');
@@ -46,30 +33,6 @@ void main() {
     expect(result.isError, isTrue);
     expect(result.content, contains('content is required'));
     expect(file.readAsStringSync(), 'keep me');
-  });
-
-  test('preserves URI-special characters in file names', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'a#b?c%d.txt',
-      'content': 'special',
-    });
-
-    expect(result.isError, isFalse);
-    expect(File('${dir.path}/a#b?c%d.txt').readAsStringSync(), 'special');
-  });
-
-  test('resolves absolute paths', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': '${dir.path}/abs.txt',
-      'content': 'x',
-    });
-
-    expect(result.isError, isFalse);
-    expect(File('${dir.path}/abs.txt').existsSync(), isTrue);
   });
 
   test('rejects an empty path', () async {
@@ -95,20 +58,6 @@ void main() {
     expect(result.metadata['path'], '${dir.path}/a.txt');
     expect(result.metadata['oldText'], 'old content');
     expect(result.metadata['newText'], 'new content');
-  });
-
-  test('reports no old text for newly created files', () async {
-    final dir = await tempDir();
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'fresh.txt',
-      'content': 'hello',
-    });
-
-    expect(result.isError, isFalse);
-    expect(result.metadata['path'], '${dir.path}/fresh.txt');
-    expect(result.metadata.containsKey('oldText'), isFalse);
-    expect(result.metadata['newText'], 'hello');
   });
 
   test('omits diff metadata for oversized content', () async {

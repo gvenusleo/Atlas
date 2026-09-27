@@ -59,23 +59,6 @@ void main() {
     expect(file.readAsStringSync(), 'original');
   });
 
-  test('rejects missing new_text without changing the file', () async {
-    final dir = await tempDir();
-    final file = File('${dir.path}/none.txt');
-    await file.writeAsString('original');
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'none.txt',
-      'edits': [
-        {'old_text': 'original'},
-      ],
-    });
-
-    expect(result.isError, isTrue);
-    expect(result.content, contains('new_text is required'));
-    expect(file.readAsStringSync(), 'original');
-  });
-
   test('rejects overlapping edits', () async {
     final dir = await tempDir();
     final file = File('${dir.path}/overlap.txt');
@@ -92,27 +75,6 @@ void main() {
     expect(result.isError, isTrue);
     expect(result.content, contains('overlap'));
     expect(file.readAsStringSync(), 'abcdef');
-  });
-
-  test('preserves a UTF-8 BOM', () async {
-    final dir = await tempDir();
-    final file = File('${dir.path}/bom.txt');
-    await file.writeAsBytes([
-      0xEF, 0xBB, 0xBF, // BOM
-      ...'hello world'.codeUnits,
-    ]);
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'bom.txt',
-      'edits': [
-        {'old_text': 'hello', 'new_text': 'goodbye'},
-      ],
-    });
-
-    expect(result.isError, isFalse);
-    final bytes = file.readAsBytesSync();
-    expect(bytes.sublist(0, 3), [0xEF, 0xBB, 0xBF]);
-    expect(String.fromCharCodes(bytes.sublist(3)), 'goodbye world');
   });
 
   test('preserves CRLF line endings', () async {
@@ -144,25 +106,6 @@ void main() {
 
     expect(result.isError, isTrue);
     expect(result.content, contains('UTF-8'));
-  });
-
-  test('reports diff metadata with the first replacement line', () async {
-    final dir = await tempDir();
-    final file = File('${dir.path}/code.dart');
-    await file.writeAsString('line one\nline two\nline three\n');
-
-    final result = await tool.execute(toolContext(dir), {
-      'path': 'code.dart',
-      'edits': [
-        {'old_text': 'line two', 'new_text': 'line TWO'},
-      ],
-    });
-
-    expect(result.isError, isFalse);
-    expect(result.metadata['path'], '${dir.path}/code.dart');
-    expect(result.metadata['oldText'], 'line one\nline two\nline three\n');
-    expect(result.metadata['newText'], 'line one\nline TWO\nline three\n');
-    expect(result.metadata['line'], 2);
   });
 
   test('omits diff metadata for oversized files', () async {

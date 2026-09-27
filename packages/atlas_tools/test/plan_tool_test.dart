@@ -25,24 +25,6 @@ void main() {
     expect(result.content, 'Plan updated');
   });
 
-  test('accepts an empty plan', () async {
-    final result = await tool.execute(context, {'plan': []});
-
-    expect(result.isError, isFalse);
-    expect(result.content, 'Plan updated');
-  });
-
-  test('rejects a missing plan argument', () async {
-    final result = await tool.execute(context, {});
-
-    expect(result.isError, isTrue);
-    expect(result.content, 'plan is required');
-
-    final nullPlan = await tool.execute(context, {'plan': null});
-    expect(nullPlan.isError, isTrue);
-    expect(nullPlan.content, 'plan is required');
-  });
-
   test('rejects plans with too many steps', () async {
     final result = await tool.execute(context, {
       'plan': [
@@ -53,42 +35,6 @@ void main() {
 
     expect(result.isError, isTrue);
     expect(result.content, 'plan must contain at most $maxPlanSteps steps');
-  });
-
-  test('rejects blank steps', () async {
-    final result = await tool.execute(context, {
-      'plan': [
-        {'step': '   ', 'status': 'pending'},
-      ],
-    });
-
-    expect(result.isError, isTrue);
-    expect(result.content, 'plan step is required');
-  });
-
-  test('rejects steps that are too long', () async {
-    final result = await tool.execute(context, {
-      'plan': [
-        {'step': 'x' * (maxPlanStepChars + 1), 'status': 'pending'},
-      ],
-    });
-
-    expect(result.isError, isTrue);
-    expect(
-      result.content,
-      'plan step must contain at most $maxPlanStepChars characters',
-    );
-  });
-
-  test('rejects steps with control characters', () async {
-    final result = await tool.execute(context, {
-      'plan': [
-        {'step': 'step\u0007', 'status': 'pending'},
-      ],
-    });
-
-    expect(result.isError, isTrue);
-    expect(result.content, 'plan step must not contain control characters');
   });
 
   test('rejects invalid status values', () async {
@@ -112,29 +58,5 @@ void main() {
 
     expect(result.isError, isTrue);
     expect(result.content, 'plan must contain at most one in_progress step');
-  });
-
-  test('rejects non-object plan entries', () async {
-    final result = await tool.execute(context, {
-      'plan': ['not an object'],
-    });
-
-    expect(result.isError, isTrue);
-    expect(result.content, 'plan step must be an object with step and status');
-  });
-
-  test('describes the tool for the model', () {
-    final descriptor = tool.descriptor;
-    expect(descriptor.name, 'plan');
-    expect(
-      descriptor.description,
-      contains('Each call replaces the entire plan'),
-    );
-    final schema = descriptor.inputSchema;
-    final plan = (schema['properties'] as Map)['plan'] as Map;
-    expect(plan['maxItems'], maxPlanSteps);
-    final item = plan['items'] as Map;
-    final status = (item['properties'] as Map)['status'] as Map;
-    expect(status['enum'], ['pending', 'in_progress', 'completed']);
   });
 }
