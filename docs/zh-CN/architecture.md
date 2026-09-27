@@ -7,7 +7,7 @@
 > prompt 构建、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP
 > 服务端适配器（`atlas_acp`，由 `atlas acp` 提供）以及 Flutter 本地 runtime
 > 组装、WebSocket transport（`atlas_ws`）、`atlas server` 入口与移动端远程
-> 客户端均**Available**。MCP 适配器仍为 **Planned**。
+> 客户端及 MCP 客户端工具适配器（`atlas_mcp`）均**Available**。
 
 ## 系统形态
 
@@ -25,21 +25,24 @@ graph TD
     COMP --> PROMPT[atlas_prompt]
     COMP --> PROVIDER[atlas_provider]
     COMP --> TOOLS[atlas_tools]
+    COMP --> MCP[atlas_mcp]
     COMP --> STORAGE[atlas_storage]
     COMP --> RT[atlas_runtime]
     TUI --> RT
     ACP --> RT
     REMOTE[远程客户端] --> WS
     WS --> RT
-    MCP[atlas_mcp] -.-> RT
+    MCP --> RT
     PROVIDER --> RT
     TOOLS --> RT
     STORAGE --> RT
     ACP --> ACPD[acpd]
-    MCP -.-> JRPC[json_rpc_2]
+    MCP --> MCPSDK[mcp_dart]
 ```
 
-图中的 MCP 组件与连线仅用于展示目标形态，当前代码中尚未接线。
+`composeTools` 异步连接配置的 MCP 服务器并固定工具目录，随后将合并的
+`LocalToolRegistry` 注入 `composeRuntime`。应用根在 runtime 和事件消费者完成
+清理后关闭资源。MCP 是客户端适配器，ACP 会话级 MCP 配置仍为 Planned。
 
 `atlas_composition` 从 `atlas_config`、provider、存储、工具与系统提示词构建器
 组装一个 runtime；`atlas_cli` 与 `atlas_flutter` 的进程 bootstrap 共用这段
@@ -75,7 +78,7 @@ compact，等待协议 handler 完成后关闭适配器资源。关闭期间事�
 | `atlas_prompt` | 系统提示词构建：操作模板、工具列表、`~/.atlas/AGENTS.md` 与工作目录 `AGENTS.md` 加载，以及平台/shell/日期上下文 |
 | `atlas_ws` | 版本化 WebSocket wire contract 与 transport：`/acp` upgrade 端点、bearer token 认证、连接与帧策略、共享 runtime 上每连接一个 `AcpServer` 的生命周期 |
 | `atlas_acp` | 把 ACP server 适配到共享 runtime |
-| `atlas_mcp` | Planned：优先实现 MCP client，server 按真实需求再增加 |
+| `atlas_mcp` | 通过 `mcp_dart` 负责 stdio/Streamable HTTP MCP 客户端连接、发现、工具/结果映射、取消与清理 |
 | `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
 | `atlas_composition` | 共用的应用组装：构造 provider、工具、存储、提示词与唯一 runtime |
 | `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根；委托 `atlas_composition` 构造 runtime |
@@ -93,7 +96,7 @@ compact，等待协议 handler 完成后关闭适配器资源。关闭期间事�
 - 本地展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器；两个应用根都使用 `atlas_composition`。
 - `atlas_prompt` 只依赖 `atlas_runtime` 公开类型，组合根通过 `buildSystemPrompt` 使用它。
 - `atlas_cli` 与 `atlas_flutter` 是独立的进程组合根，共享构造代码而不共享 runtime 实例。
-- ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个 WebSocket 连接复用同一 `AcpServer`。MCP 为 Planned，当前没有实现包。
+- ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个 WebSocket 连接复用同一 `AcpServer`。MCP 在 `atlas_mcp` 内使用 `mcp_dart`，SDK HTTP 依赖限于该适配器。目录、重试与内容限制见 [MCP 工具](mcp.md)。
 
 ## Flutter 客户端状态
 

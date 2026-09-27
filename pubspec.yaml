@@ -13,6 +13,7 @@ workspace:
   - packages/atlas_config
   - packages/atlas_prompt
   - packages/atlas_tools
+  - packages/atlas_mcp
   - packages/atlas_acp
   - packages/atlas_tui
   - packages/atlas_ws

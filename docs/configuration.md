@@ -93,3 +93,11 @@ logging:
 - `logging.directory` enables redacted JSON-lines file logging. `ATLAS_LOG_LEVEL`
   supplies the level when `logging.level` is omitted; explicit configuration
   takes precedence.
+
+## MCP servers
+
+The optional `mcp_servers` list configures external tools for the host runtime.
+Both stdio subprocesses and Streamable HTTP endpoints with static headers are
+supported. Empty configuration preserves built-in tools; enabled-server failures
+fail startup after cleaning up opened connections. Changes require restart.
+See [MCP tools](mcp.md) for the full schema, examples and supported content.

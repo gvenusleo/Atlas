@@ -4,7 +4,7 @@
 
 - Atlas is a local general-purpose agent. Its tools have the same filesystem and shell permissions as the Atlas process.
 - Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
-- The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, Nocterm TUI, and Flutter local client are implemented; the WebSocket transport and MCP remain unimplemented.
+- The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, Nocterm TUI, Flutter local client, WebSocket transport, and MCP client tools are implemented.
 - All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
 - Nocterm receives the runtime through an injected interface. Flutter is always an ACP client; its local mode uses an in-process ACP transport, and its mobile mode connects to a computer-side `atlas server` over the WebSocket transport in `atlas_ws`.
 - Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.
@@ -16,7 +16,7 @@
 - Make the smallest change that fully solves the request. Do not perform unrelated refactors, formatting, cleanup, or speculative improvements.
 - Preserve package boundaries. Add an abstraction only when real call sites require it.
 - Do not predeclare package dependencies. Add a dependency from the owning package with `dart pub add` only when implementation code first imports it; use `flutter pub add` for the Flutter application.
-- Use Dio for all HTTP requests. Do not add `package:http` or another HTTP client. Add a dedicated WebSocket dependency only when `atlas_ws` contains an implementation that requires it.
+- Use Dio for Atlas-owned HTTP requests. MCP integration uses `mcp_dart` and may bring in and use its `package:http` dependency for MCP transport and authentication. Keep this exception inside the MCP adapter; do not introduce another HTTP client for unrelated features. Add a dedicated WebSocket dependency only when `atlas_ws` contains an implementation that requires it.
 - Keep the agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
 - Persisted timeline items must belong to the same session and turn; storage writes that update multiple records must be atomic.
 - The runtime serializes active turns per session, and persisted provider/tool failures use safe summaries rather than raw exception text.
@@ -30,7 +30,7 @@
 - `atlas_runtime` owns domain models, events, ports, orchestration, cancellation, compaction, skills, and the model/tool loop. It must not depend on persistence, provider, tool, UI, or protocol implementations.
 - `atlas_storage`, `atlas_provider`, and `atlas_tools` depend on and implement runtime ports without owning orchestration.
 - `atlas_ws` owns the versioned WebSocket wire contract (one ACP JSON-RPC message per text frame over `/acp`), token authorization, connection policies, and transport behavior without composing runtime services.
-- `atlas_acp` owns ACP lifecycle and adapts the shared runtime through `acpd`; `atlas_mcp` is Planned.
+- `atlas_acp` owns ACP lifecycle and adapts the shared runtime through `acpd`; `atlas_mcp` owns stdio/Streamable HTTP client tools, connections, cancellation, and result mapping through `mcp_dart`.
 - `atlas_tui` renders and interacts with an injected runtime interface; it does not depend on remote client protocols.
 - `atlas_cli` and `atlas_flutter` are application composition roots. Running `atlas` enters the TUI by default; `atlas acp` serves the composed runtime to ACP clients over NDJSON stdio; `atlas server` exposes the composed runtime through `atlas_ws` for remote clients.
 

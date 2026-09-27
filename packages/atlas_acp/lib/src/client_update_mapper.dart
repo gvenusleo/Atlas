@@ -5,7 +5,7 @@ import 'package:atlas_runtime/atlas_runtime.dart' as rt;
 ///
 /// ACP is a display-oriented protocol, so the reconstruction is lossy:
 /// sequence numbers and timestamps are regenerated locally, and tool names
-/// are derived from the ACP tool kind. The events cover what presentation
+/// are derived from the ACP tool kind or generic tool title. The events cover what presentation
 /// code consumes: text and reasoning deltas, tool start/finish, plans, and
 /// compaction outcomes.
 final class ClientUpdateMapper(
@@ -76,7 +76,7 @@ final class ClientUpdateMapper(
               occurredAt: _now(),
               call: rt.ToolCall(
                 id: rt.ToolCallId(toolCall.toolCallId),
-                name: _nameFromKind(toolCall.kind),
+                name: _nameFromKind(toolCall.kind, toolCall.title),
                 arguments: toolCall.rawInput is Map
                     ? Map<String, Object?>.from(toolCall.rawInput as Map)
                     : const <String, Object?>{},
@@ -131,7 +131,7 @@ final class ClientUpdateMapper(
                 occurredAt: _now(),
                 call: rt.ToolCall(
                   id: rt.ToolCallId(update.toolCallId),
-                  name: _nameFromKind(update.kind),
+                  name: _nameFromKind(update.kind, update.title),
                   arguments: update.rawInput is Map
                       ? Map<String, Object?>.from(update.rawInput as Map)
                       : const <String, Object?>{},
@@ -198,12 +198,12 @@ final class ClientUpdateMapper(
     return '';
   }
 
-  static String _nameFromKind(ToolKind? kind) => switch (kind) {
+  static String _nameFromKind(ToolKind? kind, String? title) => switch (kind) {
     ToolKind.read => 'read',
     ToolKind.edit => 'edit',
     ToolKind.execute => 'shell',
     ToolKind.think => 'plan',
-    _ => 'tool',
+    _ => title?.trim().isNotEmpty == true ? title! : 'tool',
   };
 
   static DateTime _now() => DateTime.now().toUtc();
@@ -284,7 +284,7 @@ final class ClientTimelineMapper(
             occurredAt: _now(),
             call: rt.ToolCall(
               id: rt.ToolCallId(toolCall.toolCallId),
-              name: _nameFromKind(toolCall.kind),
+              name: _nameFromKind(toolCall.kind, toolCall.title),
               arguments: toolCall.rawInput is Map
                   ? Map<String, Object?>.from(toolCall.rawInput as Map)
                   : const <String, Object?>{},
@@ -327,12 +327,12 @@ final class ClientTimelineMapper(
     return '';
   }
 
-  static String _nameFromKind(ToolKind? kind) => switch (kind) {
+  static String _nameFromKind(ToolKind? kind, String? title) => switch (kind) {
     ToolKind.read => 'read',
     ToolKind.edit => 'edit',
     ToolKind.execute => 'shell',
     ToolKind.think => 'plan',
-    _ => 'tool',
+    _ => title?.trim().isNotEmpty == true ? title! : 'tool',
   };
 
   static DateTime _now() => DateTime.now().toUtc();
@@ -381,7 +381,7 @@ final class ClientConversationMapper(
       ToolCallUpdateSession(:final toolCall) => [
         rt.ConversationToolCall(
           callId: toolCall.toolCallId,
-          name: _nameFromKind(toolCall.kind),
+          name: _nameFromKind(toolCall.kind, toolCall.title),
           arguments: toolCall.rawInput is Map
               ? Map<String, Object?>.from(toolCall.rawInput as Map)
               : const {},
@@ -406,12 +406,12 @@ final class ClientConversationMapper(
       ? (chunk.content as TextContentBlock).text
       : '';
 
-  static String _nameFromKind(ToolKind? kind) => switch (kind) {
+  static String _nameFromKind(ToolKind? kind, String? title) => switch (kind) {
     ToolKind.read => 'read',
     ToolKind.edit => 'edit',
     ToolKind.execute => 'shell',
     ToolKind.think => 'plan',
-    _ => 'tool',
+    _ => title?.trim().isNotEmpty == true ? title! : 'tool',
   };
 }
 

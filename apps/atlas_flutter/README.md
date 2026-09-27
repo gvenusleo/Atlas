@@ -33,7 +33,7 @@ animates the caret with spring-driven corner physics.
 - Tests may also import `atlas_ws` (dev dependency) to serve a real
   `atlas server` endpoint for remote connection integration tests.
 - `atlas_composition` for process-level runtime construction.
-- `atlas_config`, `atlas_prompt`, and `atlas_storage` from application
+- `atlas_config`, `atlas_prompt`, `atlas_provider`, and `atlas_storage` from application
   bootstrap only. Tests may also import `atlas_tools`.
 - `atlas_runtime` public types for the injected runtime interface.
 
@@ -43,8 +43,8 @@ animates the caret with spring-driven corner physics.
   persistence in feature or presentation code; only bootstrap composes
   adapters.
 - No ACP protocol implementation; the app consumes `atlas_acp` as a client,
-  including over WebSocket (the bridge lives in the app bootstrap). MCP
-  adapters remain Planned.
+  including over WebSocket (the bridge lives in the app bootstrap). Local MCP
+  tools are composed through `atlas_composition`; their protocol stays in `atlas_mcp`.
 - No Nocterm rendering logic; the terminal TUI belongs to `atlas_tui`.
 
 ## Structure

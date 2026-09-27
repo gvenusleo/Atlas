@@ -47,3 +47,10 @@ Atlas ACP 客户端仍会处理第三方 Agent 发出的权限请求。Agent 与
 ## Planned
 
 客户端文件系统与终端能力，以及 ACP v2 支持仍为 Planned。
+
+## 主机配置的 MCP 工具
+
+Atlas 主机配置的 MCP 工具复用已有 `tool_call`、`tool_call_update`，包括进度和
+历史恢复。没有内置工具 kind 时，Atlas 客户端保留通用 ACP 工具标题。
+会话传入的 `mcpServers` 仍被显式拒绝：主机配置属于整个 runtime，尚未实现 ACP
+会话隔离。详见 [MCP 工具](mcp.md)。

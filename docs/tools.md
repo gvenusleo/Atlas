@@ -71,3 +71,11 @@ Tools run with the permissions of the local Atlas process. Atlas does not
 provide a sandbox, permission prompts, or an approval gate. `shell` executes
 commands with those permissions; the model sees every exit code and decides
 how to proceed.
+
+## MCP tools
+
+Configured MCP tools join the same registry and tool loop as the built-ins, with
+stable names prefixed by `mcp_`. They retain paired results, cancellation and
+history replay. Text and structured JSON are supported, with a 50 KiB aggregate
+output/metadata budget; binary content is marked as omitted. See
+[MCP tools](mcp.md) for transports, configuration and retry semantics.

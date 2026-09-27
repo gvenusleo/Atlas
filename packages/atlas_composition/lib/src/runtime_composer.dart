@@ -8,6 +8,7 @@ import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 
 import 'logging.dart';
+import 'tool_composer.dart';
 
 /// Composes the configured runtime for one process.
 ///
@@ -23,15 +24,13 @@ AgentRuntime composeRuntime(
   String? dbPath,
   AtlasLogger? logger,
 }) {
+  if (tools == null && config.mcpServers.any((server) => server.enabled)) {
+    throw ArgumentError(
+      'Configured MCP servers require composeTools before composeRuntime',
+    );
+  }
   final resolvedTools =
-      tools ??
-      LocalToolRegistry([
-        ReadTool(),
-        WriteTool(),
-        EditTool(),
-        ShellTool(environment: shellEnvironment),
-        PlanTool(),
-      ]);
+      tools ?? LocalToolRegistry(builtInTools(environment: shellEnvironment));
   final providers = <ProviderId, ModelProvider>{};
   for (final configured in config.providers) {
     switch (configured) {
@@ -57,17 +56,7 @@ AgentRuntime composeRuntime(
     sessionContextBuilder: sessionContextBuilder ?? buildSessionContext,
     maxSteps: config.agent.maxSteps,
     maxOutputTokens: config.agent.maxOutputTokens,
-    logger:
-        logger ??
-        (config.logging.directory == null
-            ? const NoopLogger()
-            : FileLogSink(
-                Directory(config.logging.directory!),
-                minimumLevel: LogLevel.values.firstWhere(
-                  (level) => level.name == config.logging.level,
-                ),
-                retainDays: config.logging.retainDays,
-              )),
+    logger: logger ?? composeLogger(config),
     temperature: config.agent.temperature,
     compactionThreshold: config.agent.compaction.threshold,
     keepRecentTokens: config.agent.compaction.keepRecentTokens,
@@ -94,3 +83,15 @@ List<ModelDescriptor> composeModels(AtlasConfig config) => [
       ),
     },
 ].expand((descriptors) => descriptors).toList();
+
+/// Creates the configured redacted log sink for runtime and adapters.
+AtlasLogger composeLogger(AtlasConfig config) =>
+    config.logging.directory == null
+    ? const NoopLogger()
+    : FileLogSink(
+        Directory(config.logging.directory!),
+        minimumLevel: LogLevel.values.firstWhere(
+          (level) => level.name == config.logging.level,
+        ),
+        retainDays: config.logging.retainDays,
+      );

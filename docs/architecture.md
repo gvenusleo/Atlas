@@ -8,7 +8,7 @@
 > interface, the ACP server adapter (`atlas_acp`, served by `atlas acp`), and
 > local Flutter runtime composition, the WebSocket transport (`atlas_ws`),
 > the `atlas server` entry point, and the mobile remote client are
-> **Available**. The MCP adapter remains **Planned**.
+> **Available**, including the MCP client tool adapter (`atlas_mcp`).
 
 ## System Shape
 
@@ -27,22 +27,25 @@ graph TD
     COMP --> PROMPT[atlas_prompt]
     COMP --> PROVIDER[atlas_provider]
     COMP --> TOOLS[atlas_tools]
+    COMP --> MCP[atlas_mcp]
     COMP --> STORAGE[atlas_storage]
     COMP --> RT[atlas_runtime]
     TUI --> RT
     ACP --> RT
     REMOTE[Remote client] --> WS
     WS --> RT
-    MCP[atlas_mcp] -.-> RT
+    MCP --> RT
     PROVIDER --> RT
     TOOLS --> RT
     STORAGE --> RT
     ACP --> ACPD[acpd]
-MCP -.-> JRPC[planned protocol]
+    MCP --> MCPSDK[mcp_dart]
 ```
 
-The MCP component and edges above appear for target-state context; they are
-not wired in code yet.
+`composeTools` asynchronously connects configured MCP servers and freezes their
+tool catalog before `composeRuntime` receives a combined `LocalToolRegistry`.
+Application roots own shutdown after runtime turns and event consumers drain.
+MCP is a client adapter; ACP session-level MCP configuration remains Planned.
 
 `atlas_composition` composes one runtime from `atlas_config`, providers,
 storage, tools, and the system prompt builder. `atlas_cli` and `atlas_flutter`
@@ -84,11 +87,11 @@ returns naturally instead of allowing Nocterm to terminate the process.
 | `atlas_prompt` | System prompt construction: operating template, tool listing, `~/.atlas/AGENTS.md` and working-directory `AGENTS.md` loading, and platform/shell/date context |
 | `atlas_ws` | Versioned WebSocket wire contract and transport: the `/acp` upgrade endpoint, bearer-token authorization, connection and frame policies, and per-connection `AcpServer` lifecycle over the shared runtime |
 | `atlas_acp` | ACP server adaptation to the shared runtime |
-| `atlas_mcp` | Planned: MCP client first, with server support deferred until needed |
+| `atlas_mcp` | stdio and Streamable HTTP MCP client connections, discovery, tool/result mapping, cancellation and cleanup through `mcp_dart` |
 | `atlas_tui` | Nocterm chat interface over an injected runtime interface: message transcript, input bar, and turn status |
 | `atlas_composition` | Shared application composition for configured providers, tools, storage, prompts, and the single runtime |
 | `atlas_cli` | Composition root for the default TUI and other CLI commands; delegates runtime construction to `atlas_composition` |
-| `atlas_flutter` | Desktop and mobile ACP client; remote WebSocket mode is planned; the theme preference is client-local (`shared_preferences`) |
+| `atlas_flutter` | Desktop and mobile ACP client with remote WebSocket mode; the theme preference is client-local (`shared_preferences`) |
 
 ## Dependency Rules
 
@@ -102,7 +105,7 @@ returns naturally instead of allowing Nocterm to terminate the process.
 - Local presentation code receives runtime interfaces directly. Only application bootstrap code constructs provider, tool, and storage adapters; both application roots use `atlas_composition`.
 - `atlas_prompt` depends on `atlas_runtime` public types only and is consumed by composition roots through `buildSystemPrompt`.
 - `atlas_cli` and `atlas_flutter` are separate process composition roots and share construction code, not runtime instances.
-- ACP owns its protocol lifecycle through `acpd`; `atlas server` reuses the same `AcpServer` per WebSocket connection. MCP is Planned and has no implementation package yet.
+- ACP owns its protocol lifecycle through `acpd`; `atlas server` reuses the same `AcpServer` per WebSocket connection. MCP uses `mcp_dart` in `atlas_mcp`; SDK HTTP dependencies stay inside that adapter. See [MCP tools](mcp.md) for catalog, retry and content limits.
 
 ## Flutter Client State
 

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:atlas_config/atlas_config.dart';
+import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_prompt/atlas_prompt.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tui/atlas_tui.dart';
@@ -13,6 +14,7 @@ import 'acp_command.dart';
 import 'cache_command.dart';
 import 'compose.dart';
 import 'runtime_resources.dart';
+import 'termination_signals.dart';
 import 'server_command.dart';
 import 'version.dart';
 
@@ -30,6 +32,8 @@ Future<int> runCli(List<String> args, {AtlasCommandRunner? runner}) async {
   } on ConfigLoadException catch (error) {
     cli.err.writeln('atlas: $error');
     return ExitCode.config.code;
+  } on TurnCancelledException {
+    return ExitCode.success.code;
   } catch (error, stack) {
     cli.err.writeln('atlas: $error');
     if (cli.verbose) cli.err.writeln(Trace.from(stack).terse);
@@ -129,7 +133,16 @@ final class AtlasCommandRunner({
       return ExitCode.usage.code;
     }
     final config = loadConfiguration();
-    final resources = CliRuntimeResources(config);
+    final startupSignals = TerminationSignals();
+    final CliRuntimeResources resources;
+    try {
+      resources = await CliRuntimeResources.create(
+        config,
+        cancellation: startupSignals.cancellation,
+      );
+    } finally {
+      await startupSignals.close();
+    }
     try {
       await runAtlasTui(
         runtime: resources.runtime,

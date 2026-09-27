@@ -67,8 +67,9 @@ as a subprocess and drive sessions through JSON-RPC.
 
 ## Not implemented
 
-MCP server connections, filesystem **write** and terminal client methods,
+Session-supplied MCP server connections, filesystem **write** and terminal client methods,
 elicitation, and HTTP/WebSocket transports. These capabilities are not
 advertised during initialization. Permission requests are handled on the
 client side (`session/request_permission`) and surfaced through
-`PermissionPort`.
+`PermissionPort`. Host-configured MCP tools are provided by the runtime and
+rendered as generic tools; their connections belong to `atlas_mcp`.

@@ -1,3 +1,5 @@
+import 'mcp_config.dart';
+
 import 'package:atlas_provider/atlas_provider.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 
@@ -8,6 +10,9 @@ final class const AtlasConfig({
 
   /// Configured model providers in file order.
   required final List<ConfiguredProvider> providers,
+
+  /// Configured external MCP tool servers.
+  final List<McpServerConfig> mcpServers = const [],
 
   /// Agent loop parameters.
   required final AgentConfig agent,

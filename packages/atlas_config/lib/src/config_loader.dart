@@ -5,6 +5,7 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:yaml/yaml.dart';
 
 import 'atlas_config.dart';
+import 'mcp_config.dart';
 
 /// Raised when the configuration file cannot be parsed or validated.
 final class const ConfigLoadException(
@@ -37,6 +38,7 @@ AtlasConfig parseConfig(
   return AtlasConfig(
     defaultModel: _defaultModel(root, providers),
     providers: providers,
+    mcpServers: _mcpServers(root, env, home),
     agent: _agent(root),
     session: _session(root, home),
     logging: _logging(root, home, env),
@@ -524,4 +526,172 @@ double _fraction(Object? value, String path, double fallback) {
     throw ConfigLoadException('$path must be greater than 0 and at most 1');
   }
   return result;
+}
+
+List<McpServerConfig> _mcpServers(
+  Map<String, Object?> root,
+  Map<String, String> env,
+  String? home,
+) {
+  final servers = _asList(root['mcp_servers'] ?? const [], 'mcp_servers');
+  final names = <String>{};
+  return List.unmodifiable([
+    for (final (index, raw) in servers.indexed)
+      _mcpServer(raw, 'mcp_servers[$index]', env, home, names),
+  ]);
+}
+
+McpServerConfig _mcpServer(
+  Object? raw,
+  String path,
+  Map<String, String> env,
+  String? home,
+  Set<String> names,
+) {
+  final map = _asMap(raw, path);
+  final name = _string(map['name'], '$path.name');
+  if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(name) || name.length > 128) {
+    throw ConfigLoadException('$path.name must be 1–128 ASCII name characters');
+  }
+  if (!names.add(name)) {
+    throw ConfigLoadException('$path.name must be unique');
+  }
+  final enabled = map['enabled'] ?? true;
+  if (enabled is! bool) {
+    throw ConfigLoadException('$path.enabled must be a boolean');
+  }
+  final transport = _string(map['transport'], '$path.transport');
+  if (transport != 'stdio' && transport != 'streamable_http') {
+    throw ConfigLoadException(
+      '$path.transport must be stdio or streamable_http',
+    );
+  }
+  final allowed = {
+    'name',
+    'transport',
+    'enabled',
+    'startup_timeout_seconds',
+    'call_timeout_seconds',
+    if (transport == 'stdio') ...['command', 'args', 'cwd', 'env'],
+    if (transport == 'streamable_http') ...['url', 'headers'],
+  };
+  for (final key in map.keys) {
+    if (!allowed.contains(key)) {
+      throw ConfigLoadException('$path.$key is not supported for $transport');
+    }
+  }
+  final startup = _mcpDuration(map, path, 'startup_timeout_seconds', 15);
+  final call = _mcpDuration(map, path, 'call_timeout_seconds', 60);
+  if (transport == 'stdio') {
+    final command = _string(map['command'], '$path.command');
+    if (command.trim().isEmpty || command.contains('\x00')) {
+      throw ConfigLoadException('$path.command must be a valid executable');
+    }
+    final args = _asList(map['args'] ?? const [], '$path.args');
+    final parsedArgs = <String>[];
+    for (final (index, arg) in args.indexed) {
+      if (arg is! String || arg.contains('\x00')) {
+        throw ConfigLoadException('$path.args[$index] must be a valid string');
+      }
+      parsedArgs.add(arg);
+    }
+    final rawCwd = _stringOrNull(map['cwd'], '$path.cwd');
+    final cwd = rawCwd == null ? null : _expandHome(rawCwd, home);
+    if (cwd != null &&
+        (cwd.contains('\x00') ||
+            !(cwd.startsWith('/') ||
+                RegExp(r'^[A-Za-z]:[\\/]').hasMatch(cwd) ||
+                cwd.startsWith(r'\\')))) {
+      throw ConfigLoadException('$path.cwd must be an absolute path');
+    }
+    return McpStdioConfig(
+      name: name,
+      enabled: enabled,
+      startupTimeout: startup,
+      callTimeout: call,
+      command: command,
+      args: List.unmodifiable(parsedArgs),
+      workingDirectory: cwd,
+      environment: _mcpStrings(map['env'], '$path.env', env, enabled, false),
+    );
+  }
+  final uri = Uri.tryParse(_string(map['url'], '$path.url'));
+  if (uri == null ||
+      !{'http', 'https'}.contains(uri.scheme) ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasFragment) {
+    throw ConfigLoadException(
+      '$path.url must be HTTP(S) without userinfo or fragment',
+    );
+  }
+  return McpHttpConfig(
+    name: name,
+    enabled: enabled,
+    startupTimeout: startup,
+    callTimeout: call,
+    url: uri,
+    headers: _mcpStrings(map['headers'], '$path.headers', env, enabled, true),
+  );
+}
+
+Duration _mcpDuration(
+  Map<String, Object?> map,
+  String path,
+  String key,
+  int fallback,
+) {
+  final seconds = _positiveInt(map[key], '$path.$key', fallback);
+  if (seconds > 9223372036854) {
+    throw ConfigLoadException('$path.$key exceeds the supported duration');
+  }
+  return Duration(seconds: seconds);
+}
+
+Map<String, String> _mcpStrings(
+  Object? raw,
+  String path,
+  Map<String, String> env,
+  bool enabled,
+  bool headers,
+) {
+  if (raw == null) return const {};
+  if (raw is! Map || raw.keys.any((key) => key is! String)) {
+    throw ConfigLoadException('$path must be a string map');
+  }
+  final result = <String, String>{};
+  final seen = <String>{};
+  for (final entry in raw.entries) {
+    final key = entry.key as String;
+    if (entry.value is! String) {
+      throw ConfigLoadException('$path.$key must be a string');
+    }
+    final value = enabled
+        ? _expandEnv(entry.value as String, '$path.$key', env)
+        : entry.value as String;
+    final lower = key.toLowerCase();
+    final invalidKey = headers
+        ? !RegExp(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$").hasMatch(key) ||
+              lower.startsWith('mcp-') ||
+              {
+                'host',
+                'content-type',
+                'content-length',
+                'accept',
+                'last-event-id',
+                'connection',
+                'transfer-encoding',
+              }.contains(lower) ||
+              !seen.add(lower)
+        : key.isEmpty || key.contains('=') || key.contains('\x00');
+    if (invalidKey ||
+        value.contains('\x00') ||
+        (headers && (value.contains('\r') || value.contains('\n')))) {
+      throw ConfigLoadException(
+        '$path.$key is not a valid ${headers ? 'custom header' : 'environment entry'}',
+      );
+    }
+    result[key] = value;
+  }
+  return Map.unmodifiable(result);
 }

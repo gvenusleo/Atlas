@@ -22,6 +22,9 @@ class const AtlasApp({super.key}) extends ConsumerStatefulWidget {
 
 class _AtlasAppState extends ConsumerState<AtlasApp>
     with WidgetsBindingObserver {
+  /// Bound for releasing the active runtime while the app quits.
+  static const _exitCloseTimeout = Duration(seconds: 5);
+
   RuntimeEnvironment? _runtimeEnvironment;
   Brightness? _syncedBrightness;
 
@@ -46,6 +49,13 @@ class _AtlasAppState extends ConsumerState<AtlasApp>
     // from a native finalizer during isolate shutdown, and closing a master
     // whose shell is still alive blocks the main thread.
     ref.read(terminalSessionRegistryProvider).closeAll();
+    // MCP and ACP children must be released here too: quitting from the window
+    // does not run the provider disposal that owns them. The wait is bounded
+    // so a stuck child cannot block quitting, and closing is idempotent.
+    final environment = ref.read(runtimeEnvironmentProvider).environment;
+    if (environment != null) {
+      await environment.close().timeout(_exitCloseTimeout, onTimeout: () {});
+    }
     return AppExitResponse.exit;
   }
 

@@ -36,7 +36,8 @@ The repository currently contains:
   database, grouped by provider and session;
 - architecture and development contracts for the Dart implementation.
 
-MCP integration is not implemented yet. The CLI builds as a single executable
+MCP client tools support configured stdio and Streamable HTTP servers with static
+headers. See [MCP tools](docs/mcp.md) for setup and limits. The CLI builds as a single executable
 with `mise run cli-build` (`build/bundle/bin/atlas`). Start the remote
 endpoint with `atlas server` and connect from the app's remote connection
 screen (`atlas server` prints the pairing token on every start).
@@ -85,7 +86,7 @@ See [Development](docs/development.md) for workspace commands, [Architecture](do
 Atlas is designed to run tools with the permissions of its local process. It
 does not provide a sandbox, permission prompts, or an approval gate. The current
 runtime, tools, storage, TUI, ACP, and Flutter clients follow this boundary.
-WebSocket transport and MCP remain unimplemented.
+MCP tools share this boundary. OAuth login and ACP session-provided MCP configuration remain Planned.
 
 ## License
 

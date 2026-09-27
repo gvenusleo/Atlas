@@ -5,7 +5,7 @@ The command-line and Nocterm entry point for Atlas.
 ## Responsibility
 
 - Owns the process entry point: loads `~/.atlas/config.yaml` and calls
-  `atlas_composition` `composeRuntime` to obtain one `atlas_runtime`
+  `atlas_composition` `composeTools` followed by `composeRuntime` to obtain one `atlas_runtime`
   `AgentRuntime` instance.
 - Starts the Nocterm TUI by default (`atlas`); `atlas acp` serves the same
   runtime to ACP clients over NDJSON stdio. `atlas server` exposes the same
@@ -16,7 +16,7 @@ The command-line and Nocterm entry point for Atlas.
 - Uses a thin executable trampoline and `CommandRunner<int>` routing. Help and
   usage validation precede configuration and resource allocation.
 - Owns resource teardown: drains runtime shutdown, closes protocol listeners,
-  storage, and HTTP clients, then returns a standard process exit code.
+  MCP connections, storage, and HTTP clients, then returns a standard process exit code.
 - Generates `--version` from this package's pubspec with `build_version`.
 
 ## Verification
@@ -46,7 +46,7 @@ requirements, exit codes, and version generation.
 - No re-implementation of the agent loop; every client uses the single
   `atlas_runtime` engine.
 - No rendering logic; the Nocterm UI belongs to `atlas_tui`.
-- No protocol logic: WebSocket and Planned MCP adapters are not owned here;
+- No protocol logic: WebSocket and MCP adapters are not owned here;
   `atlas_acp` is started from this process but implemented in its own package.
 - No provider-specific request fields, persistence schemas, or tool
   implementations; those belong to their owning packages. Composition of

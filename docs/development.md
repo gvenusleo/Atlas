@@ -4,7 +4,7 @@
 
 ## Current State
 
-The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, `atlas_composition`, the `atlas_tui` Nocterm chat interface, the ACP server adapter (`atlas_acp`), and local Flutter runtime composition are executable with focused tests; the MCP adapter and WebSocket transport remain planned.
+The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, `atlas_composition`, the `atlas_tui` Nocterm chat interface, the ACP server adapter (`atlas_acp`), and local Flutter runtime composition are executable with focused tests; the MCP client adapter and WebSocket transport are also implemented.
 
 ## Workspace Layout
 
@@ -16,9 +16,9 @@ packages/atlas_config        YAML config loading and validation
 packages/atlas_prompt        system prompt and skill catalog loading
 packages/atlas_composition   shared runtime composition for CLI and Flutter
 packages/atlas_tools         built-in tools
-packages/atlas_ws            versioned WebSocket protocol and transport (Planned)
+packages/atlas_ws            versioned WebSocket protocol and transport
 packages/atlas_acp           ACP adapter
-packages/atlas_mcp           MCP adapter (Planned)
+packages/atlas_mcp           MCP client tools (stdio and Streamable HTTP)
 packages/atlas_tui           Nocterm presentation package
 apps/atlas_cli               atlas CLI and TUI, with the `atlas acp`, `atlas server`, and `atlas cache` subcommands
 apps/atlas_flutter           Flutter desktop and mobile application
@@ -138,7 +138,7 @@ before rendering.
 - Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.
 - Add public abstractions only when a real adapter or test requires them.
 - Do not predeclare dependencies for planned code. Run `dart pub add` from the owning Dart package, or `flutter pub add` from `atlas_flutter`, when implementation code first needs a package.
-- Use Dio for every HTTP request. Do not add `package:http` or a second HTTP client. Add a WebSocket dependency only with the first real `atlas_ws` implementation.
+- Use Dio for Atlas-owned HTTP requests. MCP integration uses `mcp_dart` and may bring in and use its `package:http` dependency for MCP transport and authentication. Keep this exception inside the MCP adapter; do not introduce another HTTP client for unrelated features. Add a WebSocket dependency only with the first real `atlas_ws` implementation.
 - Public Dart APIs require concise documentation comments.
 - Runtime and protocol packages must not import Flutter.
 - Presentation packages must not import provider, tool, or storage implementations.

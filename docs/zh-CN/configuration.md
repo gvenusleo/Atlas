@@ -86,3 +86,10 @@ logging:
   `providers[0].base_url`。
 - 配置 `logging.directory` 后会启用脱敏 JSON Lines 文件日志。未配置
   `logging.level` 时可使用 `ATLAS_LOG_LEVEL`；显式配置优先。
+
+## MCP 服务器
+
+可选 `mcp_servers` 列表为主机 runtime 配置外部工具，支持 stdio 子进程及带静态
+请求头的 Streamable HTTP。空配置保留内置工具；启用服务器失败时，启动失败并
+清理已打开连接。修改配置后需重启。完整 schema、示例及内容限制见
+[MCP 工具](mcp.md)。

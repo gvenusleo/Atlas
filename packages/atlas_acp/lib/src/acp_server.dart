@@ -1013,14 +1013,13 @@ final class AcpServer(
     return parts;
   }
 
-  /// Rejects a non-empty `mcpServers` parameter: Atlas does not implement
-  /// MCP server connections (a MUST-level ACP stdio capability), so a client
-  /// asking for them gets an explicit error instead of silent failure.
+  /// Rejects session-supplied MCP configuration. Host-configured connections
+  /// belong to composition; ACP session isolation is not implemented yet.
   static void _rejectMcpServers(List<McpServer> servers) {
     if (servers.isNotEmpty) {
       throw RpcError(
         code: -32602,
-        message: 'mcpServers are not supported by this agent',
+        message: 'Session mcpServers are not supported; configure MCP on the Atlas host',
       );
     }
   }

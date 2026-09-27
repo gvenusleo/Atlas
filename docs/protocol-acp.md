@@ -55,3 +55,12 @@ The runtime-facing contract is `AgentSession`; ACP-only presentation members
 ## Planned
 
 Client filesystem and terminal capabilities, and ACP v2 support remain planned.
+
+## Host-configured MCP tools
+
+MCP tools configured on the Atlas host use the existing `tool_call` and
+`tool_call_update` flow, including progress and history replay. Generic ACP tool
+titles are retained by the Atlas client when there is no built-in tool kind.
+Session-provided `mcpServers` is still explicitly rejected: host configuration
+is global to the composed runtime and does not implement ACP session isolation.
+See [MCP tools](mcp.md).

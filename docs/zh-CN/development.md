@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-仓库目前是 Dart 与 Flutter workspace。`atlas_runtime`、`atlas_storage`、Provider 适配器、`atlas_config`、`atlas_tools`、`atlas_prompt`、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP 服务端适配器（`atlas_acp`）以及 Flutter 本地 runtime 组装已是带聚焦测试的可执行实现；MCP 适配器与 WebSocket transport 仍处于规划阶段。
+仓库目前是 Dart 与 Flutter workspace。`atlas_runtime`、`atlas_storage`、Provider 适配器、`atlas_config`、`atlas_tools`、`atlas_prompt`、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP 服务端适配器（`atlas_acp`）以及 Flutter 本地 runtime 组装已是带聚焦测试的可执行实现；MCP 客户端适配器与 WebSocket transport 也已实现。
 
 ## Workspace 结构
 
@@ -16,9 +16,9 @@ packages/atlas_config        YAML 配置加载与校验
 packages/atlas_prompt        系统提示词与 skill catalog 加载
 packages/atlas_composition   CLI 与 Flutter 共用的 runtime 组装
 packages/atlas_tools         内置工具
-packages/atlas_ws            版本化 WebSocket 协议与 transport（Planned）
+packages/atlas_ws            版本化 WebSocket 协议与 transport
 packages/atlas_acp           ACP 适配器
-packages/atlas_mcp           MCP 适配器（Planned）
+packages/atlas_mcp           MCP 客户端工具（stdio 与 Streamable HTTP）
 packages/atlas_tui           Nocterm 展示 package
 apps/atlas_cli               atlas CLI 与 TUI，另有 `atlas acp`、`atlas server`、`atlas cache` 子命令
 apps/atlas_flutter           Flutter 桌面端与移动端应用
@@ -122,7 +122,7 @@ Provider 适配器会在原始计数之外持久化归一化的完整输入量�
 - 领域概念与 runtime ports 放在 `atlas_runtime`；Provider、存储、工具、UI 和协议实现分别放在其所属 package。
 - 只有真实适配器或测试需要时才增加公共抽象。
 - 不要为规划中的代码预先声明依赖。实现代码首次需要某个 package 时，在所属 Dart package 中运行 `dart pub add`；`atlas_flutter` 使用 `flutter pub add`。
-- 所有 HTTP 请求统一使用 Dio，不得添加 `package:http` 或第二套 HTTP client。只有 `atlas_ws` 出现真实实现时才添加 WebSocket 依赖。
+- Atlas 自有 HTTP 请求使用 Dio。MCP 集成采用 `mcp_dart`，允许引入并使用其 `package:http` 依赖处理 MCP 传输与认证。此例外仅限 MCP 适配器，不为其他功能引入另一套 HTTP client。只有 `atlas_ws` 出现真实实现时才添加 WebSocket 依赖。
 - 公共 Dart API 必须有简明文档注释。
 - Runtime 与协议 package 不得导入 Flutter。
 - 展示 package 不得导入 Provider、工具或存储实现。

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:atlas_cli/atlas_cli.dart';
@@ -112,6 +113,80 @@ providers:
   });
 
   test(
+    'composed MCP tools share prompts, ordered results and persistence',
+    () async {
+      final fixture = File('../../packages/atlas_mcp/test/fixtures/server.dart')
+          .absolute
+          .path;
+      final config = parseConfig('''default_model: fake/provider
+providers:
+  - name: fake
+    type: responses
+    base_url: https://example.com
+    api_key: unused
+    models:
+      - value: provider
+mcp_servers:
+  - name: test
+    transport: stdio
+    command: ${jsonEncode(Platform.resolvedExecutable)}
+    args: [${jsonEncode(fixture)}]
+''');
+      final tools = await composeTools(config);
+      addTearDown(tools.close);
+      final store = _testStore();
+      final provider = _McpProvider();
+      final runtime = composeRuntime(
+        config,
+        store: store,
+        tools: tools.registry,
+        provider: provider,
+      );
+      addTearDown(runtime.shutdown);
+      final events = await runtime
+          .run(
+            TurnRequest(
+              content: const [TextContent('Use both tools')],
+              workingDirectory: Directory.current.path,
+            ),
+          )
+          .toList();
+      final results = events
+          .whereType<ToolFinished>()
+          .map((e) => e.result)
+          .toList();
+      expect(results.map((r) => r.callId.value), [
+        'builtin',
+        'mcp-ok',
+        'mcp-error',
+      ]);
+      expect(results.map((r) => r.isError), [false, false, true]);
+      expect(jsonDecode(results[1].content), {'answer': 42});
+      final snapshot = await store.loadSession(results.first.sessionId);
+      expect(
+        snapshot.timeline.whereType<ToolResultItem>().map((r) => r.content),
+        results.map((r) => r.content),
+      );
+      expect(provider.requests, hasLength(2));
+      final request = provider.requests.last;
+      expect(
+        request.messages
+            .where((m) => m.role == ModelMessageRole.tool)
+            .map((m) => m.toolOutput),
+        results.map((r) => r.content),
+      );
+      expect(
+        request.systemPrompt,
+        contains(
+          tools.registry.descriptors
+              .firstWhere((d) => d.description == 'structured')
+              .name,
+        ),
+      );
+    },
+  );
+
+  test(
     'runs a multi-turn tool loop with a fake provider and real tools',
     () async {
       final config = parseConfig('''
@@ -222,5 +297,49 @@ final class _FakeProvider() implements ModelProvider {
         stopReason: StopReason.endTurn,
       ),
     );
+  }
+}
+
+final class _McpProvider implements ModelProvider {
+  final requests = <ModelRequest>[];
+  @override
+  Future<ModelDescriptor> describe(ModelRef model) async =>
+      ModelDescriptor(ref: model);
+  @override
+  Stream<ModelStreamEvent> stream(ModelRequest request) async* {
+    requests.add(request);
+    if (requests.length == 1) {
+      yield ModelCompletedEvent(
+        ModelResponse(
+          content: const [],
+          toolCalls: [
+            ToolCall(
+              id: ToolCallId('builtin'),
+              name: 'plan',
+              arguments: {'plan': <Object?>[]},
+            ),
+            for (final (id, description) in [
+              ('mcp-ok', 'structured'),
+              ('mcp-error', 'error'),
+            ])
+              ToolCall(
+                id: ToolCallId(id),
+                name: request.tools
+                    .firstWhere((t) => t.description == description)
+                    .name,
+                arguments: const {},
+              ),
+          ],
+          stopReason: StopReason.toolUse,
+        ),
+      );
+    } else {
+      yield const ModelCompletedEvent(
+        ModelResponse(
+          content: [TextContent('done')],
+          stopReason: StopReason.endTurn,
+        ),
+      );
+    }
   }
 }

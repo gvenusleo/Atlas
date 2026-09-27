@@ -30,7 +30,8 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
   Atlas；
 - Dart 实现需要遵守的架构与开发规范。
 
-MCP 集成尚未实现。CLI 可通过 `mise run cli-build` 构建为单文件可执行程序
+MCP 客户端工具支持 stdio 和带静态请求头的 Streamable HTTP 服务器，配置与限制见
+[MCP 工具](docs/zh-CN/mcp.md)。CLI 可通过 `mise run cli-build` 构建为单文件可执行程序
 （`build/bundle/bin/atlas`）。用 `atlas server` 启动远程端点，再在 App 的
 远程连接页接入（`atlas server` 每次启动都会打印配对 token）。
 
@@ -77,7 +78,7 @@ Workspace 命令见[开发文档](docs/zh-CN/development.md)，runtime 边界见
 
 Atlas 设计为使用本地进程的权限执行工具，不提供沙箱、权限提示或 approval gate。
 当前 runtime、工具、存储、TUI、ACP 与 Flutter 客户端均遵循这一边界。
-WebSocket transport 与 MCP 尚未实现。
+MCP 工具沿用此边界。OAuth 登录和 ACP 会话传入的 MCP 配置仍为 Planned。
 
 ## 许可证
 

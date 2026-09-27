@@ -11,7 +11,10 @@ YAML configuration loading for Atlas composition roots.
 - Validates the document and reports `ConfigLoadException` failures with
   field paths.
 - Expands `${ENV_VAR}` references in `api_key` and a leading `~/` in
-  `session.db_path`.
+  `session.db_path`. MCP `env` and `headers` support the same substitutions;
+  stdio `cwd` expands a leading `~/`. Disabled entries skip secret substitution.
+- Defines stdio and Streamable HTTP `mcp_servers` DTOs without opening connections
+  or importing the MCP SDK.
 
 ## Allowed dependencies
 

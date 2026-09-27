@@ -10,8 +10,17 @@ import 'termination_signals.dart';
 
 /// Serves ACP until stdin closes or a termination signal arrives.
 Future<void> runAcpCommand(AtlasConfig config) async {
-  final resources = CliRuntimeResources(config);
   final signals = TerminationSignals();
+  final CliRuntimeResources resources;
+  try {
+    resources = await CliRuntimeResources.create(
+      config,
+      cancellation: signals.cancellation,
+    );
+  } catch (_) {
+    await signals.close();
+    rethrow;
+  }
   final input = StreamController<List<int>>();
   final subscription = stdin.listen(
     input.add,

@@ -4,6 +4,7 @@ import 'package:atlas_acp/atlas_acp.dart';
 import 'package:atlas_composition/atlas_composition.dart';
 import 'package:atlas_config/atlas_config.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
+import 'package:atlas_provider/atlas_provider.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 
 import '../features/remote_connection/application/runtime_controller.dart';
@@ -48,18 +49,51 @@ Future<RuntimeBootstrap> bootstrapRuntime({
 
   final configFile = File('$home/.atlas/config.yaml');
   DriftSessionStore? store;
+  ComposedTools? tools;
+  DioHttpStreamClient? http;
+  AgentRuntime? runtime;
+  AcpClient? client;
+  Future<void>? serverDone;
+  Future<void>? closing;
+  Future<void> cleanup() async {
+    try {
+      await runtime?.shutdown();
+    } finally {
+      try {
+        await client?.close();
+        await serverDone;
+      } finally {
+        try {
+          await tools?.close();
+        } finally {
+          http?.close();
+          await store?.close();
+        }
+      }
+    }
+  }
+
+  Future<void> close() => closing ??= cleanup();
+
   try {
     final config = loadConfig(configFile, environment: values);
+    final logger = composeLogger(config);
+    tools = await composeTools(config, environment: values, logger: logger);
+    http = DioHttpStreamClient();
     store = DriftSessionStore.openFile(File(config.session.dbPath));
-    final runtime = composeRuntime(
+    runtime = composeRuntime(
       config,
       store: store,
+      tools: tools.registry,
+      httpClient: http,
+      logger: logger,
       shellEnvironment: values,
     );
     final models = List<ModelDescriptor>.unmodifiable(composeModels(config));
     final server = AcpServer(runtime, models: models);
-    final (serverDone, clientTransport) = server.serveMemory();
-    final client = AcpClient(
+    final (serving, clientTransport) = server.serveMemory();
+    serverDone = serving;
+    client = AcpClient(
       clientTransport,
       catalog: models,
       defaultModel: runtime.defaultModel,
@@ -69,18 +103,17 @@ Future<RuntimeBootstrap> bootstrapRuntime({
       RuntimeEnvironment(
         runtime: client,
         models: client.catalog.isEmpty ? models : client.catalog,
-        onClose: () async {
-          await client.close();
-          await serverDone;
-          await store?.close();
-        },
+        onClose: close,
       ),
     );
   } on ConfigLoadException catch (error) {
-    store?.close();
+    await close();
     return RuntimeBootstrap.failed('Cannot load ${configFile.path}: $error');
   } on Object catch (error) {
-    store?.close();
-    return RuntimeBootstrap.failed('Cannot start Atlas: $error');
+    await close();
+    final detail = error is SafeMessageException
+        ? error.safeMessage
+        : error.runtimeType.toString();
+    return RuntimeBootstrap.failed('Cannot start Atlas: $detail');
   }
 }

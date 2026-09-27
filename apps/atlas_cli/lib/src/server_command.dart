@@ -101,8 +101,17 @@ Future<void> runServerCommand({
   out.writeln('Remote access token: $token');
   err.writeln('Keep it secret; it grants full local agent access.');
 
-  final resources = CliRuntimeResources(config);
   final signals = TerminationSignals();
+  final CliRuntimeResources resources;
+  try {
+    resources = await CliRuntimeResources.create(
+      config,
+      cancellation: signals.cancellation,
+    );
+  } catch (_) {
+    await signals.close();
+    rethrow;
+  }
   final server = AtlasWsServer(
     runtime: resources.runtime,
     models: composeModels(config),

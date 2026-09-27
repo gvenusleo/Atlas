@@ -1,6 +1,7 @@
 @Timeout(Duration(minutes: 2))
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -44,6 +45,7 @@ void main() {
   Future<TestProcess> start(
     List<String> args, {
     bool configured = false,
+    String mcp = '',
   }) async {
     if (configured) {
       await d.dir('.atlas', [
@@ -58,6 +60,7 @@ providers:
       - value: model
 session:
   db_path: ~/.atlas/test.db
+$mcp
 '''),
       ]).create();
     }
@@ -293,6 +296,82 @@ session:
       expect(await process.stderr.rest.toList(), isEmpty);
     },
   );
+
+  String mcpConfig({bool silent = false}) {
+    final fixture = File('../../packages/atlas_mcp/test/fixtures/server.dart')
+        .absolute
+        .path;
+    return '''mcp_servers:
+  - name: fixture
+    transport: stdio
+    command: ${jsonEncode('${cli_util.sdkPath}/bin/dart${Platform.isWindows ? '.exe' : ''}')}
+    args: [${jsonEncode(fixture)}${silent ? ', silent' : ''}]
+    startup_timeout_seconds: 60
+    env:
+      ATLAS_MCP_PID_FILE: ${jsonEncode(d.path('mcp.pid'))}
+''';
+  }
+
+  Future<void> expectMcpExited() async {
+    final child = File(d.path('mcp.pid'));
+    expect(child.existsSync(), isTrue);
+    if (!Platform.isWindows) {
+      final probe = await Process.run('/bin/kill', [
+        '-0',
+        child.readAsStringSync(),
+      ]);
+      expect(probe.exitCode, isNot(0));
+    }
+  }
+
+  test(
+    'ACP owns configured MCP subprocesses without stdout contamination',
+    () async {
+      final process = await start(['acp'], configured: true, mcp: mcpConfig());
+      process.stdin.writeln(
+        jsonEncode({
+          'jsonrpc': '2.0',
+          'id': 1,
+          'method': 'initialize',
+          'params': {'protocolVersion': 1},
+        }),
+      );
+      expect(jsonDecode(await process.stdout.next), contains('result'));
+      await process.stdin.close();
+      await process.shouldExit(0);
+      expect(await process.stderr.rest.toList(), isEmpty);
+      await expectMcpExited();
+    },
+  );
+
+  test('SIGTERM during MCP startup closes the pending child', () async {
+    final process = await start(
+      ['acp'],
+      configured: true,
+      mcp: mcpConfig(silent: true),
+    );
+    final pidFile = File(d.path('mcp.pid'));
+    final deadline = Stopwatch()..start();
+    while (!pidFile.existsSync() &&
+        deadline.elapsed < const Duration(seconds: 10)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(pidFile.existsSync(), isTrue);
+    expect(Process.killPid(process.pid, ProcessSignal.sigterm), isTrue);
+    await process.shouldExit(0);
+    expect(await process.stderr.rest.toList(), isEmpty);
+    await expectMcpExited();
+  }, skip: Platform.isWindows ? 'POSIX signals' : false);
+
+  test('cache ignores enabled MCP connections', () async {
+    final process = await start(
+      ['cache'],
+      configured: true,
+      mcp: mcpConfig(silent: true),
+    );
+    await process.shouldExit(0);
+    expect(File(d.path('mcp.pid')).existsSync(), isFalse);
+  });
 
   test('token rotation needs no provider configuration', () async {
     final process = await start(['server', '--rotate-token']);
