@@ -2,17 +2,11 @@
 
 [English](../architecture.md)
 
-> **状态：** `atlas_runtime`、`atlas_storage`、`atlas_provider`
-> 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt`
-> prompt 构建、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP
-> 服务端适配器（`atlas_acp`，由 `atlas acp` 提供）以及 Flutter 本地 runtime
-> 组装、WebSocket transport（`atlas_ws`）、`atlas server` 入口与移动端远程
-> 客户端及 MCP 客户端工具适配器（`atlas_mcp`）均**Available**。
+> **状态：** `atlas_runtime`、`atlas_storage`、`atlas_provider` 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt` prompt 构建、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP 服务端适配器（`atlas_acp`，由 `atlas acp` 提供）以及 Flutter 本地 runtime 组装、WebSocket transport（`atlas_ws`）、`atlas server` 入口与移动端远程客户端及 MCP 客户端工具适配器（`atlas_mcp`）均**Available**。
 
 ## 系统形态
 
-Atlas 使用唯一的 Dart runtime 实现，并通过本地应用组合根与可选远程
-transport 提供能力。展示层或协议适配器不得维护第二套 Agent loop。
+Atlas 使用唯一的 Dart runtime 实现，并通过本地应用组合根与可选远程 transport 提供能力。展示层或协议适配器不得维护第二套 Agent loop。
 
 ```mermaid
 graph TD
@@ -40,31 +34,13 @@ graph TD
     MCP --> MCPSDK[mcp_dart]
 ```
 
-`composeTools` 异步连接配置的 MCP 服务器并固定工具目录，随后将合并的
-`LocalToolRegistry` 注入 `composeRuntime`。应用根在 runtime 和事件消费者完成
-清理后关闭资源。MCP 是客户端适配器，ACP 会话级 MCP 配置仍为 Planned。
+`composeTools` 异步连接配置的 MCP 服务器并固定工具目录，随后将合并的 `LocalToolRegistry` 注入 `composeRuntime`。应用根在 runtime 和事件消费者完成清理后关闭资源。MCP 是客户端适配器，ACP 会话级 MCP 配置仍为 Planned。
 
-`atlas_composition` 从 `atlas_config`、provider、存储、工具与系统提示词构建器
-组装一个 runtime；`atlas_cli` 与 `atlas_flutter` 的进程 bootstrap 共用这段
-组装代码。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas acp` 时通过 NDJSON
-stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）。Flutter App
-始终是 ACP 客户端：本地模式在进程内启动 `AcpServer` 并通过内存 transport
-连接，远程模式通过 `acpd_io` 拉起第三方 ACP agent。Nocterm 仍直接使用
-runtime。`atlas server` 通过 `atlas_ws` 把已组装的 runtime handler 暴露给
-远程客户端：Atlas 移动 App（及任意 ACP 客户端）经 WebSocket 连接——每个
-text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接断开时已
-开始的 turn 会继续执行完毕，重连后通过 `session/load` 恢复现场。ACP 作为
-入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
+`atlas_composition` 从 `atlas_config`、provider、存储、工具与系统提示词构建器组装一个 runtime；`atlas_cli` 与 `atlas_flutter` 的进程 bootstrap 共用这段组装代码。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas acp` 时通过 NDJSON stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）。Flutter App 始终是 ACP 客户端：本地模式在进程内启动 `AcpServer` 并通过内存 transport 连接，远程模式通过 `acpd_io` 拉起第三方 ACP agent。Nocterm 仍直接使用 runtime。`atlas server` 通过 `atlas_ws` 把已组装的 runtime handler 暴露给远程客户端：Atlas 移动 App（及任意 ACP 客户端）经 WebSocket 连接——每个 text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接断开时已开始的 turn 会继续执行完毕，重连后通过 `session/load` 恢复现场。ACP 作为入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
 
 ### CLI 关闭职责
 
-CLI command runner 在创建适配器前解析参数。每个运行中的命令拥有自身的存储与
-HTTP client，并通过 `atlas_composition` 组装 runtime。进程关闭时先停止接收
-新任务，再调用 `AgentRuntime.shutdown()` 取消并等待活动或排队的 turn 与
-compact，等待协议 handler 完成后关闭适配器资源。关闭期间事件消费者继续
-消费流，确保终态持久化完成。普通 WebSocket 断连仍允许已有 turn 执行完毕，
-与进程关闭不同。Nocterm bootstrap 与终端清理仍属于 `atlas_tui`；该 bootstrap
-自然返回，不允许 Nocterm 直接终止进程。
+CLI command runner 在创建适配器前解析参数。每个运行中的命令拥有自身的存储与 HTTP client，并通过 `atlas_composition` 组装 runtime。进程关闭时先停止接收新任务，再调用 `AgentRuntime.shutdown()` 取消并等待活动或排队的 turn 与 compact，等待协议 handler 完成后关闭适配器资源。关闭期间事件消费者继续消费流，确保终态持久化完成。普通 WebSocket 断连仍允许已有 turn 执行完毕，与进程关闭不同。Nocterm bootstrap 与终端清理仍属于 `atlas_tui`；该 bootstrap 自然返回，不允许 Nocterm 直接终止进程。
 
 ## Package 职责
 
@@ -100,45 +76,17 @@ compact，等待协议 handler 完成后关闭适配器资源。关闭期间事�
 
 ## Flutter 客户端状态
 
-Flutter 的 Riverpod controller 放在各 feature 的 `application` 目录中。
-`remote_connection` controller 接收 `app` 注入的 ACP 子进程与 WebSocket
-连接函数；feature 代码不导入 runtime bootstrap。工作目录 provider 放在
-`shared/application`，连接选择与 workspace 草稿不需要相互依赖对方的 controller。
+Flutter 的 Riverpod controller 放在各 feature 的 `application` 目录中。`remote_connection` controller 接收 `app` 注入的 ACP 子进程与 WebSocket 连接函数；feature 代码不导入 runtime bootstrap。工作目录 provider 放在 `shared/application`，连接选择与 workspace 草稿不需要相互依赖对方的 controller。
 
-macOS 上，`app/shell_environment.dart` 在本地 bootstrap 前读取一次用户导出的环境。
-它在 `HOME` 中以交互式登录模式启动绝对路径的 `SHELL`，支持 zsh、bash 和 sh，
-未设置时使用 `/bin/zsh`。随机边界标记与 NUL 分隔的数据将环境变量和启动输出分开，
-保留值中的换行及等号。不可变快照覆盖继承环境中的同名变量，但保留原始的
-`PWD`、`OLDPWD`、`SHLVL` 和 `_`。配置中的 `${VAR}`、组装后的 shell 工具及
-ACP 子进程连接显式接收同一快照，不修改 `Platform.environment`。
-shell 工具仍使用 `/bin/sh -c` 执行命令。
+macOS 上，`app/shell_environment.dart` 在本地 bootstrap 前读取一次用户导出的环境。它在 `HOME` 中以交互式登录模式启动绝对路径的 `SHELL`，支持 zsh、bash 和 sh，未设置时使用 `/bin/zsh`。随机边界标记与 NUL 分隔的数据将环境变量和启动输出分开，保留值中的换行及等号。不可变快照覆盖继承环境中的同名变量，但保留原始的 `PWD`、`OLDPWD`、`SHLVL` 和 `_`。配置中的 `${VAR}`、组装后的 shell 工具及 ACP 子进程连接显式接收同一快照，不修改 `Platform.environment`。shell 工具仍使用 `/bin/sh -c` 执行命令。
 
-解析限时 10 秒，stdout/stderr 合计最多接收 1 MiB。不支持的 shell、启动失败、非零退出、
-数据格式错误、输出超限或超时都会完整保留原始环境。应用只记录失败类别，不记录变量值或
-shell 输出。探测仍在运行时，清理先暂停根进程，通过 `/bin/ps` 获取有界的父子 PID 快照，
-再先终止已发现的后代、最后终止根进程，包括忽略 TERM 的前台命令。
-枚举限时 500 ms、输出上限 1 MiB，进程退出等待及管道清理也都有界。枚举失败仍会终止
-根进程。快照前已经重新归属的后代（例如 shell 提前退出后）、枚举期间新启动的后代，
-以及主动分离的进程无法保证清理。
-其他平台和 CLI/TUI 继续继承既有环境，内置终端仍自行启动登录 shell。
-修改 shell 配置后需要重启 App；快照只包含导出变量，不包含 alias 或函数，也不会随会话
-目录变化重新选择 mise 项目版本。
+解析限时 10 秒，stdout/stderr 合计最多接收 1 MiB。不支持的 shell、启动失败、非零退出、数据格式错误、输出超限或超时都会完整保留原始环境。应用只记录失败类别，不记录变量值或 shell 输出。探测仍在运行时，清理先暂停根进程，通过 `/bin/ps` 获取有界的父子 PID 快照，再先终止已发现的后代、最后终止根进程，包括忽略 TERM 的前台命令。枚举限时 500 ms、输出上限 1 MiB，进程退出等待及管道清理也都有界。枚举失败仍会终止根进程。快照前已经重新归属的后代（例如 shell 提前退出后）、枚举期间新启动的后代，以及主动分离的进程无法保证清理。其他平台和 CLI/TUI 继续继承既有环境，内置终端仍自行启动登录 shell。修改 shell 配置后需要重启 App；快照只包含导出变量，不包含 alias 或函数，也不会随会话目录变化重新选择 mise 项目版本。
 
-已保存的 ACP 与远程连接配置使用共享 repository，串行处理列表更新，并在写入成功后
-发布不可变快照。视图调用 controller 命令，不直接读取或覆盖存储列表。每个文件浏览器
-都有独立、自动释放的 controller，管理目录缓存、文件监听防抖、预览和文件操作。
-`FileBrowserService` 负责文件系统访问；菜单、对话框和 Markdown 预览开关保留在 Widget 中。
+已保存的 ACP 与远程连接配置使用共享 repository，串行处理列表更新，并在写入成功后发布不可变快照。视图调用 controller 命令，不直接读取或覆盖存储列表。每个文件浏览器都有独立、自动释放的 controller，管理目录缓存、文件监听防抖、预览和文件操作。`FileBrowserService` 负责文件系统访问；菜单、对话框和 Markdown 预览开关保留在 Widget 中。
 
-工作区和设置页按可用宽度切换导航：宽度至少为 960 个逻辑像素时显示侧栏或分区导航栏，
-Android 与 iOS 也遵循此规则；较窄窗口使用抽屉或横向分区选择器。移动平台的控件保留较大的
-触控区域，与布局选择分开处理。会话历史和远程连接列表按需构建；会话侧栏支持 Tab、
-Enter/空格，以及 Shift+F10 打开上下文菜单，也可通过右键或长按打开菜单。
+工作区和设置页按可用宽度切换导航：宽度至少为 960 个逻辑像素时显示侧栏或分区导航栏，Android 与 iOS 也遵循此规则；较窄窗口使用抽屉或横向分区选择器。移动平台的控件保留较大的触控区域，与布局选择分开处理。会话历史和远程连接列表按需构建；会话侧栏支持 Tab、Enter/空格，以及 Shift+F10 打开上下文菜单，也可通过右键或长按打开菜单。
 
-应用在 `go_router` 中将 `/settings` 嵌套在 `/` 下，直接进入设置页也保留可返回的工作区页面。
-Android 与 iOS 使用 Flutter 内置深链处理器，注册 `atlas:///` 和 `atlas:///settings`。
-HTTPS App Links / Universal Links 仍为 Planned：需要确认域名、提供 Android 发布证书指纹、
-配置 iOS 关联域名 entitlement，并托管 `assetlinks.json` / `apple-app-site-association` 文件。
-自定义 scheme 链接不提供经过验证的域名归属。
+应用在 `go_router` 中将 `/settings` 嵌套在 `/` 下，直接进入设置页也保留可返回的工作区页面。Android 与 iOS 使用 Flutter 内置深链处理器，注册 `atlas:///` 和 `atlas:///settings`。HTTPS App Links / Universal Links 仍为 Planned：需要确认域名、提供 Android 发布证书指纹、配置 iOS 关联域名 entitlement，并托管 `assetlinks.json` / `apple-app-site-association` 文件。自定义 scheme 链接不提供经过验证的域名归属。
 
 ## Runtime 行为契约
 

@@ -9,38 +9,18 @@ Atlas is a local general-purpose AI agent being rebuilt as a unified Dart and Fl
 The repository currently contains:
 
 - a Pub workspace that defines runtime, protocol, client, and adapter boundaries;
-- a Flutter desktop and mobile client that always connects through ACP, with sessions,
-  agent turns, a file browser, and an embedded terminal;
+- a Flutter desktop and mobile client that always connects through ACP, with sessions, agent turns, a file browser, and an embedded terminal;
 - a working `atlas_runtime` agent engine and `atlas_storage` Drift adapter;
-- an `atlas_provider` package with OpenAI-compatible Chat Completions and
-  Responses adapters plus an Anthropic Messages adapter, and a composite
-  provider for routing multiple providers to one runtime;
-- an `atlas_prompt` package that builds the system prompt and loads AGENTS.md
-  instruction files;
-- an `atlas_composition` package that wires config, providers, tools, storage,
-  and the system prompt into one runtime for both `atlas_cli` and
-  `atlas_flutter`;
-- a Nocterm chat interface in `atlas_tui` that runs as the default `atlas`
-  terminal entry point, with slash commands (`/model`, `/new`, `/resume`,
-  `/compact`, `/quit`) and skill injection; `/compact` accepts an optional
-  instruction, and `/model` can then select a reasoning effort;
-- an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON
-  stdio, covering session lifecycle, model and effort config, slash commands,
-  turn streaming, agent plans, live shell output, file diffs, and follow-along
-  locations;
-- a `atlas_ws` WebSocket transport served by the new `atlas server`
-  subcommand: bearer-token auth, one ACP JSON-RPC message per text frame, and
-  automatic client reconnection, so the Flutter mobile app can drive the
-  computer's Atlas from anywhere on the Tailscale/private network;
-- an `atlas cache` subcommand that reports prompt-cache reuse from the session
-  database, grouped by provider and session;
+- an `atlas_provider` package with OpenAI-compatible Chat Completions and Responses adapters plus an Anthropic Messages adapter, and a composite provider for routing multiple providers to one runtime;
+- an `atlas_prompt` package that builds the system prompt and loads AGENTS.md instruction files;
+- an `atlas_composition` package that wires config, providers, tools, storage, and the system prompt into one runtime for both `atlas_cli` and `atlas_flutter`;
+- a Nocterm chat interface in `atlas_tui` that runs as the default `atlas` terminal entry point, with slash commands (`/model`, `/new`, `/resume`, `/compact`, `/quit`) and skill injection; `/compact` accepts an optional instruction, and `/model` can then select a reasoning effort;
+- an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON stdio, covering session lifecycle, model and effort config, slash commands, turn streaming, agent plans, live shell output, file diffs, and follow-along locations;
+- a `atlas_ws` WebSocket transport served by the new `atlas server` subcommand: bearer-token auth, one ACP JSON-RPC message per text frame, and automatic client reconnection, so the Flutter mobile app can drive the computer's Atlas from anywhere on the Tailscale/private network;
+- an `atlas cache` subcommand that reports prompt-cache reuse from the session database, grouped by provider and session;
 - architecture and development contracts for the Dart implementation.
 
-MCP client tools support configured stdio and Streamable HTTP servers with static
-headers. See [MCP tools](docs/mcp.md) for setup and limits. The CLI builds as a single executable
-with `mise run cli-build` (`build/bundle/bin/atlas`). Start the remote
-endpoint with `atlas server` and connect from the app's remote connection
-screen (`atlas server` prints the pairing token on every start).
+MCP client tools support configured stdio and Streamable HTTP servers with static headers. See [MCP tools](docs/mcp.md) for setup and limits. The CLI builds as a single executable with `mise run cli-build` (`build/bundle/bin/atlas`). Start the remote endpoint with `atlas server` and connect from the app's remote connection screen (`atlas server` prints the pairing token on every start).
 
 ## Installation
 
@@ -83,10 +63,7 @@ See [Development](docs/development.md) for workspace commands, [Architecture](do
 
 ## Security Model
 
-Atlas is designed to run tools with the permissions of its local process. It
-does not provide a sandbox, permission prompts, or an approval gate. The current
-runtime, tools, storage, TUI, ACP, and Flutter clients follow this boundary.
-MCP tools share this boundary. OAuth login and ACP session-provided MCP configuration remain Planned.
+Atlas is designed to run tools with the permissions of its local process. It does not provide a sandbox, permission prompts, or an approval gate. The current runtime, tools, storage, TUI, ACP, and Flutter clients follow this boundary. MCP tools share this boundary. OAuth login and ACP session-provided MCP configuration remain Planned.
 
 ## License
 

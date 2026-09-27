@@ -2,11 +2,7 @@
 
 [中文](zh-CN/configuration.md)
 
-Atlas loads its application configuration from `~/.atlas/config.yaml` through
-the `atlas_config` package. Both `atlas_cli` and `atlas_flutter` locate the
-file and pass it to `loadConfig`; `atlas_composition` then maps the result onto
-one runtime. The package parses, validates, and maps configuration onto
-provider objects.
+Atlas loads its application configuration from `~/.atlas/config.yaml` through the `atlas_config` package. Both `atlas_cli` and `atlas_flutter` locate the file and pass it to `loadConfig`; `atlas_composition` then maps the result onto one runtime. The package parses, validates, and maps configuration onto provider objects.
 
 ## Example
 
@@ -61,43 +57,18 @@ logging:
 
 ## Rules
 
-- `default_model` is `"<provider>/<model>"` and must reference a configured
-  provider and model.
-- `providers` must not be empty; each provider's `models` list must not be
-  empty. Provider names must be unique; model ids must be unique within a
-  provider.
-- `type` is `chat_completions`, `responses`, or `anthropic`. The first two
-  select the OpenAI-compatible adapter with the matching API; `anthropic`
-  selects the Anthropic adapter. Both OpenAI-compatible and Anthropic
-  providers accept an optional `user_agent`.
+- `default_model` is `"<provider>/<model>"` and must reference a configured provider and model.
+- `providers` must not be empty; each provider's `models` list must not be empty. Provider names must be unique; model ids must be unique within a provider.
+- `type` is `chat_completions`, `responses`, or `anthropic`. The first two select the OpenAI-compatible adapter with the matching API; `anthropic` selects the Anthropic adapter. Both OpenAI-compatible and Anthropic providers accept an optional `user_agent`.
 - `base_url` must be an HTTP(S) URL without a query or fragment.
-- `api_key` supports `${ENV_VAR}` references; an undefined variable fails
-  loading with the variable name in the message.
-- `max_tokens`, `context_window`, and `thinking_budget_tokens` must not be
-  negative. `max_steps` must be greater than zero.
-- Anthropic `thinking_budget_tokens` must be less than the effective
-  `max_tokens`. When thinking is enabled, Atlas omits `agent.temperature` from
-  Anthropic requests because that sampling option is incompatible.
-  `input_capabilities` and `reasoning_efforts` apply to every provider type.
-- `agent.compaction.keep_recent_tokens` must be greater than 0; it caps how
-  many tokens of the newest context are kept verbatim during compaction,
-  clamped to one third of the model context window.
-- `agent.compaction.reserve_tokens` must be greater than 0; automatic
-  compaction runs after terminal turns and before each model request once the
-  estimated context reaches `context_window - reserve_tokens`. When
-  `reserve_tokens` is greater than or equal to `context_window`, the legacy
-  `agent.compaction.threshold` fraction is used as the trigger instead;
-  `threshold` must be greater than 0 and at most 1.
-- Validation failures raise `ConfigLoadException` with a field path such as
-  `providers[0].base_url`.
-- `logging.directory` enables redacted JSON-lines file logging. `ATLAS_LOG_LEVEL`
-  supplies the level when `logging.level` is omitted; explicit configuration
-  takes precedence.
+- `api_key` supports `${ENV_VAR}` references; an undefined variable fails loading with the variable name in the message.
+- `max_tokens`, `context_window`, and `thinking_budget_tokens` must not be negative. `max_steps` must be greater than zero.
+- Anthropic `thinking_budget_tokens` must be less than the effective `max_tokens`. When thinking is enabled, Atlas omits `agent.temperature` from Anthropic requests because that sampling option is incompatible. `input_capabilities` and `reasoning_efforts` apply to every provider type.
+- `agent.compaction.keep_recent_tokens` must be greater than 0; it caps how many tokens of the newest context are kept verbatim during compaction, clamped to one third of the model context window.
+- `agent.compaction.reserve_tokens` must be greater than 0; automatic compaction runs after terminal turns and before each model request once the estimated context reaches `context_window - reserve_tokens`. When `reserve_tokens` is greater than or equal to `context_window`, the legacy `agent.compaction.threshold` fraction is used as the trigger instead; `threshold` must be greater than 0 and at most 1.
+- Validation failures raise `ConfigLoadException` with a field path such as `providers[0].base_url`.
+- `logging.directory` enables redacted JSON-lines file logging. `ATLAS_LOG_LEVEL` supplies the level when `logging.level` is omitted; explicit configuration takes precedence.
 
 ## MCP servers
 
-The optional `mcp_servers` list configures external tools for the host runtime.
-Both stdio subprocesses and Streamable HTTP endpoints with static headers are
-supported. Empty configuration preserves built-in tools; enabled-server failures
-fail startup after cleaning up opened connections. Changes require restart.
-See [MCP tools](mcp.md) for the full schema, examples and supported content.
+The optional `mcp_servers` list configures external tools for the host runtime. Both stdio subprocesses and Streamable HTTP endpoints with static headers are supported. Empty configuration preserves built-in tools; enabled-server failures fail startup after cleaning up opened connections. Changes require restart. See [MCP tools](mcp.md) for the full schema, examples and supported content.

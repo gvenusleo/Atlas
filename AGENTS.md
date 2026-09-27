@@ -47,6 +47,7 @@
 ## Documentation
 
 - Root README files describe the product, current status, and supported entry points; architecture details belong in `docs/architecture.md`.
+- Keep each Markdown paragraph on a single line. Do not hard-wrap prose, list items, or blockquote paragraphs; a paragraph that reads as one block belongs on one line.
 - English documents define structure and terminology. Keep the corresponding `docs/zh-CN` translation synchronized in the same change.
 - Mark unimplemented behavior as `Planned`. Do not document planned commands or configuration as currently available.
 - Every workspace package README states its responsibility, allowed dependencies, and prohibited ownership.

@@ -49,73 +49,34 @@ mise run ci           # 完整仓库验证
 
 使用 `mise run app-run --device macos` 运行 Flutter 客户端。各平台 release 构建使用对应的 `mise run app-build-*` 任务。使用 `mise run app-install-macos` 将本地构建的 macOS 应用安装到 `/Applications`（可用 `APP_INSTALL_DIR` 覆盖安装目录）。
 
-使用 `mise run cli-build` 构建单文件 CLI 可执行程序。Dart 3.13 的
-`dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package
-（sqlite3）不能使用 `dart compile exe`。
+使用 `mise run cli-build` 构建单文件 CLI 可执行程序。Dart 3.13 的 `dart build cli` 产物为 `build/bundle/bin/atlas`；带 build hooks 的 package （sqlite3）不能使用 `dart compile exe`。
 
-使用 `mise run cli-install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装
-预编译 release 二进制：macOS/Linux 运行
-`curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash`，
-Windows 运行 `irm .../latest/download/install.ps1 | iex`；脚本会下载与当前
-平台和架构匹配的带版本归档，并支持 `ATLAS_INSTALL_DIR` 覆盖安装目录。
+使用 `mise run cli-install` 将本地构建的二进制安装到 `~/.local/bin`。终端用户安装预编译 release 二进制：macOS/Linux 运行 `curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash`，Windows 运行 `irm .../latest/download/install.ps1 | iex`；脚本会下载与当前平台和架构匹配的带版本归档，并支持 `ATLAS_INSTALL_DIR` 覆盖安装目录。
 
-推送 `v*.*.*` tag 即可发布新版本：`.github/workflows/release.yml` 使用
-`dart build cli` 构建 linux（amd64/arm64）、macOS（amd64/arm64）与
-Windows（amd64）二进制，连同安装脚本一起上传到 GitHub Release。Release
-notes 在 GitHub Release 页自动生成，仓库不维护单独的 changelog 文件。
+推送 `v*.*.*` tag 即可发布新版本：`.github/workflows/release.yml` 使用 `dart build cli` 构建 linux（amd64/arm64）、macOS（amd64/arm64）与 Windows（amd64）二进制，连同安装脚本一起上传到 GitHub Release。Release notes 在 GitHub Release 页自动生成，仓库不维护单独的 changelog 文件。
 
 ## CLI 行为与验证
 
-`bin/atlas.dart` 只转发参数并设置返回的退出码。`atlas --help`、
-`atlas help <command>` 和 `<command> --help` 均不依赖配置。参数校验在加载配置
-或打开存储前完成；参数错误及 usage 全部写入 stderr。退出码为：成功 0、
-用法错误 64、配置失败 78、意外失败 70。`--verbose` 会在 stderr 附上精简堆栈。
+`bin/atlas.dart` 只转发参数并设置返回的退出码。`atlas --help`、`atlas help <command>` 和 `<command> --help` 均不依赖配置。参数校验在加载配置或打开存储前完成；参数错误及 usage 全部写入 stderr。退出码为：成功 0、用法错误 64、配置失败 78、意外失败 70。`--verbose` 会在 stderr 附上精简堆栈。
 
-默认 TUI 要求 stdin/stdout 都是终端、支持 ANSI，且未设置 `NO_COLOR`
-（即使值为空也会禁用 TUI）。不支持的终端会被明确拒绝，不输出转义序列；
-非交互子命令仍可使用。TUI 退出时先恢复输入模式与光标，再释放 stdin。
-各命令关闭自身资源后自然返回，不调用 `exit()`。
+默认 TUI 要求 stdin/stdout 都是终端、支持 ANSI，且未设置 `NO_COLOR` （即使值为空也会禁用 TUI）。不支持的终端会被明确拒绝，不输出转义序列；非交互子命令仍可使用。TUI 退出时先恢复输入模式与光标，再释放 stdin。各命令关闭自身资源后自然返回，不调用 `exit()`。
 
-CLI package 声明了 `atlas` 可执行入口；在 workspace 根目录可运行
-`dart run atlas_cli:atlas --help`。版本由 `build_version` 从
-`apps/atlas_cli/pubspec.yaml` 生成。修改版本后运行 `mise run cli-version`，
-并提交 `apps/atlas_cli/lib/src/version.dart`。`mise run cli-build` 会自动生成
-版本文件；release 构建在打包前检查 `--version` 与发布 tag 一致。
+CLI package 声明了 `atlas` 可执行入口；在 workspace 根目录可运行 `dart run atlas_cli:atlas --help`。版本由 `build_version` 从 `apps/atlas_cli/pubspec.yaml` 生成。修改版本后运行 `mise run cli-version`，并提交 `apps/atlas_cli/lib/src/version.dart`。`mise run cli-build` 会自动生成版本文件；release 构建在打包前检查 `--version` 与发布 tag 一致。
 
-`mise run cli-integration-test` 已纳入 `mise run ci`，会在
-`.dart_tool/atlas_cli/` 下构建隔离的原生 bundle，再检查真实进程输出、退出码、
-ACP EOF 与资源清理。设置 `ATLAS_TEST_BINARY` 为可执行文件的绝对路径，可直接
-验证已有产物。macOS/Linux 使用 Dart FFI 探针创建真实 PTY，并通过系统
-`stty` 工具比较退出前后的终端状态，覆盖整段与逐字符输入的 `/quit`、信号、终端恢复和
-`NO_COLOR`，不再需要 Python。退出探针等待输入光标确认命令已经显示，再单独发送回车；
-超时诊断包含最后的输入阶段。主题探测结果到达时必须保留此前输入的草稿。
-Windows 跳过 POSIX 专属用例。Release job
-会对各平台构建产物运行同一套进程测试。
+`mise run cli-integration-test` 已纳入 `mise run ci`，会在 `.dart_tool/atlas_cli/` 下构建隔离的原生 bundle，再检查真实进程输出、退出码、ACP EOF 与资源清理。设置 `ATLAS_TEST_BINARY` 为可执行文件的绝对路径，可直接验证已有产物。macOS/Linux 使用 Dart FFI 探针创建真实 PTY，并通过系统 `stty` 工具比较退出前后的终端状态，覆盖整段与逐字符输入的 `/quit`、信号、终端恢复和 `NO_COLOR`，不再需要 Python。退出探针等待输入光标确认命令已经显示，再单独发送回车；超时诊断包含最后的输入阶段。主题探测结果到达时必须保留此前输入的草稿。Windows 跳过 POSIX 专属用例。Release job 会对各平台构建产物运行同一套进程测试。
 
 ### 阅读 `atlas cache`
 
-`atlas cache --limit 200` 采样最近 200 个 turn 及其所有已持久化的对话回复，
-包括被上下文压缩隐藏的历史。报表从同一个数据库快照读取，按 Provider/model
-和 session 分组。不包括压缩摘要调用或未产生回复记录的请求尝试，因此不是完整账单。
+`atlas cache --limit 200` 采样最近 200 个 turn 及其所有已持久化的对话回复，包括被上下文压缩隐藏的历史。报表从同一个数据库快照读取，按 Provider/model 和 session 分组。不包括压缩摘要调用或未产生回复记录的请求尝试，因此不是完整账单。
 
-- **Token hit rate**：可测请求的缓存读取 token 总和除以完整输入 token 总和。
-  缓存写入和输出 token 不算命中。
-- **Requests with hits**：可测请求中发生过缓存读取的比例，不代表整个 prompt
-  全部命中的请求比例。
-- **Cache-data coverage**：可测请求数除以已记录回复数。未知、数据不一致、
-  已中断及零输入记录不参与命中率计算，并分别说明。未知命中率显示 `n/a`，
-  不算缓存未命中。
-- 输入明细使用同一批可测请求。未报告缓存写入时，其余输入标为
-  **unclassified**，不假定为 fresh input。
+- **Token hit rate**：可测请求的缓存读取 token 总和除以完整输入 token 总和。缓存写入和输出 token 不算命中。
+- **Requests with hits**：可测请求中发生过缓存读取的比例，不代表整个 prompt 全部命中的请求比例。
+- **Cache-data coverage**：可测请求数除以已记录回复数。未知、数据不一致、已中断及零输入记录不参与命中率计算，并分别说明。未知命中率显示 `n/a`，不算缓存未命中。
+- 输入明细使用同一批可测请求。未报告缓存写入时，其余输入标为 **unclassified**，不假定为 fresh input。
 
-Provider 适配器会在原始计数之外持久化归一化的完整输入量和缓存字段可用性。
-缺少这些元数据的旧记录仍可读取，但不会依赖当前配置重新解释。Chat Completions
-非标准顶层缓存字段若没有标准 `cached_tokens`，则口径未知，不参与计算。
-新增的标准 usage 会逐步提高覆盖率，不会重写历史数据。Token 命中率不等于
-费用节省率，也不能仅凭低命中率判断缓存未命中的原因。
+Provider 适配器会在原始计数之外持久化归一化的完整输入量和缓存字段可用性。缺少这些元数据的旧记录仍可读取，但不会依赖当前配置重新解释。Chat Completions 非标准顶层缓存字段若没有标准 `cached_tokens`，则口径未知，不参与计算。新增的标准 usage 会逐步提高覆盖率，不会重写历史数据。Token 命中率不等于费用节省率，也不能仅凭低命中率判断缓存未命中的原因。
 
-输出采用纯文本并适配终端宽度，管道输出或设置 `NO_COLOR` 时同样没有转义序列。
-会话标题与 Provider 名称在展示前会清理控制字符。
+输出采用纯文本并适配终端宽度，管道输出或设置 `NO_COLOR` 时同样没有转义序列。会话标题与 Provider 名称在展示前会清理控制字符。
 
 ## Package 规则
 
@@ -126,8 +87,7 @@ Provider 适配器会在原始计数之外持久化归一化的完整输入量�
 - 公共 Dart API 必须有简明文档注释。
 - Runtime 与协议 package 不得导入 Flutter。
 - 展示 package 不得导入 Provider、工具或存储实现。
-- 应用 bootstrap 负责组装这些适配器并注入 runtime。`atlas_cli` 与
-  `atlas_flutter` 都通过 `atlas_composition` 完成组装。
+- 应用 bootstrap 负责组装这些适配器并注入 runtime。`atlas_cli` 与 `atlas_flutter` 都通过 `atlas_composition` 完成组装。
 - `atlas_ws` 只负责 WebSocket transport，并接收注入的 request handler。
 - 生成的序列化文件与源文件放在一起，仅在所选生成器要求时提交。
 - 行为实现必须添加聚焦测试；空骨架 package 不需要占位测试。

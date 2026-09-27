@@ -9,31 +9,17 @@ Atlas 是一个本地通用 AI Agent，当前正在重建为统一的 Dart 与 F
 仓库目前包含：
 
 - 定义 runtime、协议、客户端与适配器边界的 Pub workspace；
-- 始终通过 ACP 连接的 Flutter 桌面端和移动端客户端，支持会话、agent
-  turn、文件浏览器与内嵌终端；
+- 始终通过 ACP 连接的 Flutter 桌面端和移动端客户端，支持会话、agent turn、文件浏览器与内嵌终端；
 - 可运行的 `atlas_runtime` Agent engine 与 `atlas_storage` Drift 适配器；
-- 提供 OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages
-  适配器，并通过 composite provider 将多个 provider 路由到同一个 runtime 的
-  `atlas_provider` 包；
+- 提供 OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages 适配器，并通过 composite provider 将多个 provider 路由到同一个 runtime 的 `atlas_provider` 包；
 - 构建系统提示词并加载 AGENTS.md 指令文件的 `atlas_prompt` 包；
-- 把 config、provider、工具、存储与系统提示词组装进同一个 runtime，供
-  `atlas_cli` 与 `atlas_flutter` 共用的 `atlas_composition` 包；
-- `atlas_tui` 中作为默认 `atlas` 终端入口运行的 Nocterm 聊天界面，支持
-  斜杠命令（`/model`、`/new`、`/resume`、`/compact`、`/quit`）与 skill
-  注入；`/compact` 可带可选指令，`/model` 之后可选择 reasoning effort；
-- `atlas_acp` 中的 ACP 服务端适配器，由 `atlas acp` 通过 NDJSON stdio
-  提供，覆盖会话生命周期、模型与 effort 配置、斜杠命令、turn 流式输出、
-  agent plan、实时 shell 输出、文件 diff 与 follow-along 位置；
-- 由新 `atlas server` 子命令提供的 `atlas_ws` WebSocket transport：
-  bearer token 认证、每个 text frame 一条 ACP JSON-RPC 消息、客户端自动
-  重连——Flutter 移动 App 由此可在 Tailscale/私有网络上远程驱动电脑端的
-  Atlas；
+- 把 config、provider、工具、存储与系统提示词组装进同一个 runtime，供 `atlas_cli` 与 `atlas_flutter` 共用的 `atlas_composition` 包；
+- `atlas_tui` 中作为默认 `atlas` 终端入口运行的 Nocterm 聊天界面，支持斜杠命令（`/model`、`/new`、`/resume`、`/compact`、`/quit`）与 skill 注入；`/compact` 可带可选指令，`/model` 之后可选择 reasoning effort；
+- `atlas_acp` 中的 ACP 服务端适配器，由 `atlas acp` 通过 NDJSON stdio 提供，覆盖会话生命周期、模型与 effort 配置、斜杠命令、turn 流式输出、agent plan、实时 shell 输出、文件 diff 与 follow-along 位置；
+- 由新 `atlas server` 子命令提供的 `atlas_ws` WebSocket transport：bearer token 认证、每个 text frame 一条 ACP JSON-RPC 消息、客户端自动重连——Flutter 移动 App 由此可在 Tailscale/私有网络上远程驱动电脑端的 Atlas；
 - Dart 实现需要遵守的架构与开发规范。
 
-MCP 客户端工具支持 stdio 和带静态请求头的 Streamable HTTP 服务器，配置与限制见
-[MCP 工具](docs/zh-CN/mcp.md)。CLI 可通过 `mise run cli-build` 构建为单文件可执行程序
-（`build/bundle/bin/atlas`）。用 `atlas server` 启动远程端点，再在 App 的
-远程连接页接入（`atlas server` 每次启动都会打印配对 token）。
+MCP 客户端工具支持 stdio 和带静态请求头的 Streamable HTTP 服务器，配置与限制见 [MCP 工具](docs/zh-CN/mcp.md)。CLI 可通过 `mise run cli-build` 构建为单文件可执行程序（`build/bundle/bin/atlas`）。用 `atlas server` 启动远程端点，再在 App 的远程连接页接入（`atlas server` 每次启动都会打印配对 token）。
 
 ## 安装
 
@@ -76,9 +62,7 @@ Workspace 命令见[开发文档](docs/zh-CN/development.md)，runtime 边界见
 
 ## 安全模型
 
-Atlas 设计为使用本地进程的权限执行工具，不提供沙箱、权限提示或 approval gate。
-当前 runtime、工具、存储、TUI、ACP 与 Flutter 客户端均遵循这一边界。
-MCP 工具沿用此边界。OAuth 登录和 ACP 会话传入的 MCP 配置仍为 Planned。
+Atlas 设计为使用本地进程的权限执行工具，不提供沙箱、权限提示或 approval gate。当前 runtime、工具、存储、TUI、ACP 与 Flutter 客户端均遵循这一边界。MCP 工具沿用此边界。OAuth 登录和 ACP 会话传入的 MCP 配置仍为 Planned。
 
 ## 许可证
 

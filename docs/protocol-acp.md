@@ -1,56 +1,36 @@
 # ACP Protocol
 
-Atlas implements ACP v1 through `packages/atlas_acp`. The Flutter application
-always uses an ACP client, including for an Atlas runtime hosted in-process.
+Atlas implements ACP v1 through `packages/atlas_acp`. The Flutter application always uses an ACP client, including for an Atlas runtime hosted in-process.
 
 ## Supported Surface
 
-- Session creation, prompting, cancellation, loading, resume, listing, close,
-  deletion, and configuration options.
+- Session creation, prompting, cancellation, loading, resume, listing, close, deletion, and configuration options.
 - Text, image, embedded text resource, and resource-link prompt blocks.
 - Message, reasoning, tool, plan, command, session-info, and usage updates.
-- Shell progress uses standard `tool_call_update` text content with `in_progress`
-  status. Each snapshot replaces previous content; the final result replaces it
-  with `completed` or `failed` status. `rawOutput` carries captured text and final
-  metadata even for failures and replay. No terminal extension is required.
-- ACP clients preserve tool content when a partial update omits it, including
-  status-only completion and history replay. Explicit empty content clears it.
-- Atlas does not initiate permission requests. Tools run with the permissions
-  of the Atlas process; clients must not wait for an approval round trip.
+- Shell progress uses standard `tool_call_update` text content with `in_progress` status. Each snapshot replaces previous content; the final result replaces it with `completed` or `failed` status. `rawOutput` carries captured text and final metadata even for failures and replay. No terminal extension is required.
+- ACP clients preserve tool content when a partial update omits it, including status-only completion and history replay. Explicit empty content clears it.
+- Atlas does not initiate permission requests. Tools run with the permissions of the Atlas process; clients must not wait for an approval round trip.
 
 ## Atlas Extensions
 
-Atlas extensions use the `_atlas.dev` namespace and are declared in
-`agentCapabilities._meta['atlas.dev']`.
+Atlas extensions use the `_atlas.dev` namespace and are declared in `agentCapabilities._meta['atlas.dev']`.
 
 - `_atlas.dev/session/set_title` renames a persisted Atlas session.
 - `compact` advertises support for Atlas context compaction.
-- `permissionModel: none` declares that the Atlas agent never sends
-  `session/request_permission`.
+- `permissionModel: none` declares that the Atlas agent never sends `session/request_permission`.
 
-The Atlas ACP client still handles permission requests from third-party
-agents. Agent and client permission behavior are separate protocol roles.
+The Atlas ACP client still handles permission requests from third-party agents. Agent and client permission behavior are separate protocol roles.
 
-The runtime-facing contract is `AgentSession`; ACP-only presentation members
-(titles, commands, and modes) are exposed through `PresentationAgentSession`.
+The runtime-facing contract is `AgentSession`; ACP-only presentation members (titles, commands, and modes) are exposed through `PresentationAgentSession`.
 
 ## WebSocket Transport
 
-`atlas server` exposes the same ACP surface over a custom WebSocket transport
-(`atlas_ws`), used by the Atlas mobile client:
+`atlas server` exposes the same ACP surface over a custom WebSocket transport (`atlas_ws`), used by the Atlas mobile client:
 
-- Endpoint `GET /acp`; the HTTP upgrade is guarded by
-  `Authorization: Bearer <token>` (token issued by `atlas server`, stored in
-  `~/.atlas/remote_token`, mode 0600).
-- Each WebSocket text frame carries exactly one ACP JSON-RPC message
-  (request, response, or notification, in both directions). Binary frames and
-  oversized frames close the connection.
-- Lifecycle, sessions, events, permission requests, and `_atlas.dev`
-  extensions behave exactly as over stdio; the server runs one `AcpServer`
-  per connection over the shared runtime.
-- A dropped socket does not cancel an in-flight turn: the runtime finishes
-  and persists it, and the client reconciles through `session/load` after
-  reconnecting with exponential backoff.
+- Endpoint `GET /acp`; the HTTP upgrade is guarded by `Authorization: Bearer <token>` (token issued by `atlas server`, stored in `~/.atlas/remote_token`, mode 0600).
+- Each WebSocket text frame carries exactly one ACP JSON-RPC message (request, response, or notification, in both directions). Binary frames and oversized frames close the connection.
+- Lifecycle, sessions, events, permission requests, and `_atlas.dev` extensions behave exactly as over stdio; the server runs one `AcpServer` per connection over the shared runtime.
+- A dropped socket does not cancel an in-flight turn: the runtime finishes and persists it, and the client reconciles through `session/load` after reconnecting with exponential backoff.
 
 ## Planned
 
@@ -58,9 +38,4 @@ Client filesystem and terminal capabilities, and ACP v2 support remain planned.
 
 ## Host-configured MCP tools
 
-MCP tools configured on the Atlas host use the existing `tool_call` and
-`tool_call_update` flow, including progress and history replay. Generic ACP tool
-titles are retained by the Atlas client when there is no built-in tool kind.
-Session-provided `mcpServers` is still explicitly rejected: host configuration
-is global to the composed runtime and does not implement ACP session isolation.
-See [MCP tools](mcp.md).
+MCP tools configured on the Atlas host use the existing `tool_call` and `tool_call_update` flow, including progress and history replay. Generic ACP tool titles are retained by the Atlas client when there is no built-in tool kind. Session-provided `mcpServers` is still explicitly rejected: host configuration is global to the composed runtime and does not implement ACP session isolation. See [MCP tools](mcp.md).

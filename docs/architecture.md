@@ -2,19 +2,11 @@
 
 [中文](zh-CN/architecture.md)
 
-> **Status:** `atlas_runtime`, `atlas_storage`, the `atlas_provider`
-> adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt`
-> prompt construction, `atlas_composition`, the `atlas_tui` Nocterm chat
-> interface, the ACP server adapter (`atlas_acp`, served by `atlas acp`), and
-> local Flutter runtime composition, the WebSocket transport (`atlas_ws`),
-> the `atlas server` entry point, and the mobile remote client are
-> **Available**, including the MCP client tool adapter (`atlas_mcp`).
+> **Status:** `atlas_runtime`, `atlas_storage`, the `atlas_provider` adapters, `atlas_config` loading, the built-in `atlas_tools`, `atlas_prompt` prompt construction, `atlas_composition`, the `atlas_tui` Nocterm chat interface, the ACP server adapter (`atlas_acp`, served by `atlas acp`), and local Flutter runtime composition, the WebSocket transport (`atlas_ws`), the `atlas server` entry point, and the mobile remote client are **Available**, including the MCP client tool adapter (`atlas_mcp`).
 
 ## System Shape
 
-Atlas uses one Dart runtime implementation with local application composition
-roots and optional remote transports. No presentation or protocol adapter owns
-a separate agent loop.
+Atlas uses one Dart runtime implementation with local application composition roots and optional remote transports. No presentation or protocol adapter owns a separate agent loop.
 
 ```mermaid
 graph TD
@@ -42,38 +34,13 @@ graph TD
     MCP --> MCPSDK[mcp_dart]
 ```
 
-`composeTools` asynchronously connects configured MCP servers and freezes their
-tool catalog before `composeRuntime` receives a combined `LocalToolRegistry`.
-Application roots own shutdown after runtime turns and event consumers drain.
-MCP is a client adapter; ACP session-level MCP configuration remains Planned.
+`composeTools` asynchronously connects configured MCP servers and freezes their tool catalog before `composeRuntime` receives a combined `LocalToolRegistry`. Application roots own shutdown after runtime turns and event consumers drain. MCP is a client adapter; ACP session-level MCP configuration remains Planned.
 
-`atlas_composition` composes one runtime from `atlas_config`, providers,
-storage, tools, and the system prompt builder. `atlas_cli` and `atlas_flutter`
-use this shared composition from their own process bootstraps.
-Running `atlas` enters the Nocterm TUI by default. Running `atlas acp`
-serves the composed runtime to ACP clients (editors such as Zed) over NDJSON
-stdio. The Flutter app is always an ACP client: local mode starts an
-in-process `AcpServer` over an in-memory transport, and remote mode spawns a
-third-party ACP agent through `acpd_io`. Nocterm still talks to the runtime
-directly. `atlas server` exposes the composed runtime handler through
-`atlas_ws` for remote clients: the Atlas mobile app (and any ACP client)
-connects over a WebSocket where each text frame carries one ACP JSON-RPC
-message, guarded by a bearer token; turns started on a connection keep running
-when the socket drops and are recovered through `session/load` after
-reconnection. ACP is an inbound adapter to the same runtime; MCP primarily
-connects external tools to the tool layer.
+`atlas_composition` composes one runtime from `atlas_config`, providers, storage, tools, and the system prompt builder. `atlas_cli` and `atlas_flutter` use this shared composition from their own process bootstraps. Running `atlas` enters the Nocterm TUI by default. Running `atlas acp` serves the composed runtime to ACP clients (editors such as Zed) over NDJSON stdio. The Flutter app is always an ACP client: local mode starts an in-process `AcpServer` over an in-memory transport, and remote mode spawns a third-party ACP agent through `acpd_io`. Nocterm still talks to the runtime directly. `atlas server` exposes the composed runtime handler through `atlas_ws` for remote clients: the Atlas mobile app (and any ACP client) connects over a WebSocket where each text frame carries one ACP JSON-RPC message, guarded by a bearer token; turns started on a connection keep running when the socket drops and are recovered through `session/load` after reconnection. ACP is an inbound adapter to the same runtime; MCP primarily connects external tools to the tool layer.
 
 ### CLI Shutdown Ownership
 
-The CLI command runner parses arguments before creating adapters. Each running
-command owns its storage and HTTP client, composed through `atlas_composition`.
-On process shutdown it stops accepting work, calls `AgentRuntime.shutdown()`
-to cancel and drain active/queued turns and compactions, waits for protocol
-handlers, and closes adapter resources. Event consumers keep draining during
-shutdown so terminal persistence boundaries are completed. A normal WebSocket
-disconnect still lets existing turns finish; process shutdown is distinct.
-Nocterm bootstrap and terminal cleanup remain in `atlas_tui`; that bootstrap
-returns naturally instead of allowing Nocterm to terminate the process.
+The CLI command runner parses arguments before creating adapters. Each running command owns its storage and HTTP client, composed through `atlas_composition`. On process shutdown it stops accepting work, calls `AgentRuntime.shutdown()` to cancel and drain active/queued turns and compactions, waits for protocol handlers, and closes adapter resources. Event consumers keep draining during shutdown so terminal persistence boundaries are completed. A normal WebSocket disconnect still lets existing turns finish; process shutdown is distinct. Nocterm bootstrap and terminal cleanup remain in `atlas_tui`; that bootstrap returns naturally instead of allowing Nocterm to terminate the process.
 
 ## Package Responsibilities
 
@@ -109,65 +76,21 @@ returns naturally instead of allowing Nocterm to terminate the process.
 
 ## Flutter Client State
 
-Flutter keeps Riverpod controllers under each feature's `application` directory.
-The `remote_connection` controller receives ACP subprocess and WebSocket connector
-functions from `app`; feature code does not import the runtime bootstrap. The
-working-directory provider lives in `shared/application`, so connection selection
-and workspace drafts do not depend on each other's controllers.
+Flutter keeps Riverpod controllers under each feature's `application` directory. The `remote_connection` controller receives ACP subprocess and WebSocket connector functions from `app`; feature code does not import the runtime bootstrap. The working-directory provider lives in `shared/application`, so connection selection and workspace drafts do not depend on each other's controllers.
 
-On macOS, `app/shell_environment.dart` resolves the user's exported environment
-once before local bootstrap. It starts the absolute `SHELL` (zsh, bash, or sh;
-`/bin/zsh` when absent) as an interactive login shell in `HOME`. A randomly framed,
-NUL-delimited environment capture separates variables from startup output and
-preserves embedded newlines and equals signs. The immutable snapshot overlays
-the inherited environment while preserving `PWD`, `OLDPWD`, `SHLVL`, and `_`.
-Configuration `${VAR}` substitutions, the composed shell tool, and ACP subprocess
-connections all receive this snapshot explicitly; `Platform.environment` is not
-mutated. Shell commands still run under `/bin/sh -c`.
+On macOS, `app/shell_environment.dart` resolves the user's exported environment once before local bootstrap. It starts the absolute `SHELL` (zsh, bash, or sh; `/bin/zsh` when absent) as an interactive login shell in `HOME`. A randomly framed, NUL-delimited environment capture separates variables from startup output and preserves embedded newlines and equals signs. The immutable snapshot overlays the inherited environment while preserving `PWD`, `OLDPWD`, `SHLVL`, and `_`. Configuration `${VAR}` substitutions, the composed shell tool, and ACP subprocess connections all receive this snapshot explicitly; `Platform.environment` is not mutated. Shell commands still run under `/bin/sh -c`.
 
-Resolution has a 10-second deadline and a combined stdout/stderr limit of 1 MiB.
-Unsupported shells, launch failures, nonzero exits, malformed output, excessive
-output, or timeout retain the entire original environment. The app logs only a
-failure category, never variable values or shell output. When the probe is still
-running, cleanup stops its root, takes a bounded `/bin/ps` parent/PID snapshot,
-and kills discovered descendants before the root, including foreground commands
-that ignore TERM. Enumeration has a 500 ms deadline and a 1 MiB output limit;
-process exit and pipe cleanup are also bounded. If enumeration fails, cleanup
-still kills the root. Descendants already reparented before the snapshot (for
-example after an early shell exit), newly spawned during enumeration, or
-deliberately detached cannot be guaranteed cleaned up. Other platforms and CLI/TUI keep
-inheriting their existing environment, and the embedded terminal still starts
-its own login shell. Restart the app after changing shell configuration. The
-snapshot contains exported variables, not aliases or functions, and does not
-reselect mise project versions when the session directory changes.
+Resolution has a 10-second deadline and a combined stdout/stderr limit of 1 MiB. Unsupported shells, launch failures, nonzero exits, malformed output, excessive output, or timeout retain the entire original environment. The app logs only a failure category, never variable values or shell output. When the probe is still running, cleanup stops its root, takes a bounded `/bin/ps` parent/PID snapshot, and kills discovered descendants before the root, including foreground commands that ignore TERM. Enumeration has a 500 ms deadline and a 1 MiB output limit; process exit and pipe cleanup are also bounded. If enumeration fails, cleanup still kills the root. Descendants already reparented before the snapshot (for example after an early shell exit), newly spawned during enumeration, or deliberately detached cannot be guaranteed cleaned up. Other platforms and CLI/TUI keep inheriting their existing environment, and the embedded terminal still starts its own login shell. Restart the app after changing shell configuration. The snapshot contains exported variables, not aliases or functions, and does not reselect mise project versions when the session directory changes.
 
-Saved ACP and remote profiles use shared repositories that serialize list updates
-and publish immutable snapshots after successful writes. Views call controller
-commands rather than reading or replacing stored lists. Each file browser has its
-own auto-disposed controller for directory caches, debounced watches, previews,
-and file operations. `FileBrowserService` owns filesystem access; widgets keep
-menus, dialogs, and the Markdown preview toggle.
+Saved ACP and remote profiles use shared repositories that serialize list updates and publish immutable snapshots after successful writes. Views call controller commands rather than reading or replacing stored lists. Each file browser has its own auto-disposed controller for directory caches, debounced watches, previews, and file operations. `FileBrowserService` owns filesystem access; widgets keep menus, dialogs, and the Markdown preview toggle.
 
-Workspace and settings navigation adapt to the available width: windows at
-least 960 logical pixels wide show side panels or a section rail, including on
-Android and iOS. Smaller windows use drawers or a section strip. Touch targets
-remain larger on mobile platforms independently of the chosen layout. Session
-history and remote profiles build rows lazily; the session sidebar supports Tab,
-Enter/Space, and Shift+F10 for its context menu (also available by right-click or
-long press).
+Workspace and settings navigation adapt to the available width: windows at least 960 logical pixels wide show side panels or a section rail, including on Android and iOS. Smaller windows use drawers or a section strip. Touch targets remain larger on mobile platforms independently of the chosen layout. Session history and remote profiles build rows lazily; the session sidebar supports Tab, Enter/Space, and Shift+F10 for its context menu (also available by right-click or long press).
 
-The app owns a `go_router` route tree with `/settings` nested under `/`, so direct
-settings entry retains a workspace page to return to. Android and iOS use
-Flutter's built-in deep link handler and register `atlas:///` and
-`atlas:///settings`. HTTPS App Links / Universal Links are Planned: they require
-a confirmed domain, Android release certificate fingerprints, associated-domain
-entitlements on iOS, and hosted `assetlinks.json` / `apple-app-site-association`
-files. Custom-scheme links do not provide verified domain ownership.
+The app owns a `go_router` route tree with `/settings` nested under `/`, so direct settings entry retains a workspace page to return to. Android and iOS use Flutter's built-in deep link handler and register `atlas:///` and `atlas:///settings`. HTTPS App Links / Universal Links are Planned: they require a confirmed domain, Android release certificate fingerprints, associated-domain entitlements on iOS, and hosted `assetlinks.json` / `apple-app-site-association` files. Custom-scheme links do not provide verified domain ownership.
 
 ## Runtime Contracts
 
-The runtime implementation and remaining adapters must preserve these
-product-level contracts:
+The runtime implementation and remaining adapters must preserve these product-level contracts:
 
 - Each model tool call receives one model-visible result in the original order, including failures.
 - `AgentEvent` values are emitted in occurrence order so clients do not regroup output after a turn.
