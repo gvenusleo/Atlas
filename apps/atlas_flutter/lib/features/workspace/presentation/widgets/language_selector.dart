@@ -15,21 +15,21 @@ class const LanguageSelector({
 
   @override
   Widget build(BuildContext context) {
-    return SettingsSegmentedButton<AppLanguage>(
+    return SettingsDropdown<AppLanguage>(
       key: const ValueKey('atlas-language-selector'),
-      segments: [
-        ButtonSegment(
+      options: [
+        SettingsDropdownOption(
           value: AppLanguage.system,
-          label: Text(context.l10n.system),
+          label: context.l10n.system,
           tooltip: context.l10n.systemLanguageTooltip,
         ),
-        ButtonSegment(
+        SettingsDropdownOption(
           value: AppLanguage.english,
-          label: Text(context.l10n.english),
+          label: context.l10n.english,
         ),
-        ButtonSegment(
+        SettingsDropdownOption(
           value: AppLanguage.simplifiedChinese,
-          label: Text(context.l10n.simplifiedChinese),
+          label: context.l10n.simplifiedChinese,
         ),
       ],
       selected: language,

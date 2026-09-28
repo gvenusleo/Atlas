@@ -5,11 +5,14 @@ import 'package:atlas_flutter/app/atlas_app.dart';
 import 'package:atlas_flutter/app/locale_mode.dart';
 import 'package:atlas_flutter/app/theme_mode.dart';
 import 'package:atlas_flutter/features/workspace/presentation/settings_page.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/settings_controls.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_page.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_metrics.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_shell.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:flutter/foundation.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -541,6 +544,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SettingsPage), findsOneWidget);
 
+      await tester.tap(find.byKey(const ValueKey('atlas-theme-selector')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Dark'));
       await tester.pumpAndSettle();
 
@@ -583,8 +588,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Language'), findsOneWidget);
 
-      final themeSelector = find.byType(SegmentedButton<ThemeMode>);
-      final languageSelector = find.byType(SegmentedButton<AppLanguage>);
+      final themeSelector = find.byKey(const ValueKey('atlas-theme-selector'));
+      final languageSelector = find.byKey(
+        const ValueKey('atlas-language-selector'),
+      );
       expect(themeSelector, findsOneWidget);
       expect(languageSelector, findsOneWidget);
       expect(
@@ -592,6 +599,8 @@ void main() {
         tester.getTopRight(languageSelector).dx,
       );
 
+      await tester.tap(languageSelector);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('简体中文'));
       await tester.pumpAndSettle();
 
@@ -599,6 +608,8 @@ void main() {
       expect(find.text('主题'), findsOneWidget);
       expect(find.byKey(const ValueKey('atlas-settings-back')), findsOneWidget);
 
+      await tester.tap(languageSelector);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('English'));
       await tester.pumpAndSettle();
 
@@ -644,8 +655,7 @@ void main() {
         AtlasPalette.standard.light.panel,
       );
 
-      // The content column is centered in the pane, while its headings share
-      // the same left edge as the theme choices and setting rows.
+      // The content column is centered, with the preferences inset in a card.
       final pane = find.byKey(const ValueKey('atlas-settings-pane'));
       const contentLeft =
           SettingsPage.railWidth +
@@ -660,27 +670,60 @@ void main() {
             .dx,
         contentLeft,
       );
-      expect(tester.getTopLeft(find.text('Theme')).dx, contentLeft);
+      final card = find.byKey(const ValueKey('atlas-appearance-card'));
+      expect(tester.getTopLeft(card).dx, contentLeft);
+      expect(tester.getSize(card).width, SettingsPage.columnWidth);
+      final separator = find.descendant(
+        of: card,
+        matching: find.byType(Divider),
+      );
+      expect(separator, findsOneWidget);
+      expect(tester.getSize(separator).height, 1);
+      expect(tester.getTopLeft(separator).dx, contentLeft + 1);
+      expect(
+        tester.getTopRight(separator).dx,
+        contentLeft + SettingsPage.columnWidth - 1,
+      );
+      expect(tester.getTopLeft(find.text('Theme')).dx, contentLeft + 17);
 
-      final themeSelector = find.byType(SegmentedButton<ThemeMode>);
-      final languageSelector = find.byType(SegmentedButton<AppLanguage>);
+      final themeSelector = find.byKey(const ValueKey('atlas-theme-selector'));
+      final languageSelector = find.byKey(
+        const ValueKey('atlas-language-selector'),
+      );
       expect(
         tester.getTopRight(themeSelector).dx,
-        contentLeft + SettingsPage.columnWidth,
+        contentLeft + SettingsPage.columnWidth - 17,
       );
       expect(
         tester.getTopRight(languageSelector).dx,
         tester.getTopRight(themeSelector).dx,
       );
-      expect(tester.getTopLeft(find.text('Language')).dx, contentLeft);
+      expect(tester.getTopLeft(find.text('Language')).dx, contentLeft + 17);
       expect(
         find.byKey(const ValueKey('atlas-settings-rail-toggle')),
         findsOneWidget,
       );
-      final backButton = tester.widget<TextButton>(back);
+      final backSurface = find.descendant(
+        of: back,
+        matching: find.byType(WorkspaceHoverSurface),
+      );
+      expect(backSurface, findsOneWidget);
       expect(
-        backButton.style!.overlayColor!.resolve({WidgetState.hovered}),
-        Colors.transparent,
+        tester.widget<WorkspaceHoverSurface>(backSurface).borderRadius,
+        BorderRadius.circular(AtlasRadii.control),
+      );
+      expect(
+        tester.getSize(backSurface).width,
+        tester
+            .getSize(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('atlas-settings-rail-appearance'),
+                ),
+                matching: find.byType(WorkspaceHoverSurface),
+              ),
+            )
+            .width,
       );
     },
   );
@@ -713,7 +756,7 @@ void main() {
         find.byKey(const ValueKey('atlas-settings-strip-appearance')),
         findsNothing,
       );
-      expect(find.byKey(const ValueKey('atlas-settings-back')), findsOneWidget);
+      expect(find.byKey(const ValueKey('atlas-settings-back')), findsNothing);
 
       await tester.tap(toggle);
       await tester.pumpAndSettle();
@@ -723,21 +766,26 @@ void main() {
         find.byKey(const ValueKey('atlas-settings-rail-appearance')),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SegmentedButton<ThemeMode>), findsOneWidget);
+      expect(find.byType(SettingsDropdown<ThemeMode>), findsOneWidget);
     },
   );
 
   testShell(
-    'settings can return while its rail is collapsed',
+    'settings back button stays in the rail when it is collapsed',
     const Size(1200, 760),
     (tester) async {
       await tester.tap(find.byTooltip('Settings'));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('atlas-settings-rail-toggle')),
-      );
+      final toggle = find.byKey(const ValueKey('atlas-settings-rail-toggle'));
+      await tester.tap(toggle);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('atlas-settings-back')));
+      expect(find.byKey(const ValueKey('atlas-settings-back')), findsNothing);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      final rail = find.byKey(const ValueKey('atlas-settings-rail'));
+      final back = find.byKey(const ValueKey('atlas-settings-back'));
+      expect(find.descendant(of: rail, matching: back), findsOneWidget);
+      await tester.tap(back);
       await tester.pumpAndSettle();
       expect(find.byType(SettingsPage), findsNothing);
       expect(find.byType(WorkspacePage), findsOneWidget);
@@ -758,7 +806,7 @@ void main() {
       // Compact layouts drop the rail and keep the pane only.
       expect(find.byKey(const ValueKey('atlas-settings-rail')), findsNothing);
 
-      final selector = find.byType(SegmentedButton<ThemeMode>);
+      final selector = find.byKey(const ValueKey('atlas-theme-selector'));
       expect(
         tester.getTopLeft(selector).dy,
         greaterThan(tester.getBottomLeft(find.text('Theme')).dy),
@@ -768,7 +816,9 @@ void main() {
         tester.getTopLeft(find.text('Theme')).dx,
       );
       expect(tester.getTopRight(selector).dx, lessThanOrEqualTo(390));
-      final languageSelector = find.byType(SegmentedButton<AppLanguage>);
+      final languageSelector = find.byKey(
+        const ValueKey('atlas-language-selector'),
+      );
       expect(
         tester.getTopLeft(languageSelector).dy,
         greaterThan(tester.getBottomLeft(find.text('Language')).dy),
@@ -789,6 +839,43 @@ void main() {
   );
 
   testShell(
+    'settings dropdowns align with their buttons on narrow screens',
+    const Size(390, 844),
+    platform: TargetPlatform.android,
+    (tester) async {
+      await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+
+      for (final (key, option) in [
+        ('atlas-theme-selector', 'Dark'),
+        ('atlas-language-selector', '简体中文'),
+      ]) {
+        final selector = find.byKey(ValueKey(key));
+        await tester.tap(selector);
+        await tester.pumpAndSettle();
+        final menu = find
+            .ancestor(of: find.text(option), matching: find.byType(Material))
+            .at(1);
+        expect(tester.getTopLeft(menu).dx, tester.getTopLeft(selector).dx);
+        expect(tester.getSize(menu).width, 144);
+        expect(tester.getSize(menu).width, tester.getSize(selector).width);
+        final check = find.descendant(
+          of: menu,
+          matching: find.byIcon(LucideIcons.check),
+        );
+        expect(check, findsOneWidget);
+        expect(tester.getTopRight(menu).dx - tester.getTopRight(check).dx, 16);
+        expect(tester.getTopRight(menu).dx, lessThanOrEqualTo(390));
+        await tester.tap(selector);
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testShell(
     'settings theme selector fits a 375px screen',
     const Size(375, 760),
     platform: TargetPlatform.android,
@@ -798,7 +885,7 @@ void main() {
       await tester.tap(find.byTooltip('Settings'));
       await tester.pumpAndSettle();
 
-      final selector = find.byType(SegmentedButton<ThemeMode>);
+      final selector = find.byKey(const ValueKey('atlas-theme-selector'));
       expect(tester.getTopRight(selector).dx, lessThanOrEqualTo(375));
       expect(tester.takeException(), isNull);
     },
@@ -815,7 +902,7 @@ void main() {
       final left = tester.getTopLeft(find.text('Appearance').last).dx;
       final paneCenter = tester.getCenter(pane).dx;
       expect(left + SettingsPage.columnWidth / 2, closeTo(paneCenter, 0.01));
-      expect(tester.getTopLeft(find.text('Theme')).dx, left);
+      expect(tester.getTopLeft(find.text('Theme')).dx, left + 17);
       expect(tester.takeException(), isNull);
     },
   );

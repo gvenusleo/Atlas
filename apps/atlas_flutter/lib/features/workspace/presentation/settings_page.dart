@@ -50,7 +50,7 @@ class const SettingsPage({super.key}) extends ConsumerStatefulWidget {
   /// Maximum width of the settings rows inside the content pane.
   ///
   /// The content stays centered without stretching rows across a wide window.
-  static const columnWidth = 820.0;
+  static const columnWidth = 640.0;
 
   @override
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
@@ -140,7 +140,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                             section: _section,
                             onSelect: _select,
                             showRail: desktop,
-                            showBack: desktop && !_railVisible,
                           ),
                         ),
                       ],
@@ -194,7 +193,7 @@ class const _SectionRail({
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 8),
               child: Text(
                 context.l10n.settings,
                 style: TextStyle(
@@ -207,11 +206,12 @@ class const _SectionRail({
             for (final item in SettingsSection.values)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: _SectionEntry(
+                child: _RailEntry(
                   key: ValueKey('atlas-settings-rail-${item.name}'),
-                  section: item,
+                  icon: item.icon,
+                  label: item.label(context),
                   selected: item == section,
-                  onSelect: onSelect,
+                  onTap: () => onSelect(item),
                 ),
               ),
           ],
@@ -223,31 +223,21 @@ class const _SectionRail({
 
 class const _SettingsBackButton() extends StatelessWidget {
   @override
-  Widget build(BuildContext context) {
-    final colors = AtlasColors.of(context);
-    return TextButton.icon(
-      key: const ValueKey('atlas-settings-back'),
-      onPressed: () => context.pop(),
-      style: ButtonStyle(
-        alignment: Alignment.centerLeft,
-        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-        foregroundColor: WidgetStatePropertyAll(colors.textSecondary),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        ),
-      ),
-      icon: const Icon(LucideIcons.arrowLeft, size: 15),
-      label: Text(context.l10n.back),
-    );
-  }
+  Widget build(BuildContext context) => _RailEntry(
+    key: const ValueKey('atlas-settings-back'),
+    icon: LucideIcons.arrowLeft,
+    label: context.l10n.back,
+    onTap: () => context.pop(),
+  );
 }
 
-/// One selectable section in the rail.
-class const _SectionEntry({
+/// A selectable action in the settings rail.
+class const _RailEntry({
   super.key,
-  required final SettingsSection section,
-  required final bool selected,
-  required final ValueChanged<SettingsSection> onSelect,
+  required final IconData icon,
+  required final String label,
+  required final VoidCallback onTap,
+  final bool selected = false,
 }) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -260,27 +250,21 @@ class const _SectionEntry({
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => onSelect(section),
+          onTap: onTap,
           child: Container(
             constraints: const BoxConstraints(minHeight: 30),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Row(
               children: [
-                Icon(
-                  section.icon,
-                  size: 14,
-                  color: selected ? colors.textPrimary : colors.textSecondary,
-                ),
+                Icon(icon, size: 14, color: colors.textPrimary),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    section.label(context),
+                    label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: selected
-                          ? colors.textPrimary
-                          : colors.textSecondary,
+                      color: colors.textPrimary,
                       fontSize: 12.5,
                       fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
                     ),
@@ -367,13 +351,11 @@ class const _SectionStrip({
 
 /// Scrolling content pane holding the selected section.
 ///
-/// Without the rail (compact layouts and phone screens) the same header line
-/// carries the back button, so navigation never disappears.
+/// Compact layouts use a header back button because they have no section rail.
 class const _SettingsPane({
   required final SettingsSection section,
   required final ValueChanged<SettingsSection> onSelect,
   required final bool showRail,
-  required final bool showBack,
 }) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -438,9 +420,9 @@ class const _SettingsPane({
             child: SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(
                 compact ? 20 : 40,
-                compact ? 28 : 48,
+                20,
                 compact ? 20 : 40,
-                40,
+                20,
               ),
               child: Align(
                 alignment: Alignment.topCenter,
@@ -456,21 +438,13 @@ class const _SettingsPane({
               ),
             ),
           ),
-          if (showBack)
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(10, 8, 10, 14),
-                child: _SettingsBackButton(),
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-/// The appearance group: title, summary, and the theme row.
+/// The appearance group: title, summary, and related preferences.
 class const _AppearanceSection() extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -482,26 +456,34 @@ class const _AppearanceSection() extends ConsumerWidget {
           title: context.l10n.appearance,
           description: context.l10n.appearanceDescription,
         ),
-        const SizedBox(height: 28),
-        const Divider(height: 1),
-        _SettingRow(
-          label: context.l10n.theme,
-          description: context.l10n.themeDescription,
-          control: _ThemeModeSelector(
-            mode: mode,
-            onChanged: (selected) => unawaited(
-              ref.read(themeModeProvider.notifier).select(selected),
-            ),
-          ),
-        ),
-        const Divider(height: 1),
-        _SettingRow(
-          label: context.l10n.language,
-          description: context.l10n.languageDescription,
-          control: LanguageSelector(
-            language: ref.watch(languageProvider),
-            onChanged: (selected) =>
-                unawaited(ref.read(languageProvider.notifier).select(selected)),
+        const SizedBox(height: 12),
+        SettingsGroupCard(
+          key: const ValueKey('atlas-appearance-card'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SettingRow(
+                label: context.l10n.theme,
+                description: context.l10n.themeDescription,
+                control: _ThemeModeSelector(
+                  mode: mode,
+                  onChanged: (selected) => unawaited(
+                    ref.read(themeModeProvider.notifier).select(selected),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              _SettingRow(
+                label: context.l10n.language,
+                description: context.l10n.languageDescription,
+                control: LanguageSelector(
+                  language: ref.watch(languageProvider),
+                  onChanged: (selected) => unawaited(
+                    ref.read(languageProvider.notifier).select(selected),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -543,15 +525,14 @@ class const _SettingRow({
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // Narrow panes stack the control under its label: the segmented
-          // selector does not shrink below its three segments.
+          // Narrow panes stack the control under its label.
           if (constraints.maxWidth < 420) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [text, const SizedBox(height: 10), control],
+              children: [text, const SizedBox(height: 8), control],
             );
           }
           return Row(
@@ -574,21 +555,22 @@ class const _ThemeModeSelector({
 }) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return SettingsSegmentedButton<ThemeMode>(
-      segments: [
-        ButtonSegment(
+    return SettingsDropdown<ThemeMode>(
+      key: const ValueKey('atlas-theme-selector'),
+      options: [
+        SettingsDropdownOption(
           value: ThemeMode.system,
-          label: Text(context.l10n.system),
+          label: context.l10n.system,
           tooltip: context.l10n.systemThemeTooltip,
         ),
-        ButtonSegment(
+        SettingsDropdownOption(
           value: ThemeMode.light,
-          label: Text(context.l10n.light),
+          label: context.l10n.light,
           tooltip: context.l10n.lightTooltip,
         ),
-        ButtonSegment(
+        SettingsDropdownOption(
           value: ThemeMode.dark,
-          label: Text(context.l10n.dark),
+          label: context.l10n.dark,
           tooltip: context.l10n.darkTooltip,
         ),
       ],

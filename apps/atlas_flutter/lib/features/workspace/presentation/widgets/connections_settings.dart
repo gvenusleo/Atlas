@@ -124,23 +124,35 @@ class _ConnectionsSettingsState extends ConsumerState<ConnectionsSettings> {
           title: context.l10n.acpConnections,
           description: context.l10n.acpConnectionsDescription,
         ),
-        const Divider(height: 1),
-        if (connections.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Text(
-              context.l10n.noConnectionsYet,
-              style: TextStyle(color: colors.textSecondary, fontSize: 12),
-            ),
-          )
-        else
-          for (final connection in connections)
-            _ConnectionRow(
-              connection: connection,
-              active: _isActive(runtimeState, connection),
-              onActivate: () => unawaited(_activate(connection)),
-              onRemove: () => unawaited(_removeConnection(connection)),
-            ),
+        const SizedBox(height: 12),
+        SettingsGroupCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (connections.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Text(
+                    context.l10n.noConnectionsYet,
+                    style: TextStyle(color: colors.textSecondary, fontSize: 12),
+                  ),
+                )
+              else
+                for (final (index, connection) in connections.indexed) ...[
+                  if (index > 0) const Divider(height: 1),
+                  _ConnectionRow(
+                    connection: connection,
+                    active: _isActive(runtimeState, connection),
+                    onActivate: () => unawaited(_activate(connection)),
+                    onRemove: () => unawaited(_removeConnection(connection)),
+                  ),
+                ],
+            ],
+          ),
+        ),
         if (error != null)
           Padding(
             padding: const EdgeInsets.only(top: 10),
@@ -189,7 +201,7 @@ class const _ConnectionRow({
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
           Icon(
