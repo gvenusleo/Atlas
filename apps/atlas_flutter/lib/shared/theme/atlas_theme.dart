@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'atlas_palette.dart';
-export 'atlas_palette.dart';
+import 'package:atlas_flutter/shared/theme/atlas_palette.dart';
+
+export 'package:atlas_flutter/shared/theme/atlas_palette.dart';
 
 /// Radius scale for controls in the otherwise flat application shell.
 abstract final class AtlasRadii {

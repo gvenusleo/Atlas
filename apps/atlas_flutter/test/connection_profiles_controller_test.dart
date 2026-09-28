@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:atlas_flutter/features/remote_connection/application/connection_profiles_controller.dart';
-import 'package:atlas_flutter/features/remote_connection/data/acp_connections.dart';
-import 'package:atlas_flutter/features/remote_connection/data/connection_repository.dart';
-import 'package:atlas_flutter/features/remote_connection/data/remote_connections.dart';
+import 'package:atlas_flutter/features/connections/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/features/connections/data/connection_repository.dart';
+import 'package:atlas_flutter/features/connections/domain/acp_connection.dart';
+import 'package:atlas_flutter/features/connections/domain/remote_connection_profile.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

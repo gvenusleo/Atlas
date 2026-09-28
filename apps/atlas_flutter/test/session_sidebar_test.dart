@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:atlas_flutter/app/runtime_environment.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/sessions_panel.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';

@@ -1,4 +1,6 @@
-import 'package:atlas_flutter/app/remote_connections.dart';
+import 'package:atlas_flutter/features/connections/data/remote_connection_codec.dart';
+import 'package:atlas_flutter/features/connections/data/remote_connections.dart';
+import 'package:atlas_flutter/features/connections/domain/remote_connection_profile.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -61,12 +63,12 @@ void main() {
     expect(loaded.single.name, 'First');
   });
 
-  test('fromJson rejects malformed profiles', () {
-    expect(RemoteConnectionProfile.fromJson(null), isNull);
-    expect(RemoteConnectionProfile.fromJson('nope'), isNull);
-    expect(RemoteConnectionProfile.fromJson({'name': 'x'}), isNull);
+  test('remote decoder rejects malformed profiles', () {
+    expect(RemoteConnectionCodec.decode(null), isNull);
+    expect(RemoteConnectionCodec.decode('nope'), isNull);
+    expect(RemoteConnectionCodec.decode({'name': 'x'}), isNull);
     expect(
-      RemoteConnectionProfile.fromJson({
+      RemoteConnectionCodec.decode({
         'name': 'x',
         'wsUrl': 'ws://x/acp',
         'token': 42,
@@ -75,7 +77,7 @@ void main() {
     );
   });
 
-  test('fromJson requires the name and wsUrl keys to hold strings', () {
+  test('remote decoder requires the name and wsUrl keys to hold strings', () {
     // A map pattern matches on key presence, so an omitted key, an explicit
     // null, a wrong type, and an empty string must all be rejected.
     for (final json in <Object?>[
@@ -88,11 +90,7 @@ void main() {
       <String, Object?>{'name': '', 'wsUrl': 'ws://x/acp'},
       <String, Object?>{'name': 'x', 'wsUrl': ''},
     ]) {
-      expect(
-        RemoteConnectionProfile.fromJson(json),
-        isNull,
-        reason: 'for $json',
-      );
+      expect(RemoteConnectionCodec.decode(json), isNull, reason: 'for $json');
     }
   });
 }

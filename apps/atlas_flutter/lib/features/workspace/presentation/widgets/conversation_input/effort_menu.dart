@@ -2,9 +2,9 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../../shared/theme/atlas_theme.dart';
-import '../workspace_controls.dart';
-import 'floating_menu_card.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/floating_menu_card.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Toolbar trigger that opens the reasoning-effort picker.
 class const EffortMenu({
@@ -21,7 +21,7 @@ class const EffortMenu({
         .where((effort) => effort.value == current)
         .map((effort) => effort.name.isEmpty ? effort.value : effort.name)
         .firstOrNull;
-    return WorkspaceHoverSurface(
+    return AtlasHoverSurface(
       borderRadius: BorderRadius.circular(AtlasRadii.control),
       child: TextButton(
         style: ButtonStyle(

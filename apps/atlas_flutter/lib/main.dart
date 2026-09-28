@@ -3,12 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'app/atlas_app.dart';
-import 'app/locale_mode.dart';
-import 'app/platform_window.dart';
-import 'app/runtime_environment.dart';
-import 'app/shell_environment.dart';
-import 'app/theme_mode.dart';
+import 'package:atlas_flutter/app/atlas_app.dart';
+import 'package:atlas_flutter/app/bootstrap/runtime_environment.dart';
+import 'package:atlas_flutter/app/bootstrap/shell_environment.dart';
+import 'package:atlas_flutter/app/platform/platform_window.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/settings/application/preferences_provider.dart';
+import 'package:atlas_flutter/features/settings/data/preferences_repository.dart';
+import 'package:atlas_flutter/features/settings/data/preferences_store.dart';
 
 /// Whether this build targets a phone or tablet.
 ///
@@ -28,9 +30,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // The theme preference is read before the first frame so the window opens in
   // the stored appearance instead of flashing the platform default.
-  final preferences = await openThemePreferences();
-  final themeMode = loadThemeMode(preferences);
-  final language = loadAppLanguage(preferences);
+  final preferences = PreferencesRepository(
+    store: await SharedPreferencesStore.open(),
+  );
+  final themeMode = preferences.themeMode;
   if (!isMobileClient) {
     await initializePlatformWindow(
       initialBrightness: _effectiveBrightness(themeMode),
@@ -59,13 +62,7 @@ Future<void> main() async {
     ProviderScope(
       overrides: [
         runtimeEnvironmentProvider.overrideWith(() => controller),
-        themeModeProvider.overrideWith(
-          () =>
-              ThemeModeController(initial: themeMode, preferences: preferences),
-        ),
-        languageProvider.overrideWith(
-          () => LanguageController(initial: language, preferences: preferences),
-        ),
+        preferencesRepositoryProvider.overrideWithValue(preferences),
         if (!isMobileClient)
           runtimeStartupErrorProvider.overrideWithValue(bootstrap!.error),
       ],

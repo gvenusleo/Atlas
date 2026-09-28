@@ -7,7 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Schemes the Markdown renderer will hand to the platform URL handler.
 const _openableMarkdownSchemes = {'http', 'https', 'mailto'};

@@ -1,9 +1,8 @@
 import 'dart:async';
 
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 
 final class FixedWorkingDirectory(final String path)
     extends WorkspaceWorkingDirectory {

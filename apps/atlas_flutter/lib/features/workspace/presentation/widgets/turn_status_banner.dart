@@ -3,9 +3,9 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../shared/theme/atlas_theme.dart';
-import '../../../../l10n/localizations.dart';
-import '../../application/workspace_state.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Transient working indicator shown above the conversation input.
 ///

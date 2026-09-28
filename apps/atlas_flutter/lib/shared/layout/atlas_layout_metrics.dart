@@ -1,0 +1,87 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+
+/// Shared geometry and platform rules for the workspace shell.
+abstract final class AtlasLayoutMetrics {
+  /// Width at which the desktop three-panel layout becomes available.
+  static const desktopBreakpoint = 960.0;
+
+  /// Minimum width preserved for the central workspace.
+  static const centerMinimumWidth = 420.0;
+
+  /// Initial width of the sessions sidebar.
+  static const leftDefaultWidth = 224.0;
+
+  /// Minimum width of the sessions sidebar.
+  static const leftMinimumWidth = 184.0;
+
+  /// Maximum width of the sessions sidebar.
+  static const leftMaximumWidth = 360.0;
+
+  /// Initial width of the details sidebar.
+  static const rightDefaultWidth = 260.0;
+
+  /// Minimum width of the details sidebar.
+  static const rightMinimumWidth = 220.0;
+
+  /// Maximum width of the details sidebar.
+  static const rightMaximumWidth = 720.0;
+
+  /// Width of the interactive resize gutter.
+  static const resizeHandleWidth = 8.0;
+
+  /// Toolbar height used by desktop panels.
+  static double get desktopToolbarHeight => usesTouchTargets ? 56.0 : 38.0;
+
+  /// Square side length of desktop toolbar buttons.
+  static double get desktopToolbarButtonSize => usesTouchTargets ? 44.0 : 26.0;
+
+  /// Toolbar height used by compact layouts.
+  static const compactToolbarHeight = 48.0;
+
+  /// Horizontal inset reserved for macOS traffic-light controls.
+  static const macOSTrafficLightInset = 76.0;
+
+  /// Duration of the desktop sidebar reveal animation.
+  static const sidebarAnimationDuration = Duration(milliseconds: 180);
+
+  /// Whether the platform uses the integrated Atlas titlebar. All desktop
+  /// platforms draw the toolbar in-window with custom caption controls.
+  static bool get usesIntegratedTitlebar =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
+  /// Whether native traffic-light buttons overlay the window's top-left
+  /// corner; panels keep a wider inset there. Only macOS has them.
+  static bool get showsTrafficLights =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
+  /// Whether controls need touch-sized targets, independent of navigation
+  /// layout. Wide touch windows still use the side-by-side workspace.
+  static bool get usesTouchTargets =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// Picks a system monospace font for code and terminal views.
+  static String get monospaceFontFamily {
+    if (Platform.isMacOS) {
+      return 'JetBrainsMono Nerd Font Mono';
+    }
+    if (Platform.isWindows) {
+      return 'Cascadia Mono';
+    }
+    return 'monospace';
+  }
+
+  /// Shortens a directory to its final path segment for compact labels.
+  static String directoryLabel(String directory) {
+    final segments = Uri.file(directory).pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .toList();
+    return segments.isEmpty ? directory : segments.last;
+  }
+}

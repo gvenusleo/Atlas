@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/features/workspace/data/terminal_session.dart';
+import 'package:atlas_flutter/features/terminal/data/terminal_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

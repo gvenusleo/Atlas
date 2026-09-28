@@ -1,13 +1,13 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:atlas_flutter/app/bootstrap/acp_bootstrap.dart';
+import 'package:atlas_flutter/app/bootstrap/runtime_environment.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_state.dart';
+import 'package:atlas_flutter/features/connections/domain/acp_connection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:atlas_flutter/app/runtime_environment.dart';
-
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:atlas_flutter/app/acp_bootstrap.dart';
-import 'package:atlas_flutter/app/acp_connections.dart';
 
 void main() {
   test('AcpConnection carries the server command', () {

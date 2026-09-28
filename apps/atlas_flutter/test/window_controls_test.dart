@@ -1,5 +1,5 @@
-import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
-import 'package:atlas_flutter/features/workspace/presentation/workspace_metrics.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -91,7 +91,7 @@ void main() {
           platform == TargetPlatform.windows ||
           platform == TargetPlatform.linux;
       expect(
-        WorkspaceMetrics.usesIntegratedTitlebar,
+        AtlasLayoutMetrics.usesIntegratedTitlebar,
         integrated,
         reason: '$platform should be $integrated',
       );

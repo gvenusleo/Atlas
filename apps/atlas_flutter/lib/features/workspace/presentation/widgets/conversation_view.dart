@@ -4,17 +4,17 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
 
-import '../../../../shared/markdown/atlas_markdown.dart';
-import '../../../../l10n/localizations.dart';
-import '../../../../shared/theme/atlas_theme.dart';
-import '../../application/workspace_controller.dart';
-import '../../application/workspace_message.dart';
-import '../../data/image_attachment.dart';
-import 'conversation_input/conversation_input.dart';
-import 'remote_working_directory_bar.dart';
-import 'turn_status_banner.dart';
-import 'workspace_controls.dart';
-import '../workspace_metrics.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
+import 'package:atlas_flutter/features/workspace/domain/image_attachment.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/conversation_input.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/remote_working_directory_bar.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/turn_status_banner.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/markdown/atlas_markdown.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Keeps one conversation pane per session so transcript and composer state
 /// survive focus changes.
@@ -377,7 +377,7 @@ class const _AssistantMessage(final String text) extends StatelessWidget {
       padding: const EdgeInsetsGeometry.symmetric(vertical: 6),
       child: AtlasMarkdown(
         data: text,
-        fontFamily: WorkspaceMetrics.monospaceFontFamily,
+        fontFamily: AtlasLayoutMetrics.monospaceFontFamily,
       ),
     );
   }
@@ -507,7 +507,7 @@ class _ActivityDisclosureState extends State<_ActivityDisclosure>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SelectionContainer.disabled(
-            child: WorkspaceHoverSurface(
+            child: AtlasHoverSurface(
               borderRadius: BorderRadius.circular(AtlasRadii.control),
               child: TextButton(
                 style: ButtonStyle(
@@ -641,7 +641,7 @@ class const _ToolMessage(final WorkspaceMessage message)
       message.text,
       style: TextStyle(
         color: colors.textSecondary,
-        fontFamily: WorkspaceMetrics.monospaceFontFamily,
+        fontFamily: AtlasLayoutMetrics.monospaceFontFamily,
         fontSize: 12,
         height: 1.45,
       ),
@@ -752,7 +752,7 @@ class const _ToolTitle({
               style: TextStyle(
                 color: color,
                 fontSize: 12,
-                fontFamily: WorkspaceMetrics.monospaceFontFamily,
+                fontFamily: AtlasLayoutMetrics.monospaceFontFamily,
               ),
             ),
         ],
@@ -809,7 +809,7 @@ String _relativePath(String path, String workingDirectory) {
       ? normalizedRoot
       : '$normalizedRoot/';
   if (normalizedPath == normalizedRoot) {
-    return WorkspaceMetrics.directoryLabel(normalizedPath);
+    return AtlasLayoutMetrics.directoryLabel(normalizedPath);
   }
   if (normalizedPath.startsWith(root)) {
     return normalizedPath.substring(root.length);

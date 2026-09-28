@@ -2,21 +2,20 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../l10n/localizations.dart';
-
-import '../../remote_connection/application/runtime_controller.dart';
-import '../../../shared/theme/atlas_theme.dart';
-import '../application/workspace_controller.dart';
-import 'widgets/workspace_controls.dart';
-import 'widgets/details_panel.dart';
-import 'widgets/sessions_panel.dart';
-import 'widgets/workspace_panel.dart';
-import 'workspace_metrics.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/details_panel.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/sessions_panel.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_panel.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Responsive Atlas workspace with desktop side panels and compact drawers.
 class const WorkspaceShell({
@@ -40,10 +39,10 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
   late final AnimationController _rightSidebarAnimation;
   bool _leftVisible = true;
   bool _rightVisible = true;
-  double _leftWidth = WorkspaceMetrics.leftDefaultWidth;
-  double _rightWidth = WorkspaceMetrics.rightDefaultWidth;
-  double _leftClosingWidth = WorkspaceMetrics.leftDefaultWidth;
-  double _rightClosingWidth = WorkspaceMetrics.rightDefaultWidth;
+  double _leftWidth = AtlasLayoutMetrics.leftDefaultWidth;
+  double _rightWidth = AtlasLayoutMetrics.rightDefaultWidth;
+  double _leftClosingWidth = AtlasLayoutMetrics.leftDefaultWidth;
+  double _rightClosingWidth = AtlasLayoutMetrics.rightDefaultWidth;
 
   @override
   void initState() {
@@ -59,12 +58,12 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     }
     _leftSidebarAnimation = AnimationController(
       value: 1,
-      duration: WorkspaceMetrics.sidebarAnimationDuration,
+      duration: AtlasLayoutMetrics.sidebarAnimationDuration,
       vsync: this,
     );
     _rightSidebarAnimation = AnimationController(
       value: 1,
-      duration: WorkspaceMetrics.sidebarAnimationDuration,
+      duration: AtlasLayoutMetrics.sidebarAnimationDuration,
       vsync: this,
     );
   }
@@ -80,7 +79,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= WorkspaceMetrics.desktopBreakpoint) {
+        if (constraints.maxWidth >= AtlasLayoutMetrics.desktopBreakpoint) {
           return _buildDesktop(constraints.maxWidth);
         }
         return _buildCompact(constraints.maxWidth);
@@ -92,12 +91,12 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     final widths = _resolvePanelWidths(availableWidth);
     final leftPanelWidth = _leftVisible ? widths.left : _leftClosingWidth;
     final rightPanelWidth = _rightVisible ? widths.right : _rightClosingWidth;
-    final closedLeftButtonX = WorkspaceMetrics.showsTrafficLights
-        ? WorkspaceMetrics.macOSTrafficLightInset
+    final closedLeftButtonX = AtlasLayoutMetrics.showsTrafficLights
+        ? AtlasLayoutMetrics.macOSTrafficLightInset
         : 6.0;
 
     return Scaffold(
-      body: WorkspaceResizeRing(
+      body: AtlasResizeRing(
         child: SafeArea(
           child: Stack(
             children: [
@@ -115,7 +114,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                             width: leftPanelWidth,
                             child: const SessionsPanel(),
                           ),
-                          WorkspaceResizeHandle(
+                          AtlasResizeHandle(
                             key: const ValueKey('atlas-left-resize-handle'),
                             panelOnLeft: true,
                             onDrag: (delta) =>
@@ -140,7 +139,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          WorkspaceResizeHandle(
+                          AtlasResizeHandle(
                             key: const ValueKey('atlas-right-resize-handle'),
                             panelOnLeft: false,
                             onDrag: (delta) =>
@@ -161,7 +160,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                 key: const ValueKey('atlas-left-toggle-positioned'),
                 top: 6,
                 left: closedLeftButtonX,
-                child: WorkspaceToolbarButton(
+                child: AtlasToolbarButton(
                   key: const ValueKey('atlas-left-toggle'),
                   icon: _leftVisible
                       ? LucideIcons.panelLeft
@@ -177,7 +176,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
                 key: const ValueKey('atlas-right-toggle-positioned'),
                 top: 6,
                 right: 6,
-                child: WorkspaceToolbarButton(
+                child: AtlasToolbarButton(
                   key: const ValueKey('atlas-right-toggle'),
                   icon: _rightVisible
                       ? LucideIcons.panelRight
@@ -227,7 +226,7 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
           child: DetailsPanel(onClose: () => Navigator.of(context).pop()),
         ),
       ),
-      body: WorkspaceResizeRing(
+      body: AtlasResizeRing(
         child: SafeArea(
           child: WorkspacePanel(
             startupError: widget.startupError,
@@ -245,8 +244,8 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     final visiblePanels = (_leftVisible ? 1 : 0) + (_rightVisible ? 1 : 0);
     final sideBudget = math.max(
       availableWidth -
-          WorkspaceMetrics.centerMinimumWidth -
-          visiblePanels * WorkspaceMetrics.resizeHandleWidth,
+          AtlasLayoutMetrics.centerMinimumWidth -
+          visiblePanels * AtlasLayoutMetrics.resizeHandleWidth,
       0,
     );
     if (visiblePanels == 0) {
@@ -255,14 +254,14 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
 
     var left = _leftVisible
         ? _leftWidth.clamp(
-            WorkspaceMetrics.leftMinimumWidth,
-            WorkspaceMetrics.leftMaximumWidth,
+            AtlasLayoutMetrics.leftMinimumWidth,
+            AtlasLayoutMetrics.leftMaximumWidth,
           )
         : 0.0;
     var right = _rightVisible
         ? _rightWidth.clamp(
-            WorkspaceMetrics.rightMinimumWidth,
-            WorkspaceMetrics.rightMaximumWidth,
+            AtlasLayoutMetrics.rightMinimumWidth,
+            AtlasLayoutMetrics.rightMaximumWidth,
           )
         : 0.0;
     if (left + right <= sideBudget) {
@@ -270,28 +269,28 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     }
 
     final minimumTotal =
-        (_leftVisible ? WorkspaceMetrics.leftMinimumWidth : 0.0) +
-        (_rightVisible ? WorkspaceMetrics.rightMinimumWidth : 0.0);
+        (_leftVisible ? AtlasLayoutMetrics.leftMinimumWidth : 0.0) +
+        (_rightVisible ? AtlasLayoutMetrics.rightMinimumWidth : 0.0);
     final distributable = math.max(sideBudget - minimumTotal, 0.0);
     final leftFlex = _leftVisible
-        ? left - WorkspaceMetrics.leftMinimumWidth
+        ? left - AtlasLayoutMetrics.leftMinimumWidth
         : 0.0;
     final rightFlex = _rightVisible
-        ? right - WorkspaceMetrics.rightMinimumWidth
+        ? right - AtlasLayoutMetrics.rightMinimumWidth
         : 0.0;
     final totalFlex = leftFlex + rightFlex;
     if (totalFlex > 0) {
       left = _leftVisible
-          ? WorkspaceMetrics.leftMinimumWidth +
+          ? AtlasLayoutMetrics.leftMinimumWidth +
                 distributable * leftFlex / totalFlex
           : 0.0;
       right = _rightVisible
-          ? WorkspaceMetrics.rightMinimumWidth +
+          ? AtlasLayoutMetrics.rightMinimumWidth +
                 distributable * rightFlex / totalFlex
           : 0.0;
     } else {
-      left = _leftVisible ? WorkspaceMetrics.leftMinimumWidth : 0.0;
-      right = _rightVisible ? WorkspaceMetrics.rightMinimumWidth : 0.0;
+      left = _leftVisible ? AtlasLayoutMetrics.leftMinimumWidth : 0.0;
+      right = _rightVisible ? AtlasLayoutMetrics.rightMinimumWidth : 0.0;
     }
     return _PanelWidths(left: left, right: right);
   }
@@ -301,15 +300,15 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     final right = _rightVisible ? widths.right : 0.0;
     final dividers = (_leftVisible ? 1 : 0) + (_rightVisible ? 1 : 0);
     final maximum = math.min(
-      WorkspaceMetrics.leftMaximumWidth,
+      AtlasLayoutMetrics.leftMaximumWidth,
       availableWidth -
-          WorkspaceMetrics.centerMinimumWidth -
+          AtlasLayoutMetrics.centerMinimumWidth -
           right -
-          dividers * WorkspaceMetrics.resizeHandleWidth,
+          dividers * AtlasLayoutMetrics.resizeHandleWidth,
     );
     setState(() {
       _leftWidth = (widths.left + delta).clamp(
-        WorkspaceMetrics.leftMinimumWidth,
+        AtlasLayoutMetrics.leftMinimumWidth,
         maximum,
       );
     });
@@ -320,15 +319,15 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell>
     final left = _leftVisible ? widths.left : 0.0;
     final dividers = (_leftVisible ? 1 : 0) + (_rightVisible ? 1 : 0);
     final maximum = math.min(
-      WorkspaceMetrics.rightMaximumWidth,
+      AtlasLayoutMetrics.rightMaximumWidth,
       availableWidth -
-          WorkspaceMetrics.centerMinimumWidth -
+          AtlasLayoutMetrics.centerMinimumWidth -
           left -
-          dividers * WorkspaceMetrics.resizeHandleWidth,
+          dividers * AtlasLayoutMetrics.resizeHandleWidth,
     );
     setState(() {
       _rightWidth = (widths.right - delta).clamp(
-        WorkspaceMetrics.rightMinimumWidth,
+        AtlasLayoutMetrics.rightMinimumWidth,
         maximum,
       );
     });

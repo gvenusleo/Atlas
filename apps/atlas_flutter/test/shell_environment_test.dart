@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/app/shell_environment.dart';
+import 'package:atlas_flutter/app/bootstrap/shell_environment.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter_test/flutter_test.dart';

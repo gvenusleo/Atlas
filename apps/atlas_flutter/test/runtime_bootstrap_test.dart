@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:atlas_flutter/app/runtime_environment.dart';
+import '../../../packages/atlas_mcp/test/fixtures/server.dart';
+
+import 'package:atlas_flutter/app/bootstrap/runtime_environment.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import '../../../packages/atlas_mcp/test/fixtures/server.dart';
 
 void main() {
   for (final mcp in [false, true]) {

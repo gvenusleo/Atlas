@@ -1,0 +1,582 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'package:atlas_flutter/features/connections/presentation/connections_settings.dart';
+import 'package:atlas_flutter/features/settings/application/locale_mode.dart';
+import 'package:atlas_flutter/features/settings/application/theme_mode.dart';
+import 'package:atlas_flutter/features/settings/presentation/widgets/language_selector.dart';
+import 'package:atlas_flutter/features/settings/presentation/widgets/settings_controls.dart';
+import 'package:atlas_flutter/shared/widgets/settings_group.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/side_panel.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
+
+/// Sections offered by the settings surface.
+enum SettingsSection {
+  /// Client-local appearance and language preferences.
+  appearance(LucideIcons.sunMoon),
+
+  /// ACP server connections and runtime switching.
+  connections(LucideIcons.plug);
+
+  const SettingsSection(this.icon);
+  final IconData icon;
+
+  String label(BuildContext context) => switch (this) {
+    SettingsSection.appearance => context.l10n.appearance,
+    SettingsSection.connections => context.l10n.connections,
+  };
+}
+
+/// Settings page for client-local preferences and ACP connections.
+///
+/// The page is a section rail beside a content pane, and it owns the window
+/// chrome the workspace shell provides elsewhere: the traffic-light inset, the
+/// titlebar drag areas, and the custom caption controls on platforms without
+/// native ones.
+///
+/// Navigation lives in the rail, with a back action at its foot. Compact
+/// layouts hide the rail and switch sections from a strip inside the pane.
+class const SettingsPage({super.key}) extends ConsumerStatefulWidget {
+  /// Width of the section rail on desktop layouts.
+  static const railWidth = 260.0;
+
+  /// Maximum width of the settings rows inside the content pane.
+  ///
+  /// The content stays centered without stretching rows across a wide window.
+  static const columnWidth = 640.0;
+
+  @override
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends ConsumerState<SettingsPage>
+    with SingleTickerProviderStateMixin {
+  var _section = SettingsSection.appearance;
+  var _railVisible = true;
+  late final AnimationController _railAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _railAnimation = AnimationController(
+      value: 1,
+      duration: AtlasLayoutMetrics.sidebarAnimationDuration,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _railAnimation.dispose();
+    super.dispose();
+  }
+
+  void _select(SettingsSection section) => setState(() => _section = section);
+
+  void _toggleRail() {
+    setState(() => _railVisible = !_railVisible);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _railAnimation.value = _railVisible ? 1 : 0;
+    } else {
+      unawaited(
+        _railAnimation.animateTo(
+          _railVisible ? 1 : 0,
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: AtlasResizeRing(
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final desktop =
+                  constraints.maxWidth >= AtlasLayoutMetrics.desktopBreakpoint;
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (desktop)
+                          AnimatedBuilder(
+                            animation: _railAnimation,
+                            builder: (context, child) {
+                              if (_railAnimation.value == 0) {
+                                return const SizedBox.shrink();
+                              }
+                              return ClipRect(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  widthFactor: _railAnimation.value,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _SectionRail(
+                                  section: _section,
+                                  onSelect: _select,
+                                ),
+                                const _VerticalHairline(),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: _SettingsPane(
+                            section: _section,
+                            onSelect: _select,
+                            showRail: desktop,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (desktop)
+                    Positioned(
+                      top: 6,
+                      left: AtlasLayoutMetrics.showsTrafficLights
+                          ? AtlasLayoutMetrics.macOSTrafficLightInset
+                          : 6,
+                      child: AtlasToolbarButton(
+                        key: const ValueKey('atlas-settings-rail-toggle'),
+                        icon: _railVisible
+                            ? LucideIcons.panelLeft
+                            : LucideIcons.panelLeftOpen,
+                        tooltip: _railVisible
+                            ? context.l10n.hideSessions
+                            : context.l10n.showSessions,
+                        onPressed: _toggleRail,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Section list with an exit action at the foot of the rail.
+class const _SectionRail({
+  required final SettingsSection section,
+  required final ValueChanged<SettingsSection> onSelect,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return SizedBox(
+      key: const ValueKey('atlas-settings-rail'),
+      width: SettingsPage.railWidth,
+      child: SidePanel(
+        semanticLabel: context.l10n.settings,
+        footer: const Padding(
+          padding: EdgeInsets.fromLTRB(10, 8, 10, 14),
+          child: _SettingsBackButton(),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 8),
+              child: Text(
+                context.l10n.settings,
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            for (final item in SettingsSection.values)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: _RailEntry(
+                  key: ValueKey('atlas-settings-rail-${item.name}'),
+                  icon: item.icon,
+                  label: item.label(context),
+                  selected: item == section,
+                  onTap: () => onSelect(item),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class const _SettingsBackButton() extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => _RailEntry(
+    key: const ValueKey('atlas-settings-back'),
+    icon: LucideIcons.arrowLeft,
+    label: context.l10n.back,
+    onTap: () => context.pop(),
+  );
+}
+
+/// A selectable action in the settings rail.
+class const _RailEntry({
+  super.key,
+  required final IconData icon,
+  required final String label,
+  required final VoidCallback onTap,
+  final bool selected = false,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: AtlasHoverSurface(
+        // The selected section keeps the highlight while not hovered.
+        color: selected ? colors.raised : null,
+        borderRadius: BorderRadius.circular(AtlasRadii.control),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 30),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Icon(icon, size: 14, color: colors.textPrimary),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 12.5,
+                      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One pixel separator between the rail and the content pane.
+class const _VerticalHairline() extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) =>
+      Container(width: 1, color: AtlasColors.of(context).divider);
+}
+
+/// Horizontal section strip used when the rail is hidden.
+class const _SectionStrip({
+  required final SettingsSection section,
+  required final ValueChanged<SettingsSection> onSelect,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          for (final item in SettingsSection.values)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: AtlasHoverSurface(
+                key: ValueKey('atlas-settings-strip-${item.name}'),
+                color: item == section ? colors.raised : null,
+                borderRadius: BorderRadius.circular(AtlasRadii.control),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelect(item),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          item.icon,
+                          size: 14,
+                          color: item == section
+                              ? colors.textPrimary
+                              : colors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          item.label(context),
+                          style: TextStyle(
+                            color: item == section
+                                ? colors.textPrimary
+                                : colors.textSecondary,
+                            fontSize: 12.5,
+                            fontWeight: item == section
+                                ? FontWeight.w500
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Scrolling content pane holding the selected section.
+///
+/// Compact layouts use a header back button because they have no section rail.
+class const _SettingsPane({
+  required final SettingsSection section,
+  required final ValueChanged<SettingsSection> onSelect,
+  required final bool showRail,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final compact = !showRail;
+    final showsControls = usesCaptionControls(
+      desktop: Platform.environment['XDG_CURRENT_DESKTOP'] ?? '',
+      sessionType: Platform.environment['XDG_SESSION_TYPE'] ?? '',
+    );
+    return ColoredBox(
+      key: const ValueKey('atlas-settings-pane'),
+      color: colors.canvas,
+      child: Column(
+        children: [
+          SizedBox(
+            height: compact
+                ? AtlasLayoutMetrics.compactToolbarHeight
+                : AtlasLayoutMetrics.desktopToolbarHeight,
+            child: AtlasTitlebarDragArea(
+              child: Row(
+                children: [
+                  if (!showRail) ...[
+                    SizedBox(
+                      width: AtlasLayoutMetrics.showsTrafficLights
+                          ? AtlasLayoutMetrics.macOSTrafficLightInset
+                          : 6,
+                    ),
+                    AtlasToolbarButton(
+                      key: const ValueKey('atlas-settings-back'),
+                      icon: LucideIcons.arrowLeft,
+                      tooltip: context.l10n.back,
+                      size: compact
+                          ? 44
+                          : AtlasLayoutMetrics.desktopToolbarButtonSize,
+                      onPressed: () => context.pop(),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      context.l10n.settings,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (showsControls) ...[
+                    const AtlasWindowControls(),
+                    const SizedBox(width: 6),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          if (!showRail) ...[
+            _SectionStrip(section: section, onSelect: onSelect),
+            const Divider(height: 1),
+          ],
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                compact ? 20 : 40,
+                20,
+                compact ? 20 : 40,
+                20,
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: SettingsPage.columnWidth,
+                  ),
+                  child: switch (section) {
+                    SettingsSection.appearance => const _AppearanceSection(),
+                    SettingsSection.connections => const ConnectionsSettings(),
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The appearance group: title, summary, and related preferences.
+class const _AppearanceSection() extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsSectionHeader(
+          title: context.l10n.appearance,
+          description: context.l10n.appearanceDescription,
+        ),
+        const SizedBox(height: 12),
+        SettingsGroupCard(
+          key: const ValueKey('atlas-appearance-card'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SettingRow(
+                label: context.l10n.theme,
+                description: context.l10n.themeDescription,
+                control: _ThemeModeSelector(
+                  mode: mode,
+                  onChanged: (selected) => unawaited(
+                    ref.read(themeModeProvider.notifier).select(selected),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              _SettingRow(
+                label: context.l10n.language,
+                description: context.l10n.languageDescription,
+                control: LanguageSelector(
+                  language: ref.watch(languageProvider),
+                  onChanged: (selected) => unawaited(
+                    ref.read(languageProvider.notifier).select(selected),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One labelled setting with its control on the trailing edge of the row.
+class const _SettingRow({
+  required final String label,
+  required final String description,
+  required final Widget control,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: colors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          description,
+          style: TextStyle(
+            color: colors.textSecondary,
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Narrow panes stack the control under its label.
+          if (constraints.maxWidth < 420) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [text, const SizedBox(height: 8), control],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: text),
+              const SizedBox(width: 24),
+              control,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Compact selector for the client-local theme mode.
+class const _ThemeModeSelector({
+  required final ThemeMode mode,
+  required final ValueChanged<ThemeMode> onChanged,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return SettingsDropdown<ThemeMode>(
+      key: const ValueKey('atlas-theme-selector'),
+      options: [
+        SettingsDropdownOption(
+          value: ThemeMode.system,
+          label: context.l10n.system,
+          tooltip: context.l10n.systemThemeTooltip,
+        ),
+        SettingsDropdownOption(
+          value: ThemeMode.light,
+          label: context.l10n.light,
+          tooltip: context.l10n.lightTooltip,
+        ),
+        SettingsDropdownOption(
+          value: ThemeMode.dark,
+          label: context.l10n.dark,
+          tooltip: context.l10n.darkTooltip,
+        ),
+      ],
+      selected: mode,
+      onChanged: onChanged,
+    );
+  }
+}

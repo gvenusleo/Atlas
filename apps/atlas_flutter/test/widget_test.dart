@@ -1,22 +1,23 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/app/app_router.dart';
 import 'package:atlas_flutter/app/atlas_app.dart';
-import 'package:atlas_flutter/app/locale_mode.dart';
-import 'package:atlas_flutter/app/theme_mode.dart';
-import 'package:atlas_flutter/features/workspace/presentation/settings_page.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/settings_controls.dart';
+import 'package:atlas_flutter/app/routing/app_router.dart';
+import 'package:atlas_flutter/features/settings/application/locale_mode.dart';
+import 'package:atlas_flutter/features/settings/application/theme_mode.dart';
+import 'package:atlas_flutter/features/settings/domain/app_language.dart';
+import 'package:atlas_flutter/features/settings/presentation/settings_page.dart';
+import 'package:atlas_flutter/features/settings/presentation/widgets/settings_controls.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_page.dart';
-import 'package:atlas_flutter/features/workspace/presentation/workspace_metrics.dart';
 import 'package:atlas_flutter/features/workspace/presentation/workspace_shell.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/workspace_controls.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:window_manager/window_manager.dart';
 
 void main() {
@@ -145,7 +146,7 @@ void main() {
         );
         expect(
           tester.getSize(button),
-          Size.square(WorkspaceMetrics.desktopToolbarButtonSize),
+          Size.square(AtlasLayoutMetrics.desktopToolbarButtonSize),
         );
       }
       expect(
@@ -297,7 +298,7 @@ void main() {
       expect(find.byType(DragToMoveArea), findsNWidgets(3));
       expect(
         tester.getTopLeft(find.byKey(const ValueKey('atlas-left-toggle'))).dx,
-        WorkspaceMetrics.macOSTrafficLightInset,
+        AtlasLayoutMetrics.macOSTrafficLightInset,
       );
 
       await tester.tap(find.byKey(const ValueKey('atlas-left-toggle')));
@@ -306,7 +307,7 @@ void main() {
       final leftToggle = find.byKey(const ValueKey('atlas-left-toggle'));
       expect(
         tester.getTopLeft(leftToggle).dx,
-        WorkspaceMetrics.macOSTrafficLightInset,
+        AtlasLayoutMetrics.macOSTrafficLightInset,
       );
     },
   );
@@ -705,11 +706,11 @@ void main() {
       );
       final backSurface = find.descendant(
         of: back,
-        matching: find.byType(WorkspaceHoverSurface),
+        matching: find.byType(AtlasHoverSurface),
       );
       expect(backSurface, findsOneWidget);
       expect(
-        tester.widget<WorkspaceHoverSurface>(backSurface).borderRadius,
+        tester.widget<AtlasHoverSurface>(backSurface).borderRadius,
         BorderRadius.circular(AtlasRadii.control),
       );
       expect(
@@ -720,7 +721,7 @@ void main() {
                 of: find.byKey(
                   const ValueKey('atlas-settings-rail-appearance'),
                 ),
-                matching: find.byType(WorkspaceHoverSurface),
+                matching: find.byType(AtlasHoverSurface),
               ),
             )
             .width,
@@ -742,7 +743,7 @@ void main() {
       final toggle = find.byKey(const ValueKey('atlas-settings-rail-toggle'));
       expect(
         tester.getTopLeft(toggle).dx,
-        WorkspaceMetrics.macOSTrafficLightInset,
+        AtlasLayoutMetrics.macOSTrafficLightInset,
       );
       await tester.tap(toggle);
       await tester.pumpAndSettle();

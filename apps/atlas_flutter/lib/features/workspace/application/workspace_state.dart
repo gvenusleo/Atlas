@@ -1,6 +1,6 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
-import 'workspace_message.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 
 /// Activity phase of a turn, mirroring the TUI status line.
 enum TurnPhase {
@@ -25,6 +25,9 @@ final class SessionWorkspace({
   /// Model used by subsequent turns on this session.
   required final ModelDescriptor activeModel,
   List<WorkspaceMessage> messages = const [],
+
+  /// Agent commands advertised for this session.
+  List<AgentCommand> commands = const [],
 
   /// Persisted session id, or null for a draft that has not started a turn.
   final SessionId? sessionId,
@@ -57,16 +60,22 @@ final class SessionWorkspace({
   final String? mode,
 }) {
   /// Creates a session workspace cache.
-  this : messages = List.unmodifiable(messages);
+  this
+    : messages = List.unmodifiable(messages),
+      commands = List.unmodifiable(commands);
 
   /// Conversation items in occurrence order.
   final List<WorkspaceMessage> messages;
+
+  /// Agent command catalog rendered by the composer.
+  final List<AgentCommand> commands;
 
   /// Returns a copy with the given fields replaced.
   SessionWorkspace copyWith({
     SessionId? sessionId,
     String? workingDirectory,
     List<WorkspaceMessage>? messages,
+    List<AgentCommand>? commands,
     bool? busy,
     TurnPhase? turnPhase,
     Object? turnStartedAt = _unset,
@@ -81,6 +90,7 @@ final class SessionWorkspace({
     sessionId: sessionId ?? this.sessionId,
     workingDirectory: workingDirectory ?? this.workingDirectory,
     messages: messages ?? this.messages,
+    commands: commands ?? this.commands,
     busy: busy ?? this.busy,
     turnPhase: turnPhase ?? this.turnPhase,
     turnStartedAt: identical(turnStartedAt, _unset)
@@ -110,12 +120,16 @@ final class WorkspaceState({
   /// Whether the session sidebar is refreshing.
   final bool loadingSessions = false,
   List<PermissionRequest> pendingPermissions = const [],
+  List<ModelDescriptor> models = const [],
+  List<ModeOption> modes = const [],
 }) {
   /// Creates a workspace state.
   this
     : workspaces = Map<String, SessionWorkspace>.unmodifiable(workspaces),
       sessions = List.unmodifiable(sessions),
-      pendingPermissions = List.unmodifiable(pendingPermissions);
+      pendingPermissions = List.unmodifiable(pendingPermissions),
+      models = List.unmodifiable(models),
+      modes = List.unmodifiable(modes);
 
   /// Per-session transcripts and turn status, including background runs.
   final Map<String, SessionWorkspace> workspaces;
@@ -125,6 +139,12 @@ final class WorkspaceState({
 
   /// Agent permission requests awaiting a user decision, in arrival order.
   final List<PermissionRequest> pendingPermissions;
+
+  /// Available models exposed without runtime access from views.
+  final List<ModelDescriptor> models;
+
+  /// Available session modes exposed without runtime access from views.
+  final List<ModeOption> modes;
 
   /// Focused session cache.
   SessionWorkspace get active {
@@ -187,11 +207,15 @@ final class WorkspaceState({
     List<SessionSummary>? sessions,
     bool? loadingSessions,
     List<PermissionRequest>? pendingPermissions,
+    List<ModelDescriptor>? models,
+    List<ModeOption>? modes,
   }) => WorkspaceState(
     activeKey: activeKey ?? this.activeKey,
     workspaces: workspaces ?? this.workspaces,
     sessions: sessions ?? this.sessions,
     loadingSessions: loadingSessions ?? this.loadingSessions,
     pendingPermissions: pendingPermissions ?? this.pendingPermissions,
+    models: models ?? this.models,
+    modes: modes ?? this.modes,
   );
 }

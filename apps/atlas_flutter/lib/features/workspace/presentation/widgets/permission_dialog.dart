@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../../shared/theme/atlas_theme.dart';
-import '../../../../l10n/localizations.dart';
-import '../../application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Hosts permission dialogs for the current workspace.
 ///

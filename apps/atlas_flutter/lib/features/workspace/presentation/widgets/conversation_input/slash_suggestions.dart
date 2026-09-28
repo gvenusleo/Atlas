@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../../shared/theme/atlas_theme.dart';
-import '../../workspace_metrics.dart';
-import 'floating_menu_card.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/floating_menu_card.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Maximum slash suggestion rows shown before the popup scrolls.
 const maxSlashPopupRows = 5;
@@ -40,7 +40,7 @@ class const SlashSuggestions({
               '/${suggestion.$1}',
               style: TextStyle(
                 color: colors.textPrimary,
-                fontFamily: WorkspaceMetrics.monospaceFontFamily,
+                fontFamily: AtlasLayoutMetrics.monospaceFontFamily,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
               ),

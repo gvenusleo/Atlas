@@ -13,7 +13,7 @@ The current implementation provides a responsive workspace shell, resizable side
 
 ## Allowed dependencies
 
-- Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`, `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`, `file_picker`, `clipboard`, `pty2`, `terminal_view`, `flutter_secure_storage`, `stream_channel`, and `web_socket_channel`.
+- Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`, `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`, `file_picker`, `clipboard`, `pty2`, `terminal_view`, `flutter_secure_storage`, `shared_preferences`, `stream_channel`, and `web_socket_channel`.
 - Tests may also import `atlas_ws` (dev dependency) to serve a real `atlas server` endpoint for remote connection integration tests.
 - `atlas_composition` for process-level runtime construction.
 - `atlas_config`, `atlas_prompt`, `atlas_provider`, and `atlas_storage` from application bootstrap only. Tests may also import `atlas_tools`.
@@ -29,16 +29,18 @@ The current implementation provides a responsive workspace shell, resizable side
 
 ```text
 lib/main.dart                            bootstrap and ProviderScope
-lib/app                                  application root, routing, platform window, runtime bootstrap
-lib/features/<feature>/application       feature controllers and state
-lib/features/<feature>/data              local filesystem, terminal, and preference access
-lib/features/<feature>/presentation      feature pages, layouts, and widgets
-lib/shared                               shared application state, theme, and UI
+lib/app/bootstrap                        runtime bootstrap and process connectors
+lib/app/routing, lib/app/platform        navigation and platform window
+lib/features/<feature>/application       Riverpod controllers and immutable UI state
+lib/features/<feature>/data              storage and platform services where needed
+lib/features/<feature>/domain            shared models and ports where needed
+lib/features/<feature>/presentation      pages, layouts, and widgets
+lib/shared                               shared state, window UI, theme, and layout
 ```
 
-Connection controllers and saved-profile repositories live in `features/remote_connection`; `app` injects the process and WebSocket connectors. The file browser delegates filesystem state and operations to its own Riverpod controller. See [architecture](../../docs/architecture.md#flutter-client-state).
+Settings preferences use a feature repository backed by `shared_preferences`, seeded before the first frame. Connection controllers and saved-profile repositories live in `features/connections`; `app/bootstrap` injects the process and WebSocket connectors. File browsers use a Riverpod provider family keyed by session and directory; filesystem access lives in `features/files/data`. The workspace composes files and terminal hosts, while window controls live in `shared`. See [architecture](../../docs/architecture.md#flutter-client-state).
 
-The client-local theme preference lives in `lib/app`: `theme_mode.dart` reads and persists the theme mode with `shared_preferences`, and `atlas_app.dart` applies it. The settings page (`/settings`) owns appearance preferences and ACP connection management, and reuses the workspace window chrome. Android and iOS register `atlas:///` for the workspace and `atlas:///settings` for settings. Settings retains the workspace beneath it when opened directly, so both the page back button and system back return to the workspace. HTTPS App Links / Universal Links remain Planned until a domain and Android release certificate fingerprints are supplied and the domain association files are hosted.
+The client-local theme and language preferences live in `features/settings`: a repository handles storage, Riverpod controllers apply selections, and `atlas_app.dart` reads their state. The settings page (`/settings`) composes appearance and connection management; it shares window chrome with the workspace. Android and iOS register `atlas:///` for the workspace and `atlas:///settings` for settings. Settings retains the workspace beneath it when opened directly, so both the page back button and system back return to the workspace. HTTPS App Links / Universal Links remain Planned until a domain and Android release certificate fingerprints are supplied and the domain association files are hosted.
 
 On macOS, startup imports exported variables from the user's interactive login shell once, so configuration values, local shell tools, and ACP subprocesses can find terminal-installed commands even when the app starts from Finder or Dock. Restart Atlas after editing shell configuration. Resolution failure falls back to the original environment; aliases and shell functions are not imported.
 

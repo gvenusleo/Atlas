@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:atlas_flutter/features/workspace/application/file_browser_controller.dart';
-import 'package:atlas_flutter/features/workspace/application/file_browser_state.dart';
-import 'package:atlas_flutter/features/workspace/data/file_browser_service.dart';
+import 'package:atlas_flutter/features/files/application/file_browser_controller.dart';
+import 'package:atlas_flutter/features/files/application/file_browser_state.dart';
+import 'package:atlas_flutter/features/files/data/file_browser_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -26,6 +26,34 @@ void main() {
       container.dispose();
       await service.close();
     });
+  });
+
+  test('browser family isolates sessions and disposes unused caches', () async {
+    service.listings['/workspace'] = [Directory('/workspace/sub')];
+    const first = (sessionKey: 'first', workingDirectory: '/workspace');
+    const second = (sessionKey: 'second', workingDirectory: '/workspace');
+    final scoped = ProviderContainer(
+      overrides: [fileBrowserServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(scoped.dispose);
+    final subscription = scoped.listen(fileBrowserProvider(first), (_, _) {});
+    scoped.listen(fileBrowserProvider(second), (_, _) {});
+    await pumpEventQueue();
+    await scoped
+        .read(fileBrowserProvider(first).notifier)
+        .toggle(scoped.read(fileBrowserProvider(first)).entries.single);
+    expect(
+      scoped.read(fileBrowserProvider(first)).entries.single.expanded,
+      isTrue,
+    );
+    expect(
+      scoped.read(fileBrowserProvider(second)).entries.single.expanded,
+      isFalse,
+    );
+    subscription.close();
+    await pumpEventQueue();
+    expect(scoped.exists(fileBrowserProvider(first)), isFalse);
+    expect(scoped.exists(fileBrowserProvider(second)), isTrue);
   });
 
   test(

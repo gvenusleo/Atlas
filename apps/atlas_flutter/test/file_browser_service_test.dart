@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/features/workspace/data/file_browser_service.dart';
+import 'package:atlas_flutter/features/files/data/file_browser_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

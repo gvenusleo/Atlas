@@ -9,22 +9,22 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:morphnext/morphnext.dart';
 
-import '../../../../remote_connection/application/runtime_controller.dart';
-import '../../../../../shared/theme/atlas_theme.dart';
-import '../../../../../l10n/localizations.dart';
-import '../../../../../shared/widgets/animated_caret.dart';
-import '../../../application/workspace_controller.dart';
-import '../../../application/workspace_state.dart';
-import '../../../data/image_attachment.dart';
-import 'context_usage_ring.dart';
-import 'effort_menu.dart';
-import 'floating_menu_card.dart';
-import 'input_attachments.dart';
-import 'input_menu.dart';
-import 'mode_menu.dart';
-import 'model_menu.dart';
-import 'slash_suggestions.dart';
-import '../workspace_controls.dart';
+import 'package:atlas_flutter/features/workspace/application/image_attachments.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
+import 'package:atlas_flutter/features/workspace/domain/image_attachment.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/context_usage_ring.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/effort_menu.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/floating_menu_card.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/input_attachments.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/input_menu.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/mode_menu.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/model_menu.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/slash_suggestions.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/animated_caret.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Composer with model, reasoning effort, slash completion, send, and cancel.
 class const ConversationInput({
@@ -138,9 +138,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
       ),
     );
     final controller = ref.read(workspaceProvider.notifier);
-    final environment =
-        ref.read(runtimeEnvironmentProvider).environment ??
-        (throw StateError('runtime is not ready'));
+    final catalog = ref.watch(workspaceProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
       child: ConstrainedBox(
@@ -230,7 +228,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                             ),
                             const SizedBox(width: 4),
                             ModelMenu(
-                              models: environment.models,
+                              models: catalog.models,
                               activeModel: activeModel,
                               onTap: _toggleModel,
                             ),
@@ -241,9 +239,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                 value: reasoningEffort,
                                 onTap: _toggleEffort,
                               ),
-                            if (environment.runtime.modeOptions.isNotEmpty)
+                            if (catalog.modes.isNotEmpty)
                               ModeMenu(
-                                modes: environment.runtime.modeOptions,
+                                modes: catalog.modes,
                                 value: mode,
                                 onTap: _toggleMode,
                               ),
@@ -260,7 +258,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                               message: busy
                                   ? context.l10n.stop
                                   : context.l10n.send,
-                              child: WorkspaceHoverSurface(
+                              child: AtlasHoverSurface(
                                 key: const ValueKey('atlas-send-button'),
                                 // Sending shifts to the accent color on hover.
                                 color: _canSend
@@ -324,7 +322,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                       showWhenUnlinked: false,
                       offset: Offset(
                         0,
-                        -(math.min(environment.models.length, maxPickerRows) *
+                        -(math.min(catalog.models.length, maxPickerRows) *
                                 ModelMenuCard.rowHeight +
                             ModelMenuCard.cardPadding * 2 +
                             8),
@@ -333,7 +331,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                         width: 280,
                         child: ModelMenuCard(
                           key: _menuKeys[InputMenu.model],
-                          models: environment.models,
+                          models: catalog.models,
                           activeModel: activeModel,
                           highlighted: _menus.highlight(InputMenu.model),
                           onHighlighted: (index) => setState(
@@ -391,10 +389,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                       showWhenUnlinked: false,
                       offset: Offset(
                         0,
-                        -(math.min(
-                                  environment.runtime.modeOptions.length,
-                                  maxPickerRows,
-                                ) *
+                        -(math.min(catalog.modes.length, maxPickerRows) *
                                 ModeMenuCard.rowHeight +
                             ModeMenuCard.cardPadding * 2 +
                             8),
@@ -403,7 +398,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                         width: 150,
                         child: ModeMenuCard(
                           key: _menuKeys[InputMenu.mode],
-                          modes: environment.runtime.modeOptions,
+                          modes: catalog.modes,
                           value: mode,
                           highlighted: _menus.highlight(InputMenu.mode),
                           onHighlighted: (index) => setState(
@@ -456,13 +451,11 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Opens or closes the model picker.
   void _toggleModel() {
-    final environment =
-        ref.read(runtimeEnvironmentProvider).environment ??
-        (throw StateError('runtime is not ready'));
+    final catalog = ref.read(workspaceProvider);
     final activeModel = _workspace.activeModel;
     _toggleMenu(
       InputMenu.model,
-      initialHighlight: environment.models.indexWhere(
+      initialHighlight: catalog.models.indexWhere(
         (model) => model.ref == activeModel.ref,
       ),
     );
@@ -482,13 +475,11 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Opens or closes the session-mode picker.
   void _toggleMode() {
-    final environment =
-        ref.read(runtimeEnvironmentProvider).environment ??
-        (throw StateError('runtime is not ready'));
+    final catalog = ref.read(workspaceProvider);
     final current = _workspace.mode;
     _toggleMenu(
       InputMenu.mode,
-      initialHighlight: environment.runtime.modeOptions.indexWhere(
+      initialHighlight: catalog.modes.indexWhere(
         (option) => option.id == current,
       ),
     );
@@ -527,16 +518,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
   /// Empty until the session exists and the agent has advertised its catalog,
   /// which is why the popup stays closed in a draft workspace.
   List<AgentCommand> get _remoteCommands {
-    final environment = ref.read(runtimeEnvironmentProvider).environment;
-    final runtime = environment?.runtime;
-    if (runtime == null) {
-      return const [];
-    }
-    final sessionId = ref.read(workspaceProvider).sessionId;
-    if (sessionId == null) {
-      return const [];
-    }
-    return runtime.commandsFor(sessionId);
+    return _workspace.commands;
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
@@ -596,7 +578,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Arrow keys move the model highlight; enter selects it.
   KeyEventResult _handleModelMenuKey(KeyEvent event) {
-    final models = ref.read(runtimeEnvironmentProvider).environment!.models;
+    final models = ref.read(workspaceProvider).models;
     if (models.isEmpty) {
       return KeyEventResult.ignored;
     }
@@ -643,11 +625,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   /// Arrow keys move the mode highlight; enter selects it.
   KeyEventResult _handleModeMenuKey(KeyEvent event) {
-    final modes = ref
-        .read(runtimeEnvironmentProvider)
-        .environment!
-        .runtime
-        .modeOptions;
+    final modes = ref.read(workspaceProvider).modes;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       setState(() => _menus.moveHighlight(InputMenu.mode, 1, modes.length));
       return KeyEventResult.handled;

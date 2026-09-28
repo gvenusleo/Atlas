@@ -1,0 +1,56 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:acpd_io/acpd_io.dart';
+import 'package:atlas_acp/atlas_acp.dart';
+
+import 'package:atlas_flutter/features/connections/domain/acp_connection.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+
+/// Starts [connection] as a child process and wraps it in an [AcpClient].
+///
+/// The returned environment injects the ACP client as the runtime, so
+/// presentation code consumes a remote agent exactly like the local runtime.
+/// The model catalog is discovered from a temporary session's config options
+/// and the temporary session is removed again. [environment] supplies the
+/// startup exports used by the child process and its home-directory probe.
+Future<RuntimeBootstrap> bootstrapAcpClient(
+  AcpConnection connection, {
+  Map<String, String>? environment,
+}) async {
+  final values = Map<String, String>.unmodifiable(
+    environment ?? Platform.environment,
+  );
+  try {
+    final agent = await AcpAgent.start(
+      AcpAgentConfig(
+        command: connection.command,
+        args: connection.arguments,
+        env: values,
+      ),
+    );
+    final client = AcpClient(agent.transport);
+    await client.connect();
+    final home =
+        values['HOME'] ?? values['USERPROFILE'] ?? Directory.current.path;
+    final probe = await client.createSession(workingDirectory: home);
+    final catalog = client.catalog;
+    try {
+      await client.deleteSession(probe.id);
+    } on Object {
+      // The probe session is harmless; leaving it behind is acceptable.
+    }
+    return RuntimeBootstrap.ready(
+      RuntimeEnvironment(
+        runtime: client,
+        models: catalog,
+        onClose: () async {
+          await client.close();
+          await agent.close();
+        },
+      ),
+    );
+  } on Object catch (error) {
+    return RuntimeBootstrap.failed('Cannot start ACP server: $error');
+  }
+}

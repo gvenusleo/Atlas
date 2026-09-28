@@ -1,8 +1,11 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/app/remote_connections.dart';
-import 'package:atlas_flutter/app/runtime_environment.dart';
-import 'package:atlas_flutter/features/remote_connection/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/app/bootstrap/runtime_environment.dart';
+import 'package:atlas_flutter/features/connections/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_state.dart';
+import 'package:atlas_flutter/features/connections/data/remote_connections.dart';
+import 'package:atlas_flutter/features/connections/domain/remote_connection_profile.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
@@ -10,8 +13,8 @@ import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:atlas_ws/atlas_ws.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import 'workspace_support.dart';
 

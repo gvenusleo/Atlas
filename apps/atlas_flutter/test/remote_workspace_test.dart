@@ -1,7 +1,8 @@
-import 'package:atlas_flutter/app/runtime_environment.dart';
-import 'package:atlas_flutter/features/remote_connection/application/connection_profiles_controller.dart';
-import 'package:atlas_flutter/features/remote_connection/data/remote_connections.dart';
-import 'package:atlas_flutter/features/remote_connection/presentation/remote_connect_view.dart';
+import 'package:atlas_flutter/features/connections/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/remote_connection_profile.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/connections/presentation/remote_connect_view.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
 import 'package:atlas_flutter/features/workspace/presentation/widgets/details_panel.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';

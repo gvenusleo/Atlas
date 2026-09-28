@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../../shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Formats a token count for compact hover labels such as `128k`.
 String compactTokenCount(int tokens) {

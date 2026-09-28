@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:atlas_flutter/features/workspace/data/image_attachment.dart';
+import 'package:atlas_flutter/features/workspace/domain/image_attachment.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

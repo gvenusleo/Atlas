@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'caret_animation.dart';
+import 'package:atlas_flutter/shared/widgets/caret_animation.dart';
 
 /// Draws an animated caret over a text field.
 ///

@@ -1,12 +1,12 @@
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:atlas_flutter/app/runtime_environment.dart';
-import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
-import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 
 import 'workspace_support.dart';
 

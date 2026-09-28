@@ -1,0 +1,357 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'package:atlas_flutter/features/connections/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_state.dart';
+import 'package:atlas_flutter/features/connections/domain/remote_connection_profile.dart';
+import 'package:atlas_flutter/features/connections/presentation/remote_profile_form.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
+
+/// Entry state for mobile clients and fallback for desktop without a runtime:
+/// manages remote server profiles and drives the connection lifecycle.
+class const RemoteConnectView({super.key}) extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<RemoteConnectView> createState() => _RemoteConnectViewState();
+}
+
+class _RemoteConnectViewState extends ConsumerState<RemoteConnectView> {
+  bool _busy = false;
+
+  /// Surfaces a persistence failure; without this the dialog closes and the
+  /// list stays unchanged with no explanation (for example a locked system
+  /// keyring on Linux or an unavailable Keystore).
+  Future<void> _showSaveError(Object error) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.l10n.couldNotSaveConnectionTitle),
+        content: Text('$error'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(context.l10n.ok),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addOrEdit([RemoteConnectionProfile? profile]) async {
+    final result = await showDialog<RemoteConnectionProfile>(
+      context: context,
+      builder: (context) => RemoteProfileFormDialog(profile: profile),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    try {
+      await ref
+          .read(remoteProfilesProvider.notifier)
+          .saveProfile(result, previous: profile);
+    } on Object catch (error) {
+      await _showSaveError(error);
+    }
+  }
+
+  Future<void> _remove(RemoteConnectionProfile profile) async {
+    try {
+      await ref.read(remoteProfilesProvider.notifier).removeProfile(profile);
+    } on Object catch (error) {
+      await _showSaveError(error);
+    }
+  }
+
+  Future<void> _connect(RemoteConnectionProfile profile) async {
+    final controller = ref.read(runtimeEnvironmentProvider.notifier);
+    setState(() => _busy = true);
+    try {
+      // The controller applies the profile's computer-side working directory
+      // only after the connection succeeds.
+      await controller.activateRemote(profile);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _busy = false);
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(context.l10n.connectionFailed),
+            content: Text('$error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(context.l10n.ok),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _disconnect() async {
+    await ref.read(runtimeEnvironmentProvider.notifier).disconnectRemote();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final runtimeState = ref.watch(runtimeEnvironmentProvider);
+    final savedProfiles = ref.watch(remoteProfilesProvider);
+    final profiles = savedProfiles.value ?? const <RemoteConnectionProfile>[];
+    final loadError = savedProfiles.error;
+    final status = runtimeState.remoteStatus;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          LucideIcons.monitorSmartphone,
+                          color: colors.accent,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            context.l10n.connectToComputer,
+                            style: TextStyle(
+                              color: colors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      context.l10n.remoteConnectInstructions,
+                      style: TextStyle(
+                        color: colors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (loadError != null) ...[
+                      Text(
+                        '$loadError',
+                        style: TextStyle(color: colors.error, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (profiles.isEmpty && !_busy)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          context.l10n.noSavedConnections,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              sliver: SliverList.builder(
+                itemCount: profiles.length,
+                itemBuilder: (context, index) {
+                  final profile = profiles[index];
+                  return _ProfileTile(
+                    profile: profile,
+                    active:
+                        runtimeState.remoteProfile?.wsUrl == profile.wsUrl &&
+                        runtimeState.remoteProfile?.name == profile.name,
+                    status:
+                        runtimeState.remoteProfile?.wsUrl == profile.wsUrl &&
+                            runtimeState.remoteProfile?.name == profile.name
+                        ? status
+                        : RemoteConnectionStatus.disconnected,
+                    error: runtimeState.remoteProfile?.wsUrl == profile.wsUrl
+                        ? runtimeState.remoteError
+                        : null,
+                    busy: _busy,
+                    onConnect: () => unawaited(_connect(profile)),
+                    onDisconnect: () => unawaited(_disconnect()),
+                    onEdit: () => unawaited(_addOrEdit(profile)),
+                    onRemove: () => unawaited(_remove(profile)),
+                  );
+                },
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              sliver: SliverToBoxAdapter(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => unawaited(_addOrEdit()),
+                  icon: const Icon(LucideIcons.plus, size: 16),
+                  label: Text(context.l10n.addConnection),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One saved profile row with its connection state.
+class const _ProfileTile({
+  required final RemoteConnectionProfile profile,
+  required final bool active,
+  required final RemoteConnectionStatus status,
+  required final String? error,
+  required final bool busy,
+  required final VoidCallback onConnect,
+  required final VoidCallback onDisconnect,
+  required final VoidCallback onEdit,
+  required final VoidCallback onRemove,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final (label, color) = switch (status) {
+      RemoteConnectionStatus.connecting => (
+        context.l10n.connecting,
+        colors.accent,
+      ),
+      RemoteConnectionStatus.connected => (
+        context.l10n.connected,
+        colors.success,
+      ),
+      RemoteConnectionStatus.reconnecting => (
+        context.l10n.reconnecting,
+        colors.warning,
+      ),
+      RemoteConnectionStatus.error => (
+        context.l10n.connectionFailed,
+        colors.error,
+      ),
+      RemoteConnectionStatus.disconnected => (
+        context.l10n.notConnected,
+        colors.textSecondary,
+      ),
+    };
+    return AtlasHoverSurface(
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    profile.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: context.l10n.edit,
+                  icon: const Icon(LucideIcons.pencil, size: 14),
+                  onPressed: busy ? null : onEdit,
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: context.l10n.remove,
+                  icon: const Icon(LucideIcons.trash, size: 14),
+                  onPressed: busy ? null : onRemove,
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Text(
+                profile.wsUrl,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 11.5,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            if (error != null && error!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: Text(
+                  error!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.error, fontSize: 11.5),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: Text(
+                  label,
+                  style: TextStyle(color: color, fontSize: 11.5),
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: active && status == RemoteConnectionStatus.connected
+                  ? TextButton(
+                      onPressed: busy ? null : onDisconnect,
+                      child: Text(context.l10n.disconnect),
+                    )
+                  : TextButton(
+                      onPressed: busy ? null : onConnect,
+                      child: Text(
+                        status == RemoteConnectionStatus.error
+                            ? context.l10n.retry
+                            : context.l10n.connect,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

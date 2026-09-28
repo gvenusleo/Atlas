@@ -2,13 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../remote_connection/application/runtime_controller.dart';
-import '../../../../l10n/localizations.dart';
-import '../../application/workspace_controller.dart';
-import 'file_browser.dart';
-import 'side_panel.dart';
-import 'terminal_panel.dart';
-import 'workspace_controls.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser_host.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/terminal_host.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/widgets/side_panel.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Files and terminal sidebar used by desktop panels and compact drawers.
 class const DetailsPanel({
@@ -32,7 +32,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
         semanticLabel: context.l10n.workspaceTools,
         compact: widget.onClose != null,
         action: widget.onClose != null
-            ? WorkspaceToolbarButton(
+            ? AtlasToolbarButton(
                 icon: LucideIcons.x,
                 tooltip: context.l10n.closeWorkspaceTools,
                 size: 44,
@@ -58,7 +58,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
         compact: widget.onClose != null,
         useCanvasColor: true,
         action: widget.onClose != null
-            ? WorkspaceToolbarButton(
+            ? AtlasToolbarButton(
                 icon: LucideIcons.x,
                 tooltip: context.l10n.closeWorkspaceTools,
                 size: 44,
@@ -84,7 +84,7 @@ class _DetailsPanelState extends ConsumerState<DetailsPanel> {
       useCanvasColor: true,
       title: _ToolTabs(terminal: terminal, onChanged: _onToolTabChanged),
       action: widget.onClose != null
-          ? WorkspaceToolbarButton(
+          ? AtlasToolbarButton(
               icon: LucideIcons.x,
               tooltip: context.l10n.closeWorkspaceTools,
               size: 44,
@@ -127,14 +127,14 @@ class const _ToolTabs({
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        WorkspaceToolbarButton(
+        AtlasToolbarButton(
           icon: LucideIcons.folder,
           tooltip: context.l10n.files,
           active: !terminal,
           onPressed: () => onChanged(false),
         ),
         const SizedBox(width: 4),
-        WorkspaceToolbarButton(
+        AtlasToolbarButton(
           icon: LucideIcons.terminal,
           tooltip: context.l10n.terminal,
           active: terminal,

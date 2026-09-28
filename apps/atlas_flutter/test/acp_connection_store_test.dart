@@ -1,6 +1,8 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/features/remote_connection/data/acp_connections.dart';
+import 'package:atlas_flutter/features/connections/data/acp_connection_codec.dart';
+import 'package:atlas_flutter/features/connections/data/acp_connections.dart';
+import 'package:atlas_flutter/features/connections/domain/acp_connection.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -44,7 +46,7 @@ void main() {
     },
   );
 
-  test('fromJson requires the name and command keys to hold strings', () {
+  test('ACP decoder requires the name and command keys to hold strings', () {
     for (final json in <Object?>[
       null,
       'nope',
@@ -55,7 +57,7 @@ void main() {
       <String, Object?>{'name': 'Atlas', 'command': ''},
       <String, Object?>{'name': '', 'command': 'atlas'},
     ]) {
-      expect(AcpConnection.fromJson(json), isNull, reason: 'for $json');
+      expect(AcpConnectionCodec.decode(json), isNull, reason: 'for $json');
     }
   });
 }

@@ -1,5 +1,6 @@
-import 'package:atlas_flutter/features/workspace/application/terminal_registry.dart';
-import 'package:atlas_flutter/features/workspace/data/terminal_session.dart';
+import 'package:atlas_flutter/features/terminal/domain/terminal_port.dart';
+import 'package:atlas_flutter/features/terminal/application/terminal_registry.dart';
+import 'package:atlas_flutter/features/terminal/data/terminal_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

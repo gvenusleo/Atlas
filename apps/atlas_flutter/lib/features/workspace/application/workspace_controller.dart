@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../remote_connection/application/runtime_controller.dart';
-import '../../remote_connection/application/connection_profiles_controller.dart';
-import '../../../shared/application/working_directory.dart';
-import 'workspace_message.dart';
-import 'workspace_state.dart';
+import 'package:atlas_flutter/features/connections/application/connection_profiles_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/workspace/application/session_catalog.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_timeline.dart';
+import 'package:atlas_flutter/shared/application/working_directory.dart';
 
-export '../../../shared/application/working_directory.dart';
+export 'package:atlas_flutter/shared/application/working_directory.dart';
 
 /// Coordinates one Flutter workspace with the injected shared runtime.
 final class WorkspaceController extends Notifier<WorkspaceState> {
@@ -76,6 +79,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         draftKey: _draftWorkspace(ref.read(workspaceWorkingDirectoryProvider)),
       },
       sessions: const [],
+      models: _environmentCache?.models ?? const [],
+      modes: _environmentCache?.runtime.modeOptions ?? const [],
     );
   }
 
@@ -95,6 +100,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       activeKey: draftKey,
       workspaces: {draftKey: draft},
       sessions: const [],
+      models: _environmentCache?.models ?? const [],
+      modes: _environmentCache?.runtime.modeOptions ?? const [],
     );
   }
 
@@ -119,6 +126,8 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
         draftKey: _draftWorkspace(ref.read(workspaceWorkingDirectoryProvider)),
       },
       sessions: const [],
+      models: _environmentCache?.models ?? const [],
+      modes: _environmentCache?.runtime.modeOptions ?? const [],
     );
     unawaited(refreshSessions(showLoading: false));
   }
@@ -175,29 +184,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       state = state.copyWith(loadingSessions: true);
     }
     try {
-      final sessions = <SessionSummary>[];
-      String? cursor;
-      do {
-        final page = await _environment.runtime.listSessions(
-          cursor: cursor,
-          limit: 100,
-        );
-        sessions.addAll(page.items);
-        cursor = page.nextCursor;
-      } while (cursor != null && sessions.length < 500);
-      // Merge titles reported by the agent through session_info_update.
-      final runtime = _environment.runtime;
-      for (var i = 0; i < sessions.length; i++) {
-        final title = runtime.titleFor(sessions[i].id);
-        if (title != null && title.isNotEmpty) {
-          sessions[i] = SessionSummary(
-            id: sessions[i].id,
-            title: title,
-            workingDirectory: sessions[i].workingDirectory,
-            updatedAt: sessions[i].updatedAt,
-          );
-        }
-      }
+      final sessions = await SessionCatalog(_environment.runtime).load();
       state = state.copyWith(sessions: sessions, loadingSessions: false);
     } catch (error) {
       _appendLocal(
@@ -269,12 +256,13 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       final workspace = SessionWorkspace(
         sessionId: snapshot.session.id,
         workingDirectory: snapshot.session.workingDirectory,
-        messages: _messagesFromTimeline(snapshot.timeline),
+        messages: messagesFromTimeline(snapshot.timeline, nextId: _nextId),
         contextTokens: snapshot.session.lastUsage.totalTokens,
-        hasImages: _timelineHasImages(snapshot.timeline),
+        hasImages: timelineHasImages(snapshot.timeline),
         activeModel: selection.model,
         reasoningEffort: selection.effort,
         mode: _environment.runtime.modeFor(id),
+        commands: _environment.runtime.commandsFor(id),
       );
       final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
       workspaces[id.value] = workspace;
@@ -795,7 +783,27 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       default:
         break;
     }
+    if (event is TurnStarted || event is TurnFinished) {
+      final commands = _environment.runtime.commandsFor(event.sessionId);
+      final previous = state.workspaces[target]?.commands;
+      if (previous != null && !_sameCommands(previous, commands)) {
+        _patch(target, (workspace) => workspace.copyWith(commands: commands));
+      }
+    }
     return target;
+  }
+
+  static bool _sameCommands(List<AgentCommand> left, List<AgentCommand> right) {
+    if (identical(left, right)) return true;
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i].name != right[i].name ||
+          left[i].description != right[i].description ||
+          left[i].inputHint != right[i].inputHint) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _appendDelta(String key, WorkspaceMessageKind kind, String delta) {
@@ -1063,88 +1071,6 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
       }
     }
     return selected;
-  }
-
-  /// Whether any timeline message carries image content.
-  static bool _timelineHasImages(List<TimelineItem> timeline) {
-    for (final item in timeline) {
-      final content = switch (item) {
-        UserMessageItem(:final content) => content,
-        AssistantMessageItem(:final content) => content,
-        _ => null,
-      };
-      if (content != null && content.any((part) => part is ImageContent)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  List<WorkspaceMessage> _messagesFromTimeline(List<TimelineItem> timeline) {
-    final messages = <WorkspaceMessage>[];
-    final calls = <ToolCallId, int>{};
-    for (final item in timeline) {
-      switch (item) {
-        case UserMessageItem(:final content):
-          final text = textFromContent(content);
-          final imageSources = [
-            for (final part in content)
-              if (part is ImageContent) part.source,
-          ];
-          if (text.isNotEmpty || imageSources.isNotEmpty) {
-            messages.add(
-              WorkspaceMessage(
-                id: item.id.value,
-                kind: WorkspaceMessageKind.user,
-                text: text,
-                imageSources: imageSources,
-              ),
-            );
-          }
-        case AssistantMessageItem(:final content, :final reasoning):
-          if (reasoning.isNotEmpty) {
-            messages.add(
-              WorkspaceMessage(
-                id: _nextId(),
-                kind: WorkspaceMessageKind.reasoning,
-                text: reasoning,
-              ),
-            );
-          }
-          final text = textFromContent(content);
-          if (text.isNotEmpty) {
-            messages.add(
-              WorkspaceMessage(
-                id: item.id.value,
-                kind: WorkspaceMessageKind.assistant,
-                text: text,
-              ),
-            );
-          }
-        case ToolCallItem(:final call):
-          calls[call.id] = messages.length;
-          messages.add(
-            WorkspaceMessage(
-              id: item.id.value,
-              kind: WorkspaceMessageKind.tool,
-              text: '',
-              toolName: call.name,
-              arguments: call.arguments,
-              isRunning: true,
-            ),
-          );
-        case ToolResultItem(:final callId, :final content, :final isError):
-          final index = calls[callId];
-          if (index != null) {
-            messages[index] = messages[index].copyWith(
-              text: content,
-              isError: isError,
-              isRunning: false,
-            );
-          }
-      }
-    }
-    return messages;
   }
 }
 

@@ -1,27 +1,21 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
-
 import 'package:atlas_runtime/atlas_runtime.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../remote_connection/application/runtime_controller.dart';
-import '../../../../shared/theme/atlas_theme.dart';
-import '../../../../l10n/localizations.dart';
-import '../../../../shared/widgets/animated_caret.dart';
-import '../../application/workspace_controller.dart';
-import '../workspace_metrics.dart';
-import 'side_panel.dart';
-import 'workspace_controls.dart';
-
-/// Picks a working directory for a new session; overridable in tests.
-final directoryPickerProvider = Provider<Future<String?> Function()>(
-  (ref) => FilePicker.getDirectoryPath,
-);
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/directory_picker.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/animated_caret.dart';
+import 'package:atlas_flutter/shared/widgets/side_panel.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Sessions sidebar used by desktop panels and compact drawers.
 class const SessionsPanel({
@@ -37,7 +31,7 @@ class const SessionsPanel({
       semanticLabel: context.l10n.sessions,
       compact: onClose != null,
       action: onClose != null
-          ? WorkspaceToolbarButton(
+          ? AtlasToolbarButton(
               icon: LucideIcons.x,
               tooltip: context.l10n.closeSessions,
               size: 44,
@@ -64,7 +58,7 @@ class const _SessionsPanelToolbar({required final bool compact})
       padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
       child: Align(
         alignment: Alignment.bottomLeft,
-        child: WorkspaceToolbarButton(
+        child: AtlasToolbarButton(
           icon: LucideIcons.settings,
           tooltip: context.l10n.settings,
           size: compact ? 44 : null,
@@ -195,7 +189,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
           ),
         ),
         actions: [
-          WorkspaceHoverSurface(
+          AtlasHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             child: TextButton(
               style: const ButtonStyle(
@@ -205,7 +199,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
               child: Text(context.l10n.cancel),
             ),
           ),
-          WorkspaceHoverSurface(
+          AtlasHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             child: TextButton(
               style: const ButtonStyle(
@@ -241,7 +235,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
         title: Text(context.l10n.deleteSession),
         content: Text(context.l10n.deleteSessionQuestion(label)),
         actions: [
-          WorkspaceHoverSurface(
+          AtlasHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             child: TextButton(
               style: const ButtonStyle(
@@ -254,7 +248,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
               ),
             ),
           ),
-          WorkspaceHoverSurface(
+          AtlasHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             child: TextButton(
               style: const ButtonStyle(
@@ -320,7 +314,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
                 controller: _newSessionMenu,
                 style: MenuStyle(alignment: AlignmentDirectional.bottomStart),
                 menuChildren: [
-                  WorkspaceHoverSurface(
+                  AtlasHoverSurface(
                     borderRadius: BorderRadius.circular(AtlasRadii.control),
                     child: MenuItemButton(
                       style: const ButtonStyle(
@@ -338,7 +332,7 @@ class _SessionListState extends ConsumerState<_SessionList> {
                       ),
                     ),
                   ),
-                  WorkspaceHoverSurface(
+                  AtlasHoverSurface(
                     borderRadius: BorderRadius.circular(AtlasRadii.control),
                     child: MenuItemButton(
                       style: const ButtonStyle(
@@ -445,7 +439,7 @@ class const _SessionGroupHeader({
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return WorkspaceHoverSurface(
+    return AtlasHoverSurface(
       borderRadius: BorderRadius.circular(AtlasRadii.control),
       child: Material(
         type: MaterialType.transparency,
@@ -525,7 +519,7 @@ class _SessionTileState extends State<_SessionTile> {
         controller: _menuController,
         childFocusNode: _focusNode,
         menuChildren: [
-          WorkspaceHoverSurface(
+          AtlasHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             child: MenuItemButton(
               style: const ButtonStyle(
@@ -552,7 +546,7 @@ class _SessionTileState extends State<_SessionTile> {
               ),
             ),
           ),
-          WorkspaceHoverSurface(
+          AtlasHoverSurface(
             borderRadius: BorderRadius.circular(AtlasRadii.control),
             child: MenuItemButton(
               style: const ButtonStyle(
@@ -580,7 +574,7 @@ class _SessionTileState extends State<_SessionTile> {
             ),
           ),
         ],
-        child: WorkspaceHoverSurface(
+        child: AtlasHoverSurface(
           // Selected rows keep the highlight while not hovered.
           color: widget.selected ? colors.raised : null,
           borderRadius: BorderRadius.circular(AtlasRadii.control),
@@ -640,7 +634,7 @@ class _SessionTileState extends State<_SessionTile> {
                         Flexible(
                           fit: FlexFit.tight,
                           child: Text(
-                            WorkspaceMetrics.directoryLabel(
+                            AtlasLayoutMetrics.directoryLabel(
                               session.workingDirectory,
                             ),
                             maxLines: 1,
@@ -754,7 +748,7 @@ class const _SidebarActionButton({
   @override
   Widget build(BuildContext context) {
     final colors = AtlasColors.of(context);
-    return WorkspaceHoverSurface(
+    return AtlasHoverSurface(
       borderRadius: BorderRadius.circular(AtlasRadii.control),
       child: Material(
         type: MaterialType.transparency,

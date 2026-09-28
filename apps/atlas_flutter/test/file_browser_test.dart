@@ -1,15 +1,18 @@
 import 'dart:io';
 
-import 'package:atlas_flutter/app/runtime_environment.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/files/application/file_browser_controller.dart';
+import 'package:atlas_flutter/features/files/data/file_browser_service.dart';
+import 'package:atlas_flutter/features/files/presentation/file_browser.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
-import 'package:atlas_flutter/features/workspace/data/file_browser_service.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/file_browser_host.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -46,14 +49,14 @@ void main() {
   }) async {
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          fileBrowserServiceProvider.overrideWithValue(
+            service ?? const FileBrowserService(),
+          ),
+        ],
         child: MaterialApp(
           theme: buildAtlasTheme(AtlasPalette.standard, Brightness.light),
-          home: Scaffold(
-            body: FileBrowser(
-              workingDirectory: tempDir.path,
-              service: service ?? const FileBrowserService(),
-            ),
-          ),
+          home: Scaffold(body: FileBrowser(workingDirectory: tempDir.path)),
         ),
       ),
     );

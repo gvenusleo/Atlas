@@ -1,0 +1,345 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:morphnext/morphnext.dart';
+import 'package:window_manager/window_manager.dart';
+
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+
+/// Whether the host window lacks native edge resizing and needs the
+/// in-widget resize ring. macOS keeps native resize edges, and the
+/// window_manager Windows plugin installs hit-test edges for frameless
+/// windows; on Linux the hidden title bar leaves the GTK window without
+/// native decorations, which drops both SSD and CSD edges on every backend.
+bool get needsResizeRing {
+  if (!AtlasLayoutMetrics.usesIntegratedTitlebar || !Platform.isLinux) {
+    return false;
+  }
+  return true;
+}
+
+/// Whether custom minimize/maximize/close buttons should be shown. macOS
+/// keeps its native traffic lights and never draws the group; Windows hides
+/// the native title bar and relies on it everywhere; Linux shows it except
+/// on tiling Wayland compositors (Hyprland, Sway, i3), which drive those
+/// commands through keybindings.
+bool usesCaptionControls({
+  required String desktop,
+  required String sessionType,
+}) {
+  if (!AtlasLayoutMetrics.usesIntegratedTitlebar) {
+    return false;
+  }
+  if (defaultTargetPlatform == TargetPlatform.macOS) {
+    return false;
+  }
+  if (defaultTargetPlatform != TargetPlatform.linux) {
+    return true;
+  }
+  // Empty XDG_CURRENT_DESKTOP values fall through to showing the controls:
+  // an unidentifiable compositor is assumed to be floating-desktop-like.
+  final onTilingCompositor =
+      sessionType == 'wayland' &&
+      const ['hyprland', 'sway', 'i3'].contains(desktop.toLowerCase());
+  return !onTilingCompositor;
+}
+
+/// A transparent ring around application pages that restores edge resizing on
+/// platforms where the hidden title bar removes native resize handles.
+class const AtlasResizeRing({super.key, required final Widget child})
+    extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    if (!needsResizeRing) {
+      return child;
+    }
+    return DragToResizeArea(resizeEdgeSize: 4, child: child);
+  }
+}
+
+/// Minimize, maximize and close buttons for platforms without native
+/// caption controls, matching the workspace toolbar's visual language.
+class const AtlasWindowControls({super.key}) extends StatefulWidget {
+  @override
+  State<AtlasWindowControls> createState() => _AtlasWindowControlsState();
+}
+
+class _AtlasWindowControlsState extends State<AtlasWindowControls>
+    with WindowListener {
+  bool _maximized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+    unawaited(_refreshMaximized());
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowMaximize() {
+    if (mounted) {
+      setState(() => _maximized = true);
+    }
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    if (mounted) {
+      setState(() => _maximized = false);
+    }
+  }
+
+  Future<void> _toggleMaximize() async {
+    if (await windowManager.isMaximized()) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+  }
+
+  Future<void> _refreshMaximized() async {
+    final maximized = await windowManager.isMaximized();
+    if (mounted && maximized != _maximized) {
+      setState(() => _maximized = maximized);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The glyph mirrors the resulting state: tapping restore shows the
+    // overlaid squares, tapping maximize shows the plain square.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AtlasToolbarButton(
+          icon: LucideIcons.minus,
+          tooltip: context.l10n.minimize,
+          onPressed: windowManager.minimize,
+        ),
+        AtlasToolbarButton(
+          icon: _maximized ? LucideIcons.copy : LucideIcons.square,
+          tooltip: _maximized ? context.l10n.restore : context.l10n.maximize,
+          onPressed: () async {
+            await _toggleMaximize();
+            await _refreshMaximized();
+          },
+        ),
+        AtlasToolbarButton(
+          icon: LucideIcons.x,
+          tooltip: context.l10n.close,
+          onPressed: windowManager.close,
+        ),
+      ],
+    );
+  }
+}
+
+/// Makes a toolbar draggable on platforms with an integrated titlebar.
+class const AtlasTitlebarDragArea({super.key, required final Widget child})
+    extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    if (!AtlasLayoutMetrics.usesIntegratedTitlebar) {
+      return child;
+    }
+    // The drag area stays behind the content so its double-tap recognizer
+    // never delays taps on toolbar controls.
+    return Stack(
+      children: [
+        const Positioned.fill(child: DragToMoveArea(child: SizedBox.expand())),
+        child,
+      ],
+    );
+  }
+}
+
+/// Resizable gutter joining a desktop sidebar to the central workspace.
+class const AtlasResizeHandle({
+  super.key,
+  required final bool panelOnLeft,
+  required final ValueChanged<double> onDrag,
+}) extends StatefulWidget {
+  @override
+  State<AtlasResizeHandle> createState() => _AtlasResizeHandleState();
+}
+
+class _AtlasResizeHandleState extends State<AtlasResizeHandle> {
+  bool _hovered = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => setState(() => _dragging = true),
+        onHorizontalDragUpdate: (details) => widget.onDrag(details.delta.dx),
+        onHorizontalDragEnd: (_) => setState(() => _dragging = false),
+        onHorizontalDragCancel: () => setState(() => _dragging = false),
+        child: SizedBox(
+          width: AtlasLayoutMetrics.resizeHandleWidth,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: ColoredBox(
+                      color: widget.panelOnLeft ? colors.panel : colors.canvas,
+                    ),
+                  ),
+                  Expanded(child: ColoredBox(color: colors.canvas)),
+                ],
+              ),
+              Positioned(
+                top: AtlasLayoutMetrics.desktopToolbarHeight,
+                left: 0,
+                right: 0,
+                child: SizedBox(
+                  key: const ValueKey('atlas-resize-header-divider'),
+                  height: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(color: colors.divider),
+                  ),
+                ),
+              ),
+              Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: 1,
+                  color: _hovered || _dragging ? colors.accent : colors.divider,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Paints the Atlas hover highlight behind its child.
+///
+/// While the pointer is over the child, [hoveredColor] (defaults to the
+/// raised surface color) fades in as a rounded background behind the child,
+/// matching the shared button hover interaction.
+class const AtlasHoverSurface({
+  super.key,
+
+  /// The child painted above the hover background.
+  required final Widget child,
+
+  /// Background color while not hovered.
+  final Color? color,
+
+  /// Background color while hovered; defaults to the raised surface color.
+  final Color? hoveredColor,
+
+  /// Corner radius of the hover background.
+  final BorderRadiusGeometry borderRadius = const BorderRadius.all(
+    Radius.circular(AtlasRadii.control),
+  ),
+
+  /// Whether hover tracking is active.
+  final bool enabled = true,
+}) extends StatefulWidget {
+  @override
+  State<AtlasHoverSurface> createState() => _AtlasHoverSurfaceState();
+}
+
+class _AtlasHoverSurfaceState extends State<AtlasHoverSurface> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return MouseRegion(
+      onEnter: widget.enabled ? (_) => setState(() => _hovered = true) : null,
+      onExit: widget.enabled ? (_) => setState(() => _hovered = false) : null,
+      child: AnimatedContainer(
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: _hovered
+              ? (widget.hoveredColor ?? colors.raised)
+              : widget.color,
+          borderRadius: widget.borderRadius,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Cupertino toolbar action with Atlas hover and tooltip styling.
+class const AtlasToolbarButton({
+  super.key,
+  required final IconData icon,
+  required final String tooltip,
+  required final VoidCallback onPressed,
+  final bool active = false,
+
+  /// Square side length; use a larger value for touch layouts.
+  final double? size,
+}) extends StatefulWidget {
+  @override
+  State<AtlasToolbarButton> createState() => _AtlasToolbarButtonState();
+}
+
+class _AtlasToolbarButtonState extends State<AtlasToolbarButton> {
+  @override
+  Widget build(BuildContext context) {
+    final colors = AtlasColors.of(context);
+
+    return AtlasHoverSurface(
+      // Active buttons keep the highlight while not hovered.
+      color: widget.active ? colors.raised : null,
+      borderRadius: BorderRadius.circular(AtlasRadii.control),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(
+            width: widget.size ?? AtlasLayoutMetrics.desktopToolbarButtonSize,
+            height: widget.size ?? AtlasLayoutMetrics.desktopToolbarButtonSize,
+          ),
+          style: IconButton.styleFrom(
+            // The outer surface paints the hover/active background as a
+            // rounded rectangle; keep the button's own overlay transparent
+            // so it never draws a circular highlight on top.
+            overlayColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AtlasRadii.control),
+            ),
+          ),
+          onPressed: widget.onPressed,
+          icon: AnimatedMorphIcon(
+            icon: widget.icon,
+            color: widget.active ? colors.textPrimary : colors.textSecondary,
+            size: 16,
+            semanticLabel: widget.tooltip,
+          ),
+        ),
+      ),
+    );
+  }
+}

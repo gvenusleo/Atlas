@@ -5,14 +5,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../features/workspace/application/terminal_registry.dart';
-import '../l10n/app_localizations.dart';
-import '../shared/theme/atlas_theme.dart';
-import 'app_router.dart';
-import 'locale_mode.dart';
-import 'platform_window.dart';
-import 'runtime_environment.dart';
-import 'theme_mode.dart';
+import 'package:atlas_flutter/app/platform/platform_window.dart';
+import 'package:atlas_flutter/app/routing/app_router.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/settings/application/locale_mode.dart';
+import 'package:atlas_flutter/features/settings/application/theme_mode.dart';
+import 'package:atlas_flutter/features/terminal/application/terminal_registry.dart';
+import 'package:atlas_flutter/l10n/app_localizations.dart';
+import 'package:atlas_flutter/l10n/locale_resolution.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Root application for the Atlas desktop and mobile clients.
 class const AtlasApp({super.key}) extends ConsumerStatefulWidget {

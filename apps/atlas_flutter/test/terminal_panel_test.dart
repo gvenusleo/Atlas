@@ -1,7 +1,9 @@
-import 'package:atlas_flutter/app/runtime_environment.dart';
-import 'package:atlas_flutter/features/workspace/application/terminal_registry.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/terminal/application/terminal_registry.dart';
+import 'package:atlas_flutter/features/terminal/presentation/terminal_panel.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/terminal_panel.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/terminal_host.dart';
 import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
-import 'app_localizations.dart';
-import 'app_localizations_en.dart';
+import 'package:atlas_flutter/l10n/app_localizations.dart';
+import 'package:atlas_flutter/l10n/app_localizations_en.dart';
 
 /// Looks up the current UI language. Standalone widget tests without an app
 /// localization delegate keep their previous English behavior.

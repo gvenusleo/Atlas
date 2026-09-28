@@ -1,11 +1,12 @@
+import 'package:atlas_flutter/features/terminal/domain/terminal_port.dart';
+
 import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:atlas_flutter/app/atlas_app.dart';
-import 'package:atlas_flutter/app/runtime_environment.dart';
-import 'package:atlas_flutter/features/remote_connection/application/runtime_controller.dart';
-import 'package:atlas_flutter/features/workspace/application/terminal_registry.dart';
-import 'package:atlas_flutter/features/workspace/data/terminal_session.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/terminal/application/terminal_registry.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

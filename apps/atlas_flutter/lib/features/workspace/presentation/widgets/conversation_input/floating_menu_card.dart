@@ -1,10 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../../shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 /// Maximum rows shown in a floating picker before its list scrolls.
 const maxPickerRows = 8;

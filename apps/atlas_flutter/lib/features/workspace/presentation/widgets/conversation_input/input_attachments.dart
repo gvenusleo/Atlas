@@ -1,10 +1,10 @@
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../../../shared/theme/atlas_theme.dart';
-import '../../../../../l10n/localizations.dart';
-import '../../../data/image_attachment.dart';
-import '../workspace_controls.dart';
+import 'package:atlas_flutter/features/workspace/domain/image_attachment.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Toolbar trigger that opens the image picker.
 class const AttachImageButton({
@@ -18,7 +18,7 @@ class const AttachImageButton({
     final colors = AtlasColors.of(context);
     return Tooltip(
       message: enabled ? context.l10n.attachImage : context.l10n.modelNoImages,
-      child: WorkspaceHoverSurface(
+      child: AtlasHoverSurface(
         enabled: enabled && !attaching,
         borderRadius: BorderRadius.circular(AtlasRadii.control),
         child: IconButton(

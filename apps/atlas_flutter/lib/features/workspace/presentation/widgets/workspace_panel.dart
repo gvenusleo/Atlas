@@ -2,15 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../remote_connection/application/runtime_controller.dart';
-import '../../../../shared/theme/atlas_theme.dart';
-import '../../../../l10n/localizations.dart';
-import '../../../remote_connection/presentation/remote_connect_view.dart';
-import '../../application/workspace_controller.dart';
-import '../workspace_metrics.dart';
-import 'conversation_view.dart';
-import 'permission_dialog.dart';
-import 'workspace_controls.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_state.dart';
+import 'package:atlas_flutter/features/connections/presentation/remote_connect_view.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/permission_dialog.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/layout/atlas_layout_metrics.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/window_controls.dart';
 
 /// Central conversation panel and its responsive toolbar.
 class const WorkspacePanel({
@@ -48,12 +49,12 @@ class const WorkspacePanel({
                   .firstOrNull ??
               context.l10n.session;
     final leftToolbarInset =
-        WorkspaceMetrics.showsTrafficLights && (compact || !leftActive)
-        ? WorkspaceMetrics.macOSTrafficLightInset
+        AtlasLayoutMetrics.showsTrafficLights && (compact || !leftActive)
+        ? AtlasLayoutMetrics.macOSTrafficLightInset
         : 6.0;
     final animationDuration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : WorkspaceMetrics.sidebarAnimationDuration;
+        : AtlasLayoutMetrics.sidebarAnimationDuration;
     final runtimeState = ref.watch(runtimeEnvironmentProvider);
     final remoteStatus = runtimeState.remoteStatus;
 
@@ -64,11 +65,11 @@ class const WorkspacePanel({
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            WorkspaceTitlebarDragArea(
+            AtlasTitlebarDragArea(
               child: SizedBox(
                 height: compact
-                    ? WorkspaceMetrics.compactToolbarHeight
-                    : WorkspaceMetrics.desktopToolbarHeight,
+                    ? AtlasLayoutMetrics.compactToolbarHeight
+                    : AtlasLayoutMetrics.desktopToolbarHeight,
                 child: AnimatedPadding(
                   duration: animationDuration,
                   curve: Curves.easeOutCubic,
@@ -76,7 +77,7 @@ class const WorkspacePanel({
                   child: Row(
                     children: [
                       if (compact)
-                        WorkspaceToolbarButton(
+                        AtlasToolbarButton(
                           key: const ValueKey('atlas-left-toggle'),
                           icon: LucideIcons.panelLeft,
                           tooltip: context.l10n.openSessions,
@@ -89,7 +90,7 @@ class const WorkspacePanel({
                           curve: Curves.easeOutCubic,
                           width: leftActive
                               ? 0
-                              : WorkspaceMetrics.desktopToolbarButtonSize,
+                              : AtlasLayoutMetrics.desktopToolbarButtonSize,
                         ),
                       const SizedBox(width: 4),
                       Expanded(
@@ -129,7 +130,7 @@ class const WorkspacePanel({
                           ),
                         ),
                       if (compact)
-                        WorkspaceToolbarButton(
+                        AtlasToolbarButton(
                           key: const ValueKey('atlas-right-toggle'),
                           icon: LucideIcons.panelRight,
                           tooltip: context.l10n.openWorkspaceTools,

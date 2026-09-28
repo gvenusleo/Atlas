@@ -1,6 +1,11 @@
-import 'package:atlas_flutter/app/locale_mode.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:atlas_flutter/features/settings/application/locale_mode.dart';
+import 'package:atlas_flutter/features/settings/application/preferences_provider.dart';
+import 'package:atlas_flutter/features/settings/data/preferences_repository.dart';
+import 'package:atlas_flutter/features/settings/data/preferences_store.dart';
+import 'package:atlas_flutter/features/settings/domain/app_language.dart';
+import 'package:atlas_flutter/l10n/locale_resolution.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,8 +18,8 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     final container = ProviderContainer(
       overrides: [
-        languageProvider.overrideWith(
-          () => LanguageController(preferences: preferences),
+        preferencesRepositoryProvider.overrideWithValue(
+          PreferencesRepository(store: SharedPreferencesStore(preferences)),
         ),
       ],
     );
@@ -64,6 +69,6 @@ void main() {
         .read(languageProvider.notifier)
         .select(AppLanguage.simplifiedChinese);
     expect(container.read(languageProvider), AppLanguage.simplifiedChinese);
-    await saveAppLanguage(null, AppLanguage.english);
+    await const PreferencesRepository().saveLanguage(AppLanguage.english);
   });
 }

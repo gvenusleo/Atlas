@@ -1,6 +1,16 @@
 import 'dart:convert';
 
 import 'package:atlas_acp/atlas_acp.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/connections/domain/runtime_environment.dart';
+import 'package:atlas_flutter/features/workspace/application/image_attachments.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
+import 'package:atlas_flutter/features/workspace/domain/image_attachment.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/conversation_input.dart';
+import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:atlas_storage/atlas_storage.dart';
 import 'package:atlas_tools/atlas_tools.dart';
@@ -9,15 +19,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-
-import 'package:atlas_flutter/app/runtime_environment.dart';
-import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
-import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
-import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
-import 'package:atlas_flutter/features/workspace/data/image_attachment.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_input/conversation_input.dart';
-import 'package:atlas_flutter/features/workspace/presentation/widgets/conversation_view.dart';
-import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
 
 void main() {
   testWidgets('model picker supports keyboard navigation', (tester) async {

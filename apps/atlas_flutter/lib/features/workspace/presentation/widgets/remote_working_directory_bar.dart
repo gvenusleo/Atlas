@@ -2,11 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../remote_connection/application/runtime_controller.dart';
-import '../../../../shared/theme/atlas_theme.dart';
-import '../../../../l10n/localizations.dart';
-import '../../../../shared/widgets/animated_caret.dart';
-import '../../application/workspace_controller.dart';
+import 'package:atlas_flutter/features/connections/application/runtime_controller.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_controller.dart';
+import 'package:atlas_flutter/l10n/localizations.dart';
+import 'package:atlas_flutter/shared/theme/atlas_theme.dart';
+import 'package:atlas_flutter/shared/widgets/animated_caret.dart';
 
 /// Prompts for the computer-side working directory of a remote connection.
 ///
