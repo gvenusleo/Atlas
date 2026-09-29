@@ -28,7 +28,7 @@ class const SessionPaneHost({super.key}) extends ConsumerWidget {
       workspaceProvider.select((state) => state.activeKey),
     );
     final keys = ref.watch(
-      workspaceProvider.select((state) => [...state.workspaces.keys]),
+      workspaceProvider.select((state) => state.workspaceKeys),
     );
     final index = keys.indexOf(activeKey);
     return IndexedStack(
@@ -52,8 +52,15 @@ class const _SessionPane({
 }) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final workspace = ref.watch(
-      workspaceProvider.select((s) => s.workspaces[sessionKey] ?? s.active),
+    final (busy, turnPhase, turnStartedAt, sessionId) = ref.watch(
+      sessionWorkspaceProvider(sessionKey).select(
+        (workspace) => (
+          workspace.busy,
+          workspace.turnPhase,
+          workspace.turnStartedAt,
+          workspace.sessionId,
+        ),
+      ),
     );
     return ExcludeFocus(
       excluding: !active,
@@ -69,15 +76,15 @@ class const _SessionPane({
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (active && workspace.busy)
+                    if (active && busy)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
                         child: TurnStatusBanner(
-                          phase: workspace.turnPhase,
-                          startedAt: workspace.turnStartedAt,
+                          phase: turnPhase,
+                          startedAt: turnStartedAt,
                         ),
                       ),
-                    if (active && workspace.sessionId == null)
+                    if (active && sessionId == null)
                       const RemoteWorkingDirectoryBar(),
                     ConversationInput(sessionKey: sessionKey, active: active),
                   ],
@@ -119,13 +126,12 @@ class _ConversationViewState extends ConsumerState<ConversationView> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionKey =
+    final String sessionKey =
         widget.sessionKey ??
         ref.watch(workspaceProvider.select((state) => state.activeKey));
-    final workspace = ref.watch(
-      workspaceProvider.select((s) => s.workspaces[sessionKey] ?? s.active),
+    final messages = ref.watch(
+      sessionWorkspaceProvider(sessionKey).select((w) => w.messages),
     );
-    final messages = workspace.messages;
     final textLength = messages.fold<int>(
       0,
       (length, message) => length + message.text.length,

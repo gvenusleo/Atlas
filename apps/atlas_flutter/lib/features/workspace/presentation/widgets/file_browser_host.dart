@@ -27,7 +27,7 @@ class _FileBrowserHostState extends ConsumerState<FileBrowserHost> {
   @override
   Widget build(BuildContext context) {
     final liveKeys = ref.watch(
-      workspaceProvider.select((state) => state.workspaces.keys.toSet()),
+      workspaceProvider.select((state) => state.workspaceKeys),
     );
     final directories = <String, String>{
       for (final entry in _directories.entries)

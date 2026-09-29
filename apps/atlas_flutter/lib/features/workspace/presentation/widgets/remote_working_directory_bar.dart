@@ -38,10 +38,13 @@ class _RemoteWorkingDirectoryBarState
     }
     // Only drafts need the directory: resuming an existing session keeps the
     // directory the session was created in.
-    final focused = ref.watch(
-      workspaceProvider.select((s) => s.workspaces[s.activeKey]),
+    final showsForDraft = ref.watch(
+      workspaceProvider.select((s) {
+        final focused = s.workspaces[s.activeKey];
+        return focused != null && focused.sessionId == null;
+      }),
     );
-    if (focused == null || focused.sessionId != null) {
+    if (!showsForDraft) {
       return const SizedBox.shrink();
     }
     final colors = AtlasColors.of(context);

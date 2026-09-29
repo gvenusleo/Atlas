@@ -101,44 +101,25 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionKey = widget.sessionKey;
+    final String sessionKey =
+        widget.sessionKey ??
+        ref.watch(workspaceProvider.select((s) => s.activeKey));
     final colors = AtlasColors.of(context);
     final suggestions = _suggestions;
-    final busy = ref.watch(
-      workspaceProvider.select(
-        (s) => sessionKey == null
-            ? s.busy
-            : s.workspaces[sessionKey]?.busy ?? false,
+    final (busy, activeModel, reasoningEffort, mode, contextTokens) = ref.watch(
+      sessionWorkspaceProvider(sessionKey).select(
+        (workspace) => (
+          workspace.busy,
+          workspace.activeModel,
+          workspace.reasoningEffort,
+          workspace.mode,
+          workspace.contextTokens,
+        ),
       ),
     );
-    final activeModel = ref.watch(
-      workspaceProvider.select(
-        (s) => sessionKey == null
-            ? s.activeModel
-            : s.workspaces[sessionKey]?.activeModel ?? s.activeModel,
-      ),
-    );
-    final reasoningEffort = ref.watch(
-      workspaceProvider.select(
-        (s) => sessionKey == null
-            ? s.reasoningEffort
-            : s.workspaces[sessionKey]?.reasoningEffort,
-      ),
-    );
-    final mode = ref.watch(
-      workspaceProvider.select(
-        (s) => sessionKey == null ? s.mode : s.workspaces[sessionKey]?.mode,
-      ),
-    );
-    final contextTokens = ref.watch(
-      workspaceProvider.select(
-        (s) => sessionKey == null
-            ? s.contextTokens
-            : s.workspaces[sessionKey]?.contextTokens ?? 0,
-      ),
-    );
+    final models = ref.watch(workspaceProvider.select((s) => s.models));
+    final modes = ref.watch(workspaceProvider.select((s) => s.modes));
     final controller = ref.read(workspaceProvider.notifier);
-    final catalog = ref.watch(workspaceProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
       child: ConstrainedBox(
@@ -228,7 +209,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                             ),
                             const SizedBox(width: 4),
                             ModelMenu(
-                              models: catalog.models,
+                              models: models,
                               activeModel: activeModel,
                               onTap: _toggleModel,
                             ),
@@ -239,9 +220,9 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                                 value: reasoningEffort,
                                 onTap: _toggleEffort,
                               ),
-                            if (catalog.modes.isNotEmpty)
+                            if (modes.isNotEmpty)
                               ModeMenu(
-                                modes: catalog.modes,
+                                modes: modes,
                                 value: mode,
                                 onTap: _toggleMode,
                               ),
@@ -322,7 +303,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                       showWhenUnlinked: false,
                       offset: Offset(
                         0,
-                        -(math.min(catalog.models.length, maxPickerRows) *
+                        -(math.min(models.length, maxPickerRows) *
                                 ModelMenuCard.rowHeight +
                             ModelMenuCard.cardPadding * 2 +
                             8),
@@ -331,7 +312,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                         width: 280,
                         child: ModelMenuCard(
                           key: _menuKeys[InputMenu.model],
-                          models: catalog.models,
+                          models: models,
                           activeModel: activeModel,
                           highlighted: _menus.highlight(InputMenu.model),
                           onHighlighted: (index) => setState(
@@ -389,7 +370,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                       showWhenUnlinked: false,
                       offset: Offset(
                         0,
-                        -(math.min(catalog.modes.length, maxPickerRows) *
+                        -(math.min(modes.length, maxPickerRows) *
                                 ModeMenuCard.rowHeight +
                             ModeMenuCard.cardPadding * 2 +
                             8),
@@ -398,7 +379,7 @@ class _ConversationInputState extends ConsumerState<ConversationInput> {
                         width: 150,
                         child: ModeMenuCard(
                           key: _menuKeys[InputMenu.mode],
-                          modes: catalog.modes,
+                          modes: modes,
                           value: mode,
                           highlighted: _menus.highlight(InputMenu.mode),
                           onHighlighted: (index) => setState(

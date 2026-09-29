@@ -116,6 +116,74 @@ void main() {
     expect(container.read(workspaceProvider).active.turnPhase, TurnPhase.idle);
     expect(container.read(workspaceProvider).active.turnStartedAt, isNull);
   });
+  test('streaming a turn leaves unrelated watchers alone', () async {
+    final model = ModelDescriptor(
+      ref: ModelRef(
+        providerId: ProviderId('test'),
+        modelId: ModelId('watched'),
+      ),
+    );
+    final provider = GatedFakeProvider(model.ref);
+    final store = DriftSessionStore.inMemory();
+    final runtime = AgentRuntime(
+      store: store,
+      provider: provider,
+      tools: LocalToolRegistry(const []),
+      ids: SecureIdGenerator(),
+      defaultModel: model.ref,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        runtimeEnvironmentProvider.overrideWith(
+          () => RuntimeEnvironmentController(
+            local: RuntimeEnvironment(runtime: runtime, models: [model]),
+          ),
+        ),
+        workspaceWorkingDirectoryProvider.overrideWith(
+          () => FixedWorkingDirectory('/tmp'),
+        ),
+      ],
+    );
+    addTearDown(store.close);
+    addTearDown(container.dispose);
+    final controller = container.read(workspaceProvider.notifier);
+    final key = container.read(workspaceProvider).activeKey;
+
+    // Tokens may only notify the session transcript: every other listener
+    // rebuilds a panel that did not change.
+    var models = 0;
+    var permissions = 0;
+    var keys = 0;
+    var transcript = 0;
+    container.listen(
+      workspaceProvider.select((s) => s.models),
+      (_, _) => models++,
+    );
+    container.listen(
+      workspaceProvider.select((s) => s.pendingPermissions),
+      (_, _) => permissions++,
+    );
+    container.listen(
+      workspaceProvider.select((s) => s.workspaceKeys),
+      (_, _) => keys++,
+    );
+    container.listen(
+      sessionWorkspaceProvider(key).select((w) => w.messages),
+      (_, _) => transcript++,
+    );
+
+    final turn = controller.send('hello');
+    await pumpEventQueue();
+    provider.reasoningGate.complete();
+    await pumpEventQueue();
+    provider.textGate.complete();
+    await turn;
+
+    expect(models, 0);
+    expect(permissions, 0);
+    expect(keys, 0);
+    expect(transcript, greaterThan(0));
+  });
   test('resume restores persisted reasoning messages', () async {
     final model = ModelDescriptor(
       ref: ModelRef(

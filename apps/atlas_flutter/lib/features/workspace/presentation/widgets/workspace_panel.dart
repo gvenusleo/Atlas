@@ -36,11 +36,12 @@ class const WorkspacePanel({
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = AtlasColors.of(context);
     final environment = ref.watch(runtimeEnvironmentProvider).environment;
-    final workspace = ref.watch(workspaceProvider);
-    final sessionTitle = environment == null || workspace.sessionId == null
+    final sessionId = ref.watch(workspaceProvider.select((s) => s.sessionId));
+    final sessions = ref.watch(workspaceProvider.select((s) => s.sessions));
+    final sessionTitle = environment == null || sessionId == null
         ? context.l10n.newSession
-        : workspace.sessions
-                  .where((session) => session.id == workspace.sessionId)
+        : sessions
+                  .where((session) => session.id == sessionId)
                   .map(
                     (session) => session.title.isEmpty
                         ? context.l10n.untitledSession

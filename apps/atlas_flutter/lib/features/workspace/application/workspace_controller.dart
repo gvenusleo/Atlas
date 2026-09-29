@@ -9,7 +9,7 @@ import 'package:atlas_flutter/features/connections/domain/runtime_environment.da
 import 'package:atlas_flutter/features/workspace/application/session_catalog.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_message.dart';
 import 'package:atlas_flutter/features/workspace/application/workspace_state.dart';
-import 'package:atlas_flutter/features/workspace/application/workspace_timeline.dart';
+import 'package:atlas_flutter/features/workspace/application/workspace_transcript.dart';
 import 'package:atlas_flutter/shared/application/working_directory.dart';
 
 export 'package:atlas_flutter/shared/application/working_directory.dart';
@@ -623,94 +623,60 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           ),
         );
       case ModelTextDelta(:final delta):
-        _finishRunningReasoning(target);
-        _appendDelta(target, WorkspaceMessageKind.assistant, delta);
-        _patch(
+        _streamDelta(
           target,
-          (workspace) => workspace.copyWith(turnPhase: TurnPhase.working),
+          WorkspaceMessageKind.assistant,
+          delta,
+          phase: TurnPhase.working,
+          finishReasoning: true,
         );
       case ModelReasoningDelta(:final delta):
-        _appendDelta(target, WorkspaceMessageKind.reasoning, delta);
-        _patch(
+        _streamDelta(
           target,
-          (workspace) => workspace.copyWith(turnPhase: TurnPhase.thinking),
+          WorkspaceMessageKind.reasoning,
+          delta,
+          phase: TurnPhase.thinking,
+          finishReasoning: false,
         );
       case PlanUpdated(:final entries):
-        _finishRunningReasoning(target);
+        final planText = entries
+            .map((entry) => '${_planMarker(entry.status)} ${entry.content}')
+            .join('\n');
         _patch(target, (workspace) {
-          final planText = entries
-              .map((entry) => '${_planMarker(entry.status)} ${entry.content}')
-              .join('\n');
-          final index = workspace.messages.lastIndexWhere(
-            (message) => message.kind == WorkspaceMessageKind.plan,
-          );
-          final messages = [...workspace.messages];
-          if (index < 0) {
-            messages.add(
-              WorkspaceMessage(
-                id: 'plan-${event.turnId.value}',
-                kind: WorkspaceMessageKind.plan,
-                text: planText,
-              ),
-            );
-          } else {
-            messages[index] = messages[index].copyWith(text: planText);
-          }
           return workspace.copyWith(
             turnPhase: TurnPhase.working,
-            messages: messages,
+            messages: upsertPlanMessage(
+              finishRunningReasoning(workspace.messages),
+              id: 'plan-${event.turnId.value}',
+              text: planText,
+            ),
           );
         });
       case ToolStarted(:final call):
-        _finishRunningReasoning(target);
         _streamOpen[target] = false;
         _patch(target, (workspace) {
           return workspace.copyWith(
             turnPhase: TurnPhase.working,
-            messages: [
-              ...workspace.messages,
-              WorkspaceMessage(
-                id: call.call.id.value,
-                kind: WorkspaceMessageKind.tool,
-                text: '',
-                toolName: call.call.name,
-                arguments: call.call.arguments,
-                startedAt: DateTime.now(),
-                isRunning: true,
-              ),
-            ],
+            messages: startToolCall(
+              finishRunningReasoning(workspace.messages),
+              call.call,
+              startedAt: DateTime.now(),
+            ),
           );
         });
       case ToolOutputUpdated(:final callId, :final output):
-        _patch(target, (workspace) {
-          final index = workspace.messages.lastIndexWhere(
-            (message) =>
-                message.kind == WorkspaceMessageKind.tool &&
-                message.isRunning &&
-                message.id == callId.value,
-          );
-          if (index < 0) return workspace;
-          final messages = [...workspace.messages];
-          messages[index] = messages[index].copyWith(text: output.content);
-          return workspace.copyWith(messages: messages);
-        });
+        _patchMessages(
+          target,
+          (messages) => updateToolOutput(messages, callId, output.content),
+        );
       case ToolFinished(:final result):
         _streamOpen[target] = false;
         _patch(target, (workspace) {
-          final index = workspace.messages.indexWhere(
-            (message) =>
-                message.kind == WorkspaceMessageKind.tool &&
-                message.isRunning &&
-                message.id == result.callId.value,
-          );
-          if (index < 0) {
-            return workspace.copyWith(turnPhase: TurnPhase.working);
-          }
-          final messages = [...workspace.messages];
-          messages[index] = messages[index].copyWith(
-            text: result.content,
+          final messages = finishToolCall(
+            workspace.messages,
+            result.callId,
+            content: result.content,
             isError: result.isError,
-            isRunning: false,
           );
           return workspace.copyWith(
             turnPhase: TurnPhase.working,
@@ -729,7 +695,6 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           (workspace) => workspace.copyWith(contextTokens: usage.contextTokens),
         );
       case TurnFinished(:final outcome):
-        _finishRunningReasoning(target);
         _streamOpen[target] = false;
         if (outcome.status == TurnStatus.cancelled) {
           _appendLocal(
@@ -745,6 +710,7 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
           (workspace) => workspace.copyWith(
             turnPhase: TurnPhase.idle,
             contextTokens: outcome.usage.contextTokens,
+            messages: finishRunningReasoning(workspace.messages),
           ),
         );
       case CompactionStarted():
@@ -806,31 +772,30 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     return true;
   }
 
-  void _appendDelta(String key, WorkspaceMessageKind kind, String delta) {
+  /// Streams a text or reasoning [delta] into a session transcript.
+  ///
+  /// Assistant text closes a running reasoning summary first. Deltas coalesce
+  /// into the trailing message of the same kind while a turn is streaming.
+  void _streamDelta(
+    String key,
+    WorkspaceMessageKind kind,
+    String delta, {
+    required TurnPhase phase,
+    required bool finishReasoning,
+  }) {
     _patch(key, (workspace) {
-      final messages = workspace.messages;
-      final last = messages.lastOrNull;
-      if ((_streamOpen[key] ?? false) && last?.kind == kind) {
-        return workspace.copyWith(
-          messages: [
-            ...messages.sublist(0, messages.length - 1),
-            last!.copyWith(text: last.text + delta),
-          ],
-        );
-      }
+      final messages = finishReasoning
+          ? finishRunningReasoning(workspace.messages)
+          : workspace.messages;
       return workspace.copyWith(
-        messages: [
-          ...messages,
-          WorkspaceMessage(
-            id: _nextId(),
-            kind: kind,
-            text: delta,
-            startedAt: kind == WorkspaceMessageKind.reasoning
-                ? DateTime.now()
-                : null,
-            isRunning: kind == WorkspaceMessageKind.reasoning,
-          ),
-        ],
+        turnPhase: phase,
+        messages: appendStreamDelta(
+          messages,
+          kind: kind,
+          delta: delta,
+          streaming: _streamOpen[key] ?? false,
+          nextId: _nextId,
+        ),
       );
     });
     _streamOpen[key] = true;
@@ -843,10 +808,11 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     List<Object> arguments = const [],
   ]) {
     _streamOpen[key] = false;
-    _patch(key, (workspace) {
-      return workspace.copyWith(
-        messages: [
-          ...workspace.messages,
+    _patch(
+      key,
+      (workspace) => workspace.copyWith(
+        messages: appendMessage(
+          workspace.messages,
           WorkspaceMessage(
             id: _nextId(),
             kind: kind,
@@ -854,9 +820,9 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
             localMessage: message,
             localArguments: arguments,
           ),
-        ],
-      );
-    });
+        ),
+      ),
+    );
   }
 
   void _append(
@@ -866,34 +832,32 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     List<String> imageSources = const [],
   }) {
     _streamOpen[key] = false;
-    _patch(key, (workspace) {
-      return workspace.copyWith(
-        messages: [
-          ...workspace.messages,
+    _patch(
+      key,
+      (workspace) => workspace.copyWith(
+        messages: appendMessage(
+          workspace.messages,
           WorkspaceMessage(
             id: _nextId(),
             kind: kind,
             text: text,
             imageSources: imageSources,
           ),
-        ],
-      );
-    });
+        ),
+      ),
+    );
   }
 
-  /// Marks the latest streaming reasoning item complete.
-  void _finishRunningReasoning(String key) {
+  /// Applies a transcript-only update, skipping the write when nothing matched.
+  void _patchMessages(
+    String key,
+    List<WorkspaceMessage> Function(List<WorkspaceMessage> messages) update,
+  ) {
     _patch(key, (workspace) {
-      final index = workspace.messages.lastIndexWhere(
-        (message) =>
-            message.kind == WorkspaceMessageKind.reasoning && message.isRunning,
-      );
-      if (index < 0) {
-        return workspace;
-      }
-      final messages = [...workspace.messages];
-      messages[index] = messages[index].copyWith(isRunning: false);
-      return workspace.copyWith(messages: messages);
+      final messages = update(workspace.messages);
+      return identical(messages, workspace.messages)
+          ? workspace
+          : workspace.copyWith(messages: messages);
     });
   }
 
@@ -905,8 +869,12 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
     if (current == null) {
       return;
     }
+    final next = update(current);
+    if (identical(next, current)) {
+      return;
+    }
     final workspaces = Map<String, SessionWorkspace>.from(state.workspaces);
-    workspaces[key] = update(current);
+    workspaces[key] = next;
     state = state.copyWith(workspaces: workspaces);
   }
 
@@ -1078,4 +1046,18 @@ final class WorkspaceController extends Notifier<WorkspaceState> {
 final workspaceProvider =
     NotifierProvider.autoDispose<WorkspaceController, WorkspaceState>(
       WorkspaceController.new,
+    );
+
+/// The cached workspace of one session or draft key.
+///
+/// A subscriber rebuilds only when that session's cache changes, so a turn
+/// streaming in one pane leaves the other panes alone. Views that need a few
+/// fields should `select` them to keep streaming updates cheap.
+final sessionWorkspaceProvider = Provider.autoDispose
+    .family<SessionWorkspace, String>(
+      (ref, key) => ref.watch(
+        workspaceProvider.select(
+          (state) => state.workspaces[key] ?? state.active,
+        ),
+      ),
     );
