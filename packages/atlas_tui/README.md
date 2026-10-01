@@ -4,10 +4,9 @@ The Nocterm presentation package for Atlas.
 
 ## Responsibility
 
-- Renders the Nocterm chat interface: a scrollable message transcript (assistant markdown, user, reasoning, tool, and error rows), a text input bar, and a turn status indicator.
-- Owns `ChatController`, which bridges `atlas_runtime` turn events into rendered messages. It receives an injected `AgentRuntime` and never calls providers, tools, or storage directly.
-- Exposes `runAtlasTui` as the single entry point that boots the Nocterm app and its shutdown; `atlas_cli` depends on this entry instead of importing the rendering library directly. Bootstrap checks terminal/ANSI support and `NO_COLOR`, restores input modes before closing stdin, disposes the component tree and backend, and returns without exiting the process.
-- Keeps the theme container mounted from the first frame so asynchronous terminal brightness/background detection preserves early input and sessions.
+- Renders the Nocterm chat interface: a scrollable transcript of assistant markdown, user, reasoning, tool, and error rows, a text input bar, and a turn status indicator.
+- Owns `ChatController`, which bridges `atlas_runtime` turn events into rendered messages through an injected `AgentRuntime` without calling providers, tools, or storage directly.
+- Exposes `runAtlasTui` as the single entry point that boots the Nocterm app and its shutdown. Bootstrap checks terminal and ANSI support and `NO_COLOR`, keeps early input while asynchronous terminal detection resolves, restores input modes before closing stdin, and returns without exiting the process; `atlas_cli` depends on this entry instead of importing the rendering library.
 
 ## Allowed dependencies
 
@@ -15,6 +14,6 @@ The Nocterm presentation package for Atlas.
 
 ## Prohibited ownership
 
-- No composition roots: bootstrap of providers, tools, storage, and the system prompt belongs to `atlas_composition`, called from `atlas_cli` and `atlas_flutter`.
+- No composition roots: provider, tool, storage, and prompt bootstrap belongs to `atlas_composition`, called from `atlas_cli` and `atlas_flutter`.
 - No model, provider, storage, or orchestration logic; the agent loop lives in `atlas_runtime`.
-- No remote protocol logic; ACP and Planned WebSocket/MCP adapters are not owned here.
+- No remote protocol logic; ACP and MCP adapters are not owned here.

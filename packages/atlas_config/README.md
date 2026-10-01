@@ -4,15 +4,14 @@ YAML configuration loading for Atlas composition roots.
 
 ## Responsibility
 
-- Defines the `~/.atlas/config.yaml` schema and parses it into `AtlasConfig` values.
-- Maps configuration onto ready-to-use provider configuration objects (`OpenAIProviderConfiguration` / `AnthropicProviderConfiguration`).
+- Defines the `~/.atlas/config.yaml` schema, parses it into `AtlasConfig` values, and maps them onto ready-to-use provider configuration objects.
 - Validates the document and reports `ConfigLoadException` failures with field paths.
-- Expands `${ENV_VAR}` references in `api_key` and a leading `~/` in `session.db_path`. MCP `env` and `headers` support the same substitutions; stdio `cwd` expands a leading `~/`. Disabled entries skip secret substitution.
+- Expands `${ENV_VAR}` references and leading `~/` paths for Atlas settings and MCP server entries, skipping secret substitution for disabled entries.
 - Defines stdio and Streamable HTTP `mcp_servers` DTOs without opening connections or importing the MCP SDK.
 
 ## Allowed dependencies
 
-`yaml`, `atlas_runtime`, `atlas_provider` public types.
+`yaml`, `atlas_runtime`, and `atlas_provider` public types.
 
 ## Prohibited ownership
 

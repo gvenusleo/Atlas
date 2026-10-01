@@ -1,8 +1,10 @@
 # Data Model
 
-Atlas persists sessions as ordered turns and timeline items. Every timeline item belongs to the same session and turn as its enclosing operation.
+[中文](zh-CN/data-model.md)
 
-SQLite stores session, turn, and timeline timestamps as UTC Unix milliseconds (`INTEGER`). The schema requires a fresh database after this precision change; there is no migration from the earlier seconds-based timestamps.
+Atlas persists sessions as ordered turns and timeline items, and every timeline item belongs to the same session and turn as its enclosing operation.
+
+SQLite stores session, turn, and timeline timestamps as UTC Unix milliseconds (`INTEGER`). This precision change requires a fresh database; there is no migration from the earlier seconds-based timestamps.
 
 ## Turn Flow
 
@@ -13,7 +15,7 @@ SQLite stores session, turn, and timeline timestamps as UTC Unix milliseconds (`
 
 ## Compaction
 
-A compaction checkpoint stores a summary and the final compacted timeline sequence. Active model context begins after that sequence. A checkpoint never splits an assistant/tool/result group; a long single turn may compact its oldest safe prefix while preserving the newest item.
+A compaction checkpoint stores a summary and the final compacted timeline sequence, and active model context begins after that sequence. A checkpoint never splits an assistant/tool/result group, and a long single turn may compact its oldest safe prefix while preserving the newest item.
 
 ## Failures
 

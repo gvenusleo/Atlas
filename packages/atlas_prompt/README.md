@@ -6,7 +6,7 @@ System prompt construction for Atlas.
 
 - Builds the Atlas system prompt through `buildSystemPrompt`: the operating template, the available tool descriptors, and platform, shell, working directory, and current date context.
 - Loads `~/.atlas/AGENTS.md` and the working-directory `AGENTS.md` through `loadInstructionFiles` and renders them into the prompt.
-- Loads skills from the user-level `~/.agents/skills` and `~/.atlas/skills` roots, then the project `.agents/skills` / `.atlas/skills` roots under the working directory through `loadSkillCatalog` (pass `workingDirectory` so project skills resolve against the session cwd); later roots override earlier ones, so `.atlas/skills` wins over `.agents/skills` within a level and project skills win over user skills. and exposes them as a `SkillCatalog`.
+- Loads skills from the user-level `~/.agents/skills` and `~/.atlas/skills` roots and the project-level `.agents/skills` and `.atlas/skills` roots through `loadSkillCatalog`, passing `workingDirectory` so project skills resolve against the session cwd. Later roots override earlier ones, and project skills win over user skills.
 
 ## Allowed dependencies
 

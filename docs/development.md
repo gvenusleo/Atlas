@@ -2,15 +2,11 @@
 
 [中文](zh-CN/development.md)
 
-## Current State
-
-The repository is a Dart and Flutter workspace. `atlas_runtime`, `atlas_storage`, the provider adapters, `atlas_config`, `atlas_tools`, `atlas_prompt`, `atlas_composition`, the `atlas_tui` Nocterm chat interface, the ACP server adapter (`atlas_acp`), and local Flutter runtime composition are executable with focused tests; the MCP client adapter and WebSocket transport are also implemented.
-
 ## Workspace Layout
 
 ```text
-packages/atlas_runtime       Session/Turn domain, timeline, ports, and agent engine
-packages/atlas_storage       Drift persistence and runtime row mapping
+packages/atlas_runtime       session and turn domain, timeline, ports, agent engine
+packages/atlas_storage       Drift persistence and row mapping
 packages/atlas_provider      model provider adapters
 packages/atlas_config        YAML config loading and validation
 packages/atlas_prompt        system prompt and skill catalog loading
@@ -20,15 +16,15 @@ packages/atlas_ws            versioned WebSocket protocol and transport
 packages/atlas_acp           ACP adapter
 packages/atlas_mcp           MCP client tools (stdio and Streamable HTTP)
 packages/atlas_tui           Nocterm presentation package
-apps/atlas_cli               atlas CLI and TUI, with the `atlas acp`, `atlas server`, and `atlas cache` subcommands
+apps/atlas_cli               atlas CLI and TUI, with `atlas acp`, `atlas server`, and `atlas cache`
 apps/atlas_flutter           Flutter desktop and mobile application
 ```
 
-The root Pub workspace owns the only `pubspec.lock`. Workspace members use `resolution: workspace` and must not add member lockfiles.
+The root Pub workspace owns the only `pubspec.lock`; workspace members use `resolution: workspace` and must not add member lockfiles. Package responsibilities are listed in [Architecture](architecture.md).
 
 ## Toolchain
 
-The root `mise.toml` pins Flutter 3.47.0, which provides Dart 3.13.0. Every package declares `sdk: ^3.13.0`, so the Dart 3.13 language features the codebase relies on (primary constructors, exhaustive switch statements over sealed types) are available without an experiment flag.
+The root `mise.toml` pins Flutter 3.47.4, which provides Dart 3.13. Every package declares `sdk: ^3.13.0`, so the Dart 3.13 features the codebase uses (primary constructors, exhaustive switches over sealed types) need no experiment flag.
 
 ```sh
 mise install
@@ -47,54 +43,40 @@ mise run test         # run available Dart and Flutter tests
 mise run ci           # complete repository verification
 ```
 
-Run the Flutter client with `mise run app-run --device macos`. Platform release builds use the matching `mise run app-build-*` task. Install a locally built macOS app into `/Applications` with `mise run app-install-macos` (override the destination with `APP_INSTALL_DIR`).
+Run the Flutter client with `mise run app-run --device macos`. Platform release builds use the matching `mise run app-build-*` task, and `mise run app-install-macos` installs a locally built macOS app into `/Applications` (override with `APP_INSTALL_DIR`).
 
-Build the single-file CLI binary with `mise run cli-build`. Dart 3.13's `dart build cli` produces `build/bundle/bin/atlas`; packages with build hooks (sqlite3) cannot use `dart compile exe`.
+Build the single-file CLI with `mise run cli-build`. Dart 3.13's `dart build cli` writes `build/bundle/bin/atlas`; packages with build hooks (sqlite3) cannot use `dart compile exe`. `mise run cli-install` installs a locally built binary into `~/.local/bin`, while end users install a release binary with `install.sh` (macOS/Linux) or `install.ps1` (Windows); those scripts pick the artifact for the platform and architecture and honor `ATLAS_INSTALL_DIR`.
 
-Install a locally built binary into `~/.local/bin` with `mise run cli-install`. End users install a prebuilt release binary with `curl -fsSL https://github.com/gvenusleo/atlas/releases/latest/download/install.sh | bash` (macOS/Linux) or `irm .../latest/download/install.ps1 | iex` (Windows); the scripts download the versioned artifact matching the platform and architecture and honor `ATLAS_INSTALL_DIR`.
+Pushing a `v*.*.*` tag releases a version: `.github/workflows/release.yml` builds linux (amd64/arm64), macOS (amd64/arm64), and Windows (amd64) binaries with `dart build cli` and uploads them with the install scripts. Release notes are generated on the GitHub release page; the repository keeps no changelog.
 
-Releases are cut by pushing a `v*.*.*` tag: `.github/workflows/release.yml` builds linux (amd64/arm64), macOS (amd64/arm64), and Windows (amd64) binaries with `dart build cli` and uploads them together with the install scripts to the GitHub release. Release notes are generated automatically on the GitHub release page; the repository keeps no separate changelog file.
+## CLI Contract
 
-## CLI Contract and Verification
+`bin/atlas.dart` forwards arguments and assigns the returned exit code. `--help`, `help <command>`, and `<command> --help` work without configuration, and argument errors are reported on stderr before any config load or storage open. Exit codes are 0 for success, 64 for invalid usage, 78 for configuration failures, and 70 for unexpected failures; `--verbose` adds a terse stack trace.
 
-`bin/atlas.dart` only forwards arguments and assigns the returned exit code. `atlas --help`, `atlas help <command>`, and `<command> --help` work without configuration. Argument errors are validated before loading configuration or opening storage; both the error and usage go to stderr. Exit codes are 0 for success, 64 for invalid usage, 78 for configuration failures, and 70 for unexpected failures. `--verbose` includes a terse stack trace on stderr.
+The default TUI needs terminal stdin/stdout, ANSI support, and an unset `NO_COLOR` (an empty value disables it). Unsupported terminals are rejected without escape sequences while non-interactive subcommands stay available, and TUI exit restores input modes and the cursor before releasing stdin. Commands close their resources and return naturally instead of calling `exit()`.
 
-The default TUI requires terminal stdin/stdout, ANSI support, and an unset `NO_COLOR` (even an empty value disables it). Unsupported terminals are rejected without escape sequences; non-interactive subcommands remain available. TUI exit restores input modes and the cursor before releasing stdin. Commands close their resources and return naturally rather than calling `exit()`.
+The CLI package declares the `atlas` executable, so `dart run atlas_cli:atlas --help` works from the workspace root. The version is generated from `apps/atlas_cli/pubspec.yaml` by `build_version`: after changing it, run `mise run cli-version` and commit `apps/atlas_cli/lib/src/version.dart`. `mise run cli-build` generates the file automatically, and release builds verify `--version` against the tag.
 
-The CLI package declares the `atlas` executable; from the workspace root use `dart run atlas_cli:atlas --help`. Its version is generated from `apps/atlas_cli/pubspec.yaml` by `build_version`. Run `mise run cli-version` after changing that version and commit `apps/atlas_cli/lib/src/version.dart`. `mise run cli-build` generates it automatically; release builds verify that `--version` matches the release tag before packaging.
-
-`mise run cli-integration-test` is included in `mise run ci`. It builds an isolated native bundle under `.dart_tool/atlas_cli/`, then checks real process output, exit codes, ACP EOF, and teardown. Set `ATLAS_TEST_BINARY` to an absolute executable path to test an existing bundle instead. On macOS/Linux, a Dart FFI probe creates a real PTY and uses the system `stty` utility to compare terminal state before and after exit. It tests `/quit` with both batched and fragmented text input, signals, terminal restoration, and `NO_COLOR` without Python. The quit probe waits for the input caret to acknowledge the command before sending Enter separately; timeout diagnostics report the last input stage. Theme detection must preserve drafts entered before its result arrives. POSIX-only cases are skipped on Windows. Release jobs run the same process suite against each platform's built artifact.
+`mise run cli-integration-test` runs as part of `mise run ci`. It builds an isolated bundle under `.dart_tool/atlas_cli/` and checks real process output, exit codes, ACP EOF, and teardown; set `ATLAS_TEST_BINARY` to test an existing bundle instead. On macOS and Linux an FFI probe creates a real PTY and compares terminal state across exit, covering `/quit` with batched and fragmented input, signals, terminal restoration, and `NO_COLOR` (POSIX-only cases are skipped on Windows). Release jobs run the same suite on each built artifact.
 
 ### Reading `atlas cache`
 
-`atlas cache --limit 200` samples the latest 200 turns and all their persisted conversation responses, including history hidden by context compaction. The report is read from one database snapshot and groups responses by provider/model and session. It does not include compaction-summary calls or attempts that never produced a response record; it is not a complete billing ledger.
+`atlas cache --limit 200` samples the latest 200 turns and their persisted conversation responses, including history hidden by compaction, from a single database snapshot. Responses are grouped by provider/model and session; compaction summaries and attempts that produced no response record are excluded, so the report is not a billing ledger.
 
-- **Token hit rate** is summed cache-read tokens divided by summed complete input tokens, over measured requests only. Cache writes and output tokens do not count as hits.
-- **Requests with hits** is the share of measured requests with any cache read, not the share whose entire prompt was cached.
-- **Cache-data coverage** is measured requests divided by recorded responses. Unknown, inconsistent, aborted, and zero-input records are excluded from rates and disclosed separately. An unknown rate is `n/a`, not a cache miss.
-- Input breakdowns cover the same measured requests. When cache writes are not reported, the remaining input is **unclassified**, not assumed to be fresh.
+- **Token hit rate** is summed cache-read tokens over summed complete input tokens across measured requests; cache writes and output tokens do not count as hits.
+- **Requests with hits** is the share of measured requests with any cache read, not the share with a fully cached prompt.
+- **Cache-data coverage** is measured requests over recorded responses. Unknown, inconsistent, aborted, and zero-input records are disclosed separately and excluded from rates, and an unknown rate is `n/a` rather than a cache miss.
 
-Provider adapters persist normalized input totals and cache-field availability alongside the original counts. Old records without this metadata remain readable but are not reinterpreted using current configuration. Nonstandard Chat Completions top-level cache buckets without standard `cached_tokens` have unknown accounting and are excluded. New, standard usage gradually increases coverage; no historical data is rewritten. Token hit rate is not cost savings, and a low value alone does not identify the cause of a cache miss.
-
-Output is plain text, respects terminal width, and remains escape-free when piped or used with `NO_COLOR`. Session titles and provider names are sanitized before rendering.
+Provider adapters persist normalized input totals and cache-field availability next to the original counts, so old records stay readable without being reinterpreted from current configuration. Output is plain text, respects terminal width, and stays free of escape sequences when piped or when `NO_COLOR` is set.
 
 ## Package Rules
 
-- Put domain concepts and runtime ports in `atlas_runtime`; keep provider, storage, tool, UI, and protocol implementations in their owning packages.
-- Add public abstractions only when a real adapter or test requires them.
-- Do not predeclare dependencies for planned code. Run `dart pub add` from the owning Dart package, or `flutter pub add` from `atlas_flutter`, when implementation code first needs a package.
-- Use Dio for Atlas-owned HTTP requests. MCP integration uses `mcp_dart` and may bring in and use its `package:http` dependency for MCP transport and authentication. Keep this exception inside the MCP adapter; do not introduce another HTTP client for unrelated features. Add a WebSocket dependency only with the first real `atlas_ws` implementation.
-- Public Dart APIs require concise documentation comments.
-- Runtime and protocol packages must not import Flutter.
-- Presentation packages must not import provider, tool, or storage implementations.
-- Application bootstrap code composes those adapters and injects the runtime. `atlas_cli` and `atlas_flutter` both call `atlas_composition`.
-- `atlas_ws` owns WebSocket transport only and accepts an injected request handler.
-- Generated serialization files stay beside their source and are committed only when the selected generator requires it.
-- Add focused tests with behavior. Empty scaffold packages do not need placeholder tests.
+- Domain concepts and runtime ports belong in `atlas_runtime`; provider, storage, tool, UI, and protocol code belongs in its owning package.
+- Add a public abstraction only when a real adapter or test needs it.
+- Add dependencies with `dart pub add` in the package that owns the behavior, or `flutter pub add` in `atlas_flutter`; do not predeclare them at the workspace root.
+- Use Dio for Atlas-owned HTTP requests. MCP integration uses `mcp_dart` and its `package:http` dependency for MCP transport and authentication; keep that exception inside the MCP adapter. Add a WebSocket dependency only when `atlas_ws` implements one.
+- Public Dart APIs need concise documentation comments. Runtime and protocol packages must not import Flutter, and presentation packages must not import provider, tool, or storage implementations.
+- Application bootstrap composes adapters and injects the runtime; both application roots use `atlas_composition`, and `atlas_ws` accepts an injected request handler.
+- Generated serialization files stay beside their source and are committed only when the generator requires it. Add focused tests with behavior; empty scaffold packages need no placeholder tests.
 
-## Documentation Rules
-
-- Root README files contain product status and supported commands, not internal architecture.
-- Architecture and dependency boundaries belong in `docs/architecture.md`.
-- Mark unavailable behavior as `Planned`; remove stale examples when behavior is removed.
-- Keep English and Chinese counterparts synchronized.
+Documentation rules live in the [documentation guide](README.md).

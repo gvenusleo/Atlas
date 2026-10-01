@@ -4,10 +4,10 @@ Built-in Atlas tool implementations: `read`, `write`, `edit`, `shell`, and `plan
 
 ## Responsibility
 
-- Implements `atlas_runtime` `Tool` and `ToolRegistry` ports with structured JSON arguments and results.
-- File tools resolve relative paths against the session working directory.
-- `shell` runs `/bin/sh -c` on Unix or `powershell -Command` on Windows, with bounded live output, optional one-shot stdin, session-relative `cwd`, configurable timeouts, and cancellation. See [tool behavior](../../docs/tools.md).
+- Implements the `atlas_runtime` `Tool` and `ToolRegistry` ports with structured JSON arguments and results, and resolves relative file paths against the session working directory.
+- `shell` runs platform commands with bounded live output, optional one-shot stdin, session-relative `cwd`, configurable timeouts, and cancellation.
 - `plan` replaces the complete task plan for multi-step work, tracking each step as `pending`, `in_progress`, or `completed`.
+- Tool behavior, limits, and the security boundary are documented in [tool behavior](../../docs/tools.md).
 
 ## Allowed dependencies
 

@@ -2,11 +2,11 @@
 
 [English](../architecture.md)
 
-> **状态：** `atlas_runtime`、`atlas_storage`、`atlas_provider` 适配器、`atlas_config` 配置加载、内置 `atlas_tools`、`atlas_prompt` prompt 构建、`atlas_composition`、`atlas_tui` Nocterm 聊天界面、ACP 服务端适配器（`atlas_acp`，由 `atlas acp` 提供）以及 Flutter 本地 runtime 组装、WebSocket transport（`atlas_ws`）、`atlas server` 入口与移动端远程客户端及 MCP 客户端工具适配器（`atlas_mcp`）均**Available**。
+> **状态：** 本文描述的 package、客户端与 transport 均为 **Available**；尚未交付的边界标记为 **Planned**。
 
 ## 系统形态
 
-Atlas 使用唯一的 Dart runtime 实现，并通过本地应用组合根与可选远程 transport 提供能力。展示层或协议适配器不得维护第二套 Agent loop。
+Atlas 使用唯一的 Dart runtime，通过本地应用组合根与可选远程 transport 提供能力。展示层或协议适配器不得维护第二套 Agent loop。
 
 ```mermaid
 graph TD
@@ -34,78 +34,68 @@ graph TD
     MCP --> MCPSDK[mcp_dart]
 ```
 
-`composeTools` 异步连接配置的 MCP 服务器并固定工具目录，随后将合并的 `LocalToolRegistry` 注入 `composeRuntime`。应用根在 runtime 和事件消费者完成清理后关闭资源。MCP 是客户端适配器，ACP 会话级 MCP 配置仍为 Planned。
+`atlas_composition` 从 config、provider、存储、工具与系统提示词组装一个 runtime。`atlas_cli` 与 `atlas_flutter` 在各自的 bootstrap 中复用这段代码，但不共享 runtime 实例。
 
-`atlas_composition` 从 `atlas_config`、provider、存储、工具与系统提示词构建器组装一个 runtime；`atlas_cli` 与 `atlas_flutter` 的进程 bootstrap 共用这段组装代码。运行 `atlas` 默认进入 Nocterm TUI；运行 `atlas acp` 时通过 NDJSON stdio 将已组装的 runtime 暴露给 ACP 客户端（如 Zed 等编辑器）。Flutter App 始终是 ACP 客户端：本地模式在进程内启动 `AcpServer` 并通过内存 transport 连接，远程模式通过 `acpd_io` 拉起第三方 ACP agent。Nocterm 仍直接使用 runtime。`atlas server` 通过 `atlas_ws` 把已组装的 runtime handler 暴露给远程客户端：Atlas 移动 App（及任意 ACP 客户端）经 WebSocket 连接——每个 text frame 承载一条 ACP JSON-RPC 消息，由 bearer token 守卫；连接断开时已开始的 turn 会继续执行完毕，重连后通过 `session/load` 恢复现场。ACP 作为入口适配到同一 runtime；MCP 主要用于把外部工具接入工具层。
+运行 `atlas` 进入 Nocterm TUI，它直接使用 runtime。`atlas acp` 通过 NDJSON stdio 将 runtime 提供给 ACP 客户端（如 Zed 等编辑器），`atlas server` 则通过 WebSocket 暴露同一套 ACP 接口：每个 text frame 承载一条 JSON-RPC 消息，由 bearer token 守卫。Flutter App 始终是 ACP 客户端，本地模式在进程内通过内存 transport 启动 `AcpServer`，远程模式通过 `acpd_io` 拉起第三方 agent。WebSocket 连接断开后，已开始的 turn 继续执行完毕，重连后通过 `session/load` 恢复。
+
+`composeTools` 先连接配置的 MCP 服务器并固定工具目录，再把合并后的 registry 交给 `composeRuntime`。MCP 是客户端适配器，负责把外部工具接入工具层；ACP 会话级 MCP 配置仍为 Planned。
 
 ### CLI 关闭职责
 
-CLI command runner 在创建适配器前解析参数。每个运行中的命令拥有自身的存储与 HTTP client，并通过 `atlas_composition` 组装 runtime。进程关闭时先停止接收新任务，再调用 `AgentRuntime.shutdown()` 取消并等待活动或排队的 turn 与 compact，等待协议 handler 完成后关闭适配器资源。关闭期间事件消费者继续消费流，确保终态持久化完成。普通 WebSocket 断连仍允许已有 turn 执行完毕，与进程关闭不同。Nocterm bootstrap 与终端清理仍属于 `atlas_tui`；该 bootstrap 自然返回，不允许 Nocterm 直接终止进程。
+每个 CLI 命令自行持有组装出的存储与 HTTP client。关闭时先停止接收新任务，调用 `AgentRuntime.shutdown()` 取消并等待活动 turn 与 compact，等待协议 handler，并在事件消费者继续消费、完成终态持久化之后关闭适配器资源。Nocterm bootstrap 与终端清理留在 `atlas_tui`，该 bootstrap 自然返回，不允许 Nocterm 直接终止进程。
 
 ## Package 职责
 
 | Package | 职责 |
 |---|---|
-| `atlas_runtime` | Session/turn 领域模型、有序 timeline item、model/tool ports、唯一 Agent engine、取消、compact 与 skill |
-| `atlas_storage` | Session、turn、有类型 timeline message 的 Drift 持久化；provider continuation 与 compact checkpoint 嵌入所属行，外加查询 |
-| `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages 适配器：认证、请求映射、SSE 解码、重试与响应转换 |
-| `atlas_config` | YAML 配置文件 schema、加载与校验，并映射为 provider 配置对象 |
-| `atlas_tools` | 返回结构化调用和结果的内置工具 |
-| `atlas_prompt` | 系统提示词构建：操作模板、工具列表、`~/.atlas/AGENTS.md` 与工作目录 `AGENTS.md` 加载，以及平台/shell/日期上下文 |
-| `atlas_ws` | 版本化 WebSocket wire contract 与 transport：`/acp` upgrade 端点、bearer token 认证、连接与帧策略、共享 runtime 上每连接一个 `AcpServer` 的生命周期 |
-| `atlas_acp` | 把 ACP server 适配到共享 runtime |
-| `atlas_mcp` | 通过 `mcp_dart` 负责 stdio/Streamable HTTP MCP 客户端连接、发现、工具/结果映射、取消与清理 |
-| `atlas_tui` | 基于注入的 runtime 接口的 Nocterm 聊天界面：消息记录、输入栏与 turn 状态 |
-| `atlas_composition` | 共用的应用组装：构造 provider、工具、存储、提示词与唯一 runtime |
-| `atlas_cli` | 默认 TUI 与其他 CLI 命令的组合根；委托 `atlas_composition` 构造 runtime |
-| `atlas_flutter` | 桌面端与移动端 ACP 客户端；移动端通过远程连接页接入 `atlas server`，远程模式下不展示本地文件与终端；主题等客户端本地偏好存于 `shared_preferences` |
+| `atlas_runtime` | Session/turn 领域模型、有序 timeline、model/tool ports、Agent engine、取消、compact 与 skill |
+| `atlas_storage` | Session、turn 与有类型 timeline message 的 Drift 持久化，以及查询 |
+| `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages：认证、请求映射、SSE 解码、重试与响应转换 |
+| `atlas_config` | YAML schema、加载与校验，并把 `~/.atlas/config.yaml` 映射为 provider 配置 |
+| `atlas_tools` | 返回结构化调用与结果的内置工具 |
+| `atlas_prompt` | 系统提示词构建，包括 `~/.atlas/AGENTS.md` 与工作目录指令文件 |
+| `atlas_ws` | `/acp` 端点的版本化 WebSocket wire contract 与 transport |
+| `atlas_acp` | 把 ACP 服务端适配到共享 runtime |
+| `atlas_mcp` | 通过 `mcp_dart` 管理 MCP 客户端连接、发现、工具与结果映射、取消与清理 |
+| `atlas_tui` | 基于注入 runtime 接口的 Nocterm 聊天界面 |
+| `atlas_composition` | 共用组装：provider、工具、存储、提示词与唯一 runtime |
+| `atlas_cli` | TUI 及其他 CLI 命令的组合根 |
+| `atlas_flutter` | 桌面端与移动端 ACP 客户端；客户端本地偏好使用 `shared_preferences` |
 
 ## 依赖规则
 
-- `atlas_runtime` 拥有领域模型与 ports，但不依赖 Flutter、存储、Provider、工具或 transport。
-- 存储、Provider 与工具 package 依赖并实现 runtime ports；适配器不能拥有编排逻辑。
-- Provider 特定请求字段只存在于 `atlas_provider`。
-- `atlas_provider` 通过 `ModelRef` 选择已配置的 endpoint；公开配置使用程序化 API，不负责 CLI 或配置文件解析。
-- OpenAI 与 Anthropic 共享 `HttpStreamClient`（重试、超时、取消）和 `decodeSse`（SSE 分帧）；`CompositeModelProvider` 按 provider 标识路由请求，使多个 provider 共享一个 runtime 实例。
-- 流式失败会转换为一个 runtime 终态事件；只有首个流事件产生前才会重试，取消会桥接到 Dio 的 `CancelToken`。
-- `atlas_ws` 维护显式版本化 wire schema 与 transport 行为；不负责组装 runtime 服务。
-- 本地展示代码直接接收 runtime 接口；只有应用 bootstrap 可以创建 Provider、工具和存储适配器；两个应用根都使用 `atlas_composition`。
-- `atlas_prompt` 只依赖 `atlas_runtime` 公开类型，组合根通过 `buildSystemPrompt` 使用它。
-- `atlas_cli` 与 `atlas_flutter` 是独立的进程组合根，共享构造代码而不共享 runtime 实例。
-- ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个 WebSocket 连接复用同一 `AcpServer`。MCP 在 `atlas_mcp` 内使用 `mcp_dart`，SDK HTTP 依赖限于该适配器。目录、重试与内容限制见 [MCP 工具](mcp.md)。
+- `atlas_runtime` 拥有领域模型与 ports，不依赖任何存储、Provider、工具、UI 或 transport 实现。
+- 存储、Provider 与工具 package 实现 runtime ports；适配器不拥有编排逻辑。Provider 特定请求字段只存在于 `atlas_provider`。
+- `atlas_provider` 通过 `ModelRef` 选择 endpoint。OpenAI 与 Anthropic 适配器共享 `HttpStreamClient` 与 `decodeSse`；`CompositeModelProvider` 按 provider 标识路由，使多个 provider 共享一个 runtime。流式失败表现为一个终态事件，只有首个流事件产生前才重试，取消桥接到 Dio 的 `CancelToken`。
+- `atlas_ws` 拥有版本化 wire schema 与 transport 行为，不组装 runtime 服务。
+- 只有应用 bootstrap 创建适配器；两个应用根都使用 `atlas_composition`，`atlas_prompt` 只依赖 `atlas_runtime` 公开类型。
+- ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个连接复用同一 `AcpServer`。MCP 在 `atlas_mcp` 内使用 `mcp_dart`，SDK 的 HTTP 依赖限于该适配器。
 
 ## Flutter 客户端状态
 
-Flutter 按功能组织产品代码：`settings`、`connections`、`workspace`、`files` 和 `terminal`。各功能的 `presentation` 放 Widget，`application` 放 Riverpod controller；仅在需要插件、文件系统或存储适配器时增加 `data`。共享窗口控件和布局尺寸放在 `shared`；`app/bootstrap` 组装本地 runtime，并向连接 controller 注入 ACP 子进程与 WebSocket 连接函数。设置 controller 通过 repository 存储偏好，并在首帧之前完成初始化；文件浏览器以会话和工作目录为键使用 provider family，通过 provider 注入文件系统服务。工作区 controller 将模型、模式及命令目录作为不可变 UI 状态暴露，输入组件无需直接查询 runtime。工作目录 provider 放在 `shared/application`，连接选择与工作区草稿可共享它而不相互导入 controller。Riverpod 的 `Notifier` 和 `AsyncNotifier` 负责界面状态；动画、焦点及菜单等临时状态留在 Widget。功能的 presentation 不导入 bootstrap 或具体存储适配器。
+Flutter 按功能组织产品代码：`settings`、`connections`、`workspace`、`files`、`terminal`。各功能拥有自己的 `presentation` Widget 与 Riverpod `application` controller，仅在需要插件、文件系统或存储适配器时增加 `data`；共享布局与窗口代码放在 `shared`。应用状态由 Riverpod `Notifier` 与 `AsyncNotifier` 持有，动画、焦点与菜单留在 Widget 中，功能的 presentation 代码不导入 bootstrap 或具体存储适配器。工作区 controller 把模型、模式与命令目录作为不可变 UI 状态暴露，输入组件无需查询 runtime；`shared/application` 中的工作目录 provider 由连接选择与工作区草稿共用。
 
-macOS 上，`app/shell_environment.dart` 在本地 bootstrap 前读取一次用户导出的环境。它在 `HOME` 中以交互式登录模式启动绝对路径的 `SHELL`，支持 zsh、bash 和 sh，未设置时使用 `/bin/zsh`。随机边界标记与 NUL 分隔的数据将环境变量和启动输出分开，保留值中的换行及等号。不可变快照覆盖继承环境中的同名变量，但保留原始的 `PWD`、`OLDPWD`、`SHLVL` 和 `_`。配置中的 `${VAR}`、组装后的 shell 工具及 ACP 子进程连接显式接收同一快照，不修改 `Platform.environment`。shell 工具仍使用 `/bin/sh -c` 执行命令。
+macOS 上，App 在本地 bootstrap 前解析一次用户导出的登录 shell 环境，配置变量替换、shell 工具与 ACP 子进程都使用该快照；`Platform.environment` 不会被修改，shell 命令仍通过 `/bin/sh -c` 执行。解析有时间和大小上限，失败时完整保留继承的环境。
 
-解析限时 10 秒，stdout/stderr 合计最多接收 1 MiB。不支持的 shell、启动失败、非零退出、数据格式错误、输出超限或超时都会完整保留原始环境。应用只记录失败类别，不记录变量值或 shell 输出。探测仍在运行时，清理先暂停根进程，通过 `/bin/ps` 获取有界的父子 PID 快照，再先终止已发现的后代、最后终止根进程，包括忽略 TERM 的前台命令。枚举限时 500 ms、输出上限 1 MiB，进程退出等待及管道清理也都有界。枚举失败仍会终止根进程。快照前已经重新归属的后代（例如 shell 提前退出后）、枚举期间新启动的后代，以及主动分离的进程无法保证清理。其他平台和 CLI/TUI 继续继承既有环境，内置终端仍自行启动登录 shell。修改 shell 配置后需要重启 App；快照只包含导出变量，不包含 alias 或函数，也不会随会话目录变化重新选择 mise 项目版本。
+已保存的 ACP 与远程配置使用串行更新、写入成功后发布不可变快照的 repository。每个文件浏览器拥有自动释放的 controller，管理缓存、监听、预览与文件操作，文件系统访问封装在 `FileBrowserService` 之后。终端面板使用注入的会话接口，共享进程注册表在退出时终止仍在运行的 shell。
 
-已保存的 ACP 与远程连接配置使用共享 repository，串行处理列表更新，并在写入成功后发布不可变快照。视图调用 controller 命令，不直接读取或覆盖存储列表。每个文件浏览器都有独立、自动释放的 controller，管理目录缓存、文件监听防抖、预览和文件操作。`FileBrowserService` 负责文件系统访问；菜单、对话框和 Markdown 预览开关保留在 Widget 中。终端面板使用注入的终端会话接口，共享进程注册表在退出时终止仍在运行的 shell。工作区的 application 层负责会话列表加载和时间线转换。
-
-工作区和设置页按可用宽度切换导航：宽度至少为 960 个逻辑像素时显示侧栏或分区导航栏，Android 与 iOS 也遵循此规则；较窄窗口使用抽屉或横向分区选择器。移动平台的控件保留较大的触控区域，与布局选择分开处理。会话历史和远程连接列表按需构建；会话侧栏支持 Tab、Enter/空格，以及 Shift+F10 打开上下文菜单，也可通过右键或长按打开菜单。
-
-应用在 `go_router` 中将 `/settings` 嵌套在 `/` 下，直接进入设置页也保留可返回的工作区页面。Android 与 iOS 使用 Flutter 内置深链处理器，注册 `atlas:///` 和 `atlas:///settings`。HTTPS App Links / Universal Links 仍为 Planned：需要确认域名、提供 Android 发布证书指纹、配置 iOS 关联域名 entitlement，并托管 `assetlinks.json` / `apple-app-site-association` 文件。自定义 scheme 链接不提供经过验证的域名归属。
+布局随可用宽度切换：宽度至少 960 逻辑像素时显示侧栏或分区导航栏（Android 与 iOS 同样适用），更窄时改用抽屉或横向分区选择器，移动端的触控区域保持更大。`go_router` 把 `/settings` 嵌套在 `/` 下，Android 与 iOS 注册 `atlas:///` 深链；HTTPS App Links 与 Universal Links 为 Planned。
 
 ## Runtime 行为契约
 
-当前 runtime 实现与后续适配器必须共同遵守以下产品级行为契约：
+runtime 与所有适配器共同遵守以下产品级契约：
 
-- 每个模型工具调用都按原顺序得到一个模型可见结果，失败也不例外。
-- `AgentEvent` 按发生顺序发送，客户端不能在 turn 结束后重新分组输出。
-- 工具过程输出使用临时替换事件（`ToolOutputUpdated`），消费者处理较慢时合并待显示快照。过程输出不进入持久 timeline 或模型上下文；每次调用仍恰好产生一个最终工具结果。
-- 取消 runtime 事件订阅会请求协作式取消 turn，等待配对的工具结果与 turn 终态持久化后再释放会话锁。
-- `Session` 包含有序的 `TimelineItem` 与持久化的 `Turn`。用户输入会和 running turn 原子写入，然后才发起第一个 Provider 请求。
-- 每个 assistant message 可以携带 Provider 所有的 `ModelContinuation`；它内嵌在 assistant 行中持久化，并恢复到对应的 provider-neutral message。
-- turn 启动前取消不产生 timeline item；用户输入已进入 runtime 后取消，需要保留中断边界：被中断模型流已接收的文本会以 aborted assistant message 持久化，并参与后续 turn 的模型上下文。
-- Skill 注入会保留历史中的原始用户文本；完整 skill 指令仅作为当前 turn 可见的模型上下文，不写入 transcript。
-- 模型请求保持前缀稳定，让 provider 能复用此前请求已缓存的前缀：system prompt 由冻结的 session context 重新拼装且把运行上下文放在最后，timeline 投影只追加，skill 指令追加在投影历史之后。
-- Anthropic 请求在最后一个工具、system prompt 与最后一条可缓存消息块上打 cache 断点；OpenAI 兼容请求始终把 session 标识作为 `prompt_cache_key` 发送。`atlas cache` 从 session 数据库报告 token 复用率、请求命中率和数据覆盖率，且不受上下文压缩影响。Provider 适配器会归一化完整输入量，并在 assistant usage 中记录缓存字段是否存在；报表不会依赖当前配置推断历史口径。旧记录和中断 usage 不参与命中率，摘要调用也不在已记录回复的统计范围内。
-- Compact 保留持久 timeline，只替换 active context checkpoint（存储在 session 行）。runtime 原样保留最近若干完整 turn，把更早内容总结，并把摘要作为模型请求的首条 user 消息投影进去（包在 `<context_summary>` 中，内容含 `Context compacted. Kept {n} recent messages.`）；system prompt 不受影响。可选 compact 指令只影响摘要，不修改用户历史。手动 compact 使用该 session 当前选中的模型生成摘要，没有选中模型时回退到最后一个 turn 使用的模型。
+- 每个模型工具调用都按原顺序得到唯一模型可见结果（失败亦然）；`AgentEvent` 按发生顺序发送，客户端不得在 turn 结束后重新分组输出。
+- 工具过程输出（`ToolOutputUpdated`）是可合并的临时替换事件，不进入持久 timeline 或模型上下文；每次调用仍恰好产生一个最终结果。
+- 取消事件订阅会请求协作式取消，并等待配对的工具结果与 turn 终态持久化后再释放会话锁。
+- `Session` 持有有序 `TimelineItem` 与持久化 `Turn`。用户输入与 running turn 原子写入后才发起首个 Provider 请求；每条 assistant message 可携带 Provider 所有的 `ModelContinuation`，内嵌在 assistant 行中持久化，并恢复到 provider-neutral message 上。
+- turn 启动前取消不产生 timeline item；已从被中断模型流接收的文本以 aborted assistant message 持久化，并参与后续模型上下文。
+- Skill 注入保留历史中的原始用户文本；完整 skill 指令是当前 turn 的模型上下文，不写入 transcript。
+- 模型请求保持前缀稳定：system prompt 由冻结的 session context 重新拼装、运行上下文放在最后，timeline 投影只追加，skill 指令追加在投影历史之后。Anthropic 请求在最后一个工具、system prompt 与最后一条可缓存消息块上打 cache 断点，OpenAI 兼容请求把 session 标识作为 `prompt_cache_key` 发送；`atlas cache` 从 session 数据库报告复用情况，不依据当前配置推断历史口径。
+- Compact 保留持久 timeline，只替换 session 行上的 active context checkpoint。runtime 原样保留最近若干完整 turn，把更早内容总结为首条 `<context_summary>` user 消息，且不拆分 assistant/tool/result 组。可选 compact 指令只影响摘要；手动 compact 使用该 session 当前选中的模型，没有则回退到最后一个 turn 使用的模型。
 
-这些是产品行为约束，不表示需要兼容已删除 Go 实现的内部结构或数据库 schema。
+这些契约描述预期行为，不表示需要兼容已删除的 Go 实现或其数据库 schema。
 
 ## 本地安全边界
 
-Atlas 工具使用本地 Atlas 进程的权限执行。产品不提供沙箱、权限提示或 approval gate；协议适配器不能宣称 runtime 实际不存在的安全边界。
+Atlas 工具使用本地 Atlas 进程的权限运行，不提供沙箱、权限提示或 approval gate。协议适配器不得宣称 runtime 实际不存在的安全边界。

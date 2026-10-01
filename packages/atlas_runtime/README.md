@@ -4,9 +4,9 @@ The single Atlas agent runtime.
 
 ## Responsibility
 
-- Owns Session and Turn domain models, ordered TimelineItem values, model/tool ports, the agent loop, cancellation, context compaction, and skills.
-- Tools may publish transient replacement snapshots through `ToolContext.onOutput`. The runtime coalesces pending snapshots for slow consumers and emits ordered `ToolOutputUpdated` events; only the final `ToolResult` enters the timeline and subsequent model context.
-- Entry points and protocol adapters call this package instead of implementing their own agent loops. Provider continuations are represented by `ModelContinuation` and persisted checkpoints are linked to assistant timeline items.
+- Owns Session and Turn domain models, ordered TimelineItem values, model and tool ports, the agent loop, cancellation, context compaction, and skills.
+- Coalesces transient tool output snapshots from `ToolContext.onOutput` for slow consumers and emits ordered `ToolOutputUpdated` events; only the final `ToolResult` enters the timeline and later model context.
+- Entry points and protocol adapters call this package instead of implementing their own agent loops. Provider continuations are represented by `ModelContinuation`, and persisted checkpoints link to assistant timeline items.
 
 ## Allowed dependencies
 
@@ -14,4 +14,4 @@ The single Atlas agent runtime.
 
 ## Prohibited ownership
 
-- No persistence, provider, tool, UI, or protocol implementations. Storage, provider, tool, and protocol packages depend on and implement runtime ports without owning orchestration.
+- No persistence, provider, tool, UI, or protocol implementations. Those packages implement runtime ports without owning orchestration.

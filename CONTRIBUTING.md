@@ -1,10 +1,10 @@
 # Contributing to Atlas
 
-Atlas is a Dart and Flutter workspace. Check the current implementation before documenting or depending on a planned capability.
+Check the current implementation before documenting or depending on a planned capability.
 
-## Development Setup
+## Setup
 
-Prerequisites: Git and [mise](https://mise.jdx.dev/).
+Prerequisites are Git and [mise](https://mise.jdx.dev/).
 
 ```sh
 git clone https://github.com/gvenusleo/atlas.git
@@ -14,30 +14,13 @@ mise run deps
 mise run ci
 ```
 
-Use `mise run deps-update` only when intentionally changing dependencies. The workspace has one root `pubspec.lock`.
-
-## Change Boundaries
-
-- Keep the agent loop in `atlas_runtime`; adapters and clients must not duplicate it.
-- Keep Flutter and Nocterm independent of providers, tools, and persistence.
-- Add dependencies in the package that owns the behavior, not at the workspace root.
-- Do not create placeholder abstractions for planned features.
-- Mark unimplemented behavior as `Planned` in documentation.
-- Keep English and Chinese documents synchronized when a translated counterpart exists.
-
-Package responsibilities and dependency direction are defined in [Architecture](docs/architecture.md). Commands and verification are documented in [Development](docs/development.md).
+The workspace has one root `pubspec.lock`; use `mise run deps-update` only when intentionally changing dependencies. Commands and verification are documented in [Development](docs/development.md), and package responsibilities in [Architecture](docs/architecture.md).
 
 ## Pull Requests
 
-Open an issue before large architectural changes, public protocol changes, persistent schema changes, or new provider adapters. Reproducible bug fixes and focused documentation corrections can be submitted directly.
+Open an issue before large architectural changes, public protocol changes, persistent schema changes, or new provider adapters. Reproducible bug fixes and focused documentation corrections can be submitted directly. Run `mise run ci` before submitting, and keep English and Chinese documents synchronized when a translated counterpart exists.
 
-Before submitting, run:
-
-```sh
-mise run ci
-```
-
-Use Conventional Commits, for example:
+Use Conventional Commits:
 
 ```text
 feat(runtime): add run cancellation

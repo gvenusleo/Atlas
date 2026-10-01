@@ -2,27 +2,22 @@
 
 The desktop and mobile client for Atlas.
 
-## Status
-
-The current implementation provides a responsive workspace shell, resizable sidebars on wide windows, compact drawers on narrow windows, GitHub light and dark-dimmed palettes that follow the system theme, a local runtime bootstrap with sessions and agent turns, a file browser, an embedded terminal, and a remote connection screen that drives a computer-side `atlas server` over WebSocket (used on mobile, available on desktop through Settings). Remote sessions hide the local file browser and terminal: files and commands run on the computer. Every text field draws its caret through the shared `AnimatedCaret` wrapper, which animates the caret with spring-driven corner physics.
-
 ## Responsibility
 
-- Composition root and ACP presentation client for desktop and mobile. The local app hosts an in-process ACP server; feature and presentation code renders UI only.
-- Remote WebSocket mode: mobile boots into the remote connection screen and desktop can switch from Settings; connections and tokens live in the platform secure storage.
+- Composition root and ACP presentation client for desktop and mobile: the local app hosts an in-process ACP server, and feature and presentation code renders UI only.
+- Remote WebSocket mode: mobile boots into the remote connection screen while desktop switches from Settings, with connections and tokens in platform secure storage. Remote sessions hide the local file browser and terminal, because files and commands run on the computer.
+- Provides the responsive workspace shell: resizable sidebars on wide windows, drawers on narrow ones, and themes that follow the system appearance.
 
 ## Allowed dependencies
 
 - Flutter SDK, `flutter_riverpod`, `go_router`, `window_manager`, `material_ui`, `lucide_icons_flutter`, `flutter_markdown_plus`, `file_picker`, `clipboard`, `pty2`, `terminal_view`, `flutter_secure_storage`, `shared_preferences`, `stream_channel`, and `web_socket_channel`.
-- Tests may also import `atlas_ws` (dev dependency) to serve a real `atlas server` endpoint for remote connection integration tests.
-- `atlas_composition` for process-level runtime construction.
-- `atlas_config`, `atlas_prompt`, `atlas_provider`, and `atlas_storage` from application bootstrap only. Tests may also import `atlas_tools`.
-- `atlas_runtime` public types for the injected runtime interface.
+- `atlas_composition` for process-level runtime construction, and `atlas_config`, `atlas_prompt`, `atlas_provider`, and `atlas_storage` from application bootstrap only.
+- `atlas_runtime` public types for the injected runtime interface. Tests may also import `atlas_ws` (dev dependency) to serve a real `atlas server` endpoint, and `atlas_tools`.
 
 ## Prohibited ownership
 
 - No agent orchestration, provider logic, tool execution, or session persistence in feature or presentation code; only bootstrap composes adapters.
-- No ACP protocol implementation; the app consumes `atlas_acp` as a client, including over WebSocket (the bridge lives in the app bootstrap). Local MCP tools are composed through `atlas_composition`; their protocol stays in `atlas_mcp`.
+- No ACP protocol implementation; the app consumes `atlas_acp` as a client, and local MCP tools are composed through `atlas_composition`.
 - No Nocterm rendering logic; the terminal TUI belongs to `atlas_tui`.
 
 ## Structure
@@ -38,11 +33,9 @@ lib/features/<feature>/presentation      pages, layouts, and widgets
 lib/shared                               shared state, window UI, theme, and layout
 ```
 
-Settings preferences use a feature repository backed by `shared_preferences`, seeded before the first frame. Connection controllers and saved-profile repositories live in `features/connections`; `app/bootstrap` injects the process and WebSocket connectors. File browsers use a Riverpod provider family keyed by session and directory; filesystem access lives in `features/files/data`. The workspace composes files and terminal hosts, while window controls live in `shared`. See [architecture](../../docs/architecture.md#flutter-client-state).
+Each feature owns its controllers, and `app/bootstrap` injects the process and WebSocket connectors. Settings preferences are seeded before the first frame, file browsers are keyed by session and directory, and the workspace composes the files and terminal hosts. See [Flutter client state](../../docs/architecture.md#flutter-client-state).
 
-The client-local theme and language preferences live in `features/settings`: a repository handles storage, Riverpod controllers apply selections, and `atlas_app.dart` reads their state. The settings page (`/settings`) composes appearance and connection management; it shares window chrome with the workspace. Android and iOS register `atlas:///` for the workspace and `atlas:///settings` for settings. Settings retains the workspace beneath it when opened directly, so both the page back button and system back return to the workspace. HTTPS App Links / Universal Links remain Planned until a domain and Android release certificate fingerprints are supplied and the domain association files are hosted.
-
-On macOS, startup imports exported variables from the user's interactive login shell once, so configuration values, local shell tools, and ACP subprocesses can find terminal-installed commands even when the app starts from Finder or Dock. Restart Atlas after editing shell configuration. Resolution failure falls back to the original environment; aliases and shell functions are not imported.
+The `go_router` tree nests `/settings` under `/`, so opening settings directly keeps a workspace to return to, and Android and iOS register `atlas:///` and `atlas:///settings`. HTTPS App Links and Universal Links remain Planned until a domain, release certificate fingerprints, and hosted association files exist. On macOS, startup imports the user's exported login-shell variables once so configuration values, shell tools, and ACP subprocesses can find terminal-installed commands when the app starts from Finder or Dock; restart after editing shell configuration, and note that the snapshot contains no aliases or functions.
 
 ## Run and Verify
 
@@ -53,13 +46,11 @@ mise run app-run --device macos
 mise run ci
 ```
 
-Platform release builds remain available through the `mise run app-build-*` tasks. Install a locally built macOS app with `mise run app-install-macos`.
-
-With the app installed on an Android device or iOS simulator, check both a cold launch and delivery while the app is already open:
+Platform release builds use the `mise run app-build-*` tasks, and `mise run app-install-macos` installs a locally built macOS app. With the app installed on an Android device or iOS simulator, check deep links on a cold launch and while the app is already open:
 
 ```sh
 adb shell am start -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d 'atlas:///settings' xin.liuyu.atlas_app
 xcrun simctl openurl booted 'atlas:///settings'
 ```
 
-The three slashes keep `settings` in the URL path. Verify that settings opens and that its back button returns to the workspace; on Android also verify system back.
+Settings must open with a working back button, and on Android system back must also return to the workspace.

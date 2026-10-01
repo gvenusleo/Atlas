@@ -9,9 +9,9 @@ Atlas documentation is organized by purpose:
 - `configuration.md`: the `~/.atlas/config.yaml` schema and validation rules.
 - `development.md`: workspace layout, commands, and engineering rules.
 - `tools.md`: the built-in tool catalog, limits, and security boundary.
-- [MCP tools](mcp.md): stdio/HTTP setup, behavior, and supported scope.
-- [MCP client development plan](plans/mcp-support.md): SDK integration decisions, delivery phases, and follow-up scope.
-- [Remote mobile control plan](plans/remote-mobile-control.md): ACP over WebSocket, authentication, disconnect semantics, and delivery phases.
+- `mcp.md`: MCP server setup, tool behavior, and supported scope.
+- `protocol-acp.md`: the ACP surface, Atlas extensions, and the WebSocket transport.
+- `data-model.md`: persistence layout and failure rules.
 - package `README.md` files: local responsibility and dependency constraints.
 
 Keep each Markdown paragraph on a single line: do not hard-wrap prose, list items, or blockquote paragraphs.
