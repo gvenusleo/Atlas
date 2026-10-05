@@ -16,5 +16,5 @@ Shared process composition for Atlas applications.
 ## Prohibited ownership
 
 - No presentation, protocol handling, or application lifecycle.
-- No CLI argument parsing or configuration-file path discovery; composition roots locate `~/.atlas/config.yaml` and pass the loaded `AtlasConfig`.
+- No CLI argument parsing or configuration-file path discovery; composition roots locate the JSON configuration directory at `~/.atlas` and pass the loaded `AtlasConfig`.
 - Feature and presentation code receives the resulting runtime through injection instead of depending on this package.

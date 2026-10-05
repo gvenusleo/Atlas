@@ -4,11 +4,12 @@ The command-line and Nocterm entry point for Atlas.
 
 ## Responsibility
 
-- Owns the process entry point: loads `~/.atlas/config.yaml`, then calls `atlas_composition` `composeTools` and `composeRuntime` to obtain one `AgentRuntime`.
+- Owns the process entry point: loads the JSON configuration documents in `~/.atlas`, then calls `atlas_composition` `composeTools` and `composeRuntime` to obtain one `AgentRuntime`.
 - Starts the Nocterm TUI by default (`atlas`); `atlas acp` serves the same runtime to ACP clients over NDJSON stdio, and `atlas server` exposes it over a bearer-token WebSocket endpoint for mobile and remote clients. Other subcommands reuse the same runtime instead of duplicating the agent loop.
 - Routes commands through a thin executable trampoline and `CommandRunner<int>`, validating help and usage before configuration or resource allocation.
 - Owns resource teardown: drains runtime shutdown, then closes protocol listeners, MCP connections, storage, and HTTP clients before returning a standard exit code.
 - Generates `--version` from this package's pubspec with `build_version`.
+- Exposes `config validate`, `models list|refresh`, and `auth set|remove` without starting the runtime or MCP servers.
 
 ## Verification
 
@@ -18,8 +19,8 @@ The command-line and Nocterm entry point for Atlas.
 
 - `atlas_composition` for runtime construction, plus `atlas_config` and `atlas_prompt` for configuration and skill loading at the TUI entry.
 - `atlas_tui` for the chat interface, `atlas_acp` for `atlas acp`, and `atlas_ws` for the `atlas server` endpoint and token store.
-- `atlas_runtime` public types, with `atlas_storage` and `atlas_provider` used only for owned adapter lifetimes.
-- `args`, `io`, `stack_trace`, and `dart:io` for routing, exit codes, diagnostics, and entry-point access.
+- `atlas_runtime` public types, with `atlas_storage` and `atlas_provider` used for owned adapter lifetimes, catalog refresh, and API-key storage.
+- `args`, `io`, `path`, `stack_trace`, and `dart:io` for routing, exit codes, diagnostics, and entry-point access.
 
 ## Prohibited ownership
 

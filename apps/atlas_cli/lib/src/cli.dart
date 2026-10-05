@@ -17,6 +17,7 @@ import 'runtime_resources.dart';
 import 'termination_signals.dart';
 import 'server_command.dart';
 import 'version.dart';
+import 'model_commands.dart';
 
 /// Runs one invocation, routing diagnostics separately from command output.
 Future<int> runCli(List<String> args, {AtlasCommandRunner? runner}) async {
@@ -81,6 +82,7 @@ final class AtlasCommandRunner({
     addCommand(_AcpCommand(this));
     addCommand(_ServerCommand(this));
     addCommand(_CacheCommand(this));
+    addModelCommands(this);
   }
 
   /// Command results and explicitly requested help.
@@ -108,7 +110,7 @@ final class AtlasCommandRunner({
 
   /// Loads configuration only after command help and validation are complete.
   AtlasConfig loadConfiguration() =>
-      _configLoader?.call() ?? loadConfig(File('$home/.atlas/config.yaml'));
+      _configLoader?.call() ?? loadConfig(Directory('$home/.atlas'));
 
   @override
   Future<int?> runCommand(ArgResults topLevelResults) async {

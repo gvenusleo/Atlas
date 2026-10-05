@@ -767,11 +767,45 @@ final class AcpClient._(
             continue;
           }
           final ref = _modelRefFromValue(value);
+          final metadata = option.meta['atlas.dev'];
+          final details = metadata is Map && metadata['version'] == 1
+              ? metadata
+              : const <String, Object?>{};
+          final contextWindow = details['contextWindow'];
+          final maxOutput = details['maxOutputTokens'];
+          final inputs = details['input'];
+          final efforts = details['reasoningEfforts'];
+          if (efforts is List) {
+            _effortsByModel[ref] = List.unmodifiable([
+              for (final effort in efforts)
+                if (effort is Map && effort['value'] is String)
+                  rt.ReasoningEffortOption(
+                    value: effort['value'] as String,
+                    name: effort['name'] is String
+                        ? effort['name'] as String
+                        : '',
+                    description: effort['description'] is String
+                        ? effort['description'] as String
+                        : '',
+                  ),
+            ]);
+          }
           catalog.add(
             rt.ModelDescriptor(
               ref: ref,
               name: option.name,
               description: option.description ?? '',
+              contextWindow: contextWindow is int && contextWindow > 0
+                  ? contextWindow
+                  : 0,
+              maxOutputTokens: maxOutput is int && maxOutput > 0
+                  ? maxOutput
+                  : 0,
+              inputCapabilities: {
+                rt.ModelInputCapability.text,
+                if (inputs is List && inputs.contains('image'))
+                  rt.ModelInputCapability.image,
+              },
               reasoningEfforts: _effortsByModel[ref] ?? const [],
             ),
           );
@@ -834,6 +868,9 @@ final class AcpClient._(
           ref: model.ref,
           name: model.name,
           description: model.description,
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxOutputTokens,
+          inputCapabilities: model.inputCapabilities,
           reasoningEfforts: _effortsByModel[model.ref] ?? const [],
         ),
     ]);

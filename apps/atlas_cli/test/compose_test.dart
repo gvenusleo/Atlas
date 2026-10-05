@@ -11,16 +11,7 @@ import 'package:test/test.dart';
 
 void main() {
   test('composeRuntime wires config into a working runtime', () {
-    final config = parseConfig('''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: responses
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: gpt-4o
-''');
+    final config = _config();
     final runtime = composeRuntime(
       config,
       store: _testStore(),
@@ -33,16 +24,7 @@ providers:
   });
 
   test('composeRuntime registers the built-in tools by default', () {
-    final config = parseConfig('''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: responses
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: gpt-4o
-''');
+    final config = _config();
     final runtime = composeRuntime(config, store: _testStore());
 
     expect(runtime.tools.descriptors.map((d) => d.name), [
@@ -57,15 +39,7 @@ providers:
   test(
     'composeRuntime passes startup exports to its default shell tool',
     () async {
-      final config = parseConfig('''default_model: oa/test
-providers:
-  - name: oa
-    type: responses
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: test
-''');
+      final config = _config();
       final runtime = composeRuntime(
         config,
         store: _testStore(),
@@ -93,16 +67,7 @@ providers:
   );
 
   test('builds real providers and storage from config', () async {
-    final config = parseConfig('''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: responses
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: gpt-4o
-''');
+    final config = _config();
     final runtime = composeRuntime(config, store: _testStore());
 
     // The config-driven provider branch is exercised: the composite provider
@@ -118,20 +83,16 @@ providers:
       final fixture = File('../../packages/atlas_mcp/test/fixtures/server.dart')
           .absolute
           .path;
-      final config = parseConfig('''default_model: fake/provider
-providers:
-  - name: fake
-    type: responses
-    base_url: https://example.com
-    api_key: unused
-    models:
-      - value: provider
-mcp_servers:
-  - name: test
-    transport: stdio
-    command: ${jsonEncode(Platform.resolvedExecutable)}
-    args: [${jsonEncode(fixture)}]
-''');
+      final config = _config(
+        mcp: {
+          'mcpServers': {
+            'test': {
+              'command': Platform.resolvedExecutable,
+              'args': [fixture],
+            },
+          },
+        },
+      );
       final tools = await composeTools(config);
       addTearDown(tools.close);
       final store = _testStore();
@@ -189,16 +150,7 @@ mcp_servers:
   test(
     'runs a multi-turn tool loop with a fake provider and real tools',
     () async {
-      final config = parseConfig('''
-default_model: fake/provider
-providers:
-  - name: fake
-    type: responses
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: provider
-''');
+      final config = _config();
       final dir = await Directory.systemTemp.createTemp('compose_test_');
       addTearDown(() => dir.delete(recursive: true));
       await Directory('${dir.path}/sub').create(recursive: true);
@@ -248,6 +200,12 @@ providers:
     },
   );
 }
+
+AtlasConfig _config({Map<String, Object?> mcp = const {}}) => parseConfig(
+  '{"defaultProvider":"fake","defaultModel":"provider"}',
+  modelsText: '{"providers":{"fake":{"api":"openai-responses","baseUrl":"https://example.com","apiKey":"k","models":[{"id":"provider"}]}}}',
+  mcpText: jsonEncode(mcp),
+);
 
 // Fake provider drives the tool loop: the first request asks to read the file,
 // every later request (which carries the tool result) finishes the turn. It

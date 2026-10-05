@@ -1,15 +1,22 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
+import '../model_options.dart';
+import '../provider_auth.dart';
+
 /// Configuration for the Anthropic Messages endpoint.
 final class AnthropicProviderConfiguration({
   /// The provider identifier used by configured model references.
   required final ProviderId id,
 
-  /// The API root, without the `/v1/messages` path.
+  /// The API base, including its version path (for example `/v1`).
+  /// The adapter appends only `/messages`.
   required final Uri baseUrl,
 
   /// The API key sent as `x-api-key`.
-  required final String apiKey,
+  final String apiKey = '',
+
+  /// Request-time credentials and custom headers, when configured.
+  final ProviderAuthentication? authentication,
   required List<AnthropicModelConfiguration> models,
 
   /// The `anthropic-version` header value.
@@ -30,8 +37,11 @@ final class const AnthropicModelConfiguration({
   /// The runtime model descriptor.
   required final ModelDescriptor descriptor,
 
-  /// Extended thinking budget in tokens; zero disables thinking.
+  /// Explicit manual thinking budget; zero uses reasoning defaults from options.
   final int thinkingBudgetTokens = 0,
+
+  /// Provider-specific defaults and compatibility behavior.
+  final ModelOptions options = const ModelOptions(),
 }) {
   /// Creates a model configuration.
   this;

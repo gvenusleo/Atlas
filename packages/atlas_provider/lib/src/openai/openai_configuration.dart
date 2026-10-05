@@ -1,5 +1,8 @@
 import 'package:atlas_runtime/atlas_runtime.dart';
 
+import '../model_options.dart';
+import '../provider_auth.dart';
+
 /// The streaming API variant exposed by an OpenAI-compatible endpoint.
 enum OpenAIProtocol {
   /// The `/chat/completions` API.
@@ -24,6 +27,9 @@ final class OpenAIProviderConfiguration({
   /// The bearer token. Empty values omit the authorization header.
   final String apiKey = '',
 
+  /// Request-time credentials and custom headers, when configured.
+  final ProviderAuthentication? authentication,
+
   /// An optional user-agent override.
   final String? userAgent,
 }) {
@@ -38,6 +44,9 @@ final class OpenAIProviderConfiguration({
 final class const OpenAIModelConfiguration({
   /// The runtime model descriptor.
   required final ModelDescriptor descriptor,
+
+  /// Provider-specific defaults and compatibility behavior.
+  final ModelOptions options = const ModelOptions(),
 }) {
   /// Creates a model configuration.
   this;

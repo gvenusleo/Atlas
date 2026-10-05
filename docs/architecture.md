@@ -51,7 +51,7 @@ Each CLI command owns the storage and HTTP clients it composes. On shutdown it s
 | `atlas_runtime` | Session and turn domain models, ordered timeline, model/tool ports, the agent engine, cancellation, compaction, skills |
 | `atlas_storage` | Drift persistence for sessions, turns, and typed timeline messages, plus queries |
 | `atlas_provider` | OpenAI-compatible Chat Completions and Responses plus Anthropic Messages: authentication, request mapping, SSE decoding, retries, response conversion |
-| `atlas_config` | YAML schema, loading, validation, and mapping of `~/.atlas/config.yaml` onto provider configuration |
+| `atlas_config` | Pi-shaped `settings.json`, `models.json`, and `mcp.json` loading, validation, and model override resolution |
 | `atlas_tools` | Built-in tools with structured calls and results |
 | `atlas_prompt` | System prompt construction, including `~/.atlas/AGENTS.md` and working-directory instruction files |
 | `atlas_ws` | Versioned WebSocket wire contract and transport for the `/acp` endpoint |
@@ -66,10 +66,18 @@ Each CLI command owns the storage and HTTP clients it composes. On shutdown it s
 
 - `atlas_runtime` owns domain models and ports and depends on no storage, provider, tool, UI, or transport implementation.
 - Storage, provider, and tool packages implement runtime ports; adapters do not own orchestration. Provider-specific request fields stay in `atlas_provider`.
-- `atlas_provider` selects an endpoint by `ModelRef`. OpenAI and Anthropic adapters share `HttpStreamClient` and `decodeSse`; `CompositeModelProvider` routes by provider identifier so several providers share one runtime. Streaming failures surface as one terminal event, retries happen only before the first streamed event, and cancellation is bridged to Dio's `CancelToken`.
+- `atlas_provider` selects an endpoint by `ModelRef`. OpenAI and Anthropic adapters share `HttpStreamClient` and `decodeSse`; `CompositeModelProvider` routes by full model reference so a relay can use a different API and endpoint for each model. Streaming failures surface as one terminal event, retries happen only before the first streamed event, and cancellation is bridged to Dio's `CancelToken`.
 - `atlas_ws` owns the versioned wire schema and transport behavior without composing runtime services.
 - Only application bootstrap code constructs adapters; both application roots use `atlas_composition`, and `atlas_prompt` depends on `atlas_runtime` public types only.
 - ACP owns its protocol lifecycle through `acpd`; `atlas server` reuses one `AcpServer` per connection. MCP uses `mcp_dart` inside `atlas_mcp`, and SDK HTTP dependencies stay in that adapter.
+
+## Model Configuration and Authentication
+
+`atlas_config` resolves an immutable startup snapshot from settings, custom models, and MCP documents. `atlas_provider` supplies bundled/cached models.dev metadata for supported built-ins and owns request-time authentication, custom headers, and compatibility behavior. `models` entries add or replace definitions; `modelOverrides` merges metadata after the catalog. Unsupported protocol options fail during loading. Provider keys are names for services, including arbitrary relays, with no separate connection identity.
+
+Saved API keys live in `auth.json`, with serialized and file-locked atomic updates. Each request re-reads the selected credential and evaluates configured environment/command references; listing models does not execute credential commands. Catalog refresh validates before replacing the disposable cache, and corrupt caches fall back to the bundle. Configuration and catalog changes take effect after restarting the host; saved-key changes take effect on the next request. SQLite continues to own session records and never becomes a second source of provider configuration.
+
+ACP model options carry versioned `atlas.dev` metadata for context/output limits, input modalities, and reasoning choices. Atlas clients retain these fields when rebuilding catalogs after session updates; third-party ACP options without the extension remain supported.
 
 ## Flutter Client State
 
@@ -91,7 +99,7 @@ The runtime and every adapter preserve these product-level contracts:
 - A `Session` holds ordered `TimelineItem` values and durable `Turn` records. User input is persisted atomically with a running turn before the first provider request, and every assistant message may carry a provider-owned `ModelContinuation` that is stored inside the assistant row and restored onto the provider-neutral message.
 - Cancellation before a turn starts creates no timeline item. Text already received from an interrupted stream is persisted as an aborted assistant message and participates in later model context.
 - Skill injection keeps the original user text in history; full skill instructions are turn-scoped model context, not transcript content.
-- Model requests stay prefix-stable: the system prompt is rebuilt from the frozen session context with the operating context last, the timeline projection only appends, and skill instructions are appended after the projected history. Anthropic requests mark cache breakpoints on the last tool, the system prompt, and the last cacheable message block, while OpenAI-compatible requests send the session identifier as `prompt_cache_key`; `atlas cache` reports reuse from the session database without inferring historical accounting from current configuration.
+- Model requests stay prefix-stable: the system prompt is rebuilt from the frozen session context with the operating context last, the timeline projection only appends, and skill instructions are appended after the projected history. Anthropic requests mark cache breakpoints on the last tool, the system prompt, and the last cacheable message block, while OpenAI Responses and official OpenAI Chat Completions requests send the session identifier as `prompt_cache_key`, and compatible relays can opt into session-affinity headers; `atlas cache` reports reuse from the session database without inferring historical accounting from current configuration.
 - Compaction keeps the durable timeline and replaces the active context checkpoint on the session row. The runtime keeps the newest whole turns verbatim, summarizes the rest into a leading `<context_summary>` user message, and never splits an assistant/tool/result group. An optional compact instruction changes only the summary, and manual compaction uses the session's selected model or the model of the last turn.
 
 These contracts describe expected behavior, not compatibility with the removed Go implementation or its database schema.

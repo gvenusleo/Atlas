@@ -10,8 +10,11 @@ import 'openai_configuration.dart';
 /// Parses a Chat Completions streaming response.
 final class ChatParser(
   /// The provider that owns this stream.
-  final ProviderId providerId,
-) implements StreamParser {
+  final ProviderId providerId, {
+
+  /// Whether the endpoint must send a finish_reason before [DONE].
+  final bool supportsFinishReason = true,
+}) implements StreamParser {
   /// Creates a chat parser for [providerId].
   this;
 
@@ -86,7 +89,9 @@ final class ChatParser(
 
   @override
   ModelResponse finish() {
-    if (!_sawEvent || !_done || _finishReason == null) {
+    if (!_sawEvent ||
+        !_done ||
+        (supportsFinishReason && _finishReason == null)) {
       throw OpenAIProviderException(
         providerId: providerId,
         message: 'chat stream ended without completion',
@@ -136,7 +141,7 @@ final class ChatParser(
     final reason = calls.isNotEmpty
         ? StopReason.toolUse
         : switch (_finishReason) {
-            'stop' => StopReason.endTurn,
+            'stop' || null => StopReason.endTurn,
             'length' => StopReason.maxTokens,
             _ => StopReason.unknown,
           };

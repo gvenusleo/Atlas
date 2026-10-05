@@ -6,7 +6,7 @@ Atlas documentation is organized by purpose:
 
 - `README.md`: product status and currently supported entry points.
 - `architecture.md`: system boundaries and dependency direction.
-- `configuration.md`: the `~/.atlas/config.yaml` schema and validation rules.
+- `configuration.md`: Pi-shaped JSON settings, models, authentication, catalog refresh, and validation rules.
 - `development.md`: workspace layout, commands, and engineering rules.
 - `tools.md`: the built-in tool catalog, limits, and security boundary.
 - `mcp.md`: MCP server setup, tool behavior, and supported scope.

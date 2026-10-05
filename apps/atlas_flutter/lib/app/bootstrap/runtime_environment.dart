@@ -28,7 +28,7 @@ RuntimeEnvironmentController createRuntimeEnvironmentController({
   );
 }
 
-/// Loads `~/.atlas/config.yaml` and composes the Flutter process runtime.
+/// Loads the JSON documents in `~/.atlas` and composes the local runtime.
 ///
 /// The local runtime is exposed through an in-process ACP server and consumed
 /// through an [AcpClient]. Mobile clients skip local composition.
@@ -46,7 +46,7 @@ Future<RuntimeBootstrap> bootstrapRuntime({
     );
   }
 
-  final configFile = File('$home/.atlas/config.yaml');
+  final configDirectory = Directory('$home/.atlas');
   DriftSessionStore? store;
   ComposedTools? tools;
   DioHttpStreamClient? http;
@@ -75,7 +75,7 @@ Future<RuntimeBootstrap> bootstrapRuntime({
   Future<void> close() => closing ??= cleanup();
 
   try {
-    final config = loadConfig(configFile, environment: values);
+    final config = loadConfig(configDirectory, environment: values);
     final logger = composeLogger(config);
     tools = await composeTools(config, environment: values, logger: logger);
     http = DioHttpStreamClient();
@@ -107,7 +107,9 @@ Future<RuntimeBootstrap> bootstrapRuntime({
     );
   } on ConfigLoadException catch (error) {
     await close();
-    return RuntimeBootstrap.failed('Cannot load ${configFile.path}: $error');
+    return RuntimeBootstrap.failed(
+      'Cannot load ${configDirectory.path}: $error',
+    );
   } on Object catch (error) {
     await close();
     final detail = error is SafeMessageException

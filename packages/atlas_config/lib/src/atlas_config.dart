@@ -3,12 +3,12 @@ import 'mcp_config.dart';
 import 'package:atlas_provider/atlas_provider.dart';
 import 'package:atlas_runtime/atlas_runtime.dart';
 
-/// The application configuration loaded from `~/.atlas/config.yaml`.
+/// A resolved snapshot of Atlas settings, model definitions, and MCP servers.
 final class const AtlasConfig({
   /// The model used when a turn does not provide an override.
   required final ModelRef defaultModel,
 
-  /// Configured model providers in file order.
+  /// Resolved model adapters; one provider may use several API protocols.
   required final List<ConfiguredProvider> providers,
 
   /// Configured external MCP tool servers.

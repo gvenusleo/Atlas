@@ -6,37 +6,38 @@ Atlas is an MCP client: tools from configured servers join the same agent loop a
 
 ## Configuration
 
-Add the optional `mcp_servers` list to `~/.atlas/config.yaml`, then restart Atlas. It defaults to an empty list.
+Configure `~/.atlas/mcp.json` using the common `mcpServers` object, then restart Atlas. A missing file means no external servers. Atlas accepts the stdio/HTTP subset of Pi-style MCP configuration; unsupported OAuth and exposure options are rejected.
 
-```yaml
-mcp_servers:
-  - name: local_tools
-    transport: stdio
-    command: /absolute/path/to/mcp-server
-    args: []
-    cwd: ~/workspace
-    env:
-      SERVICE_TOKEN: ${SERVICE_TOKEN}
-    startup_timeout_seconds: 15
-    call_timeout_seconds: 60
-
-  - name: remote_tools
-    transport: streamable_http
-    url: https://tools.example.com/mcp
-    headers:
-      Authorization: Bearer ${MCP_TOKEN}
-    enabled: true
+```json
+{
+  "mcpServers": {
+    "local_tools": {
+      "command": "/absolute/path/to/mcp-server",
+      "args": [],
+      "cwd": "~/workspace",
+      "env": { "SERVICE_TOKEN": "${SERVICE_TOKEN}" },
+      "startupTimeout": 15,
+      "timeout": 60
+    },
+    "remote_tools": {
+      "type": "http",
+      "url": "https://tools.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${MCP_TOKEN}" },
+      "enabled": true
+    }
+  }
+}
 ```
 
 Atlas does not install servers and does not treat `command` as a shell command; put literal arguments in `args`. No OAuth browser login is performed, so a remote server must accept no authentication or your configured static headers.
 
 | Field | Rules |
 |---|---|
-| `name` | Unique; 1–128 ASCII letters, digits, underscores or hyphens. |
-| `transport` | `stdio` or `streamable_http`. |
+| Object key | Server ID: 1-128 ASCII letters, digits, underscores or hyphens. |
+| `type` | `stdio` or `http`; inferred from `command` when omitted, otherwise HTTP. |
 | `enabled` | Boolean, default `true`. Disabled entries are structurally validated but do not resolve credentials or connect. |
-| `startup_timeout_seconds` | Positive integer, default 15; connection and all discovery pages share this deadline. |
-| `call_timeout_seconds` | Positive integer, default 60; progress does not extend the total deadline. |
+| `startupTimeout` | Atlas extension: positive integer seconds, default 15; connection and discovery share this deadline. |
+| `timeout` | Positive integer seconds, default 60; unlike Pi, progress does not extend Atlas's total call deadline. |
 | `command`, `args` | stdio executable and optional string list; no shell expansion. |
 | `cwd` | stdio only; absolute path, with leading `~/` expansion. Omitted means Atlas's startup directory. |
 | `env` | stdio string overrides on the bootstrap environment snapshot. |

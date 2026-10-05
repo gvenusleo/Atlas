@@ -49,19 +49,15 @@ void main() {
   }) async {
     if (configured) {
       await d.dir('.atlas', [
-        d.file('config.yaml', '''
-default_model: test/model
-providers:
-  - name: test
-    type: responses
-    base_url: https://example.invalid
-    api_key: unused-test-key
-    models:
-      - value: model
-session:
-  db_path: ~/.atlas/test.db
-$mcp
-'''),
+        d.file(
+          'settings.json',
+          '{"defaultProvider":"test","defaultModel":"model","session":{"dbPath":"~/.atlas/test.db"}}',
+        ),
+        d.file(
+          'models.json',
+          '{"providers":{"test":{"api":"openai-responses","baseUrl":"https://example.invalid","apiKey":"unused-test-key","models":[{"id":"model"}]}}}',
+        ),
+        if (mcp.isNotEmpty) d.file('mcp.json', mcp),
       ]).create();
     }
     return TestProcess.start(
@@ -116,15 +112,93 @@ $mcp
     expect(File(d.path('.atlas/test.db')).existsSync(), isFalse);
   });
 
-  test('missing configuration uses EX_CONFIG', () async {
+  test('invalid JSON configuration uses EX_CONFIG', () async {
+    await d.dir('.atlas', [d.file('settings.json', '{broken')]).create();
     final process = await start(['cache']);
     await process.shouldExit(ExitCode.config.code);
     expect(await process.stdout.rest.toList(), isEmpty);
     expect(
       (await process.stderr.rest.toList()).join('\n'),
-      contains('cannot read'),
+      contains('invalid JSON'),
     );
   });
+
+  test(
+    'missing JSON documents allow offline startup with default storage',
+    () async {
+      final process = await start(['cache']);
+      await process.shouldExit(0);
+      expect(
+        (await process.stdout.rest.toList()).join('\n'),
+        contains('No turns recorded'),
+      );
+      expect(await process.stderr.rest.toList(), isEmpty);
+      expect(File(d.path('.atlas/atlas.db')).existsSync(), isTrue);
+    },
+  );
+
+  test(
+    'auth commands preserve provider entries without opening runtime storage',
+    () async {
+      final first = await start(['auth', 'set', 'relay']);
+      first.stdin.writeln('test-key-one');
+      await first.stdin.close();
+      await first.shouldExit(0);
+      expect(
+        (await first.stdout.rest.toList()).join('\n'),
+        contains('Saved credentials for relay'),
+      );
+      expect(await first.stderr.rest.toList(), isEmpty);
+      final second = await start(['auth', 'set', 'other']);
+      second.stdin.writeln('test-key-two');
+      await second.stdin.close();
+      await second.shouldExit(0);
+      final remove = await start(['auth', 'remove', 'relay']);
+      await remove.shouldExit(0);
+      final data = jsonDecode(
+        await File(d.path('.atlas/auth.json')).readAsString(),
+      ) as Map;
+      expect(data.keys, ['other']);
+      expect(data['other'], {'type': 'api_key', 'key': 'test-key-two'});
+      expect(File(d.path('.atlas/atlas.db')).existsSync(), isFalse);
+    },
+  );
+
+  test(
+    'configuration validation and model listing do not run credential commands',
+    () async {
+      await d.dir('.atlas', [
+        d.file(
+          'settings.json',
+          '{"defaultProvider":"relay","defaultModel":"test"}',
+        ),
+        d.file(
+          'models.json',
+          jsonEncode({
+            'providers': {
+              'relay': {
+                'api': 'openai-completions',
+                'baseUrl': 'https://example.invalid',
+                'apiKey': '!exit 99',
+                'models': [
+                  {'id': 'test'},
+                ],
+              },
+            },
+          }),
+        ),
+      ]).create();
+      final validate = await start(['config', 'validate']);
+      await validate.shouldExit(0);
+      final list = await start(['models', 'list']);
+      await list.shouldExit(0);
+      expect(
+        (await list.stdout.rest.toList()).join('\n'),
+        contains('relay/test'),
+      );
+      expect(File(d.path('.atlas/atlas.db')).existsSync(), isFalse);
+    },
+  );
 
   test('cache flushes output and closes its database', () async {
     final process = await start(['cache', '--limit=5'], configured: true);
@@ -301,15 +375,17 @@ $mcp
     final fixture = File('../../packages/atlas_mcp/test/fixtures/server.dart')
         .absolute
         .path;
-    return '''mcp_servers:
-  - name: fixture
-    transport: stdio
-    command: ${jsonEncode('${cli_util.sdkPath}/bin/dart${Platform.isWindows ? '.exe' : ''}')}
-    args: [${jsonEncode(fixture)}${silent ? ', silent' : ''}]
-    startup_timeout_seconds: 60
-    env:
-      ATLAS_MCP_PID_FILE: ${jsonEncode(d.path('mcp.pid'))}
-''';
+    return jsonEncode({
+      'mcpServers': {
+        'fixture': {
+          'command':
+              '${cli_util.sdkPath}/bin/dart${Platform.isWindows ? '.exe' : ''}',
+          'args': [fixture, if (silent) 'silent'],
+          'startupTimeout': 60,
+          'env': {'ATLAS_MCP_PID_FILE': d.path('mcp.pid')},
+        },
+      },
+    });
   }
 
   Future<void> expectMcpExited() async {

@@ -6,37 +6,38 @@ Atlas 是 MCP 客户端：配置的服务器工具与 `read`、`write`、`edit`�
 
 ## 配置
 
-在 `~/.atlas/config.yaml` 中增加可选的 `mcp_servers` 列表，默认空列表，修改后重启 Atlas。
+在 `~/.atlas/mcp.json` 中使用常见的 `mcpServers` 对象配置，修改后重启 Atlas。缺失文件表示没有外部服务器。Atlas 接受 Pi 风格 MCP 配置的 stdio/HTTP 子集，不支持的 OAuth 和 exposure 选项会被拒绝。
 
-```yaml
-mcp_servers:
-  - name: local_tools
-    transport: stdio
-    command: /absolute/path/to/mcp-server
-    args: []
-    cwd: ~/workspace
-    env:
-      SERVICE_TOKEN: ${SERVICE_TOKEN}
-    startup_timeout_seconds: 15
-    call_timeout_seconds: 60
-
-  - name: remote_tools
-    transport: streamable_http
-    url: https://tools.example.com/mcp
-    headers:
-      Authorization: Bearer ${MCP_TOKEN}
-    enabled: true
+```json
+{
+  "mcpServers": {
+    "local_tools": {
+      "command": "/absolute/path/to/mcp-server",
+      "args": [],
+      "cwd": "~/workspace",
+      "env": { "SERVICE_TOKEN": "${SERVICE_TOKEN}" },
+      "startupTimeout": 15,
+      "timeout": 60
+    },
+    "remote_tools": {
+      "type": "http",
+      "url": "https://tools.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${MCP_TOKEN}" },
+      "enabled": true
+    }
+  }
+}
 ```
 
 Atlas 不安装服务器，也不把 `command` 当作 shell 命令，字面参数放入 `args`。不会发起 OAuth 浏览器登录，远程服务器需支持无认证或配置的静态请求头。
 
 | 字段 | 规则 |
 |---|---|
-| `name` | 唯一；1–128 个 ASCII 字母、数字、下划线或连字符。 |
-| `transport` | `stdio` 或 `streamable_http`。 |
+| 对象键 | Server ID：1 到 128 个 ASCII 字母、数字、下划线或连字符。 |
+| `type` | `stdio` 或 `http`；省略时，有 `command` 则使用 stdio，否则为 HTTP。 |
 | `enabled` | 布尔值，默认 `true`；禁用项检查结构，但不展开凭据、不连接。 |
-| `startup_timeout_seconds` | 正整数，默认 15；连接和全部工具分页共享截止时间。 |
-| `call_timeout_seconds` | 正整数，默认 60；进度不会延长总截止时间。 |
+| `startupTimeout` | Atlas 扩展：正整数秒，默认 15；连接和工具发现共享截止时间。 |
+| `timeout` | 正整数秒，默认 60；与 Pi 不同，进度不会延长 Atlas 的总调用截止时间。 |
 | `command`、`args` | stdio 可执行程序与可选字符串参数列表，不做 shell 展开。 |
 | `cwd` | 仅 stdio；绝对路径，展开开头的 `~/`；省略时使用 Atlas 启动目录。 |
 | `env` | stdio 字符串映射，覆盖 bootstrap 环境快照。 |

@@ -119,26 +119,39 @@ void main() {
             await request.response.close();
           }),
         );
-        final config = File('${home.path}/.atlas/config.yaml');
+        final config = File('${home.path}/.atlas/settings.json');
         await config.parent.create();
-        await config.writeAsString('''default_model: local/test
-providers:
-  - name: local
-    type: chat_completions
-    base_url: http://127.0.0.1:${server.port}/v1
-    api_key: \${ATLAS_BOOTSTRAP_TEST_KEY}
-    models:
-      - value: test
-        context_window: 100000
-''');
+        await config.writeAsString(
+          '{"defaultProvider":"local","defaultModel":"test"}',
+        );
+        await File('${home.path}/.atlas/models.json').writeAsString(
+          jsonEncode({
+            'providers': {
+              'local': {
+                'api': 'openai-completions',
+                'baseUrl': 'http://127.0.0.1:${server.port}/v1',
+                'apiKey': r'${ATLAS_BOOTSTRAP_TEST_KEY}',
+                'models': [
+                  {'id': 'test', 'contextWindow': 100000},
+                ],
+              },
+            },
+          }),
+        );
         if (mcp) {
-          await config.writeAsString('''mcp_servers:
-  - name: remote
-    transport: streamable_http
-    url: http://127.0.0.1:${server.port}/mcp
-    headers:
-      Authorization: Bearer \${ATLAS_BOOTSTRAP_TEST_KEY}
-''', mode: FileMode.append);
+          await File('${home.path}/.atlas/mcp.json').writeAsString(
+            jsonEncode({
+              'mcpServers': {
+                'remote': {
+                  'type': 'http',
+                  'url': 'http://127.0.0.1:${server.port}/mcp',
+                  'headers': {
+                    'Authorization': r'Bearer ${ATLAS_BOOTSTRAP_TEST_KEY}',
+                  },
+                },
+              },
+            }),
+          );
         }
         final values = {
           ...Platform.environment,

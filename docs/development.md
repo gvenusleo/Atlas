@@ -8,7 +8,7 @@
 packages/atlas_runtime       session and turn domain, timeline, ports, agent engine
 packages/atlas_storage       Drift persistence and row mapping
 packages/atlas_provider      model provider adapters
-packages/atlas_config        YAML config loading and validation
+packages/atlas_config        JSON config loading and validation
 packages/atlas_prompt        system prompt and skill catalog loading
 packages/atlas_composition   shared runtime composition for CLI and Flutter
 packages/atlas_tools         built-in tools

@@ -1,19 +1,18 @@
 # atlas_config
 
-YAML configuration loading for Atlas composition roots.
+Pi-shaped JSON configuration loading for Atlas composition roots.
 
 ## Responsibility
 
-- Defines the `~/.atlas/config.yaml` schema, parses it into `AtlasConfig` values, and maps them onto ready-to-use provider configuration objects.
-- Validates the document and reports `ConfigLoadException` failures with field paths.
-- Expands `${ENV_VAR}` references and leading `~/` paths for Atlas settings and MCP server entries, skipping secret substitution for disabled entries.
-- Defines stdio and Streamable HTTP `mcp_servers` DTOs without opening connections or importing the MCP SDK.
+- Loads `settings.json`, `models.json`, and `mcp.json` from the supplied Atlas directory; accepts JSON comments and rejects removed YAML configuration.
+- Resolves built-in model metadata, custom provider/model definitions, and `modelOverrides` into one immutable application snapshot.
+- Validates implemented protocol and compatibility fields with redacted field-path diagnostics. Model API keys and headers remain references for request-time resolution in `atlas_provider`.
+- Defines MCP configuration DTOs, expands enabled MCP environment/header references and home paths, and never connects to a server.
 
 ## Allowed dependencies
 
-`yaml`, `atlas_runtime`, and `atlas_provider` public types.
+`atlas_runtime`, `atlas_provider`, and `path` public APIs, plus Dart's JSON and file libraries.
 
 ## Prohibited ownership
 
-- No CLI parsing, path discovery, or argument handling; composition roots locate the configuration file.
-- No provider, storage, or orchestration logic; the package only builds configuration objects for other adapters.
+No CLI parsing, provider requests, credential command execution, session storage, UI, or agent orchestration. Composition roots locate the directory and inject the resolved snapshot.

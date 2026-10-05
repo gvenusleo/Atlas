@@ -7,8 +7,10 @@ void main() {
     final openaiCalls = <String>[];
     final anthropicCalls = <String>[];
     final composite = CompositeModelProvider({
-      ProviderId('openai'): _RecordingProvider(openaiCalls),
-      ProviderId('anthropic'): _RecordingProvider(anthropicCalls),
+      _model(ProviderId('openai'), 'gpt'): _RecordingProvider(openaiCalls),
+      _model(ProviderId('anthropic'), 'claude'): _RecordingProvider(
+        anthropicCalls,
+      ),
     });
 
     await composite.describe(_model(ProviderId('openai'), 'gpt'));
@@ -23,7 +25,7 @@ void main() {
 
   test('reports an unconfigured provider as a failed event', () async {
     final composite = CompositeModelProvider({
-      ProviderId('openai'): _RecordingProvider([]),
+      _model(ProviderId('openai'), 'gpt'): _RecordingProvider([]),
     });
 
     final events = await composite

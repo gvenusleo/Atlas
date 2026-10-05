@@ -14,8 +14,10 @@ final class AtlasDatabase(super.executor) extends _$AtlasDatabase {
   this;
 
   /// Opens a native database file on a background isolate.
-  factory openFile(File file) =>
-      AtlasDatabase(NativeDatabase.createInBackground(file));
+  factory openFile(File file) {
+    file.parent.createSync(recursive: true);
+    return AtlasDatabase(NativeDatabase.createInBackground(file));
+  }
 
   @override
   int get schemaVersion => 1;

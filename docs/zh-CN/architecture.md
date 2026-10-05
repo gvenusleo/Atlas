@@ -51,7 +51,7 @@ graph TD
 | `atlas_runtime` | Session/turn 领域模型、有序 timeline、model/tool ports、Agent engine、取消、compact 与 skill |
 | `atlas_storage` | Session、turn 与有类型 timeline message 的 Drift 持久化，以及查询 |
 | `atlas_provider` | OpenAI-compatible Chat Completions 和 Responses 以及 Anthropic Messages：认证、请求映射、SSE 解码、重试与响应转换 |
-| `atlas_config` | YAML schema、加载与校验，并把 `~/.atlas/config.yaml` 映射为 provider 配置 |
+| `atlas_config` | Pi 风格的 `settings.json`、`models.json`、`mcp.json` 加载、校验与模型覆盖解析 |
 | `atlas_tools` | 返回结构化调用与结果的内置工具 |
 | `atlas_prompt` | 系统提示词构建，包括 `~/.atlas/AGENTS.md` 与工作目录指令文件 |
 | `atlas_ws` | `/acp` 端点的版本化 WebSocket wire contract 与 transport |
@@ -66,10 +66,18 @@ graph TD
 
 - `atlas_runtime` 拥有领域模型与 ports，不依赖任何存储、Provider、工具、UI 或 transport 实现。
 - 存储、Provider 与工具 package 实现 runtime ports；适配器不拥有编排逻辑。Provider 特定请求字段只存在于 `atlas_provider`。
-- `atlas_provider` 通过 `ModelRef` 选择 endpoint。OpenAI 与 Anthropic 适配器共享 `HttpStreamClient` 与 `decodeSse`；`CompositeModelProvider` 按 provider 标识路由，使多个 provider 共享一个 runtime。流式失败表现为一个终态事件，只有首个流事件产生前才重试，取消桥接到 Dio 的 `CancelToken`。
+- `atlas_provider` 通过 `ModelRef` 选择 endpoint。OpenAI 与 Anthropic 适配器共享 `HttpStreamClient` 与 `decodeSse`；`CompositeModelProvider` 按完整模型引用路由，使同一中转站的不同模型可以使用不同 API 和端点。流式失败表现为一个终态事件，只有首个流事件产生前才重试，取消桥接到 Dio 的 `CancelToken`。
 - `atlas_ws` 拥有版本化 wire schema 与 transport 行为，不组装 runtime 服务。
 - 只有应用 bootstrap 创建适配器；两个应用根都使用 `atlas_composition`，`atlas_prompt` 只依赖 `atlas_runtime` 公开类型。
 - ACP 通过 `acpd` 负责协议生命周期；`atlas server` 为每个连接复用同一 `AcpServer`。MCP 在 `atlas_mcp` 内使用 `mcp_dart`，SDK 的 HTTP 依赖限于该适配器。
+
+## 模型配置与认证
+
+`atlas_config` 从设置、自定义模型和 MCP 文件解析不可变启动快照。`atlas_provider` 为受支持的内置 provider 提供随包分发或缓存的 models.dev 元数据，并负责请求时认证、自定义 headers 和兼容行为。`models` 新增或替换定义，`modelOverrides` 在目录加载后合并元数据。不支持的协议选项在加载时失败。Provider 键标识服务，包括任意中转站，没有独立的 connection 身份。
+
+保存的 API key 位于 `auth.json`，更新通过串行队列、文件锁和原子替换完成。每次请求重新读取所选凭据并解析配置的环境变量或命令引用，列举模型不会执行凭据命令。目录刷新校验通过后才替换可重建缓存，损坏缓存回退到内置快照。配置和目录变化重启宿主后生效，保存的 key 变化在下一次请求生效。SQLite 继续保存会话记录，不成为第二份 provider 配置来源。
+
+ACP 模型选项通过带版本的 `atlas.dev` 元数据传递上下文、输出上限、输入模态和推理选项。Atlas 客户端在会话更新后重建目录时保留这些字段，仍支持没有该扩展的第三方 ACP 选项。
 
 ## Flutter 客户端状态
 
@@ -91,7 +99,7 @@ runtime 与所有适配器共同遵守以下产品级契约：
 - `Session` 持有有序 `TimelineItem` 与持久化 `Turn`。用户输入与 running turn 原子写入后才发起首个 Provider 请求；每条 assistant message 可携带 Provider 所有的 `ModelContinuation`，内嵌在 assistant 行中持久化，并恢复到 provider-neutral message 上。
 - turn 启动前取消不产生 timeline item；已从被中断模型流接收的文本以 aborted assistant message 持久化，并参与后续模型上下文。
 - Skill 注入保留历史中的原始用户文本；完整 skill 指令是当前 turn 的模型上下文，不写入 transcript。
-- 模型请求保持前缀稳定：system prompt 由冻结的 session context 重新拼装、运行上下文放在最后，timeline 投影只追加，skill 指令追加在投影历史之后。Anthropic 请求在最后一个工具、system prompt 与最后一条可缓存消息块上打 cache 断点，OpenAI 兼容请求把 session 标识作为 `prompt_cache_key` 发送；`atlas cache` 从 session 数据库报告复用情况，不依据当前配置推断历史口径。
+- 模型请求保持前缀稳定：system prompt 由冻结的 session context 重新拼装、运行上下文放在最后，timeline 投影只追加，skill 指令追加在投影历史之后。Anthropic 请求在最后一个工具、system prompt 与最后一条可缓存消息块上打 cache 断点，OpenAI Responses 与官方 OpenAI Chat Completions 请求把 session 标识作为 `prompt_cache_key` 发送，兼容中转站可启用 session affinity headers；`atlas cache` 从 session 数据库报告复用情况，不依据当前配置推断历史口径。
 - Compact 保留持久 timeline，只替换 session 行上的 active context checkpoint。runtime 原样保留最近若干完整 turn，把更早内容总结为首条 `<context_summary>` user 消息，且不拆分 assistant/tool/result 组。可选 compact 指令只影响摘要；手动 compact 使用该 session 当前选中的模型，没有则回退到最后一个 turn 使用的模型。
 
 这些契约描述预期行为，不表示需要兼容已删除的 Go 实现或其数据库 schema。

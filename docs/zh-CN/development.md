@@ -8,7 +8,7 @@
 packages/atlas_runtime       Session/Turn 领域、timeline、ports 与 Agent engine
 packages/atlas_storage       Drift 持久化与行映射
 packages/atlas_provider      模型 Provider 适配器
-packages/atlas_config        YAML 配置加载与校验
+packages/atlas_config        JSON 配置加载与校验
 packages/atlas_prompt        系统提示词与 skill catalog 加载
 packages/atlas_composition   CLI 与 Flutter 共用的 runtime 组装
 packages/atlas_tools         内置工具

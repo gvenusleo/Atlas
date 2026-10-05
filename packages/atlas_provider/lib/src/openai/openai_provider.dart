@@ -9,6 +9,7 @@ import '../stream_runner.dart';
 import 'chat_parser.dart';
 import 'openai_configuration.dart';
 import 'responses_parser.dart';
+import '../model_options.dart';
 
 /// Streams configured models through the OpenAI Chat Completions or Responses API.
 final class OpenAICompatibleProvider(
@@ -57,9 +58,20 @@ final class OpenAICompatibleProvider(
           ? ResponsesParser(
               entry.provider.id,
               entry.configuration.descriptor.ref.modelId.value,
-              request.maxOutputTokens > 0,
+              entry.configuration.options.flag(
+                    'supportsMaxOutputTokens',
+                    true,
+                  ) &&
+                  (request.maxOutputTokens > 0 ||
+                      entry.configuration.descriptor.maxOutputTokens > 0),
             )
-          : ChatParser(entry.provider.id),
+          : ChatParser(
+              entry.provider.id,
+              supportsFinishReason: entry.configuration.options.flag(
+                'supportsFinishReason',
+                true,
+              ),
+            ),
       toFailure: (error) => switch (error) {
         DioException() =>
           request.cancellation?.isCancelled == true
@@ -89,7 +101,9 @@ final class OpenAICompatibleProvider(
   Future<ActiveHttpStream> _openStream(
     ModelRequest request,
     _ModelEntry entry,
-  ) {
+  ) async {
+    final auth = await entry.provider.authentication?.resolve();
+    request.cancellation?.throwIfCancelled();
     final uri = entry.provider.baseUrl.replace(
       path:
           '${entry.provider.baseUrl.path.replaceFirst(RegExp(r'/+$'), '')}${entry.provider.protocol == OpenAIProtocol.responses ? '/responses' : '/chat/completions'}',
@@ -99,9 +113,22 @@ final class OpenAICompatibleProvider(
       Headers.acceptHeader: 'text/event-stream',
       'user-agent': entry.provider.userAgent ?? 'Atlas',
     };
-    if (entry.provider.apiKey.isNotEmpty) {
-      headers['authorization'] = 'Bearer ${entry.provider.apiKey}';
+    final options = entry.configuration.options;
+    if (options.flag('sendSessionAffinityHeaders', false) ||
+        (entry.provider.protocol == OpenAIProtocol.responses &&
+            options.compat.containsKey('sessionAffinityFormat'))) {
+      final format = options.compat['sessionAffinityFormat'] ?? 'openai';
+      if (format == 'openrouter') {
+        headers['x-session-id'] = request.sessionId.value;
+      } else {
+        if (format == 'openai') headers['session_id'] = request.sessionId.value;
+        headers['x-client-request-id'] = request.sessionId.value;
+        headers['x-session-affinity'] = request.sessionId.value;
+      }
     }
+    final key = auth?.key ?? entry.provider.apiKey;
+    if (key.isNotEmpty) headers['authorization'] = 'Bearer $key';
+    if (auth != null) headers.addAll(auth.headers);
     return _httpClient.openStream(
       uri: uri,
       body: entry.provider.protocol == OpenAIProtocol.responses
@@ -160,29 +187,49 @@ Map<ModelRef, _ModelEntry> _indexConfigurations(
 }
 
 Map<String, Object?> _chatRequest(ModelRequest request, _ModelEntry entry) {
+  final options = entry.configuration.options;
+  final level = options.level(request.reasoningEffort);
+  final effort = options.effort(level);
   final result = <String, Object?>{
     'model': entry.configuration.descriptor.ref.modelId.value,
-    'messages': _chatMessages(request.messages, request.systemPrompt),
+    'messages': _chatMessages(request.messages, request.systemPrompt, options),
     'stream': true,
-    'stream_options': <String, Object?>{'include_usage': true},
+    if (options.flag('supportsUsageInStreaming', true))
+      'stream_options': <String, Object?>{'include_usage': true},
+    if (options.flag('supportsStore', false)) 'store': false,
   };
-  result.addAll(request.providerOptions);
+  result.addAll(options.sampling(level));
   final tools = _tools(request.tools, responses: false);
   if (tools.isNotEmpty) {
     result['tools'] = tools;
   }
-  if (request.maxOutputTokens > 0) {
-    result['max_completion_tokens'] = request.maxOutputTokens;
+  final maxTokens = _outputBudget(request, entry);
+  if (maxTokens > 0) {
+    result[options.compat['maxTokensField'] as String? ??
+            'max_completion_tokens'] =
+        maxTokens;
   }
-  if (request.temperature != null && request.reasoningEffort == null) {
+  if (request.temperature != null && effort == null) {
     result['temperature'] = request.temperature;
   }
-  if (request.reasoningEffort != null) {
-    result['reasoning_effort'] = request.reasoningEffort;
+  if (options.compat['thinkingFormat'] == 'deepseek') {
+    if (level != null) {
+      result['thinking'] = {'type': level == 'off' ? 'disabled' : 'enabled'};
+    }
+    if (effort != null && options.flag('supportsReasoningEffort', true)) {
+      result['reasoning_effort'] = effort;
+    }
+  } else if (effort != null && options.flag('supportsReasoningEffort', true)) {
+    result['reasoning_effort'] = effort;
   }
-  // Always sent so the provider can route a session's requests to the same
-  // cached prefix instead of billing every request as fresh input.
-  result['prompt_cache_key'] = request.sessionId.value;
+  if (options.flag('supportsStrictMode', false)) {
+    for (final tool in tools.cast<Map<String, Object?>>()) {
+      (tool['function'] as Map<String, Object?>)['strict'] = false;
+    }
+  }
+  if (entry.provider.baseUrl.host == 'api.openai.com') {
+    result['prompt_cache_key'] = request.sessionId.value;
+  }
   return result;
 }
 
@@ -190,6 +237,9 @@ Map<String, Object?> _responsesRequest(
   ModelRequest request,
   _ModelEntry entry,
 ) {
+  final options = entry.configuration.options;
+  final level = options.level(request.reasoningEffort);
+  final effort = options.effort(level);
   final result = <String, Object?>{
     'model': entry.configuration.descriptor.ref.modelId.value,
     'input': _responsesInput(
@@ -199,33 +249,68 @@ Map<String, Object?> _responsesRequest(
     ),
     'stream': true,
   };
-  result.addAll(request.providerOptions);
+  result.addAll(options.sampling(level));
   if (request.systemPrompt.isNotEmpty) {
-    result['instructions'] = request.systemPrompt;
+    if (options.flag('supportsDeveloperRole', true)) {
+      result['instructions'] = request.systemPrompt;
+    } else {
+      (result['input'] as List<Object?>).insert(0, {
+        'role': 'system',
+        'content': request.systemPrompt,
+      });
+    }
   }
   final tools = _tools(request.tools, responses: true);
   if (tools.isNotEmpty) {
     result['tools'] = tools;
   }
-  if (request.maxOutputTokens > 0) {
-    result['max_output_tokens'] = request.maxOutputTokens;
+  final maxTokens = _outputBudget(request, entry);
+  if (maxTokens > 0 && options.flag('supportsMaxOutputTokens', true)) {
+    result['max_output_tokens'] = maxTokens;
   }
-  if (request.temperature != null && request.reasoningEffort == null) {
+  if (request.temperature != null && effort == null) {
     result['temperature'] = request.temperature;
   }
-  if (request.reasoningEffort != null) {
-    result['reasoning'] = <String, Object?>{'effort': request.reasoningEffort};
+  if (effort != null) result['reasoning'] = <String, Object?>{'effort': effort};
+  if (!options.flag('supportsStrictMode', true)) {
+    for (final tool in tools.cast<Map<String, Object?>>()) {
+      tool.remove('strict');
+    }
   }
-  // Always sent so the provider can route a session's requests to the same
-  // cached prefix instead of billing every request as fresh input.
   result['prompt_cache_key'] = request.sessionId.value;
   return result;
 }
 
-List<Object?> _chatMessages(List<ModelMessage> messages, String systemPrompt) {
+int _outputBudget(ModelRequest request, _ModelEntry entry) {
+  final limit = entry.configuration.descriptor.maxOutputTokens;
+  if (limit > 0 && request.maxOutputTokens > limit) {
+    throw OpenAIProviderException(
+      providerId: entry.provider.id,
+      message: 'output budget exceeds model maxTokens',
+    );
+  }
+  return request.maxOutputTokens > 0
+      ? request.maxOutputTokens
+      : (limit > 0 ? limit.clamp(1, 4096) : 0);
+}
+
+List<Object?> _chatMessages(
+  List<ModelMessage> messages,
+  String systemPrompt,
+  ModelOptions options,
+) {
   final result = <Object?>[];
+  final toolNames = {
+    for (final message in messages)
+      for (final call in message.toolCalls) call.id: call.name,
+  };
   if (systemPrompt.isNotEmpty) {
-    result.add(<String, Object?>{'role': 'system', 'content': systemPrompt});
+    result.add(<String, Object?>{
+      'role': options.flag('supportsDeveloperRole', false)
+          ? 'developer'
+          : 'system',
+      'content': systemPrompt,
+    });
   }
   for (final message in messages) {
     if (message.role == ModelMessageRole.assistant &&
@@ -237,13 +322,25 @@ List<Object?> _chatMessages(List<ModelMessage> messages, String systemPrompt) {
     if (message.role == ModelMessageRole.tool) {
       item['content'] = message.toolOutput ?? '';
       item['tool_call_id'] = message.toolCallId?.value;
+      if (options.flag('requiresToolResultName', false)) {
+        item['name'] = toolNames[message.toolCallId] ?? 'tool';
+      }
     } else {
       item['content'] = message.content.isEmpty
           ? ''
           : _chatContent(message.content);
       if (message.role == ModelMessageRole.assistant &&
           message.continuation?.reasoningSummary.isNotEmpty == true) {
-        item['reasoning_content'] = message.continuation!.reasoningSummary;
+        if (options.flag('requiresThinkingAsText', false)) {
+          item['content'] =
+              '${message.continuation!.reasoningSummary}\n${item['content']}';
+        } else {
+          item['reasoning_content'] = message.continuation!.reasoningSummary;
+        }
+      }
+      if (message.role == ModelMessageRole.assistant &&
+          options.flag('requiresReasoningContentOnAssistantMessages', false)) {
+        item.putIfAbsent('reasoning_content', () => '');
       }
       if (message.toolCalls.isNotEmpty) {
         item['tool_calls'] = message.toolCalls
@@ -259,6 +356,12 @@ List<Object?> _chatMessages(List<ModelMessage> messages, String systemPrompt) {
             )
             .toList();
       }
+    }
+    if (options.flag('requiresAssistantAfterToolResult', false) &&
+        message.role == ModelMessageRole.user &&
+        result.isNotEmpty &&
+        (result.last as Map)['role'] == 'tool') {
+      result.add({'role': 'assistant', 'content': 'Done.'});
     }
     result.add(item);
   }

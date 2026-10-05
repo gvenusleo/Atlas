@@ -1,4 +1,4 @@
-/// YAML configuration loading for Atlas composition roots.
+/// Pi-shaped JSON configuration loading for Atlas composition roots.
 library;
 
 export 'src/atlas_config.dart';

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:atlas_config/atlas_config.dart';
@@ -6,478 +7,411 @@ import 'package:atlas_runtime/atlas_runtime.dart';
 import 'package:test/test.dart';
 
 void main() {
-  const env = {
-    'ANTHROPIC_API_KEY': 'sk-ant-test',
-    'OPENAI_API_KEY': 'sk-oa-test',
-  };
-  const home = '/home/test';
+  test('one relay routes models through different APIs and endpoints', () {
+    final config = _parse({
+      'baseUrl': 'https://relay.example/v1',
+      'api': 'openai-completions',
+      'apiKey': r'${UNSET_KEY}',
+      'headers': {'X-Account': 'first'},
+      'models': [
+        {'id': 'a'},
+        {
+          'id': 'vendor/b',
+          'api': 'anthropic-messages',
+          'baseUrl': 'https://claude.example/v1',
+          'headers': {'x-account': 'second'},
+        },
+      ],
+    });
+    final first = config.providers.first as ConfiguredOpenAI;
+    final second = config.providers.last as ConfiguredAnthropic;
+    expect(first.configuration.protocol, OpenAIProtocol.chatCompletions);
+    expect(first.configuration.baseUrl.toString(), 'https://relay.example/v1');
+    expect(
+      second.configuration.baseUrl.toString(),
+      'https://claude.example/v1',
+    );
+    expect(
+      second.configuration.models.single.descriptor.ref.modelId.value,
+      'vendor/b',
+    );
+    expect(second.configuration.authentication!.headers, {
+      'x-account': 'second',
+    });
+    expect(config.defaultModel.toString(), 'relay/a');
+    // Missing credentials do not prevent catalog loading.
+    expect(
+      first.configuration.authentication!.resolve(),
+      throwsA(isA<ProviderAuthException>()),
+    );
+  });
 
   test(
-    'loadConfig uses supplied exports for keys, home, and logging',
-    () async {
-      final dir = await Directory.systemTemp.createTemp('atlas_config_env_');
-      addTearDown(() => dir.delete(recursive: true));
-      final file = File('${dir.path}/config.yaml');
-      await file.writeAsString(r'''default_model: oa/test
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: ${ATLAS_CONFIG_TEST_KEY}
-    models:
-      - value: test
-''');
-      final config = loadConfig(
-        file,
-        environment: {
-          'HOME': dir.path,
-          'ATLAS_CONFIG_TEST_KEY': 'injected-key',
-          'ATLAS_LOG_LEVEL': 'debug',
+    'models replaces a definition; modelOverrides merges selected metadata',
+    () {
+      final catalog = ModelCatalog({
+        'relay': [
+          {
+            'id': 'a',
+            'name': 'Base',
+            'api': 'openai-responses',
+            'baseUrl': 'https://base.example',
+            'input': ['text', 'image'],
+            'contextWindow': 90000,
+            'maxTokens': 12000,
+            'compat': {'supportsStrictMode': true},
+            'cost': {'input': 2, 'output': 8},
+          },
+        ],
+      });
+      final config = _parse({
+        'baseUrl': 'https://proxy.example',
+        'modelOverrides': {
+          'a': {
+            'contextWindow': 64000,
+            'cost': {'input': 1},
+          },
+          'unknown': {'name': 'Ignored'},
         },
-      );
+      }, catalog: catalog);
+      final model = (config.providers.single as ConfiguredOpenAI).configuration;
+      expect(model.baseUrl.toString(), 'https://proxy.example');
+      expect(model.models.single.descriptor.contextWindow, 64000);
       expect(
-        (config.providers.single as ConfiguredOpenAI).configuration.apiKey,
-        'injected-key',
+        model.models.single.descriptor.inputCapabilities,
+        contains(ModelInputCapability.image),
       );
-      expect(config.session.dbPath, '${dir.path}/.atlas/atlas.db');
-      expect(config.logging.level, 'debug');
+      expect(model.models.single.options.cost, {'input': 1, 'output': 8});
+      final replaced = _parse({
+        'models': [
+          {'id': 'a', 'name': 'New'},
+        ],
+      }, catalog: catalog);
+      final definition =
+          (replaced.providers.single as ConfiguredOpenAI).configuration;
+      expect(definition.protocol, OpenAIProtocol.responses);
+      expect(definition.models.single.descriptor.contextWindow, 128000);
+      expect(definition.models.single.descriptor.inputCapabilities, {
+        ModelInputCapability.text,
+      });
+    },
+  );
+
+  test(
+    'custom models inherit API and address from the provider model list',
+    () {
+      final config = _parse({
+        'models': [
+          {
+            'id': 'a',
+            'api': 'openai-responses',
+            'baseUrl': 'https://relay.example',
+          },
+          {'id': 'b'},
+        ],
+      });
+      final second = config.providers.last as ConfiguredOpenAI;
+      expect(second.configuration.protocol, OpenAIProtocol.responses);
+      expect(second.configuration.baseUrl.toString(), 'https://relay.example');
+    },
+  );
+
+  test('startup thinking preference is clamped to supported levels', () {
+    final config = parseConfig(
+      '{"defaultProvider":"relay","defaultModel":"a","defaultThinkingLevel":"max"}',
+      modelsText: jsonEncode({
+        'providers': {
+          'relay': {
+            ..._provider,
+            'models': [
+              {
+                'id': 'a',
+                'reasoning': true,
+                'thinkingLevelMap': {'low': 'low', 'high': 'high'},
+              },
+            ],
+          },
+        },
+      }),
+      catalog: ModelCatalog({}),
+    );
+    final model = (config.providers.single as ConfiguredOpenAI)
+        .configuration
+        .models
+        .single;
+    expect(model.options.defaultThinkingLevel, 'high');
+    expect(model.descriptor.reasoningEfforts.first.value, 'high');
+  });
+
+  test('built-in models need no models.json declaration', () {
+    final config = parseConfig(
+      '{"defaultProvider":"openai","defaultModel":"gpt-4o"}',
+      environment: {},
+    );
+    expect(config.providers, isNotEmpty);
+    final model = config.providers
+        .whereType<ConfiguredOpenAI>()
+        .expand((p) => p.configuration.models)
+        .firstWhere((m) => m.descriptor.ref == config.defaultModel);
+    expect(model.descriptor.contextWindow, 128000);
+    expect(
+      model.descriptor.inputCapabilities,
+      contains(ModelInputCapability.image),
+    );
+  });
+
+  test(
+    'invalid cached model metadata cannot prevent configuration startup',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('atlas_cache_startup_');
+      addTearDown(() => dir.delete(recursive: true));
+      final cache = File('${dir.path}/cache/model-catalog.json');
+      await cache.parent.create();
+      await cache.writeAsString(
+        jsonEncode({
+          'version': 1,
+          'data': {
+            for (final id in ['openai', 'anthropic'])
+              id: {
+                'models': {
+                  'broken': {
+                    'name': '',
+                    'tool_call': true,
+                    'limit': {'context': 32000, 'output': 4096},
+                    'modalities': {
+                      'input': ['text'],
+                      'output': ['text'],
+                    },
+                  },
+                },
+              },
+          },
+        }),
+      );
+      await File(
+        '${dir.path}/settings.json',
+      ).writeAsString('{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
+      final config = loadConfig(dir, environment: {});
+      expect(config.defaultModel.toString(), 'openai/gpt-4o');
       expect(
-        () => loadConfig(file, environment: {'HOME': dir.path}),
-        throwsA(isA<ConfigLoadException>()),
+        config.providers.whereType<ConfiguredOpenAI>().any(
+          (p) => p.configuration.models.any(
+            (m) => m.descriptor.ref == config.defaultModel,
+          ),
+        ),
+        isTrue,
       );
     },
   );
 
-  test('parses a full configuration with both provider types', () {
+  test('JSON comments preserve URLs and do not permit trailing commas', () {
     final config = parseConfig(
-      '''
-default_model: anthropic/claude-sonnet
-providers:
-  - name: anthropic
-    type: anthropic
-    base_url: https://api.anthropic.com
-    api_key: \${ANTHROPIC_API_KEY}
-    api_version: "2023-06-01"
-    models:
-      - value: claude-sonnet
-        name: Claude Sonnet
-        context_window: 200000
-        max_tokens: 4096
-        thinking_budget_tokens: 2048
-        reasoning_efforts:
-          - value: high
-  - name: openai
-    type: responses
-    base_url: https://api.openai.com/v1
-    api_key: \${OPENAI_API_KEY}
-    user_agent: Atlas
-    models:
-      - value: gpt-4o
-        context_window: 128000
-        max_tokens: 4096
-        input_capabilities: [text, image]
-agent:
-  max_steps: 10
-  temperature: 0.7
-  compaction:
-    threshold: 0.9
-session:
-  db_path: ~/.atlas/atlas.db
-''',
-      environment: env,
-      homeDirectory: home,
+      '''{
+      // startup defaults
+      "defaultProvider": "relay", /* comment */ "defaultModel": "a"
+    }''',
+      modelsText: '{"providers":{"relay":{"api":"openai-completions","baseUrl":"https://example.com","models":[{"id":"a"}]}}}',
+      catalog: ModelCatalog({}),
     );
-
+    expect(config.defaultModel.toString(), 'relay/a');
     expect(
-      config.defaultModel,
-      ModelRef(
-        providerId: ProviderId('anthropic'),
-        modelId: ModelId('claude-sonnet'),
-      ),
-    );
-    expect(config.providers, hasLength(2));
-
-    final anthropic = config.providers.first as ConfiguredAnthropic;
-    expect(anthropic.configuration.apiKey, 'sk-ant-test');
-    expect(anthropic.configuration.apiVersion, '2023-06-01');
-    expect(anthropic.configuration.models.single.thinkingBudgetTokens, 2048);
-    expect(
-      anthropic.configuration.models.single.descriptor.name,
-      'Claude Sonnet',
-    );
-    expect(
-      anthropic
-          .configuration
-          .models
-          .single
-          .descriptor
-          .reasoningEfforts
-          .single
-          .value,
-      'high',
-    );
-
-    final openai = config.providers.last as ConfiguredOpenAI;
-    expect(openai.configuration.protocol, OpenAIProtocol.responses);
-    expect(openai.configuration.userAgent, 'Atlas');
-    expect(openai.configuration.models.single.descriptor.inputCapabilities, {
-      ModelInputCapability.text,
-      ModelInputCapability.image,
-    });
-
-    expect(config.agent.maxSteps, 10);
-    expect(config.agent.temperature, 0.7);
-    expect(config.agent.compaction.threshold, 0.9);
-    expect(config.session.dbPath, '/home/test/.atlas/atlas.db');
-    expect(config.logging.level, 'info');
-  });
-
-  test('applies defaults for omitted fields', () {
-    final config = parseConfig(
-      '''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: \${KEY}
-    models:
-      - value: gpt-4o
-''',
-      environment: const {'KEY': 'v'},
-    );
-
-    final openai = config.providers.single as ConfiguredOpenAI;
-    expect(openai.configuration.userAgent, isNull);
-    final descriptor = openai.configuration.models.single.descriptor;
-    expect(descriptor.name, '');
-    expect(descriptor.contextWindow, 0);
-    expect(descriptor.maxOutputTokens, 0);
-    expect(descriptor.inputCapabilities, const {ModelInputCapability.text});
-    expect(descriptor.reasoningEfforts, isEmpty);
-    expect(config.agent.maxSteps, 20);
-    expect(config.agent.maxOutputTokens, 0);
-    expect(config.agent.compaction.threshold, 0.8);
-    expect(config.agent.temperature, isNull);
-    expect(config.session.dbPath, '~/.atlas/atlas.db');
-    expect(config.logging.directory, isNull);
-  });
-
-  test('parses logging settings and environment level', () {
-    final config = parseConfig(
-      '''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: responses
-    base_url: https://example.com
-    api_key: key
-    models:
-      - value: gpt-4o
-logging:
-  directory: ~/.atlas/logs
-  retain_days: 3
-''',
-      homeDirectory: home,
-      environment: const {'ATLAS_LOG_LEVEL': 'debug'},
-    );
-    expect(config.logging.level, 'debug');
-    expect(config.logging.directory, '/home/test/.atlas/logs');
-    expect(config.logging.retainDays, 3);
-  });
-
-  test('rejects zero max_steps', () {
-    expect(
-      () => parseConfig('''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: responses
-    base_url: https://example.com
-    api_key: key
-    models:
-      - value: gpt-4o
-agent:
-  max_steps: 0
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('agent.max_steps must be greater than zero'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects an Anthropic thinking budget at max_tokens', () {
-    expect(
-      () => parseConfig('''
-default_model: anthropic/claude
-providers:
-  - name: anthropic
-    type: anthropic
-    base_url: https://api.anthropic.com
-    api_key: key
-    models:
-      - value: claude
-        max_tokens: 2048
-        thinking_budget_tokens: 2048
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('thinking_budget_tokens must be less than'),
-        ),
-      ),
-    );
-  });
-
-  test('expands the home directory only for a leading tilde', () {
-    final config = parseConfig('''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: gpt-4o
-session:
-  db_path: /var/data/atlas.db
-''', homeDirectory: home);
-    expect(config.session.dbPath, '/var/data/atlas.db');
-  });
-
-  test('rejects an undefined environment variable with its name', () {
-    expect(
-      () => parseConfig('''
-default_model: oa/gpt-4o
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: \${MISSING_KEY}
-    models:
-      - value: gpt-4o
-''', environment: const {}),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('MISSING_KEY'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects duplicate provider names', () {
-    expect(
-      () => parseConfig('''
-default_model: a/m
-providers:
-  - name: a
-    type: chat_completions
-    base_url: https://one.example.com
-    api_key: k
-    models:
-      - value: m
-  - name: a
-    type: chat_completions
-    base_url: https://two.example.com
-    api_key: k
-    models:
-      - value: m
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('providers[1].name'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects an unknown type with a field path', () {
-    expect(
-      () => parseConfig('''
-default_model: a/m
-providers:
-  - name: a
-    type: llama
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: m
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('providers[0].type'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects a default model that references an unknown provider', () {
-    expect(
-      () => parseConfig('''
-default_model: missing/gpt-4o
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: gpt-4o
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('unknown provider "missing"'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects a default model that references an unknown model', () {
-    expect(
-      () => parseConfig('''
-default_model: oa/nope
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: gpt-4o
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('unknown model "nope"'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects an invalid base URL', () {
-    expect(
-      () => parseConfig('''
-default_model: oa/m
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: ftp://example.com
-    api_key: k
-    models:
-      - value: m
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('providers[0].base_url'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects duplicate model ids within a provider', () {
-    expect(
-      () => parseConfig('''
-default_model: oa/m
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: m
-      - value: m
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('duplicates model "m"'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects a negative max_tokens value', () {
-    expect(
-      () => parseConfig('''
-default_model: oa/m
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: m
-        max_tokens: -1
-'''),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('max_tokens'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects invalid YAML syntax', () {
-    expect(
-      () => parseConfig('providers: [unclosed'),
+      () => parseConfig('{"defaultProvider":"openai",}'),
       throwsA(isA<ConfigLoadException>()),
     );
   });
 
-  test('rejects an empty providers list', () {
-    expect(
-      () => parseConfig('default_model: a/m\nproviders: []'),
-      throwsA(
-        isA<ConfigLoadException>().having(
-          (error) => error.message,
-          'message',
-          contains('providers must not be empty'),
-        ),
-      ),
-    );
-  });
-
-  test('rejects an invalid compaction threshold', () {
-    for (final threshold in ['0', '-0.5', '1.5']) {
+  test(
+    'settings and MCP documents load independently with supplied HOME',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('atlas_config_');
+      addTearDown(() => dir.delete(recursive: true));
+      await File('${dir.path}/settings.json').writeAsString(
+        jsonEncode({
+          'defaultProvider': 'relay',
+          'defaultModel': 'a',
+          'defaultThinkingLevel': 'high',
+          'agent': {'maxSteps': 3, 'maxOutputTokens': 2048, 'temperature': 0.2},
+          'compaction': {'keepRecentTokens': 8000, 'reserveTokens': 4096},
+          'session': {'dbPath': '~/data/atlas.db'},
+          'logging': {'directory': '~/logs'},
+        }),
+      );
+      await File('${dir.path}/models.json').writeAsString(
+        jsonEncode({
+          'providers': {'relay': _provider},
+        }),
+      );
+      await File('${dir.path}/mcp.json')
+          .writeAsString('{"mcpServers":{"local":{"command":"server"}}}');
+      final config = loadConfig(
+        dir,
+        environment: {'HOME': dir.path, 'ATLAS_LOG_LEVEL': 'debug'},
+      );
+      expect(config.session.dbPath, '${dir.path}/data/atlas.db');
+      expect(config.logging.level, 'debug');
+      expect(config.agent.maxSteps, 3);
+      expect(config.agent.compaction.reserveTokens, 4096);
+      expect(config.mcpServers.single.name, 'local');
+      await File('${dir.path}/config.yaml').writeAsString('legacy');
       expect(
-        () => parseConfig('''
-default_model: oa/m
-providers:
-  - name: oa
-    type: chat_completions
-    base_url: https://example.com
-    api_key: k
-    models:
-      - value: m
-agent:
-  compaction:
-    threshold: $threshold
-'''),
+        () => loadConfig(dir),
         throwsA(
           isA<ConfigLoadException>().having(
-            (error) => error.message,
+            (e) => e.message,
             'message',
-            contains('agent.compaction.threshold'),
+            contains('no longer supported'),
           ),
         ),
       );
-    }
+    },
+  );
+
+  test('thinking and sampling overrides retain their separate meanings', () {
+    final config = _parse({
+      ..._provider,
+      'models': [
+        {
+          'id': 'a',
+          'reasoning': true,
+          'thinkingLevelMap': {'off': null, 'high': 'max'},
+          'samplingParams': {'temperature': 0.7},
+          'samplingParamsByThinkingLevel': {
+            'high': {'top_p': 0.9},
+          },
+        },
+      ],
+    });
+    final options = (config.providers.single as ConfiguredOpenAI)
+        .configuration
+        .models
+        .single
+        .options;
+    expect(options.effort('high'), 'max');
+    expect(options.effort('off'), isNull);
+    expect(options.sampling('high'), {'temperature': 0.7, 'top_p': 0.9});
   });
+
+  for (final (label, provider, path)
+      in <(String, Map<String, Object?>, String)>[
+        ('unknown API', {..._provider, 'api': 'google-generative-ai'}, '.api'),
+        (
+          'unsupported compat',
+          {
+            ..._provider,
+            'compat': {'magic': true},
+          },
+          '.compat.magic',
+        ),
+        (
+          'unsupported reasoning format',
+          {
+            ..._provider,
+            'compat': {'thinkingFormat': 'qwen'},
+          },
+          '.compat.thinkingFormat',
+        ),
+        (
+          'duplicate model',
+          {
+            ..._provider,
+            'models': [
+              {'id': 'a'},
+              {'id': 'a'},
+            ],
+          },
+          '.id',
+        ),
+        (
+          'zero context',
+          {
+            ..._provider,
+            'models': [
+              {'id': 'a', 'contextWindow': 0},
+            ],
+          },
+          '.contextWindow',
+        ),
+        (
+          'negative output',
+          {
+            ..._provider,
+            'models': [
+              {'id': 'a', 'maxTokens': -1},
+            ],
+          },
+          '.maxTokens',
+        ),
+        (
+          'header injection',
+          {
+            ..._provider,
+            'headers': {'X-Test': 'a\nb'},
+          },
+          '.headers',
+        ),
+        (
+          'URL credentials',
+          {..._provider, 'baseUrl': 'https://user:secret@example.com'},
+          '.baseUrl',
+        ),
+        (
+          'request override',
+          {
+            ..._provider,
+            'models': [
+              {
+                'id': 'a',
+                'samplingParams': {'model': 'other'},
+              },
+            ],
+          },
+          '.samplingParams.model',
+        ),
+      ]) {
+    test('rejects $label with a field path', () {
+      expect(
+        () => _parse(provider),
+        throwsA(
+          isA<ConfigLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains(path),
+          ),
+        ),
+      );
+    });
+  }
+
+  test(
+    'unknown default and unsupported provider options are explicit errors',
+    () {
+      expect(
+        () => parseConfig('{"defaultProvider":"missing","defaultModel":"x"}'),
+        throwsA(isA<ConfigLoadException>()),
+      );
+      expect(
+        () => _parse({..._provider, 'oauth': 'radius'}),
+        throwsA(isA<ConfigLoadException>()),
+      );
+    },
+  );
 }
+
+const _provider = <String, Object?>{
+  'api': 'openai-completions',
+  'baseUrl': 'https://example.com',
+  'apiKey': 'test',
+  'models': [
+    {'id': 'a'},
+  ],
+};
+
+AtlasConfig _parse(Map<String, Object?> provider, {ModelCatalog? catalog}) =>
+    parseConfig(
+      '{"defaultProvider":"relay","defaultModel":"a"}',
+      modelsText: jsonEncode({
+        'providers': {'relay': provider},
+      }),
+      environment: {},
+      catalog: catalog ?? ModelCatalog({}),
+    );

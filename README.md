@@ -15,7 +15,8 @@ The repository is a Pub workspace that defines the runtime, protocol, client, an
 - an ACP server adapter in `atlas_acp`, served by `atlas acp` over NDJSON stdio, and the `atlas_ws` WebSocket transport served by `atlas server`, so the Flutter mobile app can drive a computer's Atlas over a private network;
 - a Flutter desktop and mobile client that always connects through ACP, with sessions, agent turns, a file browser, and an embedded terminal;
 - MCP client tools for configured stdio and Streamable HTTP servers, documented in [MCP tools](docs/mcp.md);
-- an `atlas cache` subcommand that reports prompt-cache reuse from the session database.
+- an `atlas cache` subcommand that reports prompt-cache reuse from the session database;
+- Pi-shaped `settings.json`, `models.json`, `auth.json`, and `mcp.json`, with mixed-protocol relays, offline models.dev metadata, and `atlas config validate`, `atlas models list|refresh`, and `atlas auth set|remove` commands.
 
 Architecture and engineering rules live in the [documentation guide](docs/README.md).
 

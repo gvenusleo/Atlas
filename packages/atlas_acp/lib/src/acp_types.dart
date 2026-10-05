@@ -68,6 +68,25 @@ SessionConfigOption _modelOption(
           value: model.ref.toString(),
           name: model.name.isEmpty ? model.ref.modelId.value : model.name,
           description: model.description.isEmpty ? null : model.description,
+          meta: {
+            'atlas.dev': {
+              'version': 1,
+              'contextWindow': model.contextWindow,
+              'maxOutputTokens': model.maxOutputTokens,
+              'input': [
+                for (final capability in model.inputCapabilities)
+                  capability.name,
+              ],
+              'reasoningEfforts': [
+                for (final effort in model.reasoningEfforts)
+                  {
+                    'value': effort.value,
+                    'name': effort.name,
+                    'description': effort.description,
+                  },
+              ],
+            },
+          },
         ),
     ]),
   );

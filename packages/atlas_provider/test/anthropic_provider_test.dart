@@ -389,28 +389,31 @@ void main() {
     expect(tools.single['input_schema'], {'type': 'object'});
   });
 
-  test('rejects a thinking budget that reaches max_tokens', () async {
-    var requests = 0;
-    final server = await _startServer((request) async {
-      requests++;
-      await request.response.close();
-    });
-    addTearDown(server.close);
+  test(
+    'rejects an output budget too small for thinking and an answer',
+    () async {
+      var requests = 0;
+      final server = await _startServer((request) async {
+        requests++;
+        await request.response.close();
+      });
+      addTearDown(server.close);
 
-    final events = await _provider(
-      server,
-      thinkingBudgetTokens: 2048,
-      maxOutputTokens: 512,
-    ).stream(_request()).toList();
+      final events = await _provider(
+        server,
+        thinkingBudgetTokens: 2048,
+        maxOutputTokens: 512,
+      ).stream(_request()).toList();
 
-    final error = (events.single as ModelFailedEvent).error;
-    expect(error, isA<AnthropicProviderException>());
-    expect(
-      (error as AnthropicProviderException).message,
-      'thinking budget must be less than max_tokens',
-    );
-    expect(requests, 0);
-  });
+      final error = (events.single as ModelFailedEvent).error;
+      expect(error, isA<AnthropicProviderException>());
+      expect(
+        (error as AnthropicProviderException).message,
+        'manual thinking requires an output budget of at least 2048 tokens',
+      );
+      expect(requests, 0);
+    },
+  );
 
   test('sends temperature when thinking is disabled', () async {
     final requests = <Map<String, Object?>>[];
@@ -523,7 +526,7 @@ AnthropicProvider _provider(
   return AnthropicProvider([
     AnthropicProviderConfiguration(
       id: _modelRef.providerId,
-      baseUrl: Uri.parse('http://${server.address.host}:${server.port}'),
+      baseUrl: Uri.parse('http://${server.address.host}:${server.port}/v1'),
       apiKey: 'secret-key',
       models: [
         AnthropicModelConfiguration(

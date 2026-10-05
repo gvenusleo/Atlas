@@ -23,6 +23,7 @@ dependencies:
   atlas_tui: ^0.1.0
   atlas_ws: ^0.1.0
   io: ^1.1.0
+  path: ^1.9.1
   stack_trace: ^1.12.2
 dev_dependencies:
   build_runner: ^2.16.1

@@ -46,6 +46,23 @@ void main() {
     await wire.close();
   });
 
+  test(
+    'preserves Atlas model metadata while rebuilding reasoning options',
+    () async {
+      final wire = await _FakeServer.open();
+      final client = AcpClient.channel(wire.clientChannel);
+      addTearDown(client.close);
+      addTearDown(wire.close);
+      await client.connect();
+      await client.createSession(workingDirectory: '/tmp');
+      final model = client.catalog.first;
+      expect(model.contextWindow, 128000);
+      expect(model.maxOutputTokens, 16384);
+      expect(model.inputCapabilities, contains(rt.ModelInputCapability.image));
+      expect(model.reasoningEfforts.map((e) => e.value), ['low', 'high']);
+    },
+  );
+
   test('runs a full turn and reconstructs runtime events', () async {
     final wire = await _FakeServer.open();
     final client = AcpClient.channel(wire.clientChannel);
@@ -487,6 +504,14 @@ final class _FakeServer._({
         acpd.SessionConfigSelectOption(
           value: 'opencode/foo',
           name: 'Foo Model',
+          meta: {
+            'atlas.dev': {
+              'version': 1,
+              'contextWindow': 128000,
+              'maxOutputTokens': 16384,
+              'input': ['text', 'image'],
+            },
+          },
         ),
         acpd.SessionConfigSelectOption(
           value: 'opencode/bar',

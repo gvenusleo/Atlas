@@ -82,18 +82,25 @@ final class AnthropicProvider(
   Future<ActiveHttpStream> _openStream(
     ModelRequest request,
     _ModelEntry entry,
-  ) {
+  ) async {
+    final auth = await entry.provider.authentication?.resolve();
+    request.cancellation?.throwIfCancelled();
     final uri = entry.provider.baseUrl.replace(
       path:
-          '${entry.provider.baseUrl.path.replaceFirst(RegExp(r'/+$'), '')}/v1/messages',
+          '${entry.provider.baseUrl.path.replaceFirst(RegExp(r'/+$'), '')}/messages',
     );
     final headers = <String, Object>{
       Headers.contentTypeHeader: Headers.jsonContentType,
       Headers.acceptHeader: 'text/event-stream',
-      'x-api-key': entry.provider.apiKey,
+      if ((auth?.key ?? entry.provider.apiKey).isNotEmpty)
+        'x-api-key': auth?.key ?? entry.provider.apiKey,
       'anthropic-version': entry.provider.apiVersion,
       'user-agent': entry.provider.userAgent ?? 'Atlas',
     };
+    if (entry.configuration.options.flag('sendSessionAffinityHeaders', false)) {
+      headers['x-session-affinity'] = request.sessionId.value;
+    }
+    if (auth != null) headers.addAll(auth.headers);
     return _httpClient.openStream(
       uri: uri,
       body: _anthropicRequest(request, entry),
@@ -154,21 +161,60 @@ Map<String, Object?> _anthropicRequest(
   _ModelEntry entry,
 ) {
   final descriptor = entry.configuration.descriptor;
+  final options = entry.configuration.options;
+  final level = options.level(request.reasoningEffort);
+  final effort = options.effort(level);
   final maxTokens = request.maxOutputTokens > 0
       ? request.maxOutputTokens
-      : (descriptor.maxOutputTokens > 0 ? descriptor.maxOutputTokens : 4096);
-  final thinkingBudget = _thinkingBudget(
-    entry.configuration.thinkingBudgetTokens,
-    request.reasoningEffort,
-  );
-  final thinkingEnabled = request.reasoningEffort != null && thinkingBudget > 0;
-  if (thinkingEnabled && thinkingBudget >= maxTokens) {
+      : (descriptor.maxOutputTokens > 0
+            ? descriptor.maxOutputTokens.clamp(1, 4096)
+            : 4096);
+  if (descriptor.maxOutputTokens > 0 &&
+      maxTokens > descriptor.maxOutputTokens) {
     throw AnthropicProviderException(
       providerId: entry.provider.id,
-      message: 'thinking budget must be less than max_tokens',
+      message: 'output budget exceeds model maxTokens',
     );
   }
-  final messages = _anthropicMessages(request.messages);
+  final adaptive = options.flag('forceAdaptiveThinking', false);
+  final manualThinking =
+      !adaptive &&
+      level != null &&
+      level != 'off' &&
+      (options.reasoning || entry.configuration.thinkingBudgetTokens > 0);
+  var thinkingBudget = 0;
+  if (manualThinking) {
+    // Manual thinking needs at least 1024 tokens; keep another 1024 available
+    // for the answer under the shared max_tokens ceiling.
+    if (maxTokens < 2048) {
+      throw AnthropicProviderException(
+        providerId: entry.provider.id,
+        message:
+            'manual thinking requires an output budget of at least 2048 tokens',
+      );
+    }
+    final requestedBudget = entry.configuration.thinkingBudgetTokens > 0
+        ? _thinkingBudget(entry.configuration.thinkingBudgetTokens, level)
+        : switch (level) {
+            'minimal' => 1024,
+            'low' => 2048,
+            'medium' => 8192,
+            _ => 16384,
+          };
+    if (requestedBudget < 1024) {
+      throw AnthropicProviderException(
+        providerId: entry.provider.id,
+        message: 'manual thinking budget must be at least 1024 tokens',
+      );
+    }
+    thinkingBudget = requestedBudget.clamp(1024, maxTokens - 1024);
+  }
+  final thinkingEnabled =
+      level != null && level != 'off' && (manualThinking || adaptive);
+  final messages = _anthropicMessages(
+    request.messages,
+    allowEmptySignature: options.flag('allowEmptySignature', false),
+  );
   // A breakpoint on the last message extends the cached prefix by one step per
   // request instead of re-writing the whole conversation each time.
   _markTrailingCacheBreakpoint(messages);
@@ -178,7 +224,6 @@ Map<String, Object?> _anthropicRequest(
     'messages': messages,
     'stream': true,
   };
-  result.addAll(request.providerOptions);
   if (request.systemPrompt.isNotEmpty) {
     result['system'] = <Object?>[
       <String, Object?>{
@@ -192,19 +237,128 @@ Map<String, Object?> _anthropicRequest(
   if (tools.isNotEmpty) {
     // The tool block precedes the system prompt, so marking it caches the
     // whole preamble that every request in the session shares.
-    (tools.last as Map<String, Object?>)['cache_control'] = _ephemeralCache;
+    if (options.flag('supportsCacheControlOnTools', true)) {
+      (tools.last as Map<String, Object?>)['cache_control'] = _ephemeralCache;
+    }
+    if (options.flag('supportsStrictTools', false)) {
+      for (final tool in tools.cast<Map<String, Object?>>()) {
+        final schema = tool['input_schema'];
+        if (schema is Map &&
+            schema['type'] == 'object' &&
+            _supportsStrictSchema(schema)) {
+          tool['strict'] = true;
+        }
+      }
+    }
     result['tools'] = tools;
   }
-  if (!thinkingEnabled && request.temperature != null) {
+  if (!thinkingEnabled &&
+      request.temperature != null &&
+      options.flag('supportsTemperature', true)) {
     result['temperature'] = request.temperature;
   }
   if (thinkingEnabled) {
-    result['thinking'] = <String, Object?>{
-      'type': 'enabled',
-      'budget_tokens': thinkingBudget,
-    };
+    result['thinking'] = adaptive
+        ? <String, Object?>{'type': 'adaptive'}
+        : <String, Object?>{'type': 'enabled', 'budget_tokens': thinkingBudget};
+    if (effort != null && (adaptive || options.thinkingLevelMap.isNotEmpty)) {
+      result['output_config'] = {'effort': effort};
+    }
   }
   return result;
+}
+
+// Strict sampling accepts a smaller schema language than ordinary tool use.
+// Preserve schemas unchanged and fall back to ordinary tool use when a schema
+// needs unsupported constraints, references, or open objects.
+bool _supportsStrictSchema(Map<Object?, Object?> schema) {
+  const keywords = {
+    'type',
+    'description',
+    'title',
+    'properties',
+    'required',
+    'additionalProperties',
+    'items',
+    'enum',
+    'const',
+    'anyOf',
+    'allOf',
+  };
+  if (schema.keys.any((key) => !keywords.contains(key))) return false;
+  for (final key in ['description', 'title']) {
+    if (schema.containsKey(key) && schema[key] is! String) return false;
+  }
+  const types = {
+    'object',
+    'array',
+    'string',
+    'integer',
+    'number',
+    'boolean',
+    'null',
+  };
+  final rawType = schema['type'];
+  final declaredTypes = rawType is List ? rawType : [?rawType];
+  if (declaredTypes.any((type) => !types.contains(type))) return false;
+  if (declaredTypes.contains('object')) {
+    if (schema['additionalProperties'] != false) return false;
+    final properties = schema['properties'] ?? const <String, Object?>{};
+    if (properties is! Map ||
+        properties.values.any(
+          (value) => value is! Map || !_supportsStrictSchema(value),
+        )) {
+      return false;
+    }
+    final required = schema['required'];
+    if (required != null &&
+        (required is! List ||
+            required.any(
+              (name) => name is! String || !properties.containsKey(name),
+            ))) {
+      return false;
+    }
+  } else if (schema.containsKey('properties') ||
+      schema.containsKey('additionalProperties') ||
+      schema.containsKey('required')) {
+    return false;
+  }
+  if (declaredTypes.contains('array')) {
+    final items = schema['items'];
+    if (items is! Map || !_supportsStrictSchema(items)) return false;
+  } else if (schema.containsKey('items')) {
+    return false;
+  }
+  bool scalar(Object? value) =>
+      value == null ||
+      value is String ||
+      value is bool ||
+      (value is num && value.isFinite);
+  if (schema.containsKey('const') && !scalar(schema['const'])) return false;
+  if (schema.containsKey('enum')) {
+    final values = schema['enum'];
+    if (values is! List ||
+        values.isEmpty ||
+        values.any((value) => !scalar(value))) {
+      return false;
+    }
+  }
+  for (final key in ['anyOf', 'allOf']) {
+    if (!schema.containsKey(key)) continue;
+    final branches = schema[key];
+    if (branches is! List ||
+        branches.isEmpty ||
+        branches.any(
+          (value) => value is! Map || !_supportsStrictSchema(value),
+        )) {
+      return false;
+    }
+  }
+  return declaredTypes.isNotEmpty ||
+      schema.containsKey('enum') ||
+      schema.containsKey('const') ||
+      schema.containsKey('anyOf') ||
+      schema.containsKey('allOf');
 }
 
 int _thinkingBudget(int base, String? effort) {
@@ -218,7 +372,10 @@ int _thinkingBudget(int base, String? effort) {
   return (base * multiplier).round().clamp(1, 1 << 30);
 }
 
-List<Object?> _anthropicMessages(List<ModelMessage> messages) {
+List<Object?> _anthropicMessages(
+  List<ModelMessage> messages, {
+  bool allowEmptySignature = false,
+}) {
   final result = <Object?>[];
   for (var index = 0; index < messages.length; index++) {
     final message = messages[index];
@@ -244,7 +401,7 @@ List<Object?> _anthropicMessages(List<ModelMessage> messages) {
       continue;
     }
     final content = <Object?>[
-      ..._replayedThinking(message),
+      ..._replayedThinking(message, allowEmptySignature),
       ..._anthropicContent(message.content),
       for (final call in message.toolCalls)
         <String, Object?>{
@@ -262,7 +419,10 @@ List<Object?> _anthropicMessages(List<ModelMessage> messages) {
   return result;
 }
 
-List<Object?> _replayedThinking(ModelMessage message) {
+List<Object?> _replayedThinking(
+  ModelMessage message,
+  bool allowEmptySignature,
+) {
   final blocks = message.continuation?.opaquePayload['thinking_blocks'];
   if (blocks is! List) {
     return const <Object?>[];
@@ -282,7 +442,9 @@ List<Object?> _replayedThinking(ModelMessage message) {
     }
     final text = block['thinking'];
     final signature = block['signature'];
-    if (text is String && signature is String && signature.isNotEmpty) {
+    if (text is String &&
+        signature is String &&
+        (signature.isNotEmpty || allowEmptySignature)) {
       result.add(<String, Object?>{
         'type': 'thinking',
         'thinking': text,

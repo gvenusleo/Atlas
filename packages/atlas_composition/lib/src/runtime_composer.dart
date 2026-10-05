@@ -31,17 +31,23 @@ AgentRuntime composeRuntime(
   }
   final resolvedTools =
       tools ?? LocalToolRegistry(builtInTools(environment: shellEnvironment));
-  final providers = <ProviderId, ModelProvider>{};
+  final providers = <ModelRef, ModelProvider>{};
   for (final configured in config.providers) {
     switch (configured) {
       case ConfiguredOpenAI(:final configuration):
-        providers[configured.id] = OpenAICompatibleProvider([
+        final adapter = OpenAICompatibleProvider([
           configuration,
         ], httpClient: httpClient);
+        for (final model in configuration.models) {
+          providers[model.descriptor.ref] = adapter;
+        }
       case ConfiguredAnthropic(:final configuration):
-        providers[configured.id] = AnthropicProvider([
+        final adapter = AnthropicProvider([
           configuration,
         ], httpClient: httpClient);
+        for (final model in configuration.models) {
+          providers[model.descriptor.ref] = adapter;
+        }
     }
   }
 

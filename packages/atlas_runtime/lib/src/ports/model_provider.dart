@@ -31,9 +31,6 @@ final class const ModelRequest({
   /// The sampling temperature.
   final double? temperature,
 
-  /// Provider-specific request fields passed through without interpretation.
-  final Map<String, Object?> providerOptions = const <String, Object?>{},
-
   /// Cooperative cancellation for the provider stream.
   final CancellationToken? cancellation,
 }) {

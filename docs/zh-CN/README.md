@@ -6,7 +6,7 @@ Atlas 文档按用途组织：
 
 - 根 `README.md`：产品状态与当前可用入口。
 - `architecture.md`：系统边界与依赖方向。
-- `configuration.md`：`~/.atlas/config.yaml` schema 与校验规则。
+- `configuration.md`：Pi 风格的 JSON 设置、模型、认证、目录刷新与校验规则。
 - `development.md`：workspace 结构、命令和工程规范。
 - `tools.md`：内置工具目录、限额与安全边界。
 - `mcp.md`：MCP 服务器配置、工具行为与支持范围。

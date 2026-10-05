@@ -15,7 +15,8 @@ Atlas 是一个本地通用 AI Agent，以统一的 Dart 与 Flutter 项目构�
 - `atlas_acp` 的 ACP 服务端适配器（由 `atlas acp` 经 NDJSON stdio 提供），以及由 `atlas server` 提供的 `atlas_ws` WebSocket transport，Flutter 移动 App 可据此在私有网络上驱动电脑端的 Atlas；
 - Flutter 桌面端与移动端客户端，始终通过 ACP 连接，具备会话、agent turn、文件浏览器与内嵌终端；
 - 面向已配置 stdio 与 Streamable HTTP 服务器的 MCP 客户端工具，详见 [MCP 工具](docs/zh-CN/mcp.md)；
-- `atlas cache` 子命令，从 session 数据库报告 prompt cache 复用情况。
+- `atlas cache` 子命令，从 session 数据库报告 prompt cache 复用情况；
+- Pi 风格的 `settings.json`、`models.json`、`auth.json` 与 `mcp.json`，支持同一中转站使用多种协议、离线 models.dev 元数据，以及 `atlas config validate`、`atlas models list|refresh`、`atlas auth set|remove` 命令。
 
 架构与工程规范见[文档指南](docs/zh-CN/README.md)。
 

@@ -10,17 +10,14 @@ import 'quit_interaction.dart';
 /// Exercises the native CLI in a POSIX PTY and prints measured state as JSON.
 Future<void> main(List<String> args) async {
   final [binary, home, action] = args;
-  final config = File('$home/.atlas/config.yaml');
+  final config = File('$home/.atlas/settings.json');
   await config.parent.create(recursive: true);
-  await config.writeAsString('''default_model: test/model
-providers:
-  - name: test
-    type: responses
-    base_url: https://example.invalid
-    api_key: unused-test-key
-    models:
-      - value: model
-''');
+  await config.writeAsString(
+    '{"defaultProvider":"test","defaultModel":"model"}',
+  );
+  await File('$home/.atlas/models.json').writeAsString(
+    '{"providers":{"test":{"api":"openai-responses","baseUrl":"https://example.invalid","apiKey":"unused-test-key","models":[{"id":"model"}]}}}',
+  );
   final terminal = _Terminal();
   Process? process;
   var exited = false;
