@@ -55,7 +55,23 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	modelID, stream, err := modelConfig(settings, settings.Model, "")
+	if settings.Model == "" {
+		return nil, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
+	}
+	_, _, metadata, err := settings.ModelRef(settings.Model)
+	if err != nil {
+		return nil, err
+	}
+	var thinkingLevel agent.ThinkingLevel
+	if metadata.Reasoning {
+		for _, option := range metadata.ReasoningOptions {
+			if option.Type == config.ReasoningTypeEffort && len(option.Values) > 0 {
+				thinkingLevel = agent.ThinkingLevel(option.Values[0])
+				break
+			}
+		}
+	}
+	modelID, stream, err := modelConfig(settings, settings.Model, thinkingLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +79,9 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := m.store.Create(ctx, session.CreateOptions{Cwd: cwd, ModelRef: settings.Model, SystemPrompt: resources.SystemPrompt})
+	info, err := m.store.Create(ctx, session.CreateOptions{
+		Cwd: cwd, ModelRef: settings.Model, ThinkingLevel: thinkingLevel, SystemPrompt: resources.SystemPrompt,
+	})
 	if err != nil {
 		return nil, err
 	}

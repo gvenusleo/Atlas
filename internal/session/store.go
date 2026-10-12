@@ -45,14 +45,14 @@ type CreateOptions struct {
 	SystemPrompt  string
 }
 
-// Open 打开数据库；path 为空时使用 ~/.atlas/sessions.db。
+// Open 打开数据库；path 为空时使用 ~/.atlas/atlas.db。
 func Open(ctx context.Context, path string) (*Store, error) {
 	if path == "" {
 		dir, err := config.Dir()
 		if err != nil {
 			return nil, err
 		}
-		path = filepath.Join(dir, "sessions.db")
+		path = filepath.Join(dir, "atlas.db")
 	}
 	path, err := filepath.Abs(path)
 	if err != nil {
