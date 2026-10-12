@@ -29,6 +29,24 @@ type Skill struct {
 	FilePath    string `xml:"filePath"`
 }
 
+// Discover 从全局和工作区的 .agents、.atlas 目录发现技能，统一四个来源。
+func Discover(workdir string) ([]Skill, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("定位主目录失败: %w", err)
+	}
+	cwd, err := filepath.Abs(workdir)
+	if err != nil {
+		return nil, fmt.Errorf("工作目录解析失败: %w", err)
+	}
+	return Load(
+		filepath.Join(home, ".agents", "skills"),
+		filepath.Join(home, ".atlas", "skills"),
+		filepath.Join(cwd, ".agents", "skills"),
+		filepath.Join(cwd, ".atlas", "skills"),
+	)
+}
+
 // Load 扫描 skills 来源的子目录，按名称排序；缺失目录略过，加载错误直接返回。
 func Load(dirs ...string) ([]Skill, error) {
 	var skills []Skill
@@ -68,18 +86,12 @@ func Load(dirs ...string) ([]Skill, error) {
 			}
 
 			path := filepath.Join(dirPath, "SKILL.md")
-			info, err = os.Stat(path)
+			_, err = os.Stat(path)
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			if err != nil {
 				return nil, fmt.Errorf("%s 检查失败: %w", path, err)
-			}
-			if !info.Mode().IsRegular() {
-				return nil, fmt.Errorf("%s 不是普通文件", path)
-			}
-			if info.Size() > maxFileBytes {
-				return nil, fmt.Errorf("%s 文件大小超过 10 MiB 限制", path)
 			}
 
 			realPath, err := filepath.EvalSymlinks(path)
@@ -112,26 +124,41 @@ func Load(dirs ...string) ([]Skill, error) {
 	return skills, nil
 }
 
-// loadSkill 读取文件并解析元信息，不保存正文。
-func loadSkill(path string) (Skill, error) {
+// readSkillFile 统一校验普通文件、大小和 UTF-8，并返回 YAML 头与正文。
+func readSkillFile(path string) (string, string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", "", errors.New("不是普通文件")
+	}
+	if info.Size() > maxFileBytes {
+		return "", "", errors.New("文件大小超过 10 MiB 限制")
+	}
 	file, err := os.Open(path)
 	if err != nil {
-		return Skill{}, err
+		return "", "", err
 	}
 	defer file.Close()
 
+	// 读取时继续限额，防止文件在 Stat 后增长。
 	data, err := io.ReadAll(io.LimitReader(file, maxFileBytes+1))
 	if err != nil {
-		return Skill{}, err
+		return "", "", err
 	}
 	if len(data) > maxFileBytes {
-		return Skill{}, errors.New("文件大小超过 10 MiB 限制")
+		return "", "", errors.New("文件大小超过 10 MiB 限制")
 	}
 	if !utf8.Valid(data) {
-		return Skill{}, errors.New("文件不是 UTF-8 文本")
+		return "", "", errors.New("文件不是 UTF-8 文本")
 	}
+	return splitFrontmatter(string(data))
+}
 
-	header, _, err := splitFrontmatter(string(data))
+// loadSkill 读取文件并解析元信息，不保存正文。
+func loadSkill(path string) (Skill, error) {
+	header, _, err := readSkillFile(path)
 	if err != nil {
 		return Skill{}, err
 	}
@@ -190,22 +217,6 @@ func splitFrontmatter(text string) (string, string, error) {
 		end += len(line) + 1
 	}
 	return "", "", errors.New("YAML frontmatter 缺少结束分隔符")
-}
-
-// ReadBody 读取技能正文，去除 frontmatter 和首尾空白；读取失败带技能路径返回。
-func ReadBody(skill Skill) (string, error) {
-	data, err := os.ReadFile(skill.FilePath)
-	if err != nil {
-		return "", fmt.Errorf("读取 %s 失败: %w", skill.FilePath, err)
-	}
-	if !utf8.Valid(data) {
-		return "", fmt.Errorf("%s 不是 UTF-8 文本", skill.FilePath)
-	}
-	_, body, err := splitFrontmatter(string(data))
-	if err != nil {
-		return "", fmt.Errorf("%s 加载失败: %w", skill.FilePath, err)
-	}
-	return strings.TrimSpace(body), nil
 }
 
 // validateName 校验名称长度与字符，不要求名称和目录名相同。

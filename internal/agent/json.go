@@ -41,17 +41,17 @@ func MarshalMessage(message Message) ([]byte, error) {
 // UnmarshalMessage 恢复值类型消息；未知字段和类型明确报错。
 func UnmarshalMessage(data []byte) (Message, error) {
 	var header struct {
-		Role    Role           `json:"role"`
-		Content jsontext.Value `json:"content"`
+		Role    Role          `json:"role"`
+		Content jsontext.Kind `json:"content"`
 	}
-	if err := json.Unmarshal(data, &header); err != nil {
+	if err := json.Unmarshal(data, &header, json.WithUnmarshalers(contentKindUnmarshalers)); err != nil {
 		return nil, err
 	}
 	if header.Role == RoleSystem {
-		if header.Content.Kind() != '"' {
+		if header.Content != '"' {
 			return nil, errors.New("系统消息正文必须是字符串")
 		}
-	} else if header.Content.Kind() != '[' {
+	} else if header.Content != '[' {
 		return nil, errors.New("消息内容必须是数组")
 	}
 	opts := []json.Options{json.RejectUnknownMembers(true), json.WithUnmarshalers(contentUnmarshalers)}
@@ -101,6 +101,12 @@ func UnmarshalMessage(data []byte) (Message, error) {
 	}
 	return message, nil
 }
+
+// 分派消息类型时只记录正文的起始类型，不复制完整正文。
+var contentKindUnmarshalers = json.UnmarshalFromFunc[*jsontext.Kind](func(dec *jsontext.Decoder, kind *jsontext.Kind) error {
+	*kind = dec.PeekKind()
+	return dec.SkipValue()
+})
 
 var contentMarshalers = json.MarshalToFunc[Content](func(enc *jsontext.Encoder, content Content) error {
 	// json/v2 会将接口中的值取址后传入编码器；公共入口已验证值类型契约。

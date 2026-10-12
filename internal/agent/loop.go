@@ -34,26 +34,25 @@ func Run(ctx context.Context, prompts []Message, rc *LoopContext, emit func(Even
 		msg := streamResponse(ctx, rc, e)
 		add(msg)
 
-		// 分派以 tool calls 的有无优先于 StopReason（畸形的 stop+调用照常执行）。
-		var results []ToolResultMessage
-		switch calls := toolCallsOf(&msg); {
-		case isHardStop(msg.StopReason):
-		case len(calls) == 0:
-		case msg.StopReason == StopReasonMaxOutputTokens:
-			results = failTruncated(calls, e)
-		default:
-			results = executeToolCalls(ctx, rc, calls, e)
-		}
-
-		toolResults := make([]Message, 0, len(results))
-		for _, m := range results {
+		// 正常结束的回复若仍包含工具调用，也要执行；失败、取消或截断的回复不执行工具。
+		var toolResults []Message
+		complete := func(m ToolResultMessage) {
 			add(m)
 			e.messagePair(m)
 			toolResults = append(toolResults, m)
 		}
+		switch calls := toolCallsOf(&msg); {
+		case isHardStop(msg.StopReason):
+		case len(calls) == 0:
+		case msg.StopReason == StopReasonMaxOutputTokens:
+			failTruncated(calls, e, complete)
+		default:
+			executeToolCalls(ctx, rc, calls, e, complete)
+		}
+
 		e.send(Event{Type: EventTypeTurnEnd, Message: msg, Messages: toolResults})
 
-		if len(results) == 0 {
+		if len(toolResults) == 0 || ctx.Err() != nil {
 			break
 		}
 	}
@@ -93,21 +92,18 @@ func isHardStop(r StopReason) bool {
 }
 
 // failTruncated 处理输出截断：流式拼出的参数能解析但可能不完整，全批作废、绝不执行。
-func failTruncated(calls []ToolCall, e *emitter) []ToolResultMessage {
-	messages := make([]ToolResultMessage, 0, len(calls))
+func failTruncated(calls []ToolCall, e *emitter, complete func(ToolResultMessage)) {
 	for _, call := range calls {
 		e.send(toolStart(call))
 		result := failResult(fmt.Sprintf("Tool call %q 未执行：响应撞上输出上限，参数可能不完整；请带完整参数重发", call.Name))
 		e.send(toolEnd(call, result))
-		messages = append(messages, newToolResultMessage(call, result))
+		complete(newToolResultMessage(call, result))
 	}
-	return messages
 }
 
-// executeToolCalls 按源顺序串行执行，取消后仍为剩余调用补齐错误结果。
-func executeToolCalls(ctx context.Context, rc *LoopContext, calls []ToolCall, e *emitter) []ToolResultMessage {
-	messages := make([]ToolResultMessage, len(calls))
-	for i, call := range calls {
+// executeToolCalls 逐个执行并同步交付结果；取消后为剩余调用补齐错误结果。
+func executeToolCalls(ctx context.Context, rc *LoopContext, calls []ToolCall, e *emitter, complete func(ToolResultMessage)) {
+	for _, call := range calls {
 		e.send(toolStart(call))
 		tool := findTool(rc.Tools, call.Name)
 		var result ToolResult
@@ -120,9 +116,8 @@ func executeToolCalls(ctx context.Context, rc *LoopContext, calls []ToolCall, e 
 			result = executeCall(ctx, tool, call)
 		}
 		e.send(toolEnd(call, result))
-		messages[i] = newToolResultMessage(call, result)
+		complete(newToolResultMessage(call, result))
 	}
-	return messages
 }
 
 // executeCall 执行单个调用，工具的 error 与 panic 一律收敛为错误结果。

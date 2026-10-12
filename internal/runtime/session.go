@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -50,15 +49,6 @@ type Session struct {
 // ID 返回用于查询和恢复的持久化会话标识。
 func (s *Session) ID() string { return s.id }
 
-// Skills 返回当前会话发现的技能元信息副本，供 App 解析 slash command。
-func (s *Session) Skills() ([]skills.Skill, error) {
-	if !s.mu.TryLock() {
-		return nil, ErrBusy
-	}
-	defer s.mu.Unlock()
-	return slices.Clone(s.loop.Skills), nil
-}
-
 // Create 加载当前配置和提示词，保存新会话并注册工具。
 func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	settings, err := config.Load()
@@ -79,27 +69,42 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	}
 	s := m.bind(session.Loaded{Info: info, Messages: []agent.Message{
 		agent.SystemMessage{Content: resources.SystemPrompt, Timestamp: info.CreatedAt},
-	}}, modelID, stream, resources)
+	}}, modelID, stream, resources.Skills)
 	m.mu.Lock()
 	m.sessions[s.id] = s
 	m.mu.Unlock()
 	return s, nil
 }
 
-// Resume 对已加载会话返回同一实例；保存失败的实例用数据库历史替换。
+// Resume 在全局锁外加载历史和资源；同一会话恢复期间返回 ErrBusy，其他会话可继续操作。
 func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if existing := m.sessions[id]; existing != nil {
 		if !existing.mu.TryLock() {
+			m.mu.Unlock()
 			return nil, ErrBusy
 		}
 		needsReload := existing.needsReload
 		existing.mu.Unlock()
 		if !needsReload {
+			m.mu.Unlock()
 			return existing, nil
 		}
 	}
+	// 占位实例不对外返回；恢复完成前，同一 ID 不能再次恢复或删除。
+	loading := &Session{store: m.store, id: id, needsReload: true}
+	loading.mu.Lock()
+	m.sessions[id] = loading
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		if m.sessions[id] == loading {
+			delete(m.sessions, id)
+		}
+		m.mu.Unlock()
+		loading.mu.Unlock()
+	}()
+
 	loaded, err := m.store.Load(ctx, id)
 	if err != nil {
 		return nil, err
@@ -115,17 +120,19 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err := checkWorkdir(loaded.Info.Cwd); err != nil {
 		return nil, err
 	}
-	resources, err := prompt.Build(loaded.Info.Cwd)
+	discoveredSkills, err := skills.Discover(loaded.Info.Cwd)
 	if err != nil {
 		return nil, err
 	}
-	s := m.bind(loaded, modelID, stream, resources)
+	s := m.bind(loaded, modelID, stream, discoveredSkills)
+	m.mu.Lock()
 	m.sessions[id] = s
+	m.mu.Unlock()
 	return s, nil
 }
 
 // bind 将恢复的历史与待处理调用绑定到新运行状态，工具以会话目录为基准。
-func (m *Manager) bind(loaded session.Loaded, modelID string, stream agent.StreamFn, resources prompt.Resources) *Session {
+func (m *Manager) bind(loaded session.Loaded, modelID string, stream agent.StreamFn, discoveredSkills []skills.Skill) *Session {
 	cwd := loaded.Info.Cwd
 	return &Session{
 		store:   m.store,
@@ -134,7 +141,7 @@ func (m *Manager) bind(loaded session.Loaded, modelID string, stream agent.Strea
 		loop: agent.LoopContext{
 			Messages: loaded.Messages,
 			Tools:    []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)},
-			Skills:   resources.Skills,
+			Skills:   discoveredSkills,
 			Model:    modelID, Stream: stream, ThinkingLevel: loaded.Info.ThinkingLevel,
 		},
 	}

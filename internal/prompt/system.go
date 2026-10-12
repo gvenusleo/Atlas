@@ -60,12 +60,7 @@ func Build(workdir string) (Resources, error) {
 	if err != nil {
 		return Resources{}, err
 	}
-	discoveredSkills, err := skills.Load(
-		filepath.Join(home, ".agents", "skills"),
-		filepath.Join(home, ".atlas", "skills"),
-		filepath.Join(cwd, ".agents", "skills"),
-		filepath.Join(cwd, ".atlas", "skills"),
-	)
+	discoveredSkills, err := skills.Discover(cwd)
 	if err != nil {
 		return Resources{}, err
 	}

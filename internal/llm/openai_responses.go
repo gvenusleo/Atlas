@@ -9,6 +9,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -196,7 +197,7 @@ func reasoningText(item responses.ResponseReasoningItem) string {
 	return strings.Join(summary, "\n\n")
 }
 
-// usageOf 归一化 token 口径：InputTokens 是未命中缓存的净输入（假定 provider 的。
+// usageOf 归一化 token 口径：InputTokens 是未命中缓存的净输入（假定 provider 的
 // input_tokens 含缓存读写项）；TotalTokens 由四项相加得出。
 func usageOf(u responses.ResponseUsage) agent.Usage {
 	read := u.InputTokensDetails.CachedTokens
@@ -383,7 +384,15 @@ func validateImage(img agent.ImageContent) error {
 	if img.MIMEType == "" {
 		return errors.New("图像缺少 MIME 类型")
 	}
-	if _, err := base64.StdEncoding.DecodeString(img.Data); err != nil {
+	// 流式解码器可能接受跨块拼接的填充片段；只允许末尾出现至多两个填充符。
+	if padding := strings.IndexByte(img.Data, '='); padding >= 0 {
+		suffix := img.Data[padding:]
+		if strings.Trim(suffix, "=\r\n") != "" || strings.Count(suffix, "=") > 2 {
+			return errors.New("图像数据不是合法 base64: 填充符后仍有数据或填充过多")
+		}
+	}
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(img.Data))
+	if _, err := io.Copy(io.Discard, decoder); err != nil {
 		return fmt.Errorf("图像数据不是合法 base64: %w", err)
 	}
 	return nil
