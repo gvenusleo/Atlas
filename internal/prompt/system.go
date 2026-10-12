@@ -38,7 +38,7 @@ type Resources struct {
 	Skills       []skills.Skill
 }
 
-// Build 在会话创建时组装提示词，并返回供会话和 App 共用的 skills 快照。
+// Build 在会话创建或恢复时组装提示词，并返回供会话和 App 共用的 skills 快照。
 func Build(workdir string) (Resources, error) {
 	cwd, err := filepath.Abs(workdir)
 	if err != nil {

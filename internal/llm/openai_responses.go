@@ -89,7 +89,7 @@ func OpenAIResponsesStreamFn(client openai.Client) agent.StreamFn {
 
 // requestOf 组装一次请求的参数；本地可判定的错误在这里全部拦下，不消耗网络调用。
 func requestOf(req agent.StreamRequest) (responses.ResponseNewParams, error) {
-	input, err := inputOf(req.Messages)
+	input, err := inputOf(req.SystemPrompt, req.Messages)
 	if err != nil {
 		return responses.ResponseNewParams{}, err
 	}
@@ -215,15 +215,27 @@ func usageOf(u responses.ResponseUsage) agent.Usage {
 
 // ---- 消息 → input items ----
 
-// inputOf 把消息历史全量重放为 input items，assistant 推理项按原顺序回传；
+// inputOf 先放入本次提示词，再按原顺序重放消息历史与 assistant 推理项；
+// 历史中的 system 只允许通知，提示词快照与未知类型报错。
 // 图片允许出现在 user 消息与工具结果；assistant 图片报错而非丢弃。
-func inputOf(msgs []agent.Message) (responses.ResponseInputParam, error) {
+func inputOf(systemPrompt string, msgs []agent.Message) (responses.ResponseInputParam, error) {
 	var items responses.ResponseInputParam
+	if systemPrompt != "" {
+		items = append(items, easyContent(responses.EasyInputMessageRoleSystem,
+			responses.EasyInputMessageContentUnionParam{OfString: openai.String(systemPrompt)}))
+	}
 	for _, m := range msgs {
 		switch v := m.(type) {
 		case agent.SystemMessage:
-			items = append(items, easyContent(responses.EasyInputMessageRoleSystem,
-				responses.EasyInputMessageContentUnionParam{OfString: openai.String(v.Content)}))
+			switch v.Type {
+			case agent.SystemMessageTypeNotice:
+				items = append(items, easyContent(responses.EasyInputMessageRoleSystem,
+					responses.EasyInputMessageContentUnionParam{OfString: openai.String(v.Content)}))
+			case agent.SystemMessageTypePrompt:
+				return nil, errors.New("消息历史不能包含 system_prompt 提示词快照，请通过 SystemPrompt 传入本次提示词")
+			default:
+				return nil, fmt.Errorf("消息历史中的未知 system 消息类型 %q", v.Type)
+			}
 		case agent.UserMessage:
 			content, err := messageContent(v.Content)
 			if err != nil {

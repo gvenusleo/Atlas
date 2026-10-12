@@ -20,10 +20,12 @@ type Record struct {
 	ThinkingLevel agent.ThinkingLevel
 }
 
-// Loaded 保留中断状态；PendingCalls 未补齐前不能继续请求模型。
+// Loaded 提取最新提示词快照并保留对话与中断状态；PendingCalls 未补齐前不能继续请求模型。
 type Loaded struct {
 	Info         Info
-	Messages     []agent.Message
+	SystemPrompt agent.SystemMessage
+	PromptSeq    int64
+	Messages     []agent.Message // 只包含对话消息，保留系统通知，排除全部提示词快照。
 	PendingCalls []agent.ToolCall
 }
 
@@ -125,7 +127,7 @@ func scanRecord(row scanner) (Record, error) {
 	return record, nil
 }
 
-// Messages 取 beforeSeq 之前的一页，返回正序；beforeSeq 为 0 时取最新一页。
+// Messages 取 beforeSeq 之前的一页完整原始记录，包含提示词快照，返回正序；beforeSeq 为 0 时取最新一页。
 func (s *Store) Messages(ctx context.Context, id string, beforeSeq int64, limit int) ([]Record, error) {
 	if beforeSeq < 0 {
 		return nil, errors.New("消息分页游标不能为负数")
@@ -192,8 +194,14 @@ func (s *Store) Load(ctx context.Context, id string) (Loaded, error) {
 			return Loaded{}, fmt.Errorf("会话 %s 在消息 %d 前缺少记录", id, record.Seq)
 		}
 		last = record.Seq
-		if last == 1 && record.Message.Role() != agent.RoleSystem {
-			return Loaded{}, fmt.Errorf("会话 %s 缺少初始系统消息", id)
+		prompt, isSystem := record.Message.(agent.SystemMessage)
+		isPrompt := isSystem && prompt.Type == agent.SystemMessageTypePrompt
+		if last == 1 && !isPrompt {
+			return Loaded{}, fmt.Errorf("会话 %s 缺少初始系统提示词快照", id)
+		}
+		if isPrompt {
+			loaded.SystemPrompt, loaded.PromptSeq = prompt, record.Seq
+			continue
 		}
 		loaded.Messages = append(loaded.Messages, record.Message)
 		if err := trackCalls(&loaded.PendingCalls, record.Message); err != nil {

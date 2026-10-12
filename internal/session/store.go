@@ -37,7 +37,7 @@ type Info struct {
 	LastSeq       int64
 }
 
-// CreateOptions 创建时保存模型设置与系统提示词，不在恢复时重新组装提示词。
+// CreateOptions 保存模型设置与初始系统提示词快照；后续快照通过 AppendMessage 追加。
 type CreateOptions struct {
 	Cwd           string
 	ModelRef      string
@@ -140,7 +140,9 @@ func (s *Store) Create(ctx context.Context, opts CreateOptions) (Info, error) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	info := Info{ID: uuid.NewV7().String(), Cwd: cwd, ModelRef: opts.ModelRef,
 		ThinkingLevel: opts.ThinkingLevel, CreatedAt: now, UpdatedAt: now, LastSeq: 1}
-	encoded, err := encodeMessage(agent.SystemMessage{Content: opts.SystemPrompt, Timestamp: now})
+	encoded, err := encodeMessage(agent.SystemMessage{
+		Type: agent.SystemMessageTypePrompt, Content: opts.SystemPrompt, Timestamp: now,
+	})
 	if err != nil {
 		return Info{}, err
 	}

@@ -13,13 +13,12 @@ import (
 	"github.com/gvenusleo/atlas/internal/config"
 	"github.com/gvenusleo/atlas/internal/prompt"
 	"github.com/gvenusleo/atlas/internal/session"
-	"github.com/gvenusleo/atlas/internal/skills"
 	"github.com/gvenusleo/atlas/internal/tools"
 )
 
 var (
 	ErrBusy        = errors.New("会话正在执行操作")
-	ErrNeedsReload = errors.New("会话保存失败，需要重新加载")
+	ErrNeedsReload = errors.New("会话状态不可用，需要重新初始化")
 	ErrInterrupted = errors.New("会话有未完成的工具调用，需要确认处理")
 )
 
@@ -85,42 +84,38 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := m.bind(session.Loaded{Info: info, Messages: []agent.Message{
-		agent.SystemMessage{Content: resources.SystemPrompt, Timestamp: info.CreatedAt},
-	}}, modelID, stream, resources.Skills)
+	s := &Session{store: m.store, id: info.ID}
+	s.bind(session.Loaded{Info: info}, modelID, stream, resources)
 	m.mu.Lock()
 	m.sessions[s.id] = s
 	m.mu.Unlock()
 	return s, nil
 }
 
-// Resume 在全局锁外加载历史和资源；同一会话恢复期间返回 ErrBusy，其他会话可继续操作。
+// Resume 每次都加载历史和当前资源，在同一实例上重新初始化。
+// 慢操作在全局锁外完成；同一会话恢复期间返回 ErrBusy，其他会话可继续操作。
 func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	m.mu.Lock()
-	if existing := m.sessions[id]; existing != nil {
-		if !existing.mu.TryLock() {
-			m.mu.Unlock()
-			return nil, ErrBusy
-		}
-		needsReload := existing.needsReload
-		existing.mu.Unlock()
-		if !needsReload {
-			m.mu.Unlock()
-			return existing, nil
-		}
+	s := m.sessions[id]
+	created := s == nil
+	if created {
+		s = &Session{store: m.store, id: id}
 	}
-	// 占位实例不对外返回；恢复完成前，同一 ID 不能再次恢复或删除。
-	loading := &Session{store: m.store, id: id, needsReload: true}
-	loading.mu.Lock()
-	m.sessions[id] = loading
+	if !s.mu.TryLock() {
+		m.mu.Unlock()
+		return nil, ErrBusy
+	}
+	// 恢复失败后，已有引用也不能继续使用过期的配置和历史。
+	s.needsReload = true
+	m.sessions[id] = s
 	m.mu.Unlock()
 	defer func() {
-		m.mu.Lock()
-		if m.sessions[id] == loading {
+		if created && s.needsReload {
+			m.mu.Lock()
 			delete(m.sessions, id)
+			m.mu.Unlock()
 		}
-		m.mu.Unlock()
-		loading.mu.Unlock()
+		s.mu.Unlock()
 	}()
 
 	loaded, err := m.store.Load(ctx, id)
@@ -138,30 +133,35 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err := checkWorkdir(loaded.Info.Cwd); err != nil {
 		return nil, err
 	}
-	discoveredSkills, err := skills.Discover(loaded.Info.Cwd)
+	resources, err := prompt.Build(loaded.Info.Cwd)
 	if err != nil {
 		return nil, err
 	}
-	s := m.bind(loaded, modelID, stream, discoveredSkills)
-	m.mu.Lock()
-	m.sessions[id] = s
-	m.mu.Unlock()
+	if resources.SystemPrompt != loaded.SystemPrompt.Content {
+		snapshot := agent.SystemMessage{Type: agent.SystemMessageTypePrompt,
+			Content: resources.SystemPrompt, Timestamp: time.Now()}
+		if _, err := m.store.AppendMessage(ctx, id, snapshot); err != nil {
+			return nil, errors.Join(ErrNeedsReload, err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.bind(loaded, modelID, stream, resources)
+	s.needsReload = false
 	return s, nil
 }
 
-// bind 将恢复的历史与待处理调用绑定到新运行状态，工具以会话目录为基准。
-func (m *Manager) bind(loaded session.Loaded, modelID string, stream agent.StreamFn, discoveredSkills []skills.Skill) *Session {
+// bind 在操作锁内绑定初始化结果；新建且尚未发布的实例无需加锁。
+func (s *Session) bind(loaded session.Loaded, modelID string, stream agent.StreamFn, resources prompt.Resources) {
 	cwd := loaded.Info.Cwd
-	return &Session{
-		store:   m.store,
-		id:      loaded.Info.ID,
-		pending: loaded.PendingCalls,
-		loop: agent.LoopContext{
-			Messages: loaded.Messages,
-			Tools:    []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)},
-			Skills:   discoveredSkills,
-			Model:    modelID, Stream: stream, ThinkingLevel: loaded.Info.ThinkingLevel,
-		},
+	s.pending = loaded.PendingCalls
+	s.loop = agent.LoopContext{
+		SystemPrompt: resources.SystemPrompt,
+		Messages:     loaded.Messages,
+		Tools:        []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)},
+		Skills:       resources.Skills,
+		Model:        modelID, Stream: stream, ThinkingLevel: loaded.Info.ThinkingLevel,
 	}
 }
 

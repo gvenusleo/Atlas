@@ -123,10 +123,19 @@ type Message interface {
 	Role() Role
 }
 
-// SystemMessage 是系统提示消息。
+// SystemMessageType 区分系统提示词快照与对话中的系统通知。
+type SystemMessageType string
+
+const (
+	SystemMessageTypePrompt SystemMessageType = "system_prompt"
+	SystemMessageTypeNotice SystemMessageType = "notice"
+)
+
+// SystemMessage 是提示词快照或系统通知；Type 必须显式指定。
 type SystemMessage struct {
-	Content   string    `json:"content"`
-	Timestamp time.Time `json:"timestamp"`
+	Type      SystemMessageType `json:"type"`
+	Content   string            `json:"content"`
+	Timestamp time.Time         `json:"timestamp"`
 }
 
 // Role 返回系统消息角色。
@@ -216,9 +225,10 @@ const (
 
 // StreamRequest 是一次模型调用的输入。
 type StreamRequest struct {
-	Model    string
-	Messages []Message
-	Tools    []Tool
+	Model        string
+	SystemPrompt string // 本次初始化的有效提示词，不属于对话历史。
+	Messages     []Message
+	Tools        []Tool
 	// ThinkingLevel 为空时采用服务端默认深度；off 表示请求关闭思考。
 	ThinkingLevel ThinkingLevel
 }
@@ -284,10 +294,11 @@ type Event struct {
 
 // LoopContext 是当前会话的完整状态：历史、工具、模型和运行策略都由调用方持有。
 type LoopContext struct {
-	Messages []Message
-	Tools    []Tool
-	Skills   []skills.Skill
-	Model    string
+	SystemPrompt string // 初始化后复用；Messages 不含提示词快照。
+	Messages     []Message
+	Tools        []Tool
+	Skills       []skills.Skill
+	Model        string
 	// ThinkingLevel 为空时采用服务端默认深度。
 	ThinkingLevel ThinkingLevel
 	// MaxTurns 限制一次 run 的 turn 数，0 表示不限；防御模型无限请求工具。

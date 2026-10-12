@@ -25,7 +25,7 @@ func Run(ctx context.Context, prompts []Message, rc *LoopContext, emit func(Even
 	for turn := 0; ; turn++ {
 		if rc.MaxTurns > 0 && turn >= rc.MaxTurns {
 			// 以系统消息入史留痕，供 UI 与会话回放解释 run 为何提前收尾。
-			add(SystemMessage{Content: fmt.Sprintf("run 终止：已达 MaxTurns=%d 上限", rc.MaxTurns), Timestamp: time.Now()})
+			add(SystemMessage{Type: SystemMessageTypeNotice, Content: fmt.Sprintf("run 终止：已达 MaxTurns=%d 上限", rc.MaxTurns), Timestamp: time.Now()})
 			e.messagePair(rc.Messages[len(rc.Messages)-1])
 			break
 		}
@@ -66,7 +66,7 @@ func streamResponse(ctx context.Context, rc *LoopContext, e *emitter) AssistantM
 	partial := AssistantMessage{Model: rc.Model, StopReason: StopReasonPending, Timestamp: time.Now()}
 	e.send(Event{Type: EventTypeMessageStart, Message: partial})
 
-	final := rc.Stream(ctx, StreamRequest{Model: rc.Model, Messages: rc.Messages, Tools: rc.Tools, ThinkingLevel: rc.ThinkingLevel}, func(d Delta) {
+	final := rc.Stream(ctx, StreamRequest{Model: rc.Model, SystemPrompt: rc.SystemPrompt, Messages: rc.Messages, Tools: rc.Tools, ThinkingLevel: rc.ThinkingLevel}, func(d Delta) {
 		e.send(Event{Type: EventTypeMessageUpdate, Delta: d})
 	})
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // MarshalMessage 使用领域类型的字段定义，只补充角色和内容类型标记。
@@ -227,6 +228,15 @@ func ValidateMessage(message Message) error {
 	var role Role
 	switch m := message.(type) {
 	case SystemMessage:
+		switch m.Type {
+		case SystemMessageTypePrompt:
+			if strings.TrimSpace(m.Content) == "" {
+				return errors.New("系统提示词快照不能为空")
+			}
+		case SystemMessageTypeNotice:
+		default:
+			return fmt.Errorf("未知系统消息类型 %q", m.Type)
+		}
 		return nil
 	case UserMessage:
 		role, content = m.Role(), m.Content
