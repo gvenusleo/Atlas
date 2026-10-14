@@ -20,13 +20,12 @@ type Record struct {
 	ThinkingLevel agent.ThinkingLevel
 }
 
-// Loaded 提取最新提示词快照并保留对话与中断状态；PendingCalls 未补齐前不能继续请求模型。
+// Loaded 提取最新提示词快照与原始对话；缺失工具结果在模型请求转换时补齐。
 type Loaded struct {
 	Info         Info
 	SystemPrompt agent.SystemMessage
 	PromptSeq    int64
 	Messages     []agent.Message // 只包含对话消息，保留系统通知，排除全部提示词快照。
-	PendingCalls []agent.ToolCall
 }
 
 // insertMessage 在调用方事务中插入消息，顺序号和会话更新时间由调用方维护。
@@ -204,9 +203,6 @@ func (s *Store) Load(ctx context.Context, id string) (Loaded, error) {
 			continue
 		}
 		loaded.Messages = append(loaded.Messages, record.Message)
-		if err := trackCalls(&loaded.PendingCalls, record.Message); err != nil {
-			return Loaded{}, fmt.Errorf("会话 %s 消息 %d: %w", id, last, err)
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return Loaded{}, err
@@ -215,41 +211,6 @@ func (s *Store) Load(ctx context.Context, id string) (Loaded, error) {
 		return Loaded{}, fmt.Errorf("会话 %s 的消息数量与元信息不一致", id)
 	}
 	return loaded, nil
-}
-
-// trackCalls 按历史顺序匹配调用与结果，保留未完成调用并拒绝关联断裂的历史。
-func trackCalls(pending *[]agent.ToolCall, message agent.Message) error {
-	switch m := message.(type) {
-	case agent.AssistantMessage:
-		if len(*pending) != 0 {
-			return errors.New("前一轮工具结果未补齐就出现新助手消息")
-		}
-		// 错误或取消的响应不会执行调用，不将它们当作等待恢复的工具。
-		if m.StopReason == agent.StopReasonError || m.StopReason == agent.StopReasonCanceled {
-			return nil
-		}
-		for _, content := range m.Content {
-			call, ok := content.(agent.ToolCall)
-			if !ok {
-				continue
-			}
-			if slices.ContainsFunc(*pending, func(c agent.ToolCall) bool { return c.ID == call.ID }) {
-				return fmt.Errorf("工具调用 ID %q 重复", call.ID)
-			}
-			*pending = append(*pending, call)
-		}
-	case agent.ToolResultMessage:
-		index := slices.IndexFunc(*pending, func(c agent.ToolCall) bool { return c.ID == m.ToolCallID })
-		if index < 0 || (*pending)[index].Name != m.ToolName {
-			return fmt.Errorf("工具结果 %q 没有对应调用", m.ToolCallID)
-		}
-		*pending = slices.Delete(*pending, index, index+1)
-	case agent.UserMessage:
-		if len(*pending) != 0 {
-			return errors.New("工具结果未补齐就出现新用户消息")
-		}
-	}
-	return nil
 }
 
 // Usage 聚合独立的小 JSON 字段，不读取消息正文；它表示累计消耗而非上下文大小。

@@ -2,7 +2,6 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,7 +18,6 @@ import (
 var (
 	ErrBusy        = errors.New("会话正在执行操作")
 	ErrNeedsReload = errors.New("会话状态不可用，需要重新初始化")
-	ErrInterrupted = errors.New("会话有未完成的工具调用，需要确认处理")
 )
 
 // Manager 为一个应用进程共享，确保同一会话只持有一份运行状态。
@@ -41,7 +39,6 @@ type Session struct {
 	id          string
 	mu          sync.Mutex
 	loop        agent.LoopContext
-	pending     []agent.ToolCall
 	needsReload bool
 }
 
@@ -155,7 +152,6 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 // bind 在操作锁内绑定初始化结果；新建且尚未发布的实例无需加锁。
 func (s *Session) bind(loaded session.Loaded, modelID string, stream agent.StreamFn, resources prompt.Resources) {
 	cwd := loaded.Info.Cwd
-	s.pending = loaded.PendingCalls
 	s.loop = agent.LoopContext{
 		SystemPrompt: resources.SystemPrompt,
 		Messages:     loaded.Messages,
@@ -174,9 +170,6 @@ func (s *Session) Run(ctx context.Context, message agent.UserMessage, emit func(
 	defer s.mu.Unlock()
 	if s.needsReload {
 		return nil, ErrNeedsReload
-	}
-	if len(s.pending) != 0 {
-		return nil, ErrInterrupted
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -226,45 +219,7 @@ func (s *Session) Run(ctx context.Context, message agent.UserMessage, emit func(
 	return messages, nil
 }
 
-// PendingCalls 返回独立快照供 UI 展示，不允许修改内存中的调用参数。
-func (s *Session) PendingCalls() ([]agent.ToolCall, error) {
-	if !s.mu.TryLock() {
-		return nil, ErrBusy
-	}
-	defer s.mu.Unlock()
-	calls := make([]agent.ToolCall, len(s.pending))
-	for i, call := range s.pending {
-		call.Arguments = bytes.Clone(call.Arguments)
-		calls[i] = call
-	}
-	return calls, nil
-}
-
-// ResolveInterrupted 只在用户明确确认后调用；补充未知结果，不重放工具调用。
-func (s *Session) ResolveInterrupted(ctx context.Context) error {
-	if !s.mu.TryLock() {
-		return ErrBusy
-	}
-	defer s.mu.Unlock()
-	if s.needsReload {
-		return ErrNeedsReload
-	}
-	for _, call := range s.pending {
-		message := agent.ToolResultMessage{ToolCallID: call.ID, ToolName: call.Name,
-			IsError: true, Timestamp: time.Now(), Content: []agent.Content{agent.TextContent{
-				Text: "上次运行中断，工具是否执行及其结果未知。恢复过程没有重新执行该调用。",
-			}}}
-		if _, err := s.store.AppendMessage(ctx, s.id, message); err != nil {
-			s.needsReload = true
-			return errors.Join(ErrNeedsReload, err)
-		}
-		s.loop.Messages = append(s.loop.Messages, message)
-	}
-	s.pending = nil
-	return nil
-}
-
-// SetModel 仅在会话空闲且工具结果完整时切换模型，保存成功后更新内存配置。
+// SetModel 仅在会话空闲时切换模型，保存成功后更新内存配置。
 func (s *Session) SetModel(ctx context.Context, modelRef string, thinkingLevel agent.ThinkingLevel) error {
 	if !s.mu.TryLock() {
 		return ErrBusy
@@ -272,9 +227,6 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinkingLevel a
 	defer s.mu.Unlock()
 	if s.needsReload {
 		return ErrNeedsReload
-	}
-	if len(s.pending) != 0 {
-		return ErrInterrupted
 	}
 	settings, err := config.Load()
 	if err != nil {

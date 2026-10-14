@@ -215,7 +215,7 @@ func usageOf(u responses.ResponseUsage) agent.Usage {
 
 // ---- 消息 → input items ----
 
-// inputOf 先放入本次提示词，再按原顺序重放消息历史与 assistant 推理项；
+// inputOf 先放入本次提示词，再转换请求历史；缺失工具结果临时补齐，失败或取消的响应跳过。
 // 历史中的 system 只允许通知，提示词快照与未知类型报错。
 // 图片允许出现在 user 消息与工具结果；assistant 图片报错而非丢弃。
 func inputOf(systemPrompt string, msgs []agent.Message) (responses.ResponseInputParam, error) {
@@ -224,7 +224,7 @@ func inputOf(systemPrompt string, msgs []agent.Message) (responses.ResponseInput
 		items = append(items, easyContent(responses.EasyInputMessageRoleSystem,
 			responses.EasyInputMessageContentUnionParam{OfString: openai.String(systemPrompt)}))
 	}
-	for _, m := range msgs {
+	for _, m := range messagesForRequest(msgs) {
 		switch v := m.(type) {
 		case agent.SystemMessage:
 			switch v.Type {
