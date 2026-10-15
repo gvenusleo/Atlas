@@ -28,7 +28,6 @@ type Model struct {
 	Name             string            `json:"name,omitempty"`          // 展示名，缺省用模型 id
 	ContextWindow    int64             `json:"context_window,omitzero"` // 上下文窗口（token）
 	MaxOutput        int64             `json:"max_output,omitzero"`     // 输出上限（token）
-	Cost             Cost              `json:"cost,omitzero"`           // 单价（美元/百万 token）
 	Modalities       Modalities        `json:"modalities,omitzero"`     // 输入/输出模态（能力门控）
 	Tools            *bool             `json:"tools,omitzero"`          // nil 视为支持
 	Temperature      *bool             `json:"temperature,omitzero"`    // nil 视为支持
@@ -69,11 +68,3 @@ const (
 	ModalityAudio Modality = "audio"
 	ModalityVideo Modality = "video"
 )
-
-// Cost 是模型单价（美元/百万 token）。
-type Cost struct {
-	Input      float64 `json:"input,omitzero"`
-	Output     float64 `json:"output,omitzero"`
-	CacheRead  float64 `json:"cache_read,omitzero"`
-	CacheWrite float64 `json:"cache_write,omitzero"`
-}

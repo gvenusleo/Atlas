@@ -34,7 +34,6 @@ type ModelInfo struct {
 	ContextWindow     int64
 	MaxOutput         int64
 	Modalities        config.Modalities
-	Cost              config.Cost
 	Tools             bool
 	ThinkingLevels    []agent.ThinkingLevel
 	Supported         bool
@@ -91,7 +90,6 @@ func modelInfo(settings *config.Settings, providerID, modelID string, metadata c
 			Input:  slices.Clone(metadata.Modalities.Input),
 			Output: slices.Clone(metadata.Modalities.Output),
 		},
-		Cost:           metadata.Cost,
 		Tools:          metadata.Tools == nil || *metadata.Tools,
 		ThinkingLevels: usableThinkingLevels(metadata),
 	}
