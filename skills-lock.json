@@ -9,7 +9,8 @@
       "computedHash": "2cea1cc5f134380e5293e9e98f3f2c9cf081c0fc79dbae7859b6be161082784f"
     },
     "use-modern-go": {
-      "source": "jetbrains/go-modern-guidelines",
+      "source": "JetBrains/go-modern-guidelines",
+      "ref": "main",
       "sourceType": "github",
       "skillPath": "plugin/skills/use-modern-go/SKILL.md",
       "computedHash": "c308fc949fc8a369b5ea0f2d57072789eda8d05f420b972c67576b285b7ba539"
