@@ -25,7 +25,11 @@ func Run(ctx context.Context, prompts []Message, rc *LoopContext, emit func(Even
 	for turn := 0; ; turn++ {
 		if rc.MaxTurns > 0 && turn >= rc.MaxTurns {
 			// 以系统消息入史留痕，供 UI 与会话回放解释 run 为何提前收尾。
-			add(SystemMessage{Type: SystemMessageTypeNotice, Content: fmt.Sprintf("run 终止：已达 MaxTurns=%d 上限", rc.MaxTurns), Timestamp: time.Now()})
+			add(SystemMessage{
+				Type:      SystemMessageTypeNotice,
+				Content:   fmt.Sprintf("run 终止：已达 MaxTurns=%d 上限", rc.MaxTurns),
+				Timestamp: time.Now(),
+			})
 			e.messagePair(rc.Messages[len(rc.Messages)-1])
 			break
 		}
@@ -66,7 +70,14 @@ func streamResponse(ctx context.Context, rc *LoopContext, e *emitter) AssistantM
 	partial := AssistantMessage{Model: rc.Model, StopReason: StopReasonPending, Timestamp: time.Now()}
 	e.send(Event{Type: EventTypeMessageStart, Message: partial})
 
-	final := rc.Stream(ctx, StreamRequest{Model: rc.Model, SystemPrompt: rc.SystemPrompt, Messages: rc.Messages, Tools: rc.Tools, ThinkingLevel: rc.ThinkingLevel}, func(d Delta) {
+	request := StreamRequest{
+		Model:         rc.Model,
+		SystemPrompt:  rc.SystemPrompt,
+		Messages:      rc.Messages,
+		Tools:         rc.Tools,
+		ThinkingLevel: rc.ThinkingLevel,
+	}
+	final := rc.Stream(ctx, request, func(d Delta) {
 		e.send(Event{Type: EventTypeMessageUpdate, Delta: d})
 	})
 
@@ -91,25 +102,29 @@ func isHardStop(r StopReason) bool {
 	return false
 }
 
-// failTruncated 处理输出截断：流式拼出的参数能解析但可能不完整，全批作废、绝不执行。
+// failTruncated 处理输出截断：流式拼出的参数能解析但可能不完整，
+// 全批作废、绝不执行。
 func failTruncated(calls []ToolCall, e *emitter, complete func(ToolResultMessage)) {
 	for _, call := range calls {
 		e.send(toolStart(call))
-		result := failResult(fmt.Sprintf("Tool call %q 未执行：响应撞上输出上限，参数可能不完整；请带完整参数重发", call.Name))
+		result := failResult(fmt.Sprintf(
+			"工具调用 %q 未执行：响应撞上输出上限，参数可能不完整；请带完整参数重发", call.Name))
 		e.send(toolEnd(call, result))
 		complete(newToolResultMessage(call, result))
 	}
 }
 
 // executeToolCalls 逐个执行并同步交付结果；取消后为剩余调用补齐错误结果。
-func executeToolCalls(ctx context.Context, rc *LoopContext, calls []ToolCall, e *emitter, complete func(ToolResultMessage)) {
+func executeToolCalls(
+	ctx context.Context, rc *LoopContext, calls []ToolCall, e *emitter, complete func(ToolResultMessage),
+) {
 	for _, call := range calls {
 		e.send(toolStart(call))
 		tool := findTool(rc.Tools, call.Name)
 		var result ToolResult
 		switch {
 		case tool == nil:
-			result = failResult(fmt.Sprintf("Tool %s not found", call.Name))
+			result = failResult(fmt.Sprintf("工具 %s 不存在", call.Name))
 		case ctx.Err() != nil:
 			result = failResult("已取消，未执行")
 		default:
@@ -174,12 +189,22 @@ func newToolResultMessage(call ToolCall, result ToolResult) ToolResultMessage {
 
 // toolStart 构造工具开始事件，携带调用标识与原始参数。
 func toolStart(call ToolCall) Event {
-	return Event{Type: EventTypeToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name, Arguments: call.Arguments}
+	return Event{
+		Type:       EventTypeToolExecutionStart,
+		ToolCallID: call.ID,
+		ToolName:   call.Name,
+		Arguments:  call.Arguments,
+	}
 }
 
 // toolEnd 构造工具结束事件，成功或失败由 Result.IsError 表示。
 func toolEnd(call ToolCall, result ToolResult) Event {
-	return Event{Type: EventTypeToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name, Result: result}
+	return Event{
+		Type:       EventTypeToolExecutionEnd,
+		ToolCallID: call.ID,
+		ToolName:   call.Name,
+		Result:     result,
+	}
 }
 
 // emitter 为事件补时间戳后转发；emit 为 nil 时丢弃。

@@ -38,7 +38,8 @@ type Usage struct {
 // Validate 检查用量非负、总量不溢出且与各项一致。
 func (u Usage) Validate() error {
 	var total int64
-	for _, value := range [...]int64{u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens} {
+	parts := [...]int64{u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens}
+	for _, value := range parts {
 		if value < 0 || value > math.MaxInt64-total {
 			return errors.New("Usage 含负值或总量溢出")
 		}
@@ -222,6 +223,16 @@ const (
 	ThinkingXHigh   ThinkingLevel = "xhigh"
 	ThinkingMax     ThinkingLevel = "max"
 )
+
+// Valid 判断档位是否属于规范词表。
+func (l ThinkingLevel) Valid() bool {
+	switch l {
+	case ThinkingOff, ThinkingMinimal, ThinkingLow, ThinkingMedium,
+		ThinkingHigh, ThinkingXHigh, ThinkingMax:
+		return true
+	}
+	return false
+}
 
 // StreamRequest 是一次模型调用的输入。
 type StreamRequest struct {
