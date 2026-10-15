@@ -1,3 +1,4 @@
+// Package skills 发现并解析 SKILL.md 技能，生成供系统提示词使用的目录。
 package skills
 
 import (
@@ -58,42 +59,12 @@ func Load(dirs ...string) ([]Skill, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s 路径解析失败: %w", dir, err)
 		}
-
-		entries, err := os.ReadDir(root)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
+		files, err := skillFiles(root)
 		if err != nil {
-			return nil, fmt.Errorf("%s 扫描失败: %w", root, err)
+			return nil, err
 		}
 
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") {
-				continue
-			}
-
-			// 允许 skill 目录通过符号链接共享。
-			if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
-				continue
-			}
-			dirPath := filepath.Join(root, entry.Name())
-			info, err := os.Stat(dirPath)
-			if err != nil {
-				return nil, fmt.Errorf("%s 检查失败: %w", dirPath, err)
-			}
-			if !info.IsDir() {
-				continue
-			}
-
-			path := filepath.Join(dirPath, "SKILL.md")
-			_, err = os.Stat(path)
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			if err != nil {
-				return nil, fmt.Errorf("%s 检查失败: %w", path, err)
-			}
-
+		for _, path := range files {
 			realPath, err := filepath.EvalSymlinks(path)
 			if err != nil {
 				return nil, fmt.Errorf("%s 符号链接解析失败: %w", path, err)
@@ -107,12 +78,8 @@ func Load(dirs ...string) ([]Skill, error) {
 				return nil, fmt.Errorf("%s 加载失败: %w", path, err)
 			}
 			if previous, exists := names[skill.Name]; exists {
-				return nil, fmt.Errorf(
-					"技能 %q 同名冲突: %s 与 %s",
-					skill.Name, previous, path,
-				)
+				return nil, fmt.Errorf("技能 %q 同名冲突: %s 与 %s", skill.Name, previous, path)
 			}
-
 			names[skill.Name] = path
 			paths[realPath] = true
 			skills = append(skills, skill)
@@ -124,41 +91,78 @@ func Load(dirs ...string) ([]Skill, error) {
 	return skills, nil
 }
 
-// readSkillFile 统一校验普通文件、大小和 UTF-8，并返回 YAML 头与正文。
-func readSkillFile(path string) (string, string, error) {
+// skillFiles 返回 root 下各技能目录中的 SKILL.md 路径；目录缺失时返回空。
+func skillFiles(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s 扫描失败: %w", root, err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		// 允许 skill 目录通过符号链接共享。
+		if strings.HasPrefix(entry.Name(), ".") ||
+			!entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		dirPath := filepath.Join(root, entry.Name())
+		info, err := os.Stat(dirPath)
+		if err != nil {
+			return nil, fmt.Errorf("%s 检查失败: %w", dirPath, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+
+		path := filepath.Join(dirPath, "SKILL.md")
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, fmt.Errorf("%s 检查失败: %w", path, err)
+		}
+		files = append(files, path)
+	}
+	return files, nil
+}
+
+// readSkillHeader 统一校验普通文件、大小和 UTF-8，并返回 YAML 头。
+func readSkillHeader(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", "", errors.New("不是普通文件")
+		return "", errors.New("不是普通文件")
 	}
 	if info.Size() > maxFileBytes {
-		return "", "", errors.New("文件大小超过 10 MiB 限制")
+		return "", errors.New("文件大小超过 10 MiB 限制")
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	defer file.Close()
 
 	// 读取时继续限额，防止文件在 Stat 后增长。
 	data, err := io.ReadAll(io.LimitReader(file, maxFileBytes+1))
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	if len(data) > maxFileBytes {
-		return "", "", errors.New("文件大小超过 10 MiB 限制")
+		return "", errors.New("文件大小超过 10 MiB 限制")
 	}
 	if !utf8.Valid(data) {
-		return "", "", errors.New("文件不是 UTF-8 文本")
+		return "", errors.New("文件不是 UTF-8 文本")
 	}
 	return splitFrontmatter(string(data))
 }
 
 // loadSkill 读取文件并解析元信息，不保存正文。
 func loadSkill(path string) (Skill, error) {
-	header, _, err := readSkillFile(path)
+	header, err := readSkillHeader(path)
 	if err != nil {
 		return Skill{}, err
 	}
@@ -198,25 +202,24 @@ func loadSkill(path string) (Skill, error) {
 	}, nil
 }
 
-// splitFrontmatter 提取 YAML 头和正文，分隔符必须独占一行；支持 BOM 和 CRLF。
-func splitFrontmatter(text string) (string, string, error) {
+// splitFrontmatter 提取 YAML 头，分隔符必须独占一行；支持 BOM 和 CRLF。
+func splitFrontmatter(text string) (string, error) {
 	text = strings.TrimPrefix(text, "\uFEFF")
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 
 	first, rest, found := strings.Cut(text, "\n")
 	if !found || first != "---" {
-		return "", "", errors.New("文件必须以 YAML frontmatter 开始")
+		return "", errors.New("文件必须以 YAML frontmatter 开始")
 	}
 
 	end := 0
 	for line := range strings.SplitSeq(rest, "\n") {
 		if line == "---" {
-			bodyStart := min(end+len(line)+1, len(rest))
-			return rest[:end], rest[bodyStart:], nil
+			return rest[:end], nil
 		}
 		end += len(line) + 1
 	}
-	return "", "", errors.New("YAML frontmatter 缺少结束分隔符")
+	return "", errors.New("YAML frontmatter 缺少结束分隔符")
 }
 
 // validateName 校验名称长度与字符，不要求名称和目录名相同。
