@@ -64,7 +64,8 @@ func (s *Settings) Validate() error {
 		switch p.WireAPI {
 		case "", WireAPIOpenAIResponses, WireAPIOpenAICompletions:
 		default:
-			return fmt.Errorf("providers.%s.api = %q 无效，仅支持 %s / %s", name, p.WireAPI, WireAPIOpenAIResponses, WireAPIOpenAICompletions)
+			return fmt.Errorf("providers.%s.api = %q 无效，仅支持 %s / %s",
+				name, p.WireAPI, WireAPIOpenAIResponses, WireAPIOpenAICompletions)
 		}
 	}
 	return nil

@@ -32,15 +32,19 @@ type Loaded struct {
 func insertMessage(ctx context.Context, tx *sql.Tx, id string, seq int64,
 	modelRef string, thinkingLevel agent.ThinkingLevel, m encodedMessage) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO messages
-        (session_id, seq, role, stop_reason, is_error, model_ref, thinking, created_at, message_json, usage)
+        (session_id, seq, role, stop_reason, is_error, model_ref, thinking,
+         created_at, message_json, usage)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, seq, m.role, m.stop, m.isError, modelRef, thinkingLevel, m.timestamp.UnixMilli(), m.body, m.usage)
+		id, seq, m.role, m.stop, m.isError, modelRef, thinkingLevel,
+		m.timestamp.UnixMilli(), m.body, m.usage)
 	return err
 }
 
 // AppendMessage 编码在事务外完成；消息、顺序号和更新时间一次提交。
 // lastSeq 是调用方已知的最后序号；会话已被其他写入者追加时返回 ErrConflict。
-func (s *Store) AppendMessage(ctx context.Context, id string, lastSeq int64, message agent.Message) (int64, error) {
+func (s *Store) AppendMessage(
+	ctx context.Context, id string, lastSeq int64, message agent.Message,
+) (int64, error) {
 	m, err := encodeMessage(message)
 	if err != nil {
 		return 0, fmt.Errorf("编码消息失败: %w", err)
@@ -53,8 +57,10 @@ func (s *Store) AppendMessage(ctx context.Context, id string, lastSeq int64, mes
 	var seq int64
 	var modelRef string
 	var thinkingLevel agent.ThinkingLevel
-	err = tx.QueryRowContext(ctx, `UPDATE sessions SET last_seq = last_seq + 1,
-        updated_at = max(updated_at, ?) WHERE id = ? AND last_seq = ? RETURNING last_seq, model_ref, thinking`,
+	err = tx.QueryRowContext(ctx, `UPDATE sessions
+        SET last_seq = last_seq + 1, updated_at = max(updated_at, ?)
+        WHERE id = ? AND last_seq = ?
+        RETURNING last_seq, model_ref, thinking`,
 		time.Now().UnixMilli(), id, lastSeq).Scan(&seq, &modelRef, &thinkingLevel)
 	if errors.Is(err, sql.ErrNoRows) {
 		var exists int
@@ -96,7 +102,9 @@ func scanRecord(row scanner) (Record, error) {
 	var isError bool
 	var body string
 	var usage sql.NullString
-	if err := row.Scan(&record.Seq, &role, &stop, &isError, &record.ModelRef, &record.ThinkingLevel, &body, &usage); err != nil {
+	err := row.Scan(&record.Seq, &role, &stop, &isError,
+		&record.ModelRef, &record.ThinkingLevel, &body, &usage)
+	if err != nil {
 		return Record{}, err
 	}
 	message, err := decodeMessage(body, usage)
@@ -231,7 +239,8 @@ func (s *Store) Usage(ctx context.Context, id string) (agent.Usage, error) {
         coalesce(sum(json_extract(usage, '$.cache_write_tokens')), 0),
         coalesce(sum(json_extract(usage, '$.total_tokens')), 0)
         FROM messages WHERE session_id = ? AND role = 'assistant'`, id).
-		Scan(&usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens, &usage.TotalTokens)
+		Scan(&usage.InputTokens, &usage.OutputTokens,
+			&usage.CacheReadTokens, &usage.CacheWriteTokens, &usage.TotalTokens)
 	if err != nil {
 		return agent.Usage{}, err
 	}

@@ -43,7 +43,7 @@ type Info struct {
 
 // CreateOptions 保存模型设置与初始系统提示词快照；后续快照通过 AppendMessage 追加。
 type CreateOptions struct {
-	ID            string // 由运行层预先保留，避免提交后产生重复运行实例。
+	ID            string // 由宿主层预先保留，避免提交后产生重复运行实例。
 	Cwd           string
 	ModelRef      string
 	ThinkingLevel agent.ThinkingLevel
@@ -109,18 +109,15 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// validateSettings 检查模型引用和档位词表，具体模型能力由运行层校验。
+// validateSettings 检查模型引用和档位词表，具体模型能力由宿主层校验。
 func validateSettings(modelRef string, thinkingLevel agent.ThinkingLevel) error {
 	if _, _, err := config.ParseModel(modelRef); err != nil {
 		return err
 	}
-	switch thinkingLevel {
-	case "", agent.ThinkingOff, agent.ThinkingMinimal, agent.ThinkingLow,
-		agent.ThinkingMedium, agent.ThinkingHigh, agent.ThinkingXHigh, agent.ThinkingMax:
-		return nil
-	default:
+	if thinkingLevel != "" && !thinkingLevel.Valid() {
 		return fmt.Errorf("未知思考档位 %q", thinkingLevel)
 	}
+	return nil
 }
 
 // Create 在同一事务中创建会话和首条系统消息。
@@ -161,8 +158,10 @@ func (s *Store) Create(ctx context.Context, opts CreateOptions) (Info, error) {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions
-        (id, cwd, model_ref, thinking, created_at, updated_at, last_seq) VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		info.ID, info.Cwd, info.ModelRef, info.ThinkingLevel, now.UnixMilli(), now.UnixMilli()); err != nil {
+        (id, cwd, model_ref, thinking, created_at, updated_at, last_seq)
+        VALUES (?, ?, ?, ?, ?, ?, 1)`,
+		info.ID, info.Cwd, info.ModelRef, info.ThinkingLevel,
+		now.UnixMilli(), now.UnixMilli()); err != nil {
 		return Info{}, err
 	}
 	if err := insertMessage(ctx, tx, info.ID, 1, "", "", encoded); err != nil {
@@ -258,12 +257,15 @@ func pageSize(limit int) (int, error) {
 }
 
 // UpdateSettings 调用方须确保会话空闲，并同步更新内存中的模型客户端和配置。
-func (s *Store) UpdateSettings(ctx context.Context, id, modelRef string, thinkingLevel agent.ThinkingLevel) error {
+func (s *Store) UpdateSettings(
+	ctx context.Context, id, modelRef string, thinkingLevel agent.ThinkingLevel,
+) error {
 	if err := validateSettings(modelRef, thinkingLevel); err != nil {
 		return err
 	}
-	return s.change(ctx, `UPDATE sessions SET model_ref = ?, thinking = ?, updated_at = max(updated_at, ?)
-        WHERE id = ?`, modelRef, thinkingLevel, time.Now().UnixMilli(), id)
+	return s.change(ctx, `UPDATE sessions SET model_ref = ?, thinking = ?,
+        updated_at = max(updated_at, ?) WHERE id = ?`,
+		modelRef, thinkingLevel, time.Now().UnixMilli(), id)
 }
 
 // Rename 更新名称和活动时间，空名称表示清除名称。

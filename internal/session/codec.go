@@ -72,7 +72,8 @@ func decodeMessage(body string, usage sql.NullString) (agent.Message, error) {
 		if assistant.Usage != (agent.Usage{}) {
 			return nil, errors.New("消息正文重复保存了 Usage")
 		}
-		if err := json.Unmarshal([]byte(usage.String), &assistant.Usage, json.RejectUnknownMembers(true)); err != nil {
+		err := json.Unmarshal([]byte(usage.String), &assistant.Usage, json.RejectUnknownMembers(true))
+		if err != nil {
 			return nil, err
 		}
 		if err := assistant.Usage.Validate(); err != nil {
