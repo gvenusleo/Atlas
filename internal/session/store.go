@@ -18,7 +18,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var ErrNotFound = errors.New("会话不存在")
+var (
+	ErrNotFound = errors.New("会话不存在")
+	// ErrConflict 表示会话已被其他写入者追加消息，调用方持有的历史已过期。
+	ErrConflict = errors.New("会话已被其他写入者修改")
+)
 
 // Store 可供多个会话并发使用；Close 前须等待全部运行和数据库操作结束。
 type Store struct {
@@ -39,6 +43,7 @@ type Info struct {
 
 // CreateOptions 保存模型设置与初始系统提示词快照；后续快照通过 AppendMessage 追加。
 type CreateOptions struct {
+	ID            string // 由运行层预先保留，避免提交后产生重复运行实例。
 	Cwd           string
 	ModelRef      string
 	ThinkingLevel agent.ThinkingLevel
@@ -137,8 +142,12 @@ func (s *Store) Create(ctx context.Context, opts CreateOptions) (Info, error) {
 	if strings.TrimSpace(opts.SystemPrompt) == "" {
 		return Info{}, errors.New("系统提示词不能为空")
 	}
+	id, err := uuid.Parse(opts.ID)
+	if err != nil || id.String() != opts.ID {
+		return Info{}, errors.New("会话 ID 必须是规范 UUID")
+	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	info := Info{ID: uuid.NewV7().String(), Cwd: cwd, ModelRef: opts.ModelRef,
+	info := Info{ID: opts.ID, Cwd: cwd, ModelRef: opts.ModelRef,
 		ThinkingLevel: opts.ThinkingLevel, CreatedAt: now, UpdatedAt: now, LastSeq: 1}
 	encoded, err := encodeMessage(agent.SystemMessage{
 		Type: agent.SystemMessageTypePrompt, Content: opts.SystemPrompt, Timestamp: now,

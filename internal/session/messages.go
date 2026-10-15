@@ -39,7 +39,8 @@ func insertMessage(ctx context.Context, tx *sql.Tx, id string, seq int64,
 }
 
 // AppendMessage 编码在事务外完成；消息、顺序号和更新时间一次提交。
-func (s *Store) AppendMessage(ctx context.Context, id string, message agent.Message) (int64, error) {
+// lastSeq 是调用方已知的最后序号；会话已被其他写入者追加时返回 ErrConflict。
+func (s *Store) AppendMessage(ctx context.Context, id string, lastSeq int64, message agent.Message) (int64, error) {
 	m, err := encodeMessage(message)
 	if err != nil {
 		return 0, fmt.Errorf("编码消息失败: %w", err)
@@ -53,9 +54,13 @@ func (s *Store) AppendMessage(ctx context.Context, id string, message agent.Mess
 	var modelRef string
 	var thinkingLevel agent.ThinkingLevel
 	err = tx.QueryRowContext(ctx, `UPDATE sessions SET last_seq = last_seq + 1,
-        updated_at = max(updated_at, ?) WHERE id = ? RETURNING last_seq, model_ref, thinking`,
-		time.Now().UnixMilli(), id).Scan(&seq, &modelRef, &thinkingLevel)
+        updated_at = max(updated_at, ?) WHERE id = ? AND last_seq = ? RETURNING last_seq, model_ref, thinking`,
+		time.Now().UnixMilli(), id, lastSeq).Scan(&seq, &modelRef, &thinkingLevel)
 	if errors.Is(err, sql.ErrNoRows) {
+		var exists int
+		if tx.QueryRowContext(ctx, "SELECT 1 FROM sessions WHERE id = ?", id).Scan(&exists) == nil {
+			return 0, ErrConflict
+		}
 		return 0, ErrNotFound
 	}
 	if err != nil {
