@@ -1,4 +1,4 @@
-package runtime
+package host
 
 import (
 	"context"
@@ -8,11 +8,6 @@ import (
 	"github.com/gvenusleo/atlas/internal/session"
 )
 
-func infoOf(info session.Info) Info {
-	return Info{ID: info.ID, Name: info.Name, Cwd: info.Cwd, ModelRef: info.ModelRef,
-		ThinkingLevel: info.ThinkingLevel, CreatedAt: info.CreatedAt, UpdatedAt: info.UpdatedAt, LastSeq: info.LastSeq}
-}
-
 // List 查询持久化会话，无需加载执行器或凭据。limit 为 0 时使用默认 50 条。
 func (m *Manager) List(ctx context.Context, cwd string, before *ListCursor, limit int) ([]Info, error) {
 	ctx, end, err := m.begin(ctx)
@@ -20,19 +15,7 @@ func (m *Manager) List(ctx context.Context, cwd string, before *ListCursor, limi
 		return nil, err
 	}
 	defer end()
-	var cursor *session.ListCursor
-	if before != nil {
-		cursor = &session.ListCursor{UpdatedAt: before.UpdatedAt, ID: before.ID}
-	}
-	infos, err := m.store.List(ctx, cwd, cursor, limit)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]Info, len(infos))
-	for i, info := range infos {
-		result[i] = infoOf(info)
-	}
-	return result, nil
+	return m.store.List(ctx, cwd, before, limit)
 }
 
 // Get 查询持久化元信息；运行中的状态使用 Session.State。
@@ -42,11 +25,7 @@ func (m *Manager) Get(ctx context.Context, id string) (Info, error) {
 		return Info{}, err
 	}
 	defer end()
-	info, err := m.store.Get(ctx, id)
-	if err != nil {
-		return Info{}, err
-	}
-	return infoOf(info), nil
+	return m.store.Get(ctx, id)
 }
 
 // History 返回完整记录，包括提示词快照；beforeSeq 为 0 时取最新一页。
@@ -56,15 +35,7 @@ func (m *Manager) History(ctx context.Context, id string, beforeSeq int64, limit
 		return nil, err
 	}
 	defer end()
-	records, err := m.store.Messages(ctx, id, beforeSeq, limit)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]Record, len(records))
-	for i, record := range records {
-		result[i] = Record{Seq: record.Seq, Message: record.Message, ModelRef: record.ModelRef, ThinkingLevel: record.ThinkingLevel}
-	}
-	return result, nil
+	return m.store.Messages(ctx, id, beforeSeq, limit)
 }
 
 // Usage 是会话累计 token 消耗，不是当前上下文长度。

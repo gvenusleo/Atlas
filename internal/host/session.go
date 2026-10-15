@@ -1,4 +1,4 @@
-package runtime
+package host
 
 import (
 	"context"
@@ -29,6 +29,7 @@ type Session struct {
 	cancel  context.CancelFunc
 }
 
+// ID 返回持久化会话标识，与 Manager 的查询和恢复接口使用同一值。
 func (s *Session) ID() string { return s.id }
 
 // State 返回运行期间也可读取的独立快照。
@@ -131,7 +132,12 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 		return nil, err
 	}
 	id := uuid.NewV7().String()
-	s := &Session{manager: m, id: id, done: make(chan struct{}), state: State{ID: id, Busy: true, NeedsReload: true}}
+	s := &Session{
+		manager: m,
+		id:      id,
+		done:    make(chan struct{}),
+		state:   State{ID: id, Busy: true, NeedsReload: true},
+	}
 	m.mu.Lock()
 	m.sessions[id] = s
 	m.mu.Unlock()
@@ -141,7 +147,13 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 		}
 		s.finish()
 	}()
-	info, err := m.store.Create(ctx, session.CreateOptions{ID: id, Cwd: cwd, ModelRef: settings.Model, ThinkingLevel: thinking, SystemPrompt: resources.SystemPrompt})
+	info, err := m.store.Create(ctx, session.CreateOptions{
+		ID:            id,
+		Cwd:           cwd,
+		ModelRef:      settings.Model,
+		ThinkingLevel: thinking,
+		SystemPrompt:  resources.SystemPrompt,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +199,11 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 		return nil, err
 	}
 	if resources.SystemPrompt != loaded.SystemPrompt.Content {
-		message := agent.SystemMessage{Type: agent.SystemMessageTypePrompt, Content: resources.SystemPrompt, Timestamp: time.Now()}
+		message := agent.SystemMessage{
+			Type:      agent.SystemMessageTypePrompt,
+			Content:   resources.SystemPrompt,
+			Timestamp: time.Now(),
+		}
 		seq, err := m.store.AppendMessage(ctx, id, loaded.Info.LastSeq, message)
 		if err != nil {
 			return nil, errors.Join(ErrNeedsReload, err)
@@ -202,16 +218,25 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 }
 
 // bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。
-func (s *Session) bind(loaded session.Loaded, modelID string, stream agent.StreamFn, resources prompt.Resources) {
+func (s *Session) bind(
+	loaded session.Loaded, modelID string, stream agent.StreamFn, resources prompt.Resources,
+) {
 	cwd := loaded.Info.Cwd
-	s.loop = agent.LoopContext{SystemPrompt: resources.SystemPrompt, Messages: loaded.Messages,
-		Tools:  []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)},
-		Skills: resources.Skills, Model: modelID, Stream: stream, ThinkingLevel: loaded.Info.ThinkingLevel}
-	s.seq = loaded.Info.LastSeq
+	info := loaded.Info
+	toolset := []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
+	s.loop = agent.LoopContext{
+		SystemPrompt:  resources.SystemPrompt,
+		Messages:      loaded.Messages,
+		Tools:         toolset,
+		Skills:        resources.Skills,
+		Model:         modelID,
+		Stream:        stream,
+		ThinkingLevel: info.ThinkingLevel,
+	}
+	s.seq = info.LastSeq
 	s.mu.Lock()
-	s.state.ID, s.state.Cwd = s.id, cwd
-	s.state.Name = loaded.Info.Name
-	s.state.ModelRef, s.state.ThinkingLevel = loaded.Info.ModelRef, loaded.Info.ThinkingLevel
+	s.state.ID, s.state.Cwd, s.state.Name = s.id, cwd, info.Name
+	s.state.ModelRef, s.state.ThinkingLevel = info.ModelRef, info.ThinkingLevel
 	s.state.SystemPrompt, s.state.Skills = resources.SystemPrompt, slices.Clone(resources.Skills)
 	s.state.NeedsReload = false
 	s.mu.Unlock()

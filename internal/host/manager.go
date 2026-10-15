@@ -1,4 +1,4 @@
-package runtime
+package host
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 var (
 	ErrBusy        = errors.New("会话正在执行操作")
 	ErrNeedsReload = errors.New("会话状态不可用，需要重新初始化")
-	ErrClosed      = errors.New("runtime 已关闭")
+	ErrClosed      = errors.New("宿主已关闭")
 	ErrDeleted     = errors.New("会话已删除")
 	ErrNotFound    = session.ErrNotFound
 	ErrConflict    = session.ErrConflict
@@ -37,7 +37,13 @@ func Open(ctx context.Context, databasePath string) (*Manager, error) {
 		return nil, err
 	}
 	hostCtx, cancel := context.WithCancel(context.Background())
-	return &Manager{store: store, sessions: make(map[string]*Session), ctx: hostCtx, cancel: cancel, closed: make(chan struct{})}, nil
+	return &Manager{
+		store:    store,
+		sessions: make(map[string]*Session),
+		ctx:      hostCtx,
+		cancel:   cancel,
+		closed:   make(chan struct{}),
+	}, nil
 }
 
 // begin 登记操作。登记与关闭门禁共用锁，避免 Wait 开始后再增加操作。

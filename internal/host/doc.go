@@ -1,4 +1,4 @@
-// Package runtime 为 App、ACP 等入口组装 Atlas 后端并管理其生命周期。
+// Package host 为 App、ACP 等入口组装 Atlas 后端并管理其生命周期。
 //
 // # 资源与会话
 //
@@ -40,4 +40,4 @@
 // 表示原会话实例已删除；ErrNotFound 表示没有对应记录；ErrNeedsReload
 // 表示状态失效，需通过 Resume 重新初始化；ErrConflict 表示会话已被其他进程
 // 追加消息，随保存失败与 ErrNeedsReload 一同返回。取消和超时保留标准 context 错误。
-package runtime
+package host

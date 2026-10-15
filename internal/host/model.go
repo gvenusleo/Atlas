@@ -1,4 +1,4 @@
-package runtime
+package host
 
 import (
 	"cmp"
@@ -24,7 +24,7 @@ type ModelCatalog struct {
 	Models            []ModelInfo
 }
 
-// ModelInfo 描述模型元数据与当前 runtime 的协议支持情况。
+// ModelInfo 描述模型元数据与当前 host 的协议支持情况。
 type ModelInfo struct {
 	Ref               string
 	Provider          string
@@ -64,7 +64,8 @@ func (m *Manager) Models(ctx context.Context) (ModelCatalog, error) {
 		if providerID, modelID, err := config.ParseModel(settings.Model); err != nil {
 			catalog.DefaultModelError = err.Error()
 		} else {
-			catalog.Models = append(catalog.Models, modelInfo(settings, providerID, modelID, config.Model{}))
+			info := modelInfo(settings, providerID, modelID, config.Model{})
+			catalog.Models = append(catalog.Models, info)
 		}
 	}
 	slices.SortStableFunc(catalog.Models, func(a, b ModelInfo) int {
@@ -96,7 +97,8 @@ func modelInfo(settings *config.Settings, providerID, modelID string, metadata c
 	if _, err := settings.Provider(providerID); err != nil {
 		info.UnsupportedReason = err.Error()
 	} else if provider.WireAPI != config.WireAPIOpenAIResponses {
-		info.UnsupportedReason = fmt.Sprintf("provider %q 的协议 %q 尚未实现", providerID, provider.WireAPI)
+		info.UnsupportedReason = fmt.Sprintf(
+			"provider %q 的协议 %q 尚未实现", providerID, provider.WireAPI)
 	} else if !info.Tools {
 		info.UnsupportedReason = fmt.Sprintf("模型 %q 不支持工具调用，无法用于当前 Agent", info.Ref)
 	} else {
@@ -117,12 +119,8 @@ func usableThinkingLevels(metadata config.Model) []agent.ThinkingLevel {
 		}
 		for _, value := range option.Values {
 			level := agent.ThinkingLevel(value)
-			switch level {
-			case agent.ThinkingOff, agent.ThinkingMinimal, agent.ThinkingLow, agent.ThinkingMedium,
-				agent.ThinkingHigh, agent.ThinkingXHigh, agent.ThinkingMax:
-				if !slices.Contains(levels, level) {
-					levels = append(levels, level)
-				}
+			if level.Valid() && !slices.Contains(levels, level) {
+				levels = append(levels, level)
 			}
 		}
 	}
@@ -137,7 +135,9 @@ func defaultThinkingLevel(metadata config.Model) agent.ThinkingLevel {
 }
 
 // modelConfig 校验协议和思考档位、加载凭据并创建客户端，不发起模型请求。
-func modelConfig(settings *config.Settings, modelRef string, thinkingLevel agent.ThinkingLevel) (string, agent.StreamFn, error) {
+func modelConfig(
+	settings *config.Settings, modelRef string, thinkingLevel agent.ThinkingLevel,
+) (string, agent.StreamFn, error) {
 	if modelRef == "" {
 		return "", nil, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
 	}
@@ -168,7 +168,11 @@ func modelConfig(settings *config.Settings, modelRef string, thinkingLevel agent
 	if err != nil {
 		return "", nil, err
 	}
-	client := openai.NewClient(option.WithAPIKey(key), option.WithBaseURL(provider.BaseURL), option.WithMaxRetries(0))
+	client := openai.NewClient(
+		option.WithAPIKey(key),
+		option.WithBaseURL(provider.BaseURL),
+		option.WithMaxRetries(0),
+	)
 	return modelID, llm.OpenAIResponsesStreamFn(client), nil
 }
 
