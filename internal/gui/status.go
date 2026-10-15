@@ -12,18 +12,6 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// levelNames 是思考深度档位的显示名称。
-var levelNames = map[agent.ThinkingLevel]string{
-	"":                    "默认",
-	agent.ThinkingOff:     "关闭",
-	agent.ThinkingMinimal: "极低",
-	agent.ThinkingLow:     "低",
-	agent.ThinkingMedium:  "中",
-	agent.ThinkingHigh:    "高",
-	agent.ThinkingXHigh:   "超高",
-	agent.ThinkingMax:     "最大",
-}
-
 // statusRow 是输入框下方的一行：左侧是工作目录，右侧是模型、思考深度与上下文占用。
 func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Row(c).AlignItems(ui.Center).Gap(2).Padding(0, 6).Children(func() {
@@ -83,7 +71,7 @@ func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		return ref
 	}
-	if dropdown(c, t, "模型", &ch.model, refs, name) {
+	if dropdown(c, t, "模型", modelIcon, &ch.model, refs, name) {
 		a.fitThinking(ch)
 	}
 }
@@ -94,22 +82,24 @@ func (a *App) thinkingPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 	if !ok || len(info.ThinkingLevels) == 0 {
 		return
 	}
-	name := func(l agent.ThinkingLevel) string { return levelNames[l] }
-	dropdown(c, t, "思考深度", &ch.thinking, info.ThinkingLevels, name)
+	name := func(l agent.ThinkingLevel) string { return string(l) }
+	dropdown(c, t, "思考深度", thinkIcon, &ch.thinking, info.ThinkingLevels, name)
 }
 
-// dropdown 画一个安静的下拉：当前值加向下箭头，选项在上方或下方展开；返回是否选了新值。
+// dropdown 画一个安静的下拉：图标在前，当前值在后，选项在上方或下方展开；返回是否选了新值。
 func dropdown[T comparable](
-	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
+	c *ui.Context, t *ui.Theme, label string, glyph *ui.SVG, value *T, options []T,
+	name func(T) string,
 ) bool {
 	sel := ui.SelectBase(c.Key(label), value)
-	sel.Trigger.Gap(2).Padding(3, 6).Radius(controlRound).Cursor(ui.CursorPointer).Label(label)
+	sel.Trigger.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
+		Cursor(ui.CursorPointer).Label(label)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(t.Text.Alpha(0.06))
 	}
 	sel.Trigger.Children(func() {
+		ui.Icon(c, glyph).FontSize(14).TextColor(t.TextMuted)
 		ui.Text(c, name(*value)).FontSize(12).TextColor(t.TextMuted).SingleLine()
-		ui.Icon(c, chevronIcon).FontSize(12).TextColor(t.TextMuted).Rotate(90)
 	})
 	sel.Popup(func(panel ui.Element) {
 		panel.Margin(6, 0, 6, 0).Padding(4).Radius(10).Background(t.Background).
