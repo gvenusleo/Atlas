@@ -1,7 +1,8 @@
 // Package gui 是 Atlas 的桌面入口：用 MyGo 原生界面展示 host 管理的会话。
 //
 // 界面状态只在主线程读写：后台 goroutine 调用 host，结果与事件经
-// Window.Update 回到主线程。多个会话可以同时运行，每个会话有独立的 chat 状态。
+// Window.Update 回到主线程。多个会话可以同时运行，每个会话有独立的 chat 状态，
+// 也有自己的终端标签：它们随会话保留，在会话被删除、丢弃或应用退出时关闭。
 package gui
 
 import (
@@ -46,6 +47,8 @@ type App struct {
 	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
 	md            markdown.Options
 	keyNav        bool // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
+	termWidth     float32
+	shells        int // 已创建的终端数，用作终端标签的标识
 	sidebarHidden bool
 	err           string
 
@@ -64,6 +67,7 @@ func Run() error {
 	}
 	a := newApp(h)
 	mygo.App.OnQuit(func() {
+		a.closeAllTerminals()
 		ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 		defer cancel()
 		if err := h.Close(ctx); err != nil {
@@ -75,13 +79,13 @@ func Run() error {
 			Title:     "Atlas",
 			Width:     1100,
 			Height:    760,
-			MinWidth:  720,
+			MinWidth:  800,
 			MinHeight: 420,
 			StateKey:  "main",
 			// 隐藏标题栏并固定红绿灯位置：不带工具栏，标题栏区域低而紧凑，
 			// c.TitleBar().Height 即红绿灯所在的带，开关按钮据此与它们居中对齐。
 			TitleBarStyle:        mygo.TitleBarHidden,
-			TrafficLightPosition: &mygo.Point{X: 14, Y: 10},
+			TrafficLightPosition: &mygo.Point{X: 16, Y: 16},
 			Content:              ui.View(a.view),
 		})
 		a.refresh()
@@ -92,7 +96,8 @@ func Run() error {
 
 // newApp 创建应用状态，打开一个空白的新会话。
 func newApp(h *host.Manager) *App {
-	a := &App{host: h, chats: map[string]*chat{}, sidebarWidth: sidebarDefault, shown: 1}
+	a := &App{host: h, chats: map[string]*chat{}, sidebarWidth: sidebarDefault, shown: 1,
+		termWidth: termDefault}
 	a.md.Theme = &markdown.Theme{
 		FontSize:     bodySize,
 		LineHeight:   1.6,
@@ -113,6 +118,7 @@ func newApp(h *host.Manager) *App {
 
 // newChat 切换到一个尚未创建的新会话。
 func (a *App) newChat() {
+	a.leave()
 	a.keys++
 	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
 	a.useDefaultModel(a.current)
@@ -125,6 +131,7 @@ func (a *App) toggleSidebar() {
 
 // open 切换到已有会话，首次打开时加载历史；查看历史不需要凭据。
 func (a *App) open(id string) {
+	a.leave()
 	if ch := a.chats[id]; ch != nil {
 		a.current = ch
 		return

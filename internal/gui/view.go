@@ -13,6 +13,7 @@ func (a *App) view(c *ui.Context) {
 	a.keyNav = false
 	c.OnShortcut(ui.Cmd, ui.KeyB, a.toggleSidebar)
 	c.OnShortcut(ui.Cmd, ui.KeyN, a.newChat)
+	c.OnShortcut(ui.Ctrl, ui.KeyBackquote, a.toggleTerminal)
 	ui.Column(c).Fill().Children(func() {
 		a.panes(c, t)
 	})
@@ -61,17 +62,17 @@ func (a *App) panes(c *ui.Context, t *ui.Theme) {
 	}
 }
 
-// titleBarHeight 是顶部标题栏区域的高度：不小于侧栏开关所需的高度。
+// titleBarHeight 是顶部标题栏区域的高度，交通灯在其中垂直居中。
 func titleBarHeight(c *ui.Context) float32 {
-	return max(c.TitleBar().Height, 32)
+	return max(c.TitleBar().Height, titleBarMin)
 }
 
 // sidebarToggle 在左上角画侧栏开关，紧挨窗口控件，两种状态下位置不变。
 func (a *App) sidebarToggle(c *ui.Context, t *ui.Theme) {
-	const size = 28
-	top := (titleBarHeight(c) - size) / 2
-	btn := ui.ButtonBase(c).Absolute().Top(top).Left(c.TitleBar().Left+6).Size(size, size).
-		Radius(controlRound).Cursor(ui.CursorPointer).Label("切换侧栏").Tooltip("切换侧栏")
+	top := (titleBarHeight(c) - barButton) / 2
+	btn := ui.ButtonBase(c).Absolute().Top(top).Left(c.TitleBar().Left+6).
+		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
+		Label("切换侧栏").Tooltip("切换侧栏")
 	if btn.Hovered() {
 		btn.Background(t.Text.Alpha(0.08))
 	}
@@ -88,8 +89,8 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, title string) ui.Element {
 	left := gutter + (1-a.shown)*max(bar.Left+40-gutter, 0)
 	return ui.Row(c).Height(titleBarHeight(c)).Justify(ui.Center).AlignItems(ui.Center).
 		Padding(0, gutter+bar.Right, 0, left).DragWindow().Children(func() {
-		ui.Text(c, title).Grow(1).MaxWidth(contentWidth).
-			FontSize(13).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, title).Grow(1).MaxWidth(contentWidth).SingleLine()
+		a.terminalButton(c, t)
 	})
 }
 
@@ -100,9 +101,26 @@ func column(c *ui.Context, vertical float32, fn func()) {
 	})
 }
 
-// main 构建当前会话：新会话居中欢迎，其余为标题、消息列表和底部输入。
+// main 构建主区：对话在左，会话的终端面板打开时，浮动的终端卡片在右侧。
 func (a *App) main(c *ui.Context, t *ui.Theme) {
 	ch := a.current
+	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c.Key("chat")).Grow(1).MinWidth(0).Children(func() {
+			a.conversation(c, t, ch)
+		})
+		if ch.termOpen {
+			a.termHandle(c)
+			a.terminalCard(c, t, ch)
+		}
+	})
+	// 卡片宽度限制在范围内，保证对话区不被挤得太窄。
+	window, _ := c.Size()
+	total := window - a.sidebarWidth*a.shown
+	a.termWidth = min(max(a.termWidth, termMin), max(total-chatMin-handleWidth, termMin))
+}
+
+// conversation 构建当前会话：新会话居中欢迎，其余为标题、消息列表和底部输入。
+func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c.Key(ch.key)).Fill().Background(t.Background).Children(func() {
 		if len(ch.items) == 0 && !ch.loading && !ch.running {
 			a.titleBar(c, t, "")

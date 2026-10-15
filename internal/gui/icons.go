@@ -21,6 +21,7 @@ func icon(name string) *ui.SVG {
 }
 
 var (
+	plusIcon     = icon("plus")
 	sendIcon     = icon("arrow-up")
 	stopIcon     = icon("square")
 	sidebarIcon  = icon("panel-left")

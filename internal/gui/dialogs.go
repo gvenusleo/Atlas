@@ -31,6 +31,7 @@ func (a *App) remove(id string) {
 				return
 			}
 			if ch := a.chats[id]; ch != nil {
+				ch.closeTerms()
 				delete(a.chats, id)
 				if a.current == ch {
 					a.newChat()

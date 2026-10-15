@@ -9,7 +9,7 @@ import (
 // composer 构建输入区：圆角输入框，其下是工作目录、模型与上下文占用。
 func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c).Gap(6).Children(func() {
-		card := ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(6, 6, 6, 16).Radius(cardRound).
+		card := ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(6, 6, 6, 16).Radius(inputRound).
 			Background(t.Background).Border(1, t.Text.Alpha(0.12)).
 			Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06))
 		card.Children(func() {
@@ -24,7 +24,8 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 					}
 					return true
 				})
-			if !a.keyNav {
+			// 侧栏在用键盘、或终端面板打开时，新出现的输入框不抢走焦点。
+			if !a.keyNav && !ch.termOpen {
 				input.AutoFocus()
 			}
 			a.sendButton(c, ch)

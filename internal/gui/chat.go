@@ -62,6 +62,13 @@ type chat struct {
 	model    string
 	thinking agent.ThinkingLevel
 	usage    int64 // 最近一次响应结束时的上下文词元数
+
+	// 会话的终端面板：各个标签、当前标签、是否显示，以及创建失败的原因。
+	terms      []*shell
+	termTab    int
+	termOpen   bool
+	termReveal int // 需要滚进可见范围的标签
+	termErr    string
 }
 
 // add 追加一个已定稿的显示项。

@@ -8,9 +8,20 @@ const (
 	bubbleWidth  = 680 // 用户消息的最大宽度
 	bodySize     = 15  // 对话正文字号
 	controlRound = 6   // 控件圆角
-	cardRound    = 16  // 输入框圆角
+	inputRound   = 16  // 输入框圆角
+	cardRound    = 12  // 浮动卡片圆角
+	edge         = 6   // 浮动卡片与窗口边缘的空隙
+	handleWidth  = 6   // 卡片拖动条的宽度
+	barButton    = 24  // 标题栏按钮的边长
+	tabHeight    = 24  // 终端标签的高度，与标题栏按钮同高
+	tabInset     = 4   // 标签栏左右的内边距，加边框后与标签上方的空隙相等
+	titleBarMin  = 44  // 标题栏的最小高度，交通灯在其中垂直居中
 	gutter       = 20  // 阅读区两侧的留白
 	edgeHeight   = 14  // 标题栏下沿模糊带的高度
+
+	termMin     = 240 // 终端面板的最小宽度
+	termDefault = 420 // 终端面板的默认宽度
+	chatMin     = 320 // 打开终端面板时对话区的最小宽度
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度
