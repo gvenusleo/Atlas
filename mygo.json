@@ -3,5 +3,8 @@
   "identifier": "xin.liuyu.atlas",
   "main": "./cmd/atlas",
   "version": "0.0.1",
-  "out": "build"
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "13.0"
+  }
 }
