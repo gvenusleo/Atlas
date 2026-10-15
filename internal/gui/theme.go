@@ -10,6 +10,7 @@ const (
 	controlRound = 6   // 控件圆角
 	cardRound    = 16  // 输入框圆角
 	gutter       = 20  // 阅读区两侧的留白
+	edgeHeight   = 14  // 标题栏下沿模糊带的高度
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度
