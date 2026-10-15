@@ -17,7 +17,6 @@ const (
 	tabInset     = 4   // 标签栏左右的内边距，加边框后与标签上方的空隙相等
 	titleBarMin  = 44  // 标题栏的最小高度，交通灯在其中垂直居中
 	gutter       = 20  // 阅读区两侧的留白
-	edgeHeight   = 14  // 标题栏下沿模糊带的高度
 
 	termMin     = 240 // 终端面板的最小宽度
 	termDefault = 420 // 终端面板的默认宽度

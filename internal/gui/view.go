@@ -3,7 +3,6 @@ package gui
 import (
 	"time"
 
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -127,13 +126,8 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.welcome(c, t, ch)
 			return
 		}
-		// 消息列表铺满主区，标题栏浮在它上面，滚到标题栏之下的内容被遮住，下沿略有模糊。
-		ui.Box(c).Grow(1).Children(func() {
-			a.messages(c, t, ch)
-			a.topEdge(c, t)
-			a.titleBar(c, t, a.heading(ch)).Absolute().Top(0).Left(0).Right(0).
-				Background(t.Background)
-		})
+		a.titleBar(c, t, a.heading(ch))
+		ui.Box(c).Grow(1).Children(func() { a.messages(c, t, ch) })
 		if ch.err != "" {
 			column(c, 4, func() {
 				ui.Text(c, ch.err).TextColor(t.Danger).FontSize(13).Selectable()
@@ -160,11 +154,10 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	ch.list.Key = func(i int) any { return blocks[i].items[0].id }
 	ch.list.FollowEnd = true
 	ch.list.FollowAnimation = &ui.Smooth
-	top := titleBarHeight(c)
 	ui.Column(c).Fill().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
 			column(c, 5, func() { a.block(c, t, blocks[i]) })
-		}).Grow(1).Padding(top, 0, 8).ScrollbarInsets(top, 0, 0).Children(func() {
+		}).Grow(1).Padding(0, 0, 8).Children(func() {
 			if ch.loading {
 				ui.Spinner(c).Margin(ui.Auto)
 			}
@@ -173,18 +166,6 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.jumpToLatest(c, t, ch)
 		}
 	})
-}
-
-// topEdge 在标题栏下沿铺一条窄带：滚到标题栏之下的内容在这里略微模糊，
-// 并从完全被背景色盖住渐渐显现，所以与标题栏相接处没有突兀的截断。
-func (a *App) topEdge(c *ui.Context, t *ui.Theme) {
-	top := titleBarHeight(c)
-	strip := func() ui.Element {
-		return ui.Box(c).Absolute().Top(top).Left(0).Right(0).Height(edgeHeight).PassThrough()
-	}
-	fade := &ui.LinearGradient{From: ui.RGB(0, 0, 0), To: ui.Transparent, Angle: 180, End: 1}
-	strip().Material(glass.Blur{Radius: 4, Mask: fade})
-	strip().Gradient(t.Background, t.Background.Alpha(0), 180)
 }
 
 // jumpToLatest 在用户上滚离开末尾时，于列表底部居中显示“回到最新”按钮。
