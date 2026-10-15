@@ -84,6 +84,9 @@ func TestRunIsExclusiveAndPersists(t *testing.T) {
 	if err != nil || len(records) != 3 { // 提示词快照、用户消息、助手消息
 		t.Fatalf("历史 = %d 条, err = %v", len(records), err)
 	}
+	if info, err := m.Get(t.Context(), s.id); err != nil || info.Name != "你好" {
+		t.Fatalf("自动命名 = %q, err = %v，期望首条消息文本", info.Name, err)
+	}
 }
 
 func TestCancelKeepsSessionUsable(t *testing.T) {

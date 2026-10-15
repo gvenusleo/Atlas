@@ -101,10 +101,14 @@ func (s *Session) save(ctx context.Context, message agent.Message) error {
 	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
 	defer stop()
 	seq, err := s.manager.store.AppendMessage(ctx, s.id, s.seq, message)
-	if err == nil {
-		s.seq = seq
+	if err != nil {
+		return err
 	}
-	return err
+	s.seq = seq
+	if user, ok := message.(agent.UserMessage); ok {
+		return s.autoName(ctx, user)
+	}
+	return nil
 }
 
 // lastError 按最后一条助手消息的结束原因返回运行错误。
