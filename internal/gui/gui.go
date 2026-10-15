@@ -1,0 +1,242 @@
+// Package gui 是 Atlas 的桌面入口：用 MyGo 原生界面展示 host 管理的会话。
+//
+// 界面状态只在主线程读写：后台 goroutine 调用 host，结果与事件经
+// Window.Update 回到主线程。多个会话可以同时运行，每个会话有独立的 chat 状态。
+package gui
+
+import (
+	"context"
+	"errors"
+	"log"
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
+
+	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/host"
+)
+
+const (
+	// historyPage 是打开会话时加载的最近记录条数。
+	historyPage = 200
+	// listLimit 是侧栏显示的会话数量。
+	listLimit = 100
+	// closeTimeout 限制退出时等待运行收尾的时间。
+	closeTimeout = 5 * time.Second
+)
+
+// App 持有桌面端的全部界面状态。
+type App struct {
+	host          *host.Manager
+	win           *mygo.Window
+	infos         []host.Info      // 侧栏会话，按更新时间倒序
+	chats         map[string]*chat // 已打开的会话
+	current       *chat
+	cwd           string // 新会话默认的工作目录
+	keys          int
+	sidebarWidth  float32
+	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
+	md            markdown.Options
+	keyNav        bool // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
+	sidebarHidden bool
+	err           string
+
+	// 重命名与删除对话框的状态。
+	renameID, renameText string
+	renameOpen           bool
+	deleteID             string
+	deleteOpen           bool
+}
+
+// Run 打开宿主与窗口，阻塞到应用退出。
+func Run() error {
+	h, err := host.Open(context.Background(), "")
+	if err != nil {
+		return err
+	}
+	a := newApp(h)
+	mygo.App.OnQuit(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
+		defer cancel()
+		if err := h.Close(ctx); err != nil {
+			log.Printf("关闭宿主失败: %v", err)
+		}
+	})
+	mygo.App.WhenReady(func() {
+		a.win = mygo.NewWindow(mygo.WindowOptions{
+			Title:     "Atlas",
+			Width:     1100,
+			Height:    760,
+			MinWidth:  720,
+			MinHeight: 420,
+			StateKey:  "main",
+			// 隐藏标题栏并固定红绿灯位置：不带工具栏，标题栏区域低而紧凑，
+			// c.TitleBar().Height 即红绿灯所在的带，开关按钮据此与它们居中对齐。
+			TitleBarStyle:        mygo.TitleBarHidden,
+			TrafficLightPosition: &mygo.Point{X: 14, Y: 10},
+			Content:              ui.View(a.view),
+		})
+		a.refresh()
+	})
+	return mygo.App.Run()
+}
+
+// newApp 创建应用状态，打开一个空白的新会话。
+func newApp(h *host.Manager) *App {
+	a := &App{host: h, chats: map[string]*chat{}, sidebarWidth: sidebarDefault, shown: 1}
+	a.md.Theme = &markdown.Theme{
+		FontSize:     bodySize,
+		LineHeight:   1.6,
+		BlockSpacing: 0.7,
+		Headings: [6]markdown.HeadingStyle{
+			{Size: 1.55, Weight: 600, Rule: true},
+			{Size: 1.35, Weight: 600, Rule: true},
+			{Size: 1.15, Weight: 600},
+			{Size: 1.0, Weight: 600},
+			{Size: 0.95, Weight: 600},
+			{Size: 0.9, Weight: 600},
+		},
+	}
+	a.cwd, _ = os.UserHomeDir()
+	a.newChat()
+	return a
+}
+
+// newChat 切换到一个尚未创建的新会话。
+func (a *App) newChat() {
+	a.keys++
+	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
+}
+
+// toggleSidebar 显示或隐藏侧栏。
+func (a *App) toggleSidebar() {
+	a.sidebarHidden = !a.sidebarHidden
+}
+
+// open 切换到已有会话，首次打开时加载历史；查看历史不需要凭据。
+func (a *App) open(id string) {
+	if ch := a.chats[id]; ch != nil {
+		a.current = ch
+		return
+	}
+	a.keys++
+	ch := &chat{key: "chat-" + strconv.Itoa(a.keys), id: id, loading: true}
+	for _, info := range a.infos {
+		if info.ID == id {
+			ch.cwd = info.Cwd
+		}
+	}
+	a.chats[id], a.current = ch, ch
+	go func() {
+		records, err := a.host.History(context.Background(), id, 0, historyPage)
+		a.win.Update(func() {
+			ch.loading = false
+			if err != nil {
+				ch.err = err.Error()
+				return
+			}
+			ch.load(records)
+			if len(records) == historyPage {
+				notice := &item{kind: itemNotice, done: true, text: "仅显示最近 200 条记录"}
+				ch.items = slices.Insert(ch.items, 0, notice)
+			}
+		})
+	}()
+}
+
+// refresh 重新读取侧栏的会话列表。
+func (a *App) refresh() {
+	go func() {
+		infos, err := a.host.List(context.Background(), "", nil, listLimit)
+		a.win.Update(func() {
+			if err != nil {
+				a.err = err.Error()
+				return
+			}
+			a.err, a.infos = "", infos
+		})
+	}()
+}
+
+// send 在后台运行一轮对话；返回是否已受理。
+func (a *App) send(ch *chat, text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" || ch.running || ch.loading {
+		return false
+	}
+	ch.running, ch.err = true, ""
+	session, id, cwd := ch.session, ch.id, ch.cwd
+	go func() {
+		ctx := context.Background()
+		s, err := acquire(ctx, a.host, session, id, cwd)
+		if err == nil {
+			a.win.Update(func() { a.attach(ch, s) })
+			message := agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: text}}}
+			_, err = s.Run(ctx, message, func(e agent.Event) {
+				a.win.Update(func() { ch.apply(e) })
+			})
+		}
+		a.win.Update(func() { a.finish(ch, err) })
+	}()
+	return true
+}
+
+// acquire 返回可运行的会话：已有则复用，否则创建或恢复。
+func acquire(
+	ctx context.Context, h *host.Manager, s *host.Session, id, cwd string,
+) (*host.Session, error) {
+	switch {
+	case s != nil:
+		return s, nil
+	case id == "":
+		return h.Create(ctx, cwd)
+	default:
+		return h.Resume(ctx, id)
+	}
+}
+
+// attach 记录会话句柄；新会话创建后登记到已打开的会话中。
+func (a *App) attach(ch *chat, s *host.Session) {
+	ch.session = s
+	if ch.id == "" {
+		ch.id = s.ID()
+		a.chats[ch.id] = ch
+	}
+	ch.cwd = s.State().Cwd
+	a.cwd = ch.cwd
+	a.refresh()
+}
+
+// finish 在一轮对话结束后更新状态；用户主动停止不算错误。
+func (a *App) finish(ch *chat, err error) {
+	ch.running = false
+	if err != nil && !errors.Is(err, context.Canceled) {
+		ch.err = err.Error()
+	}
+	if errors.Is(err, host.ErrNeedsReload) {
+		ch.session = nil // 下次发送时重新恢复
+	}
+	a.refresh()
+}
+
+// pickDir 让用户为尚未创建的会话选择工作目录。
+func (a *App) pickDir(ch *chat) {
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Parent:      a.win,
+			Title:       "选择工作目录",
+			DefaultPath: ch.cwd,
+			Directory:   true,
+		})
+		if err != nil || len(paths) == 0 {
+			return
+		}
+		a.win.Update(func() { ch.cwd, a.cwd = paths[0], paths[0] })
+	}()
+}
