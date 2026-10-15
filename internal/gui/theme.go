@@ -4,7 +4,7 @@ import "github.com/egoist/mygo/ui"
 
 // 界面的尺寸约定，单位为 DIP。
 const (
-	contentWidth = 900 // 阅读栏的最大宽度
+	contentWidth = 720 // 阅读栏的最大宽度
 	bubbleWidth  = 680 // 用户消息的最大宽度
 	bodySize     = 15  // 对话正文字号
 	controlRound = 6   // 控件圆角
