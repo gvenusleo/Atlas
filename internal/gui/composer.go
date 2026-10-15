@@ -28,30 +28,39 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 			if !a.keyNav && !ch.termOpen {
 				input.AutoFocus()
 			}
-			a.sendButton(c, ch)
+			a.sendButton(c, t, ch)
 		})
 		a.statusRow(c, t, ch)
 	})
 }
 
 // sendButton 是输入框右侧的圆形按钮：有内容时发送，运行时停止，空闲且为空时为灰色。
-func (a *App) sendButton(c *ui.Context, ch *chat) {
+// 可用时是浅色的强调底加强调色图标，与终端按钮的选中态一致。
+func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	glyph, label := sendIcon, "发送"
 	if ch.running {
 		glyph, label = stopIcon, "停止"
 	}
 	var btn ui.Element
-	if ch.loading || !ch.running && strings.TrimSpace(ch.input) == "" {
+	// 刚发出时会话句柄还没就绪，此时不能停止。
+	if ch.loading || ch.running && ch.session == nil ||
+		!ch.running && strings.TrimSpace(ch.input) == "" {
 		btn = ui.Button(c, "").Disabled(true)
 	} else {
-		btn = ui.PrimaryButton(c, "").Disabled(ch.running && ch.session == nil).OnClick(func() {
-			switch {
-			case ch.running:
-				ch.session.Cancel()
-			case a.send(ch, ch.input):
-				ch.input = ""
-			}
-		})
+		btn = ui.ButtonBase(c).Cursor(ui.CursorPointer).TextColor(t.Accent).
+			OnClick(func() {
+				switch {
+				case ch.running:
+					ch.session.Cancel()
+				case a.send(ch, ch.input):
+					ch.input = ""
+				}
+			})
+		alpha := float32(0.15)
+		if btn.Hovered() {
+			alpha = 0.25
+		}
+		btn.Background(t.Accent.Alpha(alpha))
 	}
 	btn.Size(30, 30).Padding(0).Radius(15).AlignSelf(ui.End).Label(label).Tooltip(label)
 	btn.Children(func() {
