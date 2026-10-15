@@ -7,19 +7,14 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// 定义文件读取限制与默认值。
+// 定义文本读取预算与默认行数。
 const (
-	readMaxFileBytes = 10 << 20
 	readMaxTextBytes = 50 << 10
 	readMaxLines     = 2000
 )
@@ -86,40 +81,10 @@ func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, err
 	}
 
-	path := args.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(workdir, path)
-	}
-	path = filepath.Clean(path)
-
-	// 拒绝目录与特殊文件。
-	info, err := os.Stat(path)
+	path := resolvePath(workdir, args.Path)
+	data, err := readRegularFile(ctx, path)
 	if err != nil {
-		return agent.ToolResult{}, fmt.Errorf("%s 检查失败: %w", path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return agent.ToolResult{}, fmt.Errorf("%s 不是普通文件", path)
-	}
-	if info.Size() > readMaxFileBytes {
-		return agent.ToolResult{}, fmt.Errorf("%s 文件大小超过 10 MiB 限制", path)
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		return agent.ToolResult{}, fmt.Errorf("%s 打开失败: %w", path, err)
-	}
-	defer file.Close()
-
-	// 文件可能在 Stat 后增长，因此实际读取也必须有上限。
-	data, err := io.ReadAll(io.LimitReader(file, readMaxFileBytes+1))
-	if err != nil {
-		return agent.ToolResult{}, fmt.Errorf("%s 读取失败: %w", path, err)
-	}
-	if err := ctx.Err(); err != nil {
 		return agent.ToolResult{}, err
-	}
-	if len(data) > readMaxFileBytes {
-		return agent.ToolResult{}, fmt.Errorf("%s 文件大小超过 10 MiB 限制", path)
 	}
 
 	mime := http.DetectContentType(data)
@@ -136,7 +101,7 @@ func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		}, nil
 	}
 
-	if !utf8.Valid(data) || strings.ContainsRune(string(data), '\x00') {
+	if !validText(data) {
 		return agent.ToolResult{}, fmt.Errorf("%s 不是支持的图片或 UTF-8 文本", path)
 	}
 

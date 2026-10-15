@@ -63,12 +63,7 @@ func writeFile(ctx context.Context, workdir string, params jsontext.Value) (agen
 		return agent.ToolResult{}, err
 	}
 
-	path := args.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(workdir, path)
-	}
-	path = filepath.Clean(path)
-
+	path := resolvePath(workdir, args.Path)
 	info, err := os.Stat(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return agent.ToolResult{}, fmt.Errorf("%s 检查失败: %w", path, err)

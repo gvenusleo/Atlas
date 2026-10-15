@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
-	"time"
 )
 
 const shellDescription = "执行 PowerShell 命令，优先使用 PowerShell 7，否则使用 Windows PowerShell。" +
@@ -28,7 +27,8 @@ func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 	// 同时设置控制台输出和传给原生命令的管道输入编码，兼容 PowerShell 5.1。
 	command = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n" +
 		"$OutputEncoding = [Console]::OutputEncoding\n" + command
-	cmd := exec.CommandContext(ctx, shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command)
+	args := []string{"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command}
+	cmd := exec.CommandContext(ctx, shell, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Cancel = func() error {
 		root := os.Getenv("SystemRoot")
@@ -36,7 +36,7 @@ func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 			root = `C:\Windows`
 		}
 		// 原命令的 context 已取消，清理进程树需要独立且有界的 context。
-		killCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		killCtx, cancel := context.WithTimeout(context.Background(), shellKillTimeout)
 		defer cancel()
 		killer := exec.CommandContext(killCtx, filepath.Join(root, "System32", "taskkill.exe"),
 			"/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
@@ -47,6 +47,6 @@ func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 		return nil
 	}
 	// taskkill 失败时，仍限制取消后的等待时间并终止直接子进程。
-	cmd.WaitDelay = time.Second
+	cmd.WaitDelay = shellWaitDelay
 	return cmd, nil
 }

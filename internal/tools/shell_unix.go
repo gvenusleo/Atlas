@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-	"time"
 )
 
 const shellDescription = "执行 Bash 命令。"
@@ -25,6 +24,6 @@ func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 		return err
 	}
 	// 进程组终止失败时，仍限制取消后的等待时间并终止直接子进程。
-	cmd.WaitDelay = time.Second
+	cmd.WaitDelay = shellWaitDelay
 	return cmd, nil
 }
