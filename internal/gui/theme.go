@@ -8,6 +8,7 @@ const (
 	bubbleWidth  = 680 // 用户消息的最大宽度
 	bodySize     = 15  // 对话正文字号
 	controlRound = 6   // 控件圆角
+	cardRound    = 16  // 输入框圆角
 	gutter       = 20  // 阅读区两侧的留白
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度

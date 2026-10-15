@@ -17,15 +17,15 @@ const (
 	bodyRunes = 4000
 )
 
-// block 构建一组显示项：用户消息为浅色块，助手回复直接排成正文，
+// block 构建一组显示项：用户消息为靠右的浅色块，助手回复直接排成正文，
 // 思考与工具为安静的单行，可点开查看细节。
 func (a *App) block(c *ui.Context, t *ui.Theme, b block) {
 	it := b.items[0]
 	switch it.kind {
 	case itemUser:
-		ui.Row(c).Children(func() {
-			ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(8, 12).Radius(10).
-				Background(t.Surface).Border(1, t.Border).MaxWidth(bubbleWidth)
+		ui.Row(c).Justify(ui.End).Children(func() {
+			ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
+				Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
 		})
 	case itemAssistant:
 		if it.done {

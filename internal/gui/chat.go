@@ -54,10 +54,14 @@ type chat struct {
 	next    int
 	list    ui.ListState
 	input   string
-	focus   ui.Handle // 输入框的稳定标识，用于读取焦点
 	running bool
 	loading bool
 	err     string
+
+	// 界面上选定的模型与思考深度，发送时应用到会话。
+	model    string
+	thinking agent.ThinkingLevel
+	usage    int64 // 最近一次响应结束时的上下文词元数
 }
 
 // add 追加一个已定稿的显示项。
@@ -122,6 +126,7 @@ func (ch *chat) append(message agent.Message) {
 	case agent.UserMessage:
 		ch.add(itemUser, textOf(m.Content))
 	case agent.AssistantMessage:
+		ch.track(m)
 		for _, block := range m.Content {
 			switch b := block.(type) {
 			case agent.ThinkingContent:
@@ -138,6 +143,13 @@ func (ch *chat) append(message agent.Message) {
 		it := ch.tool(m.ToolCallID)
 		it.tool, it.result, it.failed = m.ToolName, textOf(m.Content), m.IsError
 		it.running, it.done = false, true
+	}
+}
+
+// track 记录一次响应结束时的上下文大小：该响应的输入与输出之和就是下一次请求的起点。
+func (ch *chat) track(m agent.AssistantMessage) {
+	if n := m.Usage.TotalTokens; n > 0 {
+		ch.usage = n
 	}
 }
 
@@ -179,6 +191,7 @@ func (ch *chat) apply(e agent.Event) {
 
 // finish 用定稿的助手消息校正已流出的内容块，保持原有显示项以延续渲染状态。
 func (ch *chat) finish(m agent.AssistantMessage) {
+	ch.track(m)
 	pending := ch.live
 	ch.live = nil
 	take := func(kind itemKind) *item {

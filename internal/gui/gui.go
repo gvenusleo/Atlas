@@ -38,7 +38,9 @@ type App struct {
 	infos         []host.Info      // 侧栏会话，按更新时间倒序
 	chats         map[string]*chat // 已打开的会话
 	current       *chat
-	cwd           string // 新会话默认的工作目录
+	cwd           string           // 新会话默认的工作目录
+	models        []host.ModelInfo // 可用的模型，来自配置
+	defaultModel  string
 	keys          int
 	sidebarWidth  float32
 	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
@@ -83,6 +85,7 @@ func Run() error {
 			Content:              ui.View(a.view),
 		})
 		a.refresh()
+		a.loadModels()
 	})
 	return mygo.App.Run()
 }
@@ -112,6 +115,7 @@ func newApp(h *host.Manager) *App {
 func (a *App) newChat() {
 	a.keys++
 	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
+	a.useDefaultModel(a.current)
 }
 
 // toggleSidebar 显示或隐藏侧栏。
@@ -129,7 +133,7 @@ func (a *App) open(id string) {
 	ch := &chat{key: "chat-" + strconv.Itoa(a.keys), id: id, loading: true}
 	for _, info := range a.infos {
 		if info.ID == id {
-			ch.cwd = info.Cwd
+			ch.cwd, ch.model, ch.thinking = info.Cwd, info.ModelRef, info.ThinkingLevel
 		}
 	}
 	a.chats[id], a.current = ch, ch
@@ -164,6 +168,55 @@ func (a *App) refresh() {
 	}()
 }
 
+// loadModels 读取可用的模型清单，并为尚未选择模型的空白会话填入默认值。
+func (a *App) loadModels() {
+	go func() {
+		catalog, err := a.host.Models(context.Background())
+		a.win.Update(func() {
+			if err != nil {
+				a.err = err.Error()
+				return
+			}
+			a.models = slices.DeleteFunc(catalog.Models, func(m host.ModelInfo) bool {
+				return !m.Supported
+			})
+			a.defaultModel = catalog.DefaultModel
+			a.useDefaultModel(a.current)
+		})
+	}()
+}
+
+// modelInfo 返回清单中的模型；清单未加载或模型不在其中时 ok 为 false。
+func (a *App) modelInfo(ref string) (host.ModelInfo, bool) {
+	i := slices.IndexFunc(a.models, func(m host.ModelInfo) bool { return m.Ref == ref })
+	if i < 0 {
+		return host.ModelInfo{}, false
+	}
+	return a.models[i], true
+}
+
+// useDefaultModel 让尚未创建且没有选择模型的会话采用默认模型。
+func (a *App) useDefaultModel(ch *chat) {
+	if ch.id == "" && ch.model == "" {
+		ch.model = a.defaultModel
+		a.fitThinking(ch)
+	}
+}
+
+// fitThinking 保证思考深度属于当前模型支持的档位，否则改用该模型的默认档位。
+func (a *App) fitThinking(ch *chat) {
+	var levels []agent.ThinkingLevel
+	if info, ok := a.modelInfo(ch.model); ok {
+		levels = info.ThinkingLevels
+	}
+	if !slices.Contains(levels, ch.thinking) {
+		ch.thinking = ""
+		if len(levels) > 0 {
+			ch.thinking = levels[0]
+		}
+	}
+}
+
 // send 在后台运行一轮对话；返回是否已受理。
 func (a *App) send(ch *chat, text string) bool {
 	text = strings.TrimSpace(text)
@@ -172,11 +225,15 @@ func (a *App) send(ch *chat, text string) bool {
 	}
 	ch.running, ch.err = true, ""
 	session, id, cwd := ch.session, ch.id, ch.cwd
+	model, thinking := ch.model, ch.thinking
 	go func() {
 		ctx := context.Background()
 		s, err := acquire(ctx, a.host, session, id, cwd)
 		if err == nil {
 			a.win.Update(func() { a.attach(ch, s) })
+			err = useModel(ctx, s, model, thinking)
+		}
+		if err == nil {
 			message := agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: text}}}
 			_, err = s.Run(ctx, message, func(e agent.Event) {
 				a.win.Update(func() { ch.apply(e) })
@@ -201,6 +258,17 @@ func acquire(
 	}
 }
 
+// useModel 让会话采用界面上选定的模型与思考深度；未选择或没有变化时什么也不做。
+func useModel(
+	ctx context.Context, s *host.Session, model string, thinking agent.ThinkingLevel,
+) error {
+	state := s.State()
+	if model == "" || state.ModelRef == model && state.ThinkingLevel == thinking {
+		return nil
+	}
+	return s.SetModel(ctx, model, thinking)
+}
+
 // attach 记录会话句柄；新会话创建后登记到已打开的会话中。
 func (a *App) attach(ch *chat, s *host.Session) {
 	ch.session = s
@@ -208,8 +276,11 @@ func (a *App) attach(ch *chat, s *host.Session) {
 		ch.id = s.ID()
 		a.chats[ch.id] = ch
 	}
-	ch.cwd = s.State().Cwd
-	a.cwd = ch.cwd
+	state := s.State()
+	ch.cwd, a.cwd = state.Cwd, state.Cwd
+	if ch.model == "" {
+		ch.model, ch.thinking = state.ModelRef, state.ThinkingLevel
+	}
 	a.refresh()
 }
 
