@@ -2,8 +2,8 @@
 go = "1.27.2"
 
 [tasks.dev]
-description = "启动桌面应用"
-run = "go run ./cmd/atlas"
+description = "启动桌面应用（热重载）"
+run = "go tool mygo dev"
 
 [tasks.fmt]
 description = "gofmt 格式化"
@@ -14,8 +14,8 @@ description = "检查格式，不改写文件"
 run = "test -z \"$(gofmt -l .)\""
 
 [tasks.vet]
-description = "go vet 静态检查"
-run = "go vet ./..."
+description = "go vet 与 mygo vet 静态检查"
+run = "go vet ./... && go tool mygo vet ."
 
 [tasks.test]
 description = "运行测试"
