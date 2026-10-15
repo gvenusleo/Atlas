@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 
@@ -47,6 +48,9 @@ type App struct {
 	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
 	md            markdown.Options
 	keyNav        bool // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
+	query         string
+	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
+	more          map[string]bool  // 已点“显示更多”的目录分组
 	termWidth     float32
 	shells        int // 已创建的终端数，用作终端标签的标识
 	sidebarHidden bool
@@ -61,6 +65,8 @@ type App struct {
 
 // Run 打开宿主与窗口，阻塞到应用退出。
 func Run() error {
+	// 界面是中文的：控件自带的文字（搜索框、编辑菜单等）也用中文。
+	mygo.App.SetLanguages("zh-Hans")
 	h, err := host.Open(context.Background(), "")
 	if err != nil {
 		return err
@@ -97,7 +103,7 @@ func Run() error {
 // newApp 创建应用状态，打开一个空白的新会话。
 func newApp(h *host.Manager) *App {
 	a := &App{host: h, chats: map[string]*chat{}, sidebarWidth: sidebarDefault, shown: 1,
-		termWidth: termDefault}
+		sections: map[string]*bool{}, more: map[string]bool{}, termWidth: termDefault}
 	a.md.Theme = &markdown.Theme{
 		FontSize:     bodySize,
 		LineHeight:   1.6,
@@ -133,7 +139,7 @@ func (a *App) toggleSidebar() {
 func (a *App) open(id string) {
 	a.leave()
 	if ch := a.chats[id]; ch != nil {
-		a.current = ch
+		a.current, ch.unread = ch, false
 		return
 	}
 	a.keys++
@@ -300,6 +306,8 @@ func (a *App) finish(ch *chat, err error) {
 	if errors.Is(err, host.ErrNeedsReload) {
 		ch.session = nil // 下次发送时重新恢复
 	}
+	// 在别的会话时结束的运行，回到这个会话之前侧栏上标为未读。
+	ch.unread = ch != a.current && ch.err == ""
 	a.refresh()
 }
 

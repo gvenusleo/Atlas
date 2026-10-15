@@ -57,6 +57,7 @@ type chat struct {
 	running bool
 	loading bool
 	err     string
+	unread  bool // 在别的会话时运行结束，用户还没回来看过
 
 	// 界面上选定的模型与思考深度，发送时应用到会话。
 	model    string

@@ -32,6 +32,8 @@ var (
 	terminalIcon = icon("terminal")
 	editIcon     = icon("pencil")
 	toolIcon     = icon("wrench")
+	clockIcon    = icon("clock")
+	moreIcon     = icon("ellipsis")
 )
 
 // toolInfo 返回工具对应的图标和动词；未知工具用扳手和工具名。
