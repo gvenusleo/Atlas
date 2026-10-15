@@ -1,6 +1,7 @@
 {
   "name": "Atlas",
   "identifier": "xin.liuyu.atlas",
-  "version": "0.1.0",
+  "main": "./cmd/atlas",
+  "version": "0.0.1",
   "out": "build"
 }
