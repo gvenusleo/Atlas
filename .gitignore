@@ -21,6 +21,7 @@ auth.json
 /coverage.out
 /go.work
 /go.work.sum
+/.mygo/
 
 # 本机文件
 .DS_Store
