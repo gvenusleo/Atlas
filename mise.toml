@@ -2,12 +2,16 @@
 go = "1.27.2"
 
 [tasks.dev]
-description = "启动交互 REPL"
+description = "启动桌面应用"
 run = "go run ./cmd/atlas"
 
 [tasks.fmt]
 description = "gofmt 格式化"
 run = "gofmt -w ."
+
+[tasks.fmt-check]
+description = "检查格式，不改写文件"
+run = "test -z \"$(gofmt -l .)\""
 
 [tasks.vet]
 description = "go vet 静态检查"
@@ -21,6 +25,10 @@ run = "go test ./... -count=1 -race"
 description = "编译全部包"
 run = "go build ./..."
 
+[tasks.vuln]
+description = "govulncheck 漏洞扫描"
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./..."
+
 [tasks.ci]
-description = "CI：fmt → vet → test → build"
-depends = ["fmt", "vet", "test", "build"]
+description = "CI：fmt-check → vet → test → build → vuln"
+depends = ["fmt-check", "vet", "test", "build", "vuln"]

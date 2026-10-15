@@ -7,7 +7,6 @@ auth.json
 *.db-*
 *.sqlite
 *.sqlite-*
-.atlas/debug/
 
 # Go 与 MyGo 构建产物
 /atlas

@@ -1,3 +1,4 @@
+// Command atlas 启动 Atlas 桌面应用。
 package main
 
 import (
