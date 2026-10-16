@@ -160,15 +160,41 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c).Fill().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
 			column(c, 5, func() { a.block(c, t, blocks[i]) })
-		}).Grow(1).Padding(0, 0, 8).Children(func() {
+		}).Grow(1).Padding(edgePad, 0).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
 			if ch.loading {
 				ui.Spinner(c).Margin(ui.Auto)
 			}
 		})
+		edges(c, t)
 		if len(blocks) > 0 && !ch.list.AtEnd() {
 			a.jumpToLatest(c, t, ch)
 		}
 	})
+}
+
+// edges 在消息列表的上下沿各铺一条带：背景色从边缘处的完全不透明，缓缓过渡到透明，
+// 滚到边缘的内容渐渐淡出，与标题栏、输入框相接处没有被切断的字。带只在对话列里，
+// 不影响旁边的终端面板；它画在“回到最新”按钮之前，按钮不会被它盖住。
+func edges(c *ui.Context, t *ui.Theme) {
+	// 背景色的不透明度按二次曲线下降：边缘处完全遮住，离开边缘后很快露出内容，
+	// 再缓缓变清晰。线性或 smoothstep 在边缘附近遮得太久，字要离标题栏很远才看得见。
+	const steps = 8
+	fade := make([]ui.GradientStop, steps+1)
+	for i := range fade {
+		u := float32(i) / steps // 离边缘的距离，0 在边缘，1 在带的另一端
+		fade[i] = ui.GradientStop{Color: t.Background.Alpha((1 - u) * (1 - u)), At: u}
+	}
+	for _, bottom := range []bool{false, true} {
+		angle := float32(180) // 渐变从边缘往里：上沿的带自上而下，下沿的自下而上
+		strip := ui.Box(c).Absolute().Left(0).Right(0).Height(edgeHeight).PassThrough()
+		if bottom {
+			angle = 0
+			strip.Bottom(0)
+		} else {
+			strip.Top(0)
+		}
+		strip.LinearGradient(ui.LinearGradient{Angle: angle, Stops: fade})
+	}
 }
 
 // jumpToLatest 在用户上滚离开末尾时，于列表底部居中显示“回到最新”按钮。
