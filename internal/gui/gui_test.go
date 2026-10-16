@@ -2,6 +2,7 @@ package gui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -68,6 +69,35 @@ func TestPrependMergesSplitToolCall(t *testing.T) {
 	if got := ch.items[1]; got.kind != itemTool || got.args != string(call.Arguments) ||
 		got.result != "package a" || !got.done {
 		t.Errorf("工具项 = %+v，期望带参数与结果", got)
+	}
+}
+
+// 会话行的 ⋯ 菜单：选择在菜单关闭后的下一帧回报，那时指针在菜单上，不在这一行，
+// 行尾的 ⋯ 按钮已换成零尺寸；它的标识若随位置变，选择就丢了，点“重命名”没有反应。
+func TestSessionMenuChoiceAfterPointerLeaves(t *testing.T) {
+	a := newApp(nil)
+	a.infos = []host.Info{{ID: "s1", Name: "测试会话", Cwd: "/tmp", UpdatedAt: time.Now()}}
+	tt := ui.NewTester(a.view, 900, 600)
+
+	row, _ := tt.Find("测试会话")
+	tt.Move(row.X+10, row.Y+row.H/2)
+	tt.Advance(50 * time.Millisecond)
+	more, ok := tt.Find("更多")
+	if !ok {
+		t.Fatalf("悬停后没有 ⋯ 按钮，现有文本 %q", tt.Texts())
+	}
+	tt.ClickAt(more.X+more.W/2, more.Y+more.H/2)
+	tt.Advance(50 * time.Millisecond)
+	tt.Move(600, 400) // 指针移到菜单上，离开会话行
+	tt.Advance(50 * time.Millisecond)
+	if err := tt.ChooseMenuItem("重命名…"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(50 * time.Millisecond)
+
+	if !a.renameOpen || a.renameID != "s1" {
+		t.Errorf("renameOpen = %v, renameID = %q，期望打开 s1 的重命名对话框",
+			a.renameOpen, a.renameID)
 	}
 }
 

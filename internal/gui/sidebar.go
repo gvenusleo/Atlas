@@ -216,7 +216,8 @@ func status(c *ui.Context, t *ui.Theme, ch *chat) {
 
 // trail 画行尾：定宽的槽里平时是相对时间，运行中换成转动的指示器，悬停时换成 ⋯ 按钮。
 // 按钮始终存在，不悬停时只是零尺寸且禁用：菜单的选择要在它所在的下一帧回报，
-// 那时指针已在菜单上，悬停的状态可能已经没了。
+// 那时指针已在菜单上，悬停的状态可能已经没了。它用固定的键标识，因为它前面的时间或
+// 指示器时有时无，按位置算的标识会变，选择就找不到它了。
 func trail(
 	c *ui.Context, t *ui.Theme, updated time.Time, running, hovered bool, menu func(*ui.Menu),
 ) {
@@ -231,7 +232,7 @@ func trail(
 			default:
 				ui.Text(c, ago(updated)).FontSize(12).TextColor(t.TextMuted).SingleLine()
 			}
-			more := ui.ButtonBase(c).Size(size, size).Shrink(0).Radius(controlRound).
+			more := ui.ButtonBase(c.Key("more")).Size(size, size).Shrink(0).Radius(controlRound).
 				Cursor(ui.CursorPointer).Label("更多").Disabled(!hovered)
 			if hovered && more.Hovered() {
 				more.Background(t.Text.Alpha(0.1))
