@@ -26,6 +26,12 @@ type textEdit struct {
 	NewText *string `json:"newText"`
 }
 
+// EditDetails 是 edit 随结果附带的结构化数据，供界面渲染，不发给模型。
+type EditDetails struct {
+	// Starts 是各处替换在原文件中的起始行（从 1 起），顺序与 edits 一致。
+	Starts []int `json:"starts"`
+}
+
 // matchedEdit 保存原文中的字节区间与输入下标。
 type matchedEdit struct {
 	index   int
@@ -124,7 +130,7 @@ func editFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, fmt.Errorf("%s 不是支持的 UTF-8 文本", path)
 	}
 
-	output, err := applyEdits(string(data), args.Edits)
+	output, starts, err := applyEdits(string(data), args.Edits)
 	if err != nil {
 		return agent.ToolResult{}, fmt.Errorf("%s 替换失败: %w", path, err)
 	}
@@ -136,29 +142,32 @@ func editFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, fmt.Errorf("%s 写入失败: %w", path, err)
 	}
 
+	details, err := json.Marshal(EditDetails{Starts: starts})
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+	text := fmt.Sprintf("已替换 %s 中的 %d 个文本块", path, len(args.Edits))
 	return agent.ToolResult{
-		Content: []agent.Content{
-			agent.TextContent{
-				Text: fmt.Sprintf("已替换 %s 中的 %d 个文本块", path, len(args.Edits)),
-			},
-		},
+		Content: []agent.Content{agent.TextContent{Text: text}},
+		Details: details,
 	}, nil
 }
 
-// applyEdits 接收已校验的参数，在同一原文中定位替换。
-func applyEdits(text string, edits []textEdit) (string, error) {
+// applyEdits 接收已校验的参数，在同一原文中定位替换；
+// 同时返回各处替换在原文中的起始行（从 1 起，按 edits 的顺序）。
+func applyEdits(text string, edits []textEdit) (string, []int, error) {
 	matches := make([]matchedEdit, 0, len(edits))
 	for i, edit := range edits {
 		start := strings.Index(text, edit.OldText)
 		if start < 0 {
-			return "", fmt.Errorf(
+			return "", nil, fmt.Errorf(
 				"未找到 edits[%d].oldText，请确认内容、空格和换行与原文一致", i,
 			)
 		}
 
 		// 从匹配起点后一个字节继续查找，重叠出现也算重复。
 		if strings.Contains(text[start+1:], edit.OldText) {
-			return "", fmt.Errorf(
+			return "", nil, fmt.Errorf(
 				"edits[%d].oldText 匹配多处，请补充上下文使其唯一", i,
 			)
 		}
@@ -178,7 +187,7 @@ func applyEdits(text string, edits []textEdit) (string, error) {
 		previous := matches[i-1]
 		current := matches[i]
 		if previous.end > current.start {
-			return "", fmt.Errorf(
+			return "", nil, fmt.Errorf(
 				"edits[%d] 与 edits[%d] 的区域重叠，请合并为一次替换",
 				previous.index, current.index,
 			)
@@ -186,8 +195,10 @@ func applyEdits(text string, edits []textEdit) (string, error) {
 	}
 
 	var output strings.Builder
+	starts := make([]int, len(edits))
 	cursor := 0
 	for _, match := range matches {
+		starts[match.index] = strings.Count(text[:match.start], "\n") + 1
 		output.WriteString(text[cursor:match.start])
 		output.WriteString(match.newText)
 		cursor = match.end
@@ -196,7 +207,7 @@ func applyEdits(text string, edits []textEdit) (string, error) {
 
 	result := output.String()
 	if result == text {
-		return "", errors.New("替换后的内容与原文件相同")
+		return "", nil, errors.New("替换后的内容与原文件相同")
 	}
-	return result, nil
+	return result, starts, nil
 }

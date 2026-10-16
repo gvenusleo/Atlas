@@ -26,6 +26,16 @@ type readArgs struct {
 	Limit  int    `json:"limit"`
 }
 
+// ReadDetails 是 read 读取文本时随结果附带的结构化数据，供界面渲染，不发给模型。
+// 它是实际返回的窗口，而不是请求的：默认值与返回预算都已计入。
+type ReadDetails struct {
+	// Start 与 End 是实际返回的第一行与最后一行的行号（从 1 起）；空文件时 End 为 0。
+	Start int `json:"start"`
+	End   int `json:"end"`
+	// Total 是文件的总行数。
+	Total int `json:"total"`
+}
+
 // Read 构造 read tool；workdir 应为工作目录绝对路径，相对路径以此为基准。
 func Read(workdir string) agent.Tool {
 	return agent.Tool{
@@ -105,24 +115,30 @@ func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, fmt.Errorf("%s 不是支持的图片或 UTF-8 文本", path)
 	}
 
-	text, err := readText(string(data), args.Offset, args.Limit)
+	text, window, err := readText(string(data), args.Offset, args.Limit)
 	if err != nil {
 		return agent.ToolResult{}, fmt.Errorf("%s 读取失败: %w", path, err)
+	}
+	details, err := json.Marshal(window)
+	if err != nil {
+		return agent.ToolResult{}, err
 	}
 	return agent.ToolResult{
 		Content: []agent.Content{
 			agent.TextContent{Text: text},
 		},
+		Details: details,
 	}, nil
 }
 
-// readText 按行选取文本，超过返回预算时只保留完整行并给出续读位置。
-func readText(text string, offset, limit int) (string, error) {
+// readText 按行选取文本，超过返回预算时只保留完整行并给出续读位置；
+// 同时返回实际返回的窗口。
+func readText(text string, offset, limit int) (string, ReadDetails, error) {
 	if text == "" {
 		if offset != 1 {
-			return "", errors.New("文件为空, offset 只能为 1")
+			return "", ReadDetails{}, errors.New("文件为空, offset 只能为 1")
 		}
-		return "", nil
+		return "", ReadDetails{Start: 1}, nil
 	}
 
 	total := strings.Count(text, "\n") + 1
@@ -131,7 +147,7 @@ func readText(text string, offset, limit int) (string, error) {
 		total--
 	}
 	if offset > total {
-		return "", fmt.Errorf("offset=%d 超出文件范围，共 %d 行", offset, total)
+		return "", ReadDetails{}, fmt.Errorf("offset=%d 超出文件范围，共 %d 行", offset, total)
 	}
 
 	count := min(limit, readMaxLines, total-offset+1)
@@ -160,7 +176,7 @@ func readText(text string, offset, limit int) (string, error) {
 	}
 
 	if len(selected) == 0 {
-		return "", fmt.Errorf("第 %d 行超过 50 KiB", offset)
+		return "", ReadDetails{}, fmt.Errorf("第 %d 行超过 50 KiB", offset)
 	}
 
 	end := offset + len(selected) - 1
@@ -171,5 +187,5 @@ func readText(text string, offset, limit int) (string, error) {
 			offset, end, total, end+1,
 		)
 	}
-	return output, nil
+	return output, ReadDetails{Start: offset, End: end, Total: total}, nil
 }

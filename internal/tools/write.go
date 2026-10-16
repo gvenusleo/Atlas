@@ -12,6 +12,12 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
+// WriteDetails 是 write 随结果附带的结构化数据，供界面渲染，不发给模型。
+type WriteDetails struct {
+	// Overwrote 为真表示覆盖了已有的文件，否则是新建。
+	Overwrote bool `json:"overwrote"`
+}
+
 // writeArgs 是 write tool 的输入；Content 用指针区分参数与空内容。
 type writeArgs struct {
 	Path    string  `json:"path"`
@@ -71,6 +77,7 @@ func writeFile(ctx context.Context, workdir string, params jsontext.Value) (agen
 	if err == nil && !info.Mode().IsRegular() {
 		return agent.ToolResult{}, fmt.Errorf("%s 不是普通文件", path)
 	}
+	existed := err == nil
 	if err := ctx.Err(); err != nil {
 		return agent.ToolResult{}, err
 	}
@@ -86,11 +93,14 @@ func writeFile(ctx context.Context, workdir string, params jsontext.Value) (agen
 		return agent.ToolResult{}, fmt.Errorf("%s 写入失败: %w", path, err)
 	}
 
+	details, err := json.Marshal(WriteDetails{Overwrote: existed})
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
 	return agent.ToolResult{
 		Content: []agent.Content{
-			agent.TextContent{
-				Text: fmt.Sprintf("已写入 %s", path),
-			},
+			agent.TextContent{Text: fmt.Sprintf("已写入 %s", path)},
 		},
+		Details: details,
 	}, nil
 }
