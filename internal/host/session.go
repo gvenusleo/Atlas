@@ -232,6 +232,7 @@ func (s *Session) bind(
 		Model:         modelID,
 		Stream:        stream,
 		ThinkingLevel: info.ThinkingLevel,
+		Retry:         agent.DefaultRetry(),
 	}
 	s.seq = info.LastSeq
 	s.mu.Lock()

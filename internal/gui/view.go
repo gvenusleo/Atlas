@@ -135,6 +135,9 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 				ui.Text(c, ch.err).TextColor(t.Danger).FontSize(13).Selectable()
 			})
 		}
+		if ch.retry != "" {
+			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(13) })
+		}
 		column(c, 0, func() { a.composer(c, t, ch) })
 		ui.Column(c).Height(12)
 	})

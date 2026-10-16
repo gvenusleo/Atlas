@@ -2,6 +2,7 @@ package gui
 
 import (
 	"encoding/json/jsontext"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -58,6 +59,8 @@ type chat struct {
 	session *host.Session // 空表示尚未创建或需要重新恢复
 	items   []*item
 	live    []*item // 当前助手消息已流出的内容块，定稿时对账
+	tail    *item   // 当前消息开始流出时的最后一个显示项；重试时丢弃它之后的半截内容
+	retry   string  // 正在重试时的提示，下一个增量或这条消息结束时清掉
 	next    int
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	paging  bool  // 正在加载更早的记录
@@ -215,8 +218,20 @@ func (ch *chat) setCall(call agent.ToolCall) {
 func (ch *chat) apply(e agent.Event) {
 	switch e.Type {
 	case agent.EventTypeMessageStart:
+		ch.live, ch.tail = nil, nil
+		if n := len(ch.items); n > 0 {
+			ch.tail = ch.items[n-1]
+		}
+	case agent.EventTypeRetry:
+		// 这次响应作废：丢掉它已流出的文字与半截的工具调用，等重新请求。
+		// 中途往前加载的更早记录排在 tail 之前，不受影响；tail 不在列表里就什么也不丢。
+		if i := slices.Index(ch.items, ch.tail); ch.tail == nil || i >= 0 {
+			ch.items = ch.items[:i+1]
+		}
 		ch.live = nil
+		ch.retry = retryNotice(e.Retry)
 	case agent.EventTypeMessageUpdate:
+		ch.retry = ""
 		switch e.Delta.Type {
 		case agent.DeltaTypeText:
 			ch.stream(itemAssistant).text += e.Delta.Text
@@ -226,6 +241,7 @@ func (ch *chat) apply(e agent.Event) {
 			ch.setCall(e.Delta.ToolCall)
 		}
 	case agent.EventTypeMessageEnd:
+		ch.retry = ""
 		if m, ok := e.Message.(agent.AssistantMessage); ok {
 			ch.finish(m)
 		} else {
@@ -237,6 +253,13 @@ func (ch *chat) apply(e agent.Event) {
 	case agent.EventTypeToolExecutionEnd:
 		ch.tool(e.ToolCallID).finishCall(e.Result.Content, e.Result.Details, e.Result.IsError)
 	}
+}
+
+// retryNotice 是重试时给用户的一行提示：等多久、第几次、为什么。
+func retryNotice(r agent.RetryInfo) string {
+	reason, _, _ := strings.Cut(r.Error, "\n")
+	return fmt.Sprintf("请求失败，%d 秒后重试（第 %d/%d 次）：%s",
+		int(r.Delay.Seconds()), r.Attempt, r.Max, truncate(reason, 80))
 }
 
 // finish 用定稿的助手消息校正已流出的内容块，保持原有显示项以延续渲染状态。

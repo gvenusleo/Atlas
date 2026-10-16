@@ -3,6 +3,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"errors"
@@ -23,7 +24,8 @@ type pendingCall struct {
 }
 
 // OpenAIResponsesStreamFn 返回基于 OpenAI Responses API 的 StreamFn；
-// 失败按契约编码进返回消息：ctx 取消 → StopReasonCanceled，其余 → StopReasonError；
+// 失败按契约编码进返回消息：ctx 取消 → StopReasonCanceled，其余 → StopReasonError，
+// 其中暂时性的（限流、服务端故障、连接中断）标出 ErrorKind 供循环重试；
 // 请求构造类错误在发起 HTTP 之前返回。
 func OpenAIResponsesStreamFn(client openai.Client) agent.StreamFn {
 	return func(
@@ -31,7 +33,7 @@ func OpenAIResponsesStreamFn(client openai.Client) agent.StreamFn {
 	) agent.AssistantMessage {
 		params, err := requestOf(req)
 		if err != nil {
-			return failure(req.Model, agent.StopReasonError, err.Error())
+			return failure(req.Model, agent.StopReasonError, err.Error(), "")
 		}
 
 		stream := client.Responses.NewStreaming(ctx, params)
@@ -39,35 +41,44 @@ func OpenAIResponsesStreamFn(client openai.Client) agent.StreamFn {
 
 		final, detail, aborted := consume(stream, emit)
 		if aborted {
-			return failure(req.Model, agent.StopReasonError, detail)
+			return failure(req.Model, agent.StopReasonError, detail.text, "")
 		}
 		if err := stream.Err(); err != nil {
-			stop := agent.StopReasonError
 			if errors.Is(err, context.Canceled) {
-				stop = agent.StopReasonCanceled
+				return failure(req.Model, agent.StopReasonCanceled, err.Error(), "")
 			}
-			return failure(req.Model, stop, err.Error())
+			return failure(req.Model, agent.StopReasonError, err.Error(), errorKind(err))
 		}
 		if final == nil {
-			if detail == "" {
-				detail = "流结束但未收到终态事件"
+			// 没有 error 事件就结束的流是被截断了，可以重试；有错误码的按错误码判断。
+			if detail == (streamDetail{}) {
+				return failure(req.Model, agent.StopReasonError,
+					"流结束但未收到终态事件", agent.ErrorKindRetryable)
 			}
-			return failure(req.Model, agent.StopReasonError, detail)
+			text := cmp.Or(detail.text, detail.code)
+			return failure(req.Model, agent.StopReasonError, text, codeKind(detail.code))
 		}
 		return messageOf(*final, req.Model)
 	}
 }
 
 // failure 构造不含内容的失败消息。
-func failure(model string, stop agent.StopReason, detail string) agent.AssistantMessage {
-	return agent.AssistantMessage{Model: model, StopReason: stop, ErrorMessage: detail}
+func failure(
+	model string, stop agent.StopReason, detail string, kind agent.ErrorKind,
+) agent.AssistantMessage {
+	return agent.AssistantMessage{
+		Model: model, StopReason: stop, ErrorMessage: detail, ErrorKind: kind,
+	}
 }
 
+// streamDetail 是流里 error 事件的内容，或事件序列违反协议的说明（只有 text）。
+type streamDetail struct{ code, text string }
+
 // consume 读取事件流并发出增量；返回终态响应与 error 事件的细节，
-// aborted 为真表示事件序列违反协议，detail 即原因。
+// aborted 为真表示事件序列违反协议，detail.text 即原因。
 func consume(
 	stream *ssestream.Stream[responses.ResponseStreamEventUnion], emit func(agent.Delta),
-) (final *responses.Response, detail string, aborted bool) {
+) (final *responses.Response, detail streamDetail, aborted bool) {
 	calls := map[string]*pendingCall{}
 	for stream.Next() {
 		ev := stream.Current()
@@ -87,7 +98,8 @@ func consume(
 		case "response.function_call_arguments.delta":
 			p := calls[ev.ItemID]
 			if p == nil {
-				return nil, fmt.Sprintf("工具参数增量对应的调用 %q 尚未声明", ev.ItemID), true
+				text := fmt.Sprintf("工具参数增量对应的调用 %q 尚未声明", ev.ItemID)
+				return nil, streamDetail{text: text}, true
 			}
 			p.args.WriteString(ev.Delta)
 			emit(agent.Delta{Type: agent.DeltaTypeToolCall, ToolCall: agent.ToolCall{
@@ -99,7 +111,7 @@ func consume(
 			r := ev.Response
 			final = &r
 		case "error":
-			detail = ev.Message // 记录细节，供无终态时兜底。
+			detail = streamDetail{code: ev.Code, text: ev.Message} // 记录细节，供无终态时兜底。
 		}
 	}
 	return final, detail, false

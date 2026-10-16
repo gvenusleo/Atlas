@@ -151,6 +151,14 @@ type UserMessage struct {
 // Role 返回用户消息角色。
 func (UserMessage) Role() Role { return RoleUser }
 
+// ErrorKind 是流函数对失败原因的分类，只在流函数与循环之间传递，不保存。
+type ErrorKind string
+
+const (
+	// ErrorKindRetryable 表示失败多半是暂时的（限流、服务端故障、网络中断），稍后重试可能成功。
+	ErrorKindRetryable ErrorKind = "retryable"
+)
+
 // AssistantMessage 是一次模型响应的完整消息。
 type AssistantMessage struct {
 	Content      []Content  `json:"content"`
@@ -158,7 +166,9 @@ type AssistantMessage struct {
 	Usage        Usage      `json:"usage,omitzero"`
 	StopReason   StopReason `json:"stop_reason"`
 	ErrorMessage string     `json:"error_message,omitempty"`
-	Timestamp    time.Time  `json:"timestamp"`
+	// ErrorKind 只在 StopReason 为 error 时有意义，由流函数设置；空表示不应重试。
+	ErrorKind ErrorKind `json:"-"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // Role 返回助手消息角色。
@@ -267,7 +277,8 @@ type Delta struct {
 
 // StreamFn 调用模型并流式产出增量，返回完整的 assistant 消息。契约：
 // 失败不返回 Go error，而是编码为 StopReasonError 或 StopReasonCanceled、
-// 细节写入 ErrorMessage；无论成败都必须返回完整消息；emit 可调 0 到 n 次；
+// 细节写入 ErrorMessage，暂时性的失败再用 ErrorKind 标出；
+// 无论成败都必须返回完整消息；emit 可调 0 到 n 次；
 // 必须尊重 ctx 取消，取消时返回 StopReasonCanceled；emit 必须同步调用；
 // 消息与内容块必须以值形式装入（*ToolCall 等指针形式不被识别）。
 type StreamFn func(ctx context.Context, req StreamRequest, emit func(Delta)) AssistantMessage
@@ -285,19 +296,23 @@ const (
 	EventTypeMessageStart       EventType = "message_start"
 	EventTypeMessageUpdate      EventType = "message_update"
 	EventTypeMessageEnd         EventType = "message_end"
+	EventTypeRetry              EventType = "retry"
 	EventTypeToolExecutionStart EventType = "tool_execution_start"
 	EventTypeToolExecutionEnd   EventType = "tool_execution_end"
 )
 
 // Event 是 agent 生命周期事件；Type 决定哪些载荷字段有效：
 // agent_end 使用 Messages，turn_end 使用 Message 与 Messages；
-// message_start/end 使用 Message，message_update 使用 Delta；
+// message_start/end 使用 Message，message_update 使用 Delta，retry 使用 Retry；
+// retry 发生在 message_start 与 message_end 之间：这次响应失败了，已流出的内容作废，
+// 等待之后重新请求，最终只有一条消息结束；
 // tool_execution_start 使用调用标识与 Arguments，tool_execution_end 使用调用标识与 Result。
 type Event struct {
 	Type       EventType
 	Messages   []Message
 	Message    Message
 	Delta      Delta
+	Retry      RetryInfo
 	ToolCallID string
 	ToolName   string
 	Arguments  jsontext.Value
@@ -318,5 +333,7 @@ type LoopContext struct {
 	ThinkingLevel ThinkingLevel
 	// MaxTurns 限制一次 run 的 turn 数，0 表示不限；防御模型无限请求工具。
 	MaxTurns int
-	Stream   StreamFn
+	// Retry 是模型调用遇到暂时性失败时的重试策略，零值表示不重试。
+	Retry  RetryPolicy
+	Stream StreamFn
 }

@@ -40,6 +40,9 @@ func messageOf(r responses.Response, model string) agent.AssistantMessage {
 		}
 	}
 	msg.StopReason, msg.ErrorMessage = stopOf(r, msg.Content)
+	if r.Status == responses.ResponseStatusFailed {
+		msg.ErrorKind = codeKind(string(r.Error.Code))
+	}
 	return msg
 }
 

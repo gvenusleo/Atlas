@@ -46,6 +46,40 @@ func TestApplyEvents(t *testing.T) {
 	}
 }
 
+// 重试时这次响应已流出的文字和半截的工具调用都要丢掉，只留之前的内容；
+// 提示一行在新的输出到来时消失；用来标记的显示项不在了就什么也不丢。
+func TestRetryDiscardsPartialMessage(t *testing.T) {
+	ch := &chat{}
+	ch.add(itemUser, "你好")
+	delta := func(d agent.Delta) agent.Event {
+		return agent.Event{Type: agent.EventTypeMessageUpdate, Delta: d}
+	}
+	partial := agent.ToolCall{ID: "c1", Name: "read", Arguments: []byte(`{"pa`)}
+	for _, e := range []agent.Event{
+		{Type: agent.EventTypeMessageStart, Message: agent.AssistantMessage{}},
+		delta(agent.Delta{Type: agent.DeltaTypeText, Text: "半截"}),
+		delta(agent.Delta{Type: agent.DeltaTypeToolCall, ToolCall: partial}),
+		{Type: agent.EventTypeRetry, Retry: agent.RetryInfo{
+			Attempt: 1, Max: 4, Delay: 2 * time.Second, Error: "503"}},
+	} {
+		ch.apply(e)
+	}
+	if len(ch.items) != 1 || ch.retry == "" {
+		t.Fatalf("重试后显示项 = %d，提示 = %q，期望只剩用户消息并有提示", len(ch.items), ch.retry)
+	}
+
+	ch.apply(delta(agent.Delta{Type: agent.DeltaTypeText, Text: "好"}))
+	if len(ch.items) != 2 || ch.retry != "" || ch.items[1].text != "好" {
+		t.Errorf("新输出到来后显示项 = %d，提示 = %q，期望 2 项且提示消失", len(ch.items), ch.retry)
+	}
+
+	ch.tail = &item{}
+	ch.apply(agent.Event{Type: agent.EventTypeRetry, Retry: agent.RetryInfo{Attempt: 2, Max: 4}})
+	if len(ch.items) != 2 {
+		t.Errorf("标记不在列表里时显示项 = %d，期望什么也不丢", len(ch.items))
+	}
+}
+
 // 往前加载的一页可能把工具调用与它的结果拆开：结果在已有的后一页里，
 // 调用在新加载的这一页里，合起来仍是一张卡片。
 func TestPrependMergesSplitToolCall(t *testing.T) {

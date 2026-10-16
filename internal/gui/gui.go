@@ -323,7 +323,7 @@ func (a *App) attach(ch *chat, s *host.Session) {
 
 // finish 在一轮对话结束后更新状态；用户主动停止不算错误。
 func (a *App) finish(ch *chat, err error) {
-	ch.running = false
+	ch.running, ch.retry = false, ""
 	if err != nil && !errors.Is(err, context.Canceled) {
 		ch.err = err.Error()
 	}

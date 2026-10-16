@@ -77,9 +77,7 @@ func streamResponse(ctx context.Context, rc *LoopContext, e *emitter) AssistantM
 		Tools:         rc.Tools,
 		ThinkingLevel: rc.ThinkingLevel,
 	}
-	final := rc.Stream(ctx, request, func(d Delta) {
-		e.send(Event{Type: EventTypeMessageUpdate, Delta: d})
-	})
+	final := streamWithRetry(ctx, rc, request, e)
 
 	if final.StopReason == "" {
 		final.StopReason = StopReasonError
@@ -91,6 +89,31 @@ func streamResponse(ctx context.Context, rc *LoopContext, e *emitter) AssistantM
 	final.Timestamp = time.Now()
 	e.send(Event{Type: EventTypeMessageEnd, Message: final})
 	return final
+}
+
+// streamWithRetry 调用模型；暂时性的失败按策略退避后重试，失败的尝试整个作废：
+// 只返回最后一次的结果，所以中间的失败不会入历史，半截的工具调用也不会被执行。
+// 退避期间 ctx 取消则按取消收尾。
+func streamWithRetry(
+	ctx context.Context, rc *LoopContext, request StreamRequest, e *emitter,
+) AssistantMessage {
+	emit := func(d Delta) { e.send(Event{Type: EventTypeMessageUpdate, Delta: d}) }
+	for retries := 0; ; retries++ {
+		final := rc.Stream(ctx, request, emit)
+		if final.StopReason != StopReasonError || final.ErrorKind != ErrorKindRetryable ||
+			retries >= rc.Retry.Max {
+			return final
+		}
+		info := RetryInfo{
+			Attempt: retries + 1, Max: rc.Retry.Max,
+			Delay: rc.Retry.delay(retries + 1), Error: final.ErrorMessage,
+		}
+		e.send(Event{Type: EventTypeRetry, Retry: info})
+		if !sleep(ctx, info.Delay) {
+			final.StopReason, final.ErrorKind, final.ErrorMessage = StopReasonCanceled, "", ""
+			return final
+		}
+	}
 }
 
 // isHardStop 判定必须硬退出的终态：失败、取消，以及不应出现在定稿消息上的占位值。
