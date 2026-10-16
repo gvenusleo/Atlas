@@ -25,8 +25,10 @@ import (
 )
 
 const (
-	// historyPage 是打开会话时加载的最近记录条数。
+	// historyPage 是每次从历史中加载的记录条数：打开会话时取最近一页，向上滚时再往前取。
 	historyPage = 200
+	// olderNear 是列表顶部离可见区域还有几行时开始加载更早的记录。
+	olderNear = 5
 	// listLimit 是侧栏显示的会话数量。
 	listLimit = 100
 	// closeTimeout 限制退出时等待运行收尾的时间。
@@ -104,6 +106,8 @@ func Run() error {
 func newApp(h *host.Manager) *App {
 	a := &App{host: h, chats: map[string]*chat{}, sidebarWidth: sidebarDefault, shown: 1,
 		sections: map[string]*bool{}, more: map[string]bool{}, termWidth: termDefault}
+	// 按词显示以空格为界，中文没有空格，一段会整个冒出来；按字符才是匀速的。
+	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByCharacter}
 	a.md.Theme = &markdown.Theme{
 		FontSize:     bodySize,
 		LineHeight:   1.6,
@@ -159,10 +163,30 @@ func (a *App) open(id string) {
 				return
 			}
 			ch.load(records)
-			if len(records) == historyPage {
-				notice := &item{kind: itemNotice, done: true, text: "仅显示最近 200 条记录"}
-				ch.items = slices.Insert(ch.items, 0, notice)
+		})
+	}()
+}
+
+// loadOlder 在列表滚近顶部时再取前面一页记录；没有更早的记录或正在取时什么也不做。
+// 列表的行有 Key，往前加入时当前看的位置不动。
+func (a *App) loadOlder(ch *chat) {
+	if first, last := ch.list.Visible(); last < first || first >= olderNear {
+		return
+	}
+	if ch.loading || ch.paging || ch.oldest <= 1 {
+		return
+	}
+	ch.paging = true
+	before := ch.oldest
+	go func() {
+		records, err := a.host.History(context.Background(), ch.id, before, historyPage)
+		a.win.Update(func() {
+			ch.paging = false
+			if err != nil {
+				ch.err, ch.oldest = err.Error(), 0 // 不再重试
+				return
 			}
+			ch.prepend(records)
 		})
 	}()
 }

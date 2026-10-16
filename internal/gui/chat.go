@@ -59,6 +59,8 @@ type chat struct {
 	items   []*item
 	live    []*item // 当前助手消息已流出的内容块，定稿时对账
 	next    int
+	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
+	paging  bool  // 正在加载更早的记录
 	list    ui.ListState
 	input   string
 	running bool
@@ -128,10 +130,35 @@ func (ch *chat) blocks() []block {
 
 // load 用持久化记录重建对话，提示词快照不显示。
 func (ch *chat) load(records []host.Record) {
-	ch.items, ch.live = nil, nil
+	ch.items, ch.live, ch.oldest = nil, nil, 0
 	for _, record := range records {
 		ch.append(record.Message)
 	}
+	if len(records) > 0 {
+		ch.oldest = records[0].Seq
+	}
+}
+
+// prepend 把更早的一页记录排到已有显示项之前。页的边界可能把一次工具调用与它的结果拆开：
+// 结果已在后一页里时，调用先在这页里建好，把结果并过来，不重复显示。
+func (ch *chat) prepend(records []host.Record) {
+	older := &chat{next: ch.next}
+	older.load(records)
+	for _, it := range older.items {
+		if it.kind != itemTool || it.done {
+			continue
+		}
+		i := slices.IndexFunc(ch.items, func(o *item) bool {
+			return o.kind == itemTool && o.callID == it.callID
+		})
+		if i >= 0 {
+			o := ch.items[i]
+			it.result, it.details, it.failed, it.done = o.result, o.details, o.failed, true
+			ch.items = slices.Delete(ch.items, i, i+1)
+		}
+	}
+	ch.items = slices.Concat(older.items, ch.items)
+	ch.next, ch.oldest = older.next, older.oldest
 }
 
 // append 把一条定稿消息追加为显示项。

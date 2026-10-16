@@ -154,6 +154,7 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	ch.list.Key = func(i int) any { return blocks[i].items[0].id }
 	ch.list.FollowEnd = true
 	ch.list.FollowAnimation = &ui.Smooth
+	a.loadOlder(ch)
 	ui.Column(c).Fill().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
 			column(c, 5, func() { a.block(c, t, blocks[i]) })
