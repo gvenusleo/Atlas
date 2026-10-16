@@ -29,6 +29,9 @@ type item struct {
 	done bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
 	open bool   // 思考与工具卡片是否展开
 
+	at       time.Time // 用户与助手消息的时间，未知时为零
+	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
+
 	started time.Time // 思考：开始流出的时刻与用时，历史记录中为零
 	took    time.Duration
 
@@ -132,7 +135,7 @@ func (ch *chat) append(message agent.Message) {
 			ch.add(itemNotice, m.Content)
 		}
 	case agent.UserMessage:
-		ch.add(itemUser, textOf(m.Content))
+		ch.add(itemUser, textOf(m.Content)).at = m.Timestamp
 	case agent.AssistantMessage:
 		ch.track(m)
 		for _, block := range m.Content {
@@ -142,7 +145,7 @@ func (ch *chat) append(message agent.Message) {
 					ch.add(itemThinking, b.Thinking)
 				}
 			case agent.TextContent:
-				ch.add(itemAssistant, b.Text)
+				ch.add(itemAssistant, b.Text).at = m.Timestamp
 			case agent.ToolCall:
 				ch.setCall(b)
 			}
@@ -222,7 +225,7 @@ func (ch *chat) finish(m agent.AssistantMessage) {
 			}
 		case agent.TextContent:
 			it := take(itemAssistant)
-			it.text, it.done = b.Text, true
+			it.text, it.done, it.at = b.Text, true, m.Timestamp
 		case agent.ToolCall:
 			ch.setCall(b)
 		}

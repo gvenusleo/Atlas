@@ -36,6 +36,8 @@ var (
 	moreIcon     = icon("ellipsis")
 	modelIcon    = icon("sparkles")
 	thinkIcon    = icon("brain")
+	copyIcon     = icon("copy")
+	checkIcon    = icon("check")
 )
 
 // toolInfo 返回工具对应的图标和动词；未知工具用扳手和工具名。
