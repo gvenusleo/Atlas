@@ -215,7 +215,8 @@ func (a *App) termTab(c *ui.Context, t *ui.Theme, ch *chat, i int, sh *shell) {
 	active := i == ch.termTab
 	row := ui.Row(c.Key("tab-"+strconv.Itoa(sh.id))).Height(tabHeight).AlignItems(ui.Center).
 		Gap(4).Shrink(0).Radius(controlRound).Padding(0, 4, 0, 8)
-	if active {
+	// 只有一个标签时它无从区分，不加底色。
+	if active && len(ch.terms) > 1 {
 		row.Background(t.Text.Alpha(0.08))
 	}
 	// 新建或切换到的标签滚进可见范围；只在那一帧请求，之后用户可以自由滚走。
@@ -230,11 +231,7 @@ func (a *App) termTab(c *ui.Context, t *ui.Theme, ch *chat, i int, sh *shell) {
 			sh.focus.Focus()
 		})
 		pick.Children(func() {
-			color := t.TextMuted
-			if active {
-				color = t.Text
-			}
-			ui.Text(c, label).FontSize(13).SingleLine().TextColor(color)
+			ui.Text(c, label).FontSize(13).SingleLine().TextColor(t.TextMuted)
 			if title := sh.term.Title(); title != "" {
 				ui.Text(c, truncate(title, 16)).FontSize(13).TextColor(t.TextMuted).SingleLine()
 			}
