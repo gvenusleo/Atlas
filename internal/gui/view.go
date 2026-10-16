@@ -81,14 +81,16 @@ func (a *App) sidebarToggle(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// titleBar 画主区顶部的标题栏：可拖动窗口，标题与阅读栏对齐，并避开窗口控件与侧栏开关。
+// titleBar 画主区顶部的标题栏：可拖动窗口，标题靠主区左侧，并避开窗口控件、侧栏开关与
+// 右端的终端按钮。标题栏是窗口外框，占满主区宽度，不受阅读栏宽度限制。
 func (a *App) titleBar(c *ui.Context, t *ui.Theme, title string) ui.Element {
 	bar := c.TitleBar()
 	// 侧栏收起时，标题让开悬浮的侧栏开关；随展开程度平滑过渡。
 	left := gutter + (1-a.shown)*max(bar.Left+40-gutter, 0)
-	return ui.Row(c).Height(titleBarHeight(c)).Justify(ui.Center).AlignItems(ui.Center).
-		Padding(0, gutter+bar.Right, 0, left).DragWindow().Children(func() {
-		ui.Text(c, title).Grow(1).MaxWidth(contentWidth).SingleLine()
+	right := bar.Right + barInset + barButton + 8
+	return ui.Row(c).Height(titleBarHeight(c)).AlignItems(ui.Center).
+		Padding(0, right, 0, left).DragWindow().Children(func() {
+		ui.Text(c, title).Grow(1).SingleLine()
 		a.terminalButton(c, t)
 	})
 }

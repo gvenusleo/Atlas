@@ -138,11 +138,10 @@ func (a *App) closeAllTerminals() {
 
 // terminalButton 是标题栏右端的终端开关；面板打开时用强调色标出。
 func (a *App) terminalButton(c *ui.Context, t *ui.Theme) {
-	const inset = 12
 	open := a.current.termOpen
 	top := (titleBarHeight(c) - barButton) / 2
-	// 绝对定位在标题栏的右端，不影响标题与阅读栏的对齐。
-	btn := ui.ButtonBase(c).Absolute().Top(top).Right(inset+c.TitleBar().Right).
+	// 绝对定位在标题栏的右端，不占标题栏的位置；标题栏给它留出了空隙。
+	btn := ui.ButtonBase(c).Absolute().Top(top).Right(barInset+c.TitleBar().Right).
 		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
 		Label("终端").Tooltip("终端")
 	color := t.TextMuted
