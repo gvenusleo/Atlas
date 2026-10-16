@@ -32,12 +32,20 @@ mise run ci        # 格式检查、vet、测试、编译、漏洞扫描
       "api": "openai-responses",
       "base_url": "https://api.example.com/v1",
       "models": {
-        "model-id": { "reasoning": true, "reasoning_options": [{ "type": "effort", "values": ["low", "high"] }] }
+        "model-id": {
+          "context_window": 200000,
+          "reasoning": true,
+          "reasoning_options": [{ "type": "effort", "values": ["low", "high"] }]
+        }
       }
     }
   }
 }
 ```
+
+模型的 `context_window`（上下文窗口，token）可选，但建议填写：上下文接近窗口上限时，
+Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用圆环也依赖它。没有填写时只在
+请求被拒绝为上下文超限之后才压缩。
 
 ## 结构
 

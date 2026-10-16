@@ -21,6 +21,7 @@ const (
 	itemThinking
 	itemTool
 	itemNotice
+	itemCompaction // 上下文压缩：text 是摘要，没完成时是进行中的占位
 )
 
 // item 是对话中的一块可显示内容，只在主线程读写。
@@ -168,11 +169,16 @@ func (ch *chat) prepend(records []host.Record) {
 func (ch *chat) append(message agent.Message) {
 	switch m := message.(type) {
 	case agent.SystemMessage:
-		if m.Type == agent.SystemMessageTypeNotice {
+		ch.dropCompacting() // 压缩的结果（摘要或失败的通知）取代进行中的占位
+		switch m.Type {
+		case agent.SystemMessageTypeNotice:
 			ch.add(itemNotice, m.Content)
+		case agent.SystemMessageTypeCompaction:
+			ch.add(itemCompaction, m.Content)
+			ch.usage = 0 // 上下文变小了，下一次响应才有新的数字
 		}
 	case agent.UserMessage:
-		ch.add(itemUser, textOf(m.Content)).at = m.Timestamp
+		ch.add(itemUser, agent.TextOf(m.Content)).at = m.Timestamp
 	case agent.AssistantMessage:
 		ch.track(m)
 		for _, block := range m.Content {
@@ -196,7 +202,7 @@ func (ch *chat) append(message agent.Message) {
 
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。
 func (it *item) finishCall(content []agent.Content, details jsontext.Value, failed bool) {
-	it.result, it.details, it.failed = textOf(content), details, failed
+	it.result, it.details, it.failed = agent.TextOf(content), details, failed
 	it.running, it.done = false, true
 	it.call = nil
 }
@@ -218,9 +224,11 @@ func (ch *chat) setCall(call agent.ToolCall) {
 func (ch *chat) apply(e agent.Event) {
 	switch e.Type {
 	case agent.EventTypeMessageStart:
-		ch.live, ch.tail = nil, nil
-		if n := len(ch.items); n > 0 {
-			ch.tail = ch.items[n-1]
+		ch.live = nil
+		ch.mark()
+		system, ok := e.Message.(agent.SystemMessage)
+		if ok && system.Type == agent.SystemMessageTypeCompaction {
+			ch.add(itemCompaction, "").done = false
 		}
 	case agent.EventTypeRetry:
 		// 这次响应作废：丢掉它已流出的文字与半截的工具调用，等重新请求。
@@ -246,6 +254,7 @@ func (ch *chat) apply(e agent.Event) {
 			ch.finish(m)
 		} else {
 			ch.append(e.Message)
+			ch.mark()
 		}
 	case agent.EventTypeToolExecutionStart:
 		it := ch.tool(e.ToolCallID)
@@ -253,6 +262,21 @@ func (ch *chat) apply(e agent.Event) {
 	case agent.EventTypeToolExecutionEnd:
 		ch.tool(e.ToolCallID).finishCall(e.Result.Content, e.Result.Details, e.Result.IsError)
 	}
+}
+
+// mark 记下现在的最后一个显示项：之后这条消息被重试时，丢掉它之后流出的半截内容。
+func (ch *chat) mark() {
+	ch.tail = nil
+	if n := len(ch.items); n > 0 {
+		ch.tail = ch.items[n-1]
+	}
+}
+
+// dropCompacting 去掉进行中的压缩占位行：压缩结束时它由结果取代。
+func (ch *chat) dropCompacting() {
+	ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
+		return it.kind == itemCompaction && !it.done
+	})
 }
 
 // retryNotice 是重试时给用户的一行提示：等多久、第几次、为什么。
@@ -295,18 +319,4 @@ func (ch *chat) finish(m agent.AssistantMessage) {
 	for _, it := range pending {
 		it.done = true
 	}
-}
-
-// textOf 连接内容中的文本；图片以占位文字表示。
-func textOf(content []agent.Content) string {
-	var parts []string
-	for _, block := range content {
-		switch b := block.(type) {
-		case agent.TextContent:
-			parts = append(parts, b.Text)
-		case agent.ImageContent:
-			parts = append(parts, "[图片]")
-		}
-	}
-	return strings.Join(parts, "\n")
 }

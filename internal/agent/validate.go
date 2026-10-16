@@ -35,6 +35,13 @@ func validateSystem(m SystemMessage) error {
 			return errors.New("系统提示词快照不能为空")
 		}
 	case SystemMessageTypeNotice:
+	case SystemMessageTypeCompaction:
+		if strings.TrimSpace(m.Content) == "" {
+			return errors.New("压缩记录的摘要不能为空")
+		}
+		if m.Kept < 0 {
+			return errors.New("压缩记录保留的消息数不能为负")
+		}
 	default:
 		return fmt.Errorf("未知系统消息类型 %q", m.Type)
 	}

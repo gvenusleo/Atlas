@@ -12,13 +12,16 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// 暂时性的失败标为可重试：限流、服务端故障、连接中断；
-// 配额用尽、证书校验失败与客户端错误不重试。
+// 暂时性的失败标为可重试：限流、服务端故障、连接中断；上下文超限要先压缩；
+// 配额用尽、证书校验失败与其他客户端错误不重试。
 func TestErrorKind(t *testing.T) {
 	api := func(status int, code string) error {
 		return &openai.Error{StatusCode: status, Code: code}
 	}
-	retry := agent.ErrorKindRetryable
+	apiText := func(status int, message string) error {
+		return &openai.Error{StatusCode: status, Message: message}
+	}
+	retry, overflow := agent.ErrorKindRetryable, agent.ErrorKindContextOverflow
 	for _, tt := range []struct {
 		name string
 		err  error
@@ -30,6 +33,10 @@ func TestErrorKind(t *testing.T) {
 		{"连接中断", fmt.Errorf("读取流: %w", io.ErrUnexpectedEOF), retry},
 		{"证书校验失败", fmt.Errorf("读取流: %w", &tls.CertificateVerificationError{
 			Err: errors.New("x509: unknown authority")}), ""},
+		{"超限（错误码）", api(400, "context_length_exceeded"), overflow},
+		{"超限（兼容厂商的文字）", apiText(400, "maximum context length is 8192"), overflow},
+		{"请求体过大", apiText(413, "request_too_large"), overflow},
+		{"限流文字里带 context 不算超限", apiText(429, "context window rate limit"), retry},
 		{"配额用尽", api(429, "insufficient_quota"), ""},
 		{"参数错误", api(400, "invalid_request_error"), ""},
 		{"鉴权失败", api(401, ""), ""},
@@ -40,6 +47,7 @@ func TestErrorKind(t *testing.T) {
 	}
 	for code, want := range map[string]agent.ErrorKind{
 		"server_error": retry, "rate_limit_exceeded": retry, "invalid_prompt": "", "": "",
+		"context_length_exceeded": overflow,
 	} {
 		if got := codeKind(code); got != want {
 			t.Errorf("codeKind(%q) = %q，期望 %q", code, got, want)

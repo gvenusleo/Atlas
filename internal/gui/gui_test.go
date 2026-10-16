@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -46,37 +47,67 @@ func TestApplyEvents(t *testing.T) {
 	}
 }
 
-// 重试时这次响应已流出的文字和半截的工具调用都要丢掉，只留之前的内容；
+// 压缩进行中是一行占位，结束时由摘要取代，失败时由通知取代。压缩发生在一次响应中途时，
+// 这条响应之后被重试：已流出的文字与半截的工具调用都丢掉，压缩记录还在，
 // 提示一行在新的输出到来时消失；用来标记的显示项不在了就什么也不丢。
-func TestRetryDiscardsPartialMessage(t *testing.T) {
-	ch := &chat{}
+func TestCompactionAndRetryRows(t *testing.T) {
+	ch := &chat{usage: 5000}
 	ch.add(itemUser, "你好")
+	event := func(typ agent.EventType, m agent.Message) agent.Event {
+		return agent.Event{Type: typ, Message: m}
+	}
 	delta := func(d agent.Delta) agent.Event {
 		return agent.Event{Type: agent.EventTypeMessageUpdate, Delta: d}
 	}
+	retry := agent.Event{Type: agent.EventTypeRetry, Retry: agent.RetryInfo{
+		Attempt: 1, Max: 4, Delay: 2 * time.Second, Error: "503"}}
+	running := func() bool {
+		return slices.ContainsFunc(ch.items, func(it *item) bool {
+			return it.kind == itemCompaction && !it.done
+		})
+	}
+	compaction := agent.SystemMessage{Type: agent.SystemMessageTypeCompaction}
+
+	ch.apply(event(agent.EventTypeMessageStart, agent.AssistantMessage{}))
+	ch.apply(event(agent.EventTypeMessageStart, compaction))
+	if len(ch.items) != 2 || !running() {
+		t.Fatalf("压缩开始后显示项 = %d，进行中 = %v，期望 2 项且有进行中的占位",
+			len(ch.items), running())
+	}
+
+	compaction.Content, compaction.Kept = "摘要", 1
+	ch.apply(event(agent.EventTypeMessageEnd, compaction))
+	if got := ch.items[1]; len(ch.items) != 2 || got.kind != itemCompaction || !got.done ||
+		got.text != "摘要" || ch.usage != 0 {
+		t.Fatalf("压缩结束后显示项 = %+v，usage = %d，期望摘要取代占位且用量清零", got, ch.usage)
+	}
+
 	partial := agent.ToolCall{ID: "c1", Name: "read", Arguments: []byte(`{"pa`)}
-	for _, e := range []agent.Event{
-		{Type: agent.EventTypeMessageStart, Message: agent.AssistantMessage{}},
-		delta(agent.Delta{Type: agent.DeltaTypeText, Text: "半截"}),
-		delta(agent.Delta{Type: agent.DeltaTypeToolCall, ToolCall: partial}),
-		{Type: agent.EventTypeRetry, Retry: agent.RetryInfo{
-			Attempt: 1, Max: 4, Delay: 2 * time.Second, Error: "503"}},
-	} {
-		ch.apply(e)
+	ch.apply(delta(agent.Delta{Type: agent.DeltaTypeText, Text: "半截"}))
+	ch.apply(delta(agent.Delta{Type: agent.DeltaTypeToolCall, ToolCall: partial}))
+	ch.apply(retry)
+	if len(ch.items) != 2 || ch.items[1].kind != itemCompaction || ch.retry == "" {
+		t.Fatalf("重试后显示项 = %d，提示 = %q，期望只丢掉半截内容、留下压缩记录并有提示",
+			len(ch.items), ch.retry)
 	}
-	if len(ch.items) != 1 || ch.retry == "" {
-		t.Fatalf("重试后显示项 = %d，提示 = %q，期望只剩用户消息并有提示", len(ch.items), ch.retry)
-	}
-
 	ch.apply(delta(agent.Delta{Type: agent.DeltaTypeText, Text: "好"}))
-	if len(ch.items) != 2 || ch.retry != "" || ch.items[1].text != "好" {
-		t.Errorf("新输出到来后显示项 = %d，提示 = %q，期望 2 项且提示消失", len(ch.items), ch.retry)
+	if ch.retry != "" {
+		t.Errorf("新输出到来后提示 = %q，期望消失", ch.retry)
 	}
 
+	ch.apply(event(agent.EventTypeMessageStart,
+		agent.SystemMessage{Type: agent.SystemMessageTypeCompaction}))
+	notice := agent.SystemMessage{Type: agent.SystemMessageTypeNotice, Content: "上下文压缩失败"}
+	ch.apply(event(agent.EventTypeMessageEnd, notice))
+	if last := ch.items[len(ch.items)-1]; running() || last.kind != itemNotice {
+		t.Errorf("压缩失败后进行中 = %v，最后一项 = %v，期望占位被通知取代", running(), last.kind)
+	}
+
+	before := len(ch.items)
 	ch.tail = &item{}
-	ch.apply(agent.Event{Type: agent.EventTypeRetry, Retry: agent.RetryInfo{Attempt: 2, Max: 4}})
-	if len(ch.items) != 2 {
-		t.Errorf("标记不在列表里时显示项 = %d，期望什么也不丢", len(ch.items))
+	ch.apply(retry)
+	if len(ch.items) != before {
+		t.Errorf("标记不在列表里时显示项 %d → %d，期望什么也不丢", before, len(ch.items))
 	}
 }
 

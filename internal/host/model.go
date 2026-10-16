@@ -134,46 +134,58 @@ func defaultThinkingLevel(metadata config.Model) agent.ThinkingLevel {
 	return ""
 }
 
+// modelSetup 是一个模型在会话里用到的全部：请求用的模型 ID、流函数与上下文窗口。
+type modelSetup struct {
+	id     string
+	stream agent.StreamFn
+	window int64 // 上下文窗口（token），配置里没有则为 0
+}
+
 // modelConfig 校验协议和思考档位、加载凭据并创建客户端，不发起模型请求。
 func modelConfig(
 	settings *config.Settings, modelRef string, thinkingLevel agent.ThinkingLevel,
-) (string, agent.StreamFn, error) {
+) (modelSetup, error) {
 	if modelRef == "" {
-		return "", nil, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
+		return modelSetup{}, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
 	}
 	provider, modelID, metadata, err := settings.ModelRef(modelRef)
 	if err != nil {
-		return "", nil, err
+		return modelSetup{}, err
 	}
 	if provider.WireAPI != config.WireAPIOpenAIResponses {
-		return "", nil, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
+		return modelSetup{}, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
 	}
 	if metadata.Tools != nil && !*metadata.Tools {
-		return "", nil, fmt.Errorf("模型 %q 不支持工具调用，无法用于当前 Agent", modelRef)
+		return modelSetup{}, fmt.Errorf("模型 %q 不支持工具调用，无法用于当前 Agent", modelRef)
 	}
 	if thinkingLevel != "" {
 		if !metadata.Reasoning {
-			return "", nil, fmt.Errorf("模型 %q 未声明思考能力", modelRef)
+			return modelSetup{}, fmt.Errorf("模型 %q 未声明思考能力", modelRef)
 		}
 		if !slices.Contains(usableThinkingLevels(metadata), thinkingLevel) {
-			return "", nil, fmt.Errorf("模型 %q 未声明支持思考档位 %q", modelRef, thinkingLevel)
+			return modelSetup{}, fmt.Errorf(
+				"模型 %q 未声明支持思考档位 %q", modelRef, thinkingLevel)
 		}
 	}
 	providerID, _, _ := config.ParseModel(modelRef)
 	dir, err := config.Dir()
 	if err != nil {
-		return "", nil, err
+		return modelSetup{}, err
 	}
 	key, err := config.APIKey(dir, providerID, os.Getenv)
 	if err != nil {
-		return "", nil, err
+		return modelSetup{}, err
 	}
 	client := openai.NewClient(
 		option.WithAPIKey(key),
 		option.WithBaseURL(provider.BaseURL),
 		option.WithMaxRetries(0),
 	)
-	return modelID, llm.OpenAIResponsesStreamFn(client), nil
+	return modelSetup{
+		id:     modelID,
+		stream: llm.OpenAIResponsesStreamFn(client),
+		window: metadata.ContextWindow,
+	}, nil
 }
 
 // checkWorkdir 要求恢复的工作目录是仍然存在的绝对目录。

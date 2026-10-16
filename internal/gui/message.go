@@ -33,7 +33,28 @@ func (a *App) block(c *ui.Context, t *ui.Theme, b block) {
 		a.stepGroup(c, t, b.items)
 	case itemNotice:
 		ui.Text(c, it.text).FontSize(13).TextColor(t.TextMuted).Selectable()
+	case itemCompaction:
+		a.compaction(c, t, it)
 	}
+}
+
+// compaction 画上下文压缩：进行中是转动的指示器，完成后是一行可展开的说明，展开是摘要。
+func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
+	if !it.done {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "正在压缩上下文…").FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+			ui.Spinner(c).Size(12, 12).Shrink(0)
+		})
+		return
+	}
+	const label = "已压缩较早的对话"
+	expandable(c, t, &it.open, label, false, func() {
+		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+	}, func() {
+		panelBody(c, t, false, func() {
+			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })
+		})
+	})
 }
 
 // message 把一条消息和它下面的一行操作放在一起：指针在其上时，操作行显示发送时间与复制按钮。

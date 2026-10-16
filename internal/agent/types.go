@@ -124,18 +124,22 @@ type Message interface {
 	Role() Role
 }
 
-// SystemMessageType 区分系统提示词快照与对话中的系统通知。
+// SystemMessageType 区分系统提示词快照、对话中的系统通知与上下文压缩记录。
 type SystemMessageType string
 
 const (
-	SystemMessageTypePrompt SystemMessageType = "system_prompt"
-	SystemMessageTypeNotice SystemMessageType = "notice"
+	SystemMessageTypePrompt     SystemMessageType = "system_prompt"
+	SystemMessageTypeNotice     SystemMessageType = "notice"
+	SystemMessageTypeCompaction SystemMessageType = "compaction"
 )
 
-// SystemMessage 是提示词快照或系统通知；Type 必须显式指定。
+// SystemMessage 是提示词快照、系统通知或压缩记录；Type 必须显式指定。
+// 压缩记录的 Content 是较早对话的摘要，Kept 是它之前的消息里原样保留的最近条数：
+// 发给模型的上下文是这条摘要加上保留的那些消息，更早的消息只留在历史里。
 type SystemMessage struct {
 	Type      SystemMessageType `json:"type"`
 	Content   string            `json:"content"`
+	Kept      int               `json:"kept,omitzero"`
 	Timestamp time.Time         `json:"timestamp"`
 }
 
@@ -157,6 +161,8 @@ type ErrorKind string
 const (
 	// ErrorKindRetryable 表示失败多半是暂时的（限流、服务端故障、网络中断），稍后重试可能成功。
 	ErrorKindRetryable ErrorKind = "retryable"
+	// ErrorKindContextOverflow 表示请求超出了模型的上下文窗口：重试没用，要先压缩。
+	ErrorKindContextOverflow ErrorKind = "context_overflow"
 )
 
 // AssistantMessage 是一次模型响应的完整消息。
@@ -334,6 +340,8 @@ type LoopContext struct {
 	// MaxTurns 限制一次 run 的 turn 数，0 表示不限；防御模型无限请求工具。
 	MaxTurns int
 	// Retry 是模型调用遇到暂时性失败时的重试策略，零值表示不重试。
-	Retry  RetryPolicy
-	Stream StreamFn
+	Retry RetryPolicy
+	// ContextWindow 是模型的上下文窗口（token）；0 表示未知：不按阈值压缩，只在请求溢出时压缩。
+	ContextWindow int64
+	Stream        StreamFn
 }

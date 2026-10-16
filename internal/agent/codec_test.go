@@ -12,6 +12,8 @@ func TestMessageRoundTrip(t *testing.T) {
 	ts := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	messages := []Message{
 		SystemMessage{Type: SystemMessageTypePrompt, Content: "提示词", Timestamp: ts},
+		// 压缩记录带着保留条数，重新打开会话时据此重建上下文。
+		SystemMessage{Type: SystemMessageTypeCompaction, Content: "摘要", Kept: 3, Timestamp: ts},
 		UserMessage{Content: []Content{
 			TextContent{Text: "你好"},
 			ImageContent{Data: "QQ==", MIMEType: "image/png"},
@@ -65,6 +67,7 @@ func TestUnmarshalMessageRejects(t *testing.T) {
 		"助手含图片":   fmt.Sprintf(assistant, `{"type":"image","data":"x","mime_type":"y"}`),
 		"参数非字符串":  fmt.Sprintf(assistant, `{"type":"tool_call","id":"a","name":"b","arguments":{}}`),
 		"系统消息为数组": `{"role":"system","content":[]}`,
+		"空摘要":     `{"role":"system","type":"compaction","content":" "}`,
 	} {
 		if _, err := UnmarshalMessage([]byte(data)); err == nil {
 			t.Errorf("%s: 应当报错", name)

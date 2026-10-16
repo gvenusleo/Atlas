@@ -15,6 +15,8 @@ func Run(ctx context.Context, prompts []Message, rc *LoopContext, emit func(Even
 		rc.Messages = append(rc.Messages, m)
 		newMessages = append(newMessages, m)
 	}
+	record := func(m Message) { newMessages = append(newMessages, m) }
+	comp := &compactor{rc: rc, e: e, record: record}
 
 	e.send(Event{Type: EventTypeAgentStart})
 	for _, p := range prompts {
@@ -34,8 +36,9 @@ func Run(ctx context.Context, prompts []Message, rc *LoopContext, emit func(Even
 			break
 		}
 
+		comp.startTurn(ctx)
 		e.send(Event{Type: EventTypeTurnStart})
-		msg := streamResponse(ctx, rc, e)
+		msg := streamResponse(ctx, rc, e, func() bool { return comp.try(ctx) })
 		add(msg)
 
 		// 正常结束的回复若仍包含工具调用，也要执行；失败、取消或截断的回复不执行工具。
@@ -66,18 +69,24 @@ func Run(ctx context.Context, prompts []Message, rc *LoopContext, emit func(Even
 }
 
 // streamResponse 调用模型并发出消息生命周期事件，补齐模型名、时间戳并检查终态。
-func streamResponse(ctx context.Context, rc *LoopContext, e *emitter) AssistantMessage {
+// onOverflow 在请求超出上下文窗口时调用，返回 true 表示已压缩、可以重发。
+func streamResponse(
+	ctx context.Context, rc *LoopContext, e *emitter, onOverflow func() bool,
+) AssistantMessage {
 	partial := AssistantMessage{Model: rc.Model, StopReason: StopReasonPending, Timestamp: time.Now()}
 	e.send(Event{Type: EventTypeMessageStart, Message: partial})
 
-	request := StreamRequest{
-		Model:         rc.Model,
-		SystemPrompt:  rc.SystemPrompt,
-		Messages:      rc.Messages,
-		Tools:         rc.Tools,
-		ThinkingLevel: rc.ThinkingLevel,
+	request := func() StreamRequest {
+		return StreamRequest{
+			Model:         rc.Model,
+			SystemPrompt:  rc.SystemPrompt,
+			Messages:      rc.Messages,
+			Tools:         rc.Tools,
+			ThinkingLevel: rc.ThinkingLevel,
+		}
 	}
-	final := streamWithRetry(ctx, rc, request, e)
+	emit := func(d Delta) { e.send(Event{Type: EventTypeMessageUpdate, Delta: d}) }
+	final := streamWithRetry(ctx, rc, e, request, emit, onOverflow)
 
 	if final.StopReason == "" {
 		final.StopReason = StopReasonError
@@ -93,24 +102,36 @@ func streamResponse(ctx context.Context, rc *LoopContext, e *emitter) AssistantM
 
 // streamWithRetry 调用模型；暂时性的失败按策略退避后重试，失败的尝试整个作废：
 // 只返回最后一次的结果，所以中间的失败不会入历史，半截的工具调用也不会被执行。
-// 退避期间 ctx 取消则按取消收尾。
+// 退避期间 ctx 取消则按取消收尾。上下文溢出时重试没用：onOverflow 非空就交给它压缩，
+// 它返回 true 就重发，只给一次机会。request 每次尝试时重新构造，因为压缩会改变历史。
 func streamWithRetry(
-	ctx context.Context, rc *LoopContext, request StreamRequest, e *emitter,
+	ctx context.Context, rc *LoopContext, e *emitter,
+	request func() StreamRequest, emit func(Delta), onOverflow func() bool,
 ) AssistantMessage {
-	emit := func(d Delta) { e.send(Event{Type: EventTypeMessageUpdate, Delta: d}) }
-	for retries := 0; ; retries++ {
-		final := rc.Stream(ctx, request, emit)
-		if final.StopReason != StopReasonError || final.ErrorKind != ErrorKindRetryable ||
-			retries >= rc.Retry.Max {
+	overflowed := false
+	for retries := 0; ; {
+		final := rc.Stream(ctx, request(), emit)
+		if final.StopReason != StopReasonError {
 			return final
 		}
-		info := RetryInfo{
-			Attempt: retries + 1, Max: rc.Retry.Max,
-			Delay: rc.Retry.delay(retries + 1), Error: final.ErrorMessage,
-		}
-		e.send(Event{Type: EventTypeRetry, Retry: info})
-		if !sleep(ctx, info.Delay) {
-			final.StopReason, final.ErrorKind, final.ErrorMessage = StopReasonCanceled, "", ""
+		switch {
+		case final.ErrorKind == ErrorKindContextOverflow:
+			if overflowed || onOverflow == nil || !onOverflow() {
+				return final
+			}
+			overflowed = true
+		case final.ErrorKind == ErrorKindRetryable && retries < rc.Retry.Max:
+			retries++
+			info := RetryInfo{
+				Attempt: retries, Max: rc.Retry.Max,
+				Delay: rc.Retry.delay(retries), Error: final.ErrorMessage,
+			}
+			e.send(Event{Type: EventTypeRetry, Retry: info})
+			if !sleep(ctx, info.Delay) {
+				final.StopReason, final.ErrorKind, final.ErrorMessage = StopReasonCanceled, "", ""
+				return final
+			}
+		default:
 			return final
 		}
 	}

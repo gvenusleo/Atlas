@@ -25,7 +25,7 @@ type Loaded struct {
 	Info         Info
 	SystemPrompt agent.SystemMessage
 	PromptSeq    int64
-	Messages     []agent.Message // 只包含对话消息，保留系统通知，排除全部提示词快照。
+	Messages     []agent.Message // 发给模型的对话：不含提示词快照，压缩记录之前的消息已折叠。
 }
 
 // insertMessage 在调用方事务中插入消息，顺序号和会话更新时间由调用方维护。
@@ -206,16 +206,26 @@ func (s *Store) Load(ctx context.Context, id string) (Loaded, error) {
 			return Loaded{}, fmt.Errorf("会话 %s 在消息 %d 前缺少记录", id, record.Seq)
 		}
 		last = record.Seq
-		prompt, isSystem := record.Message.(agent.SystemMessage)
-		isPrompt := isSystem && prompt.Type == agent.SystemMessageTypePrompt
+		system, isSystem := record.Message.(agent.SystemMessage)
+		isPrompt := isSystem && system.Type == agent.SystemMessageTypePrompt
 		if last == 1 && !isPrompt {
 			return Loaded{}, fmt.Errorf("会话 %s 缺少初始系统提示词快照", id)
 		}
-		if isPrompt {
-			loaded.SystemPrompt, loaded.PromptSeq = prompt, record.Seq
-			continue
+		switch {
+		case isPrompt:
+			loaded.SystemPrompt, loaded.PromptSeq = system, record.Seq
+		case isSystem && system.Type == agent.SystemMessageTypeCompaction:
+			// 与运行时的压缩同一条规则：摘要加上之前的最后 Kept 条消息，更早的不再发给模型。
+			if system.Kept > len(loaded.Messages) {
+				return Loaded{}, fmt.Errorf(
+					"会话 %s 的压缩记录 %d 要保留 %d 条消息，此前只有 %d 条",
+					id, record.Seq, system.Kept, len(loaded.Messages))
+			}
+			kept := loaded.Messages[len(loaded.Messages)-system.Kept:]
+			loaded.Messages = append([]agent.Message{system}, kept...)
+		default:
+			loaded.Messages = append(loaded.Messages, record.Message)
 		}
-		loaded.Messages = append(loaded.Messages, record.Message)
 	}
 	if err := rows.Err(); err != nil {
 		return Loaded{}, err

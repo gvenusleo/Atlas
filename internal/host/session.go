@@ -123,7 +123,7 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 		return nil, err
 	}
 	thinking := defaultThinkingLevel(metadata)
-	modelID, stream, err := modelConfig(settings, settings.Model, thinking)
+	model, err := modelConfig(settings, settings.Model, thinking)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.bind(session.Loaded{Info: info}, modelID, stream, resources)
+	s.bind(session.Loaded{Info: info}, model, resources)
 	return s, nil
 }
 
@@ -187,7 +187,7 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	modelID, stream, err := modelConfig(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
+	model, err := modelConfig(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -213,14 +213,12 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	s.bind(loaded, modelID, stream, resources)
+	s.bind(loaded, model, resources)
 	return s, nil
 }
 
 // bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。
-func (s *Session) bind(
-	loaded session.Loaded, modelID string, stream agent.StreamFn, resources prompt.Resources,
-) {
+func (s *Session) bind(loaded session.Loaded, model modelSetup, resources prompt.Resources) {
 	cwd := loaded.Info.Cwd
 	info := loaded.Info
 	toolset := []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
@@ -229,10 +227,11 @@ func (s *Session) bind(
 		Messages:      loaded.Messages,
 		Tools:         toolset,
 		Skills:        resources.Skills,
-		Model:         modelID,
-		Stream:        stream,
+		Model:         model.id,
+		Stream:        model.stream,
 		ThinkingLevel: info.ThinkingLevel,
 		Retry:         agent.DefaultRetry(),
+		ContextWindow: model.window,
 	}
 	s.seq = info.LastSeq
 	s.mu.Lock()
@@ -258,7 +257,7 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 	if err != nil {
 		return err
 	}
-	modelID, stream, err := modelConfig(settings, modelRef, thinking)
+	model, err := modelConfig(settings, modelRef, thinking)
 	if err != nil {
 		return err
 	}
@@ -266,7 +265,8 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 		s.invalidate()
 		return errors.Join(ErrNeedsReload, err)
 	}
-	s.loop.Model, s.loop.Stream, s.loop.ThinkingLevel = modelID, stream, thinking
+	s.loop.Model, s.loop.Stream, s.loop.ThinkingLevel = model.id, model.stream, thinking
+	s.loop.ContextWindow = model.window
 	s.mu.Lock()
 	s.state.ModelRef, s.state.ThinkingLevel = modelRef, thinking
 	s.mu.Unlock()

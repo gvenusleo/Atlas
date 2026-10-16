@@ -49,7 +49,8 @@ type App struct {
 	sidebarWidth  float32
 	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
 	md            markdown.Options
-	keyNav        bool // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
+	mdNote        markdown.Options // 面板里的小号 Markdown，如压缩的摘要
+	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
 	query         string
 	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
 	more          map[string]bool  // 已点“显示更多”的目录分组
@@ -119,6 +120,15 @@ func newApp(h *host.Manager) *App {
 			{Size: 1.0, Weight: 600},
 			{Size: 0.95, Weight: 600},
 			{Size: 0.9, Weight: 600},
+		},
+	}
+	a.mdNote.Theme = &markdown.Theme{
+		FontSize:     13,
+		LineHeight:   1.5,
+		BlockSpacing: 0.5,
+		Headings: [6]markdown.HeadingStyle{
+			{Size: 1.15, Weight: 600}, {Size: 1.1, Weight: 600}, {Size: 1.05, Weight: 600},
+			{Size: 1, Weight: 600}, {Size: 1, Weight: 600}, {Size: 1, Weight: 600},
 		},
 	}
 	a.cwd, _ = os.UserHomeDir()
@@ -324,6 +334,7 @@ func (a *App) attach(ch *chat, s *host.Session) {
 // finish 在一轮对话结束后更新状态；用户主动停止不算错误。
 func (a *App) finish(ch *chat, err error) {
 	ch.running, ch.retry = false, ""
+	ch.dropCompacting() // 压缩中被取消时不会有结束事件，占位行在这里清掉
 	if err != nil && !errors.Is(err, context.Canceled) {
 		ch.err = err.Error()
 	}
