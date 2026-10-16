@@ -265,9 +265,6 @@ func (a *App) fitThinking(ch *chat) {
 	}
 }
 
-// compactCommand 是输入框里手动压缩上下文的命令。
-const compactCommand = "/compact"
-
 // job 是会话上的一项后台操作：一轮对话或一次压缩。
 type job func(ctx context.Context, s *host.Session, emit func(agent.Event)) error
 

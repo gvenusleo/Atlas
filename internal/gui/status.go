@@ -108,8 +108,7 @@ func dropdown[T comparable](
 		ui.Text(c, name(*value)).FontSize(12).TextColor(t.TextMuted).SingleLine()
 	})
 	sel.Popup(func(panel ui.Element) {
-		panel.Margin(6, 0, 6, 0).Padding(4).Radius(10).Background(t.Background).
-			Border(1, t.Border).Shadow(0, 4, 16, 0, ui.RGBA(0, 0, 0, 0.12))
+		popupPanel(panel, t).Margin(6, 0, 6, 0)
 		for _, option := range options {
 			item := sel.Item(option).Padding(5, 10).Radius(controlRound)
 			if item.Highlighted() {
@@ -119,6 +118,13 @@ func dropdown[T comparable](
 		}
 	})
 	return sel.Trigger.Changed()
+}
+
+// popupPanel 是弹出面板的外观，下拉选项与输入框的命令列表共用；与触发元素之间的间距由
+// 各处自己的边距决定。
+func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
+	return panel.Padding(4).Radius(10).Background(t.Background).
+		Border(1, t.Border).Shadow(0, 4, 16, 0, ui.RGBA(0, 0, 0, 0.12))
 }
 
 // contextRing 用圆环显示上下文窗口的占用，悬停时给出具体数字；窗口大小未知时不显示。

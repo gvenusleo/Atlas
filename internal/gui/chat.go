@@ -72,6 +72,9 @@ type chat struct {
 	err     string
 	unread  bool // 在别的会话时运行结束，用户还没回来看过
 
+	// 输入框上方的命令列表被 Esc 关掉时，输入框里的文本；文本变了就重新列出。
+	menuClosed string
+
 	// 界面上选定的模型与思考深度，发送时应用到会话。
 	model    string
 	thinking agent.ThinkingLevel

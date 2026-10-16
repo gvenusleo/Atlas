@@ -12,10 +12,14 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 		card := ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(6, 6, 6, 16).Radius(inputRound).
 			Background(t.Background).Border(1, t.Text.Alpha(0.12)).
 			Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06))
+		var input ui.Element
 		card.Children(func() {
-			input := ui.TextAreaBase(c.Key("input-"+ch.key), &ch.input).FocusRing(false).
+			input = ui.TextAreaBase(c.Key("input-"+ch.key), &ch.input).FocusRing(false).
 				Placeholder("发送消息").Lines(1, 10).Grow(1).Padding(5, 0).Disabled(ch.loading).
 				OnTextKey(func(k ui.TextKey) bool {
+					if a.commandKey(ch, k) {
+						return true
+					}
 					if k.Key != ui.KeyEnter || k.Mods != 0 {
 						return false
 					}
@@ -30,6 +34,7 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 			}
 			a.sendButton(c, t, ch)
 		})
+		a.commandMenu(c, t, ch, card, input)
 		a.statusRow(c, t, ch)
 	})
 }
