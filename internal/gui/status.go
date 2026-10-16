@@ -71,7 +71,7 @@ func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		return ref
 	}
-	if dropdown(c, t, "模型", modelIcon, &ch.model, refs, name) {
+	if dropdown(c, t, "模型", &ch.model, refs, name) {
 		a.fitThinking(ch)
 	}
 }
@@ -82,23 +82,29 @@ func (a *App) thinkingPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 	if !ok || len(info.ThinkingLevels) == 0 {
 		return
 	}
-	name := func(l agent.ThinkingLevel) string { return string(l) }
-	dropdown(c, t, "思考深度", thinkIcon, &ch.thinking, info.ThinkingLevels, name)
+	name := func(l agent.ThinkingLevel) string { return capitalize(string(l)) }
+	dropdown(c, t, "思考深度", &ch.thinking, info.ThinkingLevels, name)
 }
 
-// dropdown 画一个安静的下拉：图标在前，当前值在后，选项在上方或下方展开；返回是否选了新值。
+// capitalize 把首字母大写；思考深度的取值都是 ASCII，尚未选定时为空。
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开；返回是否选了新值。
 func dropdown[T comparable](
-	c *ui.Context, t *ui.Theme, label string, glyph *ui.SVG, value *T, options []T,
-	name func(T) string,
+	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
 ) bool {
 	sel := ui.SelectBase(c.Key(label), value)
-	sel.Trigger.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
+	sel.Trigger.AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
 		Cursor(ui.CursorPointer).Label(label)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(t.Text.Alpha(0.06))
 	}
 	sel.Trigger.Children(func() {
-		ui.Icon(c, glyph).FontSize(14).TextColor(t.TextMuted)
 		ui.Text(c, name(*value)).FontSize(12).TextColor(t.TextMuted).SingleLine()
 	})
 	sel.Popup(func(panel ui.Element) {

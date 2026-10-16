@@ -31,8 +31,6 @@ var (
 	terminalIcon = icon("terminal")
 	clockIcon    = icon("clock")
 	moreIcon     = icon("ellipsis")
-	modelIcon    = icon("sparkles")
-	thinkIcon    = icon("brain")
 	copyIcon     = icon("copy")
 	checkIcon    = icon("check")
 )
