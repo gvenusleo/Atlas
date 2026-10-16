@@ -81,7 +81,7 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 
 // entries 画列表上方不随之滚动的部分：搜索框，以及新对话与定时任务两个入口。
 func (a *App) entries(c *ui.Context, t *ui.Theme) {
-	ui.Column(c).Padding(0, 8).Gap(2).Children(func() {
+	ui.Column(c).Padding(0, 8, 6).Gap(2).Children(func() {
 		ui.SearchField(c, &a.query).Label("搜索").Margin(0, 0, 6)
 		entry(c, t, plusIcon, "新对话", true, a.newChat)
 		entry(c, t, clockIcon, "定时任务", false, nil)
