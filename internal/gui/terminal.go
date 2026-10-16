@@ -176,7 +176,7 @@ func (a *App) terminalCard(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 	card := ui.Column(c.Key("term-card")).Width(a.termWidth).Shrink(0).Margin(top, edge, edge, 0).
 		Radius(cardRound).Background(t.Background).Border(1, t.Border).
-		Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06))
+		Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06)).Clip() // 终端是方角的，裁到卡片的圆角里
 	card.Children(func() {
 		a.termTabs(c, t, ch)
 		switch {
