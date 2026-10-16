@@ -43,6 +43,35 @@ func (s *Session) WaitIdle(ctx context.Context) error {
 func (s *Session) Run(
 	ctx context.Context, message agent.UserMessage, emit func(agent.Event),
 ) ([]agent.Message, error) {
+	if message.Timestamp.IsZero() {
+		message.Timestamp = time.Now()
+	}
+	if err := agent.ValidateMessage(message); err != nil {
+		return nil, err
+	}
+	message = cloneMessage(message).(agent.UserMessage)
+	return s.execute(ctx, emit, func(
+		ctx context.Context, rc *agent.LoopContext, emit func(agent.Event),
+	) []agent.Message {
+		return agent.Run(ctx, []agent.Message{message}, rc, emit)
+	})
+}
+
+// Compact 把较早的对话压缩成摘要，和 Run 一样独占会话；没有可压缩的内容时返回
+// ErrNothingToCompact。
+func (s *Session) Compact(ctx context.Context, emit func(agent.Event)) ([]agent.Message, error) {
+	messages, err := s.execute(ctx, emit, agent.Compact)
+	if err == nil && len(messages) == 0 {
+		err = ErrNothingToCompact
+	}
+	return messages, err
+}
+
+// execute 独占会话并运行 drive，逐条保存它产生的消息；Run 与 Compact 共用。
+func (s *Session) execute(
+	ctx context.Context, emit func(agent.Event),
+	drive func(context.Context, *agent.LoopContext, func(agent.Event)) []agent.Message,
+) ([]agent.Message, error) {
 	ctx, end, err := s.manager.begin(ctx)
 	if err != nil {
 		return nil, err
@@ -60,13 +89,6 @@ func (s *Session) Run(
 	if err := runCtx.Err(); err != nil {
 		return nil, err
 	}
-	if message.Timestamp.IsZero() {
-		message.Timestamp = time.Now()
-	}
-	if err := agent.ValidateMessage(message); err != nil {
-		return nil, err
-	}
-	message = cloneMessage(message).(agent.UserMessage)
 	var saveErr error
 	loopCompleted := false
 	defer func() {
@@ -74,7 +96,7 @@ func (s *Session) Run(
 			s.invalidate()
 		}
 	}()
-	messages := agent.Run(runCtx, []agent.Message{message}, &s.loop, func(event agent.Event) {
+	messages := drive(runCtx, &s.loop, func(event agent.Event) {
 		if event.Type == agent.EventTypeMessageEnd && saveErr == nil {
 			if saveErr = s.save(ctx, event.Message); saveErr != nil {
 				s.invalidate()

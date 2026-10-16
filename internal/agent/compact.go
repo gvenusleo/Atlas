@@ -90,22 +90,36 @@ func (c *compactor) try(ctx context.Context) bool {
 		return false
 	}
 	c.tried = true
-	compacted, failed := compact(ctx, c.rc, c.e, c.record)
+	compacted, failed := compact(ctx, c.rc, c.e, c.record, autoKeep(c.rc))
 	c.failed = failed
 	return compacted
 }
 
-// compact 把较早的对话换成摘要，保留最近的消息。没有可压缩的内容时什么也不发生；
-// 摘要失败时追加一条通知，继续使用原上下文。
-func compact(
-	ctx context.Context, rc *LoopContext, e *emitter, record func(Message),
-) (compacted, failed bool) {
+// autoKeep 返回自动压缩时保留的最近消息量。
+func autoKeep(rc *LoopContext) int64 {
 	window := rc.ContextWindow
 	if window <= 0 {
 		// 窗口未知（只会在请求溢出后走到这里）：以刚溢出的上下文大小为准，保留其中的一部分。
 		window = contextTokens(rc)
 	}
 	_, keep := limits(window)
+	return keep
+}
+
+// Compact 手动压缩：把除最后一条消息外的对话换成摘要，返回新产生的消息；
+// 没有可压缩的内容时返回空。
+func Compact(ctx context.Context, rc *LoopContext, emit func(Event)) []Message {
+	e := &emitter{emit: emit}
+	var newMessages []Message
+	compact(ctx, rc, e, func(m Message) { newMessages = append(newMessages, m) }, 0)
+	return newMessages
+}
+
+// compact 把较早的对话换成摘要，保留约 keep 个 token 的最近消息。没有可压缩的内容时
+// 什么也不发生；摘要失败时追加一条通知，继续使用原上下文。
+func compact(
+	ctx context.Context, rc *LoopContext, e *emitter, record func(Message), keep int64,
+) (compacted, failed bool) {
 	cut := cutPoint(rc.Messages, keep)
 	if cut < 0 {
 		return false, false

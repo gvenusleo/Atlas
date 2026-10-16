@@ -18,6 +18,10 @@ func (a *App) view(c *ui.Context) {
 	})
 	a.sidebarToggle(c, t)
 	a.dialogs(c)
+	if a.toast != "" {
+		c.Toast(a.toast)
+		a.toast = ""
+	}
 }
 
 // clampSidebar 把侧栏宽度限制在允许的范围内。

@@ -17,6 +17,9 @@ var (
 	ErrConflict    = session.ErrConflict
 )
 
+// ErrNothingToCompact 表示会话里没有可压缩的内容。
+var ErrNothingToCompact = errors.New("没有可压缩的内容")
+
 // Manager 拥有数据库与所有运行实例；一个数据库在进程内只使用一个 Manager。
 type Manager struct {
 	store      *session.Store

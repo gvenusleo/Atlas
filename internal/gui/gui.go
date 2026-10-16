@@ -58,6 +58,7 @@ type App struct {
 	shells        int // 已创建的终端数，用作终端标签的标识
 	sidebarHidden bool
 	err           string
+	toast         string // 待显示的一次性提示，下一帧弹出后清空
 
 	// 重命名与删除对话框的状态。
 	renameID, renameText string
@@ -264,12 +265,46 @@ func (a *App) fitThinking(ch *chat) {
 	}
 }
 
-// send 在后台运行一轮对话；返回是否已受理。
+// compactCommand 是输入框里手动压缩上下文的命令。
+const compactCommand = "/compact"
+
+// job 是会话上的一项后台操作：一轮对话或一次压缩。
+type job func(ctx context.Context, s *host.Session, emit func(agent.Event)) error
+
+// say 返回让会话回复 message 的操作。
+func say(message agent.UserMessage) job {
+	return func(ctx context.Context, s *host.Session, emit func(agent.Event)) error {
+		_, err := s.Run(ctx, message, emit)
+		return err
+	}
+}
+
+// compactSession 是压缩会话上下文的操作。
+func compactSession(ctx context.Context, s *host.Session, emit func(agent.Event)) error {
+	_, err := s.Compact(ctx, emit)
+	return err
+}
+
+// send 受理输入框里的文本：压缩命令压缩当前会话，其余在后台运行一轮对话；返回是否已受理。
 func (a *App) send(ch *chat, text string) bool {
 	text = strings.TrimSpace(text)
 	if text == "" || ch.running || ch.loading {
 		return false
 	}
+	switch {
+	case text != compactCommand:
+		message := agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: text}}}
+		a.launch(ch, say(message))
+	case ch.id == "":
+		a.toast = host.ErrNothingToCompact.Error() // 新会话还没有历史，不为它创建会话
+	default:
+		a.launch(ch, compactSession)
+	}
+	return true
+}
+
+// launch 在后台获取会话、采用选定的模型并执行 run，结束后更新界面。
+func (a *App) launch(ch *chat, run job) {
 	ch.running, ch.err = true, ""
 	session, id, cwd := ch.session, ch.id, ch.cwd
 	model, thinking := ch.model, ch.thinking
@@ -281,14 +316,12 @@ func (a *App) send(ch *chat, text string) bool {
 			err = useModel(ctx, s, model, thinking)
 		}
 		if err == nil {
-			message := agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: text}}}
-			_, err = s.Run(ctx, message, func(e agent.Event) {
+			err = run(ctx, s, func(e agent.Event) {
 				a.win.Update(func() { ch.apply(e) })
 			})
 		}
 		a.win.Update(func() { a.finish(ch, err) })
 	}()
-	return true
 }
 
 // acquire 返回可运行的会话：已有则复用，否则创建或恢复。
@@ -335,7 +368,10 @@ func (a *App) attach(ch *chat, s *host.Session) {
 func (a *App) finish(ch *chat, err error) {
 	ch.running, ch.retry = false, ""
 	ch.dropCompacting() // 压缩中被取消时不会有结束事件，占位行在这里清掉
-	if err != nil && !errors.Is(err, context.Canceled) {
+	switch {
+	case errors.Is(err, host.ErrNothingToCompact):
+		a.toast = err.Error()
+	case err != nil && !errors.Is(err, context.Canceled):
 		ch.err = err.Error()
 	}
 	if errors.Is(err, host.ErrNeedsReload) {

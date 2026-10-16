@@ -89,6 +89,28 @@ func TestRunIsExclusiveAndPersists(t *testing.T) {
 	}
 }
 
+// 手动压缩不看窗口与阈值：摘要入库，再次压缩时没有可压缩的内容。
+func TestCompact(t *testing.T) {
+	m, s := newSession(t, reply)
+	s.loop.ContextWindow = 1_000_000 // 远没到自动压缩的阈值
+	if _, err := s.Compact(t.Context(), nil); !errors.Is(err, ErrNothingToCompact) {
+		t.Fatalf("空会话 Compact = %v，期望 ErrNothingToCompact", err)
+	}
+	if _, err := s.Run(t.Context(), user(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if messages, err := s.Compact(t.Context(), nil); err != nil || len(messages) != 1 {
+		t.Fatalf("Compact = %d 条, err = %v，期望 1 条摘要", len(messages), err)
+	}
+	if _, err := s.Compact(t.Context(), nil); !errors.Is(err, ErrNothingToCompact) {
+		t.Fatalf("再次 Compact = %v，期望 ErrNothingToCompact", err)
+	}
+	records, err := m.History(t.Context(), s.id, 0, 10)
+	if err != nil || len(records) != 4 { // 提示词快照、用户消息、助手消息、摘要
+		t.Fatalf("历史 = %d 条, err = %v", len(records), err)
+	}
+}
+
 func TestCancelKeepsSessionUsable(t *testing.T) {
 	entered := make(chan struct{})
 	_, s := newSession(t, func(ctx context.Context, _ agent.StreamRequest,
