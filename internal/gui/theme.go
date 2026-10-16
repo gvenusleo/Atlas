@@ -7,6 +7,7 @@ const (
 	contentWidth = 720 // 阅读栏的最大宽度
 	bubbleWidth  = 680 // 用户消息的最大宽度
 	bodySize     = 15  // 对话正文字号
+	stepSize     = 14  // 思考与工具步骤标题的字号
 	controlRound = 6   // 控件圆角
 	inputRound   = 16  // 输入框圆角
 	cardRound    = 12  // 浮动卡片圆角

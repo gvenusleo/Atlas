@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"encoding/json/jsontext"
 	"slices"
 	"strings"
 	"time"
@@ -36,14 +37,17 @@ type item struct {
 	took    time.Duration
 
 	callID  string // 工具卡片：调用 ID、名称、参数与结果
+	shown   bool   // 一组步骤是否展开，记在组的第一项上
+	call    *callView
 	tool    string
 	args    string
 	result  string
+	details jsontext.Value // 工具随结果附带的结构化数据
 	failed  bool
 	running bool
 }
 
-// block 是对话中连续展示的一组显示项：连续的工具调用合并为一组。
+// block 是对话中连续展示的一组显示项：连续的思考与工具调用合并为一组。
 type block struct{ items []*item }
 
 // chat 是一个会话的界面状态；每个会话各有一份，可以同时运行。
@@ -106,11 +110,14 @@ func (ch *chat) stream(kind itemKind) *item {
 	return it
 }
 
-// blocks 把显示项分组：连续的工具调用成为一组，其余各自成组。
+// isStep 报告显示项是否是过程中的一步：思考或工具调用。
+func isStep(k itemKind) bool { return k == itemThinking || k == itemTool }
+
+// blocks 把显示项分组：连续的思考与工具调用成为一组，其余各自成组。
 func (ch *chat) blocks() []block {
 	var out []block
 	for _, it := range ch.items {
-		if n := len(out); n > 0 && it.kind == itemTool && out[n-1].items[0].kind == itemTool {
+		if n := len(out); n > 0 && isStep(it.kind) && isStep(out[n-1].items[0].kind) {
 			out[n-1].items = append(out[n-1].items, it)
 			continue
 		}
@@ -152,9 +159,16 @@ func (ch *chat) append(message agent.Message) {
 		}
 	case agent.ToolResultMessage:
 		it := ch.tool(m.ToolCallID)
-		it.tool, it.result, it.failed = m.ToolName, textOf(m.Content), m.IsError
-		it.running, it.done = false, true
+		it.tool = m.ToolName
+		it.finishCall(m.Content, m.Details, m.IsError)
 	}
+}
+
+// finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。
+func (it *item) finishCall(content []agent.Content, details jsontext.Value, failed bool) {
+	it.result, it.details, it.failed = textOf(content), details, failed
+	it.running, it.done = false, true
+	it.call = nil
 }
 
 // track 记录一次响应结束时的上下文大小：该响应的输入与输出之和就是下一次请求的起点。
@@ -194,9 +208,7 @@ func (ch *chat) apply(e agent.Event) {
 		it := ch.tool(e.ToolCallID)
 		it.tool, it.running = e.ToolName, true
 	case agent.EventTypeToolExecutionEnd:
-		it := ch.tool(e.ToolCallID)
-		it.result, it.failed = textOf(e.Result.Content), e.Result.IsError
-		it.running, it.done = false, true
+		ch.tool(e.ToolCallID).finishCall(e.Result.Content, e.Result.Details, e.Result.IsError)
 	}
 }
 

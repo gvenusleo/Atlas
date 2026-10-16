@@ -28,10 +28,7 @@ var (
 	chevronIcon  = icon("chevron-right")
 	closeIcon    = icon("x")
 	folderIcon   = icon("folder")
-	fileIcon     = icon("file-text")
 	terminalIcon = icon("terminal")
-	editIcon     = icon("pencil")
-	toolIcon     = icon("wrench")
 	clockIcon    = icon("clock")
 	moreIcon     = icon("ellipsis")
 	modelIcon    = icon("sparkles")
@@ -39,18 +36,3 @@ var (
 	copyIcon     = icon("copy")
 	checkIcon    = icon("check")
 )
-
-// toolInfo 返回工具对应的图标和动词；未知工具用扳手和工具名。
-func toolInfo(name string) (*ui.SVG, string) {
-	switch name {
-	case "read":
-		return fileIcon, "读取"
-	case "write":
-		return editIcon, "写入"
-	case "edit":
-		return editIcon, "编辑"
-	case "shell":
-		return terminalIcon, "运行"
-	}
-	return toolIcon, name
-}
