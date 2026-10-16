@@ -183,6 +183,7 @@ func newToolResultMessage(call ToolCall, result ToolResult) ToolResultMessage {
 		ToolName:   call.Name,
 		Content:    result.Content,
 		IsError:    result.IsError,
+		Details:    result.Details,
 		Timestamp:  time.Now(),
 	}
 }

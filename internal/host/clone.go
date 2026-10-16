@@ -18,6 +18,7 @@ func cloneMessage(message agent.Message) agent.Message {
 		return message
 	case agent.ToolResultMessage:
 		message.Content = cloneContent(message.Content)
+		message.Details = bytes.Clone(message.Details)
 		return message
 	default:
 		return message
@@ -40,6 +41,7 @@ func cloneEvent(event agent.Event) agent.Event {
 	event.Delta.ToolCall.Arguments = bytes.Clone(event.Delta.ToolCall.Arguments)
 	event.Arguments = bytes.Clone(event.Arguments)
 	event.Result.Content = cloneContent(event.Result.Content)
+	event.Result.Details = bytes.Clone(event.Result.Details)
 	return event
 }
 

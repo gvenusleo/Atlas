@@ -170,7 +170,9 @@ type ToolResultMessage struct {
 	ToolName   string    `json:"tool_name"`
 	Content    []Content `json:"content"`
 	IsError    bool      `json:"is_error,omitzero"`
-	Timestamp  time.Time `json:"timestamp"`
+	// Details 是工具随结果附带的结构化数据（合法的 JSON），供界面渲染，不发给模型。
+	Details   jsontext.Value `json:"details,omitzero"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // Role 返回工具结果角色。
@@ -196,6 +198,8 @@ type ToolResult struct {
 	Content []Content
 	// IsError 表示工具执行失败，Content 保留可交给模型处理的错误细节。
 	IsError bool
+	// Details 是结构化数据（合法的 JSON），随结果保存并供界面渲染，不发给模型；没有时为空。
+	Details jsontext.Value
 }
 
 // Tool 是工具契约：元信息描述给模型，Execute 执行调用；

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json/jsontext"
 	"fmt"
 	"reflect"
 	"testing"
@@ -30,6 +31,14 @@ func TestMessageRoundTrip(t *testing.T) {
 			ToolName:   "read",
 			Content:    []Content{TextContent{Text: "错误"}},
 			IsError:    true,
+			Timestamp:  ts,
+		},
+		// 工具随结果附带的结构化数据也要原样保存。
+		ToolResultMessage{
+			ToolCallID: "c2",
+			ToolName:   "edit",
+			Content:    []Content{TextContent{Text: "已替换"}},
+			Details:    jsontext.Value(`{"starts":[3,10]}`),
 			Timestamp:  ts,
 		},
 	}
