@@ -46,7 +46,7 @@ type item struct {
 	running bool
 }
 
-// block 是对话中连续展示的一组显示项：一条用户消息，或者一次 run 的全部输出。
+// block 是对话中连续展示的一组显示项：一条用户消息，一次 run 的全部输出，或一个系统事件。
 type block struct{ items []*item }
 
 // chat 是一个会话的界面状态；每个会话各有一份，可以同时运行。
@@ -119,15 +119,44 @@ func (ch *chat) stream(kind itemKind) *item {
 // isStep 报告显示项是否是过程中的一步：思考或工具调用。
 func isStep(k itemKind) bool { return k == itemThinking || k == itemTool }
 
-// blocks 把显示项分组：用户消息自成一组，其后到下一条用户消息之前，是一次 run 的全部输出。
+// isSystem 报告显示项是否是系统事件：上下文压缩或通知。
+func isSystem(k itemKind) bool { return k == itemCompaction || k == itemNotice }
+
+// blocks 把显示项分组：用户消息自成一组，其后到下一条用户消息之前，是一次 run 的全部输出；
+// 一次 run 开头与末尾的系统事件不属于它的输出，也各自成组。
 func (ch *chat) blocks() []block {
-	var out []block
+	var runs [][]*item
 	for _, it := range ch.items {
-		if n := len(out); n > 0 && it.kind != itemUser && out[n-1].items[0].kind != itemUser {
-			out[n-1].items = append(out[n-1].items, it)
+		if n := len(runs); n > 0 && it.kind != itemUser && runs[n-1][0].kind != itemUser {
+			runs[n-1] = append(runs[n-1], it)
 			continue
 		}
-		out = append(out, block{items: []*item{it}})
+		runs = append(runs, []*item{it})
+	}
+	var out []block
+	for _, run := range runs {
+		for _, items := range peel(run) {
+			out = append(out, block{items: items})
+		}
+	}
+	return out
+}
+
+// peel 把一次 run 的输出拆开：开头与末尾的系统事件各自成组，夹在输出中间的留在里面。
+func peel(items []*item) [][]*item {
+	var out [][]*item
+	for len(items) > 0 && isSystem(items[0].kind) {
+		out, items = append(out, items[:1]), items[1:]
+	}
+	end := len(items)
+	for end > 0 && isSystem(items[end-1].kind) {
+		end--
+	}
+	if end > 0 {
+		out = append(out, items[:end])
+	}
+	for _, it := range items[end:] {
+		out = append(out, []*item{it})
 	}
 	return out
 }
