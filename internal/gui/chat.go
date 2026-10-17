@@ -49,7 +49,7 @@ type item struct {
 	running bool
 }
 
-// block 是对话中连续展示的一组显示项：连续的思考与工具调用合并为一组。
+// block 是对话中连续展示的一组显示项：一条用户消息，或者一次 run 的全部输出。
 type block struct{ items []*item }
 
 // chat 是一个会话的界面状态；每个会话各有一份，可以同时运行。
@@ -122,17 +122,42 @@ func (ch *chat) stream(kind itemKind) *item {
 // isStep 报告显示项是否是过程中的一步：思考或工具调用。
 func isStep(k itemKind) bool { return k == itemThinking || k == itemTool }
 
-// blocks 把显示项分组：连续的思考与工具调用成为一组，其余各自成组。
+// blocks 把显示项分组：用户消息自成一组，其后到下一条用户消息之前，是一次 run 的全部输出。
 func (ch *chat) blocks() []block {
 	var out []block
 	for _, it := range ch.items {
-		if n := len(out); n > 0 && isStep(it.kind) && isStep(out[n-1].items[0].kind) {
+		if n := len(out); n > 0 && it.kind != itemUser && out[n-1].items[0].kind != itemUser {
 			out[n-1].items = append(out[n-1].items, it)
 			continue
 		}
 		out = append(out, block{items: []*item{it}})
 	}
 	return out
+}
+
+// parts 把一次 run 的输出分段：连续的思考与工具调用成为一组，其余各自成段。
+func parts(items []*item) [][]*item {
+	var out [][]*item
+	for _, it := range items {
+		if n := len(out); n > 0 && isStep(it.kind) && isStep(out[n-1][0].kind) {
+			out[n-1] = append(out[n-1], it)
+			continue
+		}
+		out = append(out, []*item{it})
+	}
+	return out
+}
+
+// replyText 是一次 run 里所有助手文字，段与段之间空一行，at 是最后一段的时间；
+// 思考、工具与通知不算。
+func replyText(items []*item) (text string, at time.Time) {
+	var texts []string
+	for _, it := range items {
+		if it.kind == itemAssistant && it.text != "" {
+			texts, at = append(texts, it.text), it.at
+		}
+	}
+	return strings.Join(texts, "\n\n"), at
 }
 
 // load 用持久化记录重建对话，提示词快照不显示。

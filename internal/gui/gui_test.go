@@ -137,6 +137,32 @@ func TestPrependMergesSplitToolCall(t *testing.T) {
 	}
 }
 
+// 一次 run 的输出是一块：以用户消息为界，里面穿插的文字、思考与工具不会把它切开；
+// 复制的是其中所有的助手文字，思考与工具不算。
+func TestRunIsOneBlock(t *testing.T) {
+	ch := &chat{}
+	ch.add(itemUser, "问")
+	ch.add(itemThinking, "想")
+	ch.add(itemAssistant, "甲")
+	ch.add(itemTool, "")
+	ch.add(itemTool, "")
+	ch.add(itemAssistant, "乙")
+	ch.add(itemUser, "再问")
+	ch.add(itemAssistant, "丙")
+
+	blocks := ch.blocks()
+	if len(blocks) != 4 {
+		t.Fatalf("块 = %d，期望 4（用户、一次 run、用户、一次 run）", len(blocks))
+	}
+	run := blocks[1].items
+	if got := len(parts(run)); got != 4 {
+		t.Errorf("段 = %d，期望 4（思考、甲、两次工具调用一组、乙）", got)
+	}
+	if text, _ := replyText(run); text != "甲\n\n乙" {
+		t.Errorf("复制的文本 = %q，期望 %q", text, "甲\n\n乙")
+	}
+}
+
 // 会话行的 ⋯ 菜单：选择在菜单关闭后的下一帧回报，那时指针在菜单上，不在这一行，
 // 行尾的 ⋯ 按钮已换成零尺寸；它的标识若随位置变，选择就丢了，点“重命名”没有反应。
 func TestSessionMenuChoiceAfterPointerLeaves(t *testing.T) {

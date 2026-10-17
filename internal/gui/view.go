@@ -166,7 +166,8 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	a.loadOlder(ch)
 	ui.Column(c).Fill().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
-			column(c, 5, func() { a.block(c, t, blocks[i]) })
+			final := i < len(blocks)-1 || !ch.running
+			column(c, 5, func() { a.block(c, t, blocks[i], final) })
 		}).Grow(1).Padding(edgePad, 0).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
 			if ch.loading {
 				ui.Spinner(c).Margin(ui.Auto)

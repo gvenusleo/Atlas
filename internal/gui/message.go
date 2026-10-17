@@ -11,26 +11,46 @@ import (
 // copiedFor 是点复制后，按钮显示“已复制”的时长。
 const copiedFor = 1500 * time.Millisecond
 
-// block 构建一组显示项：用户消息为靠右的浅色块，助手回复直接排成正文，
-// 思考与工具为安静的单行，可点开查看细节。
-func (a *App) block(c *ui.Context, t *ui.Theme, b block) {
-	it := b.items[0]
-	switch it.kind {
-	case itemUser:
-		a.message(c, t, it, ui.End, func() {
-			ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
-				Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
-		})
-	case itemAssistant:
-		a.message(c, t, it, ui.Stretch, func() {
-			if it.done {
-				markdown.View(c, it.text, &a.md)
-			} else {
-				markdown.Stream(c, it.text, &a.md)
+// block 构建一组显示项：用户消息为靠右的浅色块，其余是一次 run 的输出，作为一个整体。
+// final 为假表示这次 run 还在进行。
+func (a *App) block(c *ui.Context, t *ui.Theme, b block, final bool) {
+	if it := b.items[0]; it.kind == itemUser {
+		a.userMessage(c, t, it)
+		return
+	}
+	a.reply(c, t, b.items, final)
+}
+
+// reply 构建一次 run 的全部输出：助手文字直接排成正文，思考与工具为安静的单行，可点开
+// 查看细节。一次 run 里的各段连成一体，只在末尾有一行操作，复制的是所有助手文字。
+func (a *App) reply(c *ui.Context, t *ui.Theme, items []*item, final bool) {
+	text, at := replyText(items)
+	col := ui.Column(c)
+	hovered := col.Hovered()
+	col.Children(func() {
+		ui.Column(c).Gap(10).Children(func() {
+			for _, p := range parts(items) {
+				ui.Column(c.Key(p[0].id)).Children(func() { a.part(c, t, p) })
 			}
 		})
+		if text != "" {
+			a.actions(c, t, items[0], at, text, hovered && final)
+		}
+	})
+}
+
+// part 画一次 run 输出里的一段。
+func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
+	it := items[0]
+	switch it.kind {
+	case itemAssistant:
+		if it.done {
+			markdown.View(c, it.text, &a.md)
+		} else {
+			markdown.Stream(c, it.text, &a.md)
+		}
 	case itemThinking, itemTool:
-		a.stepGroup(c, t, b.items)
+		a.stepGroup(c, t, items)
 	case itemNotice:
 		ui.Text(c, it.text).FontSize(13).TextColor(t.TextMuted).Selectable()
 	case itemCompaction:
@@ -57,27 +77,30 @@ func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 	})
 }
 
-// message 把一条消息和它下面的一行操作放在一起：指针在其上时，操作行显示发送时间与复制按钮。
-// align 是消息在栏中的对齐，用户消息靠右。
-func (a *App) message(c *ui.Context, t *ui.Theme, it *item, align ui.Align, body func()) {
-	col := ui.Column(c).AlignItems(align)
+// userMessage 把用户消息和它下面的一行操作放在一起：指针在其上时，操作行显示发送时间与
+// 复制按钮。
+func (a *App) userMessage(c *ui.Context, t *ui.Theme, it *item) {
+	col := ui.Column(c).AlignItems(ui.End)
 	hovered := col.Hovered()
 	col.Children(func() {
-		body()
-		a.actions(c, t, it, hovered && it.done)
+		ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
+			Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
+		a.actions(c, t, it, it.at, it.text, hovered && it.done)
 	})
 }
 
-// actions 画消息下方的一行：发送时间与复制按钮，只在 shown 时显示。
-// 这一行始终占着高度，显示与否不会让下面的内容跳动。
-func (a *App) actions(c *ui.Context, t *ui.Theme, it *item, shown bool) {
+// actions 画消息下方的一行：时间与复制按钮，复制的是 text，只在 shown 时显示。
+// 这一行始终占着高度，显示与否不会让下面的内容跳动。it 记着最近一次点复制的时刻。
+func (a *App) actions(
+	c *ui.Context, t *ui.Theme, it *item, at time.Time, text string, shown bool,
+) {
 	ui.Row(c).Height(barButton).AlignItems(ui.Center).Gap(2).Children(func() {
 		if !shown {
 			return
 		}
-		if !it.at.IsZero() {
-			ui.Text(c, since(it.at)).FontSize(12).TextColor(t.TextMuted).SingleLine().
-				Padding(0, 4, 0, 0).Tooltip(it.at.Local().Format("2006-01-02 15:04:05"))
+		if !at.IsZero() {
+			ui.Text(c, since(at)).FontSize(12).TextColor(t.TextMuted).SingleLine().
+				Padding(0, 4, 0, 0).Tooltip(at.Local().Format("2006-01-02 15:04:05"))
 		}
 		glyph, label := copyIcon, "复制"
 		if left := copiedFor - time.Since(it.copiedAt); left > 0 {
@@ -85,7 +108,7 @@ func (a *App) actions(c *ui.Context, t *ui.Theme, it *item, shown bool) {
 			c.After(left) // 到时再画一帧，把图标换回来
 		}
 		iconButton(c, t, glyph, label, barButton, func() {
-			mygo.Clipboard.WriteText(it.text)
+			mygo.Clipboard.WriteText(text)
 			it.copiedAt = time.Now()
 		})
 	})
