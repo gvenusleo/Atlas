@@ -56,6 +56,7 @@ type callView struct {
 	edits          []editDiff        // 编辑各处替换的行级对比，与 args.Edits 一一对应
 	starts         []int             // 编辑各处替换在原文件中的起始行，来自结果附带的数据
 	overwrote      bool              // 写入覆盖了已有的文件，来自结果附带的数据
+	old            *string           // 覆盖前的内容，来自结果附带的数据；没有时为空
 	window         tools.ReadDetails // 读取实际返回的窗口，来自结果附带的数据
 	added, removed int               // 写入与编辑增删的行数
 	cmd            *editor.State
@@ -76,7 +77,14 @@ func (it *item) view() *callView {
 		v.window = it.decoded[tools.ReadDetails]()
 	case "write":
 		v.added = lineCount(v.args.Content)
-		v.overwrote = it.decoded[tools.WriteDetails]().Overwrote
+		details := it.decoded[tools.WriteDetails]()
+		v.overwrote, v.old = details.Overwrote, details.Old
+		if v.old != nil {
+			// 有旧内容时画真正的对比，增删的行数也由它算出。
+			d := fileDiff(v.args.Path, *v.old, v.args.Content)
+			v.diffs = []*editor.DiffState{d}
+			v.added, v.removed = d.Stats()
+		}
 	case "edit":
 		for _, e := range v.args.Edits {
 			d := diffEdit(e.OldText, e.NewText)
@@ -108,12 +116,13 @@ func (it *item) verbKey() string {
 	return "create"
 }
 
-// stats 返回写入与编辑增删的行数。覆盖已有文件时旧内容不在记录里，没有可信的数字。
+// stats 返回写入与编辑增删的行数。覆盖已有文件时没有记录旧内容（文件太大或不是文本），
+// 就没有可信的数字。
 func (it *item) stats() (added, removed int) {
-	if it.failed || it.verbKey() == "overwrite" {
+	v := it.view()
+	if it.failed || it.verbKey() == "overwrite" && v.old == nil {
 		return 0, 0
 	}
-	v := it.view()
 	return v.added, v.removed
 }
 

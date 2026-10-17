@@ -121,9 +121,13 @@ func fileContent(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 	diffBox(c, t, v.diffs)
 }
 
-// overwritten 画覆盖已有文件时写入的内容：旧内容不在记录里，没有对比可看，
-// 所以只显示新内容，行号从 1 数起。
+// overwritten 画覆盖已有文件时写入的内容：有旧内容时是前后的对比（视图数据里已经建好），
+// 没有（文件太大或不是文本）就没有对比可看，只显示新内容，行号从 1 数起。
 func overwritten(c *ui.Context, t *ui.Theme, v *callView) {
+	if v.old != nil {
+		diffBox(c, t, v.diffs)
+		return
+	}
 	if v.diffs == nil {
 		head := headLines(v.args.Content, diffLines)
 		v.diffs = []*editor.DiffState{contextPatch(v.args.Path, head, 1)}
@@ -162,7 +166,7 @@ func buildDiffs(tool string, v *callView) []*editor.DiffState {
 	if v.args.Content == "" {
 		return nil
 	}
-	return []*editor.DiffState{newFileDiff(v.args.Path, headLines(v.args.Content, diffLines))}
+	return []*editor.DiffState{fileDiff(v.args.Path, "", headLines(v.args.Content, diffLines))}
 }
 
 // diffState 是对比的统一样式：上下合并，行首有 + 和 -，长行换行，与外层的滚动框配合。
@@ -171,13 +175,18 @@ func diffState() *editor.DiffState {
 		ExpandUnchanged: true, Wrap: true, FitContent: true, Font: codeFont}
 }
 
-// newFileDiff 对比空文本与新文件的内容：整份都是新增，行号从 1 数起。
-func newFileDiff(path, text string) *editor.DiffState {
+// fileDiff 对比文件前后的内容，行号从 1 数起：新建文件时 old 为空，整份都是新增；
+// 覆盖时没有改动的行按 DiffView 原生的做法折叠。
+func fileDiff(path, old, text string) *editor.DiffState {
 	// 末尾的换行不显示成多出来的一行。
+	before := editor.NewBuffer(strings.TrimSuffix(old, "\n"))
 	after := editor.NewBuffer(strings.TrimSuffix(text, "\n"))
-	after.SetLanguage(editor.LanguageFor(path))
+	lang := editor.LanguageFor(path)
+	before.SetLanguage(lang)
+	after.SetLanguage(lang)
 	d := diffState()
-	d.Old, d.New = editor.NewBuffer(""), after
+	d.ExpandUnchanged = false
+	d.Old, d.New = before, after
 	return d
 }
 
