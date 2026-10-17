@@ -11,12 +11,8 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 )
 
-const (
-	// diffLines 是写入内容最多显示的行数。
-	diffLines = 300
-	// headerHeight 是 DiffView 给补丁每一块的头留的高度，文档写明是 32。
-	headerHeight = 32
-)
+// diffLines 是写入内容最多显示的行数。
+const diffLines = 300
 
 // editDiff 是编辑里一处替换的行级对比。
 type editDiff struct {
@@ -84,23 +80,19 @@ func diffBody(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 	if len(v.diffs) == 0 {
 		return
 	}
-	diffBox(c, t, v.diffs, edit)
+	diffBox(c, t, v.diffs)
 	if note := truncatedNote(v.args.Content); !edit && note != "" {
 		ui.Text(c, note).FontSize(12).TextColor(t.TextMuted)
 	}
 }
 
-// diffBox 把对比放进浅底的圆角框，超过 panelHeight 时在框内滚动。hideHeader 为真时把每份
-// 补丁第一块的头用负的上外边距挤出框外：它只占地方；编辑的后面几块的头是分隔，留着。
-func diffBox(c *ui.Context, t *ui.Theme, ds []*editor.DiffState, hideHeader bool) {
+// diffBox 把对比放进浅底的圆角框，超过 panelHeight 时在框内滚动。
+func diffBox(c *ui.Context, t *ui.Theme, ds []*editor.DiffState) {
 	ui.Column(c).Background(boxColor(t)).Radius(8).Clip().Children(func() {
 		scrolled(c, func() {
 			for _, d := range ds {
 				d.Theme = codeTheme(t)
-				view := editor.DiffView(c, d).FillWidth()
-				if hideHeader {
-					view.Margin(-headerHeight, 0, 0, 0)
-				}
+				editor.DiffView(c, d).FillWidth()
 			}
 		})
 	})
@@ -126,7 +118,7 @@ func fileContent(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 		text := headLines(it.result, w.End-w.Start+1)
 		v.diffs = []*editor.DiffState{contextPatch(v.args.Path, text, w.Start)}
 	}
-	diffBox(c, t, v.diffs, true)
+	diffBox(c, t, v.diffs)
 }
 
 // overwritten 画覆盖已有文件时写入的内容：旧内容不在记录里，没有对比可看，
@@ -136,7 +128,7 @@ func overwritten(c *ui.Context, t *ui.Theme, v *callView) {
 		head := headLines(v.args.Content, diffLines)
 		v.diffs = []*editor.DiffState{contextPatch(v.args.Path, head, 1)}
 	}
-	diffBox(c, t, v.diffs, true)
+	diffBox(c, t, v.diffs)
 	if note := truncatedNote(v.args.Content); note != "" {
 		ui.Text(c, note).FontSize(12).TextColor(t.TextMuted)
 	}
@@ -193,44 +185,19 @@ func newFileDiff(path, text string) *editor.DiffState {
 // 各处按在原文件中的位置从前到后，新文件的起始行要计入前面各处增删的行数。
 func editPatch(path string, edits []editDiff, starts []int) *editor.DiffState {
 	var hunks []editor.PatchHunk
-	gaps := map[int]int{} // 各块的原起始行 → 它与上一块之间没改动的行数
-	shift, prevEnd := 0, 0
-	for k, i := range inFileOrder(starts) {
+	shift := 0
+	for _, i := range inFileOrder(starts) {
 		e := edits[i]
 		hunks = append(hunks, editor.PatchHunk{
 			OldStart: starts[i], OldLines: e.oldCount,
 			NewStart: starts[i] + shift, NewLines: e.newCount,
 			Lines: e.lines,
 		})
-		if k > 0 {
-			gaps[starts[i]] = starts[i] - prevEnd
-		}
-		prevEnd = starts[i] + e.oldCount
 		shift += e.shift
 	}
 	d := diffState()
-	d.RenderSeparator = hunkDivider(gaps)
 	d.SetPatch(editor.FilePatch{OldName: path, NewName: path, Hunks: hunks})
 	return d
-}
-
-// hunkDivider 画补丁里每一块的头，取代 @@ 头：一条细线，中间隔着没改动的行时再加上
-// 淡淡的“N 行未修改”。第一块的头被挤出了框外，只有后面几块的看得到。
-func hunkDivider(gaps map[int]int) func(*ui.Context, ui.Element, *editor.DiffSeparator) {
-	return func(c *ui.Context, sep ui.Element, s *editor.DiffSeparator) {
-		var line int
-		if n, _ := fmt.Sscanf(s.Header, "@@ -%d", &line); n != 1 {
-			editor.DefaultSeparator(c, sep, s)
-			return
-		}
-		t := c.Theme()
-		sep.Row().AlignItems(ui.Center).Padding(0, 10).BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
-		if gap := gaps[line]; gap > 0 {
-			sep.Children(func() {
-				ui.Text(c, fmt.Sprintf("%d 行未修改", gap)).FontSize(12).TextColor(t.TextMuted)
-			})
-		}
-	}
 }
 
 // inFileOrder 返回各处替换按在原文件中的位置从前到后的下标。
