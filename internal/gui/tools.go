@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
@@ -166,12 +165,12 @@ func (a *App) stepGroup(c *ui.Context, t *ui.Theme, items []*item) {
 	}
 	label, added, removed, running := groupSummary(items)
 	expandable(c, t, &items[0].shown, label, false, func() {
+		if running {
+			ui.Spinner(c).Size(12, 12).Shrink(0)
+		}
 		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
 		if added+removed > 0 {
 			diffPill(c, t, added, removed)
-		}
-		if running {
-			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
 	}, func() {
 		ui.Column(c).Margin(4, 0, 0).Radius(10).Border(1, t.Border).Clip().Children(func() {
@@ -195,14 +194,14 @@ func (a *App) stepRow(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	a.toolStep(c, t, it, card)
 }
 
-// thinkStep 画一次思考：标题是用时，展开后是思考的文字，太长时在框内滚动。
+// thinkStep 画一次思考：标题是思考的状态，展开后是思考的文字，太长时在框内滚动。
 func (a *App) thinkStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	label := thinkingLabel(it)
 	expandable(c, t, &it.open, label, card, func() {
-		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
 		if !it.done {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
+		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
 	}, func() {
 		panelBody(c, t, card, func() {
 			scrolled(c, func() { note(c, it.text, 13, t.TextMuted) })
@@ -215,6 +214,9 @@ func (a *App) toolStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	verb, subject, tip := it.title()
 	added, removed := it.stats()
 	expandable(c, t, &it.open, strings.TrimSpace(verb+" "+subject), card, func() {
+		if !it.done && !it.failed {
+			ui.Spinner(c).Size(12, 12).Shrink(0)
+		}
 		ui.Text(c, verb).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
 		if subject != "" {
 			ui.Text(c, subject).FontSize(stepSize).SingleLine().Tooltip(tip)
@@ -222,11 +224,8 @@ func (a *App) toolStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 		if added+removed > 0 {
 			diffPill(c, t, added, removed)
 		}
-		switch {
-		case it.failed:
+		if it.failed {
 			ui.Text(c, "失败").FontSize(stepSize).TextColor(t.Danger).SingleLine()
-		case !it.done:
-			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
 	}, func() {
 		panelBody(c, t, card, func() { a.toolDetail(c, t, it) })
@@ -280,8 +279,7 @@ type tally struct {
 	key    string // toolVerbs 的键，或 thinkingKey、otherKey
 	n      int    // 调用次数
 	failed int
-	files  []string      // 涉及的不同文件
-	took   time.Duration // 思考的总用时
+	files  []string // 涉及的不同文件
 }
 
 // phrase 把汇总说成一句：“已运行 6 个命令（1 个失败）”“已读取 a.go”“已写入 2 个文件”。
@@ -290,7 +288,7 @@ func (g tally) phrase() string {
 	var s string
 	switch {
 	case g.key == thinkingKey:
-		return thought(g.took)
+		return "已思考"
 	case g.key == otherKey:
 		s = fmt.Sprintf("已调用 %d 个工具", g.n)
 	case g.key == "shell":
@@ -306,15 +304,12 @@ func (g tally) phrase() string {
 	return s
 }
 
-// groupSummary 汇总一组调用，各类按首次出现的顺序；进行中时改为最新一步的标题。
+// groupSummary 汇总一组调用，各类按首次出现的顺序；进行中也不改变。
 // 同时返回写入与编辑增删的总行数，以及是否还有调用在进行。
 func groupSummary(items []*item) (label string, added, removed int, running bool) {
 	var tallies []tally
-	var live *item
 	for _, it := range items {
-		if !it.done {
-			live = it
-		}
+		running = running || !it.done
 		a, r := it.stats()
 		added, removed = added+a, removed+r
 		key := it.verbKey()
@@ -331,7 +326,6 @@ func groupSummary(items []*item) (label string, added, removed int, running bool
 		}
 		g := &tallies[i]
 		g.n++
-		g.took += it.took
 		if it.failed {
 			g.failed++
 		}
@@ -339,18 +333,11 @@ func groupSummary(items []*item) (label string, added, removed int, running bool
 			g.files = append(g.files, path)
 		}
 	}
-	if live != nil && live.kind == itemThinking {
-		return thinkingLabel(live), added, removed, true
-	}
-	if live != nil {
-		verb, subject, _ := live.title()
-		return strings.TrimSpace(verb + " " + subject), added, removed, true
-	}
 	phrases := make([]string, len(tallies))
 	for i, g := range tallies {
 		phrases[i] = g.phrase()
 	}
-	return strings.Join(phrases, "，"), added, removed, false
+	return strings.Join(phrases, "，"), added, removed, running
 }
 
 // diffPill 画“+147 −0”的小标签：左半绿、右半红。
@@ -368,20 +355,12 @@ func note(c *ui.Context, text string, size float32, color ui.Color) {
 	ui.Text(c, text).Selectable().FontSize(size).TextColor(color)
 }
 
-// thinkingLabel 返回思考行的标题：进行中，或思考的用时。
+// thinkingLabel 返回思考行的标题：进行中，或已思考。
 func thinkingLabel(it *item) string {
 	if !it.done {
-		return "思考中…"
+		return "思考中"
 	}
-	return thought(it.took)
-}
-
-// thought 把思考的用时说成“思考了 N 秒”；没有记录用时（历史记录）时是“已思考”。
-func thought(took time.Duration) string {
-	if took <= 0 {
-		return "已思考"
-	}
-	return fmt.Sprintf("思考了 %d 秒", max(1, int(took.Round(time.Second).Seconds())))
+	return "已思考"
 }
 
 // location 是展开后内容上方的路径：在会话工作目录下的写成相对路径，否则是绝对路径；

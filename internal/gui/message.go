@@ -62,8 +62,8 @@ func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
 func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 	if !it.done {
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "正在压缩上下文…").FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
 			ui.Spinner(c).Size(12, 12).Shrink(0)
+			ui.Text(c, "正在压缩上下文").FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
 		})
 		return
 	}

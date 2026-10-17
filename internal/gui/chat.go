@@ -35,9 +35,6 @@ type item struct {
 	at       time.Time // 用户与助手消息的时间，未知时为零
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
 
-	started time.Time // 思考：开始流出的时刻与用时，历史记录中为零
-	took    time.Duration
-
 	callID  string // 工具卡片：调用 ID、名称、参数与结果
 	shown   bool   // 一组步骤是否展开，记在组的第一项上
 	call    *callView
@@ -114,7 +111,7 @@ func (ch *chat) stream(kind itemKind) *item {
 		return ch.live[n-1]
 	}
 	it := ch.add(kind, "")
-	it.done, it.started = false, time.Now()
+	it.done = false
 	ch.live = append(ch.live, it)
 	return it
 }
@@ -333,9 +330,6 @@ func (ch *chat) finish(m agent.AssistantMessage) {
 			if b.Thinking != "" {
 				it := take(itemThinking)
 				it.text, it.done = b.Thinking, true
-				if !it.started.IsZero() {
-					it.took = time.Since(it.started)
-				}
 			}
 		case agent.TextContent:
 			it := take(itemAssistant)
