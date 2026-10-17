@@ -88,14 +88,26 @@ func diffBody(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 
 // diffBox 把对比放进浅底的圆角框，超过 panelHeight 时在框内滚动。
 func diffBox(c *ui.Context, t *ui.Theme, ds []*editor.DiffState) {
-	ui.Column(c).Background(boxColor(t)).Radius(8).Clip().Children(func() {
-		scrolled(c, func() {
-			for _, d := range ds {
-				d.Theme = codeTheme(t)
-				editor.DiffView(c, d).FillWidth()
-			}
+	ui.Column(c).Children(func() {
+		ui.Column(c).Background(boxColor(t)).Radius(boxRound).Clip().Children(func() {
+			scrolled(c, func() {
+				for _, d := range ds {
+					d.Theme = codeTheme(t)
+					editor.DiffView(c, d).FillWidth()
+				}
+			})
 		})
+		roundCorners(c, t)
 	})
+}
+
+// roundCorners 在圆角框的四角盖上窗口的背景色，让圆角在 GPU 上也是圆的。圆角框里套着矩形
+// 裁剪（滚动容器的、DiffView 自己的）时，GPU 只让最里层的裁剪成形，外层裁剪的圆角丢了，
+// CPU 渲染则不会，所以只靠 Radius 与 Clip，真窗口里框是方角的。这个圆角相框画在框之上、
+// 向外多出 boxRound，内缘正好是框的圆角；指针穿过它。
+func roundCorners(c *ui.Context, t *ui.Theme) {
+	ui.Box(c).Absolute().Top(-boxRound).Right(-boxRound).Bottom(-boxRound).Left(-boxRound).
+		Radius(2*boxRound).Border(boxRound, t.Background).PassThrough()
 }
 
 // fileContent 画读取到的文件内容：用工具报告的实际窗口排成只有上下文行的补丁，
@@ -225,20 +237,23 @@ func deletedRows(c *ui.Context, t *ui.Theme, a toolArgs, starts []int) {
 	mono := func(s string) ui.Element {
 		return ui.Text(c, s).Font(codeFont.Family).FontSize(codeFont.Size)
 	}
-	ui.Column(c).Radius(8).Clip().Children(func() {
-		scrolled(c, func() {
-			for _, i := range inFileOrder(starts) {
-				for j, line := range textLines(a.Edits[i].OldText) {
-					ui.Row(c).MinHeight(18).Gap(8).Padding(0, 10).
-						Background(t.Danger.Alpha(0.12)).Children(func() {
-						mono(strconv.Itoa(starts[i] + j)).TextColor(t.Danger).Width(32).
-							TextAlign(ui.End)
-						mono("-").TextColor(t.Danger)
-						mono(line).Selectable().Grow(1)
-					})
+	ui.Column(c).Children(func() {
+		ui.Column(c).Radius(boxRound).Clip().Children(func() {
+			scrolled(c, func() {
+				for _, i := range inFileOrder(starts) {
+					for j, line := range textLines(a.Edits[i].OldText) {
+						ui.Row(c).MinHeight(18).Gap(8).Padding(0, 10).
+							Background(t.Danger.Alpha(0.12)).Children(func() {
+							mono(strconv.Itoa(starts[i] + j)).TextColor(t.Danger).Width(32).
+								TextAlign(ui.End)
+							mono("-").TextColor(t.Danger)
+							mono(line).Selectable().Grow(1)
+						})
+					}
 				}
-			}
+			})
 		})
+		roundCorners(c, t)
 	})
 }
 

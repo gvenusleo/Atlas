@@ -438,7 +438,7 @@ func shellCommand(c *ui.Context, t *ui.Theme, v *callView) {
 			NoIndentGuides: true, NoScrollPastEnd: true, Font: codeFont, Label: "命令"}
 	}
 	v.cmd.Theme = codeTheme(t)
-	ui.Row(c).AlignItems(ui.Start).Padding(8, 10).Background(boxColor(t)).Radius(8).
+	ui.Row(c).AlignItems(ui.Start).Padding(8, 10).Background(boxColor(t)).Radius(boxRound).
 		Children(func() {
 			ui.Text(c, "$").Font(codeFont.Family).FontSize(codeFont.Size).TextColor(t.TextMuted)
 			editor.View(c, v.cmd).Grow(1).MinWidth(0)
