@@ -88,14 +88,27 @@ func diffBody(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 
 // diffBox 把对比放进浅底的圆角框，超过 panelHeight 时在框内滚动。
 func diffBox(c *ui.Context, t *ui.Theme, ds []*editor.DiffState) {
+	boxed(c, t, func() {
+		for _, d := range ds {
+			d.Theme = codeTheme(t)
+			editor.DiffView(c, d).FillWidth()
+		}
+	})
+}
+
+// codeBox 把只读的代码视图放进同样的圆角框。
+func codeBox(c *ui.Context, t *ui.Theme, st *editor.State) {
+	st.Theme = codeTheme(t)
+	boxed(c, t, func() {
+		ui.Column(c).Padding(8, 10).Children(func() { editor.View(c, st).FillWidth() })
+	})
+}
+
+// boxed 画浅底的圆角框，里面是 body，超过 panelHeight 时在框内滚动。
+func boxed(c *ui.Context, t *ui.Theme, body func()) {
 	ui.Column(c).Children(func() {
 		ui.Column(c).Background(boxColor(t)).Radius(boxRound).Clip().Children(func() {
-			scrolled(c, func() {
-				for _, d := range ds {
-					d.Theme = codeTheme(t)
-					editor.DiffView(c, d).FillWidth()
-				}
-			})
+			scrolled(c, body)
 		})
 		roundCorners(c, t)
 	})
@@ -110,8 +123,7 @@ func roundCorners(c *ui.Context, t *ui.Theme) {
 		Radius(2*boxRound).Border(boxRound, t.Background).PassThrough()
 }
 
-// fileContent 画读取到的文件内容：用工具报告的实际窗口排成只有上下文行的补丁，
-// 带真实行号；只读了文件的一部分时先说明读的是哪几行。
+// fileContent 画读取到的文件内容：只读、带高亮、没有行号；读的是哪几行写在上方的路径后面。
 func fileContent(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 	w := v.window
 	if w.Start < 1 || w.End < w.Start {
@@ -121,45 +133,29 @@ func fileContent(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 		}
 		return
 	}
-	if w.Start > 1 || w.End < w.Total {
-		caption := fmt.Sprintf("第 %d–%d 行，共 %d 行", w.Start, w.End, w.Total)
-		ui.Text(c, caption).FontSize(12).TextColor(t.TextMuted)
-	}
-	if v.diffs == nil {
+	if v.code == nil {
 		// 结果文字末尾可能还有给模型的续读说明，按窗口的行数只取读到的内容。
-		text := headLines(it.result, w.End-w.Start+1)
-		v.diffs = []*editor.DiffState{contextPatch(v.args.Path, text, w.Start)}
+		text := strings.TrimSuffix(headLines(it.result, w.End-w.Start+1), "\n")
+		v.code = readOnlyCode(text, editor.LanguageFor(v.args.Path), "文件内容")
 	}
-	diffBox(c, t, v.diffs)
+	codeBox(c, t, v.code)
 }
 
 // overwritten 画覆盖已有文件时写入的内容：有旧内容时是前后的对比（视图数据里已经建好），
-// 没有（文件太大或不是文本）就没有对比可看，只显示新内容，行号从 1 数起。
+// 没有（文件太大或不是文本）就没有对比可看，只显示新内容。
 func overwritten(c *ui.Context, t *ui.Theme, v *callView) {
 	if v.old != nil {
 		diffBox(c, t, v.diffs)
 		return
 	}
-	if v.diffs == nil {
-		head := headLines(v.args.Content, diffLines)
-		v.diffs = []*editor.DiffState{contextPatch(v.args.Path, head, 1)}
+	if v.code == nil {
+		head := strings.TrimSuffix(headLines(v.args.Content, diffLines), "\n")
+		v.code = readOnlyCode(head, editor.LanguageFor(v.args.Path), "写入的内容")
 	}
-	diffBox(c, t, v.diffs)
+	codeBox(c, t, v.code)
 	if note := truncatedNote(v.args.Content); note != "" {
 		ui.Text(c, note).FontSize(12).TextColor(t.TextMuted)
 	}
-}
-
-// contextPatch 把一段文本排成只有上下文行的补丁，让 DiffView 以真实行号显示它：
-// start 是第一行在文件里的行号。
-func contextPatch(path, text string, start int) *editor.DiffState {
-	lines := textLines(text)
-	d := diffState()
-	d.SetPatch(editor.FilePatch{OldName: path, NewName: path, Hunks: []editor.PatchHunk{{
-		OldStart: start, OldLines: len(lines), NewStart: start, NewLines: len(lines),
-		Lines: prefixed(nil, " ", lines),
-	}}})
-	return d
 }
 
 // truncatedNote 在写入的内容超过 diffLines 行时说明只显示了前面一部分。

@@ -53,14 +53,14 @@ type toolArgs struct {
 type callView struct {
 	src            string // 解析的参数原文
 	args           toolArgs
-	edits          []editDiff        // 编辑各处替换的行级对比，与 args.Edits 一一对应
-	starts         []int             // 编辑各处替换在原文件中的起始行，来自结果附带的数据
-	overwrote      bool              // 写入覆盖了已有的文件，来自结果附带的数据
-	old            *string           // 覆盖前的内容，来自结果附带的数据；没有时为空
-	window         tools.ReadDetails // 读取实际返回的窗口，来自结果附带的数据
-	added, removed int               // 写入与编辑增删的行数
-	cmd            *editor.State
-	diffs          []*editor.DiffState // 对比，或读取、覆盖写入的内容
+	edits          []editDiff          // 编辑各处替换的行级对比，与 args.Edits 一一对应
+	starts         []int               // 编辑各处替换在原文件中的起始行，来自结果附带的数据
+	overwrote      bool                // 写入覆盖了已有的文件，来自结果附带的数据
+	old            *string             // 覆盖前的内容，来自结果附带的数据；没有时为空
+	window         tools.ReadDetails   // 读取实际返回的窗口，来自结果附带的数据
+	added, removed int                 // 写入与编辑增删的行数
+	code           *editor.State       // 命令、读取或覆盖写入的内容的只读视图
+	diffs          []*editor.DiffState // 写入与编辑的对比
 }
 
 // view 返回调用的展示数据；参数没变时沿用上次的。
@@ -384,12 +384,33 @@ func thought(took time.Duration) string {
 	return fmt.Sprintf("思考了 %d 秒", max(1, int(took.Round(time.Second).Seconds())))
 }
 
+// location 是展开后内容上方的路径：在会话工作目录下的写成相对路径，否则是绝对路径；
+// 读取只读了文件的一部分时，后面接 :起-止，只读一行时接 :行号。
+func location(cwd, tool string, v *callView) string {
+	path := v.args.Path
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(cwd, path)
+	}
+	if rel, err := filepath.Rel(cwd, path); err == nil && filepath.IsLocal(rel) {
+		path = rel
+	}
+	w := v.window
+	if tool == "read" && w.Start >= 1 && w.End >= w.Start && (w.Start > 1 || w.End < w.Total) {
+		path += fmt.Sprintf(":%d", w.Start)
+		if w.End > w.Start {
+			path += fmt.Sprintf("-%d", w.End)
+		}
+	}
+	return path
+}
+
 // toolDetail 画展开后的细节：命令与输出、读取的路径与内容、写入与编辑的内容对比。
 func (a *App) toolDetail(c *ui.Context, t *ui.Theme, it *item) {
 	v := it.view()
 	ui.Column(c).Gap(8).Children(func() {
 		if v.args.Path != "" {
-			ui.Text(c, v.args.Path).Selectable().FontSize(12).TextColor(t.TextMuted)
+			path := location(a.current.cwd, it.tool, v)
+			ui.Text(c, path).Selectable().FontSize(12).TextColor(t.TextMuted)
 		}
 		switch {
 		case it.failed && it.tool != "shell":
@@ -428,20 +449,25 @@ func codeTheme(t *ui.Theme) *editor.Theme {
 	return th
 }
 
+// readOnlyCode 是只读的代码视图：带高亮、自动换行、没有行号，高度随内容，由外层滚动。
+func readOnlyCode(text string, lang *editor.Language, label string) *editor.State {
+	buf := editor.NewBuffer(text)
+	buf.SetLanguage(lang)
+	return &editor.State{Buffer: buf, ReadOnly: true, SoftWrap: true, FitContent: true,
+		LineNumbers: editor.LineNumbersOff, NoFolding: true, NoActiveLine: true,
+		NoIndentGuides: true, NoScrollPastEnd: true, Font: codeFont, Label: label}
+}
+
 // shellCommand 画命令：浅底的圆角框里，美元符号后是只读且带高亮的命令。
 func shellCommand(c *ui.Context, t *ui.Theme, v *callView) {
-	if v.cmd == nil {
-		buf := editor.NewBuffer(v.args.Command)
-		buf.SetLanguage(editor.LanguageNamed("bash"))
-		v.cmd = &editor.State{Buffer: buf, ReadOnly: true, SoftWrap: true, FitContent: true,
-			LineNumbers: editor.LineNumbersOff, NoFolding: true, NoActiveLine: true,
-			NoIndentGuides: true, NoScrollPastEnd: true, Font: codeFont, Label: "命令"}
+	if v.code == nil {
+		v.code = readOnlyCode(v.args.Command, editor.LanguageNamed("bash"), "命令")
 	}
-	v.cmd.Theme = codeTheme(t)
+	v.code.Theme = codeTheme(t)
 	ui.Row(c).AlignItems(ui.Start).Padding(8, 10).Background(boxColor(t)).Radius(boxRound).
 		Children(func() {
 			ui.Text(c, "$").Font(codeFont.Family).FontSize(codeFont.Size).TextColor(t.TextMuted)
-			editor.View(c, v.cmd).Grow(1).MinWidth(0)
+			editor.View(c, v.code).Grow(1).MinWidth(0)
 		})
 }
 
