@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/skills"
 )
 
 // saveTimeout 限制单条消息的保存耗时；保存不受运行取消影响。
@@ -39,7 +40,8 @@ func (s *Session) WaitIdle(ctx context.Context) error {
 }
 
 // Run 同步执行并交付事件。回调可 Cancel 或 State，不得重入修改或等待方法。
-// 接收的消息、事件与返回值均不共享内部历史的可变数据。
+// 接收的消息、事件与返回值均不共享内部历史的可变数据。消息以 /技能名 开头时，
+// 会在原文后附上该技能的 SKILL.md 全文，技能取自会话的快照。
 func (s *Session) Run(
 	ctx context.Context, message agent.UserMessage, emit func(agent.Event),
 ) ([]agent.Message, error) {
@@ -50,11 +52,34 @@ func (s *Session) Run(
 		return nil, err
 	}
 	message = cloneMessage(message).(agent.UserMessage)
-	return s.execute(ctx, emit, func(
+	var skillErr error
+	messages, err := s.execute(ctx, emit, func(
 		ctx context.Context, rc *agent.LoopContext, emit func(agent.Event),
 	) []agent.Message {
+		if message, skillErr = withSkill(message, rc.Skills); skillErr != nil {
+			return nil
+		}
 		return agent.Run(ctx, []agent.Message{message}, rc, emit)
 	})
+	if skillErr != nil {
+		return messages, skillErr
+	}
+	return messages, err
+}
+
+// withSkill 在用户消息以 /技能名 开头时，在原文后附上技能块，让模型直接得到技能的内容；
+// 开头不是技能时原样返回。
+func withSkill(message agent.UserMessage, list []skills.Skill) (agent.UserMessage, error) {
+	skill, ok := skills.Invoked(list, agent.TextOf(message.Content))
+	if !ok {
+		return message, nil
+	}
+	block, err := skills.InvocationBlock(skill)
+	if err != nil {
+		return message, err
+	}
+	message.Content = append(message.Content, agent.TextContent{Text: block})
+	return message, nil
 }
 
 // Compact 把较早的对话压缩成摘要，和 Run 一样独占会话；没有可压缩的内容时返回

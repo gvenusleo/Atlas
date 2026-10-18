@@ -55,6 +55,8 @@ func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
 		ui.Text(c, it.text).FontSize(13).TextColor(t.TextMuted).Selectable()
 	case itemCompaction:
 		a.compaction(c, t, it)
+	case itemSkill:
+		a.skillRow(c, t, it)
 	}
 }
 
@@ -70,6 +72,18 @@ func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 	const label = "已压缩较早的对话"
 	expandable(c, t, &it.open, label, false, func() {
 		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+	}, func() {
+		panelBody(c, t, false, func() {
+			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })
+		})
+	})
+}
+
+// skillRow 画显式调用的技能：一行可展开的说明，展开是附给模型的 SKILL.md 全文。
+func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
+	expandable(c, t, &it.open, "已载入技能 "+it.skill, false, func() {
+		ui.Text(c, "已载入技能").FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, it.skill).FontSize(stepSize).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
 			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })

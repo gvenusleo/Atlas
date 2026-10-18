@@ -1,4 +1,5 @@
-// Package skills 发现并解析 SKILL.md 技能，生成供系统提示词使用的目录。
+// Package skills 发现并解析 SKILL.md 技能，生成供系统提示词使用的目录；
+// 显式调用技能（/技能名）时，生成附给模型的技能块，并从消息里识别它。
 package skills
 
 import (
@@ -6,6 +7,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"path/filepath"
@@ -128,8 +130,8 @@ func skillFiles(root string) ([]string, error) {
 	return files, nil
 }
 
-// readSkillHeader 统一校验普通文件、大小和 UTF-8，并返回 YAML 头。
-func readSkillHeader(path string) (string, error) {
+// readSkillFile 统一校验普通文件、大小和 UTF-8，并返回文件的全部内容。
+func readSkillFile(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
@@ -157,12 +159,16 @@ func readSkillHeader(path string) (string, error) {
 	if !utf8.Valid(data) {
 		return "", errors.New("文件不是 UTF-8 文本")
 	}
-	return splitFrontmatter(string(data))
+	return string(data), nil
 }
 
 // loadSkill 读取文件并解析元信息，不保存正文。
 func loadSkill(path string) (Skill, error) {
-	header, err := readSkillHeader(path)
+	text, err := readSkillFile(path)
+	if err != nil {
+		return Skill{}, err
+	}
+	header, err := splitFrontmatter(text)
 	if err != nil {
 		return Skill{}, err
 	}
@@ -238,6 +244,53 @@ func validateName(name string) error {
 		return errors.New("name 不能以连字符开头或结尾，也不能包含连续连字符")
 	}
 	return nil
+}
+
+// Invoked 返回 text 显式调用的技能：以 / 加技能名开头，其后是空白或结尾。
+func Invoked(list []Skill, text string) (Skill, bool) {
+	for word := range strings.FieldsSeq(text) {
+		if name, ok := strings.CutPrefix(word, "/"); ok {
+			if i := slices.IndexFunc(list, func(s Skill) bool { return s.Name == name }); i >= 0 {
+				return list[i], true
+			}
+		}
+		break // 只看第一个词
+	}
+	return Skill{}, false
+}
+
+// invocationPrefix 是技能块的开头，InvocationBlock 生成、ParseInvocationBlock 识别。
+const invocationPrefix = `<skill name="`
+
+// InvocationBlock 生成显式调用技能时跟在用户输入后面的技能块：技能名与 SKILL.md 的位置，
+// 再接 SKILL.md 的全部内容，和模型自己用 read 读到的一样。
+func InvocationBlock(s Skill) (string, error) {
+	text, err := readSkillFile(s.FilePath)
+	if err != nil {
+		return "", fmt.Errorf("读取技能 %s 失败: %w", s.Name, err)
+	}
+	return fmt.Sprintf("%s%s\" location=\"%s\">\n%s\n</skill>",
+		invocationPrefix, s.Name, html.EscapeString(s.FilePath), text), nil
+}
+
+// ParseInvocationBlock 识别 InvocationBlock 生成的技能块，返回技能名与块里的内容
+// （不含首尾标签）。
+func ParseInvocationBlock(text string) (name, content string, ok bool) {
+	rest, ok := strings.CutPrefix(text, invocationPrefix)
+	if !ok {
+		return "", "", false
+	}
+	name, rest, ok = strings.Cut(rest, `"`)
+	if !ok {
+		return "", "", false
+	}
+	if _, rest, ok = strings.Cut(rest, ">\n"); !ok {
+		return "", "", false
+	}
+	if content, ok = strings.CutSuffix(rest, "\n</skill>"); !ok {
+		return "", "", false
+	}
+	return name, content, true
 }
 
 // FormatPrompt 生成技能目录，XML 编码负责转义名称、描述和路径。

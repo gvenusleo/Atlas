@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/host"
+	"github.com/gvenusleo/atlas/internal/skills"
 )
 
 // itemKind 区分对话中一块内容的呈现方式。
@@ -22,15 +23,17 @@ const (
 	itemTool
 	itemNotice
 	itemCompaction // 上下文压缩：text 是摘要，没完成时是进行中的占位
+	itemSkill      // 显式调用的技能：skill 是技能名，text 是附给模型的技能块内容
 )
 
 // item 是对话中的一块可显示内容，只在主线程读写。
 type item struct {
-	id   int
-	kind itemKind
-	text string // 用户、助手、思考的文本，或系统通知
-	done bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
-	open bool   // 思考与工具卡片是否展开
+	id    int
+	kind  itemKind
+	text  string // 用户、助手、思考的文本，或系统通知
+	done  bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
+	open  bool   // 思考、工具与技能卡片是否展开
+	skill string // 技能的名称
 
 	at       time.Time // 用户与助手消息的时间，未知时为零
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
@@ -69,8 +72,10 @@ type chat struct {
 	err     string
 	unread  bool // 在别的会话时运行结束，用户还没回来看过
 
-	// 输入框上方的命令列表被 Esc 关掉时，输入框里的文本；文本变了就重新列出。
-	menuClosed string
+	// 还没有会话时，后台发现的工作目录下的技能，供命令列表；skillsCwd 是它对应的工作目录。
+	skills    []skills.Skill
+	skillsCwd string
+	menu      menuState // 输入框上方命令列表的状态
 
 	// 界面上选定的模型与思考深度，发送时应用到会话。
 	model    string
@@ -254,7 +259,7 @@ func (ch *chat) append(message agent.Message) {
 			ch.usage = 0 // 上下文变小了，下一次响应才有新的数字
 		}
 	case agent.UserMessage:
-		ch.add(itemUser, agent.TextOf(m.Content)).at = m.Timestamp
+		ch.addUser(m)
 	case agent.AssistantMessage:
 		ch.track(m)
 		for _, block := range m.Content {
@@ -274,6 +279,34 @@ func (ch *chat) append(message agent.Message) {
 		it.tool = m.ToolName
 		it.finishCall(m.Content, m.Details, m.IsError)
 	}
+}
+
+// addUser 把用户消息排成显示项：显式调用技能时，技能块另成一项，排在输入的原文之后。
+func (ch *chat) addUser(m agent.UserMessage) {
+	var typed []agent.Content
+	var skill, content string
+	for _, c := range m.Content {
+		if t, ok := c.(agent.TextContent); ok {
+			if name, body, ok := skills.ParseInvocationBlock(t.Text); ok {
+				skill, content = name, body
+				continue
+			}
+		}
+		typed = append(typed, c)
+	}
+	ch.add(itemUser, agent.TextOf(typed)).at = m.Timestamp
+	if skill != "" {
+		ch.add(itemSkill, content).skill = skill
+	}
+}
+
+// skillList 返回会话的技能：会话已存在时取它的快照，与模型看到的技能目录同一份；
+// 还没有会话时（新会话，或尚未恢复的旧会话）取后台发现的。
+func (ch *chat) skillList() []skills.Skill {
+	if ch.session != nil {
+		return ch.session.State().Skills
+	}
+	return ch.skills
 }
 
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。

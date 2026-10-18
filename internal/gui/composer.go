@@ -28,6 +28,7 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 					}
 					return true
 				})
+			ch.menu.placeCaret(input, ch.input)
 			// 侧栏在用键盘、或终端面板打开时，新出现的输入框不抢走焦点。
 			if !a.keyNav && !ch.termOpen {
 				input.AutoFocus()

@@ -283,7 +283,8 @@ func compactSession(ctx context.Context, s *host.Session, emit func(agent.Event)
 	return err
 }
 
-// send 受理输入框里的文本：压缩命令压缩当前会话，其余在后台运行一轮对话；返回是否已受理。
+// send 受理输入框里的文本：压缩命令压缩当前会话，其余在后台运行一轮对话
+// （以 /技能名 开头时，会话会在原文后附上技能内容）；返回是否已受理。
 func (a *App) send(ch *chat, text string) bool {
 	text = strings.TrimSpace(text)
 	if text == "" || ch.running || ch.loading {
