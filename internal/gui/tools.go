@@ -115,6 +115,12 @@ func (it *item) verbKey() string {
 	return "create"
 }
 
+// active 报告这一步是否正在进行：思考正在流出，或工具正在执行。参数还在流出、
+// 排队等着执行的调用不算，这样同一时刻只有真正在做的事在转圈。
+func (it *item) active() bool {
+	return it.kind == itemThinking && !it.done || it.kind == itemTool && it.running
+}
+
 // stats 返回写入与编辑增删的行数。覆盖已有文件时没有记录旧内容（文件太大或不是文本），
 // 就没有可信的数字。
 func (it *item) stats() (added, removed int) {
@@ -198,7 +204,7 @@ func (a *App) stepRow(c *ui.Context, t *ui.Theme, it *item, card bool) {
 func (a *App) thinkStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	label := thinkingLabel(it)
 	expandable(c, t, &it.open, label, card, func() {
-		if !it.done {
+		if it.active() {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
 		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
@@ -214,7 +220,7 @@ func (a *App) toolStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	verb, subject, tip := it.title()
 	added, removed := it.stats()
 	expandable(c, t, &it.open, strings.TrimSpace(verb+" "+subject), card, func() {
-		if !it.done && !it.failed {
+		if it.active() {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
 		ui.Text(c, verb).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
@@ -309,7 +315,7 @@ func (g tally) phrase() string {
 func groupSummary(items []*item) (label string, added, removed int, running bool) {
 	var tallies []tally
 	for _, it := range items {
-		running = running || !it.done
+		running = running || it.active()
 		a, r := it.stats()
 		added, removed = added+a, removed+r
 		key := it.verbKey()

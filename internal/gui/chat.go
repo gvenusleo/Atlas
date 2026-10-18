@@ -110,10 +110,32 @@ func (ch *chat) stream(kind itemKind) *item {
 	if n := len(ch.live); n > 0 && ch.live[n-1].kind == kind && !ch.live[n-1].done {
 		return ch.live[n-1]
 	}
+	ch.endBlock()
 	it := ch.add(kind, "")
 	it.done = false
 	ch.live = append(ch.live, it)
 	return it
+}
+
+// endBlock 结束正在流出的内容块：下一块或工具调用开始流出时，它就已经写完。
+func (ch *chat) endBlock() {
+	if n := len(ch.live); n > 0 {
+		ch.live[n-1].done = true
+	}
+}
+
+// settle 在一次 run 结束时收尾：流出的内容块都已写完；还没有结果的工具调用不会再有结果，
+// 标成失败，免得一直停在进行中。
+func (ch *chat) settle(reason string) {
+	for _, it := range ch.live {
+		it.done = true
+	}
+	ch.live = nil
+	for _, it := range ch.items {
+		if it.kind == itemTool && !it.done {
+			it.finishCall([]agent.Content{agent.TextContent{Text: reason}}, nil, true)
+		}
+	}
 }
 
 // isStep 报告显示项是否是过程中的一步：思考或工具调用。
@@ -300,6 +322,7 @@ func (ch *chat) apply(e agent.Event) {
 		case agent.DeltaTypeThinking:
 			ch.stream(itemThinking).text += e.Delta.Text
 		case agent.DeltaTypeToolCall:
+			ch.endBlock()
 			ch.setCall(e.Delta.ToolCall)
 		}
 	case agent.EventTypeMessageEnd:

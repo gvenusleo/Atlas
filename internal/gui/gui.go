@@ -6,6 +6,7 @@
 package gui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log"
@@ -371,6 +372,7 @@ func (a *App) finish(ch *chat, err error) {
 	case err != nil && !errors.Is(err, context.Canceled):
 		ch.err = err.Error()
 	}
+	ch.settle(cmp.Or(ch.err, "已中断"))
 	if errors.Is(err, host.ErrNeedsReload) {
 		ch.session = nil // 下次发送时重新恢复
 	}
