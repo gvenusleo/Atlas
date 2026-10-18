@@ -45,6 +45,7 @@ type item struct {
 	args    string
 	result  string
 	details jsontext.Value // 工具随结果附带的结构化数据
+	picture *picture       // 工具结果里的图片，没有时为空
 	failed  bool
 	running bool
 }
@@ -239,6 +240,7 @@ func (ch *chat) prepend(records []host.Record) {
 		if i >= 0 {
 			o := ch.items[i]
 			it.result, it.details, it.failed, it.done = o.result, o.details, o.failed, true
+			it.picture = o.picture
 			ch.items = slices.Delete(ch.items, i, i+1)
 		}
 	}
@@ -312,6 +314,7 @@ func (ch *chat) skillList() []skills.Skill {
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。
 func (it *item) finishCall(content []agent.Content, details jsontext.Value, failed bool) {
 	it.result, it.details, it.failed = agent.TextOf(content), details, failed
+	it.picture = pictureOf(content)
 	it.running, it.done = false, true
 	it.call = nil
 }

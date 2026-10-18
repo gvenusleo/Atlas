@@ -127,7 +127,7 @@ func roundCorners(c *ui.Context, t *ui.Theme) {
 func fileContent(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 	w := v.window
 	if w.Start < 1 || w.End < w.Start {
-		// 空文件没有行可画；图片只有一句说明。
+		// 空文件没有行可画，只有一句说明。
 		if it.result != "" {
 			note(c, it.result, 12, t.TextMuted)
 		}
