@@ -39,4 +39,6 @@ var (
 	listIcon     = icon("lucide/list")
 	codeIcon     = icon("lucide/code")
 	eyeIcon      = icon("lucide/eye")
+	expandIcon   = icon("lucide/maximize-2")
+	restoreIcon  = icon("lucide/minimize-2")
 )

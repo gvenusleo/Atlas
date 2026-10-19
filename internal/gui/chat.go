@@ -91,6 +91,8 @@ type chat struct {
 	termOpen   bool
 	termReveal int // 需要滚进可见范围的标签
 	termErr    string
+
+	expanded sidePanel // 扩展到整个主区的面板；没有时为 noPanel
 }
 
 // add 追加一个已定稿的显示项。

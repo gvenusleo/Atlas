@@ -55,11 +55,7 @@ func (a *App) stackHandle(c *ui.Context) {
 // sideColumn 是主区右侧的一栏：终端与文件面板的卡片竖着叠放，都开着时终端在上，中间的
 // 拖动条调整两者的高度；只开一个时它占满整栏。
 func (a *App) sideColumn(c *ui.Context, t *ui.Theme, ch *chat) {
-	// 窗口控件在右上角的平台上，卡片从标题栏下方开始。
-	top := float32(edge)
-	if c.TitleBar().Right > 0 {
-		top = titleBarHeight(c)
-	}
+	top := cardTop(c)
 	both := ch.termOpen && ch.filesOpen()
 	var termHeight float32
 	if both {
@@ -82,6 +78,45 @@ func (a *App) sideColumn(c *ui.Context, t *ui.Theme, ch *chat) {
 				a.filesCard(c, t, ch)
 			}
 		})
+}
+
+// cardTop 是浮动卡片离窗口顶部的距离；窗口控件在右上角的平台上，卡片从标题栏下方开始。
+func cardTop(c *ui.Context) float32 {
+	if c.TitleBar().Right > 0 {
+		return titleBarHeight(c)
+	}
+	return edge
+}
+
+// expandedPanel 画扩展到整个主区的面板：从窗口顶部铺到底，对话区与另一个面板暂时不画。
+// 侧栏收起时，窗口控件与侧栏开关浮在主区左上角，卡片随侧栏的收起让出一条标题栏高度的空带，
+// 带上仍能拖动窗口。
+func (a *App) expandedPanel(c *ui.Context, t *ui.Theme, ch *chat) {
+	top := cardTop(c)
+	top += (1 - a.shown) * max(titleBarHeight(c)-top, 0)
+	ui.Column(c.Key("expanded")).Fill().Children(func() {
+		ui.Row(c).Height(top).Shrink(0).DragWindow()
+		ui.Column(c).Grow(1).MinHeight(0).Margin(0, edge, edge, edge).Children(func() {
+			if ch.expanded == termPanel {
+				a.terminalCard(c, t, ch, 0)
+			} else {
+				a.filesCard(c, t, ch)
+			}
+		})
+	})
+}
+
+// cardActions 画卡片标签栏右端的两个按钮：把面板 p 扩展到整个主区（扩展着时是还原），
+// 以及关闭。
+func (a *App) cardActions(
+	c *ui.Context, t *ui.Theme, ch *chat, p sidePanel, closeLabel string, onClose func(),
+) {
+	glyph, label := expandIcon, "扩展面板"
+	if ch.expanded == p {
+		glyph, label = restoreIcon, "还原面板"
+	}
+	iconButton(c, t, glyph, label, barButton, func() { ch.toggleExpand(p) })
+	iconButton(c, t, closeIcon, closeLabel, barButton, onClose)
 }
 
 // sideCard 是右侧栏里的一张浮动卡片：圆角边框；height 为 0 时占满栏里余下的高度，

@@ -106,9 +106,18 @@ func column(c *ui.Context, vertical float32, fn func()) {
 	})
 }
 
-// main 构建主区：对话在左，会话的终端或文件面板打开时，浮动的卡片在右侧一栏里。
+// main 构建主区：对话在左，会话的终端或文件面板打开时，浮动的卡片在右侧一栏里；
+// 有面板被扩展时，主区只有这个面板。
 func (a *App) main(c *ui.Context, t *ui.Theme) {
 	ch := a.current
+	// 被扩展的面板关掉了（不论从哪条路），就不再扩展；之后重新打开时回到右侧栏。
+	if ch.expanded != noPanel && !ch.panelOpen(ch.expanded) {
+		ch.expanded = noPanel
+	}
+	if ch.expanded != noPanel {
+		a.expandedPanel(c, t, ch)
+		return
+	}
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c.Key("chat")).Grow(1).MinWidth(0).Children(func() {
 			a.conversation(c, t, ch)

@@ -58,7 +58,7 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 			}
 			a.tabStrip(c, t, "file", items, fp.active, &fp.reveal)
 			ui.Row(c).Grow(1)
-			iconButton(c, t, closeIcon, "关闭文件面板", barButton, a.toggleFiles)
+			a.cardActions(c, t, ch, filesPanel, "关闭文件面板", a.toggleFiles)
 		})
 }
 

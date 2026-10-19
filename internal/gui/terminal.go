@@ -17,9 +17,13 @@ type shell struct {
 	focus ui.Handle // 终端视图的标识，创建后用它把键盘焦点交给终端
 }
 
-// toggleTerminal 显示或收起当前会话的终端面板；首次打开时自动开一个终端。
+// toggleTerminal 显示或收起当前会话的终端面板；首次打开时自动开一个终端。文件面板被扩展时，
+// 终端已经开着就只还原，没开就还原后打开。
 func (a *App) toggleTerminal() {
 	ch := a.current
+	if ch.restoreFor(termPanel) {
+		return
+	}
 	ch.termOpen = !ch.termOpen
 	if ch.termOpen && len(ch.terms) == 0 {
 		a.newTerminal(ch)
@@ -50,7 +54,14 @@ func (a *App) newTerminal(ch *chat) {
 	ch.termErr = ""
 	ch.terms = append(ch.terms, sh)
 	ch.termTab, ch.termReveal = len(ch.terms)-1, sh.id
-	sh.focus.Focus()
+	ch.focusTerm()
+}
+
+// focusTerm 把键盘焦点交给当前标签的终端；没有终端时什么也不做。
+func (ch *chat) focusTerm() {
+	if len(ch.terms) > 0 {
+		ch.terms[ch.termTab].focus.Focus()
+	}
 }
 
 // termFont 是终端的字体。
@@ -178,7 +189,7 @@ func (a *App) termTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 			closeLabel: "关闭终端",
 			pick: func() {
 				ch.termTab, ch.termReveal = i, sh.id
-				sh.focus.Focus()
+				ch.focusTerm()
 			},
 			close: func() { ch.closeTerm(i) },
 		}
@@ -188,6 +199,6 @@ func (a *App) termTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.tabStrip(c, t, "term", items, ch.termTab, &ch.termReveal)
 			iconButton(c, t, plusIcon, "新建终端", barButton, func() { a.newTerminal(ch) })
 			ui.Row(c).Grow(1)
-			iconButton(c, t, closeIcon, "收起终端", barButton, a.toggleTerminal)
+			a.cardActions(c, t, ch, termPanel, "收起终端", a.toggleTerminal)
 		})
 }

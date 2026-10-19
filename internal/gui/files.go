@@ -111,8 +111,12 @@ func (ch *chat) dirtyTabs() int {
 
 // toggleFiles 显示或收起当前会话的文件面板；第一次打开时建面板，右侧栏不够宽时拉宽，
 // 关闭时在没被再拖过的情况下还原。打开时开始监视工作目录，并核对已打开的文件，收起时停止监视。
+// 终端被扩展时，文件面板已经开着就只还原，没开就还原后打开。
 func (a *App) toggleFiles() {
 	ch := a.current
+	if ch.restoreFor(filesPanel) {
+		return
+	}
 	if ch.files == nil {
 		ch.files = &filePanel{treeWidth: treeDefault}
 	}
