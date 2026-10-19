@@ -172,8 +172,8 @@ func scorePath(p, query string) int {
 	return 0
 }
 
-// pathOption 是一个文件或目录（以 / 结尾）在列表里的一项：名称是文件名，说明是所在的目录，
-// 选中后换成 @路径，路径带空白时加引号。
+// pathOption 是一个文件或目录（以 / 结尾）在列表里的一项：图标按类型，名称是文件名，
+// 说明是所在的目录，选中后换成 @路径，路径带空白时加引号。
 func pathOption(p string) option {
 	dir, name := path.Split(strings.TrimSuffix(p, "/"))
 	if strings.HasSuffix(p, "/") {
@@ -183,5 +183,7 @@ func pathOption(p string) option {
 	if strings.ContainsFunc(p, unicode.IsSpace) {
 		mention = `@"` + p + `"`
 	}
-	return option{name: name, hint: strings.TrimSuffix(dir, "/"), insert: mention + " "}
+	return option{
+		name: name, hint: strings.TrimSuffix(dir, "/"), icon: fileIcon(p), insert: mention + " ",
+	}
 }

@@ -9,20 +9,22 @@ import (
 
 // 补全列表的尺寸：menuHeight 是最大高度，选项多时在里面滚动；menuRows 是它大约能放下的
 // 行数；menuNameSize 是名称的字号，量宽度与绘制都用它；menuNameMax 是名称一列的最大宽度，
-// 过长的文件名省略，不挤掉后面的内容。
+// 过长的文件名省略，不挤掉后面的内容；menuIconSize 是名称前图标的边长。
 const (
 	menuHeight   = 240
 	menuRows     = 10
 	menuNameSize = 13
 	menuNameMax  = 280
+	menuIconSize = 16
 )
 
 // option 是补全列表里的一项：命令、技能或文件。
 type option struct {
 	name, hint string
-	tag        string // 名称后的标记，如技能的 Skill
-	insert     string // 选中后换进输入框的文本
-	run        bool   // 内置命令：选中就执行，不是补全
+	icon       *ui.SVG // 名称前的图标，没有时为空
+	tag        string  // 名称后的标记，如技能的 Skill
+	insert     string  // 选中后换进输入框的文本
+	run        bool    // 内置命令：选中就执行，不是补全
 }
 
 // completion 是输入框里正在补全的词与它的候选。
@@ -214,6 +216,9 @@ func completionRow(
 		Padding(5, 10).Radius(controlRound).Cursor(ui.CursorPointer).Label(opt.name)
 	row.OnClick(pick)
 	row.Children(func() {
+		if opt.icon != nil {
+			ui.Image(c, opt.icon).Size(menuIconSize, menuIconSize).Shrink(0)
+		}
 		ui.Text(c, opt.name).FontSize(menuNameSize).SingleLine().Width(nameW).Shrink(0)
 		if opt.tag != "" {
 			ui.Text(c, "["+opt.tag+"]").FontSize(12).TextColor(t.Accent).SingleLine().Shrink(0)
