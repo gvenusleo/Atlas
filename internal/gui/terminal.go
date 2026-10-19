@@ -53,8 +53,8 @@ func (a *App) newTerminal(ch *chat) {
 	sh.focus.Focus()
 }
 
-// termFont 是终端的字体：JetBrainsMono Nerd Font Mono，未安装时退回系统等宽字体。
-var termFont = terminal.Font{Family: "JetBrainsMono Nerd Font Mono, monospace", Size: 13}
+// termFont 是终端的字体。
+var termFont = terminal.Font{Family: monoFamily, Size: codeSize}
 
 // 终端的 16 色，取自 GitHub 的 VS Code 主题：黑红绿黄蓝品青白，再是它们的亮色。
 var (
@@ -163,7 +163,7 @@ func (a *App) terminalCard(c *ui.Context, t *ui.Theme, ch *chat, height float32)
 			terminal.View(c.Key("term-"+strconv.Itoa(sh.id)), sh.term).Bind(&sh.focus).
 				Grow(1).Padding(8, 12, 12)
 		case ch.termErr != "":
-			ui.Text(c, ch.termErr).TextColor(t.Danger).FontSize(13).Selectable().Padding(12)
+			ui.Text(c, ch.termErr).TextColor(t.Danger).FontSize(textSize).Selectable().Padding(12)
 		}
 	})
 }

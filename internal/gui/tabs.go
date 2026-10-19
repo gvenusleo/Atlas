@@ -52,11 +52,11 @@ func tabBody(c *ui.Context, t *ui.Theme, it tabItem) {
 	pick.OnClick(it.pick)
 	pick.Children(func() {
 		if it.icon != nil {
-			ui.Image(c, it.icon).Size(fileIconSize, fileIconSize).Shrink(0)
+			ui.Image(c, it.icon).Size(smallIconSize, smallIconSize).Shrink(0)
 		}
-		ui.Text(c, it.label).FontSize(13).SingleLine().TextColor(t.TextMuted)
+		ui.Text(c, it.label).FontSize(textSize).SingleLine().TextColor(t.TextMuted)
 		if it.note != "" {
-			ui.Text(c, truncate(it.note, 16)).FontSize(13).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, truncate(it.note, 16)).FontSize(textSize).TextColor(t.TextMuted).SingleLine()
 		}
 	})
 	if it.dirty {

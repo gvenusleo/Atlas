@@ -52,7 +52,7 @@ func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
 	case itemThinking, itemTool:
 		a.stepGroup(c, t, items)
 	case itemNotice:
-		ui.Text(c, it.text).FontSize(13).TextColor(t.TextMuted).Selectable()
+		ui.Text(c, it.text).FontSize(textSize).TextColor(t.TextMuted).Selectable()
 	case itemCompaction:
 		a.compaction(c, t, it)
 	case itemSkill:
@@ -65,13 +65,13 @@ func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 	if !it.done {
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
-			ui.Text(c, "正在压缩上下文").FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, "正在压缩上下文").FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 		})
 		return
 	}
 	const label = "已压缩较早的对话"
 	expandable(c, t, &it.open, label, false, func() {
-		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
 			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })
@@ -82,8 +82,8 @@ func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 // skillRow 画显式调用的技能：一行可展开的说明，展开是附给模型的 SKILL.md 全文。
 func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
 	expandable(c, t, &it.open, "已载入技能 "+it.skill, false, func() {
-		ui.Text(c, "已载入技能").FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
-		ui.Text(c, it.skill).FontSize(stepSize).SingleLine()
+		ui.Text(c, "已载入技能").FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, it.skill).FontSize(bodySize).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
 			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })
@@ -113,7 +113,7 @@ func (a *App) actions(
 			return
 		}
 		if !at.IsZero() {
-			ui.Text(c, since(at)).FontSize(12).TextColor(t.TextMuted).SingleLine().
+			ui.Text(c, since(at)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().
 				Padding(0, 4, 0, 0).Tooltip(at.Local().Format("2006-01-02 15:04:05"))
 		}
 		glyph, label := copyIcon, "复制"

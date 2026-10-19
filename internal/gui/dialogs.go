@@ -46,7 +46,7 @@ func (a *App) remove(id string) {
 // dialogs 构建重命名对话框和删除确认。
 func (a *App) dialogs(c *ui.Context) {
 	ui.Modal(c, &a.renameOpen, func() {
-		ui.Text(c, "重命名会话").Bold()
+		ui.Text(c, "重命名会话").FontSize(dialogSize).Bold()
 		submit := ui.TextInput(c, &a.renameText).AutoFocus().Width(320).Submitted()
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			cancel := ui.Button(c, "取消").Clicked()

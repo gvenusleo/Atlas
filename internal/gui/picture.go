@@ -91,9 +91,9 @@ func (a *App) picturePreview(c *ui.Context, t *ui.Theme, it *item) {
 		case p.bitmap != nil:
 			ui.Image(c, p.bitmap).Absolute().Top(0).Left(0).Size(w, h).Radius(boxRound)
 		case p.err != "":
-			note(c, "无法预览："+p.err, 12, t.TextMuted)
+			note(c, "无法预览："+p.err, smallSize, t.TextMuted)
 		default:
-			note(c, it.result, 12, t.TextMuted)
+			note(c, it.result, smallSize, t.TextMuted)
 		}
 	})
 }

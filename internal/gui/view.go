@@ -81,7 +81,7 @@ func (a *App) sidebarToggle(c *ui.Context, t *ui.Theme) {
 	}
 	btn.OnClick(a.toggleSidebar)
 	btn.Children(func() {
-		ui.Icon(c, sidebarIcon).FontSize(16).TextColor(t.TextMuted)
+		ui.Icon(c, sidebarIcon).FontSize(iconSize).TextColor(t.TextMuted)
 	})
 }
 
@@ -136,11 +136,11 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 		ui.Box(c).Grow(1).Children(func() { a.messages(c, t, ch) })
 		if ch.err != "" {
 			column(c, 4, func() {
-				ui.Text(c, ch.err).TextColor(t.Danger).FontSize(13).Selectable()
+				ui.Text(c, ch.err).TextColor(t.Danger).FontSize(textSize).Selectable()
 			})
 		}
 		if ch.retry != "" {
-			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(13) })
+			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(textSize) })
 		}
 		column(c, 0, func() { a.composer(c, t, ch) })
 		ui.Column(c).Height(12)
@@ -151,7 +151,8 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 func (a *App) welcome(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c).Grow(1).Justify(ui.Center).Children(func() {
 		column(c, 0, func() {
-			ui.Text(c, "今天想做点什么？").FontSize(22).Padding(0, 0, 16).TextAlign(ui.Center)
+			ui.Text(c, "今天想做点什么？").FontSize(titleSize).Padding(0, 0, 16).
+				TextAlign(ui.Center)
 			a.composer(c, t, ch)
 		})
 	})
@@ -216,7 +217,7 @@ func (a *App) jumpToLatest(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		btn.OnClick(ch.list.ScrollToEnd)
 		btn.Children(func() {
-			ui.Icon(c, sendIcon).FontSize(16).TextColor(t.TextMuted).Rotate(180)
+			ui.Icon(c, sendIcon).FontSize(iconSize).TextColor(t.TextMuted).Rotate(180)
 		})
 	})
 }

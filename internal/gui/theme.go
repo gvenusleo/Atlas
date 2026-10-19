@@ -6,8 +6,6 @@ import "github.com/egoist/mygo/ui"
 const (
 	contentWidth = 720 // 阅读栏的最大宽度
 	bubbleWidth  = 680 // 用户消息的最大宽度
-	bodySize     = 15  // 对话正文字号
-	stepSize     = 14  // 思考与工具步骤标题的字号
 	controlRound = 6   // 控件圆角
 	boxRound     = 8   // 代码框与对比框的圆角
 	inputRound   = 16  // 输入框圆角
@@ -33,12 +31,33 @@ const (
 	treeDefault   = 200 // 文件树的默认宽度
 	treeRowHeight = 24  // 文件树一行的高度
 	treeIndent    = 14  // 文件树每深一层缩进的宽度
-	fileIconSize  = 14  // 文件类型图标的边长
 	barGap        = 4   // 标题栏右端相邻按钮的间距
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度
 	sidebarDefault = 240 // 侧栏默认宽度，双击分隔条恢复
+)
+
+// 界面的字号，单位为 DIP。没指定字号的文字用 bodySize，见 applyTheme。
+// mygo 的部件按主题字号（即 bodySize）推导自己的字号：侧栏分组标题与提示框小 1，
+// 徽标小 2，对话框标题（ui.AlertDialog）大 1。改 bodySize 时它们跟着变。
+const (
+	titleSize  = 22           // 空会话的标题
+	dialogSize = bodySize + 1 // 对话框的标题，与 ui.AlertDialog 的标题一样大
+	bodySize   = 14           // 正文：对话、输入框、标题栏与侧栏，以及步骤标题
+	textSize   = 13           // 面板、列表、标签、补全里的文字
+	smallSize  = 12           // 状态栏、时间、说明、徽标
+	codeSize   = 12           // 等宽文字：代码、命令输出、编辑器
+)
+
+// monoFamily 是等宽字体：JetBrainsMono Nerd Font Mono，未安装时退回系统等宽字体。
+const monoFamily = "JetBrainsMono Nerd Font Mono, monospace"
+
+// 图标的尺寸，单位为 DIP。
+const (
+	iconSize      = 16 // 按钮与入口里的图标
+	smallIconSize = 14 // 与 textSize 的文字并排的图标：文件类型、展开箭头、目录
+	emptyIconSize = 28 // 空状态里的大图标
 )
 
 // palette 是一套主题色，取自 GitHub Primer 的默认亮色与暗色。
@@ -90,7 +109,7 @@ func applyTheme(c *ui.Context) *ui.Theme {
 	t.AccentText = ui.Hex("#FFFFFF")
 	t.Danger, t.Success, t.Warning = p.danger, p.success, p.running
 	t.Focus, t.Selection = p.accent, p.accent.Alpha(0.25)
-	t.Radius, t.FontSize = controlRound, 14
+	t.Radius, t.FontSize = controlRound, bodySize
 	c.SetTheme(&t)
 	return &t
 }

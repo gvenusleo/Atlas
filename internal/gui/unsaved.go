@@ -33,8 +33,8 @@ func (a *App) unsavedDialog(c *ui.Context) {
 		if tb == nil {
 			return
 		}
-		ui.Text(c, "要保存“"+filepath.Base(tb.path)+"”的修改吗？").Bold()
-		ui.Text(c, "不保存的话，这些修改会丢掉。").FontSize(13).TextColor(c.Theme().TextMuted)
+		ui.Text(c, "要保存“"+filepath.Base(tb.path)+"”的修改吗？").FontSize(dialogSize).Bold()
+		ui.Text(c, "不保存的话，这些修改会丢掉。").TextColor(c.Theme().TextMuted)
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			cancel := ui.Button(c, "取消").Clicked()
 			discard := ui.Button(c, "不保存").Clicked()

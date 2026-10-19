@@ -36,8 +36,8 @@ func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 	row.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound)
 	row.Children(func() {
-		ui.Icon(c, folderIcon).FontSize(14).TextColor(t.TextMuted)
-		ui.Text(c, shortPath(ch.cwd)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+		ui.Icon(c, folderIcon).FontSize(smallIconSize).TextColor(t.TextMuted)
+		ui.Text(c, shortPath(ch.cwd)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 	})
 }
 
@@ -105,7 +105,7 @@ func dropdown[T comparable](
 		sel.Trigger.Background(rowFill(t))
 	}
 	sel.Trigger.Children(func() {
-		ui.Text(c, name(*value)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, name(*value)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 	})
 	sel.Popup(func(panel ui.Element) {
 		popupPanel(panel, t).Margin(6, 0, 6, 0)
@@ -114,7 +114,7 @@ func dropdown[T comparable](
 			if item.Highlighted() {
 				item.Background(t.Text.Alpha(0.07))
 			}
-			item.Children(func() { ui.Text(c, name(option)).FontSize(13).SingleLine() })
+			item.Children(func() { ui.Text(c, name(option)).FontSize(smallSize).SingleLine() })
 		}
 	})
 	return sel.Trigger.Changed()

@@ -39,7 +39,7 @@ func (a *App) fileTree(c *ui.Context, t *ui.Theme, ch *chat) {
 	fp := ch.files
 	ui.Column(c).Fill().Children(func() {
 		// 筛选框不要底色、字小一点、上下内边距压紧，不抢文件树的视线。
-		ui.SearchField(c, &fp.filter).Label("筛选文件").FontSize(12).
+		ui.SearchField(c, &fp.filter).Label("筛选文件").FontSize(smallSize).
 			Background(ui.Transparent).Padding(3, 8).Margin(8, 8, 4)
 		if fp.filter != "" {
 			a.filterResults(c, t, ch)
@@ -72,19 +72,19 @@ func (a *App) treeRowView(c *ui.Context, t *ui.Theme, ch *chat, r treeRow) {
 		a.openFile(ch, r.rel)
 	})
 	row.Children(func() {
-		ui.Row(c).Size(fileIconSize, fileIconSize).Shrink(0).Justify(ui.Center).
+		ui.Row(c).Size(smallIconSize, smallIconSize).Shrink(0).Justify(ui.Center).
 			AlignItems(ui.Center).Children(func() {
 			if !r.dir {
-				ui.Image(c, fileIcon(r.rel)).Size(fileIconSize, fileIconSize)
+				ui.Image(c, fileIcon(r.rel)).Size(smallIconSize, smallIconSize)
 				return
 			}
 			angle := float32(0)
 			if r.open {
 				angle = 90
 			}
-			ui.Icon(c, chevronIcon).FontSize(14).TextColor(t.TextMuted).Rotate(angle)
+			ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(angle)
 		})
-		ui.Text(c, r.name).FontSize(13).SingleLine()
+		ui.Text(c, r.name).FontSize(textSize).SingleLine()
 	})
 }
 
@@ -105,7 +105,7 @@ func (a *App) filterResults(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.resultRow(c, t, ch, p)
 		}
 		if len(found) == 0 {
-			ui.Text(c, "没有匹配的文件").FontSize(12).TextColor(t.TextMuted).Padding(8)
+			ui.Text(c, "没有匹配的文件").FontSize(smallSize).TextColor(t.TextMuted).Padding(8)
 		}
 	})
 }
@@ -123,11 +123,11 @@ func (a *App) resultRow(c *ui.Context, t *ui.Theme, ch *chat, p string) {
 	}
 	row.OnClick(func() { a.openFile(ch, p) })
 	row.Children(func() {
-		ui.Image(c, fileIcon(p)).Size(fileIconSize, fileIconSize).Shrink(0)
+		ui.Image(c, fileIcon(p)).Size(smallIconSize, smallIconSize).Shrink(0)
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-			ui.Text(c, name).FontSize(13).SingleLine()
+			ui.Text(c, name).FontSize(textSize).SingleLine()
 			if dir != "" {
-				ui.Text(c, strings.TrimSuffix(dir, "/")).FontSize(11).TextColor(t.TextMuted).
+				ui.Text(c, strings.TrimSuffix(dir, "/")).FontSize(smallSize).TextColor(t.TextMuted).
 					SingleLine()
 			}
 		})

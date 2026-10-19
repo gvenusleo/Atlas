@@ -82,7 +82,7 @@ func diffBody(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 	}
 	diffBox(c, t, v.diffs)
 	if note := truncatedNote(v.args.Content); !edit && note != "" {
-		ui.Text(c, note).FontSize(12).TextColor(t.TextMuted)
+		ui.Text(c, note).FontSize(smallSize).TextColor(t.TextMuted)
 	}
 }
 
@@ -129,7 +129,7 @@ func fileContent(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 	if w.Start < 1 || w.End < w.Start {
 		// 空文件没有行可画，只有一句说明。
 		if it.result != "" {
-			note(c, it.result, 12, t.TextMuted)
+			note(c, it.result, smallSize, t.TextMuted)
 		}
 		return
 	}
@@ -154,7 +154,7 @@ func overwritten(c *ui.Context, t *ui.Theme, v *callView) {
 	}
 	codeBox(c, t, v.code)
 	if note := truncatedNote(v.args.Content); note != "" {
-		ui.Text(c, note).FontSize(12).TextColor(t.TextMuted)
+		ui.Text(c, note).FontSize(smallSize).TextColor(t.TextMuted)
 	}
 }
 

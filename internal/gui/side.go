@@ -32,7 +32,7 @@ func panelButton(
 		btn.Background(buttonFill(t))
 	}
 	btn.OnClick(click)
-	btn.Children(func() { ui.Icon(c, glyph).FontSize(16).TextColor(color) })
+	btn.Children(func() { ui.Icon(c, glyph).FontSize(iconSize).TextColor(color) })
 }
 
 // sideHandle 是对话区与右侧栏之间的拖动条：不可见，悬停时显示左右拖动的光标，

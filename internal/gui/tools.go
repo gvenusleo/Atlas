@@ -23,7 +23,7 @@ const (
 )
 
 // codeFont 是命令、输出与内容对比用的等宽字体，与终端一致。
-var codeFont = ui.Font{Family: termFont.Family, Size: 12}
+var codeFont = ui.Font{Family: monoFamily, Size: codeSize}
 
 // toolVerbs 是各类调用完成时与进行中的动词，键见 verbKey。
 var toolVerbs = map[string][2]string{
@@ -174,7 +174,7 @@ func (a *App) stepGroup(c *ui.Context, t *ui.Theme, items []*item) {
 		if running {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
-		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 		if added+removed > 0 {
 			diffPill(c, t, added, removed)
 		}
@@ -207,10 +207,10 @@ func (a *App) thinkStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 		if it.active() {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
-		ui.Text(c, label).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 	}, func() {
 		panelBody(c, t, card, func() {
-			scrolled(c, func() { note(c, it.text, 13, t.TextMuted) })
+			scrolled(c, func() { note(c, it.text, textSize, t.TextMuted) })
 		})
 	})
 }
@@ -223,15 +223,15 @@ func (a *App) toolStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 		if it.active() {
 			ui.Spinner(c).Size(12, 12).Shrink(0)
 		}
-		ui.Text(c, verb).FontSize(stepSize).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, verb).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 		if subject != "" {
-			ui.Text(c, subject).FontSize(stepSize).SingleLine().Tooltip(tip)
+			ui.Text(c, subject).FontSize(bodySize).SingleLine().Tooltip(tip)
 		}
 		if added+removed > 0 {
 			diffPill(c, t, added, removed)
 		}
 		if it.failed {
-			ui.Text(c, "失败").FontSize(stepSize).TextColor(t.Danger).SingleLine()
+			ui.Text(c, "失败").FontSize(bodySize).TextColor(t.Danger).SingleLine()
 		}
 	}, func() {
 		panelBody(c, t, card, func() { a.toolDetail(c, t, it) })
@@ -269,7 +269,8 @@ func expandable(
 	}
 	tr.Children(func() {
 		head()
-		ui.Icon(c, chevronIcon).FontSize(13).TextColor(t.TextMuted).Rotate(90 * p.Progress())
+		ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).
+			Rotate(90 * p.Progress())
 	})
 	p.Panel(body)
 }
@@ -349,9 +350,9 @@ func groupSummary(items []*item) (label string, added, removed int, running bool
 // diffPill 画“+147 −0”的小标签：左半绿、右半红。
 func diffPill(c *ui.Context, t *ui.Theme, added, removed int) {
 	ui.Row(c).Shrink(0).Radius(4).Clip().Children(func() {
-		ui.Text(c, fmt.Sprintf("+%d", added)).FontSize(12).TextColor(t.Success).
+		ui.Text(c, fmt.Sprintf("+%d", added)).FontSize(smallSize).TextColor(t.Success).
 			Background(t.Success.Alpha(0.15)).Padding(1, 6).SingleLine()
-		ui.Text(c, fmt.Sprintf("−%d", removed)).FontSize(12).TextColor(t.Danger).
+		ui.Text(c, fmt.Sprintf("−%d", removed)).FontSize(smallSize).TextColor(t.Danger).
 			Background(t.Danger.Alpha(0.15)).Padding(1, 6).SingleLine()
 	})
 }
@@ -389,7 +390,7 @@ func (a *App) toolDetail(c *ui.Context, t *ui.Theme, it *item) {
 	ui.Column(c).Gap(8).Children(func() {
 		if v.args.Path != "" {
 			path := location(a.current.cwd, it.tool, v)
-			ui.Text(c, path).Selectable().FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, path).Selectable().FontSize(smallSize).TextColor(t.TextMuted)
 		}
 		switch {
 		case it.failed && it.tool != "shell":
@@ -406,7 +407,7 @@ func (a *App) toolDetail(c *ui.Context, t *ui.Theme, it *item) {
 			diffBody(c, t, it, v)
 		default:
 			if it.args != "" {
-				note(c, truncate(it.args, bodyRunes), 12, t.TextMuted)
+				note(c, truncate(it.args, bodyRunes), smallSize, t.TextMuted)
 			}
 		}
 		_, known := toolVerbs[it.tool]

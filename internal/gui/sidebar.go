@@ -74,7 +74,7 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 			a.open(selected)
 		}
 		if a.err != "" {
-			ui.Text(c, a.err).FontSize(12).TextColor(t.Danger).Selectable().Padding(8)
+			ui.Text(c, a.err).FontSize(smallSize).TextColor(t.Danger).Selectable().Padding(8)
 		}
 	})
 }
@@ -103,10 +103,10 @@ func entry(
 	}
 	btn.Children(func() {
 		slot := ui.Row(c).Size(20, 20).Shrink(0).Radius(10).Justify(ui.Center).AlignItems(ui.Center)
-		size, color := float32(16), t.TextMuted
+		size, color := float32(iconSize), t.TextMuted
 		if primary {
 			slot.Background(buttonFill(t))
-			size, color = 14, t.Text
+			size, color = smallIconSize, t.Text
 		}
 		slot.Children(func() { ui.Icon(c, glyph).FontSize(size).TextColor(color) })
 		ui.Text(c, label).SingleLine()
@@ -168,7 +168,7 @@ func (a *App) showMore(c *ui.Context, t *ui.Theme, cwd string, hidden int) {
 	btn.OnClick(func() { a.more[cwd] = true })
 	btn.Children(func() {
 		text := fmt.Sprintf("显示更多（%d）", hidden)
-		ui.Text(c, text).FontSize(13).TextColor(t.TextMuted)
+		ui.Text(c, text).FontSize(textSize).TextColor(t.TextMuted)
 	})
 }
 
@@ -230,7 +230,7 @@ func trail(
 			case running:
 				ui.Spinner(c).Size(12, 12).Label("运行中")
 			default:
-				ui.Text(c, ago(updated)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+				ui.Text(c, ago(updated)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 			}
 			more := ui.ButtonBase(c.Key("more")).Size(size, size).Shrink(0).Radius(controlRound).
 				Cursor(ui.CursorPointer).Label("更多").Disabled(!hovered)
@@ -239,7 +239,9 @@ func trail(
 			}
 			more.Menu(menu)
 			if hovered {
-				more.Children(func() { ui.Icon(c, moreIcon).FontSize(16).TextColor(t.TextMuted) })
+				more.Children(func() {
+					ui.Icon(c, moreIcon).FontSize(iconSize).TextColor(t.TextMuted)
+				})
 			}
 		})
 }

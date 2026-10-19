@@ -8,13 +8,11 @@ import (
 )
 
 // 补全列表的尺寸：menuHeight 是最大高度，选项多时在里面滚动；menuRows 是它大约能放下的
-// 行数；menuNameSize 是名称的字号，量宽度与绘制都用它；menuNameMax 是名称一列的最大宽度，
-// 过长的文件名省略，不挤掉后面的内容。
+// 行数；menuNameMax 是名称一列的最大宽度，过长的文件名省略，不挤掉后面的内容。
 const (
-	menuHeight   = 240
-	menuRows     = 10
-	menuNameSize = 13
-	menuNameMax  = 280
+	menuHeight  = 240
+	menuRows    = 10
+	menuNameMax = 280
 )
 
 // option 是补全列表里的一项：命令、技能或文件。
@@ -216,21 +214,22 @@ func completionRow(
 	row.OnClick(pick)
 	row.Children(func() {
 		if opt.icon != nil {
-			ui.Image(c, opt.icon).Size(fileIconSize, fileIconSize).Shrink(0)
+			ui.Image(c, opt.icon).Size(smallIconSize, smallIconSize).Shrink(0)
 		}
-		ui.Text(c, opt.name).FontSize(menuNameSize).SingleLine().Width(nameW).Shrink(0)
+		ui.Text(c, opt.name).FontSize(textSize).SingleLine().Width(nameW).Shrink(0)
 		if opt.tag != "" {
-			ui.Text(c, "["+opt.tag+"]").FontSize(12).TextColor(t.Accent).SingleLine().Shrink(0)
+			ui.Text(c, "["+opt.tag+"]").FontSize(smallSize).TextColor(t.Accent).
+				SingleLine().Shrink(0)
 		}
 		// 说明可能分了好几行，列表里只要一行。
 		hint := strings.Join(strings.Fields(opt.hint), " ")
-		ui.Text(c, hint).FontSize(12).TextColor(t.TextMuted).SingleLine().MinWidth(0)
+		ui.Text(c, hint).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().MinWidth(0)
 	})
 	return row
 }
 
 // measureName 是名称在列表里占的宽度，多留 1 DIP 免得被省略。
 func measureName(c *ui.Context, name string) float32 {
-	w, _ := c.MeasureText(1e6, ui.Span{Text: name, Size: menuNameSize})
+	w, _ := c.MeasureText(1e6, ui.Span{Text: name, Size: textSize})
 	return min(w+1, menuNameMax)
 }

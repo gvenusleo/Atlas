@@ -120,6 +120,8 @@ func newApp(h *host.Manager) *App {
 	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByCharacter}
 	a.md.Theme = &markdown.Theme{
 		FontSize:     bodySize,
+		CodeFont:     monoFamily,
+		CodeSize:     float32(codeSize) / bodySize,
 		LineHeight:   1.6,
 		BlockSpacing: 0.7,
 		Headings: [6]markdown.HeadingStyle{
@@ -131,19 +133,25 @@ func newApp(h *host.Manager) *App {
 			{Size: 0.9, Weight: 600},
 		},
 	}
-	// 文件面板里的预览与对话用同一套标题与间距，正文与面板里的其他字一样大。
-	file := *a.md.Theme
-	file.FontSize = 13
-	a.mdFile.Theme = &file
-	a.mdNote.Theme = &markdown.Theme{
-		FontSize:     13,
+	// 面板里的 Markdown 正文与面板里的其他字一样大，行距与间距更紧凑。各处的代码都是
+	// codeSize，所以 CodeSize 按各自的正文字号折算。
+	note := markdown.Theme{
+		FontSize:     textSize,
+		CodeFont:     monoFamily,
+		CodeSize:     float32(codeSize) / textSize,
 		LineHeight:   1.5,
 		BlockSpacing: 0.5,
 		Headings: [6]markdown.HeadingStyle{
-			{Size: 1.15, Weight: 600}, {Size: 1.1, Weight: 600}, {Size: 1.05, Weight: 600},
+			{Size: 1.25, Weight: 600}, {Size: 1.15, Weight: 600}, {Size: 1.05, Weight: 600},
 			{Size: 1, Weight: 600}, {Size: 1, Weight: 600}, {Size: 1, Weight: 600},
 		},
 	}
+	a.mdNote.Theme = &note
+	// 文件预览是整篇文档，标题用对话的；H5、H6 与 H4 同大，免得小于 smallSize。
+	file := note
+	file.Headings = a.md.Theme.Headings
+	file.Headings[4], file.Headings[5] = file.Headings[3], file.Headings[3]
+	a.mdFile.Theme = &file
 	a.cwd, _ = os.UserHomeDir()
 	a.newChat()
 	return a

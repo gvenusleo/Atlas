@@ -70,6 +70,6 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 	btn.Size(30, 30).Padding(0).Radius(15).AlignSelf(ui.End).Label(label).Tooltip(label)
 	btn.Children(func() {
-		ui.Icon(c, glyph).FontSize(18)
+		ui.Icon(c, glyph).FontSize(iconSize)
 	})
 }

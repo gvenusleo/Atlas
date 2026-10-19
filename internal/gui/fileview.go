@@ -54,7 +54,7 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 		Children(func() {
 			treeToggle(c, t, fp)
 			if len(items) == 0 {
-				ui.Text(c, "文件").FontSize(13).Padding(0, 6)
+				ui.Text(c, "文件").FontSize(textSize).Padding(0, 6)
 			}
 			a.tabStrip(c, t, "file", items, fp.active, &fp.reveal)
 			ui.Row(c).Grow(1)
@@ -75,7 +75,7 @@ func treeToggle(c *ui.Context, t *ui.Theme, fp *filePanel) {
 		btn.Background(buttonFill(t))
 	}
 	btn.OnClick(func() { fp.treeHidden = !fp.treeHidden })
-	btn.Children(func() { ui.Icon(c, listIcon).FontSize(16).TextColor(color) })
+	btn.Children(func() { ui.Icon(c, listIcon).FontSize(iconSize).TextColor(color) })
 }
 
 // fileContent 画内容区：没有标签时是说明，否则是当前标签的路径与内容。
@@ -103,9 +103,9 @@ func fileHeader(c *ui.Context, t *ui.Theme, rel string, tb *fileTab) {
 		ui.Row(c).Grow(1).MinWidth(0).Gap(4).ClipX().Children(func() {
 			if dir != "" {
 				dir = strings.ReplaceAll(strings.TrimSuffix(dir, "/"), "/", " / ") + " /"
-				ui.Text(c, dir).FontSize(13).TextColor(t.TextMuted).SingleLine().Shrink(0)
+				ui.Text(c, dir).FontSize(textSize).TextColor(t.TextMuted).SingleLine().Shrink(0)
 			}
-			ui.Text(c, name).FontSize(13).SingleLine()
+			ui.Text(c, name).FontSize(textSize).SingleLine()
 		})
 		if tb.ed != nil && isMarkdown(tb.path) {
 			glyph, label := codeIcon, "查看源码"
@@ -132,7 +132,7 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		return
 	}
 	ui.Column(c).Gap(6).Padding(8, 14).Background(color.Alpha(0.12)).Children(func() {
-		ui.Text(c, msg).FontSize(12)
+		ui.Text(c, msg).FontSize(smallSize)
 		if tb.changed && tb.err == "" {
 			ui.Row(c).Gap(8).Children(func() {
 				if ui.Button(c, "重新加载").Clicked() {
@@ -152,7 +152,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.loading:
 		ui.Spinner(c).Margin(ui.Auto)
 	case tb.ed == nil:
-		ui.Text(c, tb.note).FontSize(13).TextColor(t.TextMuted).TextAlign(ui.Center).
+		ui.Text(c, tb.note).FontSize(textSize).TextColor(t.TextMuted).TextAlign(ui.Center).
 			Margin(ui.Auto)
 	case tb.preview:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
@@ -172,8 +172,8 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 func emptyFiles(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Grow(1).Justify(ui.Center).AlignItems(ui.Center).Gap(8).Padding(24).
 		Children(func() {
-			ui.Icon(c, folderIcon).FontSize(28).TextColor(t.TextMuted)
-			ui.Text(c, "打开的文件显示在这里").FontSize(14)
-			ui.Text(c, "请在文件树中选择一个文件。").FontSize(12).TextColor(t.TextMuted)
+			ui.Icon(c, folderIcon).FontSize(emptyIconSize).TextColor(t.TextMuted)
+			ui.Text(c, "打开的文件显示在这里").FontSize(bodySize)
+			ui.Text(c, "请在文件树中选择一个文件。").FontSize(smallSize).TextColor(t.TextMuted)
 		})
 }
