@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -40,7 +41,8 @@ type ModelInfo struct {
 	UnsupportedReason string
 }
 
-// Models 读取当前配置中的所有模型，不加载凭据或发起网络请求。
+// Models 读取当前配置中的所有模型，不加载凭据或发起网络请求。清单按显示名排序，
+// 不分大小写，显示名相同的再按引用排。
 func (m *Manager) Models(ctx context.Context) (ModelCatalog, error) {
 	ctx, done, err := m.begin(ctx)
 	if err != nil {
@@ -68,8 +70,9 @@ func (m *Manager) Models(ctx context.Context) (ModelCatalog, error) {
 			catalog.Models = append(catalog.Models, info)
 		}
 	}
-	slices.SortStableFunc(catalog.Models, func(a, b ModelInfo) int {
-		return cmp.Compare(a.Ref, b.Ref)
+	slices.SortFunc(catalog.Models, func(a, b ModelInfo) int {
+		return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			cmp.Compare(a.Name, b.Name), cmp.Compare(a.Ref, b.Ref))
 	})
 	if err := ctx.Err(); err != nil {
 		return ModelCatalog{}, err
