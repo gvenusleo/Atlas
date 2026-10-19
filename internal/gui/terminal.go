@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -121,62 +122,40 @@ func (ch *chat) closeTerms() {
 	ch.terms, ch.termTab, ch.termOpen = nil, 0, false
 }
 
-// leave 在离开一个尚未创建的空白会话前关闭它的终端：之后再也回不到它。
-func (a *App) leave() {
-	if ch := a.current; ch != nil && ch.id == "" && !ch.running {
-		ch.closeTerms()
+// closePanels 关闭会话的终端，并停止文件面板的监视，在会话被删除、丢弃或应用退出时调用。
+func (ch *chat) closePanels() {
+	ch.closeTerms()
+	if ch.files != nil {
+		ch.files.stopWatch()
 	}
 }
 
-// closeAllTerminals 在应用退出时关闭所有会话的终端。
-func (a *App) closeAllTerminals() {
+// leave 在离开一个尚未创建的空白会话前关闭它的终端与文件面板：之后再也回不到它。文件面板里
+// 有没保存的修改时不离开，提示一声并返回 false。
+func (a *App) leave() bool {
+	ch := a.current
+	if ch == nil || ch.id != "" || ch.running {
+		return true
+	}
+	if n := ch.dirtyTabs(); n > 0 {
+		a.toast = fmt.Sprintf("文件面板里有 %d 个未保存的修改，先保存或关闭它们。", n)
+		return false
+	}
+	ch.closePanels()
+	return true
+}
+
+// closeAllPanels 在应用退出时关闭所有会话的终端，并停止文件面板的监视。
+func (a *App) closeAllPanels() {
 	for _, ch := range a.chats {
-		ch.closeTerms()
+		ch.closePanels()
 	}
-	a.current.closeTerms()
+	a.current.closePanels()
 }
 
-// terminalButton 是标题栏右端的终端开关；面板打开时用强调色标出。
-func (a *App) terminalButton(c *ui.Context, t *ui.Theme) {
-	open := a.current.termOpen
-	top := (titleBarHeight(c) - barButton) / 2
-	// 绝对定位在标题栏的右端，不占标题栏的位置；标题栏给它留出了空隙。
-	btn := ui.ButtonBase(c).Absolute().Top(top).Right(barInset+c.TitleBar().Right).
-		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
-		Label("终端").Tooltip("终端")
-	color := t.TextMuted
-	switch {
-	case open:
-		btn.Background(t.Accent.Alpha(0.15))
-		color = t.Accent
-	case btn.Hovered():
-		btn.Background(t.Text.Alpha(0.08))
-	}
-	btn.OnClick(a.toggleTerminal)
-	btn.Children(func() { ui.Icon(c, terminalIcon).FontSize(16).TextColor(color) })
-}
-
-// termHandle 是对话区与终端卡片之间的拖动条：不可见，悬停时显示左右拖动的光标，
-// 左右拖动调整卡片宽度。
-func (a *App) termHandle(c *ui.Context) {
-	handle := ui.Box(c).Width(handleWidth).Shrink(0).Cursor(ui.CursorResizeEW)
-	if dx, _, ok := handle.Dragged(); ok {
-		a.termWidth -= dx
-	}
-}
-
-// terminalCard 是右侧浮动的终端卡片：圆角边框，离窗口边缘留出 edge 的空隙；
-// 顶部是标签栏，其下是当前标签的终端。
-func (a *App) terminalCard(c *ui.Context, t *ui.Theme, ch *chat) {
-	// 窗口控件在右上角的平台上，卡片从标题栏下方开始。
-	top := float32(edge)
-	if c.TitleBar().Right > 0 {
-		top = titleBarHeight(c)
-	}
-	card := ui.Column(c.Key("term-card")).Width(a.termWidth).Shrink(0).Margin(top, edge, edge, 0).
-		Radius(cardRound).Background(t.Background).Border(1, t.Border).
-		Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06)).Clip() // 终端是方角的，裁到卡片的圆角里
-	card.Children(func() {
+// terminalCard 是右侧栏里的终端卡片：顶部是标签栏，其下是当前标签的终端。
+func (a *App) terminalCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
+	sideCard(c, t, "term-card", height).Children(func() {
 		a.termTabs(c, t, ch)
 		switch {
 		case len(ch.terms) > 0:
@@ -189,65 +168,26 @@ func (a *App) terminalCard(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// termTabs 画卡片顶部的标签栏：各个终端、新建，以及右端的收起按钮。
+// termTabs 画卡片顶部的标签栏：各个终端、新建，以及右端的收起按钮。标签太多放不下时
+// 滚动，新建与收起按钮始终可见。
 func (a *App) termTabs(c *ui.Context, t *ui.Theme, ch *chat) {
-	// 卡片上沿离窗口 edge，边框占 1：标签栏高度取标题栏减去上下各 edge 和边框，
-	// 这样标签与标题栏里的按钮、交通灯在同一条水平线上。
-	ui.Row(c).Height(titleBarHeight(c)-2*edge-2).AlignItems(ui.Center).Gap(2).
-		Padding(0, tabInset).Children(func() {
-		// 标签放在可横向滚动的行里：太多放不下时滚动，新建与收起按钮始终可见。
-		ui.ScrollHorizontal(c).Shrink(1).MinWidth(0).Gap(2).AlignItems(ui.Center).
-			Children(func() {
-				for i, sh := range ch.terms {
-					a.termTab(c, t, ch, i, sh)
-				}
-			})
-		iconButton(c, t, plusIcon, "新建终端", barButton, func() { a.newTerminal(ch) })
-		ui.Row(c).Grow(1)
-		iconButton(c, t, closeIcon, "收起终端", barButton, a.toggleTerminal)
-	})
-}
-
-// termTab 画一个标签：“终端 N”加程序设置的标题，右侧是关闭按钮。
-func (a *App) termTab(c *ui.Context, t *ui.Theme, ch *chat, i int, sh *shell) {
-	label := "终端 " + strconv.Itoa(i+1)
-	active := i == ch.termTab
-	row := ui.Row(c.Key("tab-"+strconv.Itoa(sh.id))).Height(tabHeight).AlignItems(ui.Center).
-		Gap(4).Shrink(0).Radius(controlRound).Padding(0, 4, 0, 8)
-	// 只有一个标签时它无从区分，不加底色。
-	if active && len(ch.terms) > 1 {
-		row.Background(t.Text.Alpha(0.08))
+	items := make([]tabItem, len(ch.terms))
+	for i, sh := range ch.terms {
+		items[i] = tabItem{
+			id: sh.id, label: "终端 " + strconv.Itoa(i+1), note: sh.term.Title(),
+			closeLabel: "关闭终端",
+			pick: func() {
+				ch.termTab, ch.termReveal = i, sh.id
+				sh.focus.Focus()
+			},
+			close: func() { ch.closeTerm(i) },
+		}
 	}
-	// 新建或切换到的标签滚进可见范围；只在那一帧请求，之后用户可以自由滚走。
-	if ch.termReveal == sh.id {
-		row.ScrollIntoView()
-		a.win.Update(func() { ch.termReveal = 0 })
-	}
-	row.Children(func() {
-		pick := ui.ButtonBase(c).Gap(6).Cursor(ui.CursorPointer).Label(label)
-		pick.OnClick(func() {
-			ch.termTab, ch.termReveal = i, sh.id
-			sh.focus.Focus()
+	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
+		Children(func() {
+			a.tabStrip(c, t, "term", items, ch.termTab, &ch.termReveal)
+			iconButton(c, t, plusIcon, "新建终端", barButton, func() { a.newTerminal(ch) })
+			ui.Row(c).Grow(1)
+			iconButton(c, t, closeIcon, "收起终端", barButton, a.toggleTerminal)
 		})
-		pick.Children(func() {
-			ui.Text(c, label).FontSize(13).SingleLine().TextColor(t.TextMuted)
-			if title := sh.term.Title(); title != "" {
-				ui.Text(c, truncate(title, 16)).FontSize(13).TextColor(t.TextMuted).SingleLine()
-			}
-		})
-		iconButton(c, t, closeIcon, "关闭终端", 18, func() { ch.closeTerm(i) })
-	})
-}
-
-// iconButton 画一个只有图标的方形小按钮，图标取边长的 0.6。
-func iconButton(
-	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, size float32, click func(),
-) {
-	btn := ui.ButtonBase(c).Size(size, size).Radius(controlRound).Cursor(ui.CursorPointer).
-		Label(label).Tooltip(label)
-	if btn.Hovered() {
-		btn.Background(t.Text.Alpha(0.08))
-	}
-	btn.OnClick(click)
-	btn.Children(func() { ui.Icon(c, glyph).FontSize(size * 0.6).TextColor(t.TextMuted) })
 }

@@ -8,10 +8,64 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"time"
 )
 
-// walkLimit 是遍历非 git 目录时最多列出的文件数，免得在巨大的目录里列太久、占太多内存。
-const walkLimit = 20000
+// 路径列表的参数：walkLimit 是遍历非 git 目录时最多列出的文件数，免得在巨大的目录里
+// 列太久、占太多内存；pathsMaxAge 是路径列表用多久就要重新列，运行中新建的文件也才找得到。
+const (
+	walkLimit   = 20000
+	pathsMaxAge = 3 * time.Second
+)
+
+// pathIndex 是会话工作目录下的路径列表，@ 补全与文件面板的筛选共用。
+type pathIndex struct {
+	cwd     string    // paths 对应的工作目录
+	paths   []string  // 工作目录下的文件与目录
+	at      time.Time // 开始列 paths 的时刻
+	version int       // paths 每变一次加一，按它排好的缓存据此作废
+}
+
+// rankKey 是按查询排好的路径的缓存键：同一个查询、同一版路径列表，排出来的结果就一样。
+type rankKey struct {
+	query   string
+	version int
+}
+
+// stale 报告路径列表是否该（重新）列出：换了工作目录，或用了 pathsMaxAge。
+func (ix *pathIndex) stale(cwd string) bool {
+	return ix.cwd != cwd || time.Since(ix.at) > pathsMaxAge
+}
+
+// loadPaths 在后台列出 ch 的工作目录下的路径。重新列完之前先用旧的，换了工作目录则先清掉旧的。
+func (a *App) loadPaths(ch *chat) {
+	ix, cwd := &ch.index, ch.cwd
+	if ix.cwd != cwd {
+		ix.paths = nil
+		ix.version++
+	}
+	ix.cwd, ix.at = cwd, time.Now()
+	go func() {
+		list := listPaths(cwd)
+		a.win.Update(func() {
+			if ix.cwd == cwd { // 列的时候换了工作目录的，结果作废
+				ix.paths = list
+				ix.version++
+			}
+		})
+	}()
+}
+
+// relOrAbs 返回 p 相对工作目录 cwd 的路径；不在 cwd 下的返回绝对路径。相对的 p 按 cwd 解析。
+func relOrAbs(cwd, p string) string {
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(cwd, p)
+	}
+	if rel, err := filepath.Rel(cwd, p); err == nil && filepath.IsLocal(rel) {
+		return rel
+	}
+	return p
+}
 
 // listPaths 列出工作目录下的文件与目录，供补全消息里的 @ 引用：路径相对工作目录、
 // 用 / 分隔，目录以 / 结尾。git 仓库里按 git 的口径，列出跟踪的文件与没被 .gitignore

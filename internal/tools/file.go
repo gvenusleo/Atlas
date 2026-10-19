@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"unicode/utf8"
@@ -58,4 +59,22 @@ func readRegularFile(ctx context.Context, path string) ([]byte, error) {
 // validText 判断内容是否为不含 NUL 的 UTF-8 文本。
 func validText(data []byte) bool {
 	return utf8.Valid(data) && bytes.IndexByte(data, 0) < 0
+}
+
+// ReadText 读取一个 UTF-8 文本文件，供界面打开文件：info 是读取之前文件的状态，界面据此发现
+// 之后的外部修改，读到它之后文件才出错时也会返回。不是普通文件、超过大小上限、不是 UTF-8
+// 文本时返回错误。
+func ReadText(ctx context.Context, path string) (text string, info fs.FileInfo, err error) {
+	info, err = os.Stat(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s 检查失败: %w", path, err)
+	}
+	data, err := readRegularFile(ctx, path)
+	if err != nil {
+		return "", info, err
+	}
+	if !validText(data) {
+		return "", info, fmt.Errorf("%s 不是 UTF-8 文本", path)
+	}
+	return string(data), info, nil
 }

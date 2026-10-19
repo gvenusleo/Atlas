@@ -28,7 +28,7 @@ func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	if ch.id == "" && !ch.running {
 		row = ui.ButtonBase(c).Cursor(ui.CursorPointer).Label("更换工作目录")
 		if row.Hovered() {
-			row.Background(t.Text.Alpha(0.06))
+			row.Background(rowFill(t))
 		}
 		row.OnClick(func() { a.pickDir(ch) })
 	} else {
@@ -102,7 +102,7 @@ func dropdown[T comparable](
 	sel.Trigger.AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
 		Cursor(ui.CursorPointer).Label(label)
 	if sel.Trigger.Hovered() {
-		sel.Trigger.Background(t.Text.Alpha(0.06))
+		sel.Trigger.Background(rowFill(t))
 	}
 	sel.Trigger.Children(func() {
 		ui.Text(c, name(*value)).FontSize(12).TextColor(t.TextMuted).SingleLine()

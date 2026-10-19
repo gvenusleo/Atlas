@@ -77,7 +77,7 @@ func (a *App) sidebarToggle(c *ui.Context, t *ui.Theme) {
 		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
 		Label("切换侧栏").Tooltip("切换侧栏")
 	if btn.Hovered() {
-		btn.Background(t.Text.Alpha(0.08))
+		btn.Background(buttonFill(t))
 	}
 	btn.OnClick(a.toggleSidebar)
 	btn.Children(func() {
@@ -86,16 +86,16 @@ func (a *App) sidebarToggle(c *ui.Context, t *ui.Theme) {
 }
 
 // titleBar 画主区顶部的标题栏：可拖动窗口，标题靠主区左侧，并避开窗口控件、侧栏开关与
-// 右端的终端按钮。标题栏是窗口外框，占满主区宽度，不受阅读栏宽度限制。
+// 右端的终端、文件按钮。标题栏是窗口外框，占满主区宽度，不受阅读栏宽度限制。
 func (a *App) titleBar(c *ui.Context, t *ui.Theme, title string) ui.Element {
 	bar := c.TitleBar()
 	// 侧栏收起时，标题让开悬浮的侧栏开关；随展开程度平滑过渡。
 	left := gutter + (1-a.shown)*max(bar.Left+40-gutter, 0)
-	right := bar.Right + barInset + barButton + 8
+	right := bar.Right + barInset + 2*barButton + barGap + 8
 	return ui.Row(c).Height(titleBarHeight(c)).AlignItems(ui.Center).
 		Padding(0, right, 0, left).DragWindow().Children(func() {
 		ui.Text(c, title).Grow(1).SingleLine()
-		a.terminalButton(c, t)
+		a.panelButtons(c, t)
 	})
 }
 
@@ -106,22 +106,22 @@ func column(c *ui.Context, vertical float32, fn func()) {
 	})
 }
 
-// main 构建主区：对话在左，会话的终端面板打开时，浮动的终端卡片在右侧。
+// main 构建主区：对话在左，会话的终端或文件面板打开时，浮动的卡片在右侧一栏里。
 func (a *App) main(c *ui.Context, t *ui.Theme) {
 	ch := a.current
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c.Key("chat")).Grow(1).MinWidth(0).Children(func() {
 			a.conversation(c, t, ch)
 		})
-		if ch.termOpen {
-			a.termHandle(c)
-			a.terminalCard(c, t, ch)
+		if ch.termOpen || ch.filesOpen() {
+			a.sideHandle(c)
+			a.sideColumn(c, t, ch)
 		}
 	})
-	// 卡片宽度限制在范围内，保证对话区不被挤得太窄。
+	// 右侧栏宽度限制在范围内，保证对话区不被挤得太窄。
 	window, _ := c.Size()
 	total := window - a.sidebarWidth*a.shown
-	a.termWidth = min(max(a.termWidth, termMin), max(total-chatMin-handleWidth, termMin))
+	a.sideWidth = min(max(a.sideWidth, sideMin), max(total-chatMin-handleWidth, sideMin))
 }
 
 // conversation 构建当前会话：新会话居中欢迎，其余为标题、消息列表和底部输入。

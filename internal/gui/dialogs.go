@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -31,7 +32,7 @@ func (a *App) remove(id string) {
 				return
 			}
 			if ch := a.chats[id]; ch != nil {
-				ch.closeTerms()
+				ch.closePanels()
 				delete(a.chats, id)
 				if a.current == ch {
 					a.newChat()
@@ -58,7 +59,14 @@ func (a *App) dialogs(c *ui.Context) {
 			}
 		})
 	})
-	if ui.AlertDialog(c, &a.deleteOpen, "删除这个会话？", "删除后无法恢复。", "取消", "删除") == 1 {
+	message := "删除后无法恢复。"
+	if ch := a.chats[a.deleteID]; ch != nil {
+		if n := ch.dirtyTabs(); n > 0 {
+			message = fmt.Sprintf("删除后无法恢复，文件面板里 %d 个未保存的修改也会丢掉。", n)
+		}
+	}
+	if ui.AlertDialog(c, &a.deleteOpen, "删除这个会话？", message, "取消", "删除") == 1 {
 		a.remove(a.deleteID)
 	}
+	a.unsavedDialog(c)
 }

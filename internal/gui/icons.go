@@ -36,4 +36,7 @@ var (
 	moreIcon     = icon("lucide/ellipsis")
 	copyIcon     = icon("lucide/copy")
 	checkIcon    = icon("lucide/check")
+	listIcon     = icon("lucide/list")
+	codeIcon     = icon("lucide/code")
+	eyeIcon      = icon("lucide/eye")
 )

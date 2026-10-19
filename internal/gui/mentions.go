@@ -5,52 +5,18 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 )
 
-// 文件补全的参数：mentionLimit 是最多列出的项数；pathsMaxAge 是路径列表用多久就要重新列，
-// 运行中新建的文件也才补得到。
-const (
-	mentionLimit = 50
-	pathsMaxAge  = 3 * time.Second
-)
-
-// mentionState 是 @ 补全的状态：工作目录下的路径，与按查询排好的候选。
-type mentionState struct {
-	cwd     string    // paths 对应的工作目录
-	paths   []string  // 工作目录下的文件与目录
-	at      time.Time // 开始列 paths 的时刻
-	query   string    // options 对应的查询
-	options []option  // paths 变了就作废
-	valid   bool      // options 是否对应当前的 paths 与 query
-}
-
-// loadPaths 在后台列出 ch 的工作目录下的路径，供 @ 补全。重新列完之前先用旧的，
-// 换了工作目录则先清掉旧的。
-func (a *App) loadPaths(ch *chat) {
-	m, cwd := &ch.menu.mention, ch.cwd
-	if m.cwd != cwd {
-		m.paths, m.valid = nil, false
-	}
-	m.cwd, m.at = cwd, time.Now()
-	go func() {
-		list := listPaths(cwd)
-		a.win.Update(func() {
-			if m.cwd == cwd { // 列的时候换了工作目录的，结果作废
-				m.paths, m.valid = list, false
-			}
-		})
-	}()
-}
+// mentionLimit 是路径筛选最多列出的项数，@ 补全与文件树的筛选都用它。
+const mentionLimit = 50
 
 // mentionCompletion 返回光标处的 @ 词的候选：路径里包含它已输入的部分的文件与目录。
 // 输入框里选了一段文字、或光标不在 @ 词里时没有。
 func (a *App) mentionCompletion(ch *chat, input ui.Element) completion {
-	m := &ch.menu.mention
 	caret, end := input.TextSelection()
 	if caret != end {
 		return completion{}
@@ -59,13 +25,13 @@ func (a *App) mentionCompletion(ch *chat, input ui.Element) completion {
 	if from < 0 {
 		return completion{}
 	}
-	if m.cwd != ch.cwd || time.Since(m.at) > pathsMaxAge {
+	if ch.index.stale(ch.cwd) {
 		a.loadPaths(ch)
 	}
-	if !m.valid || m.query != query {
-		m.query, m.options, m.valid = query, rankPaths(m.paths, query), true
-	}
-	return completion{text: ch.input, from: from, to: to, options: m.options}
+	options := ch.menu.mention.get(rankKey{query, ch.index.version}, func() []option {
+		return pathOptions(ch.index.paths, query)
+	})
+	return completion{text: ch.input, from: from, to: to, options: options}
 }
 
 // findMention 返回 text 里光标 caret（rune 偏移）处正在输入的 @ 词：它在 text 里的 rune
@@ -130,10 +96,19 @@ func atWordStart(runes []rune, i int) bool {
 	return r >= utf8.RuneSelf || !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-// rankPaths 返回路径里包含 query（忽略大小写）的前 mentionLimit 项：文件名等于 query 的
+// pathOptions 把路径按 rankPaths 排好，换成补全列表里的项。
+func pathOptions(paths []string, query string) []option {
+	var options []option
+	for _, p := range rankPaths(paths, query, mentionLimit) {
+		options = append(options, pathOption(p))
+	}
+	return options
+}
+
+// rankPaths 返回路径里包含 query（忽略大小写）的前 limit 项：文件名等于 query 的
 // 最前，其次是文件名以它开头的、文件名包含它的、仅路径包含它的；同一档里浅的在前，
 // 再按路径长短与字母序。
-func rankPaths(paths []string, query string) []option {
+func rankPaths(paths []string, query string, limit int) []string {
 	type hit struct {
 		path         string
 		score, depth int
@@ -149,11 +124,11 @@ func rankPaths(paths []string, query string) []option {
 		return cmp.Or(cmp.Compare(y.score, x.score), cmp.Compare(x.depth, y.depth),
 			cmp.Compare(len(x.path), len(y.path)), cmp.Compare(x.path, y.path))
 	})
-	var options []option
-	for _, h := range hits[:min(len(hits), mentionLimit)] {
-		options = append(options, pathOption(h.path))
+	var ranked []string
+	for _, h := range hits[:min(len(hits), limit)] {
+		ranked = append(ranked, h.path)
 	}
-	return options
+	return ranked
 }
 
 // scorePath 给路径与已转小写的 query 的贴近程度打分，不包含时为 0。

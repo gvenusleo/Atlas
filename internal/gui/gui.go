@@ -51,12 +51,14 @@ type App struct {
 	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
 	md            markdown.Options
 	mdNote        markdown.Options // 面板里的小号 Markdown，如压缩的摘要
+	mdFile        markdown.Options // 文件面板里的 Markdown 预览
 	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
 	query         string
 	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
 	more          map[string]bool  // 已点“显示更多”的目录分组
-	termWidth     float32
-	shells        int // 已创建的终端数，用作终端标签的标识
+	sideWidth     float32          // 右侧栏的宽度，终端与文件面板共用
+	termHeight    float32          // 终端与文件面板叠放时，终端卡片的高度；0 时各占一半
+	shells        int              // 已创建的终端数，用作终端标签的标识
 	sidebarHidden bool
 	err           string
 	toast         string // 待显示的一次性提示，下一帧弹出后清空
@@ -66,6 +68,9 @@ type App struct {
 	renameOpen           bool
 	deleteID             string
 	deleteOpen           bool
+
+	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
+	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
 }
 
 // Run 打开宿主与窗口，阻塞到应用退出。
@@ -77,8 +82,9 @@ func Run() error {
 		return err
 	}
 	a := newApp(h)
+	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { a.confirmQuit(&e.Preventable) })
 	mygo.App.OnQuit(func() {
-		a.closeAllTerminals()
+		a.closeAllPanels()
 		ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 		defer cancel()
 		if err := h.Close(ctx); err != nil {
@@ -99,6 +105,7 @@ func Run() error {
 			TrafficLightPosition: &mygo.Point{X: 16, Y: 16},
 			Content:              ui.View(a.view),
 		})
+		a.win.OnClose(func(e *mygo.CloseEvent) { a.confirmQuit(&e.Preventable) })
 		a.refresh()
 		a.loadModels()
 	})
@@ -108,7 +115,7 @@ func Run() error {
 // newApp 创建应用状态，打开一个空白的新会话。
 func newApp(h *host.Manager) *App {
 	a := &App{host: h, chats: map[string]*chat{}, sidebarWidth: sidebarDefault, shown: 1,
-		sections: map[string]*bool{}, more: map[string]bool{}, termWidth: termDefault}
+		sections: map[string]*bool{}, more: map[string]bool{}, sideWidth: sideDefault}
 	// 按词显示以空格为界，中文没有空格，一段会整个冒出来；按字符才是匀速的。
 	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByCharacter}
 	a.md.Theme = &markdown.Theme{
@@ -124,6 +131,10 @@ func newApp(h *host.Manager) *App {
 			{Size: 0.9, Weight: 600},
 		},
 	}
+	// 文件面板里的预览与对话用同一套标题与间距，正文与面板里的其他字一样大。
+	file := *a.md.Theme
+	file.FontSize = 13
+	a.mdFile.Theme = &file
 	a.mdNote.Theme = &markdown.Theme{
 		FontSize:     13,
 		LineHeight:   1.5,
@@ -140,7 +151,9 @@ func newApp(h *host.Manager) *App {
 
 // newChat 切换到一个尚未创建的新会话。
 func (a *App) newChat() {
-	a.leave()
+	if !a.leave() {
+		return
+	}
 	a.keys++
 	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
 	a.useDefaultModel(a.current)
@@ -153,7 +166,9 @@ func (a *App) toggleSidebar() {
 
 // open 切换到已有会话，首次打开时加载历史；查看历史不需要凭据。
 func (a *App) open(id string) {
-	a.leave()
+	if !a.leave() {
+		return
+	}
 	if ch := a.chats[id]; ch != nil {
 		a.current, ch.unread = ch, false
 		return

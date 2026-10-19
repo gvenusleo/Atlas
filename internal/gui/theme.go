@@ -23,9 +23,18 @@ const (
 	edgeHeight   = 32  // 消息列表上下沿的渐隐带的高度
 	edgePad      = 18  // 列表内容离上下边缘的留白，让静止时的内容不落在带里
 
-	termMin     = 240 // 终端面板的最小宽度
-	termDefault = 420 // 终端面板的默认宽度
-	chatMin     = 320 // 打开终端面板时对话区的最小宽度
+	sideMin     = 240 // 右侧栏的最小宽度
+	sideDefault = 420 // 右侧栏的默认宽度
+	filesMin    = 560 // 打开文件面板时右侧栏至少这么宽，放得下文件树与内容
+	stackMin    = 160 // 右侧栏里叠放的卡片各自的最小高度
+	chatMin     = 320 // 打开右侧栏时对话区的最小宽度
+
+	treeMin       = 140 // 文件树的最小宽度
+	treeDefault   = 200 // 文件树的默认宽度
+	treeRowHeight = 24  // 文件树一行的高度
+	treeIndent    = 14  // 文件树每深一层缩进的宽度
+	fileIconSize  = 14  // 文件类型图标的边长
+	barGap        = 4   // 标题栏右端相邻按钮的间距
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度
@@ -61,6 +70,11 @@ var (
 		danger: ui.Hex("#F85149"), success: ui.Hex("#3FB950"), running: ui.Hex("#D29922"),
 	}
 )
+
+// rowFill 与 buttonFill 是悬停或选中时铺在背景上的淡色：行与下拉触发器用 rowFill，
+// 图标按钮与标签用 buttonFill。
+func rowFill(t *ui.Theme) ui.Color    { return t.Text.Alpha(0.06) }
+func buttonFill(t *ui.Theme) ui.Color { return t.Text.Alpha(0.08) }
 
 // applyTheme 在系统的亮色或暗色主题上换成 Atlas 的色板，返回本帧的主题。
 func applyTheme(c *ui.Context) *ui.Theme {

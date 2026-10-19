@@ -9,13 +9,12 @@ import (
 
 // 补全列表的尺寸：menuHeight 是最大高度，选项多时在里面滚动；menuRows 是它大约能放下的
 // 行数；menuNameSize 是名称的字号，量宽度与绘制都用它；menuNameMax 是名称一列的最大宽度，
-// 过长的文件名省略，不挤掉后面的内容；menuIconSize 是名称前图标的边长。
+// 过长的文件名省略，不挤掉后面的内容。
 const (
 	menuHeight   = 240
 	menuRows     = 10
 	menuNameSize = 13
 	menuNameMax  = 280
-	menuIconSize = 16
 )
 
 // option 是补全列表里的一项：命令、技能或文件。
@@ -36,15 +35,15 @@ type completion struct {
 
 // menuState 是输入框上方补全列表的状态。
 type menuState struct {
-	closed    string     // 被 Esc 关掉、或刚补全完时输入框里的文本；文本变了就重新列出
-	index     int        // 选中的行；文本变了回到第一行
-	moved     bool       // 按键移动了选中行，下一帧要滚到可见
-	nameWidth float32    // 上一帧视野内最长的名称的宽度，没有时为 0
-	pointer   [2]float32 // 指针上一次在窗口里的位置，还没见过时是 noPointer
-	caretAt   int        // 补全之后光标该在的位置，rune 偏移
-	caretDue  bool       // 下一帧要把输入框的光标放到 caretAt
-	cur       completion // 上一帧列出的候选，按键作用于它
-	mention   mentionState
+	closed    string                  // 被 Esc 关掉、或刚补全完时输入框里的文本；文本变了就重新列出
+	index     int                     // 选中的行；文本变了回到第一行
+	moved     bool                    // 按键移动了选中行，下一帧要滚到可见
+	nameWidth float32                 // 上一帧视野内最长的名称的宽度，没有时为 0
+	pointer   [2]float32              // 指针上一次在窗口里的位置，还没见过时是 noPointer
+	caretAt   int                     // 补全之后光标该在的位置，rune 偏移
+	caretDue  bool                    // 下一帧要把输入框的光标放到 caretAt
+	cur       completion              // 上一帧列出的候选，按键作用于它
+	mention   memo[rankKey, []option] // @ 补全按查询排好的候选
 }
 
 // row 返回共 n 行的列表里选中的行。
@@ -217,7 +216,7 @@ func completionRow(
 	row.OnClick(pick)
 	row.Children(func() {
 		if opt.icon != nil {
-			ui.Image(c, opt.icon).Size(menuIconSize, menuIconSize).Shrink(0)
+			ui.Image(c, opt.icon).Size(fileIconSize, fileIconSize).Shrink(0)
 		}
 		ui.Text(c, opt.name).FontSize(menuNameSize).SingleLine().Width(nameW).Shrink(0)
 		if opt.tag != "" {

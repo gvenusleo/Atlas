@@ -372,13 +372,7 @@ func thinkingLabel(it *item) string {
 // location 是展开后内容上方的路径：在会话工作目录下的写成相对路径，否则是绝对路径；
 // 读取只读了文件的一部分时，后面接 :起-止，只读一行时接 :行号。
 func location(cwd, tool string, v *callView) string {
-	path := v.args.Path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwd, path)
-	}
-	if rel, err := filepath.Rel(cwd, path); err == nil && filepath.IsLocal(rel) {
-		path = rel
-	}
+	path := relOrAbs(cwd, v.args.Path)
 	w := v.window
 	if tool == "read" && w.Start >= 1 && w.End >= w.Start && (w.Start > 1 || w.End < w.Total) {
 		path += fmt.Sprintf(":%d", w.Start)

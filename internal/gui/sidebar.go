@@ -105,7 +105,7 @@ func entry(
 		slot := ui.Row(c).Size(20, 20).Shrink(0).Radius(10).Justify(ui.Center).AlignItems(ui.Center)
 		size, color := float32(16), t.TextMuted
 		if primary {
-			slot.Background(t.Text.Alpha(0.08))
+			slot.Background(buttonFill(t))
 			size, color = 14, t.Text
 		}
 		slot.Children(func() { ui.Icon(c, glyph).FontSize(size).TextColor(color) })
