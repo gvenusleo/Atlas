@@ -76,7 +76,7 @@ type chat struct {
 	// 还没有会话时，后台发现的工作目录下的技能，供命令列表；skillsCwd 是它对应的工作目录。
 	skills    []skills.Skill
 	skillsCwd string
-	menu      menuState // 输入框上方命令列表的状态
+	menu      menuState // 输入框上方补全列表的状态
 
 	// 界面上选定的模型与思考深度，发送时应用到会话。
 	model    string

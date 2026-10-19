@@ -120,7 +120,7 @@ func dropdown[T comparable](
 	return sel.Trigger.Changed()
 }
 
-// popupPanel 是弹出面板的外观，下拉选项与输入框的命令列表共用；与触发元素之间的间距由
+// popupPanel 是弹出面板的外观，下拉选项与输入框的补全列表共用；与触发元素之间的间距由
 // 各处自己的边距决定。
 func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
 	return panel.Padding(4).Radius(10).Background(t.Background).

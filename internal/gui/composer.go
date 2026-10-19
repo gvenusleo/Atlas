@@ -17,7 +17,7 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 			input = ui.TextAreaBase(c.Key("input-"+ch.key), &ch.input).FocusRing(false).
 				Placeholder("发送消息").Lines(1, 10).Grow(1).Padding(5, 0).Disabled(ch.loading).
 				OnTextKey(func(k ui.TextKey) bool {
-					if a.commandKey(ch, k) {
+					if a.completionKey(ch, k) {
 						return true
 					}
 					if k.Key != ui.KeyEnter || k.Mods != 0 {
@@ -28,14 +28,14 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 					}
 					return true
 				})
-			ch.menu.placeCaret(input, ch.input)
+			ch.menu.placeCaret(input)
 			// 侧栏在用键盘、或终端面板打开时，新出现的输入框不抢走焦点。
 			if !a.keyNav && !ch.termOpen {
 				input.AutoFocus()
 			}
 			a.sendButton(c, t, ch)
 		})
-		a.commandMenu(c, t, ch, card, input)
+		a.completionMenu(c, t, ch, card, input)
 		a.statusRow(c, t, ch)
 	})
 }
