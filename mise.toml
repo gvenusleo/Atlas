@@ -9,6 +9,10 @@ run = "go tool mygo dev"
 description = "编译全部包"
 run = "go tool mygo build"
 
+[tasks.icon]
+description = "重新生成应用图标（resources/icon.png 与 icon-dev.png）"
+run = "go run ./cmd/icon"
+
 [tasks.skills]
 description = "更新 Agent Skills"
 run = "npx skills update -p -y && go tool mygo install-skills"

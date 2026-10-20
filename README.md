@@ -10,6 +10,7 @@ Atlas 是用 Go 编写的桌面 AI Agent，当前处于重写阶段。Agent 拥�
 ```sh
 mise run dev       # 启动桌面应用
 mise run ci        # 格式检查、vet、测试、编译、漏洞扫描
+mise run icon      # 重新生成应用图标，改了 cmd/icon 之后用
 ```
 
 MyGo 不等发版，`go.mod` 固定在它 main 分支的某个提交（伪版本），本地和 CI 用的是同一份。
