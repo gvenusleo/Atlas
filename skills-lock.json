@@ -1,13 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "mygo-maintenance": {
-      "source": "egoist/mygo",
-      "ref": "main",
-      "sourceType": "github",
-      "skillPath": "cmd/mygo/template/shared/.agents/skills/mygo-maintenance/SKILL.md",
-      "computedHash": "2cea1cc5f134380e5293e9e98f3f2c9cf081c0fc79dbae7859b6be161082784f"
-    },
     "use-modern-go": {
       "source": "JetBrains/go-modern-guidelines",
       "ref": "main",

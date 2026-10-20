@@ -5,6 +5,14 @@ go = "1.27.2"
 description = "启动桌面应用（热重载）"
 run = "go tool mygo dev"
 
+[tasks.build]
+description = "编译全部包"
+run = "go tool mygo build"
+
+[tasks.skills]
+description = "更新 Agent Skills"
+run = "npx skills update -p -y && go tool mygo install-skills"
+
 [tasks.fmt]
 description = "gofmt 格式化"
 run = "gofmt -w ."
@@ -20,10 +28,6 @@ run = "go vet ./... && go tool mygo vet ."
 [tasks.test]
 description = "运行测试"
 run = "go test ./... -count=1 -race"
-
-[tasks.build]
-description = "编译全部包"
-run = "go build ./..."
 
 [tasks.vuln]
 description = "govulncheck 漏洞扫描"
