@@ -12,6 +12,13 @@ mise run dev       # 启动桌面应用
 mise run ci        # 格式检查、vet、测试、编译、漏洞扫描
 ```
 
+MyGo 不等发版，`go.mod` 固定在它 main 分支的某个提交（伪版本），本地和 CI 用的是同一份。
+要用 MyGo 的最新提交：
+
+```sh
+go get github.com/egoist/mygo@main && go mod tidy
+```
+
 ## 配置
 
 配置与数据位于 `~/.atlas/`：
