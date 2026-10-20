@@ -2,6 +2,8 @@
 // settings.json 管接入配置（可展示、可备份），auth.json 管 API key（0600，永不共享）。
 package config
 
+import "slices"
+
 // WireAPI 是请求/响应的 wire 协议方言，声明协议不代表已提供对应适配器。
 type WireAPI string
 
@@ -76,6 +78,11 @@ const (
 type Modalities struct {
 	Input  []Modality `json:"input,omitempty"`
 	Output []Modality `json:"output,omitempty"`
+}
+
+// AcceptsImages 报告模型是否声明了图片输入；没有声明就当作不支持。
+func (m Modalities) AcceptsImages() bool {
+	return slices.Contains(m.Input, ModalityImage)
 }
 
 // Modality 是输入/输出模态的取值。

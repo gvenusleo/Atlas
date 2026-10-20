@@ -1,16 +1,16 @@
 package tools
 
 import (
+	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/imaging"
 )
 
 // 定义文本读取预算与默认行数。
@@ -40,7 +40,7 @@ type ReadDetails struct {
 func Read(workdir string) agent.Tool {
 	return agent.Tool{
 		Name: "read",
-		Description: "读取 UTF-8 文本或图片（JPEG、PNG、GIF、Webp）。" +
+		Description: "读取 UTF-8 文本或图片（JPEG、PNG、GIF、Webp；大图会缩小，GIF 只取第一帧）。" +
 			"相对路径以工作目录为基准。单个文件最多 10 MiB。" +
 			"文本最多返回 2000 行或 50 KiB，保留完整行；" +
 			"内容未读完时按提示使用 offset 继续。" +
@@ -97,18 +97,17 @@ func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, err
 	}
 
-	mime := http.DetectContentType(data)
-	switch mime {
-	case "image/jpeg", "image/png", "image/gif", "image/webp":
+	img, err := imaging.Prepare(bytes.NewReader(data))
+	switch {
+	case err == nil:
 		return agent.ToolResult{
 			Content: []agent.Content{
-				agent.TextContent{Text: fmt.Sprintf("读取图片 %s (%s)", path, mime)},
-				agent.ImageContent{
-					Data:     base64.StdEncoding.EncodeToString(data),
-					MIMEType: mime,
-				},
+				agent.TextContent{Text: fmt.Sprintf("读取图片 %s (%s)", path, img.MIMEType)},
+				img,
 			},
 		}, nil
+	case !errors.Is(err, imaging.ErrUnsupported):
+		return agent.ToolResult{}, fmt.Errorf("%s: %w", path, err)
 	}
 
 	if !validText(data) {

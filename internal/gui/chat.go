@@ -38,16 +38,16 @@ type item struct {
 	at       time.Time // 用户与助手消息的时间，未知时为零
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
 
-	callID  string // 工具卡片：调用 ID、名称、参数与结果
-	shown   bool   // 一组步骤是否展开，记在组的第一项上
-	call    *callView
-	tool    string
-	args    string
-	result  string
-	details jsontext.Value // 工具随结果附带的结构化数据
-	picture *picture       // 工具结果里的图片，没有时为空
-	failed  bool
-	running bool
+	callID   string // 工具卡片：调用 ID、名称、参数与结果
+	shown    bool   // 一组步骤是否展开，记在组的第一项上
+	call     *callView
+	tool     string
+	args     string
+	result   string
+	details  jsontext.Value // 工具随结果附带的结构化数据
+	pictures []*picture     // 工具结果或用户消息里的图片
+	failed   bool
+	running  bool
 }
 
 // block 是对话中连续展示的一组显示项：一条用户消息，一次 run 的全部输出，或一个系统事件。
@@ -69,9 +69,12 @@ type chat struct {
 	list    ui.ListState
 	input   string
 	running bool
-	loading bool
-	err     string
-	unread  bool // 在别的会话时运行结束，用户还没回来看过
+	// 输入框里待发送的图片，与 input 一样是草稿；preparing 是还在后台整理的张数。
+	attachments []*attachment
+	preparing   int
+	loading     bool
+	err         string
+	unread      bool // 在别的会话时运行结束，用户还没回来看过
 
 	// 还没有会话时，后台发现的工作目录下的技能，供命令列表；skillsCwd 是它对应的工作目录。
 	skills    []skills.Skill
@@ -244,7 +247,7 @@ func (ch *chat) prepend(records []host.Record) {
 		if i >= 0 {
 			o := ch.items[i]
 			it.result, it.details, it.failed, it.done = o.result, o.details, o.failed, true
-			it.picture = o.picture
+			it.pictures = o.pictures
 			ch.items = slices.Delete(ch.items, i, i+1)
 		}
 	}
@@ -287,20 +290,29 @@ func (ch *chat) append(message agent.Message) {
 	}
 }
 
+// hasDraft 报告输入框里有没有可发送的内容：文字或图片。
+func (ch *chat) hasDraft() bool {
+	return strings.TrimSpace(ch.input) != "" || len(ch.attachments) > 0
+}
+
 // addUser 把用户消息排成显示项：显式调用技能时，技能块另成一项，排在输入的原文之后。
 func (ch *chat) addUser(m agent.UserMessage) {
 	var typed []agent.Content
 	var skill, content string
 	for _, c := range m.Content {
-		if t, ok := c.(agent.TextContent); ok {
-			if name, body, ok := skills.ParseInvocationBlock(t.Text); ok {
+		switch b := c.(type) {
+		case agent.TextContent:
+			if name, body, ok := skills.ParseInvocationBlock(b.Text); ok {
 				skill, content = name, body
 				continue
 			}
+		case agent.ImageContent:
+			continue // 图片另外显示，不算在文字里
 		}
 		typed = append(typed, c)
 	}
-	ch.add(itemUser, agent.TextOf(typed)).at = m.Timestamp
+	it := ch.add(itemUser, agent.TextOf(typed))
+	it.at, it.pictures = m.Timestamp, picturesOf(m.Content, userPictureEdge)
 	if skill != "" {
 		ch.add(itemSkill, content).skill = skill
 	}
@@ -318,7 +330,7 @@ func (ch *chat) skillList() []skills.Skill {
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。
 func (it *item) finishCall(content []agent.Content, details jsontext.Value, failed bool) {
 	it.result, it.details, it.failed = agent.TextOf(content), details, failed
-	it.picture = pictureOf(content)
+	it.pictures = picturesOf(content, pictureEdge)
 	it.running, it.done = false, true
 	it.call = nil
 }

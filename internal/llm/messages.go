@@ -1,10 +1,44 @@
 package llm
 
 import (
+	"context"
+	"slices"
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
 )
+
+// WithoutImages 包装流函数：请求里的图片换成一句说明，历史里的图片不动。用于不接受图片
+// 输入的模型；否则图片一旦进了历史，换到这样的模型后，每次请求都会被拒绝。
+func WithoutImages(stream agent.StreamFn) agent.StreamFn {
+	return func(
+		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
+	) agent.AssistantMessage {
+		req.Messages = slices.Clone(req.Messages)
+		for i, message := range req.Messages {
+			switch m := message.(type) {
+			case agent.UserMessage:
+				m.Content = omitImages(m.Content)
+				req.Messages[i] = m
+			case agent.ToolResultMessage:
+				m.Content = omitImages(m.Content)
+				req.Messages[i] = m
+			}
+		}
+		return stream(ctx, req, emit)
+	}
+}
+
+// omitImages 返回把图片换成说明文字的内容副本。
+func omitImages(content []agent.Content) []agent.Content {
+	content = slices.Clone(content)
+	for i, c := range content {
+		if _, ok := c.(agent.ImageContent); ok {
+			content[i] = agent.TextContent{Text: "[图片：当前模型不支持图片输入]"}
+		}
+	}
+	return content
+}
 
 // messagesForRequest 创建模型请求使用的历史投影，不修改原始消息或写入存储。
 // 失败和取消的助手消息不重放；缺失工具结果仅在此投影中补齐。

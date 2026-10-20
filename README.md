@@ -55,6 +55,23 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 在输入框里输入 `@` 可以引用工作目录下的文件或目录：列表列出路径里包含你输入内容（忽略
 大小写）的项，选中后以 `@路径` 写进消息，模型需要内容时自己去读。
 
+### 图片
+
+在模型的配置里声明它接受图片，输入框才能附图片：
+
+```json
+"model-id": { "modalities": { "input": ["text", "image"] } }
+```
+
+没有声明的模型，输入框左侧的按钮是灰的。有三种方式添加图片，一条消息最多 6 张：粘贴
+（截图，或在访达里复制的图片文件）、把图片文件拖到输入框上、点输入框左侧的按钮选文件。
+支持 PNG、JPEG、WebP 和 GIF（只取第一帧），原始文件不能超过 20 MB。每次请求都会把
+历史里的图片重传一遍，所以长边超过 2048 像素或超过 1 MiB 的图会先缩小再保存；模型用 `read`
+读图片文件时也按同样的规则处理。
+
+附了图片的会话换到不声明图片输入的模型后，历史里的图片在请求里换成一句说明，
+会话仍可继续。
+
 ### 子进程的环境变量
 
 从 Dock 或 Finder 启动的应用只有系统给的最小环境，找不到 brew、mise、nvm 装的命令。Atlas 启动时
@@ -103,6 +120,7 @@ Claude Desktop 一致，可以直接复制过来：
 | `internal/agent` | 消息模型与 agent 循环，不依赖其他层 |
 | `internal/llm` | 把 `agent.StreamFn` 落到具体的模型 API |
 | `internal/tools` | read、write、edit、shell 工具 |
+| `internal/imaging` | 整理要交给模型的图片：限制格式与大小，缩小，按 EXIF 方向转正 |
 | `internal/mcp` | 连接 MCP 服务器，把它们的工具交给 agent |
 | `internal/shellenv` | 向登录 shell 取环境，给 shell 工具与 MCP 子进程用 |
 | `internal/prompt`、`internal/skills` | 系统提示词、指令与技能发现 |

@@ -401,7 +401,7 @@ func (a *App) toolDetail(c *ui.Context, t *ui.Theme, it *item) {
 			// 读取、写入、编辑失败时只说明原因，没有内容可看。
 		case it.tool == "shell":
 			shellCommand(c, t, v)
-		case it.tool == "read" && it.picture != nil:
+		case it.tool == "read" && len(it.pictures) > 0:
 			a.picturePreview(c, t, it)
 		case it.tool == "read":
 			fileContent(c, t, it, v)

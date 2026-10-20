@@ -310,17 +310,21 @@ func compactSession(ctx context.Context, s *host.Session, emit func(agent.Event)
 	return err
 }
 
-// send 受理输入框里的文本：压缩命令压缩当前会话，其余在后台运行一轮对话
+// send 受理输入框里的文本与待发送的图片：压缩命令压缩当前会话，其余在后台运行一轮对话
 // （以 /技能名 开头时，会话会在原文后附上技能内容）；返回是否已受理。
 func (a *App) send(ch *chat, text string) bool {
 	text = strings.TrimSpace(text)
-	if text == "" || ch.running || ch.loading {
+	if text == "" && len(ch.attachments) == 0 || ch.running || ch.loading || ch.preparing > 0 {
+		return false
+	}
+	if len(ch.attachments) > 0 && !a.acceptsImages(ch) {
+		a.toast = noImagesHint // 附上图片后又换了模型
 		return false
 	}
 	switch {
-	case text != compactCommand:
-		message := agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: text}}}
-		a.launch(ch, say(message))
+	case text != compactCommand || len(ch.attachments) > 0:
+		a.launch(ch, say(draftMessage(text, ch.attachments)))
+		ch.attachments = nil
 	case ch.id == "":
 		a.toast = host.ErrNothingToCompact.Error() // 新会话还没有历史，不为它创建会话
 	default:

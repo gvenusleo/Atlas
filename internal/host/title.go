@@ -33,16 +33,22 @@ func (s *Session) autoName(ctx context.Context, message agent.UserMessage) error
 	return nil
 }
 
-// titleOf 取第一段非空文本的前 titleRunes 个字，空白折叠为单个空格。
+// titleOf 取第一段非空文本的前 titleRunes 个字，空白折叠为单个空格；没有文字只有图片时
+// 叫“图片”。
 func titleOf(content []agent.Content) string {
+	hasImage := false
 	for _, block := range content {
-		text, ok := block.(agent.TextContent)
-		if !ok {
-			continue
+		switch b := block.(type) {
+		case agent.TextContent:
+			if title := []rune(strings.Join(strings.Fields(b.Text), " ")); len(title) > 0 {
+				return string(title[:min(len(title), titleRunes)])
+			}
+		case agent.ImageContent:
+			hasImage = true
 		}
-		if title := []rune(strings.Join(strings.Fields(text.Text), " ")); len(title) > 0 {
-			return string(title[:min(len(title), titleRunes)])
-		}
+	}
+	if hasImage {
+		return "图片"
 	}
 	return ""
 }

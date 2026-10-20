@@ -184,11 +184,11 @@ func modelConfig(
 		option.WithBaseURL(provider.BaseURL),
 		option.WithMaxRetries(0),
 	)
-	return modelSetup{
-		id:     modelID,
-		stream: llm.OpenAIResponsesStreamFn(client),
-		window: metadata.ContextWindow,
-	}, nil
+	stream := llm.OpenAIResponsesStreamFn(client)
+	if !metadata.Modalities.AcceptsImages() {
+		stream = llm.WithoutImages(stream)
+	}
+	return modelSetup{id: modelID, stream: stream, window: metadata.ContextWindow}, nil
 }
 
 // checkWorkdir 要求恢复的工作目录是仍然存在的绝对目录。

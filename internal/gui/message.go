@@ -92,13 +92,22 @@ func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
 }
 
 // userMessage 把用户消息和它下面的一行操作放在一起：指针在其上时，操作行显示发送时间与
-// 复制按钮。
+// 复制按钮。有图片时，图片排在文字上方，靠右对齐；只有图片时没有文字块与复制按钮。
 func (a *App) userMessage(c *ui.Context, t *ui.Theme, it *item) {
-	col := ui.Column(c).AlignItems(ui.End)
+	col := ui.Column(c).AlignItems(ui.End).Gap(6)
 	hovered := col.Hovered()
 	col.Children(func() {
-		ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
-			Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
+		if len(it.pictures) > 0 {
+			ui.Row(c).Wrap().Gap(8).Justify(ui.End).MaxWidth(bubbleWidth).Children(func() {
+				for _, p := range it.pictures {
+					a.userPicture(c, t, p)
+				}
+			})
+		}
+		if it.text != "" {
+			ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
+				Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
+		}
 		a.actions(c, t, it, it.at, it.text, hovered && it.done)
 	})
 }
@@ -115,6 +124,9 @@ func (a *App) actions(
 		if !at.IsZero() {
 			ui.Text(c, since(at)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().
 				Padding(0, 4, 0, 0).Tooltip(at.Local().Format("2006-01-02 15:04:05"))
+		}
+		if text == "" {
+			return // 没有文字可复制，如只有图片的消息
 		}
 		glyph, label := copyIcon, "复制"
 		if left := copiedFor - time.Since(it.copiedAt); left > 0 {
