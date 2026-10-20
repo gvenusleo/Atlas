@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 )
@@ -64,7 +65,7 @@ func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
 func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 	if !it.done {
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Spinner(c).Size(12, 12).Shrink(0)
+			loading.Ring(c, loading.Options{Size: smallIconSize, Color: t.TextMuted}).Shrink(0)
 			ui.Text(c, "正在压缩上下文").FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 		})
 		return

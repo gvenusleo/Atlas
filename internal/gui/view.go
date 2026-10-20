@@ -3,6 +3,7 @@ package gui
 import (
 	"time"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -151,7 +152,10 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 		if ch.retry != "" {
 			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(textSize) })
 		}
-		column(c, 0, func() { a.composer(c, t, ch) })
+		column(c, 0, func() {
+			a.runStatus(c, t, ch)
+			a.composer(c, t, ch)
+		})
 		ui.Column(c).Height(12)
 	})
 }
@@ -180,7 +184,7 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 			column(c, 5, func() { a.block(c, t, blocks[i], final) })
 		}).Grow(1).Padding(edgePad, 0).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
 			if ch.loading {
-				ui.Spinner(c).Margin(ui.Auto)
+				loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 			}
 		})
 		edges(c, t)

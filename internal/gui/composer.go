@@ -1,8 +1,11 @@
 package gui
 
 import (
+	"fmt"
 	"slices"
+	"time"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -12,6 +15,10 @@ const (
 	composerButton = 30 // 输入框两侧圆形按钮的直径
 	thumbSize      = 56 // 待发送图片的缩略图的边长
 	removeSize     = 20 // 缩略图右上角移除按钮的直径
+	runBarHeight   = 24 // 输入框上方运行状态一行的高度
+	runDotsSize    = 14 // 其中跳动圆点的高度
+	// composerInset 是输入框里左侧按钮的图标离卡片左缘的距离，上方的缩略图与运行状态与它对齐。
+	composerInset = composerPad + (composerButton-iconSize)/2
 )
 
 // composer 构建输入区：圆角输入框，其下是工作目录、模型与上下文占用。
@@ -59,6 +66,35 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 		a.completionMenu(c, t, ch, card, input)
 		a.statusRow(c, t, ch)
 	})
+}
+
+// runStatus 在输入框上方画运行状态：跳动的圆点，与这次运行已经过的时间；没有运行时
+// 什么也不画。时间每秒变一次，所以在下一个整秒再画一帧。
+func (a *App) runStatus(c *ui.Context, t *ui.Theme, ch *chat) {
+	if !ch.running {
+		return
+	}
+	d := time.Since(ch.runStart)
+	c.After(time.Second - d%time.Second)
+	ui.Row(c).Height(runBarHeight).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, composerInset).
+		Children(func() {
+			dots := loading.Options{Size: runDotsSize, Color: t.TextMuted}
+			// 圆点在它的盒子里偏上，往下挪一点，才与文字居中。
+			loading.BouncingDots(c, dots).Label("运行中").Margin(3, 0, 0)
+			ui.Text(c, runTime(d)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
+		})
+}
+
+// runTime 把运行时长说成“12 秒”“3 分 05 秒”“1 小时 02 分”。
+func runTime(d time.Duration) string {
+	switch s := int(d.Seconds()); {
+	case s < 60:
+		return fmt.Sprintf("%d 秒", s)
+	case s < 3600:
+		return fmt.Sprintf("%d 分 %02d 秒", s/60, s%60)
+	default:
+		return fmt.Sprintf("%d 小时 %02d 分", s/3600, s%3600/60)
+	}
 }
 
 // sendButton 是输入框右侧的圆形按钮：有内容时发送，运行时停止，空闲且为空时为灰色。
@@ -127,15 +163,14 @@ func (a *App) imageStrip(c *ui.Context, t *ui.Theme, ch *chat) {
 	if len(ch.attachments) == 0 && ch.preparing == 0 {
 		return
 	}
-	const left = composerPad + (composerButton-iconSize)/2
-	ui.Row(c).Wrap().Gap(8).Padding(10, 10, 0, left).Children(func() {
+	ui.Row(c).Wrap().Gap(8).Padding(10, 10, 0, composerInset).Children(func() {
 		for _, f := range ch.attachments {
 			a.thumbnail(c, t, ch, f)
 		}
 		for range ch.preparing {
 			ui.Row(c).Size(thumbSize, thumbSize).Justify(ui.Center).AlignItems(ui.Center).
 				Radius(boxRound).Background(rowFill(t)).Children(func() {
-				ui.Spinner(c).Size(iconSize, iconSize)
+				loading.Ring(c, loading.Options{Size: iconSize})
 			})
 		}
 	})

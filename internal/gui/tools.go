@@ -116,12 +116,6 @@ func (it *item) verbKey() string {
 	return "create"
 }
 
-// active 报告这一步是否正在进行：思考正在流出，或工具正在执行。参数还在流出、
-// 排队等着执行的调用不算，这样同一时刻只有真正在做的事在转圈。
-func (it *item) active() bool {
-	return it.kind == itemThinking && !it.done || it.kind == itemTool && it.running
-}
-
 // stats 返回写入与编辑增删的行数。覆盖已有文件时没有记录旧内容（文件太大或不是文本），
 // 就没有可信的数字。
 func (it *item) stats() (added, removed int) {
@@ -173,11 +167,8 @@ func (a *App) stepGroup(c *ui.Context, t *ui.Theme, items []*item) {
 		a.stepRow(c, t, items[0], false)
 		return
 	}
-	label, added, removed, running := groupSummary(items)
+	label, added, removed := groupSummary(items)
 	expandable(c, t, &items[0].shown, label, false, func() {
-		if running {
-			ui.Spinner(c).Size(12, 12).Shrink(0)
-		}
 		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 		if added+removed > 0 {
 			diffPill(c, t, added, removed)
@@ -208,9 +199,6 @@ func (a *App) stepRow(c *ui.Context, t *ui.Theme, it *item, card bool) {
 func (a *App) thinkStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	label := thinkingLabel(it)
 	expandable(c, t, &it.open, label, card, func() {
-		if it.active() {
-			ui.Spinner(c).Size(12, 12).Shrink(0)
-		}
 		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 	}, func() {
 		panelBody(c, t, card, func() {
@@ -224,9 +212,6 @@ func (a *App) toolStep(c *ui.Context, t *ui.Theme, it *item, card bool) {
 	verb, subject, tip := it.title()
 	added, removed := it.stats()
 	expandable(c, t, &it.open, strings.TrimSpace(verb+" "+subject), card, func() {
-		if it.active() {
-			ui.Spinner(c).Size(12, 12).Shrink(0)
-		}
 		ui.Text(c, verb).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 		if subject != "" {
 			ui.Text(c, subject).FontSize(bodySize).SingleLine().Tooltip(tip)
@@ -316,11 +301,10 @@ func (g tally) phrase() string {
 }
 
 // groupSummary 汇总一组调用，各类按首次出现的顺序；进行中也不改变。
-// 同时返回写入与编辑增删的总行数，以及是否还有调用在进行。
-func groupSummary(items []*item) (label string, added, removed int, running bool) {
+// 同时返回写入与编辑增删的总行数。
+func groupSummary(items []*item) (label string, added, removed int) {
 	var tallies []tally
 	for _, it := range items {
-		running = running || it.active()
 		a, r := it.stats()
 		added, removed = added+a, removed+r
 		key := it.verbKey()
@@ -348,7 +332,7 @@ func groupSummary(items []*item) (label string, added, removed int, running bool
 	for i, g := range tallies {
 		phrases[i] = g.phrase()
 	}
-	return strings.Join(phrases, "，"), added, removed, running
+	return strings.Join(phrases, "，"), added, removed
 }
 
 // diffPill 画“+147 −0”的小标签：左半绿、右半红。

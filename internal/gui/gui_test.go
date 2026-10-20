@@ -42,7 +42,7 @@ func TestApplyEvents(t *testing.T) {
 	if got := ch.items[1]; got.text != "好的。" || !got.done {
 		t.Errorf("助手项 = %+v，期望以定稿文本为准且已完成", got)
 	}
-	if got := ch.items[2]; got.result != "package a" || got.running || !got.done {
+	if got := ch.items[2]; got.result != "package a" || !got.done {
 		t.Errorf("工具项 = %+v，期望带结果且已结束", got)
 	}
 }

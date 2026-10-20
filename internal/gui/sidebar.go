@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/gvenusleo/atlas/internal/host"
@@ -20,6 +21,8 @@ const (
 	timeWidth = 44
 	// moreSize 是行尾 ⋯ 按钮的边长。
 	moreSize = 20
+	// runningSize 是行尾运行中指示器的边长。
+	runningSize = 16
 )
 
 // group 是侧栏中同一工作目录下的会话。
@@ -181,7 +184,7 @@ func sidebarItem(c *ui.Context, t *ui.Theme, id, label, selected string) ui.Elem
 	return row
 }
 
-// session 构建一个会话项：标题之后是状态与行尾；行尾平时是相对时间，运行中是转动的
+// session 构建一个会话项：标题之后是状态与行尾；行尾平时是相对时间，运行中是脉动的
 // 指示器，悬停时换成 ⋯ 菜单。右键菜单与 ⋯ 相同；悬停提示给出完整标题、目录与更新时间。
 func (a *App) session(c *ui.Context, t *ui.Theme, info host.Info, selected string) {
 	label := info.Name
@@ -214,7 +217,7 @@ func status(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 }
 
-// trail 画行尾：定宽的槽里平时是相对时间，运行中换成转动的指示器，悬停时换成 ⋯ 按钮。
+// trail 画行尾：定宽的槽里平时是相对时间，运行中换成脉动的指示器，悬停时换成 ⋯ 按钮。
 // 按钮始终存在，不悬停时只是零尺寸且禁用：菜单的选择要在它所在的下一帧回报，
 // 那时指针已在菜单上，悬停的状态可能已经没了。它用固定的键标识，因为它前面的时间或
 // 指示器时有时无，按位置算的标识会变，选择就找不到它了。
@@ -228,7 +231,8 @@ func trail(
 			case hovered:
 				size = moreSize
 			case running:
-				ui.Spinner(c).Size(12, 12).Label("运行中")
+				pulse := loading.Options{Size: runningSize, Color: t.TextMuted}
+				loading.Pulse(c, pulse).Label("运行中")
 			default:
 				ui.Text(c, ago(updated)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 			}

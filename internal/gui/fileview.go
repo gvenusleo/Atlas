@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
@@ -150,7 +151,7 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	switch {
 	case tb.loading:
-		ui.Spinner(c).Margin(ui.Auto)
+		loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 	case tb.ed == nil:
 		ui.Text(c, tb.note).FontSize(textSize).TextColor(t.TextMuted).TextAlign(ui.Center).
 			Margin(ui.Auto)

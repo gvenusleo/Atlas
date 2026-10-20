@@ -335,7 +335,7 @@ func (a *App) send(ch *chat, text string) bool {
 
 // launch 在后台获取会话、采用选定的模型并执行 run，结束后更新界面。
 func (a *App) launch(ch *chat, run job) {
-	ch.running, ch.err = true, ""
+	ch.running, ch.err, ch.runStart = true, "", time.Now()
 	session, id, cwd := ch.session, ch.id, ch.cwd
 	model, thinking := ch.model, ch.thinking
 	go func() {

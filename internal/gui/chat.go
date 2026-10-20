@@ -47,7 +47,6 @@ type item struct {
 	details  jsontext.Value // 工具随结果附带的结构化数据
 	pictures []*picture     // 工具结果或用户消息里的图片
 	failed   bool
-	running  bool
 }
 
 // block 是对话中连续展示的一组显示项：一条用户消息，一次 run 的全部输出，或一个系统事件。
@@ -69,6 +68,8 @@ type chat struct {
 	list    ui.ListState
 	input   string
 	running bool
+	// runStart 是这次运行开始的时刻，运行中输入框上方的计时从它算起。
+	runStart time.Time
 	// 输入框里待发送的图片，与 input 一样是草稿；preparing 是还在后台整理的张数。
 	attachments []*attachment
 	preparing   int
@@ -331,7 +332,7 @@ func (ch *chat) skillList() []skills.Skill {
 func (it *item) finishCall(content []agent.Content, details jsontext.Value, failed bool) {
 	it.result, it.details, it.failed = agent.TextOf(content), details, failed
 	it.pictures = picturesOf(content, pictureEdge)
-	it.running, it.done = false, true
+	it.done = true
 	it.call = nil
 }
 
@@ -387,7 +388,7 @@ func (ch *chat) apply(e agent.Event) {
 		}
 	case agent.EventTypeToolExecutionStart:
 		it := ch.tool(e.ToolCallID)
-		it.tool, it.running = e.ToolName, true
+		it.tool = e.ToolName
 	case agent.EventTypeToolExecutionEnd:
 		ch.tool(e.ToolCallID).finishCall(e.Result.Content, e.Result.Details, e.Result.IsError)
 	}
