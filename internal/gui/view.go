@@ -164,7 +164,7 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 func (a *App) welcome(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c).Grow(1).Justify(ui.Center).Children(func() {
 		column(c, 0, func() {
-			ui.Text(c, "今天想做点什么？").FontSize(titleSize).Padding(0, 0, 16).
+			ui.Text(c, "今天想做点什么？").FontSize(titleSize).Padding(0, 0, 28).
 				TextAlign(ui.Center)
 			a.composer(c, t, ch)
 		})
