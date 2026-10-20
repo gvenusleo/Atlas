@@ -23,6 +23,7 @@ import (
 
 	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/host"
+	"github.com/gvenusleo/atlas/internal/shellenv"
 )
 
 const (
@@ -77,6 +78,8 @@ type App struct {
 func Run() error {
 	// 界面是中文的：控件自带的文字（搜索框、编辑菜单等）也用中文。
 	mygo.App.SetLanguages("zh-Hans")
+	// 从 Dock 启动时没有 shell 配置里的环境变量，后台向登录 shell 要一份给子进程用。
+	shellenv.Warm()
 	h, err := host.Open(context.Background(), "")
 	if err != nil {
 		return err
@@ -108,6 +111,7 @@ func Run() error {
 		a.win.OnClose(func(e *mygo.CloseEvent) { a.confirmQuit(&e.Preventable) })
 		a.refresh()
 		a.loadModels()
+		a.startMCP()
 	})
 	return mygo.App.Run()
 }

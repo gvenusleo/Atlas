@@ -175,7 +175,7 @@ func modelConfig(
 	if err != nil {
 		return modelSetup{}, err
 	}
-	key, err := config.APIKey(dir, providerID, os.Getenv)
+	key, err := config.APIKey(dir, providerID)
 	if err != nil {
 		return modelSetup{}, err
 	}

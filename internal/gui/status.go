@@ -12,10 +12,11 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// statusRow 是输入框下方的一行：左侧是工作目录，右侧是模型、思考深度与上下文占用。
+// statusRow 是输入框下方的一行：左侧是工作目录，右侧是 MCP 连接情况、模型、思考深度与上下文占用。
 func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Row(c).AlignItems(ui.Center).Gap(2).Padding(0, 6).Children(func() {
 		ui.Row(c).Grow(1).MinWidth(0).Children(func() { a.folder(c, t, ch) })
+		a.mcpStatus(c, t)
 		a.modelPicker(c, t, ch)
 		a.thinkingPicker(c, t, ch)
 		a.contextRing(c, t, ch)

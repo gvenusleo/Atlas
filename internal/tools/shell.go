@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/shellenv"
 )
 
 // 定义 shell 执行限制。
@@ -108,7 +109,7 @@ func runShell(ctx context.Context, workdir string, params jsontext.Value) (agent
 	if err != nil {
 		return agent.ToolResult{}, err
 	}
-	cmd.Dir = workdir
+	cmd.Dir, cmd.Env = workdir, shellenv.Environ()
 
 	output, err := os.CreateTemp("", "atlas-shell-*.log")
 	if err != nil {

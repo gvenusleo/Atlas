@@ -12,8 +12,28 @@ const (
 
 // Settings 是 settings.json 的结构，不含任何凭据。
 type Settings struct {
-	Model     string              `json:"model,omitempty"` // 当前选用："provider/model-id"
-	Providers map[string]Provider `json:"providers,omitempty"`
+	Model      string               `json:"model,omitempty"` // 当前选用："provider/model-id"
+	Providers  map[string]Provider  `json:"providers,omitempty"`
+	MCPServers map[string]MCPServer `json:"mcpServers,omitempty"` // 格式与 Claude Desktop 一致
+}
+
+// MCPServer 是一个 MCP 服务器的接入参数：有 Command 时启动子进程走 stdio，有 URL 时走
+// Streamable HTTP。单项的问题由 mcp 包在连接时报告，不影响 settings.json 的其余部分。
+type MCPServer struct {
+	Type    string            `json:"type,omitempty"`    // 可省略：stdio、http 或 streamable-http
+	Command string            `json:"command,omitempty"` // stdio：可执行文件，不是 shell 命令串
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"` // 值原样使用，不展开环境变量
+	Cwd     string            `json:"cwd,omitempty"` // 缺省为主目录；开头的 ~/ 换成主目录
+	URL     string            `json:"url,omitempty"` // http：服务端点
+	Headers map[string]string `json:"headers,omitempty"`
+	Timeout int               `json:"timeout,omitzero"` // 单次工具调用的超时（秒），缺省 60
+	Enabled *bool             `json:"enabled,omitzero"` // nil 视为启用
+
+	// IncludeTools 非空时只暴露匹配的工具，ExcludeTools 再从中去掉匹配的；通配符同
+	// path.Match：* 匹配任意字符，? 匹配一个字符，[…] 匹配字符集。
+	IncludeTools []string `json:"include_tools,omitempty"`
+	ExcludeTools []string `json:"exclude_tools,omitempty"`
 }
 
 // Provider 是一家厂商的接入参数与其模型清单。

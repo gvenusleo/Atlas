@@ -17,8 +17,8 @@ mise run ci        # 格式检查、vet、测试、编译、漏洞扫描
 配置与数据位于 `~/.atlas/`：
 
 - `settings.json`：当前模型与 provider 清单，不含凭据。
-- `auth.json`：以 provider 名为键的 API key，权限必须为 `0600`；也可使用环境变量
-  `<PROVIDER>_API_KEY`。
+- `auth.json`：以 provider 名为键的 API key，权限必须为 `0600`。API key 只从这个文件读取，
+  不读环境变量。
 - `AGENTS.md`：全局指令。
 - `atlas.db`：会话数据库。
 
@@ -55,6 +55,47 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 在输入框里输入 `@` 可以引用工作目录下的文件或目录：列表列出路径里包含你输入内容（忽略
 大小写）的项，选中后以 `@路径` 写进消息，模型需要内容时自己去读。
 
+### 子进程的环境变量
+
+从 Dock 或 Finder 启动的应用只有系统给的最小环境，找不到 brew、mise、nvm 装的命令。Atlas 启动时
+在后台用你的登录 shell 取一份环境（`$SHELL -l -i -c`，要带 `-i`，因为这些工具多半在 `.zshrc` 里
+激活），叠在当前环境上，给 shell 工具和 MCP 服务器用；5 秒内取不到就用当前环境。所以 shell 配置
+文件里不要等待输入，也不要太慢。终端面板自己以登录 shell 启动，会加载自己的环境，不受影响。
+
+### MCP 服务器
+
+`settings.json` 里的 `mcpServers` 接入 [MCP](https://modelcontextprotocol.io) 服务器，格式与
+Claude Desktop 一致，可以直接复制过来：
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "docs": {
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer 令牌" }
+    }
+  }
+}
+```
+
+有 `command` 的用 stdio 启动子进程，有 `url` 的用 Streamable HTTP，不支持旧的 SSE。配置里的值
+都按字面使用，不展开环境变量，所以 `env` 与 `headers` 里的令牌就明文写在 `settings.json` 里，
+这个文件不要分享；只有 `command`、`args` 与 `cwd` 开头的 `~/` 会换成主目录。可选字段：`cwd`
+（缺省为主目录）、`timeout`（单次工具调用的超时，秒，缺省 60；服务器断开后的重连也算在内）、
+`enabled: false`（不连接）、`include_tools` 与 `exclude_tools`（按名称筛选暴露给模型的工具，
+通配符是 `*`、`?` 与 `[…]`）。服务器名只能含字母、数字、`_` 与 `-`，不能含连续的 `__`，不超过
+32 个字符。暂不支持 OAuth 登录，需要授权的服务器可以在 `headers` 里放访问令牌。
+
+服务器的工具以 `mcp__服务器名__工具名` 的名字交给模型，和内置工具一样直接可用。MCP 服务器以你的
+权限运行，只接入信任的服务器。Atlas 启动时在后台连接它们，创建或恢复会话时最多等 10 秒；
+晚连上的服务器，工具要到下一个会话才有。输入框下方的 `MCP 1/2` 是已连接数与启用数，悬停时列出
+各个服务器的状态，连接失败的会写明原因。改了 `mcpServers` 要重启 Atlas 才生效；服务器断开后，
+下次调用时自动重连。过长的结果只保留首尾，完整内容存进临时文件，模型可以用 read 读取。
+
 ## 结构
 
 | 包 | 职责 |
@@ -62,6 +103,8 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 | `internal/agent` | 消息模型与 agent 循环，不依赖其他层 |
 | `internal/llm` | 把 `agent.StreamFn` 落到具体的模型 API |
 | `internal/tools` | read、write、edit、shell 工具 |
+| `internal/mcp` | 连接 MCP 服务器，把它们的工具交给 agent |
+| `internal/shellenv` | 向登录 shell 取环境，给 shell 工具与 MCP 子进程用 |
 | `internal/prompt`、`internal/skills` | 系统提示词、指令与技能发现 |
 | `internal/config` | `settings.json` 与凭据读取 |
 | `internal/session` | SQLite 会话存储 |

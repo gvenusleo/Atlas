@@ -7,15 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 const authFile = "auth.json"
 
-// APIKey 解析 provider 的凭据：auth.json（仅允许属主可读写）优先，
-// 其次环境变量 <PROVIDER 大写>_API_KEY。全无时报错并列出两条路。
-func APIKey(dir, provider string, getenv func(string) string) (string, error) {
-	envName := strings.ToUpper(provider) + "_API_KEY"
+// APIKey 读取 provider 在 auth.json（仅允许属主可读写）里的凭据，没有时报错并说明怎么加。
+// 凭据只从这个文件来，不读环境变量，行为不随应用从终端还是 Dock 启动而变。
+func APIKey(dir, provider string) (string, error) {
 	path := filepath.Join(dir, authFile)
 	if err := checkPerm(path); err != nil {
 		return "", err
@@ -32,11 +30,8 @@ func APIKey(dir, provider string, getenv func(string) string) (string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("读取 %s 失败: %w", path, err)
 	}
-	if key := getenv(envName); key != "" {
-		return key, nil
-	}
-	return "", fmt.Errorf("未找到 provider %q 的 API key：可在 %s 中添加 %q 条目，或设置环境变量 %s",
-		provider, path, provider, envName)
+	return "", fmt.Errorf("未找到 provider %q 的 API key：请在 %s 中添加 %q 条目",
+		provider, path, provider)
 }
 
 // checkPerm 拒绝属主之外有任何权限位的 auth.json（0600/0400 均可）。Windows 无 POSIX 权限位，跳过。

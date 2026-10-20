@@ -131,6 +131,7 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	mcpTools := m.mcpTools(ctx)
 	id := uuid.NewV7().String()
 	s := &Session{
 		manager: m,
@@ -157,7 +158,7 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.bind(session.Loaded{Info: info}, model, resources)
+	s.bind(session.Loaded{Info: info}, model, resources, mcpTools)
 	return s, nil
 }
 
@@ -198,6 +199,7 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	mcpTools := m.mcpTools(ctx)
 	if resources.SystemPrompt != loaded.SystemPrompt.Content {
 		message := agent.SystemMessage{
 			Type:      agent.SystemMessageTypePrompt,
@@ -213,15 +215,19 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	s.bind(loaded, model, resources)
+	s.bind(loaded, model, resources, mcpTools)
 	return s, nil
 }
 
-// bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。
-func (s *Session) bind(loaded session.Loaded, model modelSetup, resources prompt.Resources) {
+// bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。mcpTools 是 MCP 服务器暴露的
+// 工具，与内置工具一起交给模型。
+func (s *Session) bind(
+	loaded session.Loaded, model modelSetup, resources prompt.Resources, mcpTools []agent.Tool,
+) {
 	cwd := loaded.Info.Cwd
 	info := loaded.Info
-	toolset := []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
+	builtin := []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
+	toolset := slices.Concat(builtin, mcpTools)
 	s.loop = agent.LoopContext{
 		SystemPrompt:  resources.SystemPrompt,
 		Messages:      loaded.Messages,
