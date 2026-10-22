@@ -158,7 +158,7 @@ func (s *Session) save(ctx context.Context, message agent.Message) error {
 	if err := s.persistDraft(ctx); err != nil {
 		return err
 	}
-	seq, err := s.manager.store.AppendMessage(ctx, s.id, s.seq, message, s.loop.Thinking)
+	seq, err := s.manager.store.Append(ctx, s.id, s.seq, message)
 	if err != nil {
 		return err
 	}

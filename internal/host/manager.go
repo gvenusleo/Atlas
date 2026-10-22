@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/gvenusleo/atlas/internal/session"
+	"github.com/gvenusleo/atlas/internal/store"
 )
 
 var (
@@ -14,8 +14,8 @@ var (
 	ErrNotDraft    = errors.New("会话已经保存，不能换工作目录")
 	ErrClosed      = errors.New("宿主已关闭")
 	ErrDeleted     = errors.New("会话已删除")
-	ErrNotFound    = session.ErrNotFound
-	ErrConflict    = session.ErrConflict
+	ErrNotFound    = store.ErrNotFound
+	ErrConflict    = store.ErrConflict
 )
 
 // ErrNothingToCompact 表示会话里没有可压缩的内容。
@@ -23,7 +23,7 @@ var ErrNothingToCompact = errors.New("没有可压缩的内容")
 
 // Manager 拥有数据库与所有运行实例；一个数据库在进程内只使用一个 Manager。
 type Manager struct {
-	store      *session.Store
+	store      *store.DB
 	mu         sync.Mutex
 	sessions   map[string]*Session
 	ctx        context.Context
@@ -36,13 +36,13 @@ type Manager struct {
 
 // Open 打开宿主；空路径使用 ~/.atlas/atlas.db。此处不加载凭据或调用模型。
 func Open(ctx context.Context, databasePath string) (*Manager, error) {
-	store, err := session.Open(ctx, databasePath)
+	db, err := store.Open(ctx, databasePath)
 	if err != nil {
 		return nil, err
 	}
 	hostCtx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		store:    store,
+		store:    db,
 		sessions: make(map[string]*Session),
 		ctx:      hostCtx,
 		cancel:   cancel,

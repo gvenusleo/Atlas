@@ -1,4 +1,4 @@
-package session
+package store
 
 import (
 	"context"
@@ -6,18 +6,18 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 const schemaSQL = `
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
     cwd TEXT NOT NULL,
-    model_ref TEXT NOT NULL,
+    model TEXT NOT NULL,
     thinking TEXT NOT NULL DEFAULT '',
+    last_seq INTEGER NOT NULL DEFAULT 0 CHECK (last_seq >= 0),
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    last_seq INTEGER NOT NULL DEFAULT 0 CHECK (last_seq >= 0)
+    updated_at INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX sessions_updated ON sessions(updated_at DESC, id DESC);
 CREATE INDEX sessions_cwd_updated ON sessions(cwd, updated_at DESC, id DESC);
@@ -25,20 +25,13 @@ CREATE TABLE messages (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     seq INTEGER NOT NULL CHECK (seq > 0),
     role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant', 'tool_result')),
-    stop_reason TEXT NOT NULL DEFAULT '',
-    is_error INTEGER NOT NULL DEFAULT 0 CHECK (is_error IN (0, 1)),
-    model_ref TEXT NOT NULL DEFAULT '',
-    thinking TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL,
-    message_json TEXT NOT NULL CHECK (json_valid(message_json) AND json_type(message_json) = 'object'),
-    usage TEXT CHECK (usage IS NULL OR (json_valid(usage) AND json_type(usage) = 'object')),
-    PRIMARY KEY (session_id, seq),
-    CHECK ((role = 'assistant' AND usage IS NOT NULL) OR (role != 'assistant' AND usage IS NULL))
+    body TEXT NOT NULL CHECK (json_valid(body) AND json_type(body) = 'object'),
+    PRIMARY KEY (session_id, seq)
 ) STRICT;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 `
 
-// initSchema 在事务中初始化空数据库，已有数据库只接受当前版本，不执行迁移。
+// initSchema 在事务中初始化空数据库，已有数据库只接受当前版本，不做迁移。
 func initSchema(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -66,7 +59,8 @@ func initSchema(ctx context.Context, db *sql.DB) error {
 		}
 	case schemaVersion:
 	default:
-		return fmt.Errorf("不支持数据库版本 %d，当前支持 %d", version, schemaVersion)
+		return fmt.Errorf("不支持数据库版本 %d，当前是 %d：请删除旧的数据库文件后重新打开",
+			version, schemaVersion)
 	}
 	return tx.Commit()
 }

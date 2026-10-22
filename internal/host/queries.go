@@ -1,11 +1,9 @@
 package host
 
 import (
+	"cmp"
 	"context"
 	"errors"
-
-	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/session"
 )
 
 // List 查询持久化会话，无需加载执行器或凭据。limit 为 0 时使用默认 50 条。
@@ -15,7 +13,7 @@ func (m *Manager) List(ctx context.Context, cwd string, before *ListCursor, limi
 		return nil, err
 	}
 	defer end()
-	return m.store.List(ctx, cwd, before, limit)
+	return m.store.List(ctx, cwd, before, cmp.Or(limit, 50))
 }
 
 // Get 查询持久化元信息；运行中的状态使用 Session.State。
@@ -35,7 +33,7 @@ func (m *Manager) History(ctx context.Context, id string, beforeSeq int64, limit
 		return nil, err
 	}
 	defer end()
-	return m.store.Messages(ctx, id, beforeSeq, limit)
+	return m.store.Page(ctx, id, beforeSeq, limit)
 }
 
 // Prompts 返回 beforeSeq 之前的全部用户消息，正序，供会话目录使用。
@@ -46,16 +44,6 @@ func (m *Manager) Prompts(ctx context.Context, id string, beforeSeq int64) ([]Re
 	}
 	defer end()
 	return m.store.Prompts(ctx, id, beforeSeq)
-}
-
-// Usage 是会话累计 token 消耗，不是当前上下文长度。
-func (m *Manager) Usage(ctx context.Context, id string) (agent.Usage, error) {
-	ctx, end, err := m.begin(ctx)
-	if err != nil {
-		return agent.Usage{}, err
-	}
-	defer end()
-	return m.store.Usage(ctx, id)
 }
 
 // lockMutation 用占位实例排除未加载会话的恢复与其他修改，不持有全局锁执行 I/O。
@@ -85,7 +73,7 @@ func (m *Manager) Rename(ctx context.Context, id, name string) error {
 	}
 	defer unlock()
 	if err := m.store.Rename(ctx, id, name); err != nil {
-		if errors.Is(err, session.ErrNotFound) {
+		if errors.Is(err, ErrNotFound) {
 			m.forget(s)
 		}
 		return err
@@ -110,7 +98,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	defer unlock()
 	if err := m.store.Delete(ctx, id); err != nil {
 		// 记录已不存在时结果确定；其他错误无法确认是否已提交，要求重新初始化。
-		if errors.Is(err, session.ErrNotFound) {
+		if errors.Is(err, ErrNotFound) {
 			m.forget(s)
 		} else {
 			s.invalidate()

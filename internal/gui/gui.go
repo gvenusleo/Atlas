@@ -308,7 +308,7 @@ func (a *App) selection(ch *chat) (string, agent.ThinkingLevel) {
 	}
 	for _, info := range a.infos {
 		if info.ID == ch.id {
-			return info.ModelRef, info.ThinkingLevel
+			return info.Model, info.Thinking
 		}
 	}
 	return a.defaultModel, a.fit(a.defaultModel, "")

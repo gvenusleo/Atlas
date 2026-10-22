@@ -11,8 +11,8 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/config"
 	"github.com/gvenusleo/atlas/internal/prompt"
-	"github.com/gvenusleo/atlas/internal/session"
 	"github.com/gvenusleo/atlas/internal/skills"
+	"github.com/gvenusleo/atlas/internal/store"
 	"github.com/gvenusleo/atlas/internal/tools"
 )
 
@@ -131,8 +131,7 @@ func (m *Manager) New(ctx context.Context, cwd string) (*Session, error) {
 	ref, thinking, model := chooseModel(settings, "", "")
 	id := uuid.NewV7().String()
 	s := &Session{manager: m, id: id, state: State{ID: id, Draft: true}}
-	info := session.Info{ID: id, Cwd: cwd, ModelRef: ref, ThinkingLevel: thinking}
-	s.bind(session.Loaded{Info: info}, model, resources)
+	s.bind(store.Info{ID: id, Cwd: cwd, Model: ref, Thinking: thinking}, nil, model, resources)
 	return s, nil
 }
 
@@ -170,10 +169,12 @@ func (s *Session) persistDraft(ctx context.Context) error {
 	if !s.state.Draft {
 		return nil
 	}
-	info, err := s.manager.store.Create(ctx, session.CreateOptions{
-		ID: s.id, Cwd: s.state.Cwd, ModelRef: s.loop.Model.Ref, ThinkingLevel: s.loop.Thinking,
-		SystemPrompt: s.loop.Prompt,
-	})
+	snapshot := agent.SystemMessage{
+		Type: agent.SystemMessageTypePrompt, Content: s.loop.Prompt, Timestamp: time.Now(),
+	}
+	info, err := s.manager.store.Create(ctx, store.Info{
+		ID: s.id, Cwd: s.state.Cwd, Model: s.loop.Model.Ref, Thinking: s.loop.Thinking,
+	}, snapshot)
 	if err != nil {
 		return err
 	}
@@ -205,9 +206,17 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 		}
 		s.finish()
 	}()
-	loaded, err := m.store.Load(ctx, id)
+	info, records, err := m.store.Log(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	var messages []agent.Message
+	var lastPrompt string
+	for _, r := range records {
+		if p, ok := r.Message.(agent.SystemMessage); ok && p.Type == agent.SystemMessageTypePrompt {
+			lastPrompt = p.Content
+		}
+		messages = agent.Fold(messages, r.Message)
 	}
 	settings, err := config.Load()
 	if err != nil {
@@ -215,39 +224,39 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	}
 	// 上次用的模型失效了就退到别的（见 chooseModel），变了就存进会话表；一个可用的都没有时
 	// 保留原来的。
-	ref, thinking, model := chooseModel(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
+	ref, thinking, model := chooseModel(settings, info.Model, info.Thinking)
 	switch {
 	case ref == "":
-		ref, thinking = loaded.Info.ModelRef, loaded.Info.ThinkingLevel
-	case ref != loaded.Info.ModelRef || thinking != loaded.Info.ThinkingLevel:
-		if err := m.store.UpdateSettings(ctx, id, ref, thinking); err != nil {
+		ref, thinking = info.Model, info.Thinking
+	case ref != info.Model || thinking != info.Thinking:
+		if err := m.store.SetModel(ctx, id, ref, thinking); err != nil {
 			return nil, err
 		}
 	}
-	loaded.Info.ModelRef, loaded.Info.ThinkingLevel = ref, thinking
-	if err := checkWorkdir(loaded.Info.Cwd); err != nil {
+	info.Model, info.Thinking = ref, thinking
+	if err := checkWorkdir(info.Cwd); err != nil {
 		return nil, err
 	}
-	resources, err := prompt.Build(loaded.Info.Cwd)
+	resources, err := prompt.Build(info.Cwd)
 	if err != nil {
 		return nil, err
 	}
-	if resources.SystemPrompt != loaded.SystemPrompt.Content {
+	if resources.SystemPrompt != lastPrompt {
 		message := agent.SystemMessage{
 			Type:      agent.SystemMessageTypePrompt,
 			Content:   resources.SystemPrompt,
 			Timestamp: time.Now(),
 		}
-		seq, err := m.store.AppendMessage(ctx, id, loaded.Info.LastSeq, message, "")
+		seq, err := m.store.Append(ctx, id, info.LastSeq, message)
 		if err != nil {
 			return nil, errors.Join(ErrNeedsReload, err)
 		}
-		loaded.Info.LastSeq = seq
+		info.LastSeq = seq
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	s.bind(loaded, model, resources)
+	s.bind(info, messages, model, resources)
 	return s, nil
 }
 
@@ -257,18 +266,19 @@ func toolset(cwd string) []agent.Tool {
 }
 
 // bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。
-func (s *Session) bind(loaded session.Loaded, model agent.Model, resources prompt.Resources) {
-	cwd := loaded.Info.Cwd
-	info := loaded.Info
+func (s *Session) bind(
+	info store.Info, messages []agent.Message, model agent.Model, resources prompt.Resources,
+) {
+	cwd := info.Cwd
 	s.seq = info.LastSeq
-	model.Ref = info.ModelRef // 没有可用的模型时 model 是零值，引用仍记着原来的
+	model.Ref = info.Model // 没有可用的模型时 model 是零值，引用仍记着原来的
 	s.mu.Lock()
 	s.loop = agent.Input{
 		Model:    model,
-		Thinking: info.ThinkingLevel,
+		Thinking: info.Thinking,
 		Prompt:   resources.SystemPrompt,
 		Tools:    toolset(cwd),
-		Messages: loaded.Messages,
+		Messages: messages,
 	}
 	s.skills = resources.Skills
 	s.state.ID, s.state.Cwd, s.state.Name = s.id, cwd, info.Name
@@ -303,7 +313,7 @@ func (s *Session) setModel(
 	ctx context.Context, modelRef string, thinking agent.ThinkingLevel, model agent.Model,
 ) error {
 	if !s.state.Draft { // 草稿还不在库里，保存第一条消息时一并写入
-		if err := s.manager.store.UpdateSettings(ctx, s.id, modelRef, thinking); err != nil {
+		if err := s.manager.store.SetModel(ctx, s.id, modelRef, thinking); err != nil {
 			s.invalidate()
 			return errors.Join(ErrNeedsReload, err)
 		}

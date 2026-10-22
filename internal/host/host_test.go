@@ -9,7 +9,7 @@ import (
 	"uuid"
 
 	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/session"
+	"github.com/gvenusleo/atlas/internal/store"
 )
 
 // newSession 创建临时数据库和一个已持久化的会话，并以 stream 作为模型调用。
@@ -22,9 +22,8 @@ func newSession(t *testing.T, stream agent.StreamFn) (*Manager, *Session) {
 	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
 	id := uuid.NewV7().String()
-	info, err := m.store.Create(t.Context(), session.CreateOptions{
-		ID: id, Cwd: t.TempDir(), ModelRef: "p/m", SystemPrompt: "提示词",
-	})
+	info, err := m.store.Create(t.Context(),
+		store.Info{ID: id, Cwd: t.TempDir(), Model: "p/m"}, snapshot())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +31,13 @@ func newSession(t *testing.T, stream agent.StreamFn) (*Manager, *Session) {
 	s.loop = agent.Input{Prompt: "提示词", Model: agent.Model{Ref: "p/m", Stream: stream}}
 	m.sessions[id] = s
 	return m, s
+}
+
+// snapshot 是建会话时写入的提示词快照。
+func snapshot() agent.SystemMessage {
+	return agent.SystemMessage{
+		Type: agent.SystemMessageTypePrompt, Content: "提示词", Timestamp: time.Now(),
+	}
 }
 
 // reply 以固定的助手回复替代模型调用。
@@ -167,7 +173,7 @@ func TestConflictRequiresReload(t *testing.T) {
 	notice := agent.SystemMessage{
 		Type: agent.SystemMessageTypeNotice, Content: "通知", Timestamp: time.Now(),
 	}
-	if _, err := m.store.AppendMessage(t.Context(), s.id, s.seq, notice, ""); err != nil {
+	if _, err := m.store.Append(t.Context(), s.id, s.seq, notice); err != nil {
 		t.Fatal(err)
 	}
 

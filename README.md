@@ -108,5 +108,5 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 | `internal/shellenv` | 向登录 shell 取环境，给 shell 工具用 |
 | `internal/prompt`、`internal/skills` | 系统提示词、指令与技能发现 |
 | `internal/config` | `settings.json` 与凭据读取 |
-| `internal/session` | SQLite 会话存储 |
+| `internal/store` | SQLite 会话存储 |
 | `internal/host` | 组装以上各层，供 App、ACP 等入口使用 |

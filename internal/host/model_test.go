@@ -11,7 +11,7 @@ import (
 
 	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/config"
-	"github.com/gvenusleo/atlas/internal/session"
+	"github.com/gvenusleo/atlas/internal/store"
 )
 
 // 选模型的回退链：上次用的可用就用它，否则默认模型，再否则第一个可用的；
@@ -85,10 +85,9 @@ func openWith(t *testing.T, settings string) *Manager {
 func stored(t *testing.T, m *Manager, ref string) string {
 	t.Helper()
 	id := uuid.NewV7().String()
-	_, err := m.store.Create(t.Context(), session.CreateOptions{
-		ID: id, Cwd: t.TempDir(), ModelRef: ref, ThinkingLevel: agent.ThinkingHigh,
-		SystemPrompt: "提示词",
-	})
+	_, err := m.store.Create(t.Context(), store.Info{
+		ID: id, Cwd: t.TempDir(), Model: ref, Thinking: agent.ThinkingHigh,
+	}, snapshot())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +109,8 @@ func TestResumeFallsBackWhenModelIsGone(t *testing.T) {
 	if state := s.State(); state.ModelRef != "p/a" || state.ThinkingLevel != agent.ThinkingHigh {
 		t.Errorf("State = %q %q，期望退到默认模型 p/a，保留 high", state.ModelRef, state.ThinkingLevel)
 	}
-	if info, err := m.Get(t.Context(), id); err != nil || info.ModelRef != "p/a" {
-		t.Errorf("会话表里的模型 = %q（%v），期望存下退到的 p/a", info.ModelRef, err)
+	if info, err := m.Get(t.Context(), id); err != nil || info.Model != "p/a" {
+		t.Errorf("会话表里的模型 = %q（%v），期望存下退到的 p/a", info.Model, err)
 	}
 }
 
@@ -159,7 +158,7 @@ func TestNewSessionIsSavedWithFirstMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := m.Get(t.Context(), s.id)
-	if err != nil || info.ModelRef != "p/b" || info.Cwd != dir {
+	if err != nil || info.Model != "p/b" || info.Cwd != dir {
 		t.Errorf("发消息之后 Get = %+v（%v），期望存下 p/b 与换过的工作目录", info, err)
 	}
 	if records, err := m.History(t.Context(), s.id, 0, 10); err != nil || len(records) != 3 {
