@@ -38,6 +38,16 @@ func (m *Manager) History(ctx context.Context, id string, beforeSeq int64, limit
 	return m.store.Messages(ctx, id, beforeSeq, limit)
 }
 
+// Prompts 返回 beforeSeq 之前的全部用户消息，正序，供会话目录使用。
+func (m *Manager) Prompts(ctx context.Context, id string, beforeSeq int64) ([]Record, error) {
+	ctx, end, err := m.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	return m.store.Prompts(ctx, id, beforeSeq)
+}
+
 // Usage 是会话累计 token 消耗，不是当前上下文长度。
 func (m *Manager) Usage(ctx context.Context, id string) (agent.Usage, error) {
 	ctx, end, err := m.begin(ctx)

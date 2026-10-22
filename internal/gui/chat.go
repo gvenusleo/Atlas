@@ -37,6 +37,7 @@ type item struct {
 
 	at       time.Time // 用户与助手消息的时间，未知时为零
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
+	seq      int64     // 用户消息的记录序号；这次打开后新发的消息没有，为 0
 
 	callID   string // 工具卡片：调用 ID、名称、参数与结果
 	shown    bool   // 一组步骤是否展开，记在组的第一项上
@@ -65,7 +66,11 @@ type chat struct {
 	next    int
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	paging  bool  // 正在加载更早的记录
+	// seekSeq 是目录要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
+	// 0 表示没有。
+	seekSeq int64
 	list    ui.ListState
+	outline outline // 会话目录
 	input   string
 	running bool
 	// runStart 是这次运行开始的时刻，运行中输入框上方的计时从它算起。
@@ -226,7 +231,7 @@ func replyText(items []*item) (text string, at time.Time) {
 func (ch *chat) load(records []host.Record) {
 	ch.items, ch.live, ch.oldest = nil, nil, 0
 	for _, record := range records {
-		ch.append(record.Message)
+		ch.append(record.Message, record.Seq)
 	}
 	if len(records) > 0 {
 		ch.oldest = records[0].Seq
@@ -256,8 +261,8 @@ func (ch *chat) prepend(records []host.Record) {
 	ch.next, ch.oldest = older.next, older.oldest
 }
 
-// append 把一条定稿消息追加为显示项。
-func (ch *chat) append(message agent.Message) {
+// append 把一条定稿消息追加为显示项；seq 是它的记录序号，运行中新来的消息还没有，为 0。
+func (ch *chat) append(message agent.Message, seq int64) {
 	switch m := message.(type) {
 	case agent.SystemMessage:
 		ch.dropCompacting() // 压缩的结果（摘要或失败的通知）取代进行中的占位
@@ -269,7 +274,7 @@ func (ch *chat) append(message agent.Message) {
 			ch.usage = 0 // 上下文变小了，下一次响应才有新的数字
 		}
 	case agent.UserMessage:
-		ch.addUser(m)
+		ch.addUser(m).seq = seq
 	case agent.AssistantMessage:
 		ch.track(m)
 		for _, block := range m.Content {
@@ -297,9 +302,19 @@ func (ch *chat) hasDraft() bool {
 }
 
 // addUser 把用户消息排成显示项：显式调用技能时，技能块另成一项，排在输入的原文之后。
-func (ch *chat) addUser(m agent.UserMessage) {
-	var typed []agent.Content
-	var skill, content string
+func (ch *chat) addUser(m agent.UserMessage) *item {
+	typed, skill, content := splitUser(m)
+	it := ch.add(itemUser, agent.TextOf(typed))
+	it.at, it.pictures = m.Timestamp, picturesOf(m.Content, userPictureEdge)
+	if skill != "" {
+		ch.add(itemSkill, content).skill = skill
+	}
+	return it
+}
+
+// splitUser 把用户消息分成输入的文字，和显式调用的技能（名称与附给模型的内容）。
+// 图片另外显示，不算在文字里。
+func splitUser(m agent.UserMessage) (typed []agent.Content, skill, content string) {
 	for _, c := range m.Content {
 		switch b := c.(type) {
 		case agent.TextContent:
@@ -308,15 +323,11 @@ func (ch *chat) addUser(m agent.UserMessage) {
 				continue
 			}
 		case agent.ImageContent:
-			continue // 图片另外显示，不算在文字里
+			continue
 		}
 		typed = append(typed, c)
 	}
-	it := ch.add(itemUser, agent.TextOf(typed))
-	it.at, it.pictures = m.Timestamp, picturesOf(m.Content, userPictureEdge)
-	if skill != "" {
-		ch.add(itemSkill, content).skill = skill
-	}
+	return typed, skill, content
 }
 
 // skillList 返回会话的技能：会话已存在时取它的快照，与模型看到的技能目录同一份；
@@ -383,7 +394,7 @@ func (ch *chat) apply(e agent.Event) {
 		if m, ok := e.Message.(agent.AssistantMessage); ok {
 			ch.finish(m)
 		} else {
-			ch.append(e.Message)
+			ch.append(e.Message, 0)
 			ch.mark()
 		}
 	case agent.EventTypeToolExecutionStart:

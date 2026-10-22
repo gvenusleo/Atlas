@@ -63,6 +63,12 @@ func TestLoadAppliesCompaction(t *testing.T) {
 	if err != nil || len(records) != 7 {
 		t.Errorf("历史 = %d 条（%v），期望全部 7 条仍在，供界面往上翻", len(records), err)
 	}
+	// 会话目录只取某条记录之前的用户消息，压缩记录之前的也在。
+	prompts, err := store.Prompts(ctx, id, seq)
+	if err != nil || len(prompts) != 2 || prompts[0].Seq >= prompts[1].Seq ||
+		prompts[0].Message.(agent.UserMessage).Content[0].(agent.TextContent).Text != "u1" {
+		t.Errorf("提问 = %v（%v），期望 [u1, u2]", prompts, err)
+	}
 
 	append(agent.SystemMessage{
 		Type: agent.SystemMessageTypeCompaction, Content: "坏的", Kept: 99, Timestamp: now,

@@ -6,21 +6,34 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// panelButtons 画标题栏右端的两个开关：文件在最右，终端在它左边；面板打开时用强调色标出。
+// panelButtons 画标题栏右端的开关：文件在最右，终端在它左边，再左边是会话的目录
+// （提问多时才有，没有时位置空着）；面板打开时用强调色标出。
 func (a *App) panelButtons(c *ui.Context, t *ui.Theme) {
 	ch := a.current
 	panelButton(c, t, 0, folderIcon, "文件", ch.filesOpen(), a.toggleFiles)
 	panelButton(c, t, 1, terminalIcon, "终端", ch.termOpen, a.toggleTerminal)
+	if ch.hasOutline() {
+		a.outlineButton(c, t, ch)
+	}
 }
 
-// panelButton 画标题栏右端从右数第 slot 个开关，绝对定位，不占标题栏的位置；
-// 标题栏给它们留出了空隙。
+// panelButton 画标题栏右端从右数第 slot 个开关，点一下调用 click。
 func panelButton(
 	c *ui.Context, t *ui.Theme, slot int, glyph *ui.SVG, label string, open bool, click func(),
 ) {
+	btn := ui.ButtonBase(c)
+	styleBarButton(c, t, btn, slot, glyph, label, open)
+	btn.OnClick(click)
+}
+
+// styleBarButton 把 btn 画成标题栏右端从右数第 slot 个开关，绝对定位，不占标题栏的位置；
+// 标题栏给它们留出了空隙（barSlots 个）。
+func styleBarButton(
+	c *ui.Context, t *ui.Theme, btn ui.Element, slot int, glyph *ui.SVG, label string, open bool,
+) {
 	top := (titleBarHeight(c) - barButton) / 2
 	right := barInset + c.TitleBar().Right + float32(slot)*(barButton+barGap)
-	btn := ui.ButtonBase(c).Absolute().Top(top).Right(right).
+	btn.Absolute().Top(top).Right(right).
 		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
 		Label(label).Tooltip(label)
 	color := t.TextMuted
@@ -31,7 +44,6 @@ func panelButton(
 	case btn.Hovered():
 		btn.Background(buttonFill(t))
 	}
-	btn.OnClick(click)
 	btn.Children(func() { ui.Icon(c, glyph).FontSize(iconSize).TextColor(color) })
 }
 

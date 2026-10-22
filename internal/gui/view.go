@@ -92,7 +92,7 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, title string) ui.Element {
 	bar := c.TitleBar()
 	// 侧栏收起时，标题让开悬浮的侧栏开关；随展开程度平滑过渡。
 	left := gutter + (1-a.shown)*max(bar.Left+40-gutter, 0)
-	right := bar.Right + barInset + 2*barButton + barGap + 8
+	right := bar.Right + barInset + barSlots*barButton + (barSlots-1)*barGap + 8
 	return ui.Row(c).Height(titleBarHeight(c)).AlignItems(ui.Center).
 		Padding(0, right, 0, left).DragWindow().Children(func() {
 		ui.Text(c, title).Grow(1).SingleLine()
@@ -177,6 +177,7 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	ch.list.Key = func(i int) any { return blocks[i].items[0].id }
 	ch.list.FollowEnd = true
 	ch.list.FollowAnimation = &ui.Smooth
+	ch.seek(blocks)
 	a.loadOlder(ch)
 	ui.Column(c).Fill().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {

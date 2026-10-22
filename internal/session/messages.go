@@ -165,6 +165,27 @@ func (s *Store) Messages(ctx context.Context, id string, beforeSeq int64, limit 
 		return nil, err
 	}
 	defer rows.Close()
+	records, err := scanRecords(rows, id)
+	if err != nil {
+		return nil, err
+	}
+	slices.Reverse(records)
+	return records, nil
+}
+
+// Prompts 取 beforeSeq 之前的全部用户消息，返回正序，供会话目录使用。
+func (s *Store) Prompts(ctx context.Context, id string, beforeSeq int64) ([]Record, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+recordColumns+` FROM messages
+		WHERE session_id = ? AND role = 'user' AND seq < ? ORDER BY seq`, id, beforeSeq)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRecords(rows, id)
+}
+
+// scanRecords 按查询结果的顺序读出全部记录。
+func scanRecords(rows *sql.Rows, id string) ([]Record, error) {
 	var records []Record
 	for rows.Next() {
 		record, err := scanRecord(rows)
@@ -173,11 +194,7 @@ func (s *Store) Messages(ctx context.Context, id string, beforeSeq int64, limit 
 		}
 		records = append(records, record)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	slices.Reverse(records)
-	return records, nil
+	return records, rows.Err()
 }
 
 // Load 以读取元信息时的 LastSeq 为边界，后续追加不会混入本次恢复。

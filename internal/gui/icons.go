@@ -37,6 +37,7 @@ var (
 	copyIcon     = icon("lucide/copy")
 	checkIcon    = icon("lucide/check")
 	listIcon     = icon("lucide/list")
+	outlineIcon  = icon("lucide/table-of-contents")
 	codeIcon     = icon("lucide/code")
 	eyeIcon      = icon("lucide/eye")
 	expandIcon   = icon("lucide/maximize-2")

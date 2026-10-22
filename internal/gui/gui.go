@@ -206,22 +206,28 @@ func (a *App) open(id string) {
 }
 
 // loadOlder 在列表滚近顶部时再取前面一页记录；没有更早的记录或正在取时什么也不做。
+// 目录要跳到的提问还没加载时（ch.seekSeq），不论滚到哪里都取，最后一页恰好取到它为止。
 // 列表的行有 Key，往前加入时当前看的位置不动。
 func (a *App) loadOlder(ch *chat) {
-	if first, last := ch.list.Visible(); last < first || first >= olderNear {
+	first, last := ch.list.Visible()
+	if (last < first || first >= olderNear) && ch.seekSeq == 0 {
 		return
 	}
 	if ch.loading || ch.paging || ch.oldest <= 1 {
 		return
 	}
+	limit := historyPage
+	if ch.seekSeq > 0 {
+		limit = min(limit, int(ch.oldest-ch.seekSeq))
+	}
 	ch.paging = true
 	before := ch.oldest
 	go func() {
-		records, err := a.host.History(context.Background(), ch.id, before, historyPage)
+		records, err := a.host.History(context.Background(), ch.id, before, limit)
 		a.win.Update(func() {
 			ch.paging = false
 			if err != nil {
-				ch.err, ch.oldest = err.Error(), 0 // 不再重试
+				ch.err, ch.oldest, ch.seekSeq = err.Error(), 0, 0 // 不再重试
 				return
 			}
 			ch.prepend(records)
