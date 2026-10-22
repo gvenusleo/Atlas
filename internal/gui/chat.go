@@ -8,9 +8,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/host"
-	"github.com/gvenusleo/atlas/internal/skills"
+
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // itemKind 区分对话中一块内容的呈现方式。
@@ -30,6 +29,7 @@ const (
 type item struct {
 	id    int
 	kind  itemKind
+	msg   string // 所属消息的 ID；重试时这条消息的内容一起丢掉
 	text  string // 用户、助手、思考的文本，或系统通知
 	done  bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
 	open  bool   // 思考、工具与技能卡片是否展开
@@ -37,7 +37,7 @@ type item struct {
 
 	at       time.Time // 用户与助手消息的时间，未知时为零
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
-	seq      int64     // 用户消息的记录序号；这次打开后新发的消息没有，为 0
+	seq      int64     // 用户消息的记录序号
 
 	callID   string // 工具卡片：调用 ID、名称、参数与结果
 	shown    bool   // 一组步骤是否展开，记在组的第一项上
@@ -54,42 +54,46 @@ type item struct {
 type block struct{ items []*item }
 
 // chat 是一个会话的界面状态；每个会话各有一份，可以同时运行。
+//
+// 会话的视图（对话、配置项、命令、占用、标题、是否在运行）只由核心的响应与更新写入，
+// 界面从不自己决定或推算；其余是界面自己的状态。
 type chat struct {
-	key     string        // 本地稳定标识，会话创建前后保持不变
-	id      string        // 会话 ID，空表示会话还没准备好（新会话刚打开）
-	cwd     string        // 会话工作目录
-	session *host.Session // 会话的模型、技能等配置都以它为准；空表示还没准备好
-	items   []*item
-	live    []*item // 当前助手消息已流出的内容块，定稿时对账
-	tail    *item   // 当前消息开始流出时的最后一个显示项；重试时丢弃它之后的半截内容
-	retry   string  // 正在重试时的提示，下一个增量或这条消息结束时清掉
-	next    int
+	key string // 本地稳定标识，会话建好前后保持不变
+	id  string // 会话 ID；空表示新会话还没建好
+	cwd string // 会话的工作目录，建会话时定下
+
+	// 会话的视图。
+	ready     bool // 核心已经打开了这个会话
+	title     string
+	options   []protocol.ConfigOption
+	commands  []protocol.Command
+	usage     protocol.Usage
+	running   bool
+	since     time.Time // 这一轮开始的时刻，运行中输入框上方的计时从它算起
+	items     []*item
+	streaming *item  // 正在流出的文字或思考
+	retry     string // 正在重试时的提示，下一个增量或这一轮结束时清掉
+	next      int
+
+	// 界面自己的状态。
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
+	loading bool  // 正在加载最近一页历史
 	paging  bool  // 正在加载更早的记录
-	// opening 是会话正在后台准备：恢复已有的，或为新会话建草稿；switching 是正在让会话换模型或
-	// 工作目录。两者期间不能发送，也不能换模型。
-	opening, switching bool
 	// seekSeq 是目录要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
 	// 0 表示没有。
 	seekSeq int64
 	list    ui.ListState
 	outline outline // 会话目录
 	input   string
-	running bool
-	// runStart 是这次运行开始的时刻，运行中输入框上方的计时从它算起。
-	runStart time.Time
 	// 输入框里待发送的图片，与 input 一样是草稿；preparing 是还在后台整理的张数。
 	attachments []*attachment
 	preparing   int
-	loading     bool
 	err         string
 	unread      bool // 在别的会话时运行结束，用户还没回来看过
 
 	menu  menuState  // 输入框上方补全列表的状态
 	index pathIndex  // 工作目录下的路径，@ 补全与文件面板的筛选共用
 	files *filePanel // 文件面板，第一次打开时才建
-
-	usage int64 // 最近一次响应结束时的上下文词元数
 
 	// 会话的终端面板：各个标签、当前标签、是否显示，以及创建失败的原因。
 	terms      []*shell
@@ -101,12 +105,21 @@ type chat struct {
 	expanded sidePanel // 扩展到整个主区的面板；没有时为 noPanel
 }
 
-// fresh 报告会话是不是还没有保存的新会话：第一条消息保存前，它还只在内存里。
+// fresh 报告会话是不是还没发过消息的新会话：它还没写进库，换工作目录就是换一个新会话。
 func (ch *chat) fresh() bool {
-	if ch.session != nil {
-		return ch.session.State().Draft
-	}
-	return ch.id == ""
+	return !ch.loading && ch.oldest == 0 && len(ch.items) == 0 && !ch.running
+}
+
+// canSend 报告现在能不能发送：会话建好了，没在运行，历史与图片都准备好了。
+func (ch *chat) canSend() bool {
+	return ch.id != "" && !ch.running && !ch.loading && ch.preparing == 0
+}
+
+// attach 记下核心打开会话时给的配置项与状态。
+func (ch *chat) attach(options []protocol.ConfigOption, state protocol.SessionState) {
+	ch.ready, ch.options, ch.commands = true, options, state.Commands
+	ch.usage, ch.running, ch.since = state.Usage, state.Running, state.Since
+	ch.cwd, ch.title = state.Cwd, state.Title
 }
 
 // add 追加一个已定稿的显示项。
@@ -124,40 +137,39 @@ func (ch *chat) tool(callID string) *item {
 			return it
 		}
 	}
+	ch.endStream()
 	it := ch.add(itemTool, "")
 	it.callID, it.done = callID, false
 	return it
 }
 
-// stream 返回正在流出的同类内容块，没有时开始一个新块。
-func (ch *chat) stream(kind itemKind) *item {
-	if n := len(ch.live); n > 0 && ch.live[n-1].kind == kind && !ch.live[n-1].done {
-		return ch.live[n-1]
+// stream 返回 msg 正在流出的同类内容块，没有时开始一个新块。
+func (ch *chat) stream(kind itemKind, msg string) *item {
+	if it := ch.streaming; it != nil && it.kind == kind && it.msg == msg {
+		return it
 	}
-	ch.endBlock()
+	ch.endStream()
 	it := ch.add(kind, "")
-	it.done = false
-	ch.live = append(ch.live, it)
+	it.msg, it.done = msg, false
+	ch.streaming = it
 	return it
 }
 
-// endBlock 结束正在流出的内容块：下一块或工具调用开始流出时，它就已经写完。
-func (ch *chat) endBlock() {
-	if n := len(ch.live); n > 0 {
-		ch.live[n-1].done = true
+// endStream 结束正在流出的内容块：下一块、工具调用或别的消息开始时，它就已经写完。
+func (ch *chat) endStream() {
+	if ch.streaming != nil {
+		ch.streaming.done = true
+		ch.streaming = nil
 	}
 }
 
-// settle 在一次 run 结束时收尾：流出的内容块都已写完；还没有结果的工具调用不会再有结果，
+// settle 在一轮结束时收尾：流出的内容块都已写完；还没有结果的工具调用不会再有结果，
 // 标成失败，免得一直停在进行中。
 func (ch *chat) settle(reason string) {
-	for _, it := range ch.live {
-		it.done = true
-	}
-	ch.live = nil
+	ch.endStream()
 	for _, it := range ch.items {
 		if it.kind == itemTool && !it.done {
-			it.finishCall([]agent.Content{agent.TextContent{Text: reason}}, nil, true)
+			it.finishCall([]protocol.ToolCallContent{{Content: protocol.Text(reason)}}, nil, true)
 		}
 	}
 }
@@ -232,22 +244,21 @@ func replyText(items []*item) (text string, at time.Time) {
 	return strings.Join(texts, "\n\n"), at
 }
 
-// load 用持久化记录重建对话，提示词快照不显示。
-func (ch *chat) load(records []host.Record) {
-	ch.items, ch.live, ch.oldest = nil, nil, 0
-	for _, record := range records {
-		ch.append(record.Message, record.Seq)
+// load 用一页历史重建对话；oldest 是这一页最早一条的记录序号。
+func (ch *chat) load(updates []protocol.SessionUpdate, oldest int64) {
+	ch.items, ch.streaming = nil, nil
+	for _, u := range updates {
+		ch.apply(u)
 	}
-	if len(records) > 0 {
-		ch.oldest = records[0].Seq
-	}
+	ch.endStream()
+	ch.oldest = oldest
 }
 
-// prepend 把更早的一页记录排到已有显示项之前。页的边界可能把一次工具调用与它的结果拆开：
+// prepend 把更早的一页历史排到已有显示项之前。页的边界可能把一次工具调用与它的结果拆开：
 // 结果已在后一页里时，调用先在这页里建好，把结果并过来，不重复显示。
-func (ch *chat) prepend(records []host.Record) {
+func (ch *chat) prepend(updates []protocol.SessionUpdate, oldest int64) {
 	older := &chat{next: ch.next}
-	older.load(records)
+	older.load(updates, oldest)
 	for _, it := range older.items {
 		if it.kind != itemTool || it.done {
 			continue
@@ -266,38 +277,104 @@ func (ch *chat) prepend(records []host.Record) {
 	ch.next, ch.oldest = older.next, older.oldest
 }
 
-// append 把一条定稿消息追加为显示项；seq 是它的记录序号，运行中新来的消息还没有，为 0。
-func (ch *chat) append(message agent.Message, seq int64) {
-	switch m := message.(type) {
-	case agent.SystemMessage:
-		ch.dropCompacting() // 压缩的结果（摘要或失败的通知）取代进行中的占位
-		switch m.Type {
-		case agent.SystemMessageTypeNotice:
-			ch.add(itemNotice, m.Content)
-		case agent.SystemMessageTypeCompaction:
-			ch.add(itemCompaction, m.Content)
-			ch.usage = 0 // 上下文变小了，下一次响应才有新的数字
+// apply 应用核心推来的一个更新。打开会话时的历史与运行中的实时更新走的都是这里。
+func (ch *chat) apply(u protocol.SessionUpdate) {
+	switch u := u.(type) {
+	case protocol.UserMessageChunk:
+		ch.userChunk(u)
+	case protocol.AgentMessageChunk:
+		ch.retry = ""
+		it := ch.stream(itemAssistant, u.MessageID)
+		it.text += u.Content.Text
+		it.at = u.Meta.At
+	case protocol.AgentThoughtChunk:
+		ch.retry = ""
+		ch.stream(itemThinking, u.MessageID).text += u.Content.Text
+	case protocol.ToolCall:
+		it := ch.tool(u.ToolCallID)
+		it.msg, it.tool, it.args = u.Meta.MessageID, u.Name, string(u.RawInput)
+	case protocol.ToolCallUpdate:
+		ch.toolUpdate(u)
+	case protocol.CompactionUpdate:
+		ch.compaction(u)
+	case protocol.Notice:
+		ch.endStream()
+		ch.add(itemNotice, u.Title)
+	case protocol.UsageUpdate:
+		ch.usage = u.Usage
+	case protocol.SessionInfoUpdate:
+		ch.title = u.Title
+	case protocol.ConfigOptionUpdate:
+		ch.options = u.ConfigOptions
+	case protocol.StateUpdate:
+		ch.running, ch.since = u.Running, u.Since
+		if !u.Running {
+			ch.retry = ""
+			ch.settle("已中断")
 		}
-	case agent.UserMessage:
-		ch.addUser(m).seq = seq
-	case agent.AssistantMessage:
-		ch.track(m)
-		for _, block := range m.Content {
-			switch b := block.(type) {
-			case agent.ThinkingContent:
-				if b.Thinking != "" {
-					ch.add(itemThinking, b.Thinking)
-				}
-			case agent.TextContent:
-				ch.add(itemAssistant, b.Text).at = m.Timestamp
-			case agent.ToolCall:
-				ch.setCall(b)
-			}
+	case protocol.RetryUpdate:
+		// 这条回复作废：丢掉它已流出的文字、思考与半截的工具调用，等重新请求。
+		ch.endStream()
+		ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
+			return it.msg == u.MessageID && it.kind != itemUser
+		})
+		ch.retry = retryNotice(u)
+	}
+}
+
+// userChunk 把用户消息的一块排进对话：同一条消息的文字与图片在一项里，技能全文另成一项。
+func (ch *chat) userChunk(u protocol.UserMessageChunk) {
+	ch.endStream()
+	if u.Meta.Skill != "" {
+		it := ch.add(itemSkill, u.Content.Text)
+		it.msg, it.skill = u.MessageID, u.Meta.Skill
+		return
+	}
+	var it *item
+	if n := len(ch.items); n > 0 && ch.items[n-1].kind == itemUser &&
+		ch.items[n-1].msg == u.MessageID {
+		it = ch.items[n-1]
+	} else {
+		it = ch.add(itemUser, "")
+		it.msg, it.seq, it.at = u.MessageID, u.Meta.Seq, u.Meta.At
+	}
+	switch u.Content.Type {
+	case "image":
+		it.pictures = append(it.pictures, &picture{data: u.Content, edge: userPictureEdge})
+	default:
+		if it.text != "" {
+			it.text += "\n"
 		}
-	case agent.ToolResultMessage:
-		it := ch.tool(m.ToolCallID)
-		it.tool = m.ToolName
-		it.finishCall(m.Content, m.Details, m.IsError)
+		it.text += u.Content.Text
+	}
+}
+
+// toolUpdate 更新工具卡片：流出的参数、开始执行，或者结果。
+func (ch *chat) toolUpdate(u protocol.ToolCallUpdate) {
+	it := ch.tool(u.ToolCallID)
+	if u.RawInput != nil {
+		it.args = string(u.RawInput)
+	}
+	switch u.Status {
+	case protocol.ToolCompleted, protocol.ToolFailed:
+		it.finishCall(u.Content, u.RawOutput, u.Status == protocol.ToolFailed)
+	}
+}
+
+// compaction 画压缩的进展：进行中是一行占位，结束时由摘要取代，失败时由通知取代，
+// 取消时消失。
+func (ch *chat) compaction(u protocol.CompactionUpdate) {
+	ch.endStream()
+	ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
+		return it.kind == itemCompaction && !it.done
+	})
+	switch u.Status {
+	case protocol.CompactionInProgress:
+		ch.add(itemCompaction, "").done = false
+	case protocol.CompactionCompleted:
+		ch.add(itemCompaction, u.Summary)
+	case protocol.CompactionFailed:
+		ch.add(itemNotice, u.Error)
 	}
 }
 
@@ -306,156 +383,46 @@ func (ch *chat) hasDraft() bool {
 	return strings.TrimSpace(ch.input) != "" || len(ch.attachments) > 0
 }
 
-// addUser 把用户消息排成显示项：显式调用技能时，技能块另成一项，排在输入的原文之后。
-func (ch *chat) addUser(m agent.UserMessage) *item {
-	typed, skill, content := splitUser(m)
-	it := ch.add(itemUser, agent.TextOf(typed))
-	it.at, it.pictures = m.Timestamp, picturesOf(m.Content, userPictureEdge)
-	if skill != "" {
-		ch.add(itemSkill, content).skill = skill
-	}
-	return it
-}
-
-// splitUser 把用户消息分成输入的文字，和显式调用的技能（名称与附给模型的内容）。
-// 图片另外显示，不算在文字里。
-func splitUser(m agent.UserMessage) (typed []agent.Content, skill, content string) {
-	for _, c := range m.Content {
-		switch b := c.(type) {
-		case agent.TextContent:
-			if name, body, ok := skills.ParseInvocationBlock(b.Text); ok {
-				skill, content = name, body
-				continue
-			}
-		case agent.ImageContent:
-			continue
-		}
-		typed = append(typed, c)
-	}
-	return typed, skill, content
-}
-
-// skillList 返回会话的技能：取会话的快照，与模型看到的技能目录同一份；会话还没准备好时没有。
-func (ch *chat) skillList() []skills.Skill {
-	if ch.session == nil {
-		return nil
-	}
-	return ch.session.State().Skills
-}
-
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。
-func (it *item) finishCall(content []agent.Content, details jsontext.Value, failed bool) {
-	it.result, it.details, it.failed = agent.TextOf(content), details, failed
-	it.pictures = picturesOf(content, pictureEdge)
+func (it *item) finishCall(
+	content []protocol.ToolCallContent, details jsontext.Value, failed bool,
+) {
+	var texts []string
+	it.pictures = nil
+	for _, c := range content {
+		if c.Content.Type == "image" {
+			it.pictures = append(it.pictures, &picture{data: c.Content, edge: pictureEdge})
+			texts = append(texts, "[图片]")
+		} else {
+			texts = append(texts, c.Content.Text)
+		}
+	}
+	it.result, it.details, it.failed = strings.Join(texts, "\n"), details, failed
 	it.done = true
 	it.call = nil
 }
 
-// track 记录一次响应结束时的上下文大小：该响应的输入与输出之和就是下一次请求的起点。
-func (ch *chat) track(m agent.AssistantMessage) {
-	if n := m.Usage.TotalTokens; n > 0 {
-		ch.usage = n
-	}
-}
-
-// setCall 记录工具调用的名称与参数；流式期间参数是累积快照。
-func (ch *chat) setCall(call agent.ToolCall) {
-	it := ch.tool(call.ID)
-	it.tool, it.args = call.Name, string(call.Arguments)
-}
-
-// apply 应用运行事件。增量只做临时展示，定稿消息到达时以其为准。
-func (ch *chat) apply(e agent.Event) {
-	switch e.Type {
-	case agent.EventMessageStart:
-		ch.live = nil
-		ch.mark()
-	case agent.EventCompactStart:
-		ch.live = nil
-		ch.mark()
-		ch.add(itemCompaction, "").done = false
-	case agent.EventRetry:
-		// 这次响应作废：丢掉它已流出的文字与半截的工具调用，等重新请求。
-		// 中途往前加载的更早记录排在 tail 之前，不受影响；tail 不在列表里就什么也不丢。
-		if i := slices.Index(ch.items, ch.tail); ch.tail == nil || i >= 0 {
-			ch.items = ch.items[:i+1]
-		}
-		ch.live = nil
-		ch.retry = retryNotice(e.Retry)
-	case agent.EventDelta:
-		ch.retry = ""
-		switch e.Delta.Type {
-		case agent.DeltaTypeText:
-			ch.stream(itemAssistant).text += e.Delta.Text
-		case agent.DeltaTypeThinking:
-			ch.stream(itemThinking).text += e.Delta.Text
-		case agent.DeltaTypeToolCall:
-			ch.endBlock()
-			ch.setCall(e.Delta.ToolCall)
-		}
-	case agent.EventMessageEnd:
-		ch.retry = ""
-		if m, ok := e.Message.(agent.AssistantMessage); ok {
-			ch.finish(m)
-		} else {
-			ch.append(e.Message, 0) // 工具结果在这里落到它的卡片上
-			ch.mark()
-		}
-	case agent.EventToolStart:
-		ch.tool(e.Call.ID).tool = e.Call.Name
-	}
-}
-
-// mark 记下现在的最后一个显示项：之后这条消息被重试时，丢掉它之后流出的半截内容。
-func (ch *chat) mark() {
-	ch.tail = nil
-	if n := len(ch.items); n > 0 {
-		ch.tail = ch.items[n-1]
-	}
-}
-
-// dropCompacting 去掉进行中的压缩占位行：压缩结束时它由结果取代。
-func (ch *chat) dropCompacting() {
-	ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
-		return it.kind == itemCompaction && !it.done
-	})
-}
-
 // retryNotice 是重试时给用户的一行提示：等多久、第几次、为什么。
-func retryNotice(r agent.RetryInfo) string {
+func retryNotice(r protocol.RetryUpdate) string {
 	reason, _, _ := strings.Cut(r.Error, "\n")
 	return fmt.Sprintf("请求失败，%d 秒后重试（第 %d/%d 次）：%s",
 		int(r.Delay.Seconds()), r.Attempt, r.Max, truncate(reason, 80))
 }
 
-// finish 用定稿的助手消息校正已流出的内容块，保持原有显示项以延续渲染状态。
-func (ch *chat) finish(m agent.AssistantMessage) {
-	ch.track(m)
-	pending := ch.live
-	ch.live = nil
-	take := func(kind itemKind) *item {
-		if i := slices.IndexFunc(pending, func(it *item) bool { return it.kind == kind }); i >= 0 {
-			it := pending[i]
-			pending = slices.Delete(pending, i, i+1)
-			return it
-		}
-		return ch.add(kind, "")
+// option 返回会话的一个配置项。
+func (ch *chat) option(id string) (protocol.ConfigOption, bool) {
+	i := slices.IndexFunc(ch.options, func(o protocol.ConfigOption) bool { return o.ID == id })
+	if i < 0 {
+		return protocol.ConfigOption{}, false
 	}
-	for _, block := range m.Content {
-		switch b := block.(type) {
-		case agent.ThinkingContent:
-			if b.Thinking != "" {
-				it := take(itemThinking)
-				it.text, it.done = b.Thinking, true
-			}
-		case agent.TextContent:
-			it := take(itemAssistant)
-			it.text, it.done, it.at = b.Text, true, m.Timestamp
-		case agent.ToolCall:
-			ch.setCall(b)
-		}
-	}
-	for _, it := range pending {
-		it.done = true
-	}
+	return ch.options[i], true
+}
+
+// acceptsImages 报告会话选定的模型是否接受图片输入。
+func (ch *chat) acceptsImages() bool {
+	model, _ := ch.option(protocol.ConfigModel)
+	i := slices.IndexFunc(model.Options, func(v protocol.ConfigValue) bool {
+		return v.Value == model.CurrentValue
+	})
+	return i >= 0 && model.Options[i].Meta.Images
 }

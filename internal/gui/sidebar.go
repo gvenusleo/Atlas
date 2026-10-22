@@ -11,7 +11,7 @@ import (
 	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 
-	"github.com/gvenusleo/atlas/internal/host"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 const (
@@ -29,12 +29,12 @@ const (
 type group struct {
 	cwd   string
 	title string
-	infos []host.Info
+	infos []protocol.SessionInfo
 }
 
 // groupByDir 按工作目录分组，目录名为组名；组与组内会话都保持 infos 的顺序（最近更新在前）。
 // 同名的不同目录用上一级目录区分。
-func groupByDir(infos []host.Info) []group {
+func groupByDir(infos []protocol.SessionInfo) []group {
 	var groups []group
 	index := map[string]int{}
 	for _, info := range infos {
@@ -149,12 +149,12 @@ func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
 
 // visible 返回分组要列出的会话：默认只有最近的 groupLimit 个；点过“显示更多”，
 // 或当前会话排在限额之外时是全部，免得当前会话从列表里消失。
-func (a *App) visible(g group, selected string) []host.Info {
+func (a *App) visible(g group, selected string) []protocol.SessionInfo {
 	if len(g.infos) <= groupLimit || a.more[g.cwd] {
 		return g.infos
 	}
 	for _, info := range g.infos[groupLimit:] {
-		if info.ID == selected {
+		if info.SessionID == selected {
 			return g.infos
 		}
 	}
@@ -186,16 +186,16 @@ func sidebarItem(c *ui.Context, t *ui.Theme, id, label, selected string) ui.Elem
 
 // session 构建一个会话项：标题之后是状态与行尾；行尾平时是相对时间，运行中是脉动的
 // 指示器，悬停时换成 ⋯ 菜单。右键菜单与 ⋯ 相同；悬停提示给出完整标题、目录与更新时间。
-func (a *App) session(c *ui.Context, t *ui.Theme, info host.Info, selected string) {
-	label := info.Name
+func (a *App) session(c *ui.Context, t *ui.Theme, info protocol.SessionInfo, selected string) {
+	label := info.Title
 	if label == "" {
 		label = "新会话"
 	}
 	menu := a.sessionMenu(info)
 	tip := label + "\n" + info.Cwd + "\n" + info.UpdatedAt.Local().Format("2006-01-02 15:04")
-	row := sidebarItem(c, t, info.ID, label, selected).ContextMenu(menu).Tooltip(tip)
+	row := sidebarItem(c, t, info.SessionID, label, selected).ContextMenu(menu).Tooltip(tip)
 	hovered := row.Hovered()
-	ch := a.chats[info.ID]
+	ch := a.chats[info.SessionID]
 	row.Children(func() {
 		status(c, t, ch)
 		trail(c, t, info.UpdatedAt, ch != nil && ch.running, hovered, menu)
@@ -271,16 +271,16 @@ func ago(at time.Time) string {
 }
 
 // sessionMenu 是会话的菜单，右键与行尾的 ⋯ 共用。
-func (a *App) sessionMenu(info host.Info) func(*ui.Menu) {
+func (a *App) sessionMenu(info protocol.SessionInfo) func(*ui.Menu) {
 	return func(m *ui.Menu) {
 		if m.Item("重命名…").Chosen() {
-			a.renameID, a.renameText, a.renameOpen = info.ID, info.Name, true
+			a.renameID, a.renameText, a.renameOpen = info.SessionID, info.Title, true
 		}
 		m.Separator()
 		dirItems(m, info.Cwd)
 		m.Separator()
 		if m.Item("删除").Chosen() {
-			a.deleteID, a.deleteOpen = info.ID, true
+			a.deleteID, a.deleteOpen = info.SessionID, true
 		}
 	}
 }

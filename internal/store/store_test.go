@@ -22,7 +22,8 @@ func TestAppendAndRead(t *testing.T) {
 
 	now := time.Now()
 	user := func(s string) agent.UserMessage {
-		return agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: s}}, Timestamp: now}
+		return agent.UserMessage{Timestamp: now,
+			Content: []agent.Content{agent.TextContent{Text: s}}}
 	}
 	reply := agent.AssistantMessage{Model: "p/m", StopReason: agent.StopReasonStop, Timestamp: now}
 	id := uuid.NewV7().String()

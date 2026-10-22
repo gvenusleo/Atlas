@@ -5,20 +5,17 @@ import (
 	"unicode/utf8"
 )
 
-// compactCommand 是输入框里手动压缩上下文的命令。
-const compactCommand = "/compact"
-
-// commandList 是可用的命令：内置命令在前，其后是会话的技能。在输入框里输入 / 时列出。
-// 技能补全后接着输入参数，不直接执行。
+// commandList 是可用的命令，来自核心：/compact 在前，其后是会话的技能。在输入框里输入 / 时
+// 列出。带参数的命令（技能）补全后接着输入参数，不直接执行。
 func (ch *chat) commandList() []option {
-	list := []option{{
-		name: compactCommand, hint: "把较早的对话压缩成摘要", insert: compactCommand, run: true,
-	}}
-	for _, s := range ch.skillList() {
-		name := "/" + s.Name
-		list = append(list, option{
-			name: name, hint: s.Description, tag: "Skill", insert: name + " ",
-		})
+	var list []option
+	for _, c := range ch.commands {
+		name := "/" + c.Name
+		opt := option{name: name, hint: c.Description, insert: name, run: c.Input == nil}
+		if c.Input != nil {
+			opt.tag, opt.insert = "Skill", name+" "
+		}
+		list = append(list, opt)
 	}
 	return list
 }

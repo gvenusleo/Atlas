@@ -43,9 +43,12 @@ func encodeAll(messages []agent.Message) ([]string, error) {
 }
 
 // insert 在调用方的事务里插入一条消息；序号与会话表由调用方维护。
-func insert(ctx context.Context, tx *sql.Tx, id string, seq int64, role agent.Role, body string) error {
+func insert(
+	ctx context.Context, tx *sql.Tx, id string, seq int64, role agent.Role, body string,
+) error {
 	_, err := tx.ExecContext(ctx,
-		"INSERT INTO messages (session_id, seq, role, body) VALUES (?, ?, ?, ?)", id, seq, role, body)
+		"INSERT INTO messages (session_id, seq, role, body) VALUES (?, ?, ?, ?)",
+		id, seq, role, body)
 	return err
 }
 

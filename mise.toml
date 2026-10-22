@@ -35,7 +35,7 @@ run = "go test ./... -count=1 -race"
 
 [tasks.vuln]
 description = "govulncheck 漏洞扫描"
-run = "go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./..."
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./..."
 
 [tasks.ci]
 description = "CI：fmt-check → vet → test → build → vuln"

@@ -86,6 +86,15 @@ func (r *recorder) has(kind string) bool {
 	})
 }
 
+// resume 让 a 打开会话 id。
+func resume(t *testing.T, a protocol.Agent, id string) {
+	t.Helper()
+	_, err := a.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // stub 让会话用 stream 代替真的模型调用。
 func stub(t *testing.T, c *Core, id string, stream agent.StreamFn) {
 	t.Helper()
@@ -100,13 +109,14 @@ func stub(t *testing.T, c *Core, id string, stream agent.StreamFn) {
 
 // reply 回复固定的文字，并记下请求里的消息数。
 func reply(text string, seen *int) agent.StreamFn {
-	return func(_ context.Context, req agent.StreamRequest, _ func(agent.Delta)) agent.AssistantMessage {
+	return func(
+		_ context.Context, req agent.StreamRequest, _ func(agent.Delta),
+	) agent.AssistantMessage {
 		if seen != nil {
 			*seen = len(req.Messages)
 		}
-		return agent.AssistantMessage{
-			Content: []agent.Content{agent.TextContent{Text: text}}, StopReason: agent.StopReasonStop,
-		}
+		return agent.AssistantMessage{StopReason: agent.StopReasonStop,
+			Content: []agent.Content{agent.TextContent{Text: text}}}
 	}
 }
 
@@ -127,7 +137,8 @@ func TestNewSessionIsSavedWithFirstPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if list, _ := a.ListSessions(t.Context(), protocol.ListSessionsRequest{}); len(list.Sessions) != 0 {
+	list, _ := a.ListSessions(t.Context(), protocol.ListSessionsRequest{})
+	if len(list.Sessions) != 0 {
 		t.Fatalf("发消息之前列表 = %v，期望为空", list.Sessions)
 	}
 	stub(t, c, resp.SessionID, reply("好", nil))
@@ -141,11 +152,12 @@ func TestNewSessionIsSavedWithFirstPrompt(t *testing.T) {
 	if !client.has("session_info_update") || !client.has("_atlas_state") {
 		t.Error("没有收到标题或运行状态的更新")
 	}
-	list, err := a.ListSessions(t.Context(), protocol.ListSessionsRequest{})
+	list, err = a.ListSessions(t.Context(), protocol.ListSessionsRequest{})
 	if err != nil || len(list.Sessions) != 1 || list.Sessions[0].Title != "你好" {
 		t.Fatalf("列表 = %+v（%v），期望一个名为“你好”的会话", list.Sessions, err)
 	}
-	history, err := a.History(t.Context(), protocol.HistoryRequest{SessionID: resp.SessionID, Limit: 10})
+	history, err := a.History(t.Context(),
+		protocol.HistoryRequest{SessionID: resp.SessionID, Limit: 10})
 	replayed := &recorder{updates: history.Updates}
 	if err != nil || !slices.Equal(replayed.texts(), client.texts()) {
 		t.Errorf("回放 = %v（%v），期望与实时收到的一样", replayed.texts(), err)
@@ -168,9 +180,7 @@ func TestTwoProcessesShareSession(t *testing.T) {
 	if err := say(t, a1, id, "甲"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a2.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: id}); err != nil {
-		t.Fatal(err)
-	}
+	resume(t, a2, id)
 	stub(t, c2, id, reply("二", nil))
 
 	stub(t, c1, id, func(ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
@@ -213,9 +223,7 @@ func TestClientsShareSession(t *testing.T) {
 	if err := say(t, a1, id, "你好"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a2.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: id}); err != nil {
-		t.Fatal(err)
-	}
+	resume(t, a2, id)
 
 	entered := make(chan struct{})
 	stub(t, c, id, func(ctx context.Context, _ agent.StreamRequest, emit func(agent.Delta),

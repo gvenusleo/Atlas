@@ -13,8 +13,8 @@ import (
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
-	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/imaging"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 const (
@@ -39,28 +39,21 @@ func imageFiles(paths []string) []string {
 // attachment 是输入框里待发送的一张图片。
 type attachment struct {
 	id     int
-	name   string // 提示与悬停时显示的文件名
-	image  agent.ImageContent
-	bitmap *ui.Bitmap // 缩略图；解码失败时为空
+	name   string                // 提示与悬停时显示的文件名
+	image  protocol.ContentBlock // 整理好的图片
+	bitmap *ui.Bitmap            // 缩略图；解码失败时为空
 }
 
-// draftMessage 把输入框里的文字与图片排成一条用户消息：文字在前，图片在后。
-func draftMessage(text string, attachments []*attachment) agent.UserMessage {
-	var content []agent.Content
+// draftPrompt 把输入框里的文字与图片排成一条消息的内容：文字在前，图片在后。
+func draftPrompt(text string, attachments []*attachment) []protocol.ContentBlock {
+	var prompt []protocol.ContentBlock
 	if text != "" {
-		content = append(content, agent.TextContent{Text: text})
+		prompt = append(prompt, protocol.Text(text))
 	}
 	for _, f := range attachments {
-		content = append(content, f.image)
+		prompt = append(prompt, f.image)
 	}
-	return agent.UserMessage{Content: content}
-}
-
-// acceptsImages 报告会话选定的模型是否接受图片输入。
-func (a *App) acceptsImages(ch *chat) bool {
-	model, _ := a.selection(ch)
-	info, ok := a.modelInfo(model)
-	return ok && info.Modalities.AcceptsImages()
+	return prompt
 }
 
 // pickImages 让用户选图片文件，加进会话的待发送图片。
@@ -125,7 +118,7 @@ func (a *App) pasteImages(ch *chat, text string) bool {
 // 整理期间 preparing 不为零，输入框上方显示等待的方块，也不能发送。
 func (a *App) addImage(ch *chat, name string, open func() (io.ReadCloser, error)) {
 	switch {
-	case !a.acceptsImages(ch):
+	case !ch.acceptsImages():
 		a.toast = noImagesHint
 		return
 	case len(ch.attachments)+ch.preparing >= maxImages:
@@ -149,16 +142,17 @@ func (a *App) addImage(ch *chat, name string, open func() (io.ReadCloser, error)
 }
 
 // loadImage 读取并整理图片，再解出缩略图；缩略图解不出来不影响发送。
-func loadImage(open func() (io.ReadCloser, error)) (agent.ImageContent, *ui.Bitmap, error) {
+func loadImage(open func() (io.ReadCloser, error)) (protocol.ContentBlock, *ui.Bitmap, error) {
 	r, err := open()
 	if err != nil {
-		return agent.ImageContent{}, nil, err
+		return protocol.ContentBlock{}, nil, err
 	}
 	defer r.Close()
-	img, err := imaging.Prepare(r)
+	prepared, err := imaging.Prepare(r)
 	if err != nil {
-		return agent.ImageContent{}, nil, err
+		return protocol.ContentBlock{}, nil, err
 	}
+	img := protocol.Image(prepared.Data, prepared.MIMEType)
 	bitmap, _ := decodePicture(img, userPictureEdge)
 	return img, bitmap, nil
 }

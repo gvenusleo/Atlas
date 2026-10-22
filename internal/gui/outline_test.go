@@ -12,7 +12,7 @@ import (
 // outlineApp 是有 30 轮对话的界面，每轮的回复占好几行，停在末尾。
 func outlineApp(t *testing.T) (*App, *ui.Tester) {
 	t.Helper()
-	a := newApp(nil)
+	a := newApp()
 	for i := range 30 {
 		a.current.add(itemUser, fmt.Sprintf("提问%02d", i)).seq = int64(2 + 2*i)
 		a.current.add(itemAssistant, strings.Repeat("回答。", 60))

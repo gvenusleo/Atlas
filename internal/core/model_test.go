@@ -11,7 +11,9 @@ import (
 // 思考档位新模型支持就保留，否则用它的默认档；没有声明或不支持的模型都算不可用。
 func TestPickModel(t *testing.T) {
 	noTools := false
-	effort := []config.ReasoningOption{{Type: config.ReasoningTypeEffort, Values: []string{"low", "high"}}}
+	effort := []config.ReasoningOption{
+		{Type: config.ReasoningTypeEffort, Values: []string{"low", "high"}},
+	}
 	settings := &config.Settings{
 		Model: "p/default",
 		Providers: map[string]config.Provider{"p": {

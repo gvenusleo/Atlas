@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/host"
+
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // 会话目录的尺寸，单位为 DIP：outlineHeight 是最大高度，提问多时在里面滚动。
@@ -63,20 +63,10 @@ func (ch *chat) outlinePrompts(blocks []block) []prompt {
 }
 
 // olderPrompts 把历史里查到的用户消息排成目录里的条目。
-func olderPrompts(records []host.Record) []prompt {
-	out := make([]prompt, 0, len(records))
-	for _, r := range records {
-		m, ok := r.Message.(agent.UserMessage)
-		if !ok {
-			continue
-		}
-		typed, _, _ := splitUser(m)
-		pictures := slices.ContainsFunc(m.Content, func(c agent.Content) bool {
-			_, ok := c.(agent.ImageContent)
-			return ok
-		})
-		out = append(out, prompt{seq: r.Seq, at: m.Timestamp, row: -1,
-			text: promptLine(agent.TextOf(typed), pictures)})
+func olderPrompts(entries []protocol.PromptEntry) []prompt {
+	out := make([]prompt, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, prompt{seq: e.Seq, at: e.At, row: -1, text: promptLine(e.Text, e.Images)})
 	}
 	return out
 }
@@ -114,13 +104,14 @@ func (a *App) fetchOlder(ch *chat) {
 	o.fetched = true
 	id, before := ch.id, ch.oldest
 	go func() {
-		records, err := a.host.Prompts(context.Background(), id, before)
+		resp, err := a.agent.Prompts(context.Background(),
+			protocol.PromptsRequest{SessionID: id, Before: before})
 		a.win.Update(func() {
 			if err != nil {
 				ch.err = err.Error()
 				return
 			}
-			o.older = olderPrompts(records)
+			o.older = olderPrompts(resp.Prompts)
 		})
 	}()
 }

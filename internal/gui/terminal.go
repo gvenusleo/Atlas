@@ -145,7 +145,7 @@ func (ch *chat) closePanels() {
 // 有没保存的修改时不离开，提示一声并返回 false。
 func (a *App) leave() bool {
 	ch := a.current
-	if ch == nil || !ch.fresh() || ch.running {
+	if ch == nil || !ch.fresh() {
 		return true
 	}
 	if n := ch.dirtyTabs(); n > 0 {
@@ -153,6 +153,9 @@ func (a *App) leave() bool {
 		return false
 	}
 	ch.closePanels()
+	if ch.id != "" {
+		a.discard(ch)
+	}
 	return true
 }
 

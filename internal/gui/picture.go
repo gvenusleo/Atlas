@@ -5,8 +5,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/imaging"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // 图片预览的尺寸，单位为 DIP：pictureWidth、pictureHeight 是工具结果里预览的最大尺寸，
@@ -24,26 +24,15 @@ const (
 
 // picture 是消息或工具结果里的图片，以及它在后台解码的结果。
 type picture struct {
-	data    agent.ImageContent // 解码完成后清空，不再占着 base64
-	edge    int                // 解码后长边的上限（像素）
-	started bool               // 已经开始解码
-	bitmap  *ui.Bitmap         // 解码成功时才有
-	err     string             // 解码失败或图片太大时的原因
-}
-
-// picturesOf 取出内容里的全部图片，没有时返回 nil；edge 是它们解码后长边的上限。
-func picturesOf(content []agent.Content, edge int) []*picture {
-	var out []*picture
-	for _, c := range content {
-		if img, ok := c.(agent.ImageContent); ok {
-			out = append(out, &picture{data: img, edge: edge})
-		}
-	}
-	return out
+	data    protocol.ContentBlock // 解码完成后清空，不再占着 base64
+	edge    int                   // 解码后长边的上限（像素）
+	started bool                  // 已经开始解码
+	bitmap  *ui.Bitmap            // 解码成功时才有
+	err     string                // 解码失败或图片太大时的原因
 }
 
 // decodePicture 解码图片，长边缩到 edge 以内。在后台调用。
-func decodePicture(img agent.ImageContent, edge int) (*ui.Bitmap, error) {
+func decodePicture(img protocol.ContentBlock, edge int) (*ui.Bitmap, error) {
 	data, err := base64.StdEncoding.DecodeString(img.Data)
 	if err != nil {
 		return nil, err
@@ -64,7 +53,7 @@ func (a *App) startDecode(p *picture) {
 	go func() {
 		bitmap, err := decodePicture(p.data, p.edge)
 		a.win.Update(func() {
-			p.bitmap, p.data = bitmap, agent.ImageContent{}
+			p.bitmap, p.data = bitmap, protocol.ContentBlock{}
 			if err != nil {
 				p.err = err.Error()
 			}

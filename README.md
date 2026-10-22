@@ -99,14 +99,19 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 
 ## 结构
 
+核心是一个 [ACP](https://agentclientprotocol.com) 形态的提供端，桌面界面是它的客户端，
+以后的 ACP、WebSocket 入口也是。设计见 [docs/design.md](docs/design.md)。
+
 | 包 | 职责 |
 | --- | --- |
-| `internal/agent` | 消息模型与 agent 循环，不依赖其他层 |
+| `internal/protocol` | 对客户端开放的接口与数据类型，语义照 ACP，不依赖其他包 |
+| `internal/core` | 核心：管理会话，是会话运行时数据的唯一权威，实现 `protocol.Agent` |
+| `internal/gui` | 桌面界面，只通过 `protocol` 使用核心 |
+| `internal/agent` | 消息模型、一轮运行的循环、压缩与上下文折叠，不依赖其他包 |
 | `internal/llm` | 把 `agent.StreamFn` 落到具体的模型 API |
 | `internal/tools` | read、write、edit、shell 工具 |
 | `internal/imaging` | 整理要交给模型的图片：限制格式与大小，缩小，按 EXIF 方向转正 |
 | `internal/shellenv` | 向登录 shell 取环境，给 shell 工具用 |
 | `internal/prompt`、`internal/skills` | 系统提示词、指令与技能发现 |
 | `internal/config` | `settings.json` 与凭据读取 |
-| `internal/store` | SQLite 会话存储 |
-| `internal/host` | 组装以上各层，供 App、ACP 等入口使用 |
+| `internal/store` | SQLite 会话存储，只做存取 |

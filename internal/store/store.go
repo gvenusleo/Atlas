@@ -157,7 +157,8 @@ func scanInfo(row scanner) (Info, error) {
 
 // Get 读会话的元信息，不读历史。
 func (d *DB) Get(ctx context.Context, id string) (Info, error) {
-	return scanInfo(d.db.QueryRowContext(ctx, "SELECT "+infoColumns+" FROM sessions WHERE id = ?", id))
+	return scanInfo(d.db.QueryRowContext(ctx,
+		"SELECT "+infoColumns+" FROM sessions WHERE id = ?", id))
 }
 
 // Cursor 是列表上一页最后一项的位置；列表是实时视图，不提供跨页快照。
@@ -205,7 +206,8 @@ func (d *DB) SetModel(ctx context.Context, id, model string, thinking agent.Thin
 
 // Rename 改名；空名称表示清除名称。
 func (d *DB) Rename(ctx context.Context, id, name string) error {
-	return d.change(ctx, "UPDATE sessions SET name = ?, updated_at = max(updated_at, ?) WHERE id = ?",
+	return d.change(ctx,
+		"UPDATE sessions SET name = ?, updated_at = max(updated_at, ?) WHERE id = ?",
 		name, time.Now().UnixMilli(), id)
 }
 

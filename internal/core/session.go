@@ -221,7 +221,9 @@ func (s *session) cancelTurn() {
 }
 
 // setConfig 换模型或思考深度：配好新模型，保存，再采用；返回完整的配置项，并推给其他连接。
-func (s *session) setConfig(ctx context.Context, id, value string) ([]protocol.ConfigOption, error) {
+func (s *session) setConfig(
+	ctx context.Context, id, value string,
+) ([]protocol.ConfigOption, error) {
 	end, err := s.begin(nil)
 	if err != nil {
 		return nil, err
@@ -260,7 +262,8 @@ func (s *session) setConfig(ctx context.Context, id, value string) ([]protocol.C
 	usage := s.usage()
 	s.mu.Unlock()
 	options := configOptions(settings, ref, thinking)
-	s.broadcast(protocol.ConfigOptionUpdate{ConfigOptions: options}, protocol.UsageUpdate{Usage: usage})
+	s.broadcast(protocol.ConfigOptionUpdate{ConfigOptions: options},
+		protocol.UsageUpdate{Usage: usage})
 	return options, nil
 }
 

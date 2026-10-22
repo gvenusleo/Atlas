@@ -7,6 +7,8 @@ import (
 
 	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
+
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // 输入区的尺寸，单位为 DIP。
@@ -74,7 +76,7 @@ func (a *App) runStatus(c *ui.Context, t *ui.Theme, ch *chat) {
 	if !ch.running {
 		return
 	}
-	d := time.Since(ch.runStart)
+	d := time.Since(ch.since)
 	c.After(time.Second - d%time.Second)
 	ui.Row(c).Height(runBarHeight).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, composerInset).
 		Children(func() {
@@ -105,16 +107,14 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 		glyph, label = stopIcon, "停止"
 	}
 	var btn ui.Element
-	// 刚发出时会话句柄还没就绪，此时不能停止。
-	if ch.loading || ch.running && ch.session == nil ||
-		!ch.running && (!ch.hasDraft() || ch.preparing > 0) {
+	if !ch.running && (!ch.hasDraft() || !ch.canSend()) {
 		btn = ui.Button(c, "").Disabled(true)
 	} else {
 		btn = ui.ButtonBase(c).Cursor(ui.CursorPointer).TextColor(t.Accent).
 			OnClick(func() {
 				switch {
 				case ch.running:
-					ch.session.Cancel()
+					a.agent.Cancel(protocol.CancelNotification{SessionID: ch.id})
 				case a.send(ch, ch.input):
 					ch.input = ""
 				}
@@ -134,7 +134,7 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 
 // imageButton 是输入框左侧的按钮，点一下选图片。当前模型不接受图片时变淡，点了提示原因。
 func (a *App) imageButton(c *ui.Context, t *ui.Theme, ch *chat) {
-	can := a.acceptsImages(ch)
+	can := ch.acceptsImages()
 	label, color := "添加图片", t.TextMuted
 	if !can {
 		label, color = "当前模型不接受图片", t.TextMuted.Alpha(0.4)

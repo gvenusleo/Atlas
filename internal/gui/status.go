@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 
-	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // statusRow 是输入框下方的一行：左侧是工作目录，右侧是模型、思考深度与上下文占用。
@@ -25,7 +26,7 @@ func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 // folder 显示会话的工作目录；还没有保存的新会话可以点击更换。
 func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	var row ui.Element
-	if ch.fresh() && !ch.running && !ch.opening && !ch.switching {
+	if ch.fresh() {
 		row = ui.ButtonBase(c).Cursor(ui.CursorPointer).Label("更换工作目录")
 		if row.Hovered() {
 			row.Background(rowFill(t))
@@ -56,53 +57,36 @@ func shortPath(path string) string {
 	return path
 }
 
-// pickable 报告现在能不能换模型：换模型是对会话做的，要等会话准备好；运行、准备和切换期间不能，
-// 会话状态失效了也不能，要等重新恢复。
-func (ch *chat) pickable() bool {
-	return ch.session != nil && !ch.running && !ch.opening && !ch.switching &&
-		!ch.session.State().NeedsReload
-}
-
-// modelPicker 选择会话使用的模型；模型清单没有加载时不显示。
+// modelPicker 选择会话使用的模型，thinkingPicker 选择思考深度：都照着核心给的配置项画，
+// 会话没打开或模型不支持思考时没有。运行中不能换。
 func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
-	if len(a.models) == 0 {
-		return
-	}
-	refs := make([]string, len(a.models))
-	for i, m := range a.models {
-		refs[i] = m.Ref
-	}
-	name := func(ref string) string {
-		if m, ok := a.modelInfo(ref); ok {
-			return m.Name
-		}
-		return ref
-	}
-	model, thinking := a.selection(ch)
-	dropdown(c, t, "模型", &model, refs, name, !ch.pickable(), func() {
-		a.choose(ch, model, a.fit(model, thinking))
-	})
+	a.configPicker(c, t, ch, protocol.ConfigModel)
 }
 
-// thinkingPicker 选择思考深度；模型不支持思考时不显示。
 func (a *App) thinkingPicker(c *ui.Context, t *ui.Theme, ch *chat) {
-	model, thinking := a.selection(ch)
-	info, ok := a.modelInfo(model)
-	if !ok || len(info.ThinkingLevels) == 0 {
-		return
-	}
-	name := func(l agent.ThinkingLevel) string { return capitalize(string(l)) }
-	dropdown(c, t, "思考深度", &thinking, info.ThinkingLevels, name, !ch.pickable(), func() {
-		a.choose(ch, model, thinking)
-	})
+	a.configPicker(c, t, ch, protocol.ConfigThinking)
 }
 
-// capitalize 把首字母大写；思考深度的取值都是 ASCII，尚未选定时为空。
-func capitalize(s string) string {
-	if s == "" {
-		return s
+// configPicker 把一个配置项画成下拉。
+func (a *App) configPicker(c *ui.Context, t *ui.Theme, ch *chat, id string) {
+	opt, ok := ch.option(id)
+	if !ok || len(opt.Options) == 0 {
+		return
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	values := make([]string, len(opt.Options))
+	for i, v := range opt.Options {
+		values[i] = v.Value
+	}
+	name := func(value string) string {
+		if i := slices.Index(values, value); i >= 0 {
+			return opt.Options[i].Name
+		}
+		return value
+	}
+	value := opt.CurrentValue
+	dropdown(c, t, opt.Name, &value, values, name, !ch.ready || ch.running, func() {
+		a.choose(ch, id, value)
+	})
 }
 
 // dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开。value 指向当前值的本帧副本，
@@ -146,14 +130,12 @@ func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
 
 // contextRing 用圆环显示上下文窗口的占用，悬停时给出具体数字；窗口大小未知时不显示。
 func (a *App) contextRing(c *ui.Context, t *ui.Theme, ch *chat) {
-	model, _ := a.selection(ch)
-	info, ok := a.modelInfo(model)
-	if !ok || info.ContextWindow <= 0 {
+	if ch.usage.Size <= 0 {
 		return
 	}
-	used := min(float32(ch.usage)/float32(info.ContextWindow), 1)
+	used := min(float32(ch.usage.Used)/float32(ch.usage.Size), 1)
 	tip := fmt.Sprintf("上下文已用 %.0f%%（%s / %s）",
-		used*100, tokens(ch.usage), tokens(info.ContextWindow))
+		used*100, tokens(ch.usage.Used), tokens(ch.usage.Size))
 	// 圆环从正上方开始，所以把元素逆时针转 90 度。
 	ui.Box(c).Size(16, 16).Margin(0, 0, 0, 6).Rotate(-90).Label(tip).Tooltip(tip).
 		Draw(func(p *ui.Painter, r ui.Rect) {

@@ -43,7 +43,9 @@ func (s *session) send(ctx context.Context, blocks []protocol.ContentBlock) (
 	if err != nil {
 		return "", err
 	}
-	return s.run(ctx, func(ctx context.Context, in agent.Input, emit func(agent.Event)) []agent.Message {
+	return s.run(ctx, func(
+		ctx context.Context, in agent.Input, emit func(agent.Event),
+	) []agent.Message {
 		return agent.Run(ctx, in, user, emit)
 	})
 }
@@ -126,7 +128,8 @@ func (s *session) ready(ctx context.Context) error {
 		s.mu.Lock()
 		s.model, s.thinking = model, thinking
 		s.mu.Unlock()
-		s.broadcast(protocol.ConfigOptionUpdate{ConfigOptions: configOptions(settings, ref, thinking)})
+		s.broadcast(protocol.ConfigOptionUpdate{
+			ConfigOptions: configOptions(settings, ref, thinking)})
 	}
 	if !saved {
 		return nil

@@ -54,14 +54,14 @@ cmd/atlas ── 组装：打开库，建核心，交给入口
 | 包 | 职责 |
 | --- | --- |
 | `protocol` | 对客户端开放的接口（`Agent`、`Client`）与全部请求、响应、更新类型，JSON 标签用 ACP 的线上名称。只有数据，没有逻辑 |
-| `core` | ACP 的提供端：管理已加载的会话，实现 `protocol.Agent`。会话运行时数据的唯一权威 |
+| `core` | ACP 的提供端：管理已加载的会话，实现 `protocol.Agent`。会话运行时数据的唯一权威；选模型的回退规则也在这里 |
 | `agent` | 消息、模型与工具的接口，一轮运行的循环、压缩、上下文折叠。没有状态，不做 IO |
 | `llm` | `agent.StreamFn` 的实现（OpenAI Responses） |
 | `tools` | read、write、edit、shell |
 | `store` | SQLite：会话表与消息表。只存取，不懂折叠与运行 |
-| `config` | 读 `settings.json`、`auth.json`，模型清单，选模型的回退规则 |
+| `config` | 读 `settings.json`、`auth.json` |
 | `prompt`、`skills` | 按工作目录组装系统提示词，发现技能 |
-| `gui` | 桌面客户端：只依赖 `protocol`，不 import `core`、`agent`、`store` |
+| `gui` | 桌面客户端：会话只通过 `protocol` 使用，不 import `core`、`agent`、`store`（文件面板读文件用 `tools` 的工具函数） |
 | `acp`、`ws` | 以后做：把 `protocol.Agent` 与 `protocol.Client` 映射成 JSON-RPC，分别走 stdio 与 WebSocket |
 
 `gui` 只依赖 `protocol`，由编译器保证界面拿不到核心的内部状态：它想知道什么，都只能通过接口问，
@@ -116,7 +116,11 @@ type Client interface {
 | `Rename{sessionId, title}` | `_atlas/session/rename` | 改名，打开着它的连接收到 `session_info_update` |
 
 斜杠命令按 ACP 的方式处理，就是一条以 `/` 开头的 `Prompt`：`/compact` 压缩上下文；`/技能名 参数`
-在原文后附上技能全文再运行。可用的命令（`compact` 与全部技能）通过 `available_commands_update` 推给客户端。
+在原文后附上技能全文再运行。
+
+打开会话时的状态随响应给出（`NewSession`、`ResumeSession` 的 `_meta`，即 `protocol.SessionState`）：
+工作目录、标题、可用的命令（`compact` 与全部技能）、上下文占用、是否在运行，之后由更新推进。
+工作目录在会话里不变，技能随它而定，所以命令不另发更新。
 
 没有“换工作目录”：ACP 的工作目录在建会话时就定了。新会话想换目录，就建一个新会话。
 
@@ -148,7 +152,6 @@ type Client interface {
 | `notice` | 系统通知，如压缩失败、达到上限 |
 | `session_info_update` | 会话第一次保存（有了名称）与改名 |
 | `config_option_update` | 别的连接换了模型或思考深度 |
-| `available_commands_update` | 加载会话时 |
 | `_atlas_state` | 一轮开始与结束：`running`、`since`。仿照 ACP v2 草案的 `state_update`，中途接入的客户端靠它知道会话在不在运行 |
 | `_atlas_retry` | 一次模型请求失败、等待重试：`messageId`、第几次、等多久、原因。客户端丢掉这条消息已流出的内容 |
 | `_atlas_reset` | 别的进程写过这个会话，核心已从库里重新加载。客户端丢掉显示的对话，重新读历史 |
@@ -177,7 +180,7 @@ type session struct {
 	cwd      string
 	saved    bool              // 已写进库；之前只在内存里
 	seq      int64             // 本进程写入或读到的最后序号
-	turn     *turn             // 正在运行的一轮；nil 表示空闲。这是唯一的控制状态
+	turn     *turn             // 正在进行的操作；nil 表示空闲。这是唯一的控制状态
 	model    agent.Model       // 没有可用的模型时 Stream 为空
 	thinking agent.ThinkingLevel
 	prompt   string            // 系统提示词
@@ -195,7 +198,9 @@ type turn struct {
 ```
 
 现在 host 的 `Busy`、`Running`、`NeedsReload`、`Draft`、`Deleted`、`Closed`，与 GUI 的 `running`、
-`opening`、`switching`，都由 `turn` 是否为空加上 `saved` 取代。
+`opening`、`switching`，都由 `turn` 是否为空加上 `saved` 取代。一轮对话或压缩的 `turn` 带取消函数，
+会广播 `_atlas_state`；换模型、删除这类很快的操作也占着 `turn`，但不能取消、不广播，
+所以它们与一轮互斥，而锁仍然不跨 IO。
 
 ### 加载
 
@@ -303,7 +308,7 @@ CREATE TABLE messages (
 ```go
 func Open(path string) (*DB, error)
 
-func (db *DB) Create(info Info, first ...agent.Message) (seq int64, err error)
+func (db *DB) Create(info Info, first ...agent.Message) (Info, error) // 返回的含 LastSeq
 // Append 追加一条。lastSeq 是调用方已知的最后序号，库里不是它时返回 ErrConflict。
 func (db *DB) Append(id string, lastSeq int64, m agent.Message) (seq int64, err error)
 func (db *DB) SetModel(id, model string, thinking agent.ThinkingLevel) error
@@ -312,7 +317,7 @@ func (db *DB) Delete(id string) error
 
 func (db *DB) Get(id string) (Info, error) // 含 LastSeq
 func (db *DB) List(cwd string, before *Cursor, limit int) ([]Info, error)
-func (db *DB) Log(id string) ([]agent.Message, int64, error) // 全部历史与最后序号
+func (db *DB) Log(id string) (Info, []Record, error) // 全部历史，正序
 func (db *DB) Page(id string, before int64, limit int) ([]Record, error)
 func (db *DB) Prompts(id string, before int64) ([]Record, error)
 ```

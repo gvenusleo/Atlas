@@ -43,7 +43,9 @@ type Agent interface {
 	// Cancel 取消正在运行的一轮；被取消的 Prompt 以 StopCancelled 返回。
 	Cancel(req CancelNotification)
 	// SetConfigOption 换模型或思考深度，保存后返回完整的配置项。
-	SetConfigOption(ctx context.Context, req SetConfigOptionRequest) (SetConfigOptionResponse, error)
+	SetConfigOption(
+		ctx context.Context, req SetConfigOptionRequest,
+	) (SetConfigOptionResponse, error)
 
 	// History 取一页历史，以更新的形式给出（_atlas/session/history）。
 	History(ctx context.Context, req HistoryRequest) (HistoryResponse, error)

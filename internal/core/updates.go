@@ -147,7 +147,8 @@ func updatesOf(m agent.Message, seq int64, id string) []protocol.SessionUpdate {
 			if name, body, ok := skills.ParseInvocationBlock(content.Text); ok {
 				meta.Skill, content = name, protocol.Text(body)
 			}
-			out = append(out, protocol.UserMessageChunk{MessageID: id, Content: content, Meta: meta})
+			out = append(out,
+				protocol.UserMessageChunk{MessageID: id, Content: content, Meta: meta})
 		}
 	case agent.AssistantMessage:
 		for _, block := range m.Content {

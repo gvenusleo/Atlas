@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"cmp"
 	"time"
 
 	"github.com/egoist/mygo/plugins/loading"
@@ -142,7 +143,7 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.welcome(c, t, ch)
 			return
 		}
-		a.titleBar(c, t, a.heading(ch))
+		a.titleBar(c, t, cmp.Or(ch.title, "新对话"))
 		ui.Box(c).Grow(1).Children(func() { a.messages(c, t, ch) })
 		if ch.err != "" {
 			column(c, 4, func() {
@@ -234,14 +235,4 @@ func (a *App) jumpToLatest(c *ui.Context, t *ui.Theme, ch *chat) {
 			ui.Icon(c, sendIcon).FontSize(iconSize).TextColor(t.TextMuted).Rotate(180)
 		})
 	})
-}
-
-// heading 返回当前会话的标题。
-func (a *App) heading(ch *chat) string {
-	for _, info := range a.infos {
-		if info.ID == ch.id && info.Name != "" {
-			return info.Name
-		}
-	}
-	return "新对话"
 }

@@ -142,7 +142,8 @@ func configOptions(
 			Category: protocol.ConfigThinking, Type: "select", CurrentValue: string(thinking)}
 		for _, l := range levels {
 			name := strings.ToUpper(string(l[:1])) + string(l[1:])
-			level.Options = append(level.Options, protocol.ConfigValue{Value: string(l), Name: name})
+			level.Options = append(level.Options,
+				protocol.ConfigValue{Value: string(l), Name: name})
 		}
 		options = append(options, level)
 	}
