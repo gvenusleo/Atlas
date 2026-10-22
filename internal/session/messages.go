@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/config"
 )
 
 // Record 包含完整消息及该次响应的请求设置；Seq 是分页游标。
@@ -42,12 +41,24 @@ func insertMessage(ctx context.Context, tx *sql.Tx, id string, seq int64,
 
 // AppendMessage 编码在事务外完成；消息、顺序号和更新时间一次提交。
 // lastSeq 是调用方已知的最后序号；会话已被其他写入者追加时返回 ErrConflict。
+// 助手消息的 Model 是产生它的模型的完整引用，盖在记录的 model_ref 上；thinkingLevel 是生成它
+// 时请求用的思考档位，由调用方（会话的 LoopContext）给出。其他消息没有这两项，忽略 thinkingLevel。
 func (s *Store) AppendMessage(
 	ctx context.Context, id string, lastSeq int64, message agent.Message,
+	thinkingLevel agent.ThinkingLevel,
 ) (int64, error) {
 	m, err := encodeMessage(message)
 	if err != nil {
 		return 0, fmt.Errorf("编码消息失败: %w", err)
+	}
+	var modelRef string
+	if assistant, ok := message.(agent.AssistantMessage); ok {
+		modelRef = assistant.Model
+		if err := validateSettings(modelRef, thinkingLevel); err != nil {
+			return 0, err
+		}
+	} else {
+		thinkingLevel = ""
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -55,13 +66,11 @@ func (s *Store) AppendMessage(
 	}
 	defer tx.Rollback()
 	var seq int64
-	var modelRef string
-	var thinkingLevel agent.ThinkingLevel
 	err = tx.QueryRowContext(ctx, `UPDATE sessions
         SET last_seq = last_seq + 1, updated_at = max(updated_at, ?)
         WHERE id = ? AND last_seq = ?
-        RETURNING last_seq, model_ref, thinking`,
-		time.Now().UnixMilli(), id, lastSeq).Scan(&seq, &modelRef, &thinkingLevel)
+        RETURNING last_seq`,
+		time.Now().UnixMilli(), id, lastSeq).Scan(&seq)
 	if errors.Is(err, sql.ErrNoRows) {
 		var exists int
 		if tx.QueryRowContext(ctx, "SELECT 1 FROM sessions WHERE id = ?", id).Scan(&exists) == nil {
@@ -71,17 +80,6 @@ func (s *Store) AppendMessage(
 	}
 	if err != nil {
 		return 0, err
-	}
-	if assistant, ok := message.(agent.AssistantMessage); ok {
-		_, modelID, err := config.ParseModel(modelRef)
-		if err != nil {
-			return 0, err
-		}
-		if assistant.Model != modelID {
-			return 0, fmt.Errorf("响应模型 %q 与会话模型 %q 不一致", assistant.Model, modelID)
-		}
-	} else {
-		modelRef, thinkingLevel = "", ""
 	}
 	if err := insertMessage(ctx, tx, id, seq, modelRef, thinkingLevel, m); err != nil {
 		return 0, err
@@ -122,8 +120,7 @@ func scanRecord(row scanner) (Record, error) {
 		if err := validateSettings(record.ModelRef, record.ThinkingLevel); err != nil {
 			return Record{}, fmt.Errorf("消息 %d 请求设置无效: %w", record.Seq, err)
 		}
-		_, modelID, _ := config.ParseModel(record.ModelRef)
-		if m.Model != modelID {
+		if m.Model != record.ModelRef {
 			return Record{}, fmt.Errorf("消息 %d 的模型归属不一致", record.Seq)
 		}
 	case agent.ToolResultMessage:

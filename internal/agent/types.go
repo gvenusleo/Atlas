@@ -167,7 +167,8 @@ const (
 
 // AssistantMessage 是一次模型响应的完整消息。
 type AssistantMessage struct {
-	Content      []Content  `json:"content"`
+	Content []Content `json:"content"`
+	// Model 是产生这条消息的模型的完整引用 provider/model-id，由循环按 LoopContext.Model 记下。
 	Model        string     `json:"model"`
 	Usage        Usage      `json:"usage,omitzero"`
 	StopReason   StopReason `json:"stop_reason"`
@@ -258,7 +259,7 @@ func (l ThinkingLevel) Valid() bool {
 
 // StreamRequest 是一次模型调用的输入。
 type StreamRequest struct {
-	Model        string
+	Model        string // 完整引用 provider/model-id，即 LoopContext.Model。
 	SystemPrompt string // 本次初始化的有效提示词，不属于对话历史。
 	Messages     []Message
 	Tools        []Tool
@@ -336,7 +337,9 @@ type LoopContext struct {
 	Messages     []Message
 	Tools        []Tool
 	Skills       []skills.Skill
-	Model        string
+	// Model 是会话当前模型的完整引用 provider/model-id，能唯一指出一个模型；
+	// 会话的模型只记在这里，StreamFn 据此选用对应的客户端与模型 ID。
+	Model string
 	// ThinkingLevel 为空时采用服务端默认深度。
 	ThinkingLevel ThinkingLevel
 	// MaxTurns 限制一次 run 的 turn 数，0 表示不限；防御模型无限请求工具。

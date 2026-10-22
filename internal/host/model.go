@@ -137,11 +137,21 @@ func defaultThinkingLevel(metadata config.Model) agent.ThinkingLevel {
 	return ""
 }
 
-// modelSetup 是一个模型在会话里用到的全部：请求用的模型 ID、流函数与上下文窗口。
+// modelSetup 是一个模型在会话里用到的全部：流函数与上下文窗口。模型本身以完整引用
+// provider/model-id 记在会话的 LoopContext 里。
 type modelSetup struct {
-	id     string
 	stream agent.StreamFn
 	window int64 // 上下文窗口（token），配置里没有则为 0
+}
+
+// withModelID 让流函数发请求时用模型 ID：循环交来的是完整引用，provider 已体现在客户端上。
+func withModelID(stream agent.StreamFn, id string) agent.StreamFn {
+	return func(
+		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
+	) agent.AssistantMessage {
+		req.Model = id
+		return stream(ctx, req, emit)
+	}
 }
 
 // modelConfig 校验协议和思考档位、加载凭据并创建客户端，不发起模型请求。
@@ -188,7 +198,7 @@ func modelConfig(
 	if !metadata.Modalities.AcceptsImages() {
 		stream = llm.WithoutImages(stream)
 	}
-	return modelSetup{id: modelID, stream: stream, window: metadata.ContextWindow}, nil
+	return modelSetup{stream: withModelID(stream, modelID), window: metadata.ContextWindow}, nil
 }
 
 // checkWorkdir 要求恢复的工作目录是仍然存在的绝对目录。

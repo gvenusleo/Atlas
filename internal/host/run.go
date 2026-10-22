@@ -147,7 +147,7 @@ func (s *Session) execute(
 func (s *Session) save(ctx context.Context, message agent.Message) error {
 	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
 	defer stop()
-	seq, err := s.manager.store.AppendMessage(ctx, s.id, s.seq, message)
+	seq, err := s.manager.store.AppendMessage(ctx, s.id, s.seq, message, s.loop.ThinkingLevel)
 	if err != nil {
 		return err
 	}

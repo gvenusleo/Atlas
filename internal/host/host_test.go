@@ -29,7 +29,7 @@ func newSession(t *testing.T, stream agent.StreamFn) (*Manager, *Session) {
 		t.Fatal(err)
 	}
 	s := &Session{manager: m, id: id, seq: info.LastSeq, state: State{ID: id}}
-	s.loop = agent.LoopContext{SystemPrompt: "提示词", Model: "m", Stream: stream}
+	s.loop = agent.LoopContext{SystemPrompt: "提示词", Model: "p/m", Stream: stream}
 	m.sessions[id] = s
 	return m, s
 }
@@ -46,6 +46,27 @@ func reply(context.Context, agent.StreamRequest, func(agent.Delta)) agent.Assist
 
 func user() agent.UserMessage {
 	return agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: "你好"}}}
+}
+
+// 会话的模型以 LoopContext 里的完整引用为准：State 取自它；请求时只用其中的模型 ID，
+// 因为 provider 已体现在客户端上。
+func TestModelFollowsLoopContext(t *testing.T) {
+	_, s := newSession(t, reply)
+	if got := s.State().ModelRef; got != "p/m" {
+		t.Errorf("State().ModelRef = %q，期望 LoopContext 里的 p/m", got)
+	}
+
+	var sent string
+	stream := withModelID(func(
+		_ context.Context, req agent.StreamRequest, _ func(agent.Delta),
+	) agent.AssistantMessage {
+		sent = req.Model
+		return agent.AssistantMessage{}
+	}, "org/name")
+	stream(t.Context(), agent.StreamRequest{Model: "p/org/name"}, nil)
+	if sent != "org/name" {
+		t.Errorf("请求的模型 = %q，期望只有模型 ID org/name", sent)
+	}
 }
 
 func TestRunIsExclusiveAndPersists(t *testing.T) {
@@ -146,7 +167,7 @@ func TestConflictRequiresReload(t *testing.T) {
 	notice := agent.SystemMessage{
 		Type: agent.SystemMessageTypeNotice, Content: "通知", Timestamp: time.Now(),
 	}
-	if _, err := m.store.AppendMessage(t.Context(), s.id, s.seq, notice); err != nil {
+	if _, err := m.store.AppendMessage(t.Context(), s.id, s.seq, notice, ""); err != nil {
 		t.Fatal(err)
 	}
 

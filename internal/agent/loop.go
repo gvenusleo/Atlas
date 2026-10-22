@@ -93,9 +93,7 @@ func streamResponse(
 		final.StopReason = StopReasonError
 		final.ErrorMessage = "StreamFn 违反契约：返回了空 StopReason 的消息"
 	}
-	if final.Model == "" {
-		final.Model = rc.Model
-	}
+	final.Model = rc.Model // 记下产生它的模型：以 LoopContext 为准，不论流函数回报的是什么
 	final.Timestamp = time.Now()
 	e.send(Event{Type: EventTypeMessageEnd, Message: final})
 	return final

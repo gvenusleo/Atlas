@@ -32,11 +32,13 @@ type Session struct {
 // ID 返回持久化会话标识，与 Manager 的查询和恢复接口使用同一值。
 func (s *Session) ID() string { return s.id }
 
-// State 返回运行期间也可读取的独立快照。
+// State 返回运行期间也可读取的独立快照。模型、思考深度、提示词与技能目录取自 LoopContext，
+// 它们是会话配置的唯一来源，所以只在持有 mu 时修改。
 func (s *Session) State() State {
 	s.mu.Lock()
 	state := s.state
-	state.Skills = slices.Clone(state.Skills)
+	state.ModelRef, state.ThinkingLevel = s.loop.Model, s.loop.ThinkingLevel
+	state.SystemPrompt, state.Skills = s.loop.SystemPrompt, slices.Clone(s.loop.Skills)
 	s.mu.Unlock()
 	s.manager.mu.Lock()
 	state.Closed = s.manager.closing
@@ -204,7 +206,7 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 			Content:   resources.SystemPrompt,
 			Timestamp: time.Now(),
 		}
-		seq, err := m.store.AppendMessage(ctx, id, loaded.Info.LastSeq, message)
+		seq, err := m.store.AppendMessage(ctx, id, loaded.Info.LastSeq, message, "")
 		if err != nil {
 			return nil, errors.Join(ErrNeedsReload, err)
 		}
@@ -222,22 +224,20 @@ func (s *Session) bind(loaded session.Loaded, model modelSetup, resources prompt
 	cwd := loaded.Info.Cwd
 	info := loaded.Info
 	toolset := []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
+	s.seq = info.LastSeq
+	s.mu.Lock()
 	s.loop = agent.LoopContext{
 		SystemPrompt:  resources.SystemPrompt,
 		Messages:      loaded.Messages,
 		Tools:         toolset,
 		Skills:        resources.Skills,
-		Model:         model.id,
+		Model:         info.ModelRef,
 		Stream:        model.stream,
 		ThinkingLevel: info.ThinkingLevel,
 		Retry:         agent.DefaultRetry(),
 		ContextWindow: model.window,
 	}
-	s.seq = info.LastSeq
-	s.mu.Lock()
 	s.state.ID, s.state.Cwd, s.state.Name = s.id, cwd, info.Name
-	s.state.ModelRef, s.state.ThinkingLevel = info.ModelRef, info.ThinkingLevel
-	s.state.SystemPrompt, s.state.Skills = resources.SystemPrompt, slices.Clone(resources.Skills)
 	s.state.NeedsReload = false
 	s.mu.Unlock()
 }
@@ -265,10 +265,9 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 		s.invalidate()
 		return errors.Join(ErrNeedsReload, err)
 	}
-	s.loop.Model, s.loop.Stream, s.loop.ThinkingLevel = model.id, model.stream, thinking
-	s.loop.ContextWindow = model.window
 	s.mu.Lock()
-	s.state.ModelRef, s.state.ThinkingLevel = modelRef, thinking
+	s.loop.Model, s.loop.Stream, s.loop.ThinkingLevel = modelRef, model.stream, thinking
+	s.loop.ContextWindow = model.window
 	s.mu.Unlock()
 	return nil
 }
