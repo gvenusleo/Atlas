@@ -106,7 +106,7 @@ type Client interface {
 | `ResumeSession{sessionId}` | `session/resume` | 加载会话并订阅，不回放历史。GUI 用它，历史另外分页读 |
 | `LoadSession{sessionId}` | `session/load` | 加载会话并订阅，先把全部历史以更新回放，再返回。给 ACP 客户端用 |
 | `ListSessions{cwd?, cursor?}` | `session/list` | 列出已保存的会话：`sessionId`、`cwd`、`title`、`updatedAt` |
-| `DeleteSession{sessionId}` | `session/delete` | 删除空闲会话 |
+| `DeleteSession{sessionId}` | `session/delete` | 删除空闲会话；会话不存在时静默成功 |
 | `CloseSession{sessionId}` | `session/close` | 这个连接不再看这个会话。没有连接在看、也不在运行时，核心卸载它 |
 | `Prompt{sessionId, prompt}` | `session/prompt` | 跑一轮，这一轮结束时才返回 `stopReason`：`end_turn`、`max_tokens`、`cancelled`。模型调用失败返回错误 |
 | `Cancel{sessionId}` | `session/cancel` | 取消正在运行的一轮，被取消的 `Prompt` 以 `cancelled` 返回 |
@@ -125,6 +125,10 @@ type Client interface {
 没有“换工作目录”：ACP 的工作目录在建会话时就定了。新会话想换目录，就建一个新会话。
 
 非空闲会话上的 `Prompt`、`SetConfigOption`、`DeleteSession` 返回 `ErrBusy`。
+
+会话属于打开它的连接：`Prompt`、`Cancel`、`SetConfigOption` 只对这个连接新建或打开过的会话有效，
+否则返回 `ErrNotFound`。`DeleteSession`、`Rename` 与历史查询不要求打开过。打开与卸载串行进行，
+所以不会有连接订阅到正在卸载的会话上。
 
 ### 配置项
 

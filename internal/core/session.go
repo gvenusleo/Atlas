@@ -46,7 +46,7 @@ type turn struct {
 	since  time.Time
 }
 
-// create 建一个新会话：选好模型，按工作目录组装提示词与工具，还只在内存里。
+// create 建一个新会话：选好模型，按工作目录组装提示词与工具，还只在内存里，也还没有登记。
 func (c *Core) create(cwd string) (*session, error) {
 	if err := checkWorkdir(cwd); err != nil {
 		return nil, err
@@ -60,12 +60,8 @@ func (c *Core) create(cwd string) (*session, error) {
 		return nil, err
 	}
 	thinking, model := chooseModel(settings, "", "")
-	s := &session{id: uuid.NewV7().String(), core: c, cwd: cwd, model: model, thinking: thinking,
-		prompt: resources.SystemPrompt, tools: toolset(cwd), skills: resources.Skills}
-	c.mu.Lock()
-	c.sessions[s.id] = s
-	c.mu.Unlock()
-	return s, nil
+	return &session{id: uuid.NewV7().String(), core: c, cwd: cwd, model: model, thinking: thinking,
+		prompt: resources.SystemPrompt, tools: toolset(cwd), skills: resources.Skills}, nil
 }
 
 // load 从库里加载会话：重放历史得到上下文；上次的模型失效了就退到别的并存下来；
@@ -75,7 +71,10 @@ func (c *Core) load(ctx context.Context, id string) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	messages, lastPrompt := replay(records)
+	if err := checkWorkdir(info.Cwd); err != nil {
+		return nil, err
+	}
+	messages, lastPrompt := fold(records)
 	settings, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -85,9 +84,6 @@ func (c *Core) load(ctx context.Context, id string) (*session, error) {
 		if err := c.db.SetModel(ctx, id, model.Ref, thinking); err != nil {
 			return nil, err
 		}
-	}
-	if err := checkWorkdir(info.Cwd); err != nil {
-		return nil, err
 	}
 	resources, err := prompt.Build(info.Cwd)
 	if err != nil {
@@ -104,8 +100,8 @@ func (c *Core) load(ctx context.Context, id string) (*session, error) {
 		skills: resources.Skills, messages: messages}, nil
 }
 
-// replay 依次把历史 Fold 成上下文，并找出最后一份提示词快照。
-func replay(records []store.Record) (messages []agent.Message, lastPrompt string) {
+// fold 依次把历史 Fold 成上下文，并找出最后一份提示词快照。
+func fold(records []store.Record) (messages []agent.Message, lastPrompt string) {
 	for _, r := range records {
 		if p, ok := r.Message.(agent.SystemMessage); ok && p.Type == agent.SystemMessageTypePrompt {
 			lastPrompt = p.Content
@@ -136,15 +132,12 @@ func (s *session) subscribe(client protocol.Client) {
 	s.mu.Unlock()
 }
 
-// unsubscribe 让 client 不再收到更新；没有人看、也不在运行的会话卸载掉。
-func (s *session) unsubscribe(client protocol.Client) {
+// unsubscribe 让 client 不再收到更新，返回会话是否已经没有人看、也不在运行。
+func (s *session) unsubscribe(client protocol.Client) (idle bool) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.clients = slices.DeleteFunc(s.clients, func(c protocol.Client) bool { return c == client })
-	idle := len(s.clients) == 0 && s.turn == nil
-	s.mu.Unlock()
-	if idle {
-		s.core.forget(s)
-	}
+	return len(s.clients) == 0 && s.turn == nil
 }
 
 // broadcast 把更新推给每个打开着这个会话的连接。

@@ -232,18 +232,24 @@ type PromptEntry struct {
 
 // ---- 内容 ----
 
+// 内容块的种类。
+const (
+	ContentText  = "text"
+	ContentImage = "image"
+)
+
 // ContentBlock 是一块内容：文字或图片。
 type ContentBlock struct {
-	Type     string `json:"type"` // text 或 image
+	Type     string `json:"type"` // ContentText 或 ContentImage
 	Text     string `json:"text,omitempty"`
 	Data     string `json:"data,omitempty"` // 图片的 base64
 	MimeType string `json:"mimeType,omitempty"`
 }
 
 // Text 是一块文字。
-func Text(s string) ContentBlock { return ContentBlock{Type: "text", Text: s} }
+func Text(s string) ContentBlock { return ContentBlock{Type: ContentText, Text: s} }
 
 // Image 是一块 base64 编码的图片。
 func Image(data, mimeType string) ContentBlock {
-	return ContentBlock{Type: "image", Data: data, MimeType: mimeType}
+	return ContentBlock{Type: ContentImage, Data: data, MimeType: mimeType}
 }

@@ -142,7 +142,7 @@ func (s *session) ready(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	messages, _ := replay(records)
+	messages, _ := fold(records)
 	s.mu.Lock()
 	s.messages, s.seq = messages, info.LastSeq
 	usage := s.usage()
@@ -224,9 +224,9 @@ func userMessage(blocks []protocol.ContentBlock) agent.UserMessage {
 	m := agent.UserMessage{Timestamp: time.Now()}
 	for _, b := range blocks {
 		switch b.Type {
-		case "text":
+		case protocol.ContentText:
 			m.Content = append(m.Content, agent.TextContent{Text: b.Text})
-		case "image":
+		case protocol.ContentImage:
 			m.Content = append(m.Content, agent.ImageContent{Data: b.Data, MIMEType: b.MimeType})
 		}
 	}

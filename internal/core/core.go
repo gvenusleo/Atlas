@@ -24,7 +24,8 @@ type Core struct {
 	sessions map[string]*session // 本进程加载的会话
 	closing  bool
 	ops      sync.WaitGroup // 进行中的请求，Close 等它们结束再关库
-	loading  sync.Mutex     // 加载串行进行，同一会话不会被加载两次
+	// opening 让打开与卸载串行：同一会话不会被加载两次，也不会有连接订阅到正在卸载的会话上。
+	opening sync.Mutex
 }
 
 // New 用打开的数据库建核心。
@@ -35,7 +36,7 @@ func New(db *store.DB) *Core {
 
 // Connect 为一个客户端建连接：它打开的会话的更新都推给 client。
 func (c *Core) Connect(client protocol.Client) protocol.Agent {
-	return &conn{core: c, client: client}
+	return &conn{core: c, client: client, sessions: map[string]*session{}}
 }
 
 // Close 不再接收请求，取消所有正在运行的一轮，等请求都结束后关库。ctx 到期时不再等，
@@ -79,21 +80,43 @@ func (c *Core) lookup(id string) (*session, error) {
 	return nil, protocol.ErrNotFound
 }
 
-// open 返回会话，没加载就从库里加载。
-func (c *Core) open(ctx context.Context, id string) (*session, error) {
-	c.loading.Lock()
-	defer c.loading.Unlock()
-	if s, err := c.lookup(id); err == nil {
-		return s, nil
-	}
-	s, err := c.load(ctx, id)
+// open 让 client 订阅会话并返回它；会话没加载就从库里加载。
+func (c *Core) open(ctx context.Context, id string, client protocol.Client) (*session, error) {
+	c.opening.Lock()
+	defer c.opening.Unlock()
+	s, err := c.lookup(id)
 	if err != nil {
-		return nil, err
+		if s, err = c.load(ctx, id); err != nil {
+			return nil, err
+		}
+		c.register(s)
 	}
-	c.mu.Lock()
-	c.sessions[id] = s
-	c.mu.Unlock()
+	s.subscribe(client)
 	return s, nil
+}
+
+// add 登记新建的会话，并让 client 订阅它。
+func (c *Core) add(s *session, client protocol.Client) {
+	c.opening.Lock()
+	defer c.opening.Unlock()
+	c.register(s)
+	s.subscribe(client)
+}
+
+// release 让 client 不再订阅会话；没有人看、也不在运行的会话卸载掉。
+func (c *Core) release(s *session, client protocol.Client) {
+	c.opening.Lock()
+	defer c.opening.Unlock()
+	if s.unsubscribe(client) {
+		c.forget(s)
+	}
+}
+
+// register 登记一个加载了的会话。
+func (c *Core) register(s *session) {
+	c.mu.Lock()
+	c.sessions[s.id] = s
+	c.mu.Unlock()
 }
 
 // forget 卸载会话，仅当登记的还是它时。

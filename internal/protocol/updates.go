@@ -11,9 +11,10 @@ type SessionNotification struct {
 	Update    SessionUpdate `json:"update"`
 }
 
-// SessionUpdate 是会话的一个更新，具体类型见本文件；Kind 是它在线上的 sessionUpdate 值。
+// SessionUpdate 是会话的一个更新，具体类型见本文件；方法 SessionUpdate 返回它在线上的
+// sessionUpdate 字段值。
 type SessionUpdate interface {
-	Kind() string
+	SessionUpdate() string
 }
 
 // MessageMeta 是消息块与工具调用上的 Atlas 扩展。
@@ -70,7 +71,7 @@ type ToolCall struct {
 	ToolCallID string         `json:"toolCallId"`
 	Name       string         `json:"name"`
 	Title      string         `json:"title"`
-	ToolKind   ToolKind       `json:"kind"`
+	Kind       ToolKind       `json:"kind"`
 	Status     ToolStatus     `json:"status"`
 	RawInput   jsontext.Value `json:"rawInput,omitempty"`
 	Meta       MessageMeta    `json:"_meta,omitzero"`
@@ -156,16 +157,16 @@ type RetryUpdate struct {
 // 重新读历史（_atlas_reset）。
 type ResetUpdate struct{}
 
-func (UserMessageChunk) Kind() string   { return "user_message_chunk" }
-func (AgentMessageChunk) Kind() string  { return "agent_message_chunk" }
-func (AgentThoughtChunk) Kind() string  { return "agent_thought_chunk" }
-func (ToolCall) Kind() string           { return "tool_call" }
-func (ToolCallUpdate) Kind() string     { return "tool_call_update" }
-func (UsageUpdate) Kind() string        { return "usage_update" }
-func (CompactionUpdate) Kind() string   { return "compaction_update" }
-func (Notice) Kind() string             { return "notice" }
-func (SessionInfoUpdate) Kind() string  { return "session_info_update" }
-func (ConfigOptionUpdate) Kind() string { return "config_option_update" }
-func (StateUpdate) Kind() string        { return "_atlas_state" }
-func (RetryUpdate) Kind() string        { return "_atlas_retry" }
-func (ResetUpdate) Kind() string        { return "_atlas_reset" }
+func (UserMessageChunk) SessionUpdate() string   { return "user_message_chunk" }
+func (AgentMessageChunk) SessionUpdate() string  { return "agent_message_chunk" }
+func (AgentThoughtChunk) SessionUpdate() string  { return "agent_thought_chunk" }
+func (ToolCall) SessionUpdate() string           { return "tool_call" }
+func (ToolCallUpdate) SessionUpdate() string     { return "tool_call_update" }
+func (UsageUpdate) SessionUpdate() string        { return "usage_update" }
+func (CompactionUpdate) SessionUpdate() string   { return "compaction_update" }
+func (Notice) SessionUpdate() string             { return "notice" }
+func (SessionInfoUpdate) SessionUpdate() string  { return "session_info_update" }
+func (ConfigOptionUpdate) SessionUpdate() string { return "config_option_update" }
+func (StateUpdate) SessionUpdate() string        { return "_atlas_state" }
+func (RetryUpdate) SessionUpdate() string        { return "_atlas_retry" }
+func (ResetUpdate) SessionUpdate() string        { return "_atlas_reset" }

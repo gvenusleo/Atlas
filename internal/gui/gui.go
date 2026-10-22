@@ -219,9 +219,10 @@ func (a *App) open(id string) {
 // reload 从头读最近一页历史，重建对话。
 func (a *App) reload(ch *chat) {
 	ch.loading = true
+	id := ch.id
 	go func() {
 		history, err := a.agent.History(context.Background(),
-			protocol.HistoryRequest{SessionID: ch.id, Limit: historyPage})
+			protocol.HistoryRequest{SessionID: id, Limit: historyPage})
 		a.win.Update(func() {
 			ch.loading = false
 			if err != nil {
@@ -235,11 +236,13 @@ func (a *App) reload(ch *chat) {
 
 // start 让核心在后台打开会话：新会话新建，已有会话恢复。失败时历史照常显示，错误显示在
 // 对话下方，发送时再试一次。窗口还没创建（启动时）先不做，创建窗口后再调用。
+// 之后又调用过 start（比如又换了工作目录）时，这次的响应已经过时：丢掉它，新建的会话也关掉。
 func (a *App) start(ch *chat) {
 	if a.win == nil {
 		return
 	}
-	id, cwd := ch.id, ch.cwd
+	ch.starts++
+	gen, id, cwd := ch.starts, ch.id, ch.cwd
 	go func() {
 		ctx := context.Background()
 		var options []protocol.ConfigOption
@@ -255,7 +258,13 @@ func (a *App) start(ch *chat) {
 			options, state = resp.ConfigOptions, resp.State
 		}
 		a.win.Update(func() {
-			if err != nil {
+			switch {
+			case gen != ch.starts:
+				if err == nil && id != ch.id {
+					a.closeSession(id)
+				}
+				return
+			case err != nil:
 				ch.err = err.Error()
 				return
 			}
@@ -283,10 +292,10 @@ func (a *App) loadOlder(ch *chat) {
 		limit = min(limit, int(ch.oldest-ch.seekSeq))
 	}
 	ch.paging = true
-	before := ch.oldest
+	id, before := ch.id, ch.oldest
 	go func() {
 		history, err := a.agent.History(context.Background(),
-			protocol.HistoryRequest{SessionID: ch.id, Before: before, Limit: limit})
+			protocol.HistoryRequest{SessionID: id, Before: before, Limit: limit})
 		a.win.Update(func() {
 			ch.paging = false
 			if err != nil {
@@ -314,9 +323,9 @@ func (a *App) refresh() {
 
 // choose 让核心换会话的模型或思考深度；完成前选择器仍显示原来的，失败时显示原因。
 func (a *App) choose(ch *chat, id, value string) {
+	req := protocol.SetConfigOptionRequest{SessionID: ch.id, ConfigID: id, Value: value}
 	go func() {
-		resp, err := a.agent.SetConfigOption(context.Background(),
-			protocol.SetConfigOptionRequest{SessionID: ch.id, ConfigID: id, Value: value})
+		resp, err := a.agent.SetConfigOption(context.Background(), req)
 		a.win.Update(func() {
 			if err != nil {
 				ch.err = err.Error()
@@ -344,7 +353,11 @@ func (a *App) setCwd(ch *chat, cwd string) {
 // discard 让核心不再保留这个会话，并从已打开的会话里去掉它。
 func (a *App) discard(ch *chat) {
 	delete(a.chats, ch.id)
-	id := ch.id
+	a.closeSession(ch.id)
+}
+
+// closeSession 在后台告诉核心这个界面不再看会话 id。
+func (a *App) closeSession(id string) {
 	go func() {
 		_ = a.agent.CloseSession(context.Background(), protocol.CloseSessionRequest{SessionID: id})
 	}()
@@ -394,13 +407,11 @@ func (a *App) finish(ch *chat, err error) {
 
 // pickDir 让用户为尚未保存的新会话选择工作目录。
 func (a *App) pickDir(ch *chat) {
+	options := mygo.OpenDialogOptions{
+		Parent: a.win, Title: "选择工作目录", DefaultPath: ch.cwd, Directory: true,
+	}
 	go func() {
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Parent:      a.win,
-			Title:       "选择工作目录",
-			DefaultPath: ch.cwd,
-			Directory:   true,
-		})
+		paths, err := mygo.Dialog.Open(options)
 		if err != nil || len(paths) == 0 {
 			return
 		}

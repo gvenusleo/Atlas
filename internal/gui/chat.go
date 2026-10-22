@@ -76,6 +76,7 @@ type chat struct {
 	next      int
 
 	// 界面自己的状态。
+	starts  int   // 让核心打开它的次数，用来认出过时的响应，见 App.start
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	loading bool  // 正在加载最近一页历史
 	paging  bool  // 正在加载更早的记录
@@ -339,7 +340,7 @@ func (ch *chat) userChunk(u protocol.UserMessageChunk) {
 		it.msg, it.seq, it.at = u.MessageID, u.Meta.Seq, u.Meta.At
 	}
 	switch u.Content.Type {
-	case "image":
+	case protocol.ContentImage:
 		it.pictures = append(it.pictures, &picture{data: u.Content, edge: userPictureEdge})
 	default:
 		if it.text != "" {
@@ -390,7 +391,7 @@ func (it *item) finishCall(
 	var texts []string
 	it.pictures = nil
 	for _, c := range content {
-		if c.Content.Type == "image" {
+		if c.Content.Type == protocol.ContentImage {
 			it.pictures = append(it.pictures, &picture{data: c.Content, edge: pictureEdge})
 			texts = append(texts, "[图片]")
 		} else {

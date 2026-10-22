@@ -8,9 +8,9 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// WithoutImages 包装流函数：请求里的图片换成一句说明，历史里的图片不动。用于不接受图片
+// withoutImages 包装流函数：请求里的图片换成一句说明，历史里的图片不动。用于不接受图片
 // 输入的模型；否则图片一旦进了历史，换到这样的模型后，每次请求都会被拒绝。
-func WithoutImages(stream agent.StreamFn) agent.StreamFn {
+func withoutImages(stream agent.StreamFn) agent.StreamFn {
 	return func(
 		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
 	) agent.AssistantMessage {

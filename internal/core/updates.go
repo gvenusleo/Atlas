@@ -82,25 +82,7 @@ func (t *translator) call(call agent.ToolCall) protocol.SessionUpdate {
 func (t *translator) end(m agent.Message, seq int64) []protocol.SessionUpdate {
 	switch m := m.(type) {
 	case agent.AssistantMessage:
-		var out []protocol.SessionUpdate
-		meta := protocol.MessageMeta{At: m.Timestamp}
-		for _, block := range m.Content {
-			switch b := block.(type) {
-			case agent.ThinkingContent:
-				if !t.thought && b.Thinking != "" {
-					out = append(out, protocol.AgentThoughtChunk{
-						MessageID: t.msg, Content: protocol.Text(b.Thinking)})
-				}
-			case agent.TextContent:
-				if !t.text {
-					out = append(out, protocol.AgentMessageChunk{
-						MessageID: t.msg, Content: protocol.Text(b.Text), Meta: meta})
-				}
-			case agent.ToolCall:
-				out = append(out, t.call(b))
-			}
-		}
-		return out
+		return assistantUpdates(m, t.msg, t.text, t.thought, t.call)
 	case agent.SystemMessage:
 		if t.compaction == "" {
 			break
@@ -151,20 +133,8 @@ func updatesOf(m agent.Message, seq int64, id string) []protocol.SessionUpdate {
 				protocol.UserMessageChunk{MessageID: id, Content: content, Meta: meta})
 		}
 	case agent.AssistantMessage:
-		for _, block := range m.Content {
-			switch b := block.(type) {
-			case agent.ThinkingContent:
-				if b.Thinking != "" {
-					out = append(out, protocol.AgentThoughtChunk{
-						MessageID: id, Content: protocol.Text(b.Thinking)})
-				}
-			case agent.TextContent:
-				out = append(out, protocol.AgentMessageChunk{MessageID: id,
-					Content: protocol.Text(b.Text), Meta: protocol.MessageMeta{At: m.Timestamp}})
-			case agent.ToolCall:
-				out = append(out, toolCall(b, id))
-			}
-		}
+		call := func(c agent.ToolCall) protocol.SessionUpdate { return toolCall(c, id) }
+		out = assistantUpdates(m, id, false, false, call)
 	case agent.ToolResultMessage:
 		update := protocol.ToolCallUpdate{ToolCallID: m.ToolCallID,
 			Status: protocol.ToolCompleted, RawOutput: m.Details}
@@ -188,6 +158,42 @@ func updatesOf(m agent.Message, seq int64, id string) []protocol.SessionUpdate {
 	return out
 }
 
+// assistantUpdates 把一条定稿的助手消息转成更新：思考、文字与工具调用按原来的顺序，紧挨着的
+// 两块文字之间补空行，与流式时一致（见 llm）。text、thought 为真表示这类内容已经流出过，不再发；
+// call 转换工具调用。
+func assistantUpdates(
+	m agent.AssistantMessage, id string, text, thought bool,
+	call func(agent.ToolCall) protocol.SessionUpdate,
+) []protocol.SessionUpdate {
+	var out []protocol.SessionUpdate
+	afterText := false
+	for _, block := range m.Content {
+		switch b := block.(type) {
+		case agent.ThinkingContent:
+			if b.Thinking == "" {
+				continue // 空的思考不显示，也不隔开前后的文字
+			}
+			if !thought {
+				out = append(out, protocol.AgentThoughtChunk{
+					MessageID: id, Content: protocol.Text(b.Thinking)})
+			}
+		case agent.TextContent:
+			if !text {
+				s := b.Text
+				if afterText {
+					s = "\n\n" + s
+				}
+				out = append(out, protocol.AgentMessageChunk{MessageID: id,
+					Content: protocol.Text(s), Meta: protocol.MessageMeta{At: m.Timestamp}})
+			}
+		case agent.ToolCall:
+			out = append(out, call(b))
+		}
+		_, afterText = block.(agent.TextContent)
+	}
+	return out
+}
+
 // toolCall 是一个刚发出的工具调用。
 func toolCall(call agent.ToolCall, msg string) protocol.ToolCall {
 	kind := protocol.ToolOther
@@ -199,7 +205,7 @@ func toolCall(call agent.ToolCall, msg string) protocol.ToolCall {
 	case "shell":
 		kind = protocol.ToolExecute
 	}
-	return protocol.ToolCall{ToolCallID: call.ID, Name: call.Name, Title: call.Name, ToolKind: kind,
+	return protocol.ToolCall{ToolCallID: call.ID, Name: call.Name, Title: call.Name, Kind: kind,
 		Status: protocol.ToolPending, RawInput: call.Arguments,
 		Meta: protocol.MessageMeta{MessageID: msg}}
 }

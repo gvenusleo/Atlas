@@ -2,16 +2,12 @@ package core
 
 import (
 	"cmp"
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 
 	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/config"
@@ -150,16 +146,6 @@ func configOptions(
 	return options
 }
 
-// withModelID 让流函数发请求时用模型 ID：循环交来的是完整引用，provider 已体现在客户端上。
-func withModelID(stream agent.StreamFn, id string) agent.StreamFn {
-	return func(
-		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
-	) agent.AssistantMessage {
-		req.Model = id
-		return stream(ctx, req, emit)
-	}
-}
-
 // modelConfig 校验协议和思考档位、加载凭据并创建客户端，不发起模型请求。
 func modelConfig(
 	settings *config.Settings, modelRef string, thinkingLevel agent.ThinkingLevel,
@@ -189,18 +175,9 @@ func modelConfig(
 	if err != nil {
 		return agent.Model{}, err
 	}
-	client := openai.NewClient(
-		option.WithAPIKey(key),
-		option.WithBaseURL(provider.BaseURL),
-		option.WithMaxRetries(0),
-	)
-	stream := llm.OpenAIResponsesStreamFn(client)
-	if !metadata.Modalities.AcceptsImages() {
-		stream = llm.WithoutImages(stream)
-	}
-	return agent.Model{
-		Ref: modelRef, Window: metadata.ContextWindow, Stream: withModelID(stream, modelID),
-	}, nil
+	stream := llm.OpenAIResponses(provider.BaseURL, key, modelID,
+		metadata.Modalities.AcceptsImages())
+	return agent.Model{Ref: modelRef, Window: metadata.ContextWindow, Stream: stream}, nil
 }
 
 // checkWorkdir 要求工作目录是仍然存在的绝对目录。

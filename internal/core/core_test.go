@@ -82,7 +82,7 @@ func (r *recorder) has(kind string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.ContainsFunc(r.updates, func(u protocol.SessionUpdate) bool {
-		return u.Kind() == kind
+		return u.SessionUpdate() == kind
 	})
 }
 
@@ -208,8 +208,9 @@ func TestTwoProcessesShareSession(t *testing.T) {
 	}
 }
 
-// 同一进程里两个连接打开同一个会话，都收到更新；运行中另一个 Prompt 返回 ErrBusy，
-// 取消后这一轮以 cancelled 结束。
+// 会话属于打开它的连接：没打开的连接不能对它发 Prompt。同一进程里两个连接打开同一个会话，
+// 都收到更新；运行中另一个 Prompt 返回 ErrBusy，取消后这一轮以 cancelled 结束。
+// 删除不存在的会话静默成功。
 func TestClientsShareSession(t *testing.T) {
 	c := open(t, home(t, settingsJSON))
 	client1, client2 := &recorder{}, &recorder{}
@@ -222,6 +223,9 @@ func TestClientsShareSession(t *testing.T) {
 	stub(t, c, id, reply("好", nil))
 	if err := say(t, a1, id, "你好"); err != nil {
 		t.Fatal(err)
+	}
+	if err := say(t, a2, id, "没打开就发"); !errors.Is(err, protocol.ErrNotFound) {
+		t.Fatalf("没打开会话的连接 Prompt = %v，期望 ErrNotFound", err)
 	}
 	resume(t, a2, id)
 
@@ -258,6 +262,10 @@ func TestClientsShareSession(t *testing.T) {
 	}
 	if got := client1.texts(); !slices.Equal(got, want) {
 		t.Errorf("先打开的连接收到 %v，期望 %v", got, want)
+	}
+	missing := protocol.DeleteSessionRequest{SessionID: "0190f0f0-0000-7000-8000-000000000001"}
+	if err := a1.DeleteSession(t.Context(), missing); err != nil {
+		t.Errorf("删除不存在的会话 = %v，期望静默成功", err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
@@ -16,9 +17,39 @@ import (
 const listPage = 100
 
 // conn 是一个客户端连接：实现 protocol.Agent，它打开的会话的更新推给 client。
+// 运行、取消与换配置只对这个连接打开过的会话有效（ACP：会话要先在这个连接上新建或打开）。
 type conn struct {
 	core   *Core
 	client protocol.Client
+
+	mu       sync.Mutex
+	sessions map[string]*session // 这个连接打开的会话
+}
+
+// session 返回这个连接打开的会话。
+func (c *conn) session(id string) (*session, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if s := c.sessions[id]; s != nil {
+		return s, nil
+	}
+	return nil, protocol.ErrNotFound
+}
+
+// track 记下这个连接打开了会话。
+func (c *conn) track(s *session) {
+	c.mu.Lock()
+	c.sessions[s.id] = s
+	c.mu.Unlock()
+}
+
+// untrack 去掉这个连接打开的会话，返回它；没打开过时为 nil。
+func (c *conn) untrack(id string) *session {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.sessions[id]
+	delete(c.sessions, id)
+	return s
 }
 
 func (c *conn) NewSession(
@@ -37,7 +68,8 @@ func (c *conn) NewSession(
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
-	s.subscribe(c.client)
+	c.core.add(s, c.client)
+	c.track(s)
 	return protocol.NewSessionResponse{
 		SessionID: s.id, ConfigOptions: options, State: s.state(""),
 	}, nil
@@ -74,19 +106,20 @@ func (c *conn) LoadSession(
 
 // attach 打开会话并订阅它的更新，给出它的配置项与现在的状态。
 func (c *conn) attach(ctx context.Context, id string) (protocol.ResumeSessionResponse, error) {
-	s, err := c.core.open(ctx, id)
+	info, err := c.core.db.Get(ctx, id)
+	if err != nil {
+		return protocol.ResumeSessionResponse{}, err
+	}
+	s, err := c.core.open(ctx, id, c.client)
 	if err != nil {
 		return protocol.ResumeSessionResponse{}, err
 	}
 	options, err := s.options()
 	if err != nil {
+		c.core.release(s, c.client)
 		return protocol.ResumeSessionResponse{}, err
 	}
-	info, err := c.core.db.Get(ctx, id)
-	if err != nil {
-		return protocol.ResumeSessionResponse{}, err
-	}
-	s.subscribe(c.client)
+	c.track(s)
 	return protocol.ResumeSessionResponse{ConfigOptions: options, State: s.state(info.Name)}, nil
 }
 
@@ -124,39 +157,37 @@ func (c *conn) ListSessions(
 	return resp, nil
 }
 
+// DeleteSession 删除空闲的会话；会话不存在时什么也不做（ACP：静默成功）。
+// 删除不要求这个连接打开过它。
 func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequest) error {
 	end, err := c.core.begin()
 	if err != nil {
 		return err
 	}
 	defer end()
-	s, err := c.core.lookup(req.SessionID)
-	if err != nil {
-		return c.core.db.Delete(ctx, req.SessionID)
-	}
-	done, err := s.begin(nil)
-	if err != nil {
-		return err
-	}
-	defer done()
-	s.mu.Lock()
-	saved := s.saved
-	s.mu.Unlock()
-	if saved {
-		if err := c.core.db.Delete(ctx, req.SessionID); err != nil {
+	s, _ := c.core.lookup(req.SessionID)
+	if s != nil {
+		done, err := s.begin(nil)
+		if err != nil {
 			return err
 		}
+		defer done()
 	}
-	c.core.forget(s)
+	err = c.core.db.Delete(ctx, req.SessionID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) { // 还没保存的新会话不在库里
+		return err
+	}
+	if s != nil {
+		c.core.forget(s)
+		c.untrack(req.SessionID)
+	}
 	return nil
 }
 
 func (c *conn) CloseSession(_ context.Context, req protocol.CloseSessionRequest) error {
-	s, err := c.core.lookup(req.SessionID)
-	if err != nil {
-		return nil
+	if s := c.untrack(req.SessionID); s != nil {
+		c.core.release(s, c.client)
 	}
-	s.unsubscribe(c.client)
 	return nil
 }
 
@@ -168,7 +199,7 @@ func (c *conn) Prompt(
 		return protocol.PromptResponse{}, err
 	}
 	defer end()
-	s, err := c.core.lookup(req.SessionID)
+	s, err := c.session(req.SessionID)
 	if err != nil {
 		return protocol.PromptResponse{}, err
 	}
@@ -177,7 +208,7 @@ func (c *conn) Prompt(
 }
 
 func (c *conn) Cancel(req protocol.CancelNotification) {
-	if s, err := c.core.lookup(req.SessionID); err == nil {
+	if s, err := c.session(req.SessionID); err == nil {
 		s.cancelTurn()
 	}
 }
@@ -190,7 +221,7 @@ func (c *conn) SetConfigOption(
 		return protocol.SetConfigOptionResponse{}, err
 	}
 	defer end()
-	s, err := c.core.lookup(req.SessionID)
+	s, err := c.session(req.SessionID)
 	if err != nil {
 		return protocol.SetConfigOptionResponse{}, err
 	}
@@ -234,6 +265,7 @@ func (c *conn) Prompts(
 	return resp, nil
 }
 
+// Rename 改名；打开着这个会话的连接都收到新标题。不要求这个连接打开过它。
 func (c *conn) Rename(ctx context.Context, req protocol.RenameRequest) error {
 	end, err := c.core.begin()
 	if err != nil {

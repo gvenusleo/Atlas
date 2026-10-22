@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/responses"
 
@@ -23,11 +24,32 @@ type pendingCall struct {
 	args     strings.Builder
 }
 
-// OpenAIResponsesStreamFn 返回基于 OpenAI Responses API 的 StreamFn；
+// OpenAIResponses 返回一个模型的 StreamFn：以 apiKey 连接 baseURL 上的 OpenAI Responses API，
+// 请求里的模型是 modelID（循环交来的是完整引用 provider/model-id，provider 已体现在 baseURL 上）。
+// images 为假时，请求里的图片换成一句说明，见 withoutImages。
+func OpenAIResponses(baseURL, apiKey, modelID string, images bool) agent.StreamFn {
+	client := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(baseURL),
+		option.WithMaxRetries(0),
+	)
+	stream := responsesStream(client)
+	if !images {
+		stream = withoutImages(stream)
+	}
+	return func(
+		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
+	) agent.AssistantMessage {
+		req.Model = modelID
+		return stream(ctx, req, emit)
+	}
+}
+
+// responsesStream 返回基于 OpenAI Responses API 的 StreamFn；
 // 失败按契约编码进返回消息：ctx 取消 → StopReasonCanceled，其余 → StopReasonError，
 // 其中暂时性的（限流、服务端故障、连接中断）标出 ErrorKind 供循环重试；
 // 请求构造类错误在发起 HTTP 之前返回。
-func OpenAIResponsesStreamFn(client openai.Client) agent.StreamFn {
+func responsesStream(client openai.Client) agent.StreamFn {
 	return func(
 		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
 	) agent.AssistantMessage {
@@ -80,12 +102,21 @@ func consume(
 	stream *ssestream.Stream[responses.ResponseStreamEventUnion], emit func(agent.Delta),
 ) (final *responses.Response, detail streamDetail, aborted bool) {
 	calls := map[string]*pendingCall{}
+	var part [2]int64 // 上一个文字增量所在的输出项与内容块
+	text := false     // 上一个增量是文字
 	for stream.Next() {
 		ev := stream.Current()
 		switch ev.Type { // wire 值的权威定义见 SDK 的 shared/constant 包。
 		case "response.output_text.delta":
+			// 紧挨着的两段文字之间补空行：定稿后它们是两块，界面同样以空行分开。
+			key := [2]int64{ev.OutputIndex, ev.ContentIndex}
+			if text && key != part {
+				emit(agent.Delta{Type: agent.DeltaTypeText, Text: "\n\n"})
+			}
+			part, text = key, true
 			emit(agent.Delta{Type: agent.DeltaTypeText, Text: ev.Delta})
 		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
+			text = false
 			emit(agent.Delta{Type: agent.DeltaTypeThinking, Text: ev.Delta})
 		case "response.reasoning_summary_part.done":
 			// 多段摘要之间补空行，供实时显示分段。
@@ -102,6 +133,7 @@ func consume(
 				return nil, streamDetail{text: text}, true
 			}
 			p.args.WriteString(ev.Delta)
+			text = false
 			emit(agent.Delta{Type: agent.DeltaTypeToolCall, ToolCall: agent.ToolCall{
 				ID:        p.id,
 				Name:      p.name,
