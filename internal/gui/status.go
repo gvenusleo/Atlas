@@ -114,7 +114,12 @@ func dropdown[T comparable](
 			if item.Highlighted() {
 				item.Background(t.Text.Alpha(0.07))
 			}
-			item.Children(func() { ui.Text(c, name(option)).FontSize(smallSize).SingleLine() })
+			item.Children(func() {
+				text := ui.Text(c, name(option)).FontSize(smallSize).SingleLine()
+				if option == *value {
+					text.TextColor(t.Accent)
+				}
+			})
 		}
 	})
 	return sel.Trigger.Changed()
