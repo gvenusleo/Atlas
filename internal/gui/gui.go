@@ -437,7 +437,7 @@ func (a *App) launch(ch *chat, run job) {
 // userSaved 报告事件是不是一条用户消息已经保存。
 func userSaved(e agent.Event) bool {
 	_, user := e.Message.(agent.UserMessage)
-	return user && e.Type == agent.EventTypeMessageEnd
+	return user && e.Type == agent.EventMessageEnd
 }
 
 // acquire 返回可用的会话：准备好了就复用；还没有或已失效时，新会话重新建，已有会话重新恢复。

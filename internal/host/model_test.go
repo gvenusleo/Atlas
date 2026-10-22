@@ -154,7 +154,7 @@ func TestNewSessionIsSavedWithFirstMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s.loop.Stream = reply
+	s.loop.Model.Stream = reply
 	if _, err := s.Run(t.Context(), user(), nil); err != nil {
 		t.Fatal(err)
 	}

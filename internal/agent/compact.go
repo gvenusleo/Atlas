@@ -64,97 +64,104 @@ func limits(window int64) (reserve, keep int64) {
 	return reserve, keep
 }
 
-// compactor 记录一次 run 里压缩的状态：每个 turn 最多试一次，失败过一次后这次 run 不再试。
+// compactor 记录一轮里压缩的状态：每次请求前最多试一次，失败过一次后这一轮不再试。
 type compactor struct {
-	rc     *LoopContext
-	e      *emitter
-	record func(Message) // 把新消息记入 run 的返回值
+	r      *run
 	failed bool
-	tried  bool // 这个 turn 里已经试过
+	tried  bool // 这次请求前已经试过
 }
 
-// startTurn 在每个 turn 发请求之前调用：上下文接近窗口上限时先压缩。
+// startTurn 在每次请求模型之前调用：上下文接近窗口上限时先压缩。
 func (c *compactor) startTurn(ctx context.Context) {
 	c.tried = false
-	if window := c.rc.ContextWindow; window > 0 {
+	if window := c.r.Model.Window; window > 0 {
 		reserve, _ := limits(window)
-		if contextTokens(c.rc) > window-reserve {
+		if Tokens(c.r.Messages) > window-reserve {
 			c.try(ctx)
 		}
 	}
 }
 
-// try 压缩一次；这个 turn 里试过、或这次 run 里失败过时什么也不做。返回是否压缩了。
+// try 压缩一次；这次请求前试过、或这一轮里失败过时什么也不做。返回是否压缩了。
 func (c *compactor) try(ctx context.Context) bool {
 	if c.tried || c.failed {
 		return false
 	}
 	c.tried = true
-	compacted, failed := compact(ctx, c.rc, c.e, c.record, autoKeep(c.rc))
+	compacted, failed := compact(ctx, c.r, autoKeep(c.r))
 	c.failed = failed
 	return compacted
 }
 
 // autoKeep 返回自动压缩时保留的最近消息量。
-func autoKeep(rc *LoopContext) int64 {
-	window := rc.ContextWindow
+func autoKeep(r *run) int64 {
+	window := r.Model.Window
 	if window <= 0 {
 		// 窗口未知（只会在请求溢出后走到这里）：以刚溢出的上下文大小为准，保留其中的一部分。
-		window = contextTokens(rc)
+		window = Tokens(r.Messages)
 	}
 	_, keep := limits(window)
 	return keep
 }
 
-// Compact 手动压缩：把除最后一条消息外的对话换成摘要，返回新产生的消息；
-// 没有可压缩的内容时返回空。
-func Compact(ctx context.Context, rc *LoopContext, emit func(Event)) []Message {
-	e := &emitter{emit: emit}
-	var newMessages []Message
-	compact(ctx, rc, e, func(m Message) { newMessages = append(newMessages, m) }, 0)
-	return newMessages
+// Compact 手动压缩：把除最后一条消息外的上下文换成摘要，返回新产生的消息；
+// 没有可压缩的内容时返回空。in 不被修改。
+func Compact(ctx context.Context, in Input, emit func(Event)) []Message {
+	r := newRun(in, emit)
+	compact(ctx, r, 0)
+	return r.added
 }
 
-// compact 把较早的对话换成摘要，保留约 keep 个 token 的最近消息。没有可压缩的内容时
+// Compactable 报告上下文里有没有手动压缩可以压的内容。
+func Compactable(messages []Message) bool {
+	return cutPoint(messages, 0) >= 0
+}
+
+// Fold 把一条新消息并进上下文并返回新的上下文：压缩记录换成“摘要 + 它之前保留的 Kept 条”，
+// 提示词快照不进上下文（提示词单独发送），其余追加。上下文由历史依次 Fold 得到；
+// 运行中推进与重放历史用的是这同一条规则。追加时可能复用 messages 的底层数组。
+func Fold(messages []Message, m Message) []Message {
+	if s, ok := m.(SystemMessage); ok {
+		switch s.Type {
+		case SystemMessageTypePrompt:
+			return messages
+		case SystemMessageTypeCompaction:
+			kept := messages[len(messages)-min(s.Kept, len(messages)):]
+			return append([]Message{s}, kept...)
+		}
+	}
+	return append(messages, m)
+}
+
+// compact 把较早的上下文换成摘要，保留约 keep 个 token 的最近消息。没有可压缩的内容时
 // 什么也不发生；摘要失败时追加一条通知，继续使用原上下文。
-func compact(
-	ctx context.Context, rc *LoopContext, e *emitter, record func(Message), keep int64,
-) (compacted, failed bool) {
-	cut := cutPoint(rc.Messages, keep)
+func compact(ctx context.Context, r *run, keep int64) (compacted, failed bool) {
+	cut := cutPoint(r.Messages, keep)
 	if cut < 0 {
 		return false, false
 	}
-	e.send(Event{Type: EventTypeMessageStart,
-		Message: SystemMessage{Type: SystemMessageTypeCompaction, Timestamp: time.Now()}})
-	summary, err := summarize(ctx, rc, rc.Messages[:cut], e)
+	r.emit(Event{Type: EventCompactStart})
+	summary, err := summarize(ctx, r, r.Messages[:cut])
 	if err != nil {
 		if ctx.Err() != nil {
-			return false, true // 用户取消了：不留通知，界面在这次 run 结束时清掉占位行
+			return false, true // 用户取消了：不留通知，界面在这一轮结束时清掉占位行
 		}
-		notice := SystemMessage{
+		r.add(SystemMessage{
 			Type:      SystemMessageTypeNotice,
 			Content:   "上下文压缩失败，已继续使用原上下文：" + err.Error(),
 			Timestamp: time.Now(),
-		}
-		rc.Messages = append(rc.Messages, notice)
-		record(notice)
-		e.send(Event{Type: EventTypeMessageEnd, Message: notice})
+		})
 		return false, true
 	}
-	entry := SystemMessage{
+	r.add(SystemMessage{
 		Type: SystemMessageTypeCompaction, Content: summary,
-		Kept: len(rc.Messages) - cut, Timestamp: time.Now(),
-	}
-	rc.Messages = append([]Message{entry}, rc.Messages[cut:]...)
-	record(entry)
-	e.send(Event{Type: EventTypeMessageEnd, Message: entry})
+		Kept: len(r.Messages) - cut, Timestamp: time.Now(),
+	})
 	return true, false
 }
 
 // summarize 用同一个模型为 messages 写摘要：独立的一次请求，没有工具，增量不外发。
-func summarize(
-	ctx context.Context, rc *LoopContext, messages []Message, e *emitter,
-) (string, error) {
+func summarize(ctx context.Context, r *run, messages []Message) (string, error) {
 	conversation := "<conversation>\n" + transcript(messages) + "\n</conversation>\n\n"
 	prompt := UserMessage{
 		Content:   []Content{TextContent{Text: conversation + summaryInstructions}},
@@ -162,10 +169,10 @@ func summarize(
 	}
 	request := func() StreamRequest {
 		return StreamRequest{
-			Model: rc.Model, SystemPrompt: summarySystemPrompt, Messages: []Message{prompt},
+			Model: r.Model.Ref, SystemPrompt: summarySystemPrompt, Messages: []Message{prompt},
 		}
 	}
-	final := streamWithRetry(ctx, rc, e, request, func(Delta) {}, nil)
+	final := streamWithRetry(ctx, r, request, func(Delta) {}, nil)
 	summary := strings.TrimSpace(TextOf(final.Content))
 	switch {
 	case final.StopReason == StopReasonCanceled:
@@ -285,20 +292,20 @@ func isCompaction(m Message) bool {
 	return ok && s.Type == SystemMessageTypeCompaction
 }
 
-// contextTokens 估算下一次请求的上下文大小：压缩点之后最新一条带用量的助手响应的用量，
-// 加上它之后各消息的估算；没有这样的响应时整体估算（提示词与工具定义不计，预留量已经覆盖）。
+// Tokens 估算上下文的大小：压缩点之后最新一条带用量的助手响应的用量，加上它之后各消息的估算；
+// 没有这样的响应时整体估算（提示词与工具定义不计，预留量已经覆盖）。
 // 保留段里的响应是压缩之前的，它们的用量含有已被摘要掉的内容，不能用。
-func contextTokens(rc *LoopContext) int64 {
+func Tokens(messages []Message) int64 {
 	trusted := 0
-	if len(rc.Messages) > 0 && isCompaction(rc.Messages[0]) {
-		trusted = 1 + rc.Messages[0].(SystemMessage).Kept
+	if len(messages) > 0 && isCompaction(messages[0]) {
+		trusted = 1 + messages[0].(SystemMessage).Kept
 	}
-	for i := len(rc.Messages) - 1; i >= trusted; i-- {
-		if m, ok := rc.Messages[i].(AssistantMessage); ok && m.Usage.TotalTokens > 0 {
-			return m.Usage.TotalTokens + estimateMessages(rc.Messages[i+1:])
+	for i := len(messages) - 1; i >= trusted; i-- {
+		if m, ok := messages[i].(AssistantMessage); ok && m.Usage.TotalTokens > 0 {
+			return m.Usage.TotalTokens + estimateMessages(messages[i+1:])
 		}
 	}
-	return estimateMessages(rc.Messages)
+	return estimateMessages(messages)
 }
 
 // estimateMessages 估算一组消息的大小。

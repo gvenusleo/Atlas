@@ -36,12 +36,9 @@ func cloneMessages(messages []agent.Message) []agent.Message {
 
 // cloneEvent 独立复制各载荷，避免事件字段之间共享可变数据。
 func cloneEvent(event agent.Event) agent.Event {
-	event.Messages = cloneMessages(event.Messages)
 	event.Message = cloneMessage(event.Message)
 	event.Delta.ToolCall.Arguments = bytes.Clone(event.Delta.ToolCall.Arguments)
-	event.Arguments = bytes.Clone(event.Arguments)
-	event.Result.Content = cloneContent(event.Result.Content)
-	event.Result.Details = bytes.Clone(event.Result.Details)
+	event.Call.Arguments = bytes.Clone(event.Call.Arguments)
 	return event
 }
 

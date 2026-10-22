@@ -16,21 +16,22 @@ import (
 func TestApplyEvents(t *testing.T) {
 	ch := &chat{}
 	text := func(s string) agent.Event {
-		return agent.Event{Type: agent.EventTypeMessageUpdate,
+		return agent.Event{Type: agent.EventDelta,
 			Delta: agent.Delta{Type: agent.DeltaTypeText, Text: s}}
 	}
 	call := agent.ToolCall{ID: "c1", Name: "read", Arguments: []byte(`{"path":"a.go"}`)}
 	events := []agent.Event{
-		{Type: agent.EventTypeMessageEnd, Message: agent.UserMessage{
+		{Type: agent.EventMessageEnd, Message: agent.UserMessage{
 			Content: []agent.Content{agent.TextContent{Text: "看看 a.go"}}}},
-		{Type: agent.EventTypeMessageStart, Message: agent.AssistantMessage{}},
+		{Type: agent.EventMessageStart, Message: agent.AssistantMessage{}},
 		text("好"), text("的"),
-		{Type: agent.EventTypeMessageUpdate, Delta: agent.Delta{
+		{Type: agent.EventDelta, Delta: agent.Delta{
 			Type: agent.DeltaTypeToolCall, ToolCall: call}},
-		{Type: agent.EventTypeMessageEnd, Message: agent.AssistantMessage{
+		{Type: agent.EventMessageEnd, Message: agent.AssistantMessage{
 			Content: []agent.Content{agent.TextContent{Text: "好的。"}, call}}},
-		{Type: agent.EventTypeToolExecutionStart, ToolCallID: "c1", ToolName: "read"},
-		{Type: agent.EventTypeToolExecutionEnd, ToolCallID: "c1", Result: agent.ToolResult{
+		{Type: agent.EventToolStart, Call: call},
+		{Type: agent.EventMessageEnd, Message: agent.ToolResultMessage{
+			ToolCallID: "c1", ToolName: "read",
 			Content: []agent.Content{agent.TextContent{Text: "package a"}}}},
 	}
 	for _, e := range events {
@@ -58,9 +59,10 @@ func TestCompactionAndRetryRows(t *testing.T) {
 		return agent.Event{Type: typ, Message: m}
 	}
 	delta := func(d agent.Delta) agent.Event {
-		return agent.Event{Type: agent.EventTypeMessageUpdate, Delta: d}
+		return agent.Event{Type: agent.EventDelta, Delta: d}
 	}
-	retry := agent.Event{Type: agent.EventTypeRetry, Retry: agent.RetryInfo{
+	compactStart := agent.Event{Type: agent.EventCompactStart}
+	retry := agent.Event{Type: agent.EventRetry, Retry: agent.RetryInfo{
 		Attempt: 1, Max: 4, Delay: 2 * time.Second, Error: "503"}}
 	running := func() bool {
 		return slices.ContainsFunc(ch.items, func(it *item) bool {
@@ -69,15 +71,15 @@ func TestCompactionAndRetryRows(t *testing.T) {
 	}
 	compaction := agent.SystemMessage{Type: agent.SystemMessageTypeCompaction}
 
-	ch.apply(event(agent.EventTypeMessageStart, agent.AssistantMessage{}))
-	ch.apply(event(agent.EventTypeMessageStart, compaction))
+	ch.apply(event(agent.EventMessageStart, agent.AssistantMessage{}))
+	ch.apply(compactStart)
 	if len(ch.items) != 2 || !running() {
 		t.Fatalf("压缩开始后显示项 = %d，进行中 = %v，期望 2 项且有进行中的占位",
 			len(ch.items), running())
 	}
 
 	compaction.Content, compaction.Kept = "摘要", 1
-	ch.apply(event(agent.EventTypeMessageEnd, compaction))
+	ch.apply(event(agent.EventMessageEnd, compaction))
 	if got := ch.items[1]; len(ch.items) != 2 || got.kind != itemCompaction || !got.done ||
 		got.text != "摘要" || ch.usage != 0 {
 		t.Fatalf("压缩结束后显示项 = %+v，usage = %d，期望摘要取代占位且用量清零", got, ch.usage)
@@ -96,10 +98,9 @@ func TestCompactionAndRetryRows(t *testing.T) {
 		t.Errorf("新输出到来后提示 = %q，期望消失", ch.retry)
 	}
 
-	ch.apply(event(agent.EventTypeMessageStart,
-		agent.SystemMessage{Type: agent.SystemMessageTypeCompaction}))
+	ch.apply(compactStart)
 	notice := agent.SystemMessage{Type: agent.SystemMessageTypeNotice, Content: "上下文压缩失败"}
-	ch.apply(event(agent.EventTypeMessageEnd, notice))
+	ch.apply(event(agent.EventMessageEnd, notice))
 	if last := ch.items[len(ch.items)-1]; running() || last.kind != itemNotice {
 		t.Errorf("压缩失败后进行中 = %v，最后一项 = %v，期望占位被通知取代", running(), last.kind)
 	}

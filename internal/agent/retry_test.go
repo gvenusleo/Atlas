@@ -33,17 +33,17 @@ func TestRetry(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			calls, retries := 0, 0
-			rc := &LoopContext{
-				Model: "m",
-				Retry: RetryPolicy{Max: tt.max, Base: time.Millisecond},
+			saved := retryPolicy
+			retryPolicy = RetryPolicy{Max: tt.max, Base: time.Millisecond}
+			t.Cleanup(func() { retryPolicy = saved })
+			in := Input{Model: Model{Ref: "m",
 				Stream: func(context.Context, StreamRequest, func(Delta)) AssistantMessage {
 					calls++
 					return tt.script[calls-1]
-				},
-			}
+				}}}
 			prompt := UserMessage{Content: []Content{TextContent{Text: "你好"}}}
-			messages := Run(ctx, []Message{prompt}, rc, func(e Event) {
-				if e.Type == EventTypeRetry {
+			messages := Run(ctx, in, prompt, func(e Event) {
+				if e.Type == EventRetry {
 					retries++
 					if tt.cancelOnRetry {
 						cancel()

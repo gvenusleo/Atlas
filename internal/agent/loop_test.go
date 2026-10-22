@@ -36,30 +36,29 @@ func TestExecuteToolCallsBatches(t *testing.T) {
 				return finish(name)(ctx, id, p)
 			}}
 	}
-	rc := &LoopContext{Tools: []Tool{
+	tools := []Tool{
 		waiting("a"), waiting("b"),
 		{Name: "w", Execute: finish("w")},                 // 会改动状态，不能与别的调用并发
 		{Name: "c", ReadOnly: true, Execute: finish("c")}, // 只读，但前面隔着 w，自成一批
-	}}
+	}
 	calls := []ToolCall{
 		{ID: "1", Name: "a"}, {ID: "2", Name: "b"}, {ID: "3", Name: "w"}, {ID: "4", Name: "c"},
 	}
 
 	var events, delivered []string
-	e := &emitter{emit: func(ev Event) {
+	r := newRun(Input{Tools: tools}, func(ev Event) {
 		switch ev.Type {
-		case EventTypeToolExecutionStart:
-			events = append(events, "start "+ev.ToolCallID)
-		case EventTypeToolExecutionEnd:
-			events = append(events, "end "+ev.ToolCallID)
+		case EventToolStart:
+			events = append(events, "start "+ev.Call.ID)
+		case EventMessageEnd:
+			id := ev.Message.(ToolResultMessage).ToolCallID
+			events, delivered = append(events, "end "+id), append(delivered, id)
 		}
-	}}
+	})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		executeToolCalls(t.Context(), rc, calls, e, func(m ToolResultMessage) {
-			delivered = append(delivered, m.ToolCallID)
-		})
+		executeToolCalls(t.Context(), r, calls)
 	}()
 	select {
 	case <-done:

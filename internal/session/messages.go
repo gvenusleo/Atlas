@@ -225,21 +225,10 @@ func (s *Store) Load(ctx context.Context, id string) (Loaded, error) {
 		if last == 1 && !isPrompt {
 			return Loaded{}, fmt.Errorf("会话 %s 缺少初始系统提示词快照", id)
 		}
-		switch {
-		case isPrompt:
+		if isPrompt {
 			loaded.SystemPrompt, loaded.PromptSeq = system, record.Seq
-		case isSystem && system.Type == agent.SystemMessageTypeCompaction:
-			// 与运行时的压缩同一条规则：摘要加上之前的最后 Kept 条消息，更早的不再发给模型。
-			if system.Kept > len(loaded.Messages) {
-				return Loaded{}, fmt.Errorf(
-					"会话 %s 的压缩记录 %d 要保留 %d 条消息，此前只有 %d 条",
-					id, record.Seq, system.Kept, len(loaded.Messages))
-			}
-			kept := loaded.Messages[len(loaded.Messages)-system.Kept:]
-			loaded.Messages = append([]agent.Message{system}, kept...)
-		default:
-			loaded.Messages = append(loaded.Messages, record.Message)
 		}
+		loaded.Messages = agent.Fold(loaded.Messages, record.Message)
 	}
 	if err := rows.Err(); err != nil {
 		return Loaded{}, err

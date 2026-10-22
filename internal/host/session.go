@@ -12,6 +12,7 @@ import (
 	"github.com/gvenusleo/atlas/internal/config"
 	"github.com/gvenusleo/atlas/internal/prompt"
 	"github.com/gvenusleo/atlas/internal/session"
+	"github.com/gvenusleo/atlas/internal/skills"
 	"github.com/gvenusleo/atlas/internal/tools"
 )
 
@@ -21,7 +22,8 @@ type Session struct {
 	manager *Manager
 	id      string
 	mu      sync.Mutex
-	loop    agent.LoopContext
+	loop    agent.Input
+	skills  []skills.Skill
 	seq     int64
 	state   State
 	done    chan struct{}
@@ -31,13 +33,13 @@ type Session struct {
 // ID 返回持久化会话标识，与 Manager 的查询和恢复接口使用同一值。
 func (s *Session) ID() string { return s.id }
 
-// State 返回运行期间也可读取的独立快照。模型、思考深度、提示词与技能目录取自 LoopContext，
+// State 返回运行期间也可读取的独立快照。模型、思考深度、提示词与技能目录取自 loop 与 skills，
 // 它们是会话配置的唯一来源，所以只在持有 mu 时修改。
 func (s *Session) State() State {
 	s.mu.Lock()
 	state := s.state
-	state.ModelRef, state.ThinkingLevel = s.loop.Model, s.loop.ThinkingLevel
-	state.SystemPrompt, state.Skills = s.loop.SystemPrompt, slices.Clone(s.loop.Skills)
+	state.ModelRef, state.ThinkingLevel = s.loop.Model.Ref, s.loop.Thinking
+	state.SystemPrompt, state.Skills = s.loop.Prompt, slices.Clone(s.skills)
 	s.mu.Unlock()
 	s.manager.mu.Lock()
 	state.Closed = s.manager.closing
@@ -156,7 +158,7 @@ func (s *Session) SetCwd(ctx context.Context, cwd string) error {
 		return err
 	}
 	s.mu.Lock()
-	s.loop.SystemPrompt, s.loop.Skills = resources.SystemPrompt, resources.Skills
+	s.loop.Prompt, s.skills = resources.SystemPrompt, resources.Skills
 	s.loop.Tools = toolset(cwd)
 	s.state.Cwd = cwd
 	s.mu.Unlock()
@@ -169,8 +171,8 @@ func (s *Session) persistDraft(ctx context.Context) error {
 		return nil
 	}
 	info, err := s.manager.store.Create(ctx, session.CreateOptions{
-		ID: s.id, Cwd: s.state.Cwd, ModelRef: s.loop.Model, ThinkingLevel: s.loop.ThinkingLevel,
-		SystemPrompt: s.loop.SystemPrompt,
+		ID: s.id, Cwd: s.state.Cwd, ModelRef: s.loop.Model.Ref, ThinkingLevel: s.loop.Thinking,
+		SystemPrompt: s.loop.Prompt,
 	})
 	if err != nil {
 		return err
@@ -255,22 +257,20 @@ func toolset(cwd string) []agent.Tool {
 }
 
 // bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。
-func (s *Session) bind(loaded session.Loaded, model modelSetup, resources prompt.Resources) {
+func (s *Session) bind(loaded session.Loaded, model agent.Model, resources prompt.Resources) {
 	cwd := loaded.Info.Cwd
 	info := loaded.Info
 	s.seq = info.LastSeq
+	model.Ref = info.ModelRef // 没有可用的模型时 model 是零值，引用仍记着原来的
 	s.mu.Lock()
-	s.loop = agent.LoopContext{
-		SystemPrompt:  resources.SystemPrompt,
-		Messages:      loaded.Messages,
-		Tools:         toolset(cwd),
-		Skills:        resources.Skills,
-		Model:         info.ModelRef,
-		Stream:        model.stream,
-		ThinkingLevel: info.ThinkingLevel,
-		Retry:         agent.DefaultRetry(),
-		ContextWindow: model.window,
+	s.loop = agent.Input{
+		Model:    model,
+		Thinking: info.ThinkingLevel,
+		Prompt:   resources.SystemPrompt,
+		Tools:    toolset(cwd),
+		Messages: loaded.Messages,
 	}
+	s.skills = resources.Skills
 	s.state.ID, s.state.Cwd, s.state.Name = s.id, cwd, info.Name
 	s.state.NeedsReload = false
 	s.mu.Unlock()
@@ -298,9 +298,9 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 	return s.setModel(ctx, modelRef, thinking, model)
 }
 
-// setModel 保存并采用已经配好的模型：先写会话表，保存成功后才改 LoopContext。调用方须独占会话。
+// setModel 保存并采用已经配好的模型：先写会话表，保存成功后才改 loop。调用方须独占会话。
 func (s *Session) setModel(
-	ctx context.Context, modelRef string, thinking agent.ThinkingLevel, model modelSetup,
+	ctx context.Context, modelRef string, thinking agent.ThinkingLevel, model agent.Model,
 ) error {
 	if !s.state.Draft { // 草稿还不在库里，保存第一条消息时一并写入
 		if err := s.manager.store.UpdateSettings(ctx, s.id, modelRef, thinking); err != nil {
@@ -309,8 +309,7 @@ func (s *Session) setModel(
 		}
 	}
 	s.mu.Lock()
-	s.loop.Model, s.loop.Stream, s.loop.ThinkingLevel = modelRef, model.stream, thinking
-	s.loop.ContextWindow = model.window
+	s.loop.Model, s.loop.Thinking = model, thinking
 	s.mu.Unlock()
 	return nil
 }
@@ -322,7 +321,7 @@ func (s *Session) retryModel(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ref, thinking, err := pickModel(settings, s.loop.Model, s.loop.ThinkingLevel)
+	ref, thinking, err := pickModel(settings, s.loop.Model.Ref, s.loop.Thinking)
 	if err != nil {
 		return err
 	}

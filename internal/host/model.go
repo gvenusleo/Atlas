@@ -102,10 +102,10 @@ func pickModel(
 // （见 execute）。
 func chooseModel(
 	settings *config.Settings, preferred string, thinking agent.ThinkingLevel,
-) (ref string, level agent.ThinkingLevel, model modelSetup) {
+) (ref string, level agent.ThinkingLevel, model agent.Model) {
 	ref, level, err := pickModel(settings, preferred, thinking)
 	if err != nil {
-		return "", "", modelSetup{}
+		return "", "", agent.Model{}
 	}
 	model, _ = modelConfig(settings, ref, level)
 	return ref, level, model
@@ -172,13 +172,6 @@ func usableThinkingLevels(metadata config.Model) []agent.ThinkingLevel {
 	return levels
 }
 
-// modelSetup 是一个模型在会话里用到的全部：流函数与上下文窗口。模型本身以完整引用
-// provider/model-id 记在会话的 LoopContext 里。
-type modelSetup struct {
-	stream agent.StreamFn
-	window int64 // 上下文窗口（token），配置里没有则为 0
-}
-
 // withModelID 让流函数发请求时用模型 ID：循环交来的是完整引用，provider 已体现在客户端上。
 func withModelID(stream agent.StreamFn, id string) agent.StreamFn {
 	return func(
@@ -192,37 +185,37 @@ func withModelID(stream agent.StreamFn, id string) agent.StreamFn {
 // modelConfig 校验协议和思考档位、加载凭据并创建客户端，不发起模型请求。
 func modelConfig(
 	settings *config.Settings, modelRef string, thinkingLevel agent.ThinkingLevel,
-) (modelSetup, error) {
+) (agent.Model, error) {
 	if modelRef == "" {
-		return modelSetup{}, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
+		return agent.Model{}, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
 	}
 	provider, modelID, metadata, err := settings.ModelRef(modelRef)
 	if err != nil {
-		return modelSetup{}, err
+		return agent.Model{}, err
 	}
 	if provider.WireAPI != config.WireAPIOpenAIResponses {
-		return modelSetup{}, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
+		return agent.Model{}, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
 	}
 	if metadata.Tools != nil && !*metadata.Tools {
-		return modelSetup{}, fmt.Errorf("模型 %q 不支持工具调用，无法用于当前 Agent", modelRef)
+		return agent.Model{}, fmt.Errorf("模型 %q 不支持工具调用，无法用于当前 Agent", modelRef)
 	}
 	if thinkingLevel != "" {
 		if !metadata.Reasoning {
-			return modelSetup{}, fmt.Errorf("模型 %q 未声明思考能力", modelRef)
+			return agent.Model{}, fmt.Errorf("模型 %q 未声明思考能力", modelRef)
 		}
 		if !slices.Contains(usableThinkingLevels(metadata), thinkingLevel) {
-			return modelSetup{}, fmt.Errorf(
+			return agent.Model{}, fmt.Errorf(
 				"模型 %q 未声明支持思考档位 %q", modelRef, thinkingLevel)
 		}
 	}
 	providerID, _, _ := config.ParseModel(modelRef)
 	dir, err := config.Dir()
 	if err != nil {
-		return modelSetup{}, err
+		return agent.Model{}, err
 	}
 	key, err := config.APIKey(dir, providerID)
 	if err != nil {
-		return modelSetup{}, err
+		return agent.Model{}, err
 	}
 	client := openai.NewClient(
 		option.WithAPIKey(key),
@@ -233,7 +226,9 @@ func modelConfig(
 	if !metadata.Modalities.AcceptsImages() {
 		stream = llm.WithoutImages(stream)
 	}
-	return modelSetup{stream: withModelID(stream, modelID), window: metadata.ContextWindow}, nil
+	return agent.Model{
+		Ref: modelRef, Window: metadata.ContextWindow, Stream: withModelID(stream, modelID),
+	}, nil
 }
 
 // checkWorkdir 要求恢复的工作目录是仍然存在的绝对目录。

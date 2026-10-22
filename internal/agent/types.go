@@ -8,8 +8,6 @@ import (
 	"errors"
 	"math"
 	"time"
-
-	"github.com/gvenusleo/atlas/internal/skills"
 )
 
 // ---- 消息模型 ----
@@ -168,7 +166,7 @@ const (
 // AssistantMessage 是一次模型响应的完整消息。
 type AssistantMessage struct {
 	Content []Content `json:"content"`
-	// Model 是产生这条消息的模型的完整引用 provider/model-id，由循环按 LoopContext.Model 记下。
+	// Model 是产生这条消息的模型的完整引用 provider/model-id，由循环按 Input.Model.Ref 记下。
 	Model        string     `json:"model"`
 	Usage        Usage      `json:"usage,omitzero"`
 	StopReason   StopReason `json:"stop_reason"`
@@ -259,7 +257,7 @@ func (l ThinkingLevel) Valid() bool {
 
 // StreamRequest 是一次模型调用的输入。
 type StreamRequest struct {
-	Model        string // 完整引用 provider/model-id，即 LoopContext.Model。
+	Model        string // 完整引用 provider/model-id，即 Input.Model.Ref。
 	SystemPrompt string // 本次初始化的有效提示词，不属于对话历史。
 	Messages     []Message
 	Tools        []Tool
@@ -294,59 +292,49 @@ type StreamFn func(ctx context.Context, req StreamRequest, emit func(Delta)) Ass
 
 // ---- 事件 ----
 
-// EventType 区分事件的生命周期阶段：run、turn、消息、工具执行。
+// EventType 区分事件。
 type EventType string
 
 const (
-	EventTypeAgentStart         EventType = "agent_start"
-	EventTypeAgentEnd           EventType = "agent_end"
-	EventTypeTurnStart          EventType = "turn_start"
-	EventTypeTurnEnd            EventType = "turn_end"
-	EventTypeMessageStart       EventType = "message_start"
-	EventTypeMessageUpdate      EventType = "message_update"
-	EventTypeMessageEnd         EventType = "message_end"
-	EventTypeRetry              EventType = "retry"
-	EventTypeToolExecutionStart EventType = "tool_execution_start"
-	EventTypeToolExecutionEnd   EventType = "tool_execution_end"
+	// EventMessageStart：助手开始回复，Message 是空的助手消息。
+	EventMessageStart EventType = "message_start"
+	// EventDelta：回复的增量，见 Delta。
+	EventDelta EventType = "delta"
+	// EventRetry：这次回复失败了，已流出的内容作废，等待后重新请求，见 Retry。
+	EventRetry EventType = "retry"
+	// EventMessageEnd：一条消息定稿，见 Message。每条新消息恰好有一个，也只有它要入历史。
+	EventMessageEnd EventType = "message_end"
+	// EventToolStart：开始执行一个工具调用，见 Call；它的结束就是工具结果的 EventMessageEnd。
+	EventToolStart EventType = "tool_start"
+	// EventCompactStart：开始压缩；结束是压缩记录或失败通知的 EventMessageEnd。
+	EventCompactStart EventType = "compact_start"
 )
 
-// Event 是 agent 生命周期事件；Type 决定哪些载荷字段有效：
-// agent_end 使用 Messages，turn_end 使用 Message 与 Messages；
-// message_start/end 使用 Message，message_update 使用 Delta，retry 使用 Retry；
-// retry 发生在 message_start 与 message_end 之间：这次响应失败了，已流出的内容作废，
-// 等待之后重新请求，最终只有一条消息结束；
-// tool_execution_start 使用调用标识与 Arguments，tool_execution_end 使用调用标识与 Result。
+// Event 是一轮运行中的事件；Type 决定哪个载荷字段有效。
 type Event struct {
-	Type       EventType
-	Messages   []Message
-	Message    Message
-	Delta      Delta
-	Retry      RetryInfo
-	ToolCallID string
-	ToolName   string
-	Arguments  jsontext.Value
-	Result     ToolResult
-	Timestamp  time.Time
+	Type    EventType
+	Message Message
+	Delta   Delta
+	Retry   RetryInfo
+	Call    ToolCall
 }
 
-// ---- 循环 ----
+// ---- 一轮 ----
 
-// LoopContext 是当前会话的完整状态：历史、工具、模型和运行策略都由调用方持有。
-type LoopContext struct {
-	SystemPrompt string // 初始化后复用；Messages 不含提示词快照。
-	Messages     []Message
-	Tools        []Tool
-	Skills       []skills.Skill
-	// Model 是会话当前模型的完整引用 provider/model-id，能唯一指出一个模型；
-	// 会话的模型只记在这里，StreamFn 据此选用对应的客户端与模型 ID。
-	Model string
-	// ThinkingLevel 为空时采用服务端默认深度。
-	ThinkingLevel ThinkingLevel
-	// MaxTurns 限制一次 run 的 turn 数，0 表示不限；防御模型无限请求工具。
-	MaxTurns int
-	// Retry 是模型调用遇到暂时性失败时的重试策略，零值表示不重试。
-	Retry RetryPolicy
-	// ContextWindow 是模型的上下文窗口（token）；0 表示未知：不按阈值压缩，只在请求溢出时压缩。
-	ContextWindow int64
-	Stream        StreamFn
+// Model 是会话用的模型。引用、窗口和流函数是一个值，总是一起换。
+type Model struct {
+	Ref string // 完整引用 provider/model-id，唯一指出一个模型
+	// Window 是上下文窗口（token）；0 表示未知：不按阈值压缩，只在请求溢出时压缩。
+	Window int64
+	Stream StreamFn // 已绑定客户端与模型 ID
+}
+
+// Input 是一轮看到的全部，由调用方给出快照，循环不修改它。
+type Input struct {
+	Model Model
+	// Thinking 为空时采用服务端默认深度。
+	Thinking ThinkingLevel
+	Prompt   string // 系统提示词
+	Tools    []Tool
+	Messages []Message // 上下文，见 Fold
 }

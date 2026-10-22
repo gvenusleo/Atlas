@@ -54,12 +54,12 @@ func (s *Session) Run(
 	message = cloneMessage(message).(agent.UserMessage)
 	var skillErr error
 	messages, err := s.execute(ctx, emit, func(
-		ctx context.Context, rc *agent.LoopContext, emit func(agent.Event),
+		ctx context.Context, in agent.Input, emit func(agent.Event),
 	) []agent.Message {
-		if message, skillErr = withSkill(message, rc.Skills); skillErr != nil {
+		if message, skillErr = withSkill(message, s.skills); skillErr != nil {
 			return nil
 		}
-		return agent.Run(ctx, []agent.Message{message}, rc, emit)
+		return agent.Run(ctx, in, message, emit)
 	})
 	if skillErr != nil {
 		return messages, skillErr
@@ -95,7 +95,7 @@ func (s *Session) Compact(ctx context.Context, emit func(agent.Event)) ([]agent.
 // execute 独占会话并运行 drive，逐条保存它产生的消息；Run 与 Compact 共用。
 func (s *Session) execute(
 	ctx context.Context, emit func(agent.Event),
-	drive func(context.Context, *agent.LoopContext, func(agent.Event)) []agent.Message,
+	drive func(context.Context, agent.Input, func(agent.Event)) []agent.Message,
 ) ([]agent.Message, error) {
 	ctx, end, err := s.manager.begin(ctx)
 	if err != nil {
@@ -114,7 +114,7 @@ func (s *Session) execute(
 	if err := runCtx.Err(); err != nil {
 		return nil, err
 	}
-	if s.loop.Stream == nil { // 恢复时没有可用的模型
+	if s.loop.Model.Stream == nil { // 恢复时没有可用的模型
 		if err := s.retryModel(ctx); err != nil {
 			return nil, err
 		}
@@ -126,11 +126,14 @@ func (s *Session) execute(
 			s.invalidate()
 		}
 	}()
-	messages := drive(runCtx, &s.loop, func(event agent.Event) {
-		if event.Type == agent.EventTypeMessageEnd && saveErr == nil {
+	// 循环拿的是快照；消息保存之后才并进会话的上下文，所以上下文始终与库里的历史一致。
+	messages := drive(runCtx, s.loop, func(event agent.Event) {
+		if event.Type == agent.EventMessageEnd && saveErr == nil {
 			if saveErr = s.save(ctx, event.Message); saveErr != nil {
 				s.invalidate()
 				cancel()
+			} else {
+				s.loop.Messages = agent.Fold(s.loop.Messages, event.Message)
 			}
 		}
 		if emit != nil {
@@ -155,7 +158,7 @@ func (s *Session) save(ctx context.Context, message agent.Message) error {
 	if err := s.persistDraft(ctx); err != nil {
 		return err
 	}
-	seq, err := s.manager.store.AppendMessage(ctx, s.id, s.seq, message, s.loop.ThinkingLevel)
+	seq, err := s.manager.store.AppendMessage(ctx, s.id, s.seq, message, s.loop.Thinking)
 	if err != nil {
 		return err
 	}

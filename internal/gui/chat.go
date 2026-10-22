@@ -367,14 +367,14 @@ func (ch *chat) setCall(call agent.ToolCall) {
 // apply 应用运行事件。增量只做临时展示，定稿消息到达时以其为准。
 func (ch *chat) apply(e agent.Event) {
 	switch e.Type {
-	case agent.EventTypeMessageStart:
+	case agent.EventMessageStart:
 		ch.live = nil
 		ch.mark()
-		system, ok := e.Message.(agent.SystemMessage)
-		if ok && system.Type == agent.SystemMessageTypeCompaction {
-			ch.add(itemCompaction, "").done = false
-		}
-	case agent.EventTypeRetry:
+	case agent.EventCompactStart:
+		ch.live = nil
+		ch.mark()
+		ch.add(itemCompaction, "").done = false
+	case agent.EventRetry:
 		// 这次响应作废：丢掉它已流出的文字与半截的工具调用，等重新请求。
 		// 中途往前加载的更早记录排在 tail 之前，不受影响；tail 不在列表里就什么也不丢。
 		if i := slices.Index(ch.items, ch.tail); ch.tail == nil || i >= 0 {
@@ -382,7 +382,7 @@ func (ch *chat) apply(e agent.Event) {
 		}
 		ch.live = nil
 		ch.retry = retryNotice(e.Retry)
-	case agent.EventTypeMessageUpdate:
+	case agent.EventDelta:
 		ch.retry = ""
 		switch e.Delta.Type {
 		case agent.DeltaTypeText:
@@ -393,19 +393,16 @@ func (ch *chat) apply(e agent.Event) {
 			ch.endBlock()
 			ch.setCall(e.Delta.ToolCall)
 		}
-	case agent.EventTypeMessageEnd:
+	case agent.EventMessageEnd:
 		ch.retry = ""
 		if m, ok := e.Message.(agent.AssistantMessage); ok {
 			ch.finish(m)
 		} else {
-			ch.append(e.Message, 0)
+			ch.append(e.Message, 0) // 工具结果在这里落到它的卡片上
 			ch.mark()
 		}
-	case agent.EventTypeToolExecutionStart:
-		it := ch.tool(e.ToolCallID)
-		it.tool = e.ToolName
-	case agent.EventTypeToolExecutionEnd:
-		ch.tool(e.ToolCallID).finishCall(e.Result.Content, e.Result.Details, e.Result.IsError)
+	case agent.EventToolStart:
+		ch.tool(e.Call.ID).tool = e.Call.Name
 	}
 }
 

@@ -17,7 +17,8 @@ func (s *Session) autoName(ctx context.Context, message agent.UserMessage) error
 		_, ok := m.(agent.UserMessage)
 		return ok
 	}
-	if s.State().Name != "" || slices.IndexFunc(s.loop.Messages, isUser) != len(s.loop.Messages)-1 {
+	// 消息保存之后才并进上下文，所以这条还不在里面：里面已有用户消息就不是第一条。
+	if s.State().Name != "" || slices.ContainsFunc(s.loop.Messages, isUser) {
 		return nil
 	}
 	title := titleOf(message.Content)

@@ -29,7 +29,7 @@ func newSession(t *testing.T, stream agent.StreamFn) (*Manager, *Session) {
 		t.Fatal(err)
 	}
 	s := &Session{manager: m, id: id, seq: info.LastSeq, state: State{ID: id}}
-	s.loop = agent.LoopContext{SystemPrompt: "提示词", Model: "p/m", Stream: stream}
+	s.loop = agent.Input{Prompt: "提示词", Model: agent.Model{Ref: "p/m", Stream: stream}}
 	m.sessions[id] = s
 	return m, s
 }
@@ -113,7 +113,7 @@ func TestRunIsExclusiveAndPersists(t *testing.T) {
 // 手动压缩不看窗口与阈值：摘要入库，再次压缩时没有可压缩的内容。
 func TestCompact(t *testing.T) {
 	m, s := newSession(t, reply)
-	s.loop.ContextWindow = 1_000_000 // 远没到自动压缩的阈值
+	s.loop.Model.Window = 1_000_000 // 远没到自动压缩的阈值
 	if _, err := s.Compact(t.Context(), nil); !errors.Is(err, ErrNothingToCompact) {
 		t.Fatalf("空会话 Compact = %v，期望 ErrNothingToCompact", err)
 	}

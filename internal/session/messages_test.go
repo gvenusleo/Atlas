@@ -42,8 +42,8 @@ func TestAppendMessageStampsModel(t *testing.T) {
 	}
 }
 
-// 压缩记录重放时与运行时的压缩同一条规则：摘要加上它之前的最后 Kept 条消息，
-// 更早的消息只留在历史里；Kept 超过此前的消息数的记录是损坏的。
+// 压缩记录重放时与运行时的压缩同一条规则（agent.Fold）：摘要加上它之前的最后 Kept 条消息，
+// 更早的消息只留在历史里。
 func TestLoadAppliesCompaction(t *testing.T) {
 	ctx := t.Context()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), "atlas.db"))
@@ -101,12 +101,5 @@ func TestLoadAppliesCompaction(t *testing.T) {
 	if err != nil || len(prompts) != 2 || prompts[0].Seq >= prompts[1].Seq ||
 		prompts[0].Message.(agent.UserMessage).Content[0].(agent.TextContent).Text != "u1" {
 		t.Errorf("提问 = %v（%v），期望 [u1, u2]", prompts, err)
-	}
-
-	append(agent.SystemMessage{
-		Type: agent.SystemMessageTypeCompaction, Content: "坏的", Kept: 99, Timestamp: now,
-	})
-	if _, err := store.Load(ctx, id); err == nil {
-		t.Error("Kept 超过此前消息数的压缩记录应当报错")
 	}
 }
