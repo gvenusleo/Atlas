@@ -90,7 +90,8 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 ### 工具
 
 模型只有四个工具：read、write、edit、shell。Atlas 不接入 MCP：要用的外部能力写成技能
-（`.agents/skills`），教模型通过 shell 调用对应的命令行工具。
+（`.agents/skills`），教模型通过 shell 调用对应的命令行工具。同一轮里模型发出的多个调用，
+只读的（read）并发执行，会改动文件或运行命令的（write、edit、shell）按发出的顺序一个个执行。
 
 ## 结构
 

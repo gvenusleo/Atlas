@@ -225,7 +225,9 @@ type Tool struct {
 	Description string
 	// Parameters 是 JSON Schema 对象；省略时按无参工具处理。
 	Parameters map[string]any
-	Execute    func(ctx context.Context, toolCallID string, params jsontext.Value) (ToolResult, error)
+	// ReadOnly 表示工具不改变任何状态，同一轮里连续的只读调用可以并发执行。
+	ReadOnly bool
+	Execute  func(ctx context.Context, toolCallID string, params jsontext.Value) (ToolResult, error)
 }
 
 // ---- 流式调用 ----

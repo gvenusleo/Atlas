@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -158,25 +159,64 @@ func failTruncated(calls []ToolCall, e *emitter, complete func(ToolResultMessage
 	}
 }
 
-// executeToolCalls 逐个执行并同步交付结果；取消后为剩余调用补齐错误结果。
+// maxParallel 是并发执行的只读调用数的上限，免得一轮里的大批读取同时占满内存。
+const maxParallel = 8
+
+// executeToolCalls 执行一轮里的调用并同步交付结果，交付顺序与调用顺序一致。连续的只读调用
+// 并发执行，其余的调用按顺序一个个执行；取消后为剩余调用补齐错误结果。
 func executeToolCalls(
 	ctx context.Context, rc *LoopContext, calls []ToolCall, e *emitter, complete func(ToolResultMessage),
 ) {
-	for _, call := range calls {
-		e.send(toolStart(call))
-		tool := findTool(rc.Tools, call.Name)
-		var result ToolResult
-		switch {
-		case tool == nil:
-			result = failResult(fmt.Sprintf("工具 %s 不存在", call.Name))
-		case ctx.Err() != nil:
-			result = failResult("已取消，未执行")
-		default:
-			result = executeCall(ctx, tool, call)
-		}
-		e.send(toolEnd(call, result))
-		complete(newToolResultMessage(call, result))
+	for len(calls) > 0 {
+		n := batchLen(rc.Tools, calls)
+		runBatch(ctx, rc, calls[:n], e, complete)
+		calls = calls[n:]
 	}
+}
+
+// batchLen 返回 calls 开头可以一起执行的调用数：开头连续的只读调用（至多 maxParallel 个）
+// 并发；开头不是只读调用时，它自己单独成批。
+func batchLen(tools []Tool, calls []ToolCall) int {
+	n := 0
+	for n < len(calls) && n < maxParallel {
+		if tool := findTool(tools, calls[n].Name); tool == nil || !tool.ReadOnly {
+			break
+		}
+		n++
+	}
+	return max(n, 1)
+}
+
+// runBatch 先发出整批的开始事件，并发执行，再按调用顺序发出结束事件并交付结果。
+func runBatch(
+	ctx context.Context, rc *LoopContext, batch []ToolCall,
+	e *emitter, complete func(ToolResultMessage),
+) {
+	for _, call := range batch {
+		e.send(toolStart(call))
+	}
+	results := make([]ToolResult, len(batch))
+	var wg sync.WaitGroup
+	for i, call := range batch {
+		wg.Go(func() { results[i] = runCall(ctx, rc, call) })
+	}
+	wg.Wait()
+	for i, call := range batch {
+		e.send(toolEnd(call, results[i]))
+		complete(newToolResultMessage(call, results[i]))
+	}
+}
+
+// runCall 执行一次调用：工具不存在或已取消时直接给出错误结果。
+func runCall(ctx context.Context, rc *LoopContext, call ToolCall) ToolResult {
+	tool := findTool(rc.Tools, call.Name)
+	switch {
+	case tool == nil:
+		return failResult(fmt.Sprintf("工具 %s 不存在", call.Name))
+	case ctx.Err() != nil:
+		return failResult("已取消，未执行")
+	}
+	return executeCall(ctx, tool, call)
 }
 
 // executeCall 执行单个调用，工具的 error 与 panic 一律收敛为错误结果。

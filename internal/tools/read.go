@@ -39,7 +39,8 @@ type ReadDetails struct {
 // Read 构造 read tool；workdir 应为工作目录绝对路径，相对路径以此为基准。
 func Read(workdir string) agent.Tool {
 	return agent.Tool{
-		Name: "read",
+		Name:     "read",
+		ReadOnly: true,
 		Description: "读取 UTF-8 文本或图片（JPEG、PNG、GIF、Webp；大图会缩小，GIF 只取第一帧）。" +
 			"相对路径以工作目录为基准。单个文件最多 10 MiB。" +
 			"文本最多返回 2000 行或 50 KiB，保留完整行；" +
