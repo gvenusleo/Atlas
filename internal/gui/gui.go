@@ -175,7 +175,8 @@ func (a *App) toggleSidebar() {
 	a.sidebarHidden = !a.sidebarHidden
 }
 
-// open 切换到已有会话，首次打开时加载历史；查看历史不需要凭据。
+// open 切换到已有会话，首次打开时加载历史并恢复会话。历史直接读库，不依赖恢复，
+// 所以恢复失败也能看。
 func (a *App) open(id string) {
 	if !a.leave() {
 		return
@@ -201,6 +202,25 @@ func (a *App) open(id string) {
 				return
 			}
 			ch.load(records)
+		})
+	}()
+	a.resume(ch)
+}
+
+// resume 在后台恢复已有会话：模型也在这时选定，上次用的失效就退到默认模型。失败时历史照常显示，
+// 错误显示在对话下方，发送时再试一次。
+func (a *App) resume(ch *chat) {
+	ch.resuming = true
+	id := ch.id
+	go func() {
+		s, err := a.host.Resume(context.Background(), id)
+		a.win.Update(func() {
+			ch.resuming = false
+			if err != nil {
+				ch.err = err.Error()
+				return
+			}
+			a.attach(ch, s)
 		})
 	}()
 }
@@ -280,22 +300,46 @@ func (a *App) modelInfo(ref string) (host.ModelInfo, bool) {
 func (a *App) useDefaultModel(ch *chat) {
 	if ch.id == "" && ch.model == "" {
 		ch.model = a.defaultModel
-		a.fitThinking(ch)
+		ch.thinking = a.fit(ch.model, ch.thinking)
 	}
 }
 
-// fitThinking 保证思考深度属于当前模型支持的档位，否则改用该模型的默认档位。
-func (a *App) fitThinking(ch *chat) {
+// fit 保证思考深度属于模型支持的档位，否则改用该模型的默认档位。
+func (a *App) fit(model string, thinking agent.ThinkingLevel) agent.ThinkingLevel {
 	var levels []agent.ThinkingLevel
-	if info, ok := a.modelInfo(ch.model); ok {
+	if info, ok := a.modelInfo(model); ok {
 		levels = info.ThinkingLevels
 	}
-	if !slices.Contains(levels, ch.thinking) {
-		ch.thinking = ""
-		if len(levels) > 0 {
-			ch.thinking = levels[0]
-		}
+	switch {
+	case slices.Contains(levels, thinking):
+		return thinking
+	case len(levels) > 0:
+		return levels[0]
 	}
+	return ""
+}
+
+// choose 采用界面上选的模型与思考深度：有会话就让会话在后台换，保存并校验，失败时选择器
+// 回到原来的；还没有会话时记进草稿。
+func (a *App) choose(ch *chat, model string, thinking agent.ThinkingLevel) {
+	if ch.session == nil {
+		ch.model, ch.thinking = model, thinking
+		return
+	}
+	s := ch.session
+	ch.switching = true
+	go func() {
+		err := s.SetModel(context.Background(), model, thinking)
+		a.win.Update(func() {
+			ch.switching = false
+			if err != nil {
+				ch.err = err.Error()
+			}
+			if errors.Is(err, host.ErrNeedsReload) {
+				a.reload(ch)
+			}
+		})
+	}()
 }
 
 // job 是会话上的一项后台操作：一轮对话或一次压缩。
@@ -319,7 +363,8 @@ func compactSession(ctx context.Context, s *host.Session, emit func(agent.Event)
 // （以 /技能名 开头时，会话会在原文后附上技能内容）；返回是否已受理。
 func (a *App) send(ch *chat, text string) bool {
 	text = strings.TrimSpace(text)
-	if text == "" && len(ch.attachments) == 0 || ch.running || ch.loading || ch.preparing > 0 {
+	busy := ch.running || ch.loading || ch.resuming || ch.switching || ch.preparing > 0
+	if text == "" && len(ch.attachments) == 0 || busy {
 		return false
 	}
 	if len(ch.attachments) > 0 && !a.acceptsImages(ch) {
@@ -338,7 +383,8 @@ func (a *App) send(ch *chat, text string) bool {
 	return true
 }
 
-// launch 在后台获取会话、采用选定的模型并执行 run，结束后更新界面。
+// launch 在后台获取会话并执行 run，结束后更新界面；新会话创建后先采用草稿里选的模型，
+// 已有会话的选择在选的时候就应用了。
 func (a *App) launch(ch *chat, run job) {
 	ch.running, ch.err, ch.runStart = true, "", time.Now()
 	session, id, cwd := ch.session, ch.id, ch.cwd
@@ -348,6 +394,8 @@ func (a *App) launch(ch *chat, run job) {
 		s, err := acquire(ctx, a.host, session, id, cwd)
 		if err == nil {
 			a.win.Update(func() { a.attach(ch, s) })
+		}
+		if err == nil && id == "" {
 			err = useModel(ctx, s, model, thinking)
 		}
 		if err == nil {
@@ -393,10 +441,15 @@ func (a *App) attach(ch *chat, s *host.Session) {
 	}
 	state := s.State()
 	ch.cwd, a.cwd = state.Cwd, state.Cwd
-	if ch.model == "" {
-		ch.model, ch.thinking = state.ModelRef, state.ThinkingLevel
-	}
 	a.refresh()
+}
+
+// reload 在会话状态失效后丢掉它并立刻重新恢复；失效前的模型与思考深度先记进草稿，
+// 恢复期间选择器不会跳回旧值。
+func (a *App) reload(ch *chat) {
+	ch.model, ch.thinking = ch.selection()
+	ch.session = nil
+	a.resume(ch)
 }
 
 // finish 在一轮对话结束后更新状态；用户主动停止不算错误。
@@ -411,7 +464,7 @@ func (a *App) finish(ch *chat, err error) {
 	}
 	ch.settle(cmp.Or(ch.err, "已中断"))
 	if errors.Is(err, host.ErrNeedsReload) {
-		ch.session = nil // 下次发送时重新恢复
+		a.reload(ch)
 	}
 	// 在别的会话时结束的运行，回到这个会话之前侧栏上标为未读。
 	ch.unread = ch != a.current && ch.err == ""

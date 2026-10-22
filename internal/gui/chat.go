@@ -66,6 +66,8 @@ type chat struct {
 	next    int
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	paging  bool  // 正在加载更早的记录
+	// resuming 是已有会话正在后台恢复；switching 是正在让会话换模型。两者期间不能发送或换模型。
+	resuming, switching bool
 	// seekSeq 是目录要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
 	// 0 表示没有。
 	seekSeq int64
@@ -89,7 +91,8 @@ type chat struct {
 	index     pathIndex  // 工作目录下的路径，@ 补全与文件面板的筛选共用
 	files     *filePanel // 文件面板，第一次打开时才建
 
-	// 界面上选定的模型与思考深度，发送时应用到会话。
+	// 模型与思考深度的草稿：还没有会话时（新会话创建前，或已有会话正在恢复）界面上的选择。
+	// 有会话时以会话的 LoopContext 为准，见 selection。
 	model    string
 	thinking agent.ThinkingLevel
 	usage    int64 // 最近一次响应结束时的上下文词元数
@@ -102,6 +105,15 @@ type chat struct {
 	termErr    string
 
 	expanded sidePanel // 扩展到整个主区的面板；没有时为 noPanel
+}
+
+// selection 是会话当前的模型与思考深度：有会话时取自它的 LoopContext，还没有时是草稿。
+func (ch *chat) selection() (string, agent.ThinkingLevel) {
+	if ch.session != nil {
+		state := ch.session.State()
+		return state.ModelRef, state.ThinkingLevel
+	}
+	return ch.model, ch.thinking
 }
 
 // add 追加一个已定稿的显示项。

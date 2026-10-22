@@ -56,6 +56,11 @@ func shortPath(path string) string {
 	return path
 }
 
+// pickable 报告现在能不能换模型：运行和切换期间不能；已有会话要等恢复好，换模型是对会话做的。
+func (ch *chat) pickable() bool {
+	return !ch.running && !ch.switching && (ch.session != nil || ch.id == "")
+}
+
 // modelPicker 选择会话使用的模型；模型清单没有加载时不显示。
 func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 	if len(a.models) == 0 {
@@ -71,19 +76,23 @@ func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		return ref
 	}
-	if dropdown(c, t, "模型", &ch.model, refs, name) {
-		a.fitThinking(ch)
-	}
+	model, thinking := ch.selection()
+	dropdown(c, t, "模型", &model, refs, name, !ch.pickable(), func() {
+		a.choose(ch, model, a.fit(model, thinking))
+	})
 }
 
 // thinkingPicker 选择思考深度；模型不支持思考时不显示。
 func (a *App) thinkingPicker(c *ui.Context, t *ui.Theme, ch *chat) {
-	info, ok := a.modelInfo(ch.model)
+	model, thinking := ch.selection()
+	info, ok := a.modelInfo(model)
 	if !ok || len(info.ThinkingLevels) == 0 {
 		return
 	}
 	name := func(l agent.ThinkingLevel) string { return capitalize(string(l)) }
-	dropdown(c, t, "思考深度", &ch.thinking, info.ThinkingLevels, name)
+	dropdown(c, t, "思考深度", &thinking, info.ThinkingLevels, name, !ch.pickable(), func() {
+		a.choose(ch, model, thinking)
+	})
 }
 
 // capitalize 把首字母大写；思考深度的取值都是 ASCII，尚未选定时为空。
@@ -94,13 +103,15 @@ func capitalize(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开；返回是否选了新值。
+// dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开。value 指向当前值的本帧副本，
+// 选了新值后 onChange 里读它；disabled 时点不开。
 func dropdown[T comparable](
 	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
-) bool {
+	disabled bool, onChange func(),
+) {
 	sel := ui.SelectBase(c.Key(label), value)
 	sel.Trigger.AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
-		Cursor(ui.CursorPointer).Label(label)
+		Cursor(ui.CursorPointer).Label(label).Disabled(disabled).OnChange(onChange)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(rowFill(t))
 	}
@@ -122,7 +133,6 @@ func dropdown[T comparable](
 			})
 		}
 	})
-	return sel.Trigger.Changed()
 }
 
 // popupPanel 是弹出面板的外观，下拉选项与输入框的补全列表共用；与触发元素之间的间距由
@@ -134,7 +144,8 @@ func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
 
 // contextRing 用圆环显示上下文窗口的占用，悬停时给出具体数字；窗口大小未知时不显示。
 func (a *App) contextRing(c *ui.Context, t *ui.Theme, ch *chat) {
-	info, ok := a.modelInfo(ch.model)
+	model, _ := ch.selection()
+	info, ok := a.modelInfo(model)
 	if !ok || info.ContextWindow <= 0 {
 		return
 	}

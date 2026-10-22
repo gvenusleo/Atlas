@@ -3,7 +3,6 @@ package host
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -117,15 +116,11 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if settings.Model == "" {
-		return nil, fmt.Errorf("请在 ~/.atlas/settings.json 中配置 model")
-	}
-	_, _, metadata, err := settings.ModelRef(settings.Model)
+	ref, thinking, err := pickModel(settings, "", "")
 	if err != nil {
 		return nil, err
 	}
-	thinking := defaultThinkingLevel(metadata)
-	model, err := modelConfig(settings, settings.Model, thinking)
+	model, err := modelConfig(settings, ref, thinking)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +147,7 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	info, err := m.store.Create(ctx, session.CreateOptions{
 		ID:            id,
 		Cwd:           cwd,
-		ModelRef:      settings.Model,
+		ModelRef:      ref,
 		ThinkingLevel: thinking,
 		SystemPrompt:  resources.SystemPrompt,
 	})
@@ -189,10 +184,22 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	model, err := modelConfig(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
+	// 上次用的模型失效了就退到默认模型，再退到第一个可用的（见 pickModel）；变了就存进会话表。
+	// 选不出模型、或配不起来（缺凭据等），也不挡着恢复：会话照常打开，用户可以换模型，
+	// 要运行时再试一次并报原因（见 execute）。
+	var model modelSetup
+	ref, thinking, err := pickModel(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
 	if err != nil {
-		return nil, err
+		ref, thinking = loaded.Info.ModelRef, loaded.Info.ThinkingLevel
+	} else {
+		if ref != loaded.Info.ModelRef || thinking != loaded.Info.ThinkingLevel {
+			if err := m.store.UpdateSettings(ctx, id, ref, thinking); err != nil {
+				return nil, err
+			}
+		}
+		model, _ = modelConfig(settings, ref, thinking)
 	}
+	loaded.Info.ModelRef, loaded.Info.ThinkingLevel = ref, thinking
 	if err := checkWorkdir(loaded.Info.Cwd); err != nil {
 		return nil, err
 	}
@@ -261,6 +268,13 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 	if err != nil {
 		return err
 	}
+	return s.setModel(ctx, modelRef, thinking, model)
+}
+
+// setModel 保存并采用已经配好的模型：先写会话表，保存成功后才改 LoopContext。调用方须独占会话。
+func (s *Session) setModel(
+	ctx context.Context, modelRef string, thinking agent.ThinkingLevel, model modelSetup,
+) error {
 	if err := s.manager.store.UpdateSettings(ctx, s.id, modelRef, thinking); err != nil {
 		s.invalidate()
 		return errors.Join(ErrNeedsReload, err)
@@ -270,4 +284,22 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 	s.loop.ContextWindow = model.window
 	s.mu.Unlock()
 	return nil
+}
+
+// retryModel 在会话没有可用的模型时（恢复时选不出或配不起来）再试一次：配置可能已经改好了。
+// 仍然不行就返回原因。调用方须独占会话。
+func (s *Session) retryModel(ctx context.Context) error {
+	settings, err := config.Load()
+	if err != nil {
+		return err
+	}
+	ref, thinking, err := pickModel(settings, s.loop.Model, s.loop.ThinkingLevel)
+	if err != nil {
+		return err
+	}
+	model, err := modelConfig(settings, ref, thinking)
+	if err != nil {
+		return err
+	}
+	return s.setModel(ctx, ref, thinking, model)
 }

@@ -98,7 +98,7 @@ func (s *Settings) Provider(id string) (Provider, error) {
 }
 
 // ModelRef 把 "provider/model-id" 解析为接入参数、模型 ID 与其元数据。
-// 元数据查 providers.<id>.models；查不到时返回零值 Model（不报错）。
+// 模型必须在 providers.<id>.models 里声明，没有声明的视为不存在，会话据此退到别的模型。
 func (s *Settings) ModelRef(ref string) (Provider, string, Model, error) {
 	provider, id, err := ParseModel(ref)
 	if err != nil {
@@ -108,5 +108,10 @@ func (s *Settings) ModelRef(ref string) (Provider, string, Model, error) {
 	if err != nil {
 		return Provider{}, "", Model{}, err
 	}
-	return p, id, p.Models[id], nil
+	model, ok := p.Models[id]
+	if !ok {
+		return Provider{}, "", Model{}, fmt.Errorf(
+			"模型 %q 没有在 settings.json 的 providers.%s.models 中声明", ref, provider)
+	}
+	return p, id, model, nil
 }

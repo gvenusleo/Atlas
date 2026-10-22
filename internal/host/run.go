@@ -114,6 +114,11 @@ func (s *Session) execute(
 	if err := runCtx.Err(); err != nil {
 		return nil, err
 	}
+	if s.loop.Stream == nil { // 恢复时没有可用的模型
+		if err := s.retryModel(ctx); err != nil {
+			return nil, err
+		}
+	}
 	var saveErr error
 	loopCompleted := false
 	defer func() {

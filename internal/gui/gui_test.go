@@ -207,3 +207,38 @@ func TestViewShowsConversation(t *testing.T) {
 		}
 	}
 }
+
+// 选模型：思考深度随之改成新模型支持的档位；运行中选择器点不开。
+// 选中的值在 onChange 里读，不能是每帧重算的副本被覆盖之后的值。
+func TestPickModel(t *testing.T) {
+	newPicker := func(running bool) (*App, *ui.Tester) {
+		a := newApp(nil)
+		a.models = []host.ModelInfo{
+			{Ref: "p/a", Name: "Alpha", ThinkingLevels: []agent.ThinkingLevel{"low", "high"}},
+			{Ref: "p/b", Name: "Beta", ThinkingLevels: []agent.ThinkingLevel{"medium"}},
+		}
+		a.current.model, a.current.thinking, a.current.running = "p/a", "high", running
+		tt := ui.NewTester(a.view, 900, 600)
+		tt.Advance(time.Second)
+		return a, tt
+	}
+
+	a, tt := newPicker(false)
+	if err := tt.Click("模型"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(time.Second)
+	tt.Key(0, ui.KeyDown)
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(time.Second)
+	if a.current.model != "p/b" || a.current.thinking != "medium" {
+		t.Errorf("选择 = %q %q，期望 p/b 与 Beta 支持的 medium", a.current.model, a.current.thinking)
+	}
+
+	_, tt = newPicker(true)
+	_ = tt.Click("模型")
+	tt.Advance(time.Second)
+	if tt.HasText("Beta") {
+		t.Error("运行中模型选择器不应打开")
+	}
+}
