@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // read 的结果附带实际返回的窗口（起止行与总行数），界面靠它显示真实行号；
@@ -17,7 +19,7 @@ func TestReadDetails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte(lines), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for params, want := range map[string]ReadDetails{
+	for params, want := range map[string]protocol.ReadDetails{
 		`{"path":"a.txt"}`:                       {Start: 1, End: 10, Total: 10},
 		`{"path":"a.txt","offset":3,"limit":4}`:  {Start: 3, End: 6, Total: 10},
 		`{"path":"a.txt","offset":9,"limit":50}`: {Start: 9, End: 10, Total: 10},
@@ -26,7 +28,7 @@ func TestReadDetails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var got ReadDetails
+		var got protocol.ReadDetails
 		if err := json.Unmarshal(result.Details, &got); err != nil {
 			t.Fatal(err)
 		}

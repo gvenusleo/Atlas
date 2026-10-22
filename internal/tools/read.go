@@ -11,6 +11,7 @@ import (
 
 	"github.com/gvenusleo/atlas/internal/agent"
 	"github.com/gvenusleo/atlas/internal/imaging"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // 定义文本读取预算与默认行数。
@@ -24,16 +25,6 @@ type readArgs struct {
 	Path   string `json:"path"`
 	Offset int    `json:"offset"`
 	Limit  int    `json:"limit"`
-}
-
-// ReadDetails 是 read 读取文本时随结果附带的结构化数据，供界面渲染，不发给模型。
-// 它是实际返回的窗口，而不是请求的：默认值与返回预算都已计入。
-type ReadDetails struct {
-	// Start 与 End 是实际返回的第一行与最后一行的行号（从 1 起）；空文件时 End 为 0。
-	Start int `json:"start"`
-	End   int `json:"end"`
-	// Total 是文件的总行数。
-	Total int `json:"total"`
 }
 
 // Read 构造 read tool；workdir 应为工作目录绝对路径，相对路径以此为基准。
@@ -133,12 +124,12 @@ func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 
 // readText 按行选取文本，超过返回预算时只保留完整行并给出续读位置；
 // 同时返回实际返回的窗口。
-func readText(text string, offset, limit int) (string, ReadDetails, error) {
+func readText(text string, offset, limit int) (string, protocol.ReadDetails, error) {
 	if text == "" {
 		if offset != 1 {
-			return "", ReadDetails{}, errors.New("文件为空, offset 只能为 1")
+			return "", protocol.ReadDetails{}, errors.New("文件为空, offset 只能为 1")
 		}
-		return "", ReadDetails{Start: 1}, nil
+		return "", protocol.ReadDetails{Start: 1}, nil
 	}
 
 	total := strings.Count(text, "\n") + 1
@@ -147,7 +138,7 @@ func readText(text string, offset, limit int) (string, ReadDetails, error) {
 		total--
 	}
 	if offset > total {
-		return "", ReadDetails{}, fmt.Errorf("offset=%d 超出文件范围，共 %d 行", offset, total)
+		return "", protocol.ReadDetails{}, fmt.Errorf("offset=%d 超出文件范围，共 %d 行", offset, total)
 	}
 
 	count := min(limit, readMaxLines, total-offset+1)
@@ -176,7 +167,7 @@ func readText(text string, offset, limit int) (string, ReadDetails, error) {
 	}
 
 	if len(selected) == 0 {
-		return "", ReadDetails{}, fmt.Errorf("第 %d 行超过 50 KiB", offset)
+		return "", protocol.ReadDetails{}, fmt.Errorf("第 %d 行超过 50 KiB", offset)
 	}
 
 	end := offset + len(selected) - 1
@@ -187,5 +178,5 @@ func readText(text string, offset, limit int) (string, ReadDetails, error) {
 			offset, end, total, end+1,
 		)
 	}
-	return output, ReadDetails{Start: offset, End: end, Total: total}, nil
+	return output, protocol.ReadDetails{Start: offset, End: end, Total: total}, nil
 }

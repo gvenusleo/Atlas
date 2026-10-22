@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // write 覆盖已有文件时，结果附带被覆盖的内容，界面靠它画对比；空文件也是旧内容。
@@ -18,13 +20,13 @@ func TestWriteDetailsOld(t *testing.T) {
 	for _, tt := range []struct {
 		file string
 		old  []byte // nil 表示文件原本不存在
-		want WriteDetails
+		want protocol.WriteDetails
 	}{
-		{"new.txt", nil, WriteDetails{}},
-		{"text.txt", []byte("旧\n"), WriteDetails{Overwrote: true, Old: new("旧\n")}},
-		{"empty.txt", []byte{}, WriteDetails{Overwrote: true, Old: new("")}},
-		{"binary.bin", []byte{0xff, 0xfe}, WriteDetails{Overwrote: true}},
-		{"big.txt", bytes.Repeat([]byte("x"), maxOldBytes+1), WriteDetails{Overwrote: true}},
+		{"new.txt", nil, protocol.WriteDetails{}},
+		{"text.txt", []byte("旧\n"), protocol.WriteDetails{Overwrote: true, Old: new("旧\n")}},
+		{"empty.txt", []byte{}, protocol.WriteDetails{Overwrote: true, Old: new("")}},
+		{"binary.bin", []byte{0xff, 0xfe}, protocol.WriteDetails{Overwrote: true}},
+		{"big.txt", bytes.Repeat([]byte("x"), maxOldBytes+1), protocol.WriteDetails{Overwrote: true}},
 	} {
 		path := filepath.Join(dir, tt.file)
 		if tt.old != nil {
@@ -37,7 +39,7 @@ func TestWriteDetailsOld(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: 写入失败: %v", tt.file, err)
 		}
-		var got WriteDetails
+		var got protocol.WriteDetails
 		if err := json.Unmarshal(result.Details, &got); err != nil {
 			t.Fatal(err)
 		}

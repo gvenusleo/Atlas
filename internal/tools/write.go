@@ -11,19 +11,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // maxOldBytes 是覆盖时随结果附带的旧内容的大小上限；更大的文件不附带。
 const maxOldBytes = 256 << 10
-
-// WriteDetails 是 write 随结果附带的结构化数据，供界面渲染，不发给模型。
-type WriteDetails struct {
-	// Overwrote 为真表示覆盖了已有的文件，否则是新建。
-	Overwrote bool `json:"overwrote"`
-	// Old 是被覆盖前的内容，界面靠它显示对比；文件超过 maxOldBytes、不是有效的 UTF-8
-	// 文本或读不出来时为空，界面只显示新内容。
-	Old *string `json:"old,omitzero"`
-}
 
 // writeArgs 是 write tool 的输入；Content 用指针区分参数与空内容。
 type writeArgs struct {
@@ -104,7 +96,7 @@ func writeFile(ctx context.Context, workdir string, params jsontext.Value) (agen
 		return agent.ToolResult{}, fmt.Errorf("%s 写入失败: %w", path, err)
 	}
 
-	details, err := json.Marshal(WriteDetails{Overwrote: existed, Old: old})
+	details, err := json.Marshal(protocol.WriteDetails{Overwrote: existed, Old: old})
 	if err != nil {
 		return agent.ToolResult{}, err
 	}

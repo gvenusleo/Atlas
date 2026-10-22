@@ -10,7 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
-	"github.com/gvenusleo/atlas/internal/tools"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 const (
@@ -52,14 +52,14 @@ type toolArgs struct {
 type callView struct {
 	src            string // 解析的参数原文
 	args           toolArgs
-	edits          []editDiff          // 编辑各处替换的行级对比，与 args.Edits 一一对应
-	starts         []int               // 编辑各处替换在原文件中的起始行，来自结果附带的数据
-	overwrote      bool                // 写入覆盖了已有的文件，来自结果附带的数据
-	old            *string             // 覆盖前的内容，来自结果附带的数据；没有时为空
-	window         tools.ReadDetails   // 读取实际返回的窗口，来自结果附带的数据
-	added, removed int                 // 写入与编辑增删的行数
-	code           *editor.State       // 命令、读取或覆盖写入的内容的只读视图
-	diffs          []*editor.DiffState // 写入与编辑的对比
+	edits          []editDiff           // 编辑各处替换的行级对比，与 args.Edits 一一对应
+	starts         []int                // 编辑各处替换在原文件中的起始行，来自结果附带的数据
+	overwrote      bool                 // 写入覆盖了已有的文件，来自结果附带的数据
+	old            *string              // 覆盖前的内容，来自结果附带的数据；没有时为空
+	window         protocol.ReadDetails // 读取实际返回的窗口，来自结果附带的数据
+	added, removed int                  // 写入与编辑增删的行数
+	code           *editor.State        // 命令、读取或覆盖写入的内容的只读视图
+	diffs          []*editor.DiffState  // 写入与编辑的对比
 }
 
 // view 返回调用的展示数据；参数没变时沿用上次的。
@@ -73,10 +73,10 @@ func (it *item) view() *callView {
 	}
 	switch it.tool {
 	case "read":
-		v.window = it.decoded[tools.ReadDetails]()
+		v.window = it.decoded[protocol.ReadDetails]()
 	case "write":
 		v.added = lineCount(v.args.Content)
-		details := it.decoded[tools.WriteDetails]()
+		details := it.decoded[protocol.WriteDetails]()
 		v.overwrote, v.old = details.Overwrote, details.Old
 		if v.old != nil {
 			// 有旧内容时画真正的对比，增删的行数也由它算出。
@@ -90,7 +90,7 @@ func (it *item) view() *callView {
 			v.edits = append(v.edits, d)
 			v.added, v.removed = v.added+d.added, v.removed+d.removed
 		}
-		v.starts = it.decoded[tools.EditDetails]().Starts
+		v.starts = it.decoded[protocol.EditDetails]().Starts
 	}
 	it.call = v
 	return v

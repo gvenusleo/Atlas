@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gvenusleo/atlas/internal/agent"
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // editArgs 是 edit tool 的输入；所有编辑替换都针对同一份原文件。
@@ -24,12 +25,6 @@ type editArgs struct {
 type textEdit struct {
 	OldText string  `json:"oldText"`
 	NewText *string `json:"newText"`
-}
-
-// EditDetails 是 edit 随结果附带的结构化数据，供界面渲染，不发给模型。
-type EditDetails struct {
-	// Starts 是各处替换在原文件中的起始行（从 1 起），顺序与 edits 一致。
-	Starts []int `json:"starts"`
 }
 
 // matchedEdit 保存原文中的字节区间与输入下标。
@@ -142,7 +137,7 @@ func editFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, fmt.Errorf("%s 写入失败: %w", path, err)
 	}
 
-	details, err := json.Marshal(EditDetails{Starts: starts})
+	details, err := json.Marshal(protocol.EditDetails{Starts: starts})
 	if err != nil {
 		return agent.ToolResult{}, err
 	}

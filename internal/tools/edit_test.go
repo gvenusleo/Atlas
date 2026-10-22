@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
 // edit 的结果附带各处替换在原文件中的起始行（按 edits 的顺序），界面靠它显示真实行号。
@@ -22,7 +24,7 @@ func TestEditDetails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var details EditDetails
+	var details protocol.EditDetails
 	if err := json.Unmarshal(result.Details, &details); err != nil {
 		t.Fatal(err)
 	}
