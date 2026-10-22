@@ -56,9 +56,9 @@ type block struct{ items []*item }
 // chat 是一个会话的界面状态；每个会话各有一份，可以同时运行。
 type chat struct {
 	key     string        // 本地稳定标识，会话创建前后保持不变
-	id      string        // 持久化会话 ID，空表示尚未创建
+	id      string        // 会话 ID，空表示会话还没准备好（新会话刚打开）
 	cwd     string        // 会话工作目录
-	session *host.Session // 空表示尚未创建或需要重新恢复
+	session *host.Session // 会话的模型、技能等配置都以它为准；空表示还没准备好
 	items   []*item
 	live    []*item // 当前助手消息已流出的内容块，定稿时对账
 	tail    *item   // 当前消息开始流出时的最后一个显示项；重试时丢弃它之后的半截内容
@@ -66,8 +66,9 @@ type chat struct {
 	next    int
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	paging  bool  // 正在加载更早的记录
-	// resuming 是已有会话正在后台恢复；switching 是正在让会话换模型。两者期间不能发送或换模型。
-	resuming, switching bool
+	// opening 是会话正在后台准备：恢复已有的，或为新会话建草稿；switching 是正在让会话换模型或
+	// 工作目录。两者期间不能发送，也不能换模型。
+	opening, switching bool
 	// seekSeq 是目录要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
 	// 0 表示没有。
 	seekSeq int64
@@ -84,18 +85,11 @@ type chat struct {
 	err         string
 	unread      bool // 在别的会话时运行结束，用户还没回来看过
 
-	// 还没有会话时，后台发现的工作目录下的技能，供命令列表；skillsCwd 是它对应的工作目录。
-	skills    []skills.Skill
-	skillsCwd string
-	menu      menuState  // 输入框上方补全列表的状态
-	index     pathIndex  // 工作目录下的路径，@ 补全与文件面板的筛选共用
-	files     *filePanel // 文件面板，第一次打开时才建
+	menu  menuState  // 输入框上方补全列表的状态
+	index pathIndex  // 工作目录下的路径，@ 补全与文件面板的筛选共用
+	files *filePanel // 文件面板，第一次打开时才建
 
-	// 模型与思考深度的草稿：还没有会话时（新会话创建前，或已有会话正在恢复）界面上的选择。
-	// 有会话时以会话的 LoopContext 为准，见 selection。
-	model    string
-	thinking agent.ThinkingLevel
-	usage    int64 // 最近一次响应结束时的上下文词元数
+	usage int64 // 最近一次响应结束时的上下文词元数
 
 	// 会话的终端面板：各个标签、当前标签、是否显示，以及创建失败的原因。
 	terms      []*shell
@@ -107,13 +101,12 @@ type chat struct {
 	expanded sidePanel // 扩展到整个主区的面板；没有时为 noPanel
 }
 
-// selection 是会话当前的模型与思考深度：有会话时取自它的 LoopContext，还没有时是草稿。
-func (ch *chat) selection() (string, agent.ThinkingLevel) {
+// fresh 报告会话是不是还没有保存的新会话：第一条消息保存前，它还只在内存里。
+func (ch *chat) fresh() bool {
 	if ch.session != nil {
-		state := ch.session.State()
-		return state.ModelRef, state.ThinkingLevel
+		return ch.session.State().Draft
 	}
-	return ch.model, ch.thinking
+	return ch.id == ""
 }
 
 // add 追加一个已定稿的显示项。
@@ -342,13 +335,12 @@ func splitUser(m agent.UserMessage) (typed []agent.Content, skill, content strin
 	return typed, skill, content
 }
 
-// skillList 返回会话的技能：会话已存在时取它的快照，与模型看到的技能目录同一份；
-// 还没有会话时（新会话，或尚未恢复的旧会话）取后台发现的。
+// skillList 返回会话的技能：取会话的快照，与模型看到的技能目录同一份；会话还没准备好时没有。
 func (ch *chat) skillList() []skills.Skill {
-	if ch.session != nil {
-		return ch.session.State().Skills
+	if ch.session == nil {
+		return nil
 	}
-	return ch.skills
+	return ch.session.State().Skills
 }
 
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。

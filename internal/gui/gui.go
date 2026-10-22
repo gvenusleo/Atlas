@@ -111,6 +111,7 @@ func Run() error {
 		a.win.OnClose(func(e *mygo.CloseEvent) { a.confirmQuit(&e.Preventable) })
 		a.refresh()
 		a.loadModels()
+		a.start(a.current)
 	})
 	return mygo.App.Run()
 }
@@ -160,14 +161,14 @@ func newApp(h *host.Manager) *App {
 	return a
 }
 
-// newChat 切换到一个尚未创建的新会话。
+// newChat 切换到一个新会话：先是空白的，会话在后台准备好才能发送。
 func (a *App) newChat() {
 	if !a.leave() {
 		return
 	}
 	a.keys++
 	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
-	a.useDefaultModel(a.current)
+	a.start(a.current)
 }
 
 // toggleSidebar 显示或隐藏侧栏。
@@ -189,7 +190,7 @@ func (a *App) open(id string) {
 	ch := &chat{key: "chat-" + strconv.Itoa(a.keys), id: id, loading: true}
 	for _, info := range a.infos {
 		if info.ID == id {
-			ch.cwd, ch.model, ch.thinking = info.Cwd, info.ModelRef, info.ThinkingLevel
+			ch.cwd = info.Cwd
 		}
 	}
 	a.chats[id], a.current = ch, ch
@@ -204,18 +205,21 @@ func (a *App) open(id string) {
 			ch.load(records)
 		})
 	}()
-	a.resume(ch)
+	a.start(ch)
 }
 
-// resume 在后台恢复已有会话：模型也在这时选定，上次用的失效就退到默认模型。失败时历史照常显示，
-// 错误显示在对话下方，发送时再试一次。
-func (a *App) resume(ch *chat) {
-	ch.resuming = true
-	id := ch.id
+// start 在后台准备会话：新会话建草稿，已有会话恢复，模型也在这时选定。失败时历史照常显示，
+// 错误显示在对话下方，发送时再试一次。窗口还没创建（启动时）先不做，创建窗口后再调用。
+func (a *App) start(ch *chat) {
+	if a.win == nil {
+		return
+	}
+	ch.opening = true
+	id, cwd := ch.id, ch.cwd
 	go func() {
-		s, err := a.host.Resume(context.Background(), id)
+		s, err := acquire(context.Background(), a.host, nil, id, cwd)
 		a.win.Update(func() {
-			ch.resuming = false
+			ch.opening = false
 			if err != nil {
 				ch.err = err.Error()
 				return
@@ -269,7 +273,7 @@ func (a *App) refresh() {
 	}()
 }
 
-// loadModels 读取可用的模型清单，并为尚未选择模型的空白会话填入默认值。
+// loadModels 读取可用的模型清单与有效的默认模型。
 func (a *App) loadModels() {
 	go func() {
 		catalog, err := a.host.Models(context.Background())
@@ -282,7 +286,6 @@ func (a *App) loadModels() {
 				return !m.Supported
 			})
 			a.defaultModel = catalog.DefaultModel
-			a.useDefaultModel(a.current)
 		})
 	}()
 }
@@ -296,12 +299,19 @@ func (a *App) modelInfo(ref string) (host.ModelInfo, bool) {
 	return a.models[i], true
 }
 
-// useDefaultModel 让尚未创建且没有选择模型的会话采用默认模型。
-func (a *App) useDefaultModel(ch *chat) {
-	if ch.id == "" && ch.model == "" {
-		ch.model = a.defaultModel
-		ch.thinking = a.fit(ch.model, ch.thinking)
+// selection 是会话当前的模型与思考深度，取自会话的 LoopContext，这是它们唯一的来源。会话还没准备好
+// 时只用来显示：已有会话取侧栏列表里存的，新会话取默认模型。
+func (a *App) selection(ch *chat) (string, agent.ThinkingLevel) {
+	if ch.session != nil {
+		state := ch.session.State()
+		return state.ModelRef, state.ThinkingLevel
 	}
+	for _, info := range a.infos {
+		if info.ID == ch.id {
+			return info.ModelRef, info.ThinkingLevel
+		}
+	}
+	return a.defaultModel, a.fit(a.defaultModel, "")
 }
 
 // fit 保证思考深度属于模型支持的档位，否则改用该模型的默认档位。
@@ -319,13 +329,9 @@ func (a *App) fit(model string, thinking agent.ThinkingLevel) agent.ThinkingLeve
 	return ""
 }
 
-// choose 采用界面上选的模型与思考深度：有会话就让会话在后台换，保存并校验，失败时选择器
-// 回到原来的；还没有会话时记进草稿。
+// choose 让会话在后台换成界面上选的模型与思考深度，保存并校验；失败时选择器回到原来的。
+// 会话准备好了才能选，见 pickable。
 func (a *App) choose(ch *chat, model string, thinking agent.ThinkingLevel) {
-	if ch.session == nil {
-		ch.model, ch.thinking = model, thinking
-		return
-	}
 	s := ch.session
 	ch.switching = true
 	go func() {
@@ -336,8 +342,30 @@ func (a *App) choose(ch *chat, model string, thinking agent.ThinkingLevel) {
 				ch.err = err.Error()
 			}
 			if errors.Is(err, host.ErrNeedsReload) {
-				a.reload(ch)
+				a.start(ch)
 			}
+		})
+	}()
+}
+
+// setCwd 给新会话换工作目录：会话准备好了就让它重建工具、提示词与技能目录；还没准备好
+// （或准备失败）时只记下，准备时用。
+func (a *App) setCwd(ch *chat, cwd string) {
+	if ch.session == nil {
+		ch.cwd, a.cwd = cwd, cwd
+		return
+	}
+	s := ch.session
+	ch.switching = true
+	go func() {
+		err := s.SetCwd(context.Background(), cwd)
+		a.win.Update(func() {
+			ch.switching = false
+			if err != nil {
+				ch.err = err.Error()
+				return
+			}
+			ch.cwd, a.cwd = cwd, cwd
 		})
 	}()
 }
@@ -363,7 +391,7 @@ func compactSession(ctx context.Context, s *host.Session, emit func(agent.Event)
 // （以 /技能名 开头时，会话会在原文后附上技能内容）；返回是否已受理。
 func (a *App) send(ch *chat, text string) bool {
 	text = strings.TrimSpace(text)
-	busy := ch.running || ch.loading || ch.resuming || ch.switching || ch.preparing > 0
+	busy := ch.running || ch.loading || ch.opening || ch.switching || ch.preparing > 0
 	if text == "" && len(ch.attachments) == 0 || busy {
 		return false
 	}
@@ -375,64 +403,58 @@ func (a *App) send(ch *chat, text string) bool {
 	case text != compactCommand || len(ch.attachments) > 0:
 		a.launch(ch, say(draftMessage(text, ch.attachments)))
 		ch.attachments = nil
-	case ch.id == "":
-		a.toast = host.ErrNothingToCompact.Error() // 新会话还没有历史，不为它创建会话
+	case ch.fresh():
+		a.toast = host.ErrNothingToCompact.Error() // 新会话还没有历史
 	default:
 		a.launch(ch, compactSession)
 	}
 	return true
 }
 
-// launch 在后台获取会话并执行 run，结束后更新界面；新会话创建后先采用草稿里选的模型，
-// 已有会话的选择在选的时候就应用了。
+// launch 在后台获取会话并执行 run，结束后更新界面。新会话在第一条消息保存时才写进库，
+// 这时刷新侧栏，它才会出现在列表里。
 func (a *App) launch(ch *chat, run job) {
 	ch.running, ch.err, ch.runStart = true, "", time.Now()
-	session, id, cwd := ch.session, ch.id, ch.cwd
-	model, thinking := ch.model, ch.thinking
+	session, id, cwd, fresh := ch.session, ch.id, ch.cwd, ch.fresh()
 	go func() {
 		ctx := context.Background()
 		s, err := acquire(ctx, a.host, session, id, cwd)
 		if err == nil {
 			a.win.Update(func() { a.attach(ch, s) })
-		}
-		if err == nil && id == "" {
-			err = useModel(ctx, s, model, thinking)
-		}
-		if err == nil {
 			err = run(ctx, s, func(e agent.Event) {
-				a.win.Update(func() { ch.apply(e) })
+				a.win.Update(func() {
+					ch.apply(e)
+					if fresh && userSaved(e) {
+						a.refresh()
+					}
+				})
 			})
 		}
 		a.win.Update(func() { a.finish(ch, err) })
 	}()
 }
 
-// acquire 返回可运行的会话：已有则复用，否则创建或恢复。
+// userSaved 报告事件是不是一条用户消息已经保存。
+func userSaved(e agent.Event) bool {
+	_, user := e.Message.(agent.UserMessage)
+	return user && e.Type == agent.EventTypeMessageEnd
+}
+
+// acquire 返回可用的会话：准备好了就复用；还没有或已失效时，新会话重新建，已有会话重新恢复。
 func acquire(
 	ctx context.Context, h *host.Manager, s *host.Session, id, cwd string,
 ) (*host.Session, error) {
 	switch {
-	case s != nil:
+	case s != nil && !s.State().NeedsReload:
 		return s, nil
 	case id == "":
-		return h.Create(ctx, cwd)
+		return h.New(ctx, cwd)
 	default:
 		return h.Resume(ctx, id)
 	}
 }
 
-// useModel 让会话采用界面上选定的模型与思考深度；未选择或没有变化时什么也不做。
-func useModel(
-	ctx context.Context, s *host.Session, model string, thinking agent.ThinkingLevel,
-) error {
-	state := s.State()
-	if model == "" || state.ModelRef == model && state.ThinkingLevel == thinking {
-		return nil
-	}
-	return s.SetModel(ctx, model, thinking)
-}
-
-// attach 记录会话句柄；新会话创建后登记到已打开的会话中。
+// attach 记录会话句柄；新会话准备好后登记到已打开的会话中。
 func (a *App) attach(ch *chat, s *host.Session) {
 	ch.session = s
 	if ch.id == "" {
@@ -442,14 +464,6 @@ func (a *App) attach(ch *chat, s *host.Session) {
 	state := s.State()
 	ch.cwd, a.cwd = state.Cwd, state.Cwd
 	a.refresh()
-}
-
-// reload 在会话状态失效后丢掉它并立刻重新恢复；失效前的模型与思考深度先记进草稿，
-// 恢复期间选择器不会跳回旧值。
-func (a *App) reload(ch *chat) {
-	ch.model, ch.thinking = ch.selection()
-	ch.session = nil
-	a.resume(ch)
 }
 
 // finish 在一轮对话结束后更新状态；用户主动停止不算错误。
@@ -464,14 +478,14 @@ func (a *App) finish(ch *chat, err error) {
 	}
 	ch.settle(cmp.Or(ch.err, "已中断"))
 	if errors.Is(err, host.ErrNeedsReload) {
-		a.reload(ch)
+		a.start(ch) // 会话状态失效了，立刻重新恢复；失效的会话留着，选择器照常显示它的模型
 	}
 	// 在别的会话时结束的运行，回到这个会话之前侧栏上标为未读。
 	ch.unread = ch != a.current && ch.err == ""
 	a.refresh()
 }
 
-// pickDir 让用户为尚未创建的会话选择工作目录。
+// pickDir 让用户为尚未保存的新会话选择工作目录。
 func (a *App) pickDir(ch *chat) {
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
@@ -483,6 +497,6 @@ func (a *App) pickDir(ch *chat) {
 		if err != nil || len(paths) == 0 {
 			return
 		}
-		a.win.Update(func() { ch.cwd, a.cwd = paths[0], paths[0] })
+		a.win.Update(func() { a.setCwd(ch, paths[0]) })
 	}()
 }

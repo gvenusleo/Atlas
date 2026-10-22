@@ -58,7 +58,7 @@ func draftMessage(text string, attachments []*attachment) agent.UserMessage {
 
 // acceptsImages 报告会话选定的模型是否接受图片输入。
 func (a *App) acceptsImages(ch *chat) bool {
-	model, _ := ch.selection()
+	model, _ := a.selection(ch)
 	info, ok := a.modelInfo(model)
 	return ok && info.Modalities.AcceptsImages()
 }

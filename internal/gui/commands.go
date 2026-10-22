@@ -3,8 +3,6 @@ package gui
 import (
 	"strings"
 	"unicode/utf8"
-
-	"github.com/gvenusleo/atlas/internal/host"
 )
 
 // compactCommand 是输入框里手动压缩上下文的命令。
@@ -38,19 +36,4 @@ func (ch *chat) commandCompletion(text string) completion {
 		}
 	}
 	return cur
-}
-
-// loadSkills 在后台发现 ch 的工作目录下的技能，供还没有会话时的命令列表使用；
-// 每个工作目录只发现一次，出错时当作没有。
-func (a *App) loadSkills(ch *chat) {
-	cwd := ch.cwd
-	ch.skills, ch.skillsCwd = nil, cwd
-	go func() {
-		list, _ := host.DiscoverSkills(cwd)
-		a.win.Update(func() {
-			if ch.skillsCwd == cwd { // 发现期间换了工作目录的，结果作废
-				ch.skills = list
-			}
-		})
-	}()
 }

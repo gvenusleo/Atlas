@@ -2,6 +2,7 @@ package gui
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -208,37 +209,33 @@ func TestViewShowsConversation(t *testing.T) {
 	}
 }
 
-// 选模型：思考深度随之改成新模型支持的档位；运行中选择器点不开。
-// 选中的值在 onChange 里读，不能是每帧重算的副本被覆盖之后的值。
-func TestPickModel(t *testing.T) {
-	newPicker := func(running bool) (*App, *ui.Tester) {
-		a := newApp(nil)
-		a.models = []host.ModelInfo{
-			{Ref: "p/a", Name: "Alpha", ThinkingLevels: []agent.ThinkingLevel{"low", "high"}},
-			{Ref: "p/b", Name: "Beta", ThinkingLevels: []agent.ThinkingLevel{"medium"}},
-		}
-		a.current.model, a.current.thinking, a.current.running = "p/a", "high", running
-		tt := ui.NewTester(a.view, 900, 600)
+// 下拉的值是每帧重算的副本，选中的值在 onChange 里读，不会被下一帧的重算覆盖；
+// disabled 时点不开。
+func TestDropdown(t *testing.T) {
+	var picked string
+	pick := func(disabled bool) *ui.Tester {
+		picked = ""
+		tt := ui.NewTester(func(c *ui.Context) {
+			theme := applyTheme(c)
+			value := "a"
+			dropdown(c, theme, "选择", &value, []string{"a", "b"}, strings.ToUpper, disabled,
+				func() { picked = value })
+		}, 400, 300)
 		tt.Advance(time.Second)
-		return a, tt
+		_ = tt.Click("选择")
+		tt.Advance(time.Second)
+		return tt
 	}
 
-	a, tt := newPicker(false)
-	if err := tt.Click("模型"); err != nil {
-		t.Fatal(err)
-	}
-	tt.Advance(time.Second)
+	tt := pick(false)
 	tt.Key(0, ui.KeyDown)
 	tt.Key(0, ui.KeyEnter)
 	tt.Advance(time.Second)
-	if a.current.model != "p/b" || a.current.thinking != "medium" {
-		t.Errorf("选择 = %q %q，期望 p/b 与 Beta 支持的 medium", a.current.model, a.current.thinking)
+	if picked != "b" {
+		t.Errorf("选中 = %q，期望 b", picked)
 	}
 
-	_, tt = newPicker(true)
-	_ = tt.Click("模型")
-	tt.Advance(time.Second)
-	if tt.HasText("Beta") {
-		t.Error("运行中模型选择器不应打开")
+	if tt := pick(true); tt.HasText("B") {
+		t.Error("disabled 的下拉不应打开")
 	}
 }

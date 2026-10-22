@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,5 +128,44 @@ func TestResumeWithoutUsableModel(t *testing.T) {
 	}
 	if s.State().NeedsReload {
 		t.Error("没有可用模型不应使会话失效")
+	}
+}
+
+// 新会话先只在内存里，库里没有它；第一条消息保存时才写进库，连同之前换的模型；
+// 写进库以后不能再换工作目录。没发过消息的新会话不在库里留下空记录。
+func TestNewSessionIsSavedWithFirstMessage(t *testing.T) {
+	m := openWith(t, `{"model": "p/a", "providers": {"p": {"api": "openai-responses",
+		"base_url": "http://x", "models": {"a": {}, "b": {}}}}}`)
+	s, err := m.New(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state := s.State(); !state.Draft || state.ModelRef != "p/a" {
+		t.Fatalf("State = %+v，期望是模型 p/a 的草稿", state)
+	}
+	if _, err := m.Get(t.Context(), s.id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("发消息之前 Get = %v，期望库里没有", err)
+	}
+	dir := t.TempDir()
+	if err := s.SetCwd(t.Context(), dir); err != nil || s.State().Cwd != dir {
+		t.Fatalf("草稿换工作目录：%v，Cwd = %q，期望 %q", err, s.State().Cwd, dir)
+	}
+	if err := s.SetModel(t.Context(), "p/b", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	s.loop.Stream = reply
+	if _, err := s.Run(t.Context(), user(), nil); err != nil {
+		t.Fatal(err)
+	}
+	info, err := m.Get(t.Context(), s.id)
+	if err != nil || info.ModelRef != "p/b" || info.Cwd != dir {
+		t.Errorf("发消息之后 Get = %+v（%v），期望存下 p/b 与换过的工作目录", info, err)
+	}
+	if records, err := m.History(t.Context(), s.id, 0, 10); err != nil || len(records) != 3 {
+		t.Errorf("历史 = %d 条（%v），期望提示词快照、用户消息、助手消息", len(records), err)
+	}
+	if err := s.SetCwd(t.Context(), dir); !errors.Is(err, ErrNotDraft) {
+		t.Errorf("保存之后换工作目录 = %v，期望 ErrNotDraft", err)
 	}
 }

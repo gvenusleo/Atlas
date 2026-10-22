@@ -81,17 +81,14 @@ func (m *menuState) placeCaret(input ui.Element) {
 }
 
 // completionOf 返回输入框里正在补全的词：以 / 开头且还没有空白的整段文本是命令，
-// 否则光标处的 @ 词是文件。加载中或被 Esc 关掉时没有。命令列表里的技能与 @ 的路径，
-// 都在第一次用到时才在后台取。
+// 否则光标处的 @ 词是文件。加载中或被 Esc 关掉时没有。命令列表里的技能取自会话，
+// @ 的路径在第一次用到时才在后台取。
 func (a *App) completionOf(ch *chat, input ui.Element) completion {
 	text := ch.input
 	switch {
 	case ch.loading || text == ch.menu.closed:
 		return completion{}
 	case strings.HasPrefix(text, "/") && !strings.ContainsAny(text, " \t\r\n"):
-		if ch.session == nil && ch.skillsCwd != ch.cwd {
-			a.loadSkills(ch)
-		}
 		return ch.commandCompletion(text)
 	}
 	return a.mentionCompletion(ch, input)

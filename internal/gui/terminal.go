@@ -141,11 +141,11 @@ func (ch *chat) closePanels() {
 	}
 }
 
-// leave 在离开一个尚未创建的空白会话前关闭它的终端与文件面板：之后再也回不到它。文件面板里
+// leave 在离开一个还没有保存的空白会话前关闭它的终端与文件面板：之后再也回不到它。文件面板里
 // 有没保存的修改时不离开，提示一声并返回 false。
 func (a *App) leave() bool {
 	ch := a.current
-	if ch == nil || ch.id != "" || ch.running {
+	if ch == nil || !ch.fresh() || ch.running {
 		return true
 	}
 	if n := ch.dirtyTabs(); n > 0 {

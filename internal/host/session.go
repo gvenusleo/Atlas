@@ -105,22 +105,20 @@ func (m *Manager) unregister(s *Session) {
 	m.mu.Unlock()
 }
 
-// Create 加载配置与资源，保存首个提示词快照并发布会话实例。
-func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
-	ctx, end, err := m.begin(ctx)
+// New 建一个新会话：加载配置与资源，选好模型，但还只在内存里（State.Draft），不写库。
+// 第一条消息保存时才把它连同提示词快照写进库（见 save），所以没发过消息的新会话不会在库里
+// 留下空记录；之前可以用 SetModel 换模型、用 SetCwd 换工作目录。模型选不出或配不起来也照常
+// 建好，见 chooseModel。
+func (m *Manager) New(ctx context.Context, cwd string) (*Session, error) {
+	_, end, err := m.begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer end()
+	if err := checkWorkdir(cwd); err != nil {
+		return nil, err
+	}
 	settings, err := config.Load()
-	if err != nil {
-		return nil, err
-	}
-	ref, thinking, err := pickModel(settings, "", "")
-	if err != nil {
-		return nil, err
-	}
-	model, err := modelConfig(settings, ref, thinking)
 	if err != nil {
 		return nil, err
 	}
@@ -128,34 +126,63 @@ func (m *Manager) Create(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	ref, thinking, model := chooseModel(settings, "", "")
 	id := uuid.NewV7().String()
-	s := &Session{
-		manager: m,
-		id:      id,
-		done:    make(chan struct{}),
-		state:   State{ID: id, Busy: true, NeedsReload: true},
-	}
-	m.mu.Lock()
-	m.sessions[id] = s
-	m.mu.Unlock()
-	defer func() {
-		if s.State().NeedsReload {
-			m.unregister(s)
-		}
-		s.finish()
-	}()
-	info, err := m.store.Create(ctx, session.CreateOptions{
-		ID:            id,
-		Cwd:           cwd,
-		ModelRef:      ref,
-		ThinkingLevel: thinking,
-		SystemPrompt:  resources.SystemPrompt,
-	})
-	if err != nil {
-		return nil, err
-	}
+	s := &Session{manager: m, id: id, state: State{ID: id, Draft: true}}
+	info := session.Info{ID: id, Cwd: cwd, ModelRef: ref, ThinkingLevel: thinking}
 	s.bind(session.Loaded{Info: info}, model, resources)
 	return s, nil
+}
+
+// SetCwd 给草稿会话换工作目录：工具、提示词与技能目录都按新目录重建。已经保存过的会话不能换。
+func (s *Session) SetCwd(ctx context.Context, cwd string) error {
+	_, end, err := s.manager.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer end()
+	if err := s.start(false, nil); err != nil {
+		return err
+	}
+	defer s.finish()
+	if !s.state.Draft {
+		return ErrNotDraft
+	}
+	if err := checkWorkdir(cwd); err != nil {
+		return err
+	}
+	resources, err := prompt.Build(cwd)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.loop.SystemPrompt, s.loop.Skills = resources.SystemPrompt, resources.Skills
+	s.loop.Tools = toolset(cwd)
+	s.state.Cwd = cwd
+	s.mu.Unlock()
+	return nil
+}
+
+// persistDraft 在草稿会话保存第一条消息前把它写进库：会话表一行，加提示词快照，并登记实例。
+func (s *Session) persistDraft(ctx context.Context) error {
+	if !s.state.Draft {
+		return nil
+	}
+	info, err := s.manager.store.Create(ctx, session.CreateOptions{
+		ID: s.id, Cwd: s.state.Cwd, ModelRef: s.loop.Model, ThinkingLevel: s.loop.ThinkingLevel,
+		SystemPrompt: s.loop.SystemPrompt,
+	})
+	if err != nil {
+		return err
+	}
+	s.seq = info.LastSeq
+	s.manager.mu.Lock()
+	s.manager.sessions[s.id] = s
+	s.manager.mu.Unlock()
+	s.mu.Lock()
+	s.state.Draft = false
+	s.mu.Unlock()
+	return nil
 }
 
 // Resume 每次在同一实例上重新初始化，慢操作不持有 Manager 全局锁。
@@ -184,20 +211,16 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 上次用的模型失效了就退到默认模型，再退到第一个可用的（见 pickModel）；变了就存进会话表。
-	// 选不出模型、或配不起来（缺凭据等），也不挡着恢复：会话照常打开，用户可以换模型，
-	// 要运行时再试一次并报原因（见 execute）。
-	var model modelSetup
-	ref, thinking, err := pickModel(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
-	if err != nil {
+	// 上次用的模型失效了就退到别的（见 chooseModel），变了就存进会话表；一个可用的都没有时
+	// 保留原来的。
+	ref, thinking, model := chooseModel(settings, loaded.Info.ModelRef, loaded.Info.ThinkingLevel)
+	switch {
+	case ref == "":
 		ref, thinking = loaded.Info.ModelRef, loaded.Info.ThinkingLevel
-	} else {
-		if ref != loaded.Info.ModelRef || thinking != loaded.Info.ThinkingLevel {
-			if err := m.store.UpdateSettings(ctx, id, ref, thinking); err != nil {
-				return nil, err
-			}
+	case ref != loaded.Info.ModelRef || thinking != loaded.Info.ThinkingLevel:
+		if err := m.store.UpdateSettings(ctx, id, ref, thinking); err != nil {
+			return nil, err
 		}
-		model, _ = modelConfig(settings, ref, thinking)
 	}
 	loaded.Info.ModelRef, loaded.Info.ThinkingLevel = ref, thinking
 	if err := checkWorkdir(loaded.Info.Cwd); err != nil {
@@ -226,17 +249,21 @@ func (m *Manager) Resume(ctx context.Context, id string) (*Session, error) {
 	return s, nil
 }
 
+// toolset 是会话的工具，都以工作目录 cwd 为根。
+func toolset(cwd string) []agent.Tool {
+	return []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
+}
+
 // bind 发布前或在操作锁内更新配置；控制状态最后一次性发布。
 func (s *Session) bind(loaded session.Loaded, model modelSetup, resources prompt.Resources) {
 	cwd := loaded.Info.Cwd
 	info := loaded.Info
-	toolset := []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
 	s.seq = info.LastSeq
 	s.mu.Lock()
 	s.loop = agent.LoopContext{
 		SystemPrompt:  resources.SystemPrompt,
 		Messages:      loaded.Messages,
-		Tools:         toolset,
+		Tools:         toolset(cwd),
 		Skills:        resources.Skills,
 		Model:         info.ModelRef,
 		Stream:        model.stream,
@@ -275,9 +302,11 @@ func (s *Session) SetModel(ctx context.Context, modelRef string, thinking agent.
 func (s *Session) setModel(
 	ctx context.Context, modelRef string, thinking agent.ThinkingLevel, model modelSetup,
 ) error {
-	if err := s.manager.store.UpdateSettings(ctx, s.id, modelRef, thinking); err != nil {
-		s.invalidate()
-		return errors.Join(ErrNeedsReload, err)
+	if !s.state.Draft { // 草稿还不在库里，保存第一条消息时一并写入
+		if err := s.manager.store.UpdateSettings(ctx, s.id, modelRef, thinking); err != nil {
+			s.invalidate()
+			return errors.Join(ErrNeedsReload, err)
+		}
 	}
 	s.mu.Lock()
 	s.loop.Model, s.loop.Stream, s.loop.ThinkingLevel = modelRef, model.stream, thinking

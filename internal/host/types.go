@@ -26,8 +26,10 @@ type State struct {
 	Busy          bool
 	Running       bool
 	NeedsReload   bool
-	Deleted       bool
-	Closed        bool
-	SystemPrompt  string
-	Skills        []skills.Skill
+	// Draft 表示会话还只在内存里：第一条消息保存时才写进库，之前可以换工作目录。
+	Draft        bool
+	Deleted      bool
+	Closed       bool
+	SystemPrompt string
+	Skills       []skills.Skill
 }

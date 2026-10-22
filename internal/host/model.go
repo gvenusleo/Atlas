@@ -97,6 +97,20 @@ func pickModel(
 		"没有可用的模型：请在 ~/.atlas/settings.json 的 providers 里声明模型，并用 model 指定默认模型")
 }
 
+// chooseModel 选出会话该用的模型并配好（见 pickModel）。一个可用的模型都没有时 ref 为空，配不起来
+// （缺凭据等）时 model 是零值，都不算失败：会话照常打开，用户可以换模型，要运行时再试一次并报原因
+// （见 execute）。
+func chooseModel(
+	settings *config.Settings, preferred string, thinking agent.ThinkingLevel,
+) (ref string, level agent.ThinkingLevel, model modelSetup) {
+	ref, level, err := pickModel(settings, preferred, thinking)
+	if err != nil {
+		return "", "", modelSetup{}
+	}
+	model, _ = modelConfig(settings, ref, level)
+	return ref, level, model
+}
+
 // fitLevel 返回 model 支持的思考档位：thinking 在其中就是它，否则是 model 的默认档，没有档位时为空。
 func fitLevel(model ModelInfo, thinking agent.ThinkingLevel) agent.ThinkingLevel {
 	switch {

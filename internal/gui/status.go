@@ -22,10 +22,10 @@ func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// folder 显示会话的工作目录；尚未创建的会话可以点击更换。
+// folder 显示会话的工作目录；还没有保存的新会话可以点击更换。
 func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	var row ui.Element
-	if ch.id == "" && !ch.running {
+	if ch.fresh() && !ch.running && !ch.opening && !ch.switching {
 		row = ui.ButtonBase(c).Cursor(ui.CursorPointer).Label("更换工作目录")
 		if row.Hovered() {
 			row.Background(rowFill(t))
@@ -56,9 +56,11 @@ func shortPath(path string) string {
 	return path
 }
 
-// pickable 报告现在能不能换模型：运行和切换期间不能；已有会话要等恢复好，换模型是对会话做的。
+// pickable 报告现在能不能换模型：换模型是对会话做的，要等会话准备好；运行、准备和切换期间不能，
+// 会话状态失效了也不能，要等重新恢复。
 func (ch *chat) pickable() bool {
-	return !ch.running && !ch.switching && (ch.session != nil || ch.id == "")
+	return ch.session != nil && !ch.running && !ch.opening && !ch.switching &&
+		!ch.session.State().NeedsReload
 }
 
 // modelPicker 选择会话使用的模型；模型清单没有加载时不显示。
@@ -76,7 +78,7 @@ func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		return ref
 	}
-	model, thinking := ch.selection()
+	model, thinking := a.selection(ch)
 	dropdown(c, t, "模型", &model, refs, name, !ch.pickable(), func() {
 		a.choose(ch, model, a.fit(model, thinking))
 	})
@@ -84,7 +86,7 @@ func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 
 // thinkingPicker 选择思考深度；模型不支持思考时不显示。
 func (a *App) thinkingPicker(c *ui.Context, t *ui.Theme, ch *chat) {
-	model, thinking := ch.selection()
+	model, thinking := a.selection(ch)
 	info, ok := a.modelInfo(model)
 	if !ok || len(info.ThinkingLevels) == 0 {
 		return
@@ -144,7 +146,7 @@ func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
 
 // contextRing 用圆环显示上下文窗口的占用，悬停时给出具体数字；窗口大小未知时不显示。
 func (a *App) contextRing(c *ui.Context, t *ui.Theme, ch *chat) {
-	model, _ := ch.selection()
+	model, _ := a.selection(ch)
 	info, ok := a.modelInfo(model)
 	if !ok || info.ContextWindow <= 0 {
 		return
