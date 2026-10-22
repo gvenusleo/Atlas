@@ -5,7 +5,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/gvenusleo/atlas/internal/mcp"
 	"github.com/gvenusleo/atlas/internal/session"
 )
 
@@ -25,7 +24,6 @@ var ErrNothingToCompact = errors.New("没有可压缩的内容")
 type Manager struct {
 	store      *session.Store
 	mu         sync.Mutex
-	mcp        *mcp.Manager // StartMCP 之前为空，受 mu 保护
 	sessions   map[string]*Session
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -77,9 +75,6 @@ func (m *Manager) Close(ctx context.Context) error {
 		m.cancel()
 		go func() {
 			m.operations.Wait()
-			if mm := m.mcpManager(); mm != nil {
-				mm.Close()
-			}
 			err := m.store.Close()
 			m.mu.Lock()
 			m.closeErr = err

@@ -10,7 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
-	"github.com/gvenusleo/atlas/internal/mcp"
 	"github.com/gvenusleo/atlas/internal/tools"
 )
 
@@ -142,9 +141,6 @@ func (it *item) title() (verb, subject, tip string) {
 	if !ok {
 		verbs = [2]string{"已调用", "正在调用"}
 		subject, tip = it.tool, it.tool
-		if server, tool, ok := mcp.SplitName(it.tool); ok {
-			subject = server + " · " + tool
-		}
 	}
 	verb = verbs[0]
 	if !it.done {

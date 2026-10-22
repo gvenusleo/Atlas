@@ -1,4 +1,4 @@
-// Package shellenv 向用户的登录 shell 取一份环境，给 shell 工具、MCP 服务器这类子进程用。
+// Package shellenv 向用户的登录 shell 取一份环境，给 shell 工具启动的子进程用。
 //
 // 从 Dock 或 Finder 启动的应用只有系统给的最小环境，没有 shell 配置文件里设置的 PATH 等变量，
 // 找不到 brew、mise、nvm 装的命令；从终端启动的应用则继承了终端的环境。

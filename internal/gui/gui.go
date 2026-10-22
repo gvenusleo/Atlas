@@ -111,7 +111,6 @@ func Run() error {
 		a.win.OnClose(func(e *mygo.CloseEvent) { a.confirmQuit(&e.Preventable) })
 		a.refresh()
 		a.loadModels()
-		a.startMCP()
 	})
 	return mygo.App.Run()
 }
