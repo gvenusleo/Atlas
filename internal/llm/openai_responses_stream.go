@@ -104,6 +104,8 @@ func consume(
 	calls := map[string]*pendingCall{}
 	var part [2]int64 // 上一个文字增量所在的输出项与内容块
 	text := false     // 上一个增量是文字
+	thought := false  // 已流出过思考
+	gap := false      // 一段思考摘要结束了，下一段开始前要补空行
 	for stream.Next() {
 		ev := stream.Current()
 		switch ev.Type { // wire 值的权威定义见 SDK 的 shared/constant 包。
@@ -117,10 +119,15 @@ func consume(
 			emit(agent.Delta{Type: agent.DeltaTypeText, Text: ev.Delta})
 		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
 			text = false
+			if gap {
+				emit(agent.Delta{Type: agent.DeltaTypeThinking, Text: "\n\n"})
+				gap = false
+			}
+			thought = true
 			emit(agent.Delta{Type: agent.DeltaTypeThinking, Text: ev.Delta})
 		case "response.reasoning_summary_part.done":
-			// 多段摘要之间补空行，供实时显示分段。
-			emit(agent.Delta{Type: agent.DeltaTypeThinking, Text: "\n\n"})
+			// 多段摘要之间补空行，供实时显示分段；等下一段开始才补，末尾不留空行。
+			gap = thought
 		case "response.output_item.added":
 			if fc, ok := ev.Item.AsAny().(responses.ResponseFunctionToolCall); ok {
 				// item ID 关联参数增量，call ID 关联后续工具结果，两者不能混用。
