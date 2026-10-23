@@ -57,7 +57,7 @@ func (a *App) fileTree(c *ui.Context, t *ui.Theme, ch *chat) {
 func (a *App) treeRowView(c *ui.Context, t *ui.Theme, ch *chat, r treeRow) {
 	row := ui.ButtonBase(c).Height(treeRowHeight).Justify(ui.Start).AlignItems(ui.Center).Gap(6).
 		Padding(0, 6, 0, 6+float32(r.depth)*treeIndent).Radius(controlRound).
-		Cursor(ui.CursorPointer).Label(r.name)
+		Cursor(ui.CursorPointer).Label(r.name).ContextMenu(a.pathMenu(ch, r.rel))
 	switch {
 	case !r.dir && ch.files.activePath() == filepath.Join(ch.cwd, r.rel):
 		row.Background(t.SurfaceHover)
@@ -114,7 +114,7 @@ func (a *App) filterResults(c *ui.Context, t *ui.Theme, ch *chat) {
 func (a *App) resultRow(c *ui.Context, t *ui.Theme, ch *chat, p string) {
 	dir, name := path.Split(p)
 	row := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(8).Padding(4, 6).
-		Radius(controlRound).Cursor(ui.CursorPointer).Label(p)
+		Radius(controlRound).Cursor(ui.CursorPointer).Label(p).ContextMenu(a.pathMenu(ch, p))
 	switch {
 	case ch.files.activePath() == filepath.Join(ch.cwd, p):
 		row.Background(t.SurfaceHover)
