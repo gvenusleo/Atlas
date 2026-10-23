@@ -23,8 +23,8 @@ type writeArgs struct {
 	Content *string `json:"content"`
 }
 
-// Write 构造 write tool；workdir 应为工作目录绝对路径，相对路径以此为基准。
-func Write(workdir string) agent.Tool {
+// Write 构造 write tool；cwd 应为工作目录绝对路径，相对路径以此为基准。
+func Write(cwd string) agent.Tool {
 	return agent.Tool{
 		Name: "write",
 		Description: "创建或完整覆盖 UTF-8 文本文件，自动创建父目录。" +
@@ -46,14 +46,16 @@ func Write(workdir string) agent.Tool {
 			},
 			"required": []string{"path", "content"},
 		},
-		Execute: func(ctx context.Context, _ string, params jsontext.Value) (agent.ToolResult, error) {
-			return writeFile(ctx, workdir, params)
+		Execute: func(
+			ctx context.Context, _ string, params jsontext.Value,
+		) (agent.ToolResult, error) {
+			return writeFile(ctx, cwd, params)
 		},
 	}
 }
 
 // writeFile 校验参数、创建父目录并完整写入文件。
-func writeFile(ctx context.Context, workdir string, params jsontext.Value) (agent.ToolResult, error) {
+func writeFile(ctx context.Context, cwd string, params jsontext.Value) (agent.ToolResult, error) {
 	var args writeArgs
 	if err := json.Unmarshal(params, &args); err != nil {
 		return agent.ToolResult{}, fmt.Errorf("参数无效: %w", err)
@@ -68,7 +70,7 @@ func writeFile(ctx context.Context, workdir string, params jsontext.Value) (agen
 		return agent.ToolResult{}, err
 	}
 
-	path := resolvePath(workdir, args.Path)
+	path := resolvePath(cwd, args.Path)
 	info, err := os.Stat(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return agent.ToolResult{}, fmt.Errorf("%s 检查失败: %w", path, err)

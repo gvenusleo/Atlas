@@ -1,9 +1,13 @@
-// Package core 是 Atlas 的核心，ACP 形态的提供端：管理本进程加载的会话，是会话运行时数据的
-// 唯一权威。GUI、ACP、WebSocket 都通过 Connect 拿到的 protocol.Agent 使用它。
+// Package core 是 Atlas 的核心：实现 protocol.Service，管理本进程加载的会话，是会话运行时
+// 数据的唯一权威。GUI 和以后的远程入口都通过 Connect 拿到的 protocol.Service 使用它。
 //
-// 历史只在一条消息定稿时写库；会话的上下文在写库之后用 agent.Fold 推进，所以始终等于库里的历史
-// 折叠出来的结果。会话的控制状态只有正在进行的操作（session.turn）。多个进程可以打开同一个库，
-// 同一会话的并发写入由序号检查发现：这一轮停止，下一轮开始前从库里重新加载。
+// 历史只在一条消息定稿时写库；会话的上下文在写库之后用 agent.Fold 推进，所以始终等于库里的
+// 历史折叠出来的结果。会话的控制状态只有它是否忙（session.busy）。一轮归会话所有，与发起它的
+// 连接无关。多个进程可以打开同一个库，但同一会话的并发写入是不支持的用法：写入时由序号检查
+// 发现，后写入的一方得到 ErrConflict，会话在本进程内失效。
+//
+// 包内分三块：会话运行（session.go、turn.go）、更新转换（updates.go，事件与消息到更新的
+// 纯函数）、模型解析（model.go）；persist.go 负责消息与记录之间的转换。
 package core
 
 import (
@@ -23,7 +27,7 @@ type Core struct {
 	mu       sync.Mutex
 	sessions map[string]*session // 本进程加载的会话
 	closing  bool
-	ops      sync.WaitGroup // 进行中的请求，Close 等它们结束再关库
+	working  sync.WaitGroup // 进行中的请求与一轮，Close 等它们结束再关库
 	// opening 让打开与卸载串行：同一会话不会被加载两次，也不会有连接订阅到正在卸载的会话上。
 	opening sync.Mutex
 }
@@ -34,12 +38,12 @@ func New(db *store.DB) *Core {
 	return &Core{db: db, ctx: ctx, cancel: cancel, sessions: make(map[string]*session)}
 }
 
-// Connect 为一个客户端建连接：它打开的会话的更新都推给 client。
-func (c *Core) Connect(client protocol.Client) protocol.Agent {
-	return &conn{core: c, client: client, sessions: map[string]*session{}}
+// Connect 为一个客户端建连接：它订阅的会话的更新都推给 sub。
+func (c *Core) Connect(sub protocol.Subscriber) protocol.Service {
+	return &conn{core: c, sub: sub}
 }
 
-// Close 不再接收请求，取消所有正在运行的一轮，等请求都结束后关库。ctx 到期时不再等，
+// Close 不再接收请求，取消所有正在运行的一轮，等请求和一轮都结束后关库。ctx 到期时不再等，
 // 返回它的错误，数据库留着不关。
 func (c *Core) Close(ctx context.Context) error {
 	c.mu.Lock()
@@ -48,7 +52,7 @@ func (c *Core) Close(ctx context.Context) error {
 	c.cancel()
 	done := make(chan struct{})
 	go func() {
-		c.ops.Wait()
+		c.working.Wait()
 		close(done)
 	}()
 	select {
@@ -66,8 +70,8 @@ func (c *Core) begin() (end func(), err error) {
 	if c.closing {
 		return nil, protocol.ErrClosed
 	}
-	c.ops.Add(1)
-	return c.ops.Done, nil
+	c.working.Add(1)
+	return c.working.Done, nil
 }
 
 // lookup 返回本进程加载的会话。
@@ -80,8 +84,8 @@ func (c *Core) lookup(id string) (*session, error) {
 	return nil, protocol.ErrNotFound
 }
 
-// open 让 client 订阅会话并返回它；会话没加载就从库里加载。
-func (c *Core) open(ctx context.Context, id string, client protocol.Client) (*session, error) {
+// open 让 sub 订阅会话并返回它；会话没加载就从库里加载。
+func (c *Core) open(ctx context.Context, id string, sub protocol.Subscriber) (*session, error) {
 	c.opening.Lock()
 	defer c.opening.Unlock()
 	s, err := c.lookup(id)
@@ -91,23 +95,34 @@ func (c *Core) open(ctx context.Context, id string, client protocol.Client) (*se
 		}
 		c.register(s)
 	}
-	s.subscribe(client)
+	s.subscribe(sub)
 	return s, nil
 }
 
-// add 登记新建的会话，并让 client 订阅它。
-func (c *Core) add(s *session, client protocol.Client) {
+// adopt 登记新建的会话，并让 sub 订阅它。
+func (c *Core) adopt(s *session, sub protocol.Subscriber) {
 	c.opening.Lock()
 	defer c.opening.Unlock()
 	c.register(s)
-	s.subscribe(client)
+	s.subscribe(sub)
 }
 
-// release 让 client 不再订阅会话；没有人看、也不在运行的会话卸载掉。
-func (c *Core) release(s *session, client protocol.Client) {
+// release 让 sub 不再订阅会话；没有订阅者且空闲的会话卸载掉。正忙的会话在操作结束时卸载：
+// 一轮结束时由 run 卸载，换模型这类快速操作结束时由对应的请求卸载。
+func (c *Core) release(s *session, sub protocol.Subscriber) {
 	c.opening.Lock()
 	defer c.opening.Unlock()
-	if s.unsubscribe(client) {
+	s.unsubscribe(sub)
+	if s.idle() {
+		c.forget(s)
+	}
+}
+
+// unloadIfIdle 在会话没有订阅者且空闲时卸载它。
+func (c *Core) unloadIfIdle(s *session) {
+	c.opening.Lock()
+	defer c.opening.Unlock()
+	if s.idle() {
 		c.forget(s)
 	}
 }

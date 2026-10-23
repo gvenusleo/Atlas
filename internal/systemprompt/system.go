@@ -1,5 +1,5 @@
-// Package prompt 加载指令和技能目录，组装 Atlas 的系统提示词。
-package prompt
+// Package systemprompt 加载指令和技能目录，组装 Atlas 的系统提示词。
+package systemprompt
 
 import (
 	"encoding/xml"
@@ -35,15 +35,15 @@ const baseSystemPrompt = `你是名为 Atlas 的通用助手，通过工具和�
 - 同一事项冲突时，优先级从高到低为：用户会话中的明确要求、任务所在目录的指令、上层目录的指令、全局指令；不冲突的指令继续生效。
 - 处理工作目录的子目录前，检查目标路径上是否有尚未加载的 AGENTS.md，并用 read 读取。`
 
-// Resources 是一次资源发现的结果，提示词和 skills 来自同一份快照。
+// Resources 是一次资源发现的结果，系统提示词和 skills 来自同一份快照。
 type Resources struct {
 	SystemPrompt string
 	Skills       []skills.Skill
 }
 
-// Build 在会话创建或恢复时组装提示词，并返回供会话和 App 共用的 skills 快照。
-func Build(workdir string) (Resources, error) {
-	cwd, err := filepath.Abs(workdir)
+// Build 在会话创建或恢复时组装系统提示词，并返回供会话和 App 共用的 skills 快照。
+func Build(cwd string) (Resources, error) {
+	cwd, err := filepath.Abs(cwd)
 	if err != nil {
 		return Resources{}, fmt.Errorf("工作目录解析失败: %w", err)
 	}

@@ -6,16 +6,17 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 2
+const schemaVersion = 4
 
 const schemaSQL = `
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
     cwd TEXT NOT NULL,
     model TEXT NOT NULL,
     thinking TEXT NOT NULL DEFAULT '',
     last_seq INTEGER NOT NULL DEFAULT 0 CHECK (last_seq >= 0),
+    context_from INTEGER NOT NULL DEFAULT 1 CHECK (context_from >= 1),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
@@ -24,11 +25,19 @@ CREATE INDEX sessions_cwd_updated ON sessions(cwd, updated_at DESC, id DESC);
 CREATE TABLE messages (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     seq INTEGER NOT NULL CHECK (seq > 0),
-    role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant', 'tool_result')),
+    kind TEXT NOT NULL CHECK (kind <> ''),
     body TEXT NOT NULL CHECK (json_valid(body) AND json_type(body) = 'object'),
     PRIMARY KEY (session_id, seq)
 ) STRICT;
-PRAGMA user_version = 2;
+CREATE INDEX messages_kind ON messages(session_id, kind, seq);
+CREATE TABLE blobs (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    hash TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    data BLOB NOT NULL,
+    PRIMARY KEY (session_id, hash)
+) STRICT;
+PRAGMA user_version = 4;
 `
 
 // initSchema 在事务中初始化空数据库，已有数据库只接受当前版本，不做迁移。

@@ -40,22 +40,15 @@ func MarshalMessage(message Message) ([]byte, error) {
 
 // UnmarshalMessage 恢复值类型消息；未知字段和类型明确报错。
 func UnmarshalMessage(data []byte) (Message, error) {
-	var header struct {
-		Role    Role          `json:"role"`
-		Content jsontext.Kind `json:"content"`
-	}
-	if err := json.Unmarshal(data, &header, json.WithUnmarshalers(contentKindUnmarshalers)); err != nil {
+	role, err := messageRole(data)
+	if err != nil {
 		return nil, err
 	}
-	if header.Role == RoleSystem && header.Content != '"' {
-		return nil, errors.New("系统消息正文必须是字符串")
+	opts := []json.Options{
+		json.RejectUnknownMembers(true), json.WithUnmarshalers(contentUnmarshalers),
 	}
-	if header.Role != RoleSystem && header.Content != '[' {
-		return nil, errors.New("消息内容必须是数组")
-	}
-	opts := []json.Options{json.RejectUnknownMembers(true), json.WithUnmarshalers(contentUnmarshalers)}
 	var message Message
-	switch header.Role {
+	switch role {
 	case RoleSystem:
 		var value struct {
 			Role Role `json:"role"`
@@ -93,12 +86,31 @@ func UnmarshalMessage(data []byte) (Message, error) {
 		}
 		message = value.ToolResultMessage
 	default:
-		return nil, fmt.Errorf("不支持消息角色 %q", header.Role)
+		return nil, fmt.Errorf("不支持消息角色 %q", role)
 	}
 	if err := ValidateMessage(message); err != nil {
 		return nil, err
 	}
 	return message, nil
+}
+
+// messageRole 读出消息的角色，并检查正文的形状：系统消息的正文是字符串，其余是数组。
+func messageRole(data []byte) (Role, error) {
+	var header struct {
+		Role    Role          `json:"role"`
+		Content jsontext.Kind `json:"content"`
+	}
+	err := json.Unmarshal(data, &header, json.WithUnmarshalers(contentKindUnmarshalers))
+	if err != nil {
+		return "", err
+	}
+	if header.Role == RoleSystem && header.Content != '"' {
+		return "", errors.New("系统消息正文必须是字符串")
+	}
+	if header.Role != RoleSystem && header.Content != '[' {
+		return "", errors.New("消息内容必须是数组")
+	}
+	return header.Role, nil
 }
 
 // 分派消息类型时只记录正文的起始类型，不复制完整正文。
@@ -168,7 +180,9 @@ var argumentUnmarshalers = json.UnmarshalFromFunc(
 		return nil
 	})
 
-var contentUnmarshalers = json.UnmarshalFromFunc(func(dec *jsontext.Decoder, content *Content) error {
+var contentUnmarshalers = json.UnmarshalFromFunc(func(
+	dec *jsontext.Decoder, content *Content,
+) error {
 	data, err := dec.ReadValue()
 	if err != nil {
 		return err
@@ -179,7 +193,9 @@ var contentUnmarshalers = json.UnmarshalFromFunc(func(dec *jsontext.Decoder, con
 	if err := json.Unmarshal(data, &header); err != nil {
 		return err
 	}
-	opts := []json.Options{json.RejectUnknownMembers(true), json.WithUnmarshalers(argumentUnmarshalers)}
+	opts := []json.Options{
+		json.RejectUnknownMembers(true), json.WithUnmarshalers(argumentUnmarshalers),
+	}
 	switch header.Type {
 	case "text":
 		var value struct {

@@ -32,8 +32,8 @@ type shellArgs struct {
 	Timeout jsontext.Value `json:"timeout"`
 }
 
-// Shell 构造 shell 工具；workdir 应为工作目录绝对路径，每次调用启动独立 shell。
-func Shell(workdir string) agent.Tool {
+// Shell 构造 shell 工具；cwd 应为工作目录绝对路径，每次调用启动独立 shell。
+func Shell(cwd string) agent.Tool {
 	return agent.Tool{
 		Name: "shell",
 		Description: shellDescription +
@@ -58,8 +58,10 @@ func Shell(workdir string) agent.Tool {
 			},
 			"required": []string{"command"},
 		},
-		Execute: func(ctx context.Context, _ string, params jsontext.Value) (agent.ToolResult, error) {
-			return runShell(ctx, workdir, params)
+		Execute: func(
+			ctx context.Context, _ string, params jsontext.Value,
+		) (agent.ToolResult, error) {
+			return runShell(ctx, cwd, params)
 		},
 	}
 }
@@ -89,7 +91,7 @@ func parseShellArgs(params jsontext.Value) (string, int64, error) {
 }
 
 // runShell 将输出直接写入临时文件；执行失败仍保留已产生的输出。
-func runShell(ctx context.Context, workdir string, params jsontext.Value) (agent.ToolResult, error) {
+func runShell(ctx context.Context, cwd string, params jsontext.Value) (agent.ToolResult, error) {
 	command, timeout, err := parseShellArgs(params)
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -109,7 +111,7 @@ func runShell(ctx context.Context, workdir string, params jsontext.Value) (agent
 	if err != nil {
 		return agent.ToolResult{}, err
 	}
-	cmd.Dir, cmd.Env = workdir, shellenv.Environ()
+	cmd.Dir, cmd.Env = cwd, shellenv.Environ()
 
 	output, err := os.CreateTemp("", "atlas-shell-*.log")
 	if err != nil {

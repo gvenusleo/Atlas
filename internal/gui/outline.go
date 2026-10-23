@@ -11,20 +11,20 @@ import (
 	"github.com/gvenusleo/atlas/internal/protocol"
 )
 
-// 会话目录的尺寸，单位为 DIP：outlineHeight 是最大高度，提问多时在里面滚动。
+// 会话大纲的尺寸，单位为 DIP：outlineHeight 是最大高度，提问多时在里面滚动。
 const (
 	outlineWidth  = 320
 	outlineHeight = 360
 )
 
-// outline 是一个会话的目录：标题栏上的下拉，每条提问一行，选一条就滚到那条提问。
+// outline 是一个会话的大纲：标题栏上的下拉，每条提问一行，选一条就滚到那条提问。
 type outline struct {
 	older   []prompt // 查到的、前面还没加载进对话的更早的提问，正序
 	fetched bool     // 已经去查过更早的提问
 	picked  int      // 下拉绑定的值，见 outlineButton
 }
 
-// prompt 是目录里的一条提问：已加载进对话的有显示项 ID，从历史里查到的只有记录序号。
+// prompt 是大纲里的一条提问：已加载进对话的有显示项 ID，从历史里查到的只有记录序号。
 type prompt struct {
 	id   int
 	seq  int64
@@ -33,7 +33,7 @@ type prompt struct {
 	row  int // 已加载的提问在消息列表里的行号；未加载的为 -1
 }
 
-// hasOutline 报告会话是否值得有目录：至少两条提问，或前面还有没加载的记录。
+// hasOutline 报告会话是否值得有大纲：至少两条提问，或前面还有没加载的记录。
 func (ch *chat) hasOutline() bool {
 	users := 0
 	for _, it := range ch.items {
@@ -44,7 +44,7 @@ func (ch *chat) hasOutline() bool {
 	return users >= 2 || ch.oldest > 1
 }
 
-// outlinePrompts 列出目录里的提问：先是还没加载的更早的，再是对话里的。查到之后又加载进来的，
+// outlinePrompts 列出大纲里的提问：先是还没加载的更早的，再是对话里的。查到之后又加载进来的，
 // 由对话里的那份取代，所以加载更早的记录不改变条数与顺序。
 func (ch *chat) outlinePrompts(blocks []block) []prompt {
 	var out []prompt
@@ -62,8 +62,8 @@ func (ch *chat) outlinePrompts(blocks []block) []prompt {
 	return out
 }
 
-// olderPrompts 把历史里查到的用户消息排成目录里的条目。
-func olderPrompts(entries []protocol.PromptEntry) []prompt {
+// olderPrompts 把历史里查到的用户消息排成大纲里的条目。
+func olderPrompts(entries []protocol.UserMessageSummary) []prompt {
 	out := make([]prompt, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, prompt{seq: e.Seq, at: e.At, row: -1, text: promptLine(e.Text, e.Images)})
@@ -71,7 +71,7 @@ func olderPrompts(entries []protocol.PromptEntry) []prompt {
 	return out
 }
 
-// promptLine 是提问在目录里的一行：文字的第一行；没有文字时，有图片是“[图片]”。
+// promptLine 是提问在大纲里的一行：文字的第一行；没有文字时，有图片是“[图片]”。
 func promptLine(text string, pictures bool) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
 	switch {
@@ -104,19 +104,19 @@ func (a *App) fetchOlder(ch *chat) {
 	o.fetched = true
 	id, before := ch.id, ch.oldest
 	go func() {
-		resp, err := a.agent.Prompts(context.Background(),
-			protocol.PromptsRequest{SessionID: id, Before: before})
+		resp, err := a.service.ListUserMessages(context.Background(),
+			protocol.ListUserMessagesRequest{SessionID: id, Before: before})
 		a.win.Update(func() {
 			if err != nil {
 				ch.err = err.Error()
 				return
 			}
-			o.older = olderPrompts(resp.Prompts)
+			o.older = olderPrompts(resp.Messages)
 		})
 	}()
 }
 
-// outlineButton 在标题栏画目录：一个下拉，每条提问一行，选一条就滚到它。下拉的键盘操作、
+// outlineButton 在标题栏画大纲：一个下拉，每条提问一行，选一条就滚到它。下拉的键盘操作、
 // 打开时滚到选中项、悬停高亮都由 mygo 的 Select 负责。
 func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	a.fetchOlder(ch)
@@ -130,7 +130,7 @@ func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	current := currentPrompt(prompts, top)
 
 	sel := ui.SelectBase(c.Key("outline"), &o.picked)
-	styleBarButton(c, t, sel.Trigger, 2, outlineIcon, "目录", sel.Open())
+	styleBarButton(c, t, sel.Trigger, 2, outlineIcon, "大纲", sel.Open())
 	sel.Popup(func(panel ui.Element) {
 		popupPanel(panel, t).Width(outlineWidth).Margin(6, 0, 6, 0)
 		ui.Scroll(c).MaxHeight(outlineHeight).Children(func() {
@@ -150,7 +150,7 @@ func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 }
 
-// outlineRow 画目录里的一行：提问的第一行文字，和它发出的时间；current 的一行文字用强调色。
+// outlineRow 画大纲里的一行：提问的第一行文字，和它发出的时间；current 的一行文字用强调色。
 func outlineRow(c *ui.Context, t *ui.Theme, item ui.Element, p prompt, current bool) {
 	item.Padding(5, 10).Radius(controlRound).AlignItems(ui.Center).Gap(10)
 	if item.Highlighted() {
@@ -168,7 +168,7 @@ func outlineRow(c *ui.Context, t *ui.Theme, item ui.Element, p prompt, current b
 	})
 }
 
-// jump 滚到目录里的一条提问，让它排在视野顶端。它还没加载进对话时，记下要跳到它，
+// jump 滚到大纲里的一条提问，让它排在视野顶端。它还没加载进对话时，记下要跳到它，
 // 由 loadOlder 一路加载过来，到了再由 seek 滚过去。
 func (ch *chat) jump(p prompt) {
 	if row := rowOf(ch.blocks(), p); row >= 0 {
@@ -189,7 +189,7 @@ func (ch *chat) seek(blocks []block) {
 	}
 }
 
-// rowOf 返回目录里的提问所在的行；还没加载进对话时为 -1。
+// rowOf 返回大纲里的提问所在的行；还没加载进对话时为 -1。
 func rowOf(blocks []block, p prompt) int {
 	return slices.IndexFunc(blocks, func(b block) bool {
 		it := b.items[0]

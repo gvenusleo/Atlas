@@ -1,4 +1,5 @@
-// Package store 用 SQLite 保存会话与它的历史。它只做存取，不懂上下文折叠与运行；
+// Package store 用 SQLite 保存会话与它的历史。它只存取不透明的记录正文和二进制，
+// 不理解消息内容，也不涉及上下文折叠与运行；
 // 多个进程可以同时打开同一个库，同一会话的并发写入由 Append 的序号检查发现。
 package store
 
@@ -13,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/config"
 	_ "modernc.org/sqlite"
 )
 
@@ -32,25 +31,20 @@ type DB struct {
 // Info 是会话的元信息，时间以 UTC 返回。
 type Info struct {
 	ID       string
-	Name     string
+	Title    string
 	Cwd      string
 	Model    string // 上次选的模型，provider/model-id
-	Thinking agent.ThinkingLevel
-	// LastSeq 是最后一条消息的序号，从 1 起；0 表示还没有消息。
-	LastSeq   int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Thinking string
+	// LastSeq 是最后一条记录的序号，从 1 起；0 表示还没有记录。
+	LastSeq int64
+	// ContextFrom 是上下文的起点：读出上下文只需要从这个序号开始的记录。
+	ContextFrom int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
-// Open 打开数据库；path 为空时使用 ~/.atlas/atlas.db。
+// Open 打开 path 指定的数据库，不存在时创建。
 func Open(ctx context.Context, path string) (*DB, error) {
-	if path == "" {
-		dir, err := config.Dir()
-		if err != nil {
-			return nil, err
-		}
-		path = filepath.Join(dir, "atlas.db")
-	}
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("数据库路径解析失败: %w", err)
@@ -101,28 +95,25 @@ func (d *DB) Close() error {
 	return d.db.Close()
 }
 
-// Create 建会话并在同一事务里写入最初的消息，返回带时间与 LastSeq 的元信息。
-func (d *DB) Create(ctx context.Context, info Info, first ...agent.Message) (Info, error) {
-	bodies, err := encodeAll(first)
-	if err != nil {
-		return Info{}, err
-	}
+// Create 建会话并在同一事务里写入最初的记录，返回带时间与 LastSeq 的元信息。
+func (d *DB) Create(ctx context.Context, info Info, first ...Entry) (Info, error) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	info.CreatedAt, info.UpdatedAt, info.LastSeq = now, now, int64(len(first))
+	info.CreatedAt, info.UpdatedAt = now, now
+	info.LastSeq, info.ContextFrom = int64(len(first)), 1
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Info{}, err
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions
-        (id, name, cwd, model, thinking, last_seq, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		info.ID, info.Name, info.Cwd, info.Model, info.Thinking, info.LastSeq,
-		now.UnixMilli(), now.UnixMilli()); err != nil {
+        (id, title, cwd, model, thinking, last_seq, context_from, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		info.ID, info.Title, info.Cwd, info.Model, info.Thinking, info.LastSeq,
+		info.ContextFrom, now.UnixMilli(), now.UnixMilli()); err != nil {
 		return Info{}, err
 	}
-	for i, m := range first {
-		if err := insert(ctx, tx, info.ID, int64(i+1), m.Role(), bodies[i]); err != nil {
+	for i, e := range first {
+		if err := insert(ctx, tx, info.ID, int64(i+1), e); err != nil {
 			return Info{}, err
 		}
 	}
@@ -132,7 +123,8 @@ func (d *DB) Create(ctx context.Context, info Info, first ...agent.Message) (Inf
 	return info, nil
 }
 
-const infoColumns = "id, name, cwd, model, thinking, last_seq, created_at, updated_at"
+const infoColumns = "id, title, cwd, model, thinking, last_seq, context_from, " +
+	"created_at, updated_at"
 
 type scanner interface {
 	Scan(...any) error
@@ -142,8 +134,8 @@ type scanner interface {
 func scanInfo(row scanner) (Info, error) {
 	var info Info
 	var created, updated int64
-	err := row.Scan(&info.ID, &info.Name, &info.Cwd, &info.Model, &info.Thinking,
-		&info.LastSeq, &created, &updated)
+	err := row.Scan(&info.ID, &info.Title, &info.Cwd, &info.Model, &info.Thinking,
+		&info.LastSeq, &info.ContextFrom, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Info{}, ErrNotFound
 	}
@@ -198,17 +190,17 @@ func (d *DB) List(ctx context.Context, cwd string, before *Cursor, limit int) ([
 }
 
 // SetModel 记下会话选的模型与思考深度。
-func (d *DB) SetModel(ctx context.Context, id, model string, thinking agent.ThinkingLevel) error {
+func (d *DB) SetModel(ctx context.Context, id, model, thinking string) error {
 	return d.change(ctx, `UPDATE sessions SET model = ?, thinking = ?,
         updated_at = max(updated_at, ?) WHERE id = ?`,
 		model, thinking, time.Now().UnixMilli(), id)
 }
 
-// Rename 改名；空名称表示清除名称。
-func (d *DB) Rename(ctx context.Context, id, name string) error {
+// Rename 改标题；空标题表示清除标题。
+func (d *DB) Rename(ctx context.Context, id, title string) error {
 	return d.change(ctx,
-		"UPDATE sessions SET name = ?, updated_at = max(updated_at, ?) WHERE id = ?",
-		name, time.Now().UnixMilli(), id)
+		"UPDATE sessions SET title = ?, updated_at = max(updated_at, ?) WHERE id = ?",
+		title, time.Now().UnixMilli(), id)
 }
 
 // Delete 删除会话，消息由外键级联删除。

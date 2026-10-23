@@ -47,8 +47,8 @@ func requestOf(req agent.StreamRequest) (responses.ResponseNewParams, error) {
 	return params, nil
 }
 
-// inputOf 先放入本次提示词，再转换请求历史；缺失工具结果临时补齐，失败或取消的响应跳过。
-// 历史中的 system 只允许通知与压缩记录，提示词快照与未知类型报错。
+// inputOf 先放入本次系统提示词，再转换请求历史；缺失工具结果临时补齐，失败或取消的响应跳过。
+// 历史中的 system 只允许压缩记录，系统提示词快照、通知与未知类型报错。
 // 图片允许出现在 user 消息与工具结果；assistant 图片报错而非丢弃。
 func inputOf(systemPrompt string, msgs []agent.Message) (responses.ResponseInputParam, error) {
 	var items responses.ResponseInputParam
@@ -70,15 +70,13 @@ func itemsOf(m agent.Message) ([]inputItem, error) {
 	switch v := m.(type) {
 	case agent.SystemMessage:
 		switch v.Type {
-		case agent.SystemMessageTypeNotice:
-			return []inputItem{textItem(responses.EasyInputMessageRoleSystem, v.Content)}, nil
 		case agent.SystemMessageTypeCompaction:
 			// 摘要以用户消息的身份回放，模型把它当作此前对话的交代而不是指令。
 			text := "此前的对话已压缩成下面的摘要：\n\n<summary>\n" + v.Content + "\n</summary>"
 			return []inputItem{textItem(responses.EasyInputMessageRoleUser, text)}, nil
-		case agent.SystemMessageTypePrompt:
-			return nil, errors.New("消息历史不能包含 system_prompt 提示词快照，" +
-				"请通过 SystemPrompt 传入本次提示词")
+		case agent.SystemMessageTypeSystemPrompt, agent.SystemMessageTypeNotice:
+			return nil, fmt.Errorf("消息历史不能包含 %s 记录：系统提示词请通过 SystemPrompt 传入，"+
+				"通知不属于上下文", v.Type)
 		default:
 			return nil, fmt.Errorf("消息历史中的未知 system 消息类型 %q", v.Type)
 		}

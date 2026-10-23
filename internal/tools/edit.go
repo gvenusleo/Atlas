@@ -35,8 +35,8 @@ type matchedEdit struct {
 	newText string
 }
 
-// Edit 构造 edit tool；workdir 应为工作目录绝对路径，相对路径以此为基准。
-func Edit(workdir string) agent.Tool {
+// Edit 构造 edit tool；cwd 应为工作目录绝对路径，相对路径以此为基准。
+func Edit(cwd string) agent.Tool {
 	return agent.Tool{
 		Name: "edit",
 		Description: "对现有 UTF-8 文本文件进行精确文本替换。" +
@@ -77,8 +77,10 @@ func Edit(workdir string) agent.Tool {
 			},
 			"required": []string{"path", "edits"},
 		},
-		Execute: func(ctx context.Context, _ string, params jsontext.Value) (agent.ToolResult, error) {
-			return editFile(ctx, workdir, params)
+		Execute: func(
+			ctx context.Context, _ string, params jsontext.Value,
+		) (agent.ToolResult, error) {
+			return editFile(ctx, cwd, params)
 		},
 	}
 }
@@ -107,7 +109,7 @@ func parseEditArgs(params jsontext.Value) (editArgs, error) {
 }
 
 // editFile 读取现有文件，全部替换校验通过后写回；内容按字节精确匹配。
-func editFile(ctx context.Context, workdir string, params jsontext.Value) (agent.ToolResult, error) {
+func editFile(ctx context.Context, cwd string, params jsontext.Value) (agent.ToolResult, error) {
 	args, err := parseEditArgs(params)
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -116,7 +118,7 @@ func editFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, err
 	}
 
-	path := resolvePath(workdir, args.Path)
+	path := resolvePath(cwd, args.Path)
 	data, err := readRegularFile(ctx, path)
 	if err != nil {
 		return agent.ToolResult{}, err

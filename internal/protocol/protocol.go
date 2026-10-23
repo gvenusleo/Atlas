@@ -1,7 +1,5 @@
-// Package protocol 是 Atlas 对客户端开放的接口与数据类型，语义与命名照 ACP v1
-// （https://agentclientprotocol.com）。ACP 不够用的地方用 _atlas 扩展补上。
-// 桌面 GUI 在进程内直接调用；以后的 ACP、WebSocket 入口把它映射成 JSON-RPC。
-// JSON 标签用 ACP 的线上名称；Atlas 的扩展字段放在 _meta 里，键以 atlas/ 开头。
+// Package protocol 是 Atlas 对客户端开放的接口与数据类型。桌面 GUI 在进程内直接调用；
+// 以后的远程入口把它映射成线上的消息格式。
 //
 // 这个包只有数据，不依赖其他包。
 package protocol
@@ -15,50 +13,53 @@ import (
 var (
 	// ErrBusy 表示会话正在运行一轮或修改配置。
 	ErrBusy = errors.New("会话正忙")
-	// ErrNotFound 表示会话不存在，或者这个连接还没有打开它。
+	// ErrNotFound 表示会话不存在，或者这个连接没有打开它（包括已卸载、已失效）。
 	ErrNotFound = errors.New("会话不存在")
+	// ErrConflict 表示写入时发现别的进程已写入该会话；会话在本进程内失效，需要重新打开。
+	ErrConflict = errors.New("会话已在别处更新，请重新打开")
 	// ErrClosed 表示 Atlas 正在关闭。
 	ErrClosed = errors.New("Atlas 正在关闭")
 	// ErrNothingToCompact 表示上下文里没有可压缩的内容。
 	ErrNothingToCompact = errors.New("没有可压缩的内容")
 )
 
-// Agent 是 Atlas 对一个客户端连接开放的接口。
-type Agent interface {
-	// NewSession 建会话。会话先只在内存里，第一条消息保存时才写库；工作目录从此不变。
+// Service 是 Atlas 对一个客户端连接开放的接口。
+type Service interface {
+	// NewSession 新建会话。会话先只在内存里，保存第一条用户消息时才写库；工作目录此后不变。
 	NewSession(ctx context.Context, req NewSessionRequest) (NewSessionResponse, error)
-	// ResumeSession 打开会话并订阅它的更新，不回放历史（ACP session/resume）。
-	ResumeSession(ctx context.Context, req ResumeSessionRequest) (ResumeSessionResponse, error)
-	// LoadSession 打开会话并订阅，先把全部历史以更新回放，再返回（ACP session/load）。
-	LoadSession(ctx context.Context, req LoadSessionRequest) (LoadSessionResponse, error)
+	// OpenSession 加载会话并订阅它的更新，不回放历史；历史用 ListHistory 分页读取。
+	OpenSession(ctx context.Context, req OpenSessionRequest) (OpenSessionResponse, error)
 	// ListSessions 按更新时间倒序列出已保存的会话。
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
-	// DeleteSession 删除空闲的会话。
+	// DeleteSession 删除空闲的会话；会话不存在时不报错。
 	DeleteSession(ctx context.Context, req DeleteSessionRequest) error
-	// CloseSession 表示这个连接不再看这个会话。
+	// CloseSession 取消当前连接对该会话的订阅，不影响正在进行的一轮。会话没有订阅者且
+	// 空闲时卸载；若正忙，待这一轮结束后卸载。
 	CloseSession(ctx context.Context, req CloseSessionRequest) error
-	// Prompt 跑一轮，这一轮结束时才返回。以 / 开头的是命令：/compact 压缩上下文，
+	// RenameSession 修改标题；空标题表示清除。
+	RenameSession(ctx context.Context, req RenameSessionRequest) error
+	// SendPrompt 发送一条用户消息。受理成功即返回，这一轮在会话内异步运行；停止原因与
+	// 出错信息通过 RunStateUpdate 送达。以 / 开头的是命令：/compact 压缩上下文，
 	// /技能名 参数 在原文后附上技能全文再运行。
-	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)
-	// Cancel 取消正在运行的一轮；被取消的 Prompt 以 StopCancelled 返回。
-	Cancel(req CancelNotification)
-	// SetConfigOption 换模型或思考深度，保存后返回完整的配置项。
+	SendPrompt(ctx context.Context, req SendPromptRequest) (SendPromptResponse, error)
+	// CancelTurn 取消正在运行的一轮，该轮以 StopCancelled 结束；没有正在运行的一轮时不报错。
+	CancelTurn(ctx context.Context, req CancelTurnRequest) error
+	// SetConfigOption 更换模型或思考深度，保存后返回完整的配置项。
 	SetConfigOption(
 		ctx context.Context, req SetConfigOptionRequest,
 	) (SetConfigOptionResponse, error)
-
-	// History 取一页历史，以更新的形式给出（_atlas/session/history）。
-	History(ctx context.Context, req HistoryRequest) (HistoryResponse, error)
-	// Prompts 取全部用户消息的摘要，供会话目录（_atlas/session/prompts）。
-	Prompts(ctx context.Context, req PromptsRequest) (PromptsResponse, error)
-	// Rename 改名；空标题表示清除（_atlas/session/rename）。
-	Rename(ctx context.Context, req RenameRequest) error
+	// ListHistory 返回一页历史，以更新的形式给出。
+	ListHistory(ctx context.Context, req ListHistoryRequest) (ListHistoryResponse, error)
+	// ListUserMessages 返回全部用户消息的摘要，供会话大纲。
+	ListUserMessages(
+		ctx context.Context, req ListUserMessagesRequest,
+	) (ListUserMessagesResponse, error)
 }
 
-// Client 接收核心推送的更新，每个连接一个。它在核心的 goroutine 里被调用，必须很快返回，
-// 不得在里面同步调用 Agent。
-type Client interface {
-	SessionUpdate(n SessionNotification)
+// Subscriber 接收核心推送的更新，每个连接一个。核心在自己的 goroutine 里同步调用它，
+// 实现必须很快返回，不得在里面调用 Service。
+type Subscriber interface {
+	Receive(n Notification)
 }
 
 // ---- 会话 ----
@@ -70,30 +71,26 @@ type NewSessionRequest struct {
 type NewSessionResponse struct {
 	SessionID     string         `json:"sessionId"`
 	ConfigOptions []ConfigOption `json:"configOptions"`
-	State         SessionState   `json:"_meta"`
+	State         SessionState   `json:"state"`
 }
 
-type ResumeSessionRequest struct {
+type OpenSessionRequest struct {
 	SessionID string `json:"sessionId"`
 }
 
-type ResumeSessionResponse struct {
+type OpenSessionResponse struct {
 	ConfigOptions []ConfigOption `json:"configOptions"`
-	State         SessionState   `json:"_meta"`
+	State         SessionState   `json:"state"`
 }
 
-type LoadSessionRequest = ResumeSessionRequest
-
-type LoadSessionResponse = ResumeSessionResponse
-
-// SessionState 是打开会话时它的当前状态，随响应给出（在 _meta 里），之后由更新推进。
+// SessionState 是打开会话时它的当前状态，随响应给出，之后由更新推进。
 type SessionState struct {
-	Cwd      string    `json:"atlas/cwd"`
-	Title    string    `json:"atlas/title,omitempty"`
-	Commands []Command `json:"atlas/commands,omitempty"`
-	Usage    Usage     `json:"atlas/usage"`
-	Running  bool      `json:"atlas/running,omitzero"`
-	Since    time.Time `json:"atlas/since,omitzero"` // 正在运行的一轮开始的时刻
+	Cwd      string    `json:"cwd"`
+	Title    string    `json:"title,omitempty"`
+	Commands []Command `json:"commands,omitempty"`
+	Usage    Usage     `json:"usage"`
+	Running  bool      `json:"running,omitzero"`
+	Since    time.Time `json:"since,omitzero"` // 正在运行的一轮开始的时刻
 }
 
 type ListSessionsRequest struct {
@@ -121,23 +118,21 @@ type CloseSessionRequest struct {
 	SessionID string `json:"sessionId"`
 }
 
-type RenameRequest struct {
+type RenameSessionRequest struct {
 	SessionID string `json:"sessionId"`
 	Title     string `json:"title"`
 }
 
 // ---- 一轮 ----
 
-type PromptRequest struct {
+type SendPromptRequest struct {
 	SessionID string         `json:"sessionId"`
 	Prompt    []ContentBlock `json:"prompt"`
 }
 
-type PromptResponse struct {
-	StopReason StopReason `json:"stopReason"`
-}
+type SendPromptResponse struct{}
 
-// StopReason 是一轮结束的原因。模型调用失败不是结束原因，Prompt 返回错误。
+// StopReason 是一轮结束的原因。模型调用失败不是结束原因，由 RunStateUpdate 的 Error 给出。
 type StopReason string
 
 const (
@@ -146,37 +141,30 @@ const (
 	StopCancelled StopReason = "cancelled"
 )
 
-type CancelNotification struct {
+type CancelTurnRequest struct {
 	SessionID string `json:"sessionId"`
 }
 
 // ---- 配置项 ----
 
-// 配置项的 ID，也是它的类别。
+// 配置项的 ID。
 const (
 	ConfigModel    = "model"
-	ConfigThinking = "thought_level"
+	ConfigThinking = "thinking"
 )
 
 // ConfigOption 是一个下拉式的配置项。
 type ConfigOption struct {
 	ID           string        `json:"id"`
 	Name         string        `json:"name"`
-	Category     string        `json:"category"`
-	Type         string        `json:"type"` // 总是 select
 	CurrentValue string        `json:"currentValue"`
 	Options      []ConfigValue `json:"options"`
 }
 
 type ConfigValue struct {
-	Value string    `json:"value"`
-	Name  string    `json:"name"`
-	Meta  ValueMeta `json:"_meta,omitzero"`
-}
-
-// ValueMeta 是选项上的 Atlas 扩展。
-type ValueMeta struct {
-	Images bool `json:"atlas/images,omitzero"` // 模型接受图片输入
+	Value  string `json:"value"`
+	Name   string `json:"name"`
+	Images bool   `json:"images,omitzero"` // 模型接受图片输入
 }
 
 type SetConfigOptionRequest struct {
@@ -200,30 +188,30 @@ type CommandInput struct {
 	Hint string `json:"hint"`
 }
 
-// ---- 扩展：历史与目录 ----
+// ---- 历史与大纲 ----
 
-type HistoryRequest struct {
+type ListHistoryRequest struct {
 	SessionID string `json:"sessionId"`
 	Before    int64  `json:"before,omitzero"` // 这个序号之前的；0 表示最新的一页
 	Limit     int    `json:"limit"`
 }
 
-type HistoryResponse struct {
-	Updates []SessionUpdate `json:"updates"`
-	Oldest  int64           `json:"oldest"` // 这一页最早一条的序号；没有记录时为 0
+type ListHistoryResponse struct {
+	Updates []Update `json:"updates"`
+	Oldest  int64    `json:"oldest"` // 这一页最早一条的序号；没有记录时为 0
 }
 
-type PromptsRequest struct {
+type ListUserMessagesRequest struct {
 	SessionID string `json:"sessionId"`
 	Before    int64  `json:"before"`
 }
 
-type PromptsResponse struct {
-	Prompts []PromptEntry `json:"prompts"`
+type ListUserMessagesResponse struct {
+	Messages []UserMessageSummary `json:"messages"`
 }
 
-// PromptEntry 是会话目录里的一条用户消息。
-type PromptEntry struct {
+// UserMessageSummary 是会话大纲里的一条用户消息。
+type UserMessageSummary struct {
 	Seq    int64     `json:"seq"`
 	Text   string    `json:"text"`            // 输入的文字，不含图片与技能全文
 	Images bool      `json:"images,omitzero"` // 带了图片

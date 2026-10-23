@@ -13,8 +13,8 @@ import (
 // rename 把会话改名；名称为空时清除名称。
 func (a *App) rename(id, name string) {
 	go func() {
-		err := a.agent.Rename(context.Background(),
-			protocol.RenameRequest{SessionID: id, Title: strings.TrimSpace(name)})
+		err := a.service.RenameSession(context.Background(),
+			protocol.RenameSessionRequest{SessionID: id, Title: strings.TrimSpace(name)})
 		a.win.Update(func() {
 			if err != nil {
 				a.err = err.Error()
@@ -28,7 +28,7 @@ func (a *App) rename(id, name string) {
 // remove 删除会话；运行中的会话会被核心拒绝，错误显示在侧栏底部。
 func (a *App) remove(id string) {
 	go func() {
-		err := a.agent.DeleteSession(context.Background(),
+		err := a.service.DeleteSession(context.Background(),
 			protocol.DeleteSessionRequest{SessionID: id})
 		a.win.Update(func() {
 			if err != nil {

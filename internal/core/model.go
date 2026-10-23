@@ -2,6 +2,7 @@ package core
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -35,7 +36,7 @@ func listModels(settings *config.Settings) []modelInfo {
 				Name:           cmp.Or(metadata.Name, modelID),
 				Images:         metadata.Modalities.AcceptsImages(),
 				ThinkingLevels: usableThinkingLevels(metadata),
-				Supported: err == nil && provider.WireAPI == config.WireAPIOpenAIResponses &&
+				Supported: err == nil && llm.Supports(string(provider.WireAPI)) &&
 					(metadata.Tools == nil || *metadata.Tools),
 			})
 		}
@@ -118,15 +119,14 @@ func usableThinkingLevels(metadata config.Model) []agent.ThinkingLevel {
 func configOptions(
 	settings *config.Settings, ref string, thinking agent.ThinkingLevel,
 ) []protocol.ConfigOption {
-	model := protocol.ConfigOption{ID: protocol.ConfigModel, Name: "模型",
-		Category: protocol.ConfigModel, Type: "select", CurrentValue: ref}
+	model := protocol.ConfigOption{ID: protocol.ConfigModel, Name: "模型", CurrentValue: ref}
 	var levels []agent.ThinkingLevel
 	for _, m := range listModels(settings) {
 		if !m.Supported {
 			continue
 		}
 		model.Options = append(model.Options, protocol.ConfigValue{
-			Value: m.Ref, Name: m.Name, Meta: protocol.ValueMeta{Images: m.Images},
+			Value: m.Ref, Name: m.Name, Images: m.Images,
 		})
 		if m.Ref == ref {
 			levels = m.ThinkingLevels
@@ -135,7 +135,7 @@ func configOptions(
 	options := []protocol.ConfigOption{model}
 	if len(levels) > 0 {
 		level := protocol.ConfigOption{ID: protocol.ConfigThinking, Name: "思考深度",
-			Category: protocol.ConfigThinking, Type: "select", CurrentValue: string(thinking)}
+			CurrentValue: string(thinking)}
 		for _, l := range levels {
 			name := strings.ToUpper(string(l[:1])) + string(l[1:])
 			level.Options = append(level.Options,
@@ -157,7 +157,7 @@ func modelConfig(
 	if err != nil {
 		return agent.Model{}, err
 	}
-	if provider.WireAPI != config.WireAPIOpenAIResponses {
+	if !llm.Supports(string(provider.WireAPI)) {
 		return agent.Model{}, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
 	}
 	if metadata.Tools != nil && !*metadata.Tools {
@@ -175,13 +175,16 @@ func modelConfig(
 	if err != nil {
 		return agent.Model{}, err
 	}
-	stream := llm.OpenAIResponses(provider.BaseURL, key, modelID,
+	stream, err := llm.NewStream(string(provider.WireAPI), provider.BaseURL, key, modelID,
 		metadata.Modalities.AcceptsImages())
-	return agent.Model{Ref: modelRef, Window: metadata.ContextWindow, Stream: stream}, nil
+	if err != nil {
+		return agent.Model{}, err
+	}
+	return agent.Model{Ref: modelRef, ContextWindow: metadata.ContextWindow, Stream: stream}, nil
 }
 
-// checkWorkdir 要求工作目录是仍然存在的绝对目录。
-func checkWorkdir(cwd string) error {
+// checkCwd 要求工作目录是仍然存在的绝对目录。
+func checkCwd(cwd string) error {
 	if !filepath.IsAbs(cwd) {
 		return fmt.Errorf("会话工作目录 %q 不是绝对路径", cwd)
 	}
@@ -192,5 +195,94 @@ func checkWorkdir(cwd string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("会话工作目录 %s 不是目录", cwd)
 	}
+	return nil
+}
+
+// setConfig 换模型或思考深度：配好新模型，保存，再采用；返回完整的配置项，并推送给所有订阅者。
+func (s *session) setConfig(
+	ctx context.Context, id, value string,
+) ([]protocol.ConfigOption, error) {
+	end, err := s.begin(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	settings, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	ref, thinking, saved := s.model.Ref, s.thinking, s.saved
+	s.mu.Unlock()
+	switch id {
+	case protocol.ConfigModel:
+		ref = value
+		models := listModels(settings)
+		if i := slices.IndexFunc(models, func(m modelInfo) bool { return m.Ref == ref }); i >= 0 {
+			thinking = fitLevel(models[i], thinking)
+		}
+	case protocol.ConfigThinking:
+		thinking = agent.ThinkingLevel(value)
+	default:
+		return nil, errors.New("未知的配置项 " + id)
+	}
+	model, err := modelConfig(settings, ref, thinking)
+	if err != nil {
+		return nil, err
+	}
+	if saved {
+		if err := s.core.db.SetModel(ctx, s.id, ref, string(thinking)); err != nil {
+			return nil, mapStoreError(err)
+		}
+	}
+	s.mu.Lock()
+	s.model, s.thinking = model, thinking
+	usage := s.usage()
+	s.mu.Unlock()
+	options := configOptions(settings, ref, thinking)
+	s.broadcast(protocol.ConfigOptionUpdate{ConfigOptions: options},
+		protocol.UsageUpdate{Usage: usage})
+	return options, nil
+}
+
+// options 读设置，给出会话现在的配置项。
+func (s *session) options() ([]protocol.ConfigOption, error) {
+	settings, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return configOptions(settings, s.model.Ref, s.thinking), nil
+}
+
+// ensureModel 在会话没有可用的模型时再选一次（设置可能已经改好了）；仍然选不出就返回原因。
+func (s *session) ensureModel(ctx context.Context) error {
+	s.mu.Lock()
+	ref, thinking, ok, saved := s.model.Ref, s.thinking, s.model.Stream != nil, s.saved
+	s.mu.Unlock()
+	if ok {
+		return nil
+	}
+	settings, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if ref, thinking, err = pickModel(settings, ref, thinking); err != nil {
+		return err
+	}
+	model, err := modelConfig(settings, ref, thinking)
+	if err != nil {
+		return err
+	}
+	if saved {
+		if err := s.core.db.SetModel(ctx, s.id, ref, string(thinking)); err != nil {
+			return mapStoreError(err)
+		}
+	}
+	s.mu.Lock()
+	s.model, s.thinking = model, thinking
+	s.mu.Unlock()
+	s.broadcast(protocol.ConfigOptionUpdate{ConfigOptions: configOptions(settings, ref, thinking)})
 	return nil
 }

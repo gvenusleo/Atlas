@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -50,16 +51,36 @@ func open(t *testing.T, path string) *Core {
 	return c
 }
 
-// recorder 是记下收到的更新的客户端。
+// recorder 是记下收到的更新的订阅者。
 type recorder struct {
 	mu      sync.Mutex
-	updates []protocol.SessionUpdate
+	updates []protocol.Update
+	ends    chan protocol.RunStateUpdate // 每一轮结束时的 run_state
 }
 
-func (r *recorder) SessionUpdate(n protocol.SessionNotification) {
+func newRecorder() *recorder {
+	return &recorder{ends: make(chan protocol.RunStateUpdate, 8)}
+}
+
+func (r *recorder) Receive(n protocol.Notification) {
 	r.mu.Lock()
 	r.updates = append(r.updates, n.Update)
 	r.mu.Unlock()
+	if s, ok := n.Update.(protocol.RunStateUpdate); ok && !s.Running {
+		r.ends <- s
+	}
+}
+
+// end 等一轮结束，返回结束时的 run_state。
+func (r *recorder) end(t *testing.T) protocol.RunStateUpdate {
+	t.Helper()
+	select {
+	case s := <-r.ends:
+		return s
+	case <-time.After(3 * time.Second):
+		t.Fatal("一轮没有在期限内结束")
+		return protocol.RunStateUpdate{}
+	}
 }
 
 // texts 是收到的回复文字与用户消息文字，按顺序。
@@ -81,15 +102,15 @@ func (r *recorder) texts() []string {
 func (r *recorder) has(kind string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return slices.ContainsFunc(r.updates, func(u protocol.SessionUpdate) bool {
-		return u.SessionUpdate() == kind
+	return slices.ContainsFunc(r.updates, func(u protocol.Update) bool {
+		return u.Type() == kind
 	})
 }
 
-// resume 让 a 打开会话 id。
-func resume(t *testing.T, a protocol.Agent, id string) {
+// openSession 让 a 打开会话 id。
+func openSession(t *testing.T, a protocol.Service, id string) {
 	t.Helper()
-	_, err := a.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: id})
+	_, err := a.OpenSession(t.Context(), protocol.OpenSessionRequest{SessionID: id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,18 +141,30 @@ func reply(text string, seen *int) agent.StreamFn {
 	}
 }
 
-func say(t *testing.T, a protocol.Agent, id, text string) error {
+// say 发一条用户消息，返回核心是否受理。
+func say(t *testing.T, a protocol.Service, id, text string) error {
 	t.Helper()
-	_, err := a.Prompt(t.Context(), protocol.PromptRequest{
+	_, err := a.SendPrompt(t.Context(), protocol.SendPromptRequest{
 		SessionID: id, Prompt: []protocol.ContentBlock{protocol.Text(text)}})
 	return err
 }
 
-// 新会话先只在内存里，第一条消息保存时写库并以它命名；客户端只从更新里看到对话，
+// sayAndWait 发一条用户消息，等这一轮结束。
+func sayAndWait(
+	t *testing.T, a protocol.Service, r *recorder, id, text string,
+) protocol.RunStateUpdate {
+	t.Helper()
+	if err := say(t, a, id, text); err != nil {
+		t.Fatal(err)
+	}
+	return r.end(t)
+}
+
+// 新会话先只在内存里，第一条用户消息保存时写库并以它作标题；客户端只从更新里看到对话，
 // 回放的历史与实时收到的是同样的内容。
 func TestNewSessionIsSavedWithFirstPrompt(t *testing.T) {
 	c := open(t, home(t, settingsJSON))
-	client := &recorder{}
+	client := newRecorder()
 	a := c.Connect(client)
 	resp, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
 	if err != nil {
@@ -142,92 +175,82 @@ func TestNewSessionIsSavedWithFirstPrompt(t *testing.T) {
 		t.Fatalf("发消息之前列表 = %v，期望为空", list.Sessions)
 	}
 	stub(t, c, resp.SessionID, reply("好", nil))
-	if err := say(t, a, resp.SessionID, "你好"); err != nil {
-		t.Fatal(err)
+	end := sayAndWait(t, a, client, resp.SessionID, "你好")
+	if end.StopReason != protocol.StopEndTurn {
+		t.Fatalf("结束时 run_state = %+v，期望 end_turn", end)
 	}
 
 	if got := client.texts(); !slices.Equal(got, []string{"用户:你好", "助手:好"}) {
 		t.Errorf("收到的对话 = %v", got)
 	}
-	if !client.has("session_info_update") || !client.has("_atlas_state") {
+	if !client.has("session_info_update") || !client.has("run_state") {
 		t.Error("没有收到标题或运行状态的更新")
 	}
 	list, err = a.ListSessions(t.Context(), protocol.ListSessionsRequest{})
 	if err != nil || len(list.Sessions) != 1 || list.Sessions[0].Title != "你好" {
-		t.Fatalf("列表 = %+v（%v），期望一个名为“你好”的会话", list.Sessions, err)
+		t.Fatalf("列表 = %+v（%v），期望一个标题为“你好”的会话", list.Sessions, err)
 	}
-	history, err := a.History(t.Context(),
-		protocol.HistoryRequest{SessionID: resp.SessionID, Limit: 10})
+	history, err := a.ListHistory(t.Context(),
+		protocol.ListHistoryRequest{SessionID: resp.SessionID, Limit: 10})
 	replayed := &recorder{updates: history.Updates}
 	if err != nil || !slices.Equal(replayed.texts(), client.texts()) {
 		t.Errorf("回放 = %v（%v），期望与实时收到的一样", replayed.texts(), err)
 	}
 }
 
-// 两个进程打开同一个库：各自加载会话。一方运行到一半时另一方写过，这一方的保存冲突，
-// 这一轮以错误结束；下一轮开始前从库里重新加载，通知客户端重新读历史，带着对方的消息继续。
-func TestTwoProcessesShareSession(t *testing.T) {
+// 两个进程打开同一个库，同时写同一个会话是不支持的用法：后写入的一方这一轮以错误结束，
+// 会话在它的进程内失效；重新打开之后带着对方的消息继续。
+func TestConflictInvalidatesSession(t *testing.T) {
 	path := home(t, settingsJSON)
 	c1, c2 := open(t, path), open(t, path)
-	client1 := &recorder{}
-	a1, a2 := c1.Connect(client1), c2.Connect(&recorder{})
+	r1, r2 := newRecorder(), newRecorder()
+	a1, a2 := c1.Connect(r1), c2.Connect(r2)
 	resp, err := a1.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := resp.SessionID
 	stub(t, c1, id, reply("一", nil))
-	if err := say(t, a1, id, "甲"); err != nil {
-		t.Fatal(err)
-	}
-	resume(t, a2, id)
+	sayAndWait(t, a1, r1, id, "甲")
+	openSession(t, a2, id)
 	stub(t, c2, id, reply("二", nil))
+	sayAndWait(t, a2, r2, id, "乙") // 另一个进程写过这个会话
 
-	stub(t, c1, id, func(ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
-	) agent.AssistantMessage {
-		if err := say(t, a2, id, "乙"); err != nil { // 另一个进程在这一轮中途写了这个会话
-			t.Error(err)
-		}
-		return reply("三", nil)(ctx, req, emit)
-	})
-	if err := say(t, a1, id, "丙"); !errors.Is(err, store.ErrConflict) {
-		t.Fatalf("中途被别处写过的一轮 = %v，期望 ErrConflict", err)
+	end := sayAndWait(t, a1, r1, id, "丙")
+	if !strings.Contains(end.Error, protocol.ErrConflict.Error()) {
+		t.Fatalf("过时的一方这一轮 = %+v，期望以写入冲突结束", end)
+	}
+	if err := say(t, a1, id, "丁"); !errors.Is(err, protocol.ErrNotFound) {
+		t.Fatalf("失效的会话再发消息 = %v，期望 ErrNotFound", err)
 	}
 
+	openSession(t, a1, id)
 	var seen int
 	stub(t, c1, id, reply("四", &seen))
-	if err := say(t, a1, id, "丁"); err != nil {
-		t.Fatal(err)
-	}
-	if !client1.has("_atlas_reset") {
-		t.Error("重新加载之后没有通知客户端")
-	}
-	// 上下文：甲、一、丙（保存成功的用户消息）、乙、二，加上这一轮的丁。
-	if seen != 6 {
-		t.Errorf("重新加载后的请求有 %d 条消息，期望 6 条", seen)
+	sayAndWait(t, a1, r1, id, "戊")
+	// 上下文：甲、一、乙、二，加上这一轮的戊。
+	if seen != 5 {
+		t.Errorf("重新打开后的请求有 %d 条消息，期望 5 条", seen)
 	}
 }
 
-// 会话属于打开它的连接：没打开的连接不能对它发 Prompt。同一进程里两个连接打开同一个会话，
-// 都收到更新；运行中另一个 Prompt 返回 ErrBusy，取消后这一轮以 cancelled 结束。
-// 删除不存在的会话静默成功。
+// 会话属于订阅它的连接：没订阅的连接不能对它发消息。同一进程里两个连接订阅同一个会话，
+// 都收到更新；运行中再发消息返回 ErrBusy，取消后这一轮以 cancelled 结束。
 func TestClientsShareSession(t *testing.T) {
 	c := open(t, home(t, settingsJSON))
-	client1, client2 := &recorder{}, &recorder{}
-	a1, a2 := c.Connect(client1), c.Connect(client2)
+	r1, r2 := newRecorder(), newRecorder()
+	a1, a2 := c.Connect(r1), c.Connect(r2)
 	resp, err := a1.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := resp.SessionID
 	stub(t, c, id, reply("好", nil))
-	if err := say(t, a1, id, "你好"); err != nil {
-		t.Fatal(err)
-	}
+	sayAndWait(t, a1, r1, id, "你好")
 	if err := say(t, a2, id, "没打开就发"); !errors.Is(err, protocol.ErrNotFound) {
-		t.Fatalf("没打开会话的连接 Prompt = %v，期望 ErrNotFound", err)
+		t.Fatalf("没订阅会话的连接发消息 = %v，期望 ErrNotFound", err)
 	}
-	resume(t, a2, id)
+	openSession(t, a2, id)
 
 	entered := make(chan struct{})
 	stub(t, c, id, func(ctx context.Context, _ agent.StreamRequest, emit func(agent.Delta),
@@ -237,64 +260,132 @@ func TestClientsShareSession(t *testing.T) {
 		<-ctx.Done()
 		return agent.AssistantMessage{StopReason: agent.StopReasonCanceled}
 	})
-	done := make(chan protocol.PromptResponse, 1)
-	go func() {
-		resp, _ := a1.Prompt(context.Background(), protocol.PromptRequest{
-			SessionID: id, Prompt: []protocol.ContentBlock{protocol.Text("再想想")}})
-		done <- resp
-	}()
+	if err := say(t, a1, id, "再想想"); err != nil {
+		t.Fatal(err)
+	}
 	<-entered
 	if err := say(t, a2, id, "插一句"); !errors.Is(err, protocol.ErrBusy) {
-		t.Fatalf("运行中的 Prompt = %v，期望 ErrBusy", err)
+		t.Fatalf("运行中再发消息 = %v，期望 ErrBusy", err)
 	}
-	a2.Cancel(protocol.CancelNotification{SessionID: id})
-	select {
-	case resp := <-done:
-		if resp.StopReason != protocol.StopCancelled {
-			t.Errorf("被取消的一轮 = %q，期望 cancelled", resp.StopReason)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("取消之后这一轮没有结束")
+	if err := a2.CancelTurn(t.Context(), protocol.CancelTurnRequest{SessionID: id}); err != nil {
+		t.Fatal(err)
 	}
+	if end := r1.end(t); end.StopReason != protocol.StopCancelled {
+		t.Errorf("被取消的一轮 = %+v，期望 cancelled", end)
+	}
+	r2.end(t) // 后订阅的连接也收到结束
 	want := []string{"用户:你好", "助手:好", "用户:再想想", "助手:想"}
-	if got := client2.texts(); !slices.Equal(got, want[2:]) {
+	if got := r2.texts(); !slices.Equal(got, want[2:]) {
 		t.Errorf("后打开的连接收到 %v，期望 %v", got, want[2:])
 	}
-	if got := client1.texts(); !slices.Equal(got, want) {
+	if got := r1.texts(); !slices.Equal(got, want) {
 		t.Errorf("先打开的连接收到 %v，期望 %v", got, want)
-	}
-	missing := protocol.DeleteSessionRequest{SessionID: "0190f0f0-0000-7000-8000-000000000001"}
-	if err := a1.DeleteSession(t.Context(), missing); err != nil {
-		t.Errorf("删除不存在的会话 = %v，期望静默成功", err)
 	}
 }
 
-// 从 settings.json 里删掉会话上次用的模型之后，会话照常打开，退到默认模型并存下来。
-func TestResumeFallsBackWhenModelIsGone(t *testing.T) {
-	path := home(t, settingsJSON)
-	db, err := store.Open(t.Context(), path)
+// 一轮归会话所有，与连接无关：所有订阅者都关闭会话也不会中止这一轮，它跑完之后会话才卸载。
+func TestCloseSessionDoesNotStopTurn(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	r := newRecorder()
+	a := c.Connect(r)
+	resp, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := "0190f0f0-0000-7000-8000-000000000000"
-	_, err = db.Create(t.Context(), store.Info{ID: id, Cwd: t.TempDir(), Model: "p/gone",
-		Thinking: agent.ThinkingHigh}, snapshot("提示词"))
-	_ = db.Close()
+	id := resp.SessionID
+	entered, release := make(chan struct{}), make(chan struct{})
+	stub(t, c, id, func(_ context.Context, _ agent.StreamRequest, _ func(agent.Delta),
+	) agent.AssistantMessage {
+		close(entered)
+		<-release
+		return agent.AssistantMessage{StopReason: agent.StopReasonStop,
+			Content: []agent.Content{agent.TextContent{Text: "好"}}}
+	})
+	if err := say(t, a, id, "你好"); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	if err := a.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.lookup(id); err != nil {
+		t.Fatalf("关闭时这一轮还在运行，会话 lookup = %v，期望仍然加载着", err)
+	}
+	close(release)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := c.lookup(id); errors.Is(err, protocol.ErrNotFound) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("这一轮结束后会话没有卸载")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// 这一轮跑完了：消息都已入库。
+	history, err := a.ListHistory(t.Context(),
+		protocol.ListHistoryRequest{SessionID: id, Limit: 10})
+	if err != nil || len(history.Updates) == 0 {
+		t.Errorf("关闭后读历史 = %d 条（%v），期望这一轮的消息已入库", len(history.Updates), err)
+	}
+}
+
+// 图片外置到 blob 里，读出时还原；压缩之后上下文的起点前移，重新打开只带摘要和保留的消息，
+// 之前的消息不再进入上下文。
+func TestImagesAndCompactionAcrossReopen(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	r := newRecorder()
+	a := c.Connect(r)
+	resp, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
+	}
+	id := resp.SessionID
+	stub(t, c, id, reply("好", nil))
+	image := protocol.Image("AQID", "image/png")
+	if _, err := a.SendPrompt(t.Context(), protocol.SendPromptRequest{
+		SessionID: id, Prompt: []protocol.ContentBlock{protocol.Text("看图"), image}}); err != nil {
+		t.Fatal(err)
+	}
+	r.end(t)
+	sayAndWait(t, a, r, id, "再说一句")
+
+	history, err := a.ListHistory(t.Context(),
+		protocol.ListHistoryRequest{SessionID: id, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.ContentBlock
+	for _, u := range history.Updates {
+		chunk, ok := u.(protocol.UserMessageChunk)
+		if ok && chunk.Content.Type == protocol.ContentImage {
+			got = chunk.Content
+		}
+	}
+	if got != image {
+		t.Errorf("读回的图片 = %+v，期望还原成 %+v", got, image)
 	}
 
-	c := open(t, path)
-	resp, err := c.Connect(&recorder{}).ResumeSession(t.Context(),
-		protocol.ResumeSessionRequest{SessionID: id})
-	if err != nil {
-		t.Fatalf("ResumeSession = %v，期望模型被删也能打开", err)
+	if err := say(t, a, id, "/compact"); err != nil {
+		t.Fatal(err)
 	}
-	if model := resp.ConfigOptions[0]; model.CurrentValue != "p/a" ||
-		resp.ConfigOptions[1].CurrentValue != "high" {
-		t.Errorf("配置项 = %+v，期望退到默认模型 p/a，保留 high", resp.ConfigOptions)
+	if end := r.end(t); end.Error != "" {
+		t.Fatalf("压缩 = %+v，期望成功", end)
 	}
-	if info, err := c.db.Get(t.Context(), id); err != nil || info.Model != "p/a" {
-		t.Errorf("会话表里的模型 = %q（%v），期望存下退到的 p/a", info.Model, err)
+	if err := a.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: id}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := c.db.Get(t.Context(), id)
+	if err != nil || info.ContextFrom <= 1 {
+		t.Fatalf("压缩后上下文起点 = %+v（%v），期望前移", info, err)
+	}
+
+	openSession(t, a, id)
+	var seen int
+	stub(t, c, id, reply("四", &seen))
+	sayAndWait(t, a, r, id, "继续")
+	// 上下文：摘要、保留的最后一条回复，加上这一轮的“继续”。
+	if seen != 3 {
+		t.Errorf("压缩后重新打开的请求有 %d 条消息，期望 3 条", seen)
 	}
 }

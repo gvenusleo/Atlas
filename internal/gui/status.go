@@ -130,12 +130,12 @@ func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
 
 // contextRing 用圆环显示上下文窗口的占用，悬停时给出具体数字；窗口大小未知时不显示。
 func (a *App) contextRing(c *ui.Context, t *ui.Theme, ch *chat) {
-	if ch.usage.Size <= 0 {
+	if ch.usage.ContextWindow <= 0 {
 		return
 	}
-	used := min(float32(ch.usage.Used)/float32(ch.usage.Size), 1)
+	used := min(float32(ch.usage.Used)/float32(ch.usage.ContextWindow), 1)
 	tip := fmt.Sprintf("上下文已用 %.0f%%（%s / %s）",
-		used*100, tokens(ch.usage.Used), tokens(ch.usage.Size))
+		used*100, tokens(ch.usage.Used), tokens(ch.usage.ContextWindow))
 	// 圆环从正上方开始，所以把元素逆时针转 90 度。
 	ui.Box(c).Size(16, 16).Margin(0, 0, 0, 6).Rotate(-90).Label(tip).Tooltip(tip).
 		Draw(func(p *ui.Painter, r ui.Rect) {

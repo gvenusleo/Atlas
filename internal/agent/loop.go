@@ -66,7 +66,7 @@ func streamResponse(ctx context.Context, r *run, onOverflow func() bool) Assista
 	request := func() StreamRequest {
 		return StreamRequest{
 			Model:         r.Model.Ref,
-			SystemPrompt:  r.Prompt,
+			SystemPrompt:  r.SystemPrompt,
 			Messages:      r.Messages,
 			Tools:         r.Tools,
 			ThinkingLevel: r.Thinking,

@@ -16,9 +16,9 @@ import (
 const maxFileBytes = 10 << 20
 
 // resolvePath 将相对路径解析到工作目录下并清理。
-func resolvePath(workdir, path string) string {
+func resolvePath(cwd, path string) string {
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(workdir, path)
+		path = filepath.Join(cwd, path)
 	}
 	return filepath.Clean(path)
 }

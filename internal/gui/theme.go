@@ -32,7 +32,7 @@ const (
 	treeRowHeight = 24  // 文件树一行的高度
 	treeIndent    = 14  // 文件树每深一层缩进的宽度
 	barGap        = 4   // 标题栏右端相邻按钮的间距
-	barSlots      = 3   // 标题栏右端为开关留的位置：文件、终端、目录
+	barSlots      = 3   // 标题栏右端为开关留的位置：文件、终端、大纲
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度

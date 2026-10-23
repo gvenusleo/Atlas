@@ -6,7 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// panelButtons 画标题栏右端的开关：文件在最右，终端在它左边，再左边是会话的目录
+// panelButtons 画标题栏右端的开关：文件在最右，终端在它左边，再左边是会话的大纲
 // （提问多时才有，没有时位置空着）；面板打开时用强调色标出。
 func (a *App) panelButtons(c *ui.Context, t *ui.Theme) {
 	ch := a.current

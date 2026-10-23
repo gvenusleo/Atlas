@@ -7,58 +7,51 @@ import (
 	"fmt"
 	"slices"
 	"time"
-
-	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// Record 是历史里的一条消息；Seq 从 1 起连续，也是分页游标。
+// Entry 是要追加到历史的一条记录。store 不解析 Body，Kind 由调用方给出。
+type Entry struct {
+	Kind  string
+	Body  string // JSON 对象
+	Blobs []Blob // Body 引用的二进制，与记录在同一个事务里写入
+	// ContextFrom 不为 0 时，把会话的上下文起点设为这个序号（压缩记录用）。
+	ContextFrom int64
+}
+
+// Record 是历史里的一条记录；Seq 从 1 起连续，也是分页游标。
 type Record struct {
-	Seq     int64
-	Message agent.Message
+	Seq  int64
+	Kind string
+	Body string
 }
 
-// encode 把消息编成 JSON，拒绝还没定稿的助手消息。
-func encode(m agent.Message) (string, error) {
-	if a, ok := m.(agent.AssistantMessage); ok && a.StopReason == agent.StopReasonPending {
-		return "", errors.New("不能保存未定稿的助手消息")
-	}
-	data, err := agent.MarshalMessage(m)
-	if err != nil {
-		return "", fmt.Errorf("编码消息失败: %w", err)
-	}
-	return string(data), nil
+// Blob 是消息引用的二进制数据，以内容哈希寻址，属于某个会话。
+type Blob struct {
+	Hash string
+	MIME string
+	Data []byte
 }
 
-// encodeAll 在事务外编好全部消息。
-func encodeAll(messages []agent.Message) ([]string, error) {
-	bodies := make([]string, len(messages))
-	for i, m := range messages {
-		body, err := encode(m)
-		if err != nil {
-			return nil, err
+// insert 在调用方的事务里插入一条记录和它引用的 blob；序号与会话表由调用方维护。
+func insert(ctx context.Context, tx *sql.Tx, id string, seq int64, e Entry) error {
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO messages (session_id, seq, kind, body) VALUES (?, ?, ?, ?)",
+		id, seq, e.Kind, e.Body); err != nil {
+		return err
+	}
+	for _, b := range e.Blobs {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT OR IGNORE INTO blobs (session_id, hash, mime, data) VALUES (?, ?, ?, ?)",
+			id, b.Hash, b.MIME, b.Data); err != nil {
+			return err
 		}
-		bodies[i] = body
 	}
-	return bodies, nil
+	return nil
 }
 
-// insert 在调用方的事务里插入一条消息；序号与会话表由调用方维护。
-func insert(
-	ctx context.Context, tx *sql.Tx, id string, seq int64, role agent.Role, body string,
-) error {
-	_, err := tx.ExecContext(ctx,
-		"INSERT INTO messages (session_id, seq, role, body) VALUES (?, ?, ?, ?)",
-		id, seq, role, body)
-	return err
-}
-
-// Append 追加一条消息并返回它的序号。lastSeq 是调用方知道的最后序号；库里的不是它时说明
+// Append 追加一条记录并返回它的序号。lastSeq 是调用方知道的最后序号；库里的不是它时说明
 // 别的写入者追加过，返回 ErrConflict，什么也不写。
-func (d *DB) Append(ctx context.Context, id string, lastSeq int64, m agent.Message) (int64, error) {
-	body, err := encode(m)
-	if err != nil {
-		return 0, err
-	}
+func (d *DB) Append(ctx context.Context, id string, lastSeq int64, e Entry) (int64, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -66,10 +59,11 @@ func (d *DB) Append(ctx context.Context, id string, lastSeq int64, m agent.Messa
 	defer tx.Rollback()
 	var seq int64
 	err = tx.QueryRowContext(ctx, `UPDATE sessions
-        SET last_seq = last_seq + 1, updated_at = max(updated_at, ?)
+        SET last_seq = last_seq + 1, updated_at = max(updated_at, ?),
+            context_from = CASE WHEN ? > 0 THEN ? ELSE context_from END
         WHERE id = ? AND last_seq = ?
         RETURNING last_seq`,
-		time.Now().UnixMilli(), id, lastSeq).Scan(&seq)
+		time.Now().UnixMilli(), e.ContextFrom, e.ContextFrom, id, lastSeq).Scan(&seq)
 	if errors.Is(err, sql.ErrNoRows) {
 		var exists int
 		if tx.QueryRowContext(ctx, "SELECT 1 FROM sessions WHERE id = ?", id).Scan(&exists) == nil {
@@ -80,7 +74,7 @@ func (d *DB) Append(ctx context.Context, id string, lastSeq int64, m agent.Messa
 	if err != nil {
 		return 0, err
 	}
-	if err := insert(ctx, tx, id, seq, m.Role(), body); err != nil {
+	if err := insert(ctx, tx, id, seq, e); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -89,23 +83,25 @@ func (d *DB) Append(ctx context.Context, id string, lastSeq int64, m agent.Messa
 	return seq, nil
 }
 
-// Log 读出会话的全部历史，正序；序号必须从 1 起连续，到元信息的 LastSeq 为止。
-func (d *DB) Log(ctx context.Context, id string) (Info, []Record, error) {
+// Context 读出会话的元信息，和从上下文起点到最后一条的全部记录，正序；
+// 序号必须连续，到元信息的 LastSeq 为止。
+func (d *DB) Context(ctx context.Context, id string) (Info, []Record, error) {
 	info, err := d.Get(ctx, id)
 	if err != nil {
 		return Info{}, nil, err
 	}
-	records, err := d.query(ctx, id, "seq <= ? ORDER BY seq", info.LastSeq)
+	records, err := d.query(ctx, id, "seq >= ? AND seq <= ? ORDER BY seq",
+		info.ContextFrom, info.LastSeq)
 	if err != nil {
 		return Info{}, nil, err
 	}
 	for i, r := range records {
-		if r.Seq != int64(i+1) {
-			return Info{}, nil, fmt.Errorf("会话 %s 在消息 %d 前缺少记录", id, r.Seq)
+		if want := info.ContextFrom + int64(i); r.Seq != want {
+			return Info{}, nil, fmt.Errorf("会话 %s 在记录 %d 前缺少记录", id, want)
 		}
 	}
-	if int64(len(records)) != info.LastSeq {
-		return Info{}, nil, fmt.Errorf("会话 %s 的消息数量与元信息不一致", id)
+	if want := info.LastSeq - info.ContextFrom + 1; int64(len(records)) != max(want, 0) {
+		return Info{}, nil, fmt.Errorf("会话 %s 的记录数量与元信息不一致", id)
 	}
 	return info, records, nil
 }
@@ -120,15 +116,42 @@ func (d *DB) Page(ctx context.Context, id string, before int64, limit int) ([]Re
 	return records, err
 }
 
-// Prompts 取 before 之前的全部用户消息，正序，供会话目录使用。
-func (d *DB) Prompts(ctx context.Context, id string, before int64) ([]Record, error) {
-	return d.query(ctx, id, "role = 'user' AND seq < ? ORDER BY seq", before)
+// ListKind 取 before 之前某一种类的全部记录，正序；before 为 0 时不设上限。
+func (d *DB) ListKind(ctx context.Context, id, kind string, before int64) ([]Record, error) {
+	if before == 0 {
+		before = 1<<63 - 1
+	}
+	return d.query(ctx, id, "kind = ? AND seq < ? ORDER BY seq", kind, before)
 }
 
-// query 按条件读出一个会话的消息。
+// Latest 取某一种类最新的一条记录，没有时返回 ErrNotFound。
+func (d *DB) Latest(ctx context.Context, id, kind string) (Record, error) {
+	records, err := d.query(ctx, id, "kind = ? ORDER BY seq DESC LIMIT 1", kind)
+	if err != nil {
+		return Record{}, err
+	}
+	if len(records) == 0 {
+		return Record{}, ErrNotFound
+	}
+	return records[0], nil
+}
+
+// Blob 读出会话引用的二进制数据，没有时返回 ErrNotFound。
+func (d *DB) Blob(ctx context.Context, id, hash string) (Blob, error) {
+	b := Blob{Hash: hash}
+	err := d.db.QueryRowContext(ctx,
+		"SELECT mime, data FROM blobs WHERE session_id = ? AND hash = ?", id, hash).
+		Scan(&b.MIME, &b.Data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Blob{}, ErrNotFound
+	}
+	return b, err
+}
+
+// query 按条件读出一个会话的记录。
 func (d *DB) query(ctx context.Context, id, where string, args ...any) ([]Record, error) {
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT seq, role, body FROM messages WHERE session_id = ? AND "+where,
+		"SELECT seq, kind, body FROM messages WHERE session_id = ? AND "+where,
 		append([]any{id}, args...)...)
 	if err != nil {
 		return nil, err
@@ -137,16 +160,8 @@ func (d *DB) query(ctx context.Context, id, where string, args ...any) ([]Record
 	var records []Record
 	for rows.Next() {
 		var r Record
-		var role agent.Role
-		var body string
-		if err := rows.Scan(&r.Seq, &role, &body); err != nil {
+		if err := rows.Scan(&r.Seq, &r.Kind, &r.Body); err != nil {
 			return nil, err
-		}
-		if r.Message, err = agent.UnmarshalMessage([]byte(body)); err != nil {
-			return nil, fmt.Errorf("会话 %s 的消息 %d 解码失败: %w", id, r.Seq, err)
-		}
-		if r.Message.Role() != role {
-			return nil, fmt.Errorf("会话 %s 的消息 %d 角色与正文不一致", id, r.Seq)
 		}
 		records = append(records, r)
 	}

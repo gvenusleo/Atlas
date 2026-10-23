@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
@@ -16,44 +15,25 @@ import (
 // listPage 是 ListSessions 一页的会话数。
 const listPage = 100
 
-// conn 是一个客户端连接：实现 protocol.Agent，它打开的会话的更新推给 client。
-// 运行、取消与换配置只对这个连接打开过的会话有效（ACP：会话要先在这个连接上新建或打开）。
+// conn 是一个客户端连接：实现 protocol.Service，它订阅的会话的更新推给 sub。
+// 运行、取消、换配置与关闭只对这个连接订阅着的会话有效：会话要先在这个连接上新建或打开。
+// 会话本身由核心持有，卸载或失效之后，连接上的后续请求同样得到 ErrNotFound。
 type conn struct {
-	core   *Core
-	client protocol.Client
-
-	mu       sync.Mutex
-	sessions map[string]*session // 这个连接打开的会话
+	core *Core
+	sub  protocol.Subscriber
 }
 
-// session 返回这个连接打开的会话。
+// session 返回这个连接订阅着的会话。
 func (c *conn) session(id string) (*session, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if s := c.sessions[id]; s != nil {
-		return s, nil
+	s, err := c.core.lookup(id)
+	if err != nil || !s.subscribed(c.sub) {
+		return nil, protocol.ErrNotFound
 	}
-	return nil, protocol.ErrNotFound
-}
-
-// track 记下这个连接打开了会话。
-func (c *conn) track(s *session) {
-	c.mu.Lock()
-	c.sessions[s.id] = s
-	c.mu.Unlock()
-}
-
-// untrack 去掉这个连接打开的会话，返回它；没打开过时为 nil。
-func (c *conn) untrack(id string) *session {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	s := c.sessions[id]
-	delete(c.sessions, id)
-	return s
+	return s, nil
 }
 
 func (c *conn) NewSession(
-	ctx context.Context, req protocol.NewSessionRequest,
+	_ context.Context, req protocol.NewSessionRequest,
 ) (protocol.NewSessionResponse, error) {
 	end, err := c.core.begin()
 	if err != nil {
@@ -68,59 +48,34 @@ func (c *conn) NewSession(
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
-	c.core.add(s, c.client)
-	c.track(s)
+	c.core.adopt(s, c.sub)
 	return protocol.NewSessionResponse{
 		SessionID: s.id, ConfigOptions: options, State: s.state(""),
 	}, nil
 }
 
-func (c *conn) ResumeSession(
-	ctx context.Context, req protocol.ResumeSessionRequest,
-) (protocol.ResumeSessionResponse, error) {
+func (c *conn) OpenSession(
+	ctx context.Context, req protocol.OpenSessionRequest,
+) (protocol.OpenSessionResponse, error) {
 	end, err := c.core.begin()
 	if err != nil {
-		return protocol.ResumeSessionResponse{}, err
+		return protocol.OpenSessionResponse{}, err
 	}
 	defer end()
-	return c.attach(ctx, req.SessionID)
-}
-
-func (c *conn) LoadSession(
-	ctx context.Context, req protocol.LoadSessionRequest,
-) (protocol.LoadSessionResponse, error) {
-	end, err := c.core.begin()
+	info, err := c.core.db.Get(ctx, req.SessionID)
 	if err != nil {
-		return protocol.LoadSessionResponse{}, err
+		return protocol.OpenSessionResponse{}, mapStoreError(err)
 	}
-	defer end()
-	_, records, err := c.core.db.Log(ctx, req.SessionID)
+	s, err := c.core.open(ctx, req.SessionID, c.sub)
 	if err != nil {
-		return protocol.LoadSessionResponse{}, err
-	}
-	for _, u := range historyUpdates(records) {
-		c.client.SessionUpdate(protocol.SessionNotification{SessionID: req.SessionID, Update: u})
-	}
-	return c.attach(ctx, req.SessionID)
-}
-
-// attach 打开会话并订阅它的更新，给出它的配置项与现在的状态。
-func (c *conn) attach(ctx context.Context, id string) (protocol.ResumeSessionResponse, error) {
-	info, err := c.core.db.Get(ctx, id)
-	if err != nil {
-		return protocol.ResumeSessionResponse{}, err
-	}
-	s, err := c.core.open(ctx, id, c.client)
-	if err != nil {
-		return protocol.ResumeSessionResponse{}, err
+		return protocol.OpenSessionResponse{}, err
 	}
 	options, err := s.options()
 	if err != nil {
-		c.core.release(s, c.client)
-		return protocol.ResumeSessionResponse{}, err
+		c.core.release(s, c.sub)
+		return protocol.OpenSessionResponse{}, err
 	}
-	c.track(s)
-	return protocol.ResumeSessionResponse{ConfigOptions: options, State: s.state(info.Name)}, nil
+	return protocol.OpenSessionResponse{ConfigOptions: options, State: s.state(info.Title)}, nil
 }
 
 func (c *conn) ListSessions(
@@ -147,7 +102,7 @@ func (c *conn) ListSessions(
 	var resp protocol.ListSessionsResponse
 	for _, info := range infos {
 		resp.Sessions = append(resp.Sessions, protocol.SessionInfo{
-			SessionID: info.ID, Cwd: info.Cwd, Title: info.Name, UpdatedAt: info.UpdatedAt,
+			SessionID: info.ID, Cwd: info.Cwd, Title: info.Title, UpdatedAt: info.UpdatedAt,
 		})
 	}
 	if len(infos) == listPage {
@@ -157,7 +112,7 @@ func (c *conn) ListSessions(
 	return resp, nil
 }
 
-// DeleteSession 删除空闲的会话；会话不存在时什么也不做（ACP：静默成功）。
+// DeleteSession 删除空闲的会话；会话不存在时什么也不做。
 // 删除不要求这个连接打开过它。
 func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequest) error {
 	end, err := c.core.begin()
@@ -179,38 +134,66 @@ func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequ
 	}
 	if s != nil {
 		c.core.forget(s)
-		c.untrack(req.SessionID)
 	}
 	return nil
 }
 
+// CloseSession 取消这个连接对会话的订阅，不影响正在进行的一轮。
 func (c *conn) CloseSession(_ context.Context, req protocol.CloseSessionRequest) error {
-	if s := c.untrack(req.SessionID); s != nil {
-		c.core.release(s, c.client)
-	}
-	return nil
-}
-
-func (c *conn) Prompt(
-	ctx context.Context, req protocol.PromptRequest,
-) (protocol.PromptResponse, error) {
 	end, err := c.core.begin()
 	if err != nil {
-		return protocol.PromptResponse{}, err
+		return err
+	}
+	defer end()
+	if s, err := c.session(req.SessionID); err == nil {
+		c.core.release(s, c.sub)
+	}
+	return nil
+}
+
+// RenameSession 修改标题；订阅该会话的连接都会收到新标题。不要求当前连接打开过它。
+func (c *conn) RenameSession(ctx context.Context, req protocol.RenameSessionRequest) error {
+	end, err := c.core.begin()
+	if err != nil {
+		return err
+	}
+	defer end()
+	if err := c.core.db.Rename(ctx, req.SessionID, req.Title); err != nil {
+		return mapStoreError(err)
+	}
+	if s, err := c.core.lookup(req.SessionID); err == nil {
+		s.broadcast(protocol.SessionInfoUpdate{Title: req.Title})
+	}
+	return nil
+}
+
+func (c *conn) SendPrompt(
+	_ context.Context, req protocol.SendPromptRequest,
+) (protocol.SendPromptResponse, error) {
+	end, err := c.core.begin()
+	if err != nil {
+		return protocol.SendPromptResponse{}, err
 	}
 	defer end()
 	s, err := c.session(req.SessionID)
 	if err != nil {
-		return protocol.PromptResponse{}, err
+		return protocol.SendPromptResponse{}, err
 	}
-	reason, err := s.send(ctx, req.Prompt)
-	return protocol.PromptResponse{StopReason: reason}, err
+	return protocol.SendPromptResponse{}, s.sendPrompt(req.Prompt)
 }
 
-func (c *conn) Cancel(req protocol.CancelNotification) {
-	if s, err := c.session(req.SessionID); err == nil {
-		s.cancelTurn()
+func (c *conn) CancelTurn(_ context.Context, req protocol.CancelTurnRequest) error {
+	end, err := c.core.begin()
+	if err != nil {
+		return err
 	}
+	defer end()
+	s, err := c.session(req.SessionID)
+	if err != nil {
+		return err
+	}
+	s.cancelTurn()
+	return nil
 }
 
 func (c *conn) SetConfigOption(
@@ -226,57 +209,50 @@ func (c *conn) SetConfigOption(
 		return protocol.SetConfigOptionResponse{}, err
 	}
 	options, err := s.setConfig(ctx, req.ConfigID, req.Value)
+	c.core.unloadIfIdle(s) // 期间若所有订阅者都关闭了会话，现在可以卸载
 	return protocol.SetConfigOptionResponse{ConfigOptions: options}, err
 }
 
-func (c *conn) History(
-	ctx context.Context, req protocol.HistoryRequest,
-) (protocol.HistoryResponse, error) {
+func (c *conn) ListHistory(
+	ctx context.Context, req protocol.ListHistoryRequest,
+) (protocol.ListHistoryResponse, error) {
 	end, err := c.core.begin()
 	if err != nil {
-		return protocol.HistoryResponse{}, err
+		return protocol.ListHistoryResponse{}, err
 	}
 	defer end()
 	records, err := c.core.db.Page(ctx, req.SessionID, req.Before, req.Limit)
 	if err != nil || len(records) == 0 {
-		return protocol.HistoryResponse{}, err
+		return protocol.ListHistoryResponse{}, mapStoreError(err)
 	}
-	return protocol.HistoryResponse{Updates: historyUpdates(records), Oldest: records[0].Seq}, nil
+	updates, err := c.core.historyUpdates(ctx, req.SessionID, records)
+	if err != nil {
+		return protocol.ListHistoryResponse{}, err
+	}
+	return protocol.ListHistoryResponse{Updates: updates, Oldest: records[0].Seq}, nil
 }
 
-func (c *conn) Prompts(
-	ctx context.Context, req protocol.PromptsRequest,
-) (protocol.PromptsResponse, error) {
+func (c *conn) ListUserMessages(
+	ctx context.Context, req protocol.ListUserMessagesRequest,
+) (protocol.ListUserMessagesResponse, error) {
 	end, err := c.core.begin()
 	if err != nil {
-		return protocol.PromptsResponse{}, err
+		return protocol.ListUserMessagesResponse{}, err
 	}
 	defer end()
-	records, err := c.core.db.Prompts(ctx, req.SessionID, req.Before)
+	records, err := c.core.db.ListKind(ctx, req.SessionID, kindUser, req.Before)
 	if err != nil {
-		return protocol.PromptsResponse{}, err
+		return protocol.ListUserMessagesResponse{}, mapStoreError(err)
 	}
-	var resp protocol.PromptsResponse
+	var resp protocol.ListUserMessagesResponse
 	for _, r := range records {
-		if m, ok := r.Message.(agent.UserMessage); ok {
-			resp.Prompts = append(resp.Prompts, promptEntry(r.Seq, m))
+		m, err := decode(req.SessionID, r)
+		if err != nil {
+			return protocol.ListUserMessagesResponse{}, err
+		}
+		if user, ok := m.(agent.UserMessage); ok {
+			resp.Messages = append(resp.Messages, userMessageSummary(r.Seq, user))
 		}
 	}
 	return resp, nil
-}
-
-// Rename 改名；打开着这个会话的连接都收到新标题。不要求这个连接打开过它。
-func (c *conn) Rename(ctx context.Context, req protocol.RenameRequest) error {
-	end, err := c.core.begin()
-	if err != nil {
-		return err
-	}
-	defer end()
-	if err := c.core.db.Rename(ctx, req.SessionID, req.Title); err != nil {
-		return err
-	}
-	if s, err := c.core.lookup(req.SessionID); err == nil {
-		s.broadcast(protocol.SessionInfoUpdate{Title: req.Title})
-	}
-	return nil
 }

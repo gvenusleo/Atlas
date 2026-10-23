@@ -80,11 +80,11 @@ type chat struct {
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	loading bool  // 正在加载最近一页历史
 	paging  bool  // 正在加载更早的记录
-	// seekSeq 是目录要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
+	// seekSeq 是大纲要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
 	// 0 表示没有。
 	seekSeq int64
 	list    ui.ListState
-	outline outline // 会话目录
+	outline outline // 会话大纲
 	input   string
 	// 输入框里待发送的图片，与 input 一样是草稿；preparing 是还在后台整理的张数。
 	attachments []*attachment
@@ -246,7 +246,7 @@ func replyText(items []*item) (text string, at time.Time) {
 }
 
 // load 用一页历史重建对话；oldest 是这一页最早一条的记录序号。
-func (ch *chat) load(updates []protocol.SessionUpdate, oldest int64) {
+func (ch *chat) load(updates []protocol.Update, oldest int64) {
 	ch.items, ch.streaming = nil, nil
 	for _, u := range updates {
 		ch.apply(u)
@@ -257,7 +257,7 @@ func (ch *chat) load(updates []protocol.SessionUpdate, oldest int64) {
 
 // prepend 把更早的一页历史排到已有显示项之前。页的边界可能把一次工具调用与它的结果拆开：
 // 结果已在后一页里时，调用先在这页里建好，把结果并过来，不重复显示。
-func (ch *chat) prepend(updates []protocol.SessionUpdate, oldest int64) {
+func (ch *chat) prepend(updates []protocol.Update, oldest int64) {
 	older := &chat{next: ch.next}
 	older.load(updates, oldest)
 	for _, it := range older.items {
@@ -279,7 +279,7 @@ func (ch *chat) prepend(updates []protocol.SessionUpdate, oldest int64) {
 }
 
 // apply 应用核心推来的一个更新。打开会话时的历史与运行中的实时更新走的都是这里。
-func (ch *chat) apply(u protocol.SessionUpdate) {
+func (ch *chat) apply(u protocol.Update) {
 	switch u := u.(type) {
 	case protocol.UserMessageChunk:
 		ch.userChunk(u)
@@ -287,13 +287,13 @@ func (ch *chat) apply(u protocol.SessionUpdate) {
 		ch.retry = ""
 		it := ch.stream(itemAssistant, u.MessageID)
 		it.text += u.Content.Text
-		it.at = u.Meta.At
+		it.at = u.At
 	case protocol.AgentThoughtChunk:
 		ch.retry = ""
 		ch.stream(itemThinking, u.MessageID).text += u.Content.Text
 	case protocol.ToolCall:
 		it := ch.tool(u.ToolCallID)
-		it.msg, it.tool, it.args = u.Meta.MessageID, u.Name, string(u.RawInput)
+		it.msg, it.tool, it.args = u.MessageID, u.Name, string(u.RawInput)
 	case protocol.ToolCallUpdate:
 		ch.toolUpdate(u)
 	case protocol.CompactionUpdate:
@@ -307,13 +307,16 @@ func (ch *chat) apply(u protocol.SessionUpdate) {
 		ch.title = u.Title
 	case protocol.ConfigOptionUpdate:
 		ch.options = u.ConfigOptions
-	case protocol.StateUpdate:
+	case protocol.RunStateUpdate:
 		ch.running, ch.since = u.Running, u.Since
 		if !u.Running {
 			ch.retry = ""
 			ch.settle("已中断")
+			if u.Error != "" {
+				ch.err = u.Error
+			}
 		}
-	case protocol.RetryUpdate:
+	case protocol.RequestRetryUpdate:
 		// 这条回复作废：丢掉它已流出的文字、思考与半截的工具调用，等重新请求。
 		ch.endStream()
 		ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
@@ -326,9 +329,9 @@ func (ch *chat) apply(u protocol.SessionUpdate) {
 // userChunk 把用户消息的一块排进对话：同一条消息的文字与图片在一项里，技能全文另成一项。
 func (ch *chat) userChunk(u protocol.UserMessageChunk) {
 	ch.endStream()
-	if u.Meta.Skill != "" {
+	if u.Skill != "" {
 		it := ch.add(itemSkill, u.Content.Text)
-		it.msg, it.skill = u.MessageID, u.Meta.Skill
+		it.msg, it.skill = u.MessageID, u.Skill
 		return
 	}
 	var it *item
@@ -337,7 +340,7 @@ func (ch *chat) userChunk(u protocol.UserMessageChunk) {
 		it = ch.items[n-1]
 	} else {
 		it = ch.add(itemUser, "")
-		it.msg, it.seq, it.at = u.MessageID, u.Meta.Seq, u.Meta.At
+		it.msg, it.seq, it.at = u.MessageID, u.Seq, u.At
 	}
 	switch u.Content.Type {
 	case protocol.ContentImage:
@@ -404,7 +407,7 @@ func (it *item) finishCall(
 }
 
 // retryNotice 是重试时给用户的一行提示：等多久、第几次、为什么。
-func retryNotice(r protocol.RetryUpdate) string {
+func retryNotice(r protocol.RequestRetryUpdate) string {
 	reason, _, _ := strings.Cut(r.Error, "\n")
 	return fmt.Sprintf("请求失败，%d 秒后重试（第 %d/%d 次）：%s",
 		int(r.Delay.Seconds()), r.Attempt, r.Max, truncate(reason, 80))
@@ -425,5 +428,5 @@ func (ch *chat) acceptsImages() bool {
 	i := slices.IndexFunc(model.Options, func(v protocol.ConfigValue) bool {
 		return v.Value == model.CurrentValue
 	})
-	return i >= 0 && model.Options[i].Meta.Images
+	return i >= 0 && model.Options[i].Images
 }

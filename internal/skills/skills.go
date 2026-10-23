@@ -33,12 +33,12 @@ type Skill struct {
 }
 
 // Discover 从全局和工作区的 .agents、.atlas 目录发现技能，统一四个来源。
-func Discover(workdir string) ([]Skill, error) {
+func Discover(cwd string) ([]Skill, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("定位主目录失败: %w", err)
 	}
-	cwd, err := filepath.Abs(workdir)
+	cwd, err = filepath.Abs(cwd)
 	if err != nil {
 		return nil, fmt.Errorf("工作目录解析失败: %w", err)
 	}

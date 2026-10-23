@@ -30,7 +30,7 @@ func ValidateMessage(message Message) error {
 
 func validateSystem(m SystemMessage) error {
 	switch m.Type {
-	case SystemMessageTypePrompt:
+	case SystemMessageTypeSystemPrompt:
 		if strings.TrimSpace(m.Content) == "" {
 			return errors.New("系统提示词快照不能为空")
 		}

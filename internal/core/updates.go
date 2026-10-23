@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ type translator struct {
 }
 
 // event 转换一个事件；seq 是定稿消息保存后的序号。
-func (t *translator) event(e agent.Event, seq int64) []protocol.SessionUpdate {
+func (t *translator) event(e agent.Event, seq int64) []protocol.Update {
 	switch e.Type {
 	case agent.EventMessageStart:
 		t.msg, t.at = t.s.newID(), time.Now()
@@ -32,17 +33,17 @@ func (t *translator) event(e agent.Event, seq int64) []protocol.SessionUpdate {
 		return t.delta(e.Delta)
 	case agent.EventRetry:
 		t.text, t.thought, t.calls = false, false, map[string]bool{}
-		return []protocol.SessionUpdate{protocol.RetryUpdate{
+		return []protocol.Update{protocol.RequestRetryUpdate{
 			MessageID: t.msg, Attempt: e.Retry.Attempt, Max: e.Retry.Max,
 			Delay: e.Retry.Delay, Error: e.Retry.Error,
 		}}
 	case agent.EventToolStart:
-		return []protocol.SessionUpdate{protocol.ToolCallUpdate{
+		return []protocol.Update{protocol.ToolCallUpdate{
 			ToolCallID: e.Call.ID, Status: protocol.ToolInProgress,
 		}}
-	case agent.EventCompactStart:
+	case agent.EventCompactionStart:
 		t.compaction = t.s.newID()
-		return []protocol.SessionUpdate{protocol.CompactionUpdate{
+		return []protocol.Update{protocol.CompactionUpdate{
 			CompactionID: t.compaction, Status: protocol.CompactionInProgress,
 		}}
 	case agent.EventMessageEnd:
@@ -52,25 +53,24 @@ func (t *translator) event(e agent.Event, seq int64) []protocol.SessionUpdate {
 }
 
 // delta 转发一个增量。
-func (t *translator) delta(d agent.Delta) []protocol.SessionUpdate {
-	meta := protocol.MessageMeta{At: t.at}
+func (t *translator) delta(d agent.Delta) []protocol.Update {
 	switch d.Type {
 	case agent.DeltaTypeText:
 		t.text = true
-		return []protocol.SessionUpdate{protocol.AgentMessageChunk{
-			MessageID: t.msg, Content: protocol.Text(d.Text), Meta: meta}}
+		return []protocol.Update{protocol.AgentMessageChunk{
+			MessageID: t.msg, Content: protocol.Text(d.Text), At: t.at}}
 	case agent.DeltaTypeThinking:
 		t.thought = true
-		return []protocol.SessionUpdate{protocol.AgentThoughtChunk{
+		return []protocol.Update{protocol.AgentThoughtChunk{
 			MessageID: t.msg, Content: protocol.Text(d.Text)}}
 	case agent.DeltaTypeToolCall:
-		return []protocol.SessionUpdate{t.call(d.ToolCall)}
+		return []protocol.Update{t.call(d.ToolCall)}
 	}
 	return nil
 }
 
 // call 第一次见到一个调用时发出 tool_call，之后只更新它的参数。
-func (t *translator) call(call agent.ToolCall) protocol.SessionUpdate {
+func (t *translator) call(call agent.ToolCall) protocol.Update {
 	if t.calls[call.ID] {
 		return protocol.ToolCallUpdate{ToolCallID: call.ID, RawInput: call.Arguments}
 	}
@@ -79,7 +79,7 @@ func (t *translator) call(call agent.ToolCall) protocol.SessionUpdate {
 }
 
 // end 转换一条定稿的消息。
-func (t *translator) end(m agent.Message, seq int64) []protocol.SessionUpdate {
+func (t *translator) end(m agent.Message, seq int64) []protocol.Update {
 	switch m := m.(type) {
 	case agent.AssistantMessage:
 		return assistantUpdates(m, t.msg, t.text, t.thought, t.call)
@@ -90,50 +90,57 @@ func (t *translator) end(m agent.Message, seq int64) []protocol.SessionUpdate {
 		update := protocol.CompactionUpdate{CompactionID: t.compaction}
 		t.compaction = ""
 		if m.Type == agent.SystemMessageTypeCompaction {
-			update.Status, update.Summary = protocol.CompactionCompleted, m.Content
+			update.Status = protocol.CompactionCompleted
+			update.Summary = m.Content
 		} else {
 			update.Status, update.Error = protocol.CompactionFailed, m.Content
 		}
-		return []protocol.SessionUpdate{update}
+		return []protocol.Update{update}
 	}
 	return updatesOf(m, seq, t.s.newID())
 }
 
 // finish 在一轮结束时收尾：还在进行的压缩是被取消了。
-func (t *translator) finish() []protocol.SessionUpdate {
+func (t *translator) finish() []protocol.Update {
 	if t.compaction == "" {
 		return nil
 	}
-	return []protocol.SessionUpdate{protocol.CompactionUpdate{
+	return []protocol.Update{protocol.CompactionUpdate{
 		CompactionID: t.compaction, Status: protocol.CompactionCancelled,
 	}}
 }
 
-// historyUpdates 把一段历史转成更新，供回放与分页。
-func historyUpdates(records []store.Record) []protocol.SessionUpdate {
-	var out []protocol.SessionUpdate
+// historyUpdates 把一段历史记录转成更新，供分页读取。
+func (c *Core) historyUpdates(
+	ctx context.Context, id string, records []store.Record,
+) ([]protocol.Update, error) {
+	var out []protocol.Update
 	for _, r := range records {
-		out = append(out, updatesOf(r.Message, r.Seq, "h"+strconv.FormatInt(r.Seq, 10))...)
+		m, err := c.decodeWithImages(ctx, id, r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, updatesOf(m, r.Seq, "h"+strconv.FormatInt(r.Seq, 10))...)
 	}
-	return out
+	return out, nil
 }
 
 // updatesOf 把一条定稿的消息转成更新；seq 是它的序号，id 是它的消息 ID。
-func updatesOf(m agent.Message, seq int64, id string) []protocol.SessionUpdate {
-	var out []protocol.SessionUpdate
+func updatesOf(m agent.Message, seq int64, id string) []protocol.Update {
+	var out []protocol.Update
 	switch m := m.(type) {
 	case agent.UserMessage:
 		for _, block := range m.Content {
-			meta := protocol.MessageMeta{Seq: seq, At: m.Timestamp}
-			content := contentBlock(block)
-			if name, body, ok := skills.ParseInvocationBlock(content.Text); ok {
-				meta.Skill, content = name, protocol.Text(body)
+			chunk := protocol.UserMessageChunk{
+				MessageID: id, Content: contentBlock(block), Seq: seq, At: m.Timestamp,
 			}
-			out = append(out,
-				protocol.UserMessageChunk{MessageID: id, Content: content, Meta: meta})
+			if name, body, ok := skills.ParseInvocationBlock(chunk.Content.Text); ok {
+				chunk.Skill, chunk.Content = name, protocol.Text(body)
+			}
+			out = append(out, chunk)
 		}
 	case agent.AssistantMessage:
-		call := func(c agent.ToolCall) protocol.SessionUpdate { return toolCall(c, id) }
+		call := func(c agent.ToolCall) protocol.Update { return toolCall(c, id) }
 		out = assistantUpdates(m, id, false, false, call)
 	case agent.ToolResultMessage:
 		update := protocol.ToolCallUpdate{ToolCallID: m.ToolCallID,
@@ -163,9 +170,9 @@ func updatesOf(m agent.Message, seq int64, id string) []protocol.SessionUpdate {
 // call 转换工具调用。
 func assistantUpdates(
 	m agent.AssistantMessage, id string, text, thought bool,
-	call func(agent.ToolCall) protocol.SessionUpdate,
-) []protocol.SessionUpdate {
-	var out []protocol.SessionUpdate
+	call func(agent.ToolCall) protocol.Update,
+) []protocol.Update {
+	var out []protocol.Update
 	afterText := false
 	for _, block := range m.Content {
 		switch b := block.(type) {
@@ -184,7 +191,7 @@ func assistantUpdates(
 					s = "\n\n" + s
 				}
 				out = append(out, protocol.AgentMessageChunk{MessageID: id,
-					Content: protocol.Text(s), Meta: protocol.MessageMeta{At: m.Timestamp}})
+					Content: protocol.Text(s), At: m.Timestamp})
 			}
 		case agent.ToolCall:
 			out = append(out, call(b))
@@ -206,8 +213,7 @@ func toolCall(call agent.ToolCall, msg string) protocol.ToolCall {
 		kind = protocol.ToolExecute
 	}
 	return protocol.ToolCall{ToolCallID: call.ID, Name: call.Name, Title: call.Name, Kind: kind,
-		Status: protocol.ToolPending, RawInput: call.Arguments,
-		Meta: protocol.MessageMeta{MessageID: msg}}
+		Status: protocol.ToolPending, RawInput: call.Arguments, MessageID: msg}
 }
 
 // contentBlock 把文字或图片内容转成内容块。
@@ -218,9 +224,9 @@ func contentBlock(c agent.Content) protocol.ContentBlock {
 	return protocol.Text(agent.TextOf([]agent.Content{c}))
 }
 
-// promptEntry 是会话目录里的一条用户消息：输入的文字，不含图片与技能全文。
-func promptEntry(seq int64, m agent.UserMessage) protocol.PromptEntry {
-	entry := protocol.PromptEntry{Seq: seq, At: m.Timestamp}
+// userMessageSummary 是会话大纲里的一条用户消息：输入的文字，不含图片与技能全文。
+func userMessageSummary(seq int64, m agent.UserMessage) protocol.UserMessageSummary {
+	summary := protocol.UserMessageSummary{Seq: seq, At: m.Timestamp}
 	var texts []string
 	for _, block := range m.Content {
 		switch b := block.(type) {
@@ -229,9 +235,9 @@ func promptEntry(seq int64, m agent.UserMessage) protocol.PromptEntry {
 				texts = append(texts, b.Text)
 			}
 		case agent.ImageContent:
-			entry.Images = true
+			summary.Images = true
 		}
 	}
-	entry.Text = strings.Join(texts, "\n")
-	return entry
+	summary.Text = strings.Join(texts, "\n")
+	return summary
 }

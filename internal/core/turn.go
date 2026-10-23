@@ -2,12 +2,12 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/gvenusleo/atlas/internal/agent"
-	"github.com/gvenusleo/atlas/internal/config"
 	"github.com/gvenusleo/atlas/internal/protocol"
 	"github.com/gvenusleo/atlas/internal/skills"
 	"github.com/gvenusleo/atlas/internal/store"
@@ -16,66 +16,75 @@ import (
 // saveTimeout 限制单条消息的保存耗时；保存不受取消影响。
 const saveTimeout = 5 * time.Second
 
-// titleRunes 是自动生成的会话名称的最大字数。
+// titleRunes 是自动生成的会话标题的最大字数。
 const titleRunes = 30
 
 // drive 是一轮里要跑的：一轮对话或一次压缩。
 type drive func(ctx context.Context, in agent.Input, emit func(agent.Event)) []agent.Message
 
-// send 跑一轮。/compact 压缩上下文；/技能名 开头时在原文后附上技能全文。
-func (s *session) send(ctx context.Context, blocks []protocol.ContentBlock) (
-	protocol.StopReason, error,
-) {
+// sendPrompt 受理一条用户消息，随后这一轮在会话内异步运行。/compact 压缩上下文；
+// /技能名 开头时在原文后附上技能全文。
+func (s *session) sendPrompt(blocks []protocol.ContentBlock) error {
 	user := userMessage(blocks)
 	if strings.TrimSpace(agent.TextOf(user.Content)) == "/compact" {
 		s.mu.Lock()
 		compactable := agent.Compactable(s.messages)
 		s.mu.Unlock()
 		if !compactable {
-			return "", protocol.ErrNothingToCompact
+			return protocol.ErrNothingToCompact
 		}
-		return s.run(ctx, agent.Compact)
+		return s.start(agent.Compact)
 	}
 	s.mu.Lock()
 	list := s.skills
 	s.mu.Unlock()
 	user, err := withSkill(user, list)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return s.run(ctx, func(
+	return s.start(func(
 		ctx context.Context, in agent.Input, emit func(agent.Event),
 	) []agent.Message {
 		return agent.Run(ctx, in, user, emit)
 	})
 }
 
-// run 独占会话跑一轮：先与库对齐，再运行 drive，每条定稿的消息先写库、再并进上下文、最后推给
-// 客户端。写库失败时这一轮停止，之后的事件都丢掉；会话本身仍然可用。
-func (s *session) run(ctx context.Context, drive drive) (protocol.StopReason, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	defer context.AfterFunc(s.core.ctx, cancel)()
+// start 受理一轮：占用会话，检查工作目录与模型，取一份输入快照；通过之后在新的 goroutine 里
+// 运行。这一轮归会话所有：用核心的 ctx，与发起它的请求无关。
+func (s *session) start(drive drive) error {
+	if err := checkCwd(s.cwd); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(s.core.ctx)
 	end, err := s.begin(cancel)
 	if err != nil {
-		return "", err
+		cancel()
+		return err
 	}
-	s.mu.Lock()
-	since := s.turn.since
-	s.mu.Unlock()
-	s.broadcast(protocol.StateUpdate{Running: true, Since: since})
-	defer func() {
+	if err := s.ensureModel(ctx); err != nil {
 		end()
-		s.broadcast(protocol.StateUpdate{})
-	}()
-
-	if err := s.ready(ctx); err != nil {
-		return "", err
+		cancel()
+		return err
 	}
 	s.mu.Lock()
-	in := agent.Input{Model: s.model, Thinking: s.thinking, Prompt: s.prompt, Tools: s.tools,
-		Messages: s.messages}
+	in := agent.Input{Model: s.model, Thinking: s.thinking,
+		SystemPrompt: s.systemPrompt, Tools: s.tools, Messages: s.messages}
+	since := s.busy.since
 	s.mu.Unlock()
+	// 调用方的请求还没结束，Close 不会在这里错过它。
+	s.core.working.Go(func() { s.run(ctx, cancel, end, in, since, drive) })
+	return nil
+}
+
+// run 运行一轮：每条定稿的消息先写库、再并进上下文、最后推送给订阅者。写库失败时这一轮停止，
+// 之后的事件都丢掉；写入冲突还会让会话失效。结束时释放占用，推送停止原因或出错的原因，
+// 没有订阅者的会话随即卸载。
+func (s *session) run(
+	ctx context.Context, cancel context.CancelFunc, end func(),
+	in agent.Input, since time.Time, drive drive,
+) {
+	defer cancel()
+	s.broadcast(protocol.RunStateUpdate{Running: true, Since: since})
 
 	var saveErr error
 	tr := &translator{s: s}
@@ -93,94 +102,68 @@ func (s *session) run(ctx context.Context, drive drive) (protocol.StopReason, er
 		s.broadcast(tr.event(e, seq)...)
 	})
 	s.broadcast(tr.finish()...)
+
+	var state protocol.RunStateUpdate
 	switch {
 	case saveErr != nil:
-		return "", saveErr
+		state.Error = saveErr.Error()
+		if errors.Is(saveErr, protocol.ErrConflict) {
+			s.core.forget(s) // 内存里的会话已经过时，需要重新打开
+		}
 	case ctx.Err() != nil:
-		return protocol.StopCancelled, nil
+		state.StopReason = protocol.StopCancelled
+	default:
+		reason, err := stopReason(messages)
+		state.StopReason = reason
+		if err != nil {
+			state.Error = err.Error()
+		}
 	}
-	return stopReason(messages)
+	end()
+	s.broadcast(state)
+	s.core.unloadIfIdle(s)
 }
 
-// ready 让会话可以运行：没有可用的模型时再选一次（配置可能已经改好了）；
-// 别的进程写过这个会话时，从库里重新加载上下文，并通知客户端重新读历史。
-func (s *session) ready(ctx context.Context) error {
-	s.mu.Lock()
-	ref, thinking, ok, saved, seq := s.model.Ref, s.thinking, s.model.Stream != nil, s.saved, s.seq
-	s.mu.Unlock()
-	if !ok {
-		settings, err := config.Load()
-		if err != nil {
-			return err
-		}
-		if ref, thinking, err = pickModel(settings, ref, thinking); err != nil {
-			return err
-		}
-		model, err := modelConfig(settings, ref, thinking)
-		if err != nil {
-			return err
-		}
-		if saved {
-			if err := s.core.db.SetModel(ctx, s.id, ref, thinking); err != nil {
-				return err
-			}
-		}
-		s.mu.Lock()
-		s.model, s.thinking = model, thinking
-		s.mu.Unlock()
-		s.broadcast(protocol.ConfigOptionUpdate{
-			ConfigOptions: configOptions(settings, ref, thinking)})
-	}
-	if !saved {
-		return nil
-	}
-	info, err := s.core.db.Get(ctx, s.id)
-	if err != nil || info.LastSeq == seq {
-		return err
-	}
-	info, records, err := s.core.db.Log(ctx, s.id)
-	if err != nil {
-		return err
-	}
-	messages, _ := fold(records)
-	s.mu.Lock()
-	s.messages, s.seq = messages, info.LastSeq
-	usage := s.usage()
-	s.mu.Unlock()
-	s.broadcast(protocol.ResetUpdate{}, protocol.UsageUpdate{Usage: usage})
-	return nil
-}
-
-// save 写库并把消息并进上下文，返回它的序号。新会话的第一条消息（总是用户消息）连同提示词快照
-// 一起建会话，名称取这条消息的开头。保存不受这一轮取消的影响，但有独立的超时。
+// save 写库并把消息并进上下文，返回它的序号。新会话的第一条消息（总是用户消息）连同系统提示词
+// 快照一起建会话，标题取这条消息的开头。保存不受这一轮取消的影响，但有独立的超时。
 func (s *session) save(ctx context.Context, m agent.Message) (int64, error) {
 	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
 	defer stop()
-	s.mu.Lock()
-	saved, seq := s.saved, s.seq
-	info := store.Info{ID: s.id, Cwd: s.cwd, Model: s.model.Ref, Thinking: s.thinking}
-	prompt := s.prompt
-	s.mu.Unlock()
-	var err error
-	if saved {
-		seq, err = s.core.db.Append(ctx, s.id, seq, m)
-	} else {
-		if user, ok := m.(agent.UserMessage); ok {
-			info.Name = titleOf(user.Content)
-		}
-		info, err = s.core.db.Create(ctx, info, snapshot(prompt), m)
-		seq = info.LastSeq
-	}
+	entry, err := encode(m)
 	if err != nil {
 		return 0, err
 	}
 	s.mu.Lock()
+	saved, seq := s.saved, s.seq
+	info := store.Info{ID: s.id, Cwd: s.cwd, Model: s.model.Ref, Thinking: string(s.thinking)}
+	systemPrompt := s.systemPrompt
+	if sm, ok := m.(agent.SystemMessage); ok && sm.Type == agent.SystemMessageTypeCompaction {
+		entry.ContextFrom = s.contextFrom(sm)
+	}
+	s.mu.Unlock()
+	if saved {
+		seq, err = s.core.db.Append(ctx, s.id, seq, entry)
+	} else {
+		var snapshot store.Entry
+		if snapshot, err = encode(systemPromptSnapshot(systemPrompt)); err != nil {
+			return 0, err
+		}
+		if user, ok := m.(agent.UserMessage); ok {
+			info.Title = titleOf(user.Content)
+		}
+		info, err = s.core.db.Create(ctx, info, snapshot, entry)
+		seq = info.LastSeq
+	}
+	if err != nil {
+		return 0, mapStoreError(err)
+	}
+	s.mu.Lock()
 	s.saved, s.seq = true, seq
-	s.messages = agent.Fold(s.messages, m)
+	s.fold(m, seq)
 	usage := s.usage()
 	s.mu.Unlock()
 	if !saved {
-		s.broadcast(protocol.SessionInfoUpdate{Title: info.Name})
+		s.broadcast(protocol.SessionInfoUpdate{Title: info.Title})
 	}
 	if changesUsage(m) {
 		s.broadcast(protocol.UsageUpdate{Usage: usage})

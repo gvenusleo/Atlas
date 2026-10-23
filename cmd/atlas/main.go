@@ -4,14 +4,20 @@ package main
 import (
 	"context"
 	"log"
+	"path/filepath"
 
+	"github.com/gvenusleo/atlas/internal/config"
 	"github.com/gvenusleo/atlas/internal/core"
 	"github.com/gvenusleo/atlas/internal/gui"
 	"github.com/gvenusleo/atlas/internal/store"
 )
 
 func main() {
-	db, err := store.Open(context.Background(), "")
+	dir, err := config.Dir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	db, err := store.Open(context.Background(), filepath.Join(dir, "atlas.db"))
 	if err != nil {
 		log.Fatal(err)
 	}

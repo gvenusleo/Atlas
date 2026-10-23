@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -114,7 +115,11 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 			OnClick(func() {
 				switch {
 				case ch.running:
-					a.agent.Cancel(protocol.CancelNotification{SessionID: ch.id})
+					id := ch.id
+					go func() {
+						_ = a.service.CancelTurn(context.Background(),
+							protocol.CancelTurnRequest{SessionID: id})
+					}()
 				case a.send(ch, ch.input):
 					ch.input = ""
 				}

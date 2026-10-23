@@ -27,8 +27,8 @@ type readArgs struct {
 	Limit  int    `json:"limit"`
 }
 
-// Read 构造 read tool；workdir 应为工作目录绝对路径，相对路径以此为基准。
-func Read(workdir string) agent.Tool {
+// Read 构造 read tool；cwd 应为工作目录绝对路径，相对路径以此为基准。
+func Read(cwd string) agent.Tool {
 	return agent.Tool{
 		Name:     "read",
 		ReadOnly: true,
@@ -58,14 +58,16 @@ func Read(workdir string) agent.Tool {
 			},
 			"required": []string{"path"},
 		},
-		Execute: func(ctx context.Context, _ string, params jsontext.Value) (agent.ToolResult, error) {
-			return readFile(ctx, workdir, params)
+		Execute: func(
+			ctx context.Context, _ string, params jsontext.Value,
+		) (agent.ToolResult, error) {
+			return readFile(ctx, cwd, params)
 		},
 	}
 }
 
 // readFile 校验参数并读取文件，文本按行读取，图片返回附件。
-func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent.ToolResult, error) {
+func readFile(ctx context.Context, cwd string, params jsontext.Value) (agent.ToolResult, error) {
 	args := readArgs{Offset: 1, Limit: readMaxLines}
 	if err := json.Unmarshal(params, &args); err != nil {
 		return agent.ToolResult{}, fmt.Errorf("参数无效: %w", err)
@@ -83,7 +85,7 @@ func readFile(ctx context.Context, workdir string, params jsontext.Value) (agent
 		return agent.ToolResult{}, err
 	}
 
-	path := resolvePath(workdir, args.Path)
+	path := resolvePath(cwd, args.Path)
 	data, err := readRegularFile(ctx, path)
 	if err != nil {
 		return agent.ToolResult{}, err

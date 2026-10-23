@@ -5,39 +5,31 @@ import (
 	"time"
 )
 
-// SessionNotification 是一条推给客户端的更新（ACP session/update）。
-type SessionNotification struct {
-	SessionID string        `json:"sessionId"`
-	Update    SessionUpdate `json:"update"`
+// Notification 是一条推给订阅者的更新。
+type Notification struct {
+	SessionID string `json:"sessionId"`
+	Update    Update `json:"update"`
 }
 
-// SessionUpdate 是会话的一个更新，具体类型见本文件；方法 SessionUpdate 返回它在线上的
-// sessionUpdate 字段值。
-type SessionUpdate interface {
-	SessionUpdate() string
-}
-
-// MessageMeta 是消息块与工具调用上的 Atlas 扩展。
-type MessageMeta struct {
-	Seq   int64     `json:"atlas/seq,omitzero"`    // 用户消息在历史里的序号
-	At    time.Time `json:"atlas/at,omitzero"`     // 消息的时间
-	Skill string    `json:"atlas/skill,omitempty"` // 这块是显式调用的技能全文，值是技能名
-	// MessageID 是发出工具调用的助手消息；重试时调用随这条消息一起作废。
-	MessageID string `json:"atlas/messageId,omitempty"`
+// Update 是会话的一个更新，具体类型见本文件；方法 Type 返回它的种类名。
+type Update interface {
+	Type() string
 }
 
 // UserMessageChunk 是用户消息的一块。消息保存之后才发出，发消息的客户端也只在收到它时显示。
 type UserMessageChunk struct {
 	MessageID string       `json:"messageId"`
 	Content   ContentBlock `json:"content"`
-	Meta      MessageMeta  `json:"_meta,omitzero"`
+	Seq       int64        `json:"seq,omitzero"`    // 消息在历史里的序号
+	At        time.Time    `json:"at,omitzero"`     // 消息的时间
+	Skill     string       `json:"skill,omitempty"` // 这块是显式调用的技能全文，值是技能名
 }
 
 // AgentMessageChunk 是助手回复的一段文字。
 type AgentMessageChunk struct {
 	MessageID string       `json:"messageId"`
 	Content   ContentBlock `json:"content"`
-	Meta      MessageMeta  `json:"_meta,omitzero"`
+	At        time.Time    `json:"at,omitzero"` // 这条回复开始的时间
 }
 
 // AgentThoughtChunk 是助手的一段思考。
@@ -74,7 +66,8 @@ type ToolCall struct {
 	Kind       ToolKind       `json:"kind"`
 	Status     ToolStatus     `json:"status"`
 	RawInput   jsontext.Value `json:"rawInput,omitempty"`
-	Meta       MessageMeta    `json:"_meta,omitzero"`
+	// MessageID 是发出这个调用的助手消息；重试时调用随这条消息一起作废。
+	MessageID string `json:"messageId,omitempty"`
 }
 
 // ToolCallUpdate 更新一个工具调用，零值字段表示不变。
@@ -100,8 +93,8 @@ type UsageUpdate struct {
 
 // Usage 是上下文的占用。
 type Usage struct {
-	Used int64 `json:"used"`
-	Size int64 `json:"size"`
+	Used          int64 `json:"used"`
+	ContextWindow int64 `json:"contextWindow"` // 未知时为 0
 }
 
 // CompactionStatus 是压缩的状态。
@@ -138,14 +131,17 @@ type ConfigOptionUpdate struct {
 	ConfigOptions []ConfigOption `json:"configOptions"`
 }
 
-// StateUpdate 报告一轮开始或结束（_atlas_state，仿照 ACP v2 草案的 state_update）。
-type StateUpdate struct {
-	Running bool      `json:"running"`
-	Since   time.Time `json:"since,omitzero"`
+// RunStateUpdate 报告一轮开始或结束，中途接入的客户端靠它知道会话在不在运行。
+// 结束时（Running 为 false）带着停止原因，或者出错的原因。
+type RunStateUpdate struct {
+	Running    bool       `json:"running"`
+	Since      time.Time  `json:"since,omitzero"`
+	StopReason StopReason `json:"stopReason,omitempty"`
+	Error      string     `json:"error,omitempty"`
 }
 
-// RetryUpdate 报告一次模型请求失败、等待重试（_atlas_retry）：这条消息已流出的内容作废。
-type RetryUpdate struct {
+// RequestRetryUpdate 报告一次模型请求失败、等待重试：这条消息已流出的内容作废。
+type RequestRetryUpdate struct {
 	MessageID string        `json:"messageId"`
 	Attempt   int           `json:"attempt"`
 	Max       int           `json:"max"`
@@ -153,20 +149,15 @@ type RetryUpdate struct {
 	Error     string        `json:"error"`
 }
 
-// ResetUpdate 表示别的进程写过这个会话，核心已从库里重新加载；客户端丢掉显示的对话，
-// 重新读历史（_atlas_reset）。
-type ResetUpdate struct{}
-
-func (UserMessageChunk) SessionUpdate() string   { return "user_message_chunk" }
-func (AgentMessageChunk) SessionUpdate() string  { return "agent_message_chunk" }
-func (AgentThoughtChunk) SessionUpdate() string  { return "agent_thought_chunk" }
-func (ToolCall) SessionUpdate() string           { return "tool_call" }
-func (ToolCallUpdate) SessionUpdate() string     { return "tool_call_update" }
-func (UsageUpdate) SessionUpdate() string        { return "usage_update" }
-func (CompactionUpdate) SessionUpdate() string   { return "compaction_update" }
-func (Notice) SessionUpdate() string             { return "notice" }
-func (SessionInfoUpdate) SessionUpdate() string  { return "session_info_update" }
-func (ConfigOptionUpdate) SessionUpdate() string { return "config_option_update" }
-func (StateUpdate) SessionUpdate() string        { return "_atlas_state" }
-func (RetryUpdate) SessionUpdate() string        { return "_atlas_retry" }
-func (ResetUpdate) SessionUpdate() string        { return "_atlas_reset" }
+func (UserMessageChunk) Type() string   { return "user_message_chunk" }
+func (AgentMessageChunk) Type() string  { return "agent_message_chunk" }
+func (AgentThoughtChunk) Type() string  { return "agent_thought_chunk" }
+func (ToolCall) Type() string           { return "tool_call" }
+func (ToolCallUpdate) Type() string     { return "tool_call_update" }
+func (UsageUpdate) Type() string        { return "usage_update" }
+func (CompactionUpdate) Type() string   { return "compaction_update" }
+func (Notice) Type() string             { return "notice" }
+func (SessionInfoUpdate) Type() string  { return "session_info_update" }
+func (ConfigOptionUpdate) Type() string { return "config_option_update" }
+func (RunStateUpdate) Type() string     { return "run_state" }
+func (RequestRetryUpdate) Type() string { return "request_retry" }

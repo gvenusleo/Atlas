@@ -93,9 +93,11 @@ func (ThinkingContent) contentType() string {
 	return "thinking"
 }
 
-// ImageContent 是图像内容块；Data 为 base64 编码的图像。
+// ImageContent 是图像内容块；Data 为 base64 编码的图像。保存时图像外置到存储层，
+// 这时 Data 为空，Blob 是它的引用；内存里的消息总是内联 Data。
 type ImageContent struct {
-	Data     string `json:"data"`
+	Data     string `json:"data,omitempty"`
+	Blob     string `json:"blob,omitempty"`
 	MIMEType string `json:"mime_type"`
 }
 
@@ -126,12 +128,12 @@ type Message interface {
 type SystemMessageType string
 
 const (
-	SystemMessageTypePrompt     SystemMessageType = "system_prompt"
-	SystemMessageTypeNotice     SystemMessageType = "notice"
-	SystemMessageTypeCompaction SystemMessageType = "compaction"
+	SystemMessageTypeSystemPrompt SystemMessageType = "system_prompt"
+	SystemMessageTypeNotice       SystemMessageType = "notice"
+	SystemMessageTypeCompaction   SystemMessageType = "compaction"
 )
 
-// SystemMessage 是提示词快照、系统通知或压缩记录；Type 必须显式指定。
+// SystemMessage 是系统提示词快照、系统通知或压缩记录；Type 必须显式指定。
 // 压缩记录的 Content 是较早对话的摘要，Kept 是它之前的消息里原样保留的最近条数：
 // 发给模型的上下文是这条摘要加上保留的那些消息，更早的消息只留在历史里。
 type SystemMessage struct {
@@ -258,7 +260,7 @@ func (l ThinkingLevel) Valid() bool {
 // StreamRequest 是一次模型调用的输入。
 type StreamRequest struct {
 	Model        string // 完整引用 provider/model-id，即 Input.Model.Ref。
-	SystemPrompt string // 本次初始化的有效提示词，不属于对话历史。
+	SystemPrompt string // 本次生效的系统提示词，不属于对话历史。
 	Messages     []Message
 	Tools        []Tool
 	// ThinkingLevel 为空时采用服务端默认深度；off 表示请求关闭思考。
@@ -306,8 +308,8 @@ const (
 	EventMessageEnd EventType = "message_end"
 	// EventToolStart：开始执行一个工具调用，见 Call；它的结束就是工具结果的 EventMessageEnd。
 	EventToolStart EventType = "tool_start"
-	// EventCompactStart：开始压缩；结束是压缩记录或失败通知的 EventMessageEnd。
-	EventCompactStart EventType = "compact_start"
+	// EventCompactionStart：开始压缩；结束是压缩记录或失败通知的 EventMessageEnd。
+	EventCompactionStart EventType = "compaction_start"
 )
 
 // Event 是一轮运行中的事件；Type 决定哪个载荷字段有效。
@@ -324,17 +326,17 @@ type Event struct {
 // Model 是会话用的模型。引用、窗口和流函数是一个值，总是一起换。
 type Model struct {
 	Ref string // 完整引用 provider/model-id，唯一指出一个模型
-	// Window 是上下文窗口（token）；0 表示未知：不按阈值压缩，只在请求溢出时压缩。
-	Window int64
-	Stream StreamFn // 已绑定客户端与模型 ID
+	// ContextWindow 是上下文窗口（token）；0 表示未知：不按阈值压缩，只在请求溢出时压缩。
+	ContextWindow int64
+	Stream        StreamFn // 已绑定客户端与模型 ID
 }
 
 // Input 是一轮看到的全部，由调用方给出快照，循环不修改它。
 type Input struct {
 	Model Model
 	// Thinking 为空时采用服务端默认深度。
-	Thinking ThinkingLevel
-	Prompt   string // 系统提示词
-	Tools    []Tool
-	Messages []Message // 上下文，见 Fold
+	Thinking     ThinkingLevel
+	SystemPrompt string
+	Tools        []Tool
+	Messages     []Message // 上下文，见 Fold
 }

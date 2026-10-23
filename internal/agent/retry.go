@@ -12,7 +12,6 @@ type RetryPolicy struct {
 }
 
 // retryPolicy 是模型调用的重试策略：重试 4 次，依次等待 2、4、8、16 秒，共约半分钟。
-// 测试里改小。
 var retryPolicy = RetryPolicy{Max: 4, Base: 2 * time.Second}
 
 // RetryInfo 是 EventRetry 的载荷。

@@ -74,7 +74,7 @@ type compactor struct {
 // startTurn 在每次请求模型之前调用：上下文接近窗口上限时先压缩。
 func (c *compactor) startTurn(ctx context.Context) {
 	c.tried = false
-	if window := c.r.Model.Window; window > 0 {
+	if window := c.r.Model.ContextWindow; window > 0 {
 		reserve, _ := limits(window)
 		if Tokens(c.r.Messages) > window-reserve {
 			c.try(ctx)
@@ -95,7 +95,7 @@ func (c *compactor) try(ctx context.Context) bool {
 
 // autoKeep 返回自动压缩时保留的最近消息量。
 func autoKeep(r *run) int64 {
-	window := r.Model.Window
+	window := r.Model.ContextWindow
 	if window <= 0 {
 		// 窗口未知（只会在请求溢出后走到这里）：以刚溢出的上下文大小为准，保留其中的一部分。
 		window = Tokens(r.Messages)
@@ -117,13 +117,14 @@ func Compactable(messages []Message) bool {
 	return cutPoint(messages, 0) >= 0
 }
 
-// Fold 把一条新消息并进上下文并返回新的上下文：压缩记录换成“摘要 + 它之前保留的 Kept 条”，
-// 提示词快照不进上下文（提示词单独发送），其余追加。上下文由历史依次 Fold 得到；
-// 运行中推进与重放历史用的是这同一条规则。追加时可能复用 messages 的底层数组。
+// Fold 把一条新记录并进上下文并返回新的上下文：压缩记录换成“摘要 + 它之前保留的 Kept 条”，
+// 系统提示词快照（系统提示词单独发送）与通知（只给人看）不进上下文，其余追加。
+// 上下文由历史依次 Fold 得到；运行中推进与重放历史用的是这同一条规则。
+// 追加时可能复用 messages 的底层数组。
 func Fold(messages []Message, m Message) []Message {
 	if s, ok := m.(SystemMessage); ok {
 		switch s.Type {
-		case SystemMessageTypePrompt:
+		case SystemMessageTypeSystemPrompt, SystemMessageTypeNotice:
 			return messages
 		case SystemMessageTypeCompaction:
 			kept := messages[len(messages)-min(s.Kept, len(messages)):]
@@ -140,7 +141,7 @@ func compact(ctx context.Context, r *run, keep int64) (compacted, failed bool) {
 	if cut < 0 {
 		return false, false
 	}
-	r.emit(Event{Type: EventCompactStart})
+	r.emit(Event{Type: EventCompactionStart})
 	summary, err := summarize(ctx, r, r.Messages[:cut])
 	if err != nil {
 		if ctx.Err() != nil {
@@ -293,7 +294,7 @@ func isCompaction(m Message) bool {
 }
 
 // Tokens 估算上下文的大小：压缩点之后最新一条带用量的助手响应的用量，加上它之后各消息的估算；
-// 没有这样的响应时整体估算（提示词与工具定义不计，预留量已经覆盖）。
+// 没有这样的响应时整体估算（系统提示词与工具定义不计，预留量已经覆盖）。
 // 保留段里的响应是压缩之前的，它们的用量含有已被摘要掉的内容，不能用。
 func Tokens(messages []Message) int64 {
 	trusted := 0
