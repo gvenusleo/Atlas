@@ -169,13 +169,13 @@ func (a *App) readDir(ch *chat, rel string) {
 	}()
 }
 
-// readEntries 读取一个目录：目录在前、文件在后，各自按名称不分大小写排序，不含 .git。
+// readEntries 读取一个目录：目录在前、文件在后，各自按名称不分大小写排序，不含 skipped 的名字。
 // 读不了时当作空目录。
 func readEntries(dir string) []fileEntry {
 	items, _ := os.ReadDir(dir)
 	entries := make([]fileEntry, 0, len(items))
 	for _, it := range items {
-		if it.Name() == ".git" {
+		if skipped(it.Name()) {
 			continue
 		}
 		isDir := it.IsDir()
