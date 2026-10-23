@@ -33,7 +33,9 @@ func load(ctx context.Context) ([]string, error) {
 	}
 	cmd := exec.CommandContext(ctx, shell, "-l", "-i", "-c",
 		"printf %s "+marker+"; env -0; printf %s "+marker)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// 新会话没有控制终端：从终端启动时，处在后台进程组的交互 shell 去碰终端会被停住，直到超时。
+	// 它同时是自己进程组的组长，下面可以按组终止。
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error {
 		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		if errors.Is(err, syscall.ESRCH) {
