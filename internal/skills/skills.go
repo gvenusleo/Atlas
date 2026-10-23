@@ -1,0 +1,318 @@
+// Package skills 发现并解析 SKILL.md 技能，生成供系统提示词使用的目录；
+// 显式调用技能（/技能名）时，生成附给模型的技能块，并从消息里识别它。
+package skills
+
+import (
+	"cmp"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"html"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"unicode/utf8"
+
+	"go.yaml.in/yaml/v4"
+)
+
+// 定义 skills 加载限制。
+const (
+	maxNameLength        = 64
+	maxDescriptionLength = 1024
+	maxFileBytes         = 10 << 20
+)
+
+// Skill 只保存基本信息，正文通过 read tool 按需读取。
+type Skill struct {
+	Name        string `xml:"name"`
+	Description string `xml:"description"`
+	FilePath    string `xml:"filePath"`
+}
+
+// Discover 从全局和工作区的 .agents、.atlas 目录发现技能，统一四个来源。
+func Discover(cwd string) ([]Skill, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("定位主目录失败: %w", err)
+	}
+	cwd, err = filepath.Abs(cwd)
+	if err != nil {
+		return nil, fmt.Errorf("工作目录解析失败: %w", err)
+	}
+	return Load(
+		filepath.Join(home, ".agents", "skills"),
+		filepath.Join(home, ".atlas", "skills"),
+		filepath.Join(cwd, ".agents", "skills"),
+		filepath.Join(cwd, ".atlas", "skills"),
+	)
+}
+
+// Load 扫描 skills 来源的子目录，按名称排序；缺失目录略过，加载错误直接返回。
+func Load(dirs ...string) ([]Skill, error) {
+	var skills []Skill
+	names := make(map[string]string)
+	paths := make(map[string]bool)
+
+	for _, dir := range dirs {
+		root, err := filepath.Abs(dir)
+		if err != nil {
+			return nil, fmt.Errorf("%s 路径解析失败: %w", dir, err)
+		}
+		files, err := skillFiles(root)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, path := range files {
+			realPath, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return nil, fmt.Errorf("%s 符号链接解析失败: %w", path, err)
+			}
+			if paths[realPath] {
+				continue
+			}
+
+			skill, err := loadSkill(path)
+			if err != nil {
+				return nil, fmt.Errorf("%s 加载失败: %w", path, err)
+			}
+			if previous, exists := names[skill.Name]; exists {
+				return nil, fmt.Errorf("技能 %q 同名冲突: %s 与 %s", skill.Name, previous, path)
+			}
+			names[skill.Name] = path
+			paths[realPath] = true
+			skills = append(skills, skill)
+		}
+	}
+	slices.SortFunc(skills, func(a, b Skill) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	return skills, nil
+}
+
+// skillFiles 返回 root 下各技能目录中的 SKILL.md 路径；目录缺失时返回空。
+func skillFiles(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s 扫描失败: %w", root, err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		// 允许 skill 目录通过符号链接共享。
+		if strings.HasPrefix(entry.Name(), ".") ||
+			!entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		dirPath := filepath.Join(root, entry.Name())
+		info, err := os.Stat(dirPath)
+		if err != nil {
+			return nil, fmt.Errorf("%s 检查失败: %w", dirPath, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+
+		path := filepath.Join(dirPath, "SKILL.md")
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, fmt.Errorf("%s 检查失败: %w", path, err)
+		}
+		files = append(files, path)
+	}
+	return files, nil
+}
+
+// readSkillFile 统一校验普通文件、大小和 UTF-8，并返回文件的全部内容。
+func readSkillFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("不是普通文件")
+	}
+	if info.Size() > maxFileBytes {
+		return "", errors.New("文件大小超过 10 MiB 限制")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	// 读取时继续限额，防止文件在 Stat 后增长。
+	data, err := io.ReadAll(io.LimitReader(file, maxFileBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxFileBytes {
+		return "", errors.New("文件大小超过 10 MiB 限制")
+	}
+	if !utf8.Valid(data) {
+		return "", errors.New("文件不是 UTF-8 文本")
+	}
+	return string(data), nil
+}
+
+// loadSkill 读取文件并解析元信息，不保存正文。
+func loadSkill(path string) (Skill, error) {
+	text, err := readSkillFile(path)
+	if err != nil {
+		return Skill{}, err
+	}
+	header, err := splitFrontmatter(text)
+	if err != nil {
+		return Skill{}, err
+	}
+
+	// 使用原始 YAML 值检查类型，避免把数字或布尔值当成字符串。
+	var fields map[string]any
+	if err := yaml.Unmarshal([]byte(header), &fields); err != nil {
+		return Skill{}, fmt.Errorf("YAML 解析失败: %w", err)
+	}
+
+	name, ok := fields["name"].(string)
+	if !ok {
+		return Skill{}, errors.New("name 必须是字符串")
+	}
+	if err := validateName(name); err != nil {
+		return Skill{}, err
+	}
+
+	description, ok := fields["description"].(string)
+	if !ok {
+		return Skill{}, errors.New("description 必须是字符串")
+	}
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return Skill{}, errors.New("description 不能为空")
+	}
+	if utf8.RuneCountInString(description) > maxDescriptionLength {
+		return Skill{}, fmt.Errorf(
+			"description 不能超过 %d 个字符", maxDescriptionLength,
+		)
+	}
+
+	return Skill{
+		Name:        name,
+		Description: description,
+		FilePath:    path,
+	}, nil
+}
+
+// splitFrontmatter 提取 YAML 头，分隔符必须独占一行；支持 BOM 和 CRLF。
+func splitFrontmatter(text string) (string, error) {
+	text = strings.TrimPrefix(text, "\uFEFF")
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+
+	first, rest, found := strings.Cut(text, "\n")
+	if !found || first != "---" {
+		return "", errors.New("文件必须以 YAML frontmatter 开始")
+	}
+
+	end := 0
+	for line := range strings.SplitSeq(rest, "\n") {
+		if line == "---" {
+			return rest[:end], nil
+		}
+		end += len(line) + 1
+	}
+	return "", errors.New("YAML frontmatter 缺少结束分隔符")
+}
+
+// validateName 校验名称长度与字符，不要求名称和目录名相同。
+func validateName(name string) error {
+	if len(name) == 0 || len(name) > maxNameLength {
+		return fmt.Errorf("name 长度必须在 1 到 %d 个字符之间", maxNameLength)
+	}
+	for _, c := range name {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return errors.New("name 只能包含小写字母、数字和连字符")
+		}
+	}
+	if strings.HasPrefix(name, "-") ||
+		strings.HasSuffix(name, "-") ||
+		strings.Contains(name, "--") {
+		return errors.New("name 不能以连字符开头或结尾，也不能包含连续连字符")
+	}
+	return nil
+}
+
+// Invoked 返回 text 显式调用的技能：以 / 加技能名开头，其后是空白或结尾。
+func Invoked(list []Skill, text string) (Skill, bool) {
+	for word := range strings.FieldsSeq(text) {
+		if name, ok := strings.CutPrefix(word, "/"); ok {
+			if i := slices.IndexFunc(list, func(s Skill) bool { return s.Name == name }); i >= 0 {
+				return list[i], true
+			}
+		}
+		break // 只看第一个词
+	}
+	return Skill{}, false
+}
+
+// invocationPrefix 是技能块的开头，InvocationBlock 生成、ParseInvocationBlock 识别。
+const invocationPrefix = `<skill name="`
+
+// InvocationBlock 生成显式调用技能时跟在用户输入后面的技能块：技能名与 SKILL.md 的位置，
+// 再接 SKILL.md 的全部内容，和模型自己用 read 读到的一样。
+func InvocationBlock(s Skill) (string, error) {
+	text, err := readSkillFile(s.FilePath)
+	if err != nil {
+		return "", fmt.Errorf("读取技能 %s 失败: %w", s.Name, err)
+	}
+	return fmt.Sprintf("%s%s\" location=\"%s\">\n%s\n</skill>",
+		invocationPrefix, s.Name, html.EscapeString(s.FilePath), text), nil
+}
+
+// ParseInvocationBlock 识别 InvocationBlock 生成的技能块，返回技能名与块里的内容
+// （不含首尾标签）。
+func ParseInvocationBlock(text string) (name, content string, ok bool) {
+	rest, ok := strings.CutPrefix(text, invocationPrefix)
+	if !ok {
+		return "", "", false
+	}
+	name, rest, ok = strings.Cut(rest, `"`)
+	if !ok {
+		return "", "", false
+	}
+	if _, rest, ok = strings.Cut(rest, ">\n"); !ok {
+		return "", "", false
+	}
+	if content, ok = strings.CutSuffix(rest, "\n</skill>"); !ok {
+		return "", "", false
+	}
+	return name, content, true
+}
+
+// FormatPrompt 生成技能目录，XML 编码负责转义名称、描述和路径。
+func FormatPrompt(skills []Skill) (string, error) {
+	if len(skills) == 0 {
+		return "", nil
+	}
+
+	catalog := struct {
+		XMLName xml.Name `xml:"available_skills"`
+		Skills  []Skill  `xml:"skill"`
+	}{
+		Skills: skills,
+	}
+	data, err := xml.MarshalIndent(catalog, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("技能目录生成失败: %w", err)
+	}
+
+	return "以下技能提供特定任务的操作说明。" +
+		"用户点名技能或任务符合其描述时，先用 read 读取对应的 SKILL.md。" +
+		"读取结果被截断时，继续读取剩余部分。" +
+		"技能中引用的相对路径，以 SKILL.md 所在目录为基准。\n\n" +
+		string(data), nil
+}

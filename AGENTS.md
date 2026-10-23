@@ -1,65 +1,66 @@
-# Atlas Development Guide
+# Atlas 开发约定
 
-## Product Boundaries
+Atlas 是用 Go 编写的桌面 AI Agent，界面用 MyGo，没有权限审核。顶层设计见 [docs/design.md](docs/design.md)，它是各包职责、数据流转和用语的权威说明；包的清单见 [README.md](README.md) 的“结构”一节。
 
-- Atlas is a local general-purpose agent. Its tools have the same filesystem and shell permissions as the Atlas process.
-- Atlas does not provide a sandbox, permission prompts, or an approval gate. Do not introduce permission abstractions unless the product direction changes.
-- The repository is being rebuilt as a Dart and Flutter workspace. The agent runtime, CLI, ACP adapter, Nocterm TUI, Flutter local client, WebSocket transport, and MCP client tools are implemented.
-- All clients and protocol adapters must use the single runtime in `packages/atlas_runtime`. They must not duplicate the agent loop.
-- Nocterm receives the runtime through an injected interface. Flutter is always an ACP client; its local mode uses an in-process ACP transport, and its mobile mode connects to a computer-side `atlas server` over the WebSocket transport in `atlas_ws`.
-- Presentation code must not call model providers, tools, or storage directly. Application bootstrap code may construct those adapters and inject the shared runtime.
-- Provider-specific authentication, endpoints, request fields, and response conversion belong in `packages/atlas_provider` and must not enter `atlas_runtime` domain requests.
+## 原则
 
-## Change Constraints
+- 保持极简：能删则删，不为未发生的需求引入变量、抽象、配置项或函数。
+- 先设计，后改码：改动设计时先改 `docs/design.md` 并得到确认，再改代码。代码与设计不一致时，先判断哪一方有误，再修正有误的一方。
+- 数据库向后兼容，不能要求用户删库：改表结构必须同时升 `schemaVersion`、在 `migrations` 末尾追加迁移、更新 `schemaSQL`，并补一个测试验证旧版本的库迁移后与全新建库的结构一致。删除用户本机的数据前先确认，优先移到废纸篓。
+- 消息是不可变的值，创建后任何人都不修改它；不靠深拷贝保证。
+- 一致性的顺序：先写库，再改内存，最后推送给订阅者。
 
-- State assumptions when requirements are ambiguous. Ask before proceeding when different interpretations would materially change the result.
-- Make the smallest change that fully solves the request. Do not perform unrelated refactors, formatting, cleanup, or speculative improvements.
-- Preserve package boundaries. Add an abstraction only when real call sites require it.
-- Do not predeclare package dependencies. Add a dependency from the owning package with `dart pub add` only when implementation code first imports it; use `flutter pub add` for the Flutter application.
-- Use Dio for Atlas-owned HTTP requests. MCP integration uses `mcp_dart` and may bring in and use its `package:http` dependency for MCP transport and authentication. Keep this exception inside the MCP adapter; do not introduce another HTTP client for unrelated features. Add a dedicated WebSocket dependency only when `atlas_ws` contains an implementation that requires it.
-- Keep the agent loop predictable: every tool call has a paired result, tool results preserve model order, errors are model-visible, and emitted events preserve occurrence order.
-- Persisted timeline items must belong to the same session and turn; storage writes that update multiple records must be atomic.
-- The runtime serializes active turns per session, and persisted provider/tool failures use safe summaries rather than raw exception text.
-- Compaction checkpoints end at the final timeline item of a terminal turn; they must never split an assistant/tool/result group.
-- Public Dart types and functions require concise documentation comments. Other comments should explain only non-obvious behavior.
-- Dart 3.13 is the workspace baseline: every package declares `sdk: ^3.13.0`, classes with a single generative constructor declare it in the class header, and switch statements over sealed types must be exhaustive.
-- Read relevant files before editing. Current code and command output are the source of truth.
+## 分层与依赖
 
-## Workspace Boundaries
+- `protocol` 只有接口和数据类型，不依赖其他包；`agent`、`store`、`skills`、`config` 也不依赖其他内部包。
+- `gui` 的会话功能只通过 `protocol` 使用核心，不 import `core`、`agent`、`store`；文件树、编辑器、终端是 GUI 本地功能，直接使用 `tools` 等包。
+- `core` 是会话运行时数据的唯一权威，对模型提供方只通过 `llm.Supports` 与 `llm.NewStream` 使用，不知道有哪些提供方。
+- `store` 只存取不透明的记录正文和二进制，不理解消息内容。
+- 新增依赖前先对照设计文档的分层图；需要打破时先改设计。
 
-- `atlas_runtime` owns domain models, events, ports, orchestration, cancellation, compaction, skills, and the model/tool loop. It must not depend on persistence, provider, tool, UI, or protocol implementations.
-- `atlas_storage`, `atlas_provider`, and `atlas_tools` depend on and implement runtime ports without owning orchestration.
-- `atlas_ws` owns the versioned WebSocket wire contract (one ACP JSON-RPC message per text frame over `/acp`), token authorization, connection policies, and transport behavior without composing runtime services.
-- `atlas_acp` owns ACP lifecycle and adapts the shared runtime through `acpd`; `atlas_mcp` owns stdio/Streamable HTTP client tools, connections, cancellation, and result mapping through `mcp_dart`.
-- `atlas_tui` renders and interacts with an injected runtime interface; it does not depend on remote client protocols.
-- `atlas_cli` and `atlas_flutter` are application composition roots. Running `atlas` enters the TUI by default; `atlas acp` serves the composed runtime to ACP clients over NDJSON stdio; `atlas server` exposes the composed runtime through `atlas_ws` for remote clients.
+## 编码规范
 
-## Flutter App
+- 文档、注释与错误信息统一使用中文，写书面语，不用口语。注释说明“为什么”，不复述代码。
+- 编写 Go 代码前先阅读 `.agents/skills/use-modern-go`：对要改的文件运行 `sh .agents/skills/use-modern-go/scripts/run-tool.sh list --file-path <文件>`，完整读完输出，按其中的现代写法编写（如 `wg.Go`、标准库 `uuid`、`encoding/json/v2`、`omitzero`、`slices`、`min`）。
+- 编写界面代码前先阅读 `.agents/skills/mygo-maintenance`。
+- 单个函数尽量不超过 60 行，单行不超过 100 列（制表符按 4 列计），文件按职责拆分，一个文件不要混着多项职责。
+- 命名统一：方法名是“动词加宾语”（`OpenSession`、`ListHistory`），请求与响应类型是方法名加 `Request`、`Response`；工作目录在代码里一律叫 `cwd`。
+- 用语与设计文档的“用语”一节一致：用户发的叫“用户消息”，系统提示词叫“系统提示词”；`Prompt` 专指用户消息，系统提示词一律写 `SystemPrompt`；一个会话同时只有一轮。
+- 修改文件用编辑工具，不用 sed 或脚本批量改写；脚本只用来量测。
 
-- Keep bootstrap, routing, and platform-window integration in `apps/atlas_flutter/lib/app`; reusable application-wide UI and theme code belongs in `lib/shared`.
-- Organize product code by feature under `lib/features/<feature>`. Add `domain` or `data` layers only when a feature has real business logic or external data access.
-- Use Riverpod for application-wide, asynchronous, or cross-page state. Keep transient presentation state in the owning widget.
-- Use go_router for page-level navigation. Direct `Navigator` calls are acceptable for dialogs, sheets, drawers, and other local UI surfaces.
-- Preserve dependency direction: `app` may depend on features and shared code; features may depend on shared code; shared code must not import a feature.
-- Flutter bootstrap may compose runtime adapters, but Flutter feature and presentation code must not own agent orchestration, provider logic, tool execution, or session persistence.
-- Every text field is wrapped in `AnimatedCaret` and built with `showCursor: false`, so the shared caret layer (`lib/shared/widgets/animated_caret.dart`) is the only caret renderer. The wrapper decorates exactly one field.
+## GUI（MyGo）
 
-## Documentation
+- 界面状态只在主线程读写。后台 goroutine 启动前先取出要用的值，不在 goroutine 里读 `chat` 等界面状态；结果经 `Window.Update` 回到主线程。
+- 慢请求返回时界面可能已经切换，用发起时记下的标识（如 `chat.starts`）判断，对不上就丢弃结果，已建出的会话一并关闭。
+- 会话的状态只由核心的响应与更新写入，GUI 不自行决定或推算；实时更新与回放历史走同一条渲染路径。
 
-- Root README files describe the product, current status, and supported entry points; architecture details belong in `docs/architecture.md`.
-- Keep each Markdown paragraph on a single line. Do not hard-wrap prose, list items, or blockquote paragraphs; a paragraph that reads as one block belongs on one line.
-- English documents define structure and terminology. Keep the corresponding `docs/zh-CN` translation synchronized in the same change.
-- Mark unimplemented behavior as `Planned`. Do not document planned commands or configuration as currently available.
-- Every workspace package README states its responsibility, allowed dependencies, and prohibited ownership.
+## 测试
 
-## Verification
+- 只测并发与持久化格式这类容易悄悄出错的行为，不写单元测试，不为小功能和小细节补测试。现有的测试范围见设计文档的“需要自动测试保证的行为”。
+- 修复回归要先写出在旧代码上失败的测试，并实际跑一遍红灯再确认修复。
+- 不能自动验证的部分（比如真实窗口）如实说明没有验证，不说“已验证”。
 
-- Add a test only when it protects a specific behavior and can catch a plausible failure that existing tests would miss.
-- Prioritize boundaries, failures, state changes, and integration between components; use representative cases instead of many equivalent inputs.
-- Do not test trivial forwarding, repeat the same assertion at multiple layers, or mirror the implementation to compute expected results.
-- Assert observable outcomes with stable inputs; avoid locking tests to incidental layout, wording, timing, or internal call counts unless those are explicit requirements.
-- Run focused tests for changed behavior first.
-- Run `mise run ci` before delivery. It resolves the locked workspace, checks formatting, analyzes Dart and Flutter code, and runs available tests.
-- For Flutter platform integration changes, also run the matching `mise run app-build-*` task.
-- Build the CLI with `mise run cli-build` (`dart build cli`, required for packages with build hooks like sqlite3; `dart compile exe` cannot link them). The binary lands at `build/bundle/bin/atlas`; do not recreate a `build/atlas` symlink.
-- Report commands that passed and remaining risk. Command completion alone is not proof; verify the observable file or behavior change.
+## 常用命令
+
+所有 Go 工具都通过 mise 运行，用 `mise exec -- go ...` 或 `mise run <任务>`。
+
+| 命令 | 作用 |
+| --- | --- |
+| `mise run ci` | 提交前必跑：格式检查、`go vet` 与 `mygo vet`、带 `-race` 的测试、编译、漏洞扫描 |
+| `mise run fmt` | `gofmt` 格式化 |
+| `mise run dev` | 启动桌面应用（热重载） |
+| `CGO_ENABLED=0 mise exec -- go test ./...` | 不带竞态检测的快速测试 |
+
+## 文档
+
+- 保持精简、必要：不写前置论述、重复说明和没有信息量的话；每个段落和列表项写成一行，不在句子中间硬折行。
+- 术语以设计文档的“用语”一节为准，新增概念先补进去，不要在不同地方各叫各的。
+- 重构后同步更新 README 的结构表和设计文档里受影响的部分；改完用 `/write` 的标点检查脚本过一遍。
+- 不在输出里回显 `~/.atlas/` 下的凭据（`auth.json` 等）。
+
+## 提交与交付
+
+- 提交前运行 `mise run ci`，通过再提交。
+- 只在被要求时提交，不追问“是否提交”；不推送，除非明确要求。
+- 提交说明用中文，格式是 `类型: 说明`，可带范围（`refactor(gui): ...`），类型取 `feat`、`fix`、`refactor`、`docs`；改动多时在正文用列表写要点。大的重构按主题拆开提交，文档与代码分开。
+- 汇报要如实：失败就说失败并给出输出，跳过的步骤说明跳过，没验证的说明没验证；不把改动范围和风险说小。
