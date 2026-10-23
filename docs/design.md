@@ -1,38 +1,52 @@
-# Atlas 目标架构
+# Atlas 架构
 
-这份文档描述重新设计后的 Agent 运行架构：一次运行里，配置从哪里来，数据怎样流转、存在哪里，
-状态由谁管理。它不受现有命名约束，与现状的对照见末尾。
+> 本文是当前开发迭代的约定，不是稳定发布的产品契约。`protocol` 的类型与线上格式、数据库格式都会随开发不兼容地变化，不保证向后兼容，也不做迁移。
 
-核心思路：**Atlas 的核心是一个 ACP 形态的提供端，桌面 GUI、ACP、WebSocket 都只是它的客户端。**
-对外接口的语义与命名照 [ACP v1](https://agentclientprotocol.com)，ACP 不够用的地方用规范允许的
-`_atlas` 扩展补上。
+这份文档是 Atlas 的顶层设计，也是各包职责与数据流转的权威说明：一轮之中，设置从何而来，数据如何流转、存放在哪里，状态由谁管理。代码与本文不一致时，先判断哪一方有误，再修正有误的一方。
+
+核心思路：**Atlas 的核心对外只有一组接口 `protocol.Service`，桌面 GUI、ACP、WebSocket 都只是它的客户端。**
 
 ## 前提
 
-- 入口有多个：桌面 GUI（进程内），ACP（编辑器以子进程启动 `atlas acp`，走 stdio），WebSocket
-  （在 App 进程内，供手机等远程客户端）。现在只做 GUI，另外两个以后做，但核心按它们设计。
-- 多个进程可以打开同一个数据库。同一会话同一时刻只应由一个进程写入，万一并发写入，靠序号冲突
-  检测兜底。
-- 同一进程里，多个客户端可以同时打开同一个会话，各自收到全部更新。
-- 一个会话同一时刻只有一轮在运行。
-- 消息是值，创建之后任何人都不修改它。这是全局约定，不靠深拷贝保证。
-- Atlas 没有权限审核，工具在本地执行：ACP 里由客户端提供的能力（权限请求、`fs/*`、`terminal/*`）
-  一概不用。
+- 入口有多个：桌面 GUI（进程内）、ACP（编辑器以子进程启动 `atlas acp`，走 stdio）、WebSocket（位于 App 进程内，供手机等远程客户端使用）。目前只实现了 GUI，另外两个是后续的适配包，核心按它们的需要设计。
+- 多个进程可以打开同一个数据库，各自独立加载会话。同一会话同一时刻只应由一个进程写入；若出现并发写入，后写入的一方收到 `ErrConflict`，该会话在其进程内失效，需要重新打开。不做自动对齐。
+- 同一进程内，多个客户端可以同时订阅同一个会话，各自收到全部更新。
+- 一个会话同一时刻只做一件事：一轮、压缩、更换模型、删除互斥。
+- 一轮归会话所有，与发起它的连接无关：连接断开、取消订阅都不会中止一轮，只有 `CancelTurn` 和进程退出会。
+- 消息是不可变的值，创建后不再修改。这是全局约定，不依赖深拷贝来保证。
+- Atlas 没有权限审核，工具在本地执行，不依赖客户端提供任何能力（权限确认、文件、终端）。
+- 数据库没有迁移：版本号不一致时报错，由用户删除数据库后重建。
+
+## 用语
+
+| 用语 | 含义 |
+| --- | --- |
+| 会话（session） | 用户与 Agent 之间的一段对话，各自保存自己的上下文、历史与状态 |
+| 一轮（turn） | 从一条用户消息开始，到 Agent 回答完毕为止的完整过程，其间可能多次请求模型、调用工具。由一次 `SendPrompt` 调用受理，结束时给出停止原因（stop reason） |
+| 用户消息 | 用户发给 Agent 的一条消息：文字、图片或技能调用。方法名里的 `Prompt` 专指用户消息，系统提示词一律写 `SystemPrompt` |
+| 系统提示词（system prompt） | `systemprompt` 包按工作目录组装、放在每次模型请求最前面的指令 |
+| 系统提示词快照 | 系统提示词变化时记入历史的一条记录，仅用于判断是否需要追加新快照，不进入上下文 |
+| 通知（notice） | 只给人看的提示，如压缩失败。记入历史，回放时仍能看到，但不进入上下文，也不发给模型 |
+| 订阅者 | 订阅了某个会话、接收其更新的连接 |
+| 更新（update） | 核心推送给订阅者的内容，见“更新”一节 |
+| 事件（event） | `agent` 的循环交给调用方的流式事件，仅在核心内部使用；核心把它们转换成更新 |
+| 压缩（compaction） | 把较早的上下文替换为一段摘要，历史中的原消息保持不变 |
+| 设置（settings） | `settings.json`、`auth.json` 中的内容，由 `config` 读取 |
+| 配置项 | 会话的选项，Atlas 用它向客户端暴露模型与思考深度 |
 
 ## 三个概念
 
 | 概念 | 是什么 | 唯一权威 |
 | --- | --- | --- |
-| 历史 | 会话里发生过的全部消息，只追加，给人看 | 数据库 `messages` 表 |
+| 历史 | 会话中发生过的全部记录，只追加，供人查看 | 数据库 `messages` 表 |
 | 上下文 | 下一次请求发给模型的消息 | 由历史按 `agent.Fold` 折叠得到 |
-| 会话 | 一个已加载的会话：配置、上下文、是否在运行、谁在看 | 核心里的 `session` 对象 |
+| 会话 | 已加载到内存的会话：配置、上下文、是否忙、订阅者 | 核心中的会话对象 |
 
-上下文是历史的投影。两者只在两处不同：压缩之后，上下文里较早的消息换成了摘要，历史里都还在；
-提示词快照记在历史里，不进上下文。“上下文 = 依次把历史里的每条消息 `Fold` 进来”，这条规则只写
-一份，在三处用：循环在一轮里推进自己的工作副本；会话在每条消息保存后推进自己的上下文；加载会话
-时从库里重放历史。
+上下文是历史的投影。两者有三处不同：压缩之后，上下文中较早的消息被替换为摘要，而历史中仍完整保留；系统提示词快照和通知记在历史中，不进入上下文。“上下文 = 依次把历史中的每条记录 `Fold` 进来”，这条规则只定义一次，在三处使用：循环在一轮之内推进自己的工作副本；会话在每条记录保存后推进自己的上下文；加载会话时从数据库重放历史。
 
-客户端看到的对话是历史的视图，只由核心发来的更新推进，它不是数据。
+压缩记录记下保留的消息条数：折叠到压缩记录时，上下文换成“摘要加上最后这几条消息”。同时，核心知道上下文里每条消息在历史中的序号，追加压缩记录时把会话的上下文起点（`context_from`）设为保留段第一条消息的序号。加载会话时只需从上下文起点开始读，不必读取更早的历史；这一段按同样的规则折叠，得到的上下文与完整折叠一致。
+
+客户端显示的对话是历史的视图，只随核心推送的更新变化，本身不是数据。
 
 ## 分层
 
@@ -42,396 +56,308 @@ cmd/atlas ── 组装：打开库，建核心，交给入口
    ├─► gui ───┐
    ├─► acp ───┼─► protocol（接口与数据类型，不依赖任何包）
    └─► ws ────┘        ▲
-                       │ 实现
+                       │ 实现              tools ─► protocol（rawOutput 的形状）
                      core ──► agent（不依赖任何包）
                        ├────► llm ───► agent
                        ├────► tools ─► agent
-                       ├────► store ─► agent
+                       ├────► store（不依赖任何包）
                        ├────► config
-                       └────► prompt ► skills
+                       └────► systemprompt ► skills
 ```
+
+`acp`、`ws` 是后续要增加的适配包，其余均已存在。图里只画主要的依赖：`tools` 还用到 `imaging`（图片处理）和 `shellenv`（登录 shell 的环境变量），`gui` 的本地功能也用到这两个包。
 
 | 包 | 职责 |
 | --- | --- |
-| `protocol` | 对客户端开放的接口（`Agent`、`Client`）与全部请求、响应、更新类型，JSON 标签用 ACP 的线上名称。只有数据，没有逻辑 |
-| `core` | ACP 的提供端：管理已加载的会话，实现 `protocol.Agent`。会话运行时数据的唯一权威；选模型的回退规则也在这里 |
-| `agent` | 消息、模型与工具的接口，一轮运行的循环、压缩、上下文折叠。没有状态，不做 IO |
-| `llm` | `agent.StreamFn` 的实现（OpenAI Responses） |
+| `protocol` | 对客户端开放的接口（`Service`、`Subscriber`）与全部请求、响应、更新类型。只有数据，没有逻辑 |
+| `core` | 管理已加载的会话，实现 `protocol.Service`。是会话运行时数据的唯一权威。内部分三块：会话运行（忙、持久化编排）、更新转换（事件与消息到更新的纯函数）、模型解析（设置到 `agent.Model`，含回退规则） |
+| `agent` | 消息、模型与工具的接口，一轮运行的循环、压缩、上下文折叠，以及消息的编解码。没有状态，不做 IO |
+| `llm` | `agent.StreamFn` 的实现（OpenAI Responses），并提供“按设置构造流函数”的入口；核心不知道有哪些模型提供方，也不依赖 OpenAI SDK |
 | `tools` | read、write、edit、shell |
-| `store` | SQLite：会话表与消息表。只存取，不懂折叠与运行 |
-| `config` | 读 `settings.json`、`auth.json` |
-| `prompt`、`skills` | 按工作目录组装系统提示词，发现技能 |
-| `gui` | 桌面客户端：会话只通过 `protocol` 使用，不 import `core`、`agent`、`store`（文件面板读文件用 `tools` 的工具函数） |
-| `acp`、`ws` | 以后做：把 `protocol.Agent` 与 `protocol.Client` 映射成 JSON-RPC，分别走 stdio 与 WebSocket |
+| `store` | SQLite：会话表、消息表、blob 表。只存取不透明的消息正文与二进制，不理解消息内容，也不涉及折叠与运行 |
+| `config` | 读取 `settings.json`、`auth.json` |
+| `systemprompt`、`skills` | 按工作目录组装系统提示词，发现技能 |
+| `gui` | 桌面客户端：会话功能只通过 `protocol` 使用，不 import `core`、`agent`、`store` |
+| `acp`、`ws` | 后续实现：把 `protocol.Service` 与 `protocol.Subscriber` 映射为各自的线上格式，分别经由 stdio 与 WebSocket 传输 |
 
-`gui` 只依赖 `protocol`，由编译器保证界面拿不到核心的内部状态：它想知道什么，都只能通过接口问，
-或者等核心推过来。
+`gui` 的会话功能只依赖 `protocol`，由编译器保证界面无法获取核心的内部状态：需要什么信息，只能通过接口查询，或等待核心推送。协议只管会话。GUI 里的文件树、编辑器、终端是本地功能，直接使用 `tools` 等包，不经过协议，远程客户端没有这些功能。
 
 ## protocol：对外接口
 
 ```go
-// Agent 是 Atlas 对一个客户端连接开放的接口。语义与命名照 ACP v1。
-type Agent interface {
+// Service 是 Atlas 对一个客户端连接开放的接口。
+type Service interface {
 	NewSession(ctx context.Context, req NewSessionRequest) (NewSessionResponse, error)
-	ResumeSession(ctx context.Context, req ResumeSessionRequest) (ResumeSessionResponse, error)
-	LoadSession(ctx context.Context, req LoadSessionRequest) (LoadSessionResponse, error)
+	OpenSession(ctx context.Context, req OpenSessionRequest) (OpenSessionResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
 	DeleteSession(ctx context.Context, req DeleteSessionRequest) error
 	CloseSession(ctx context.Context, req CloseSessionRequest) error
-	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)
-	Cancel(req CancelNotification)
+	RenameSession(ctx context.Context, req RenameSessionRequest) error
+	SendPrompt(ctx context.Context, req SendPromptRequest) (SendPromptResponse, error)
+	CancelTurn(ctx context.Context, req CancelTurnRequest) error
 	SetConfigOption(ctx context.Context, req SetConfigOptionRequest) (SetConfigOptionResponse, error)
-
-	// Atlas 扩展，线上方法名为 _atlas/session/history 等。
-	History(ctx context.Context, req HistoryRequest) (HistoryResponse, error)
-	Prompts(ctx context.Context, req PromptsRequest) (PromptsResponse, error)
-	Rename(ctx context.Context, req RenameRequest) error
+	ListHistory(ctx context.Context, req ListHistoryRequest) (ListHistoryResponse, error)
+	ListUserMessages(ctx context.Context, req ListUserMessagesRequest) (ListUserMessagesResponse, error)
 }
 
-// Client 是核心推送更新的对象，每个连接一个。在核心的 goroutine 里调用，必须很快返回，
-// 不得在里面同步调用 Agent。
-type Client interface {
-	SessionUpdate(n SessionNotification)
+// Subscriber 接收核心推送的更新，每个连接一个。核心在自己的 goroutine 里同步调用它，
+// 实现必须很快返回，不得在里面调用 Service。
+type Subscriber interface {
+	Receive(n Notification)
 }
 ```
 
-核心只有一个，每个连接拿到一个 `Agent`：`conn := core.Connect(client)`。GUI 进程内直接调用；
-`acp`、`ws` 收到 JSON-RPC 请求就调用 `conn` 对应的方法，把 `client` 收到的更新序列化发出去。
+核心只有一个，每个连接通过 `core.Connect(subscriber)` 获得一个 `Service`。GUI 在进程内直接调用；`acp`、`ws` 收到请求后调用 `Service` 对应的方法，并把 `Subscriber` 收到的更新序列化后发送出去。
 
 ### 方法
 
-| 方法 | ACP | 做什么 |
-| --- | --- | --- |
-| `NewSession{cwd}` | `session/new` | 建会话，返回 `sessionId` 与配置项。会话先只在内存里，第一条消息保存时才写库；工作目录从此不变 |
-| `ResumeSession{sessionId}` | `session/resume` | 加载会话并订阅，不回放历史。GUI 用它，历史另外分页读 |
-| `LoadSession{sessionId}` | `session/load` | 加载会话并订阅，先把全部历史以更新回放，再返回。给 ACP 客户端用 |
-| `ListSessions{cwd?, cursor?}` | `session/list` | 列出已保存的会话：`sessionId`、`cwd`、`title`、`updatedAt` |
-| `DeleteSession{sessionId}` | `session/delete` | 删除空闲会话；会话不存在时静默成功 |
-| `CloseSession{sessionId}` | `session/close` | 这个连接不再看这个会话。没有连接在看、也不在运行时，核心卸载它 |
-| `Prompt{sessionId, prompt}` | `session/prompt` | 跑一轮，这一轮结束时才返回 `stopReason`：`end_turn`、`max_tokens`、`cancelled`。模型调用失败返回错误 |
-| `Cancel{sessionId}` | `session/cancel` | 取消正在运行的一轮，被取消的 `Prompt` 以 `cancelled` 返回 |
-| `SetConfigOption{sessionId, configId, value}` | `session/set_config_option` | 换模型或思考深度，保存后返回完整的配置项 |
-| `History{sessionId, before, limit}` | `_atlas/session/history` | 一页历史，以更新的形式返回，供界面往前翻 |
-| `Prompts{sessionId, before}` | `_atlas/session/prompts` | 全部用户消息的摘要，供会话目录 |
-| `Rename{sessionId, title}` | `_atlas/session/rename` | 改名，打开着它的连接收到 `session_info_update` |
+会话的生命周期是：新建、打开、关闭。打开即加载（会话尚未加载时）并订阅；关闭即取消订阅。
 
-斜杠命令按 ACP 的方式处理，就是一条以 `/` 开头的 `Prompt`：`/compact` 压缩上下文；`/技能名 参数`
-在原文后附上技能全文再运行。
+| 方法 | 做什么 |
+| --- | --- |
+| `NewSession{cwd}` | 新建会话，返回 `sessionId`、配置项与当前状态。新会话先只存在于内存，保存第一条用户消息时才写库；工作目录此后不再改变 |
+| `OpenSession{sessionId}` | 加载会话并订阅，返回配置项与当前状态，不回放历史；历史用 `ListHistory` 分页读取 |
+| `ListSessions{cwd?, cursor?}` | 列出已保存的会话：`sessionId`、`cwd`、`title`、`updatedAt` |
+| `DeleteSession{sessionId}` | 删除空闲的会话；会话不存在时不报错 |
+| `CloseSession{sessionId}` | 取消当前连接对该会话的订阅，不影响正在进行的一轮。会话没有订阅者且空闲时卸载；若正忙，待这一轮结束后卸载 |
+| `RenameSession{sessionId, title}` | 修改标题 |
+| `SendPrompt{sessionId, prompt}` | 发送一条用户消息（`prompt` 是内容块列表）。受理成功即返回，这一轮在会话内异步运行；停止原因与出错信息通过 `run_state` 送达。受理前的检查失败时返回错误 |
+| `CancelTurn{sessionId}` | 取消正在运行的一轮，该轮以 `cancelled` 结束；没有正在运行的一轮时不报错 |
+| `SetConfigOption{sessionId, configId, value}` | 更换模型或思考深度，保存后返回完整的配置项 |
+| `ListHistory{sessionId, before, limit}` | 返回一页历史（以更新的形式），供界面向前翻页 |
+| `ListUserMessages{sessionId, before}` | 返回全部用户消息的摘要，供会话大纲使用 |
 
-打开会话时的状态随响应给出（`NewSession`、`ResumeSession` 的 `_meta`，即 `protocol.SessionState`）：
-工作目录、标题、可用的命令（`compact` 与全部技能）、上下文占用、是否在运行，之后由更新推进。
-工作目录在会话里不变，技能随它而定，所以命令不另发更新。
+方法名统一为“动词加宾语”，请求与响应类型是方法名加 `Request`、`Response`。对会话本身的操作，宾语是 `Session`；对会话内事物的操作，宾语是那个事物，会话由请求里的 `sessionId` 指明。所有方法都是“请求加响应”的形式，没有单向通知。
 
-没有“换工作目录”：ACP 的工作目录在建会话时就定了。新会话想换目录，就建一个新会话。
+每个方法的结果都通过响应返回给调用方。会改变会话视图的变化（新消息、标题、配置项、运行状态等）另以更新推送给所有订阅者，包括调用方自己，所以 `RenameSession` 这类只返回成功或失败的方法，其结果也由更新体现。
 
-非空闲会话上的 `Prompt`、`SetConfigOption`、`DeleteSession` 返回 `ErrBusy`。
+`SendPrompt` 受理前会检查：会话存在且空闲；没有可用模型时重新选择一次，仍然没有则返回原因；工作目录仍然有效。检查通过后展开斜杠命令并开始运行。斜杠命令是以 `/` 开头的用户消息：`/compact` 压缩上下文；`/技能名 参数` 在原文后附上该技能的全文，再运行。
 
-会话属于打开它的连接：`Prompt`、`Cancel`、`SetConfigOption` 只对这个连接新建或打开过的会话有效，
-否则返回 `ErrNotFound`。`DeleteSession`、`Rename` 与历史查询不要求打开过。打开与卸载串行进行，
-所以不会有连接订阅到正在卸载的会话上。
+打开会话时，当前状态随响应一并给出（`state`，即 `protocol.SessionState`）：工作目录、标题、可用的命令（`compact` 与全部技能）、上下文占用、是否在运行，此后由更新推进。工作目录在会话中不变，技能随工作目录而定，因此命令不再单独推送更新。
+
+不支持更换工作目录：工作目录在新建会话时确定。需要换目录时，新建一个会话。
+
+会话归订阅它的连接所有：`SendPrompt`、`CancelTurn`、`SetConfigOption`、`CloseSession` 只对本连接订阅着的会话有效，也就是在本连接上新建或打开、且还没有关闭的会话。`DeleteSession`、`RenameSession`、`ListHistory`、`ListUserMessages` 不要求先打开会话。连接本身不记录会话，会话由核心持有，所以会话被卸载或失效后，连接上的后续请求同样得到 `ErrNotFound`。打开与卸载串行进行，因此不会出现连接订阅到正在卸载的会话上的情况。
 
 ### 配置项
 
-模型与思考深度都是 ACP 的配置项，客户端照着画选择器，不需要自己的模型清单或档位规则：
+模型与思考深度都是配置项，客户端据此绘制选择器，无需自备模型清单或档位规则：
 
-- `model`（`category: "model"`）：选项是全部可用的模型，值是 `provider/model-id`。每个选项在
-  `_meta.atlas` 里带 `images`，表示接受图片，界面据此决定能不能附图。
-- `thought_level`（`category: "thought_level"`）：选项是当前模型支持的档位。模型不支持思考时没有这一项。
+- `model`：选项是全部可用的模型，值为 `provider/model-id`。每个选项的 `images` 表示该模型接受图片，界面据此判断是否允许附图。
+- `thinking`：选项是当前模型支持的档位。模型不支持思考时没有这一项。
 
-换模型后，思考深度按“原档位新模型支持就保留，否则用新模型的默认档”调整，响应里是完整的新配置项，
-其他连接收到 `config_option_update`。
+更换模型后，思考深度按以下规则调整：原档位若被新模型支持则保留，否则使用新模型的默认档。响应中是完整的新配置项，所有订阅者收到 `config_option_update`。
 
 ### 更新
 
-核心推给客户端的全部更新（`session/update` 的 `sessionUpdate` 值）：
+核心推送给订阅者的全部更新（每种更新的种类名是它的 `Type()` 返回值）：
 
 | 更新 | 何时 |
 | --- | --- |
-| `user_message_chunk` | 一条用户消息保存后。发消息的客户端也只在收到它之后才显示自己的消息 |
-| `agent_message_chunk`、`agent_thought_chunk` | 流式的文字与思考，同一条消息用同一个 `messageId` |
-| `tool_call` | 模型开始发出一个工具调用：`toolCallId`、`name`、`title`、`kind`、`rawInput`，状态 `pending` |
-| `tool_call_update` | 参数继续流出（`rawInput`），开始执行（`in_progress`），结束（`completed` 或 `failed`，带 `content` 与 `rawOutput`） |
-| `usage_update` | 每条助手消息保存后：`used` 是上下文占用，`size` 是窗口 |
-| `compaction_update`、`compaction_summary_chunk` | 压缩开始、完成（带摘要）、失败、取消 |
-| `notice` | 系统通知，如压缩失败、达到上限 |
-| `session_info_update` | 会话第一次保存（有了名称）与改名 |
-| `config_option_update` | 别的连接换了模型或思考深度 |
-| `_atlas_state` | 一轮开始与结束：`running`、`since`。仿照 ACP v2 草案的 `state_update`，中途接入的客户端靠它知道会话在不在运行 |
-| `_atlas_retry` | 一次模型请求失败、等待重试：`messageId`、第几次、等多久、原因。客户端丢掉这条消息已流出的内容 |
-| `_atlas_reset` | 别的进程写过这个会话，核心已从库里重新加载。客户端丢掉显示的对话，重新读历史 |
+| `user_message_chunk` | 用户消息保存后发出。发送消息的客户端同样在收到它之后才显示该消息 |
+| `agent_message_chunk`、`agent_thought_chunk` | 流式的文字与思考，同一条消息使用同一个 `messageId`。同一条回复中相邻的两段文字之间补一个空行，流式与回放保持一致 |
+| `tool_call` | 模型开始发出一个工具调用：`toolCallId`、`name`、`title`、`kind`、`rawInput`，状态为 `pending` |
+| `tool_call_update` | 参数继续流出（`rawInput`）、开始执行（`in_progress`）、结束（`completed` 或 `failed`，带 `content` 与 `rawOutput`） |
+| `usage_update` | 每条助手消息保存后发出：`used` 是上下文占用，`contextWindow` 是窗口大小 |
+| `compaction_update` | 压缩开始、完成（带摘要）、失败（带原因）、取消 |
+| `notice` | 通知，如压缩失败、达到上限 |
+| `session_info_update` | 会话第一次保存（有了标题）与改名 |
+| `config_option_update` | 更换了模型或思考深度 |
+| `run_state` | 一轮开始与结束：`running`、`since`；结束时附带 `stopReason`（`end_turn`、`max_tokens`、`cancelled`）或 `error`。中途接入的客户端据此得知会话是否在运行 |
+| `request_retry` | 一次模型请求失败，等待重试：`messageId`、第几次、等待多久、原因。客户端应丢弃这条消息已流出的内容 |
 
-工具 `kind`：read 是 `read`，write 与 edit 是 `edit`，shell 是 `execute`。`rawOutput` 是工具附带的
-结构化数据（现在的 Details），它的形状由 `protocol` 定义，GUI 用它画 diff、行号与图片；其他客户端只看
-`title`、`content` 也能用。
+工具的 `kind`：read 对应 `read`，write 与 edit 对应 `edit`，shell 对应 `execute`。`rawOutput` 是工具附带的结构化数据（`ReadDetails`、`WriteDetails`、`EditDetails`），其形状由 `protocol` 定义，GUI 用它绘制 diff、行号与图片；其他客户端只依据 `title`、`content` 也能正常使用。
 
-所有更新由一个转换函数从 `agent` 的事件与消息生成：实时运行时由事件生成，`LoadSession` 与 `History`
-回放时由库里的消息生成。客户端只有一条渲染路径。
+所有更新都由核心中同一组转换函数，根据 `agent` 的事件与消息生成：实时运行时由事件生成，`OpenSession` 之后用 `ListHistory` 读取的历史由数据库中的记录生成，定稿的消息在两种情形下都经过同一个转换。客户端因此只有一条渲染路径。
+
+### 错误
+
+| 错误 | 何时 | 客户端应对 |
+| --- | --- | --- |
+| `ErrNotFound` | 会话不存在，或当前连接没有打开它（包括已卸载、已失效） | 重新打开或新建会话 |
+| `ErrBusy` | 会话正忙，不能受理 | 等待当前操作结束后重试 |
+| `ErrConflict` | 写入时发现其他进程已写入该会话；会话在本进程内失效 | 重新打开会话 |
+| `ErrNothingToCompact` | 上下文里没有可压缩的内容 | 无需处理 |
+| `ErrClosed` | Atlas 正在关闭 | 放弃请求 |
+
+其余失败（没有可用模型、工作目录失效、模型调用最终失败等）以带原因的错误返回，或通过 `run_state` 的 `error` 送达。
+
+### 订阅与背压
+
+核心同步调用 `Subscriber.Receive`，所以一个慢订阅者会拖住这一轮和其他订阅者。协议因此规定：`Receive` 必须很快返回；远程适配包自带有界队列，队列溢出时断开该订阅，由客户端重新打开会话并读取历史追上。核心本身不为订阅者缓冲。
 
 ## core：会话的唯一权威
 
-```go
-type Core struct {
-	db       *store.DB
-	mu       sync.Mutex
-	sessions map[string]*session // 本进程已加载的会话
-}
-
-// session 是一个已加载的会话。字段都由 mu 保护，锁只在读写字段时持有，从不跨 IO。
-type session struct {
-	id string
-
-	mu       sync.Mutex
-	cwd      string
-	saved    bool              // 已写进库；之前只在内存里
-	seq      int64             // 本进程写入或读到的最后序号
-	turn     *turn             // 正在进行的操作；nil 表示空闲。这是唯一的控制状态
-	model    agent.Model       // 没有可用的模型时 Stream 为空
-	thinking agent.ThinkingLevel
-	prompt   string            // 系统提示词
-	tools    []agent.Tool
-	skills   []skills.Skill
-	messages []agent.Message   // 上下文 = Fold(历史)
-	clients  []protocol.Client // 打开着这个会话的连接
-}
-
-type turn struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	since  time.Time
-}
-```
-
-现在 host 的 `Busy`、`Running`、`NeedsReload`、`Draft`、`Deleted`、`Closed`，与 GUI 的 `running`、
-`opening`、`switching`，都由 `turn` 是否为空加上 `saved` 取代。一轮对话或压缩的 `turn` 带取消函数，
-会广播 `_atlas_state`；换模型、删除这类很快的操作也占着 `turn`，但不能取消、不广播，
-所以它们与一轮互斥，而锁仍然不跨 IO。
+核心持有本进程已加载的会话。每个会话的状态由这几项组成：工作目录、是否已写库、已知的最后序号、是否忙、模型与思考深度、系统提示词、工具与技能、上下文、订阅者。其中是否忙是唯一的控制状态：一轮、压缩、更换模型、删除都要先占用它，所以彼此互斥。一轮和压缩可以取消，并会推送 `run_state`；更换模型、删除这类很快的操作不可取消，也不推送。核心的锁只用于读写这些字段，从不跨越 IO。
 
 ### 加载
 
-`NewSession`、`ResumeSession`、`LoadSession` 同步完成加载再返回：
+`NewSession` 与 `OpenSession` 同步完成加载后才返回：
 
-1. 已有会话：`db.Get` 与 `db.Log`，依次 `Fold` 出上下文，记下最后一份提示词快照与最后序号。
-   本进程已经加载过就直接订阅，不重新加载。
-2. 读 `settings.json`，按“上次的模型 → 默认模型 → 清单里第一个可用的”选模型。已有会话换了模型就
-   `db.SetModel`。一个可用的都没有、或缺凭据时不算失败：`model.Stream` 为空，`Prompt` 时再试一次并报原因。
-3. 按工作目录组装提示词、技能与工具。已有会话的提示词与最后一份快照不同时，追加一份新快照。
+1. 已有会话：读取会话信息，先检查工作目录，再读取从上下文起点开始的全部记录，依次 `Fold` 出上下文，并取出最后一份系统提示词快照与最后序号。本进程已经加载过该会话的，直接订阅，不重新加载。
+2. 读取 `settings.json`，按“上次的模型 → 默认模型 → 清单中第一个可用的”选择模型。已有会话更换了模型的，保存新选择。没有任何可用模型或缺少凭据时不算失败，此时会话没有可用的模型，下次 `SendPrompt` 时再试一次。
+3. 按工作目录组装系统提示词、技能与工具。已有会话的系统提示词与最后一份快照不同时，追加一份新快照。
 
-工作目录不存在、历史损坏时加载失败，返回错误。历史仍然可以用 `History` 读。
+工作目录不存在、历史损坏时，加载失败并返回错误。新建的会话待配置项读取成功后才登记并归属于连接，失败时不会留下未完成的会话。
 
 ### 一轮
 
-`Prompt` 的过程：
+`SendPrompt` 的过程：
 
-1. 加锁：`turn` 不为空返回 `ErrBusy`；否则建 `turn`，取一份 `agent.Input` 快照，解锁，广播 `_atlas_state`。
-2. 已保存的会话读一次库里的最后序号。比 `seq` 新，说明别的进程写过：从库里重新加载上下文，广播 `_atlas_reset`，再继续。
-3. 运行 `agent.Run`。事件到来时：
-   - `MessageEnd(m)`：先写库，再改内存，最后广播。
-     - 还没 `saved`：`db.Create`，名称取这条用户消息的开头，同时写入提示词快照。
-     - `db.Append(id, seq, m)`：序号对不上返回冲突，任何错误都停止这一轮，之后的事件全部丢弃。
-     - 加锁：`messages = Fold(messages, m)`，推进 `seq`，解锁。
-     - 广播由它生成的更新。
-   - 其他事件：直接广播由它生成的更新，不写库。
-4. 加锁：清掉 `turn`，解锁，广播 `_atlas_state`，返回 `stopReason` 或错误。
+1. **受理**（同步）：占用会话，不空闲则返回 `ErrBusy`；完成上文所述的检查，展开斜杠命令；取一份 `agent.Input` 快照；返回。
+2. **运行**（异步，归会话所有）：推送 `run_state{running}`，运行 `agent.Run`。事件到来时：
+   - 消息定稿（`MessageEnd`）：先写库，再修改内存，最后推送。
+     - 尚未写库：创建会话，标题取这条用户消息的开头，同时写入系统提示词快照。
+     - 追加记录时带上期望的最后序号；序号不符返回 `ErrConflict`。任何写库错误都会停止这一轮，之后的事件全部丢弃。冲突之外的写库失败，会话仍然可用；发生冲突则会话失效，被卸载。
+     - 消息 `Fold` 进上下文，推进序号。
+     - 推送由它生成的更新。
+   - 其他事件：直接推送由它生成的更新，不写库。
+3. **结束**：释放占用，推送 `run_state{idle, stopReason | error}`。会话没有订阅者时卸载。
 
-所以内存里的上下文永远等于库里的历史折叠出来的结果。写库失败只停止这一轮，会话本身仍然可用：
-下一轮开始时第 2 步会和库对齐。
+因此内存中的上下文始终等于数据库中的历史折叠出的结果。
 
 ### 多客户端与多进程
 
-- **同一进程**：一个会话只加载一次，所有打开它的连接都在 `clients` 里，更新广播给每一个。中途接入的
-  客户端先拿历史（`LoadSession` 回放或 `History` 分页），再靠 `_atlas_state` 知道是否在运行。正在流出的
-  那条消息，接入之前已经发出的部分它看不到，等这条消息结束后它会在历史里出现。
-- **不同进程**：各自加载各自的 `session`，互相看不到实时更新。写入时靠序号发现冲突；下一轮开始时与库对齐，
-  并通知自己的客户端重新读历史。
+- **同一进程**：一个会话只加载一次，所有订阅它的连接都收到每个更新。中途接入的客户端先获取历史（`ListHistory` 分页），再通过 `run_state` 得知会话是否在运行。对于正在流式输出的那条消息，接入之前已发出的部分，该客户端无法看到，待这条消息结束后，它才会出现在历史中。
+- **不同进程**：各自加载各自的会话，彼此看不到实时更新。同时写入同一个会话是不支持的用法，一旦发生，由序号检查发现，后写入的一方得到 `ErrConflict`。
 
 ## agent：一轮运行
 
-`agent` 是纯逻辑：输入一份快照，运行，通过事件交出结果。它不持有会话，不修改调用方的数据。
+`agent` 是纯逻辑：接收一份快照作为输入，运行，并通过事件交付结果。它不持有会话，也不修改调用方的数据。
 
 ```go
-// Model 是会话用的模型。引用、窗口和流函数是一个值，总是一起换。
+// Model 是会话用的模型。引用、窗口和流函数是一个值，总是一起更换。
 type Model struct {
-	Ref    string   // provider/model-id，唯一指出一个模型
-	Window int64    // 上下文窗口（token），未知为 0
-	Stream StreamFn // 已绑定客户端与模型 ID
+	Ref           string   // provider/model-id，唯一标识一个模型
+	ContextWindow int64    // 上下文窗口（token），未知为 0
+	Stream        StreamFn // 已绑定客户端与模型 ID
 }
 
 // Input 是一轮看到的全部，由调用方给出快照，循环不修改它。
 type Input struct {
-	Model    Model
-	Thinking ThinkingLevel
-	Prompt   string // 系统提示词
-	Tools    []Tool
-	Messages []Message // 上下文
+	Model        Model
+	Thinking     ThinkingLevel
+	SystemPrompt string
+	Tools        []Tool
+	Messages     []Message // 上下文
 }
 
 // Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具或 ctx 取消；
 // 返回这一轮新产生的消息。
 func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Message
 
-// Compact 把除最后一条外的上下文压成摘要，返回新产生的消息。
+// Compact 把上下文中除保留段以外的部分压成摘要，返回新产生的消息。
 func Compact(ctx context.Context, in Input, emit func(Event)) []Message
 
-// Fold 把一条新消息并进上下文：压缩记录换成“摘要 + 之前保留的 Kept 条”，
-// 提示词快照不进上下文，其余追加。
+// Fold 把一条新记录并进上下文：压缩记录换成“摘要 + 之前保留的 Kept 条”，
+// 系统提示词快照与通知不进上下文，其余追加。
 func Fold(messages []Message, m Message) []Message
-
-func Compactable(messages []Message) bool // 有没有可压缩的内容
-func Tokens(messages []Message) int64     // 估算上下文大小
 ```
 
-消息类型（`UserMessage`、`AssistantMessage`、`ToolResultMessage`、`SystemMessage`）、`Tool`、`StreamFn`
-保持现在的形状，它们是面向模型的格式，也是库里存的格式。`AssistantMessage.Model` 由循环按 `Input.Model.Ref`
-盖上。重试次数与退避是包内常量，`MaxTurns` 删除。
+消息类型（用户消息、助手消息、工具结果、系统提示词快照、通知、压缩记录）、`Tool`、`StreamFn` 是面向模型的格式，也是数据库中保存的格式，编解码由 `agent` 负责。`AssistantMessage.Model` 由循环按 `Input.Model.Ref` 填入。模型调用失败时的重试次数与退避间隔由包内的策略决定。
 
-事件只留核心需要的：`MessageStart`（助手开始回复）、`Delta`、`Retry`、`MessageEnd`（任何一条消息定稿，
-每条历史消息恰好对应一个）、`ToolStart`、`CompactStart`。工具的结束就是工具结果的 `MessageEnd`。
+事件只保留核心需要的几种：消息开始、增量、重试、消息定稿（任何一条消息定稿，每条历史记录恰好对应一个）、工具开始、压缩开始。工具的结束就是工具结果的消息定稿。
 
 ## store
 
 ```sql
 CREATE TABLE sessions (
     id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
+    title      TEXT NOT NULL,
     cwd        TEXT NOT NULL,
     model      TEXT NOT NULL,  -- 上次选的模型，provider/model-id
     thinking   TEXT NOT NULL,
     last_seq   INTEGER NOT NULL,
+    context_from INTEGER NOT NULL,  -- 上下文起点：读出上下文只需从这个序号开始的记录
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
 CREATE TABLE messages (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     seq        INTEGER NOT NULL,
-    role       TEXT NOT NULL,  -- 只为按角色查询（会话目录）
-    body       TEXT NOT NULL,  -- 消息的 JSON
+    kind       TEXT NOT NULL,  -- user、assistant、tool_result、system_prompt、notice、compaction
+    body       TEXT NOT NULL,  -- 消息的 JSON；图片等二进制只存引用
     PRIMARY KEY (session_id, seq)
+) STRICT;
+CREATE INDEX messages_kind ON messages(session_id, kind, seq);
+CREATE TABLE blobs (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    hash       TEXT NOT NULL,  -- 内容的 SHA-256
+    mime       TEXT NOT NULL,
+    data       BLOB NOT NULL,
+    PRIMARY KEY (session_id, hash)
 ) STRICT;
 ```
 
-```go
-func Open(path string) (*DB, error)
+存储遵循这些规则：
 
-func (db *DB) Create(info Info, first ...agent.Message) (Info, error) // 返回的含 LastSeq
-// Append 追加一条。lastSeq 是调用方已知的最后序号，库里不是它时返回 ErrConflict。
-func (db *DB) Append(id string, lastSeq int64, m agent.Message) (seq int64, err error)
-func (db *DB) SetModel(id, model string, thinking agent.ThinkingLevel) error
-func (db *DB) Rename(id, name string) error
-func (db *DB) Delete(id string) error
-
-func (db *DB) Get(id string) (Info, error) // 含 LastSeq
-func (db *DB) List(cwd string, before *Cursor, limit int) ([]Info, error)
-func (db *DB) Log(id string) (Info, []Record, error) // 全部历史，正序
-func (db *DB) Page(id string, before int64, limit int) ([]Record, error)
-func (db *DB) Prompts(id string, before int64) ([]Record, error)
-```
-
-多个进程可以同时打开（WAL）。冗余列（停止原因、是否出错、用量、每条消息的模型与档位）都删掉，它们都在
-JSON 里。不做迁移：版本号不符就报错，由用户删库重建。
+- `messages` 只追加；`kind` 由调用方给出，`store` 不解析 `body`。`kind` 服务两类查询：会话大纲（`user`）、最近一份系统提示词快照（`system_prompt`）。
+- 追加记录时带上期望的最后序号，库里的 `last_seq` 与它不符就返回 `ErrConflict`；记录与它引用的 blob 在同一个事务中写入；追加压缩记录时，同一个事务里更新 `context_from`。
+- 图片等二进制不放进消息 JSON，而是存入 `blobs`，以内容哈希寻址，同一会话内相同内容只存一份，消息里只留引用。核心在入库前把二进制外置，读出时按需还原；`store` 只提供 blob 的存取。blob 属于会话，会话删除时随外键级联删除，无需单独清理。
+- 多个进程可以同时打开同一个数据库（WAL）。停止原因、用量、每条消息的模型与档位等都保存在消息的 JSON 中，不单独建列。版本号记录在 `user_version`，与代码不一致时报错，并提示删除数据库后重建。
 
 ## gui：一个客户端
 
-GUI 实现 `protocol.Client`，把更新交给主线程：
+GUI 实现 `protocol.Subscriber`，把更新交给主线程。界面里只有两类内容：
 
-```go
-func (a *App) SessionUpdate(n protocol.SessionNotification) {
-	a.win.Update(func() { a.chats[n.SessionID].apply(n.Update) })
-}
-```
+- **会话的视图**：对话的显示项、配置项、可用命令、占用、标题、是否在运行。它们只由更新与响应写入，GUI 不自行决定或推算。
+- **界面自身的状态**：输入草稿与待发送的图片、滚动位置、历史翻到哪一页、大纲、面板、等待中的请求、界面自身的错误。
 
-`chat` 里只有两类东西：
-
-- **会话的视图**：对话的显示项、配置项、可用命令、占用、标题、是否在运行。它们只由更新与响应写入，
-  GUI 从不自己决定或推算。
-- **界面自己的状态**：输入草稿与待发图片、滚动、历史翻到哪一页、目录、面板、等待中的请求、界面自己的错误。
+界面状态只在主线程读写。后台请求启动前先取出所需的值，结果经窗口的更新入口回到主线程；请求返回时若界面已经切换到别的会话，就丢弃结果，已建出的会话一并关闭。
 
 具体做法：
 
-- 新会话：`NewSession`。换工作目录：用新目录再 `NewSession`，丢掉还没发过消息的那个。
-- 打开已有会话：`ResumeSession`，同时用 `History` 读最近一页；往上滚时继续读更早的页。
-- 发送：`Prompt` 放到后台 goroutine 里调用，界面不先画自己的消息，等 `user_message_chunk`。
-  能不能发送看视图里的“是否在运行”，它只来自 `_atlas_state`。
-- 换模型与思考深度：`SetConfigOption`，用响应里的配置项重画选择器。
-- 侧栏：`ListSessions`，自己的操作之后与收到 `session_info_update` 时重新读。
-- 关闭会话标签：`CloseSession`。退出：核心 `Close`（取消所有运行，等待收尾，关库）。
+- 新建会话：`NewSession`。更换工作目录：用新目录再调用一次 `NewSession`，并丢弃尚未发送过消息的旧会话。
+- 打开已有会话：`OpenSession`，同时用 `ListHistory` 读取最近一页；向上滚动时继续读取更早的页。
+- 发送：调用 `SendPrompt`（很快返回）；界面不预先绘制自己发出的消息，而是等待 `user_message_chunk`。能否发送取决于视图中的“是否在运行”，它只来自 `run_state`。
+- 更换模型与思考深度：`SetConfigOption`，用响应中的配置项重绘选择器。
+- 侧栏：`ListSessions`，在自身操作之后以及收到 `session_info_update` 时重新读取。
+- 关闭会话标签：`CloseSession`。退出：核心的 `Close`（取消所有运行，等待收尾，关闭数据库）。
 
-## 一次运行
+## 一轮的时序
 
 ```
-GUI 主线程             core（Prompt 所在 goroutine）           agent.Run          store
-go conn.Prompt ──────► 加锁：建 turn，取 Input 快照，解锁
-                       广播 _atlas_state{running}
+GUI 主线程             core                                    agent.Run          store
+SendPrompt ──────────► 受理：占用会话，检查，取 Input 快照
+◄── 已受理 ◄──────────┘
+                       推送 run_state{running}
 ◄── apply ◄──────────┘
-                       与库对齐序号（必要时重载并广播 _atlas_reset）
                        agent.Run(ctx, in, user, emit) ─────► 请求模型，执行工具
                        MessageEnd(user)：
-                         第一次保存 ───────────────────────────────────────────► Create
-                         Append(seq) ──────────────────────────────────────────► INSERT
-                         加锁：messages = Fold(messages, m)，解锁
-◄── apply ◄──────────  广播 user_message_chunk
+                         第一次保存 ───────────────────────────────────────────► 创建会话
+                         追加记录（带期望序号）─────────────────────────────────► INSERT
+                         Fold 进上下文
+◄── apply ◄──────────  推送 user_message_chunk
 ◄── apply ◄──────────  Delta → agent_message_chunk，ToolStart → tool_call_update …
-                       MessageEnd(assistant / tool result)：写库，Fold，广播
-                       结束：加锁：清掉 turn，解锁
-◄── apply ◄──────────  广播 _atlas_state{idle}
-◄── stopReason ◄─────  Prompt 返回
+                       MessageEnd(assistant / tool result)：写库，Fold，推送
+                       结束：释放占用
+◄── apply ◄──────────  推送 run_state{idle, stopReason}
 ```
 
-配置、数据、状态各只走一条路：
+设置、数据、状态各只有一条流转路径：
 
-- **配置**：`settings.json` 只在加载、换模型、`Prompt` 发现没有可用模型时读，结果只进 `session.model`，
-  经配置项告诉客户端。
-- **数据**：历史只在 `MessageEnd` 时写库；上下文只由 `Fold` 推进；客户端的对话只由更新推进。
-- **状态**：只有 `session.turn`，经 `_atlas_state` 告诉客户端。
+- **设置**：`settings.json` 只在加载、更换模型，以及 `SendPrompt` 时发现没有可用模型的情况下读取，结果只进入会话的模型，并经配置项告知客户端。
+- **数据**：历史只在消息定稿时写库；上下文只由 `Fold` 推进；客户端的对话只由更新推进。
+- **状态**：只有会话是否忙，经 `run_state` 告知客户端。
 
-## 与现状的对照
+## 需要自动测试保证的行为
 
-| 现在 | 目标 |
-| --- | --- |
-| `host` 包、`Manager`、`Session` | `core` 实现 `protocol.Agent`；`Manager` 的注册表变成 `Core.sessions` |
-| 注册表里的占位实例、`lockMutation`、操作登记 `begin` | 删除：加载是同步的请求，删除与改名只对空闲会话 |
-| `agent.LoopContext` | 一轮的快照 `agent.Input`，加上 `core.session` 的字段 |
-| `Model`、`Stream`、`ContextWindow` 三个字段 | 一个 `agent.Model` |
-| 循环直接改 `rc.Messages` | 循环只改自己的副本，会话在写库后 `Fold` |
-| 折叠规则在 `compact.go` 与 `session.Load` 各一份 | `agent.Fold` 一份 |
-| host 的 6 个状态标志、GUI 的 `running`、`opening`、`switching` | `session.turn` 与 `saved`；GUI 只有收到的 `_atlas_state` |
-| `NeedsReload` 与 GUI 重新 `Resume` | 删除：写库失败只停止这一轮，下一轮开始时与库对齐 |
-| `ErrConflict` | 保留：序号冲突检测，多进程的兜底 |
-| `agent.Event` 直接给 GUI，GUI 有实时与历史两套转换 | 核心把事件与消息转成 ACP 更新，GUI 只有一条渲染路径 |
-| GUI 的模型清单、`selection`、`fit`、`usage`、`cwd` | 配置项、`usage_update`、建会话时的 `cwd` |
-| `SetCwd` 与草稿换目录 | 删除：换目录就新建会话 |
-| `Compact` 方法 | `/compact` 斜杠命令 |
-| `autoName` | 第一次写库时命名 |
-| `clone.go` 深拷贝 | 删除：消息创建后不修改；更新是新生成的值 |
-| `agent_*`、`turn_*`、`tool_execution_end` 事件 | 删除 |
-| `session` 包（SQLite） | `store` 包；冗余列与 `Usage` 查询删除 |
-| `WaitIdle`、`Deleted`、`Closed` | `Core.Close`；其余删除 |
-| `tools` 的 Details 类型 | 移到 `protocol`，作为 `rawOutput` 的形状 |
+只测并发与持久化格式这类容易悄悄出错的行为，不为小功能写单元测试：
 
-## 实施步骤
+- 持久化：消息的 JSON 无损往返；`store` 的追加、冲突、上下文起点、blob；图片与压缩在重新打开会话之后仍然正确。
+- `Fold`：压缩、系统提示词快照、通知、普通消息得到的上下文。
+- 一条渲染路径：同一段对话，由实时更新建出的显示项，与由 `ListHistory` 回放建出的一致。
+- 并发：写入冲突让会话失效；一轮与连接解耦，关闭不中止一轮，`CancelTurn` 以 `cancelled` 结束；多订阅者都收到更新，未订阅的连接得到 `ErrNotFound`，运行中再次 `SendPrompt` 得到 `ErrBusy`；同一轮里连续的只读工具调用并发执行。
 
-每一步单独提交并通过 `mise run ci`，完成后应用照常可用：
+## 已知缺口
 
-1. **agent**：`Model`、`Input`、`Fold`，精简事件；循环不再修改输入。host 适配。
-2. **store**：新表结构与 API，`Log` 返回原始历史，折叠交给 `agent.Fold`。host 适配，删旧库重建。
-3. **protocol 与 core**：定义接口与类型，`core` 实现它并带上测试；GUI 暂时仍用 host。
-4. **GUI 改接**：GUI 实现 `protocol.Client`，只依赖 `protocol`；删除 host。同时更新 README 的结构表。
+- 新建与删除会话不会通知其他连接，其他连接的侧栏要到自己重新读取时才会更新；删除时仍订阅该会话的连接也不会被告知。
+- 不同进程之间没有实时通道，只能在写入时靠序号发现冲突。
+- 任何订阅者都能取消别人发起的一轮。
+- 一轮没有轮数、时长、费用的上限，目前只有取消能停下失控的循环。
+- 历史中的图片已外置，但 `ListHistory` 返回的更新仍内联图片数据；历史很长时分页读取的成本有待观察。
 
-ACP 与 WebSocket 入口不在这次范围内，第 4 步之后各是一个独立的适配包。
+## 后续
 
-## 测试
-
-只测必要的行为：
-
-- `Fold`：压缩记录、提示词快照、普通消息；重放历史与运行中推进得到同样的上下文。
-- 一条渲染路径：同一段对话，GUI 由实时更新建出的显示项与由 `History` 回放建出的一致。
-- 持久化：新会话第一条消息写库并命名；写库失败时这一轮停止，内存上下文与库一致，会话还能继续。
-- 多进程：两个 `Core` 打开同一个库文件，交替在同一会话上运行，后来者先对齐再继续；并发写入时一方得到冲突。
-- 多客户端：两个连接打开同一个会话，都收到全部更新；运行中第二个 `Prompt` 返回 `ErrBusy`。
-- 并发：运行中反复读、`Cancel`，在 `-race` 下通过。
-- 选模型：上次的模型被删、默认模型被删、一个可用的都没有。
-
-## 待验证
-
-- ACP 的 `notice`、`compaction_update` 还是 RFD，可能变动；适配时以当时的规范为准，核心里的转换函数是唯一要改的地方。
-- ACP 的选项对象是否允许 `_meta`（用来带 `images`）；不允许就改用一个 `_atlas` 配置项。
-- `_atlas_state` 等扩展更新的取名，按 ACP 对 `_` 开头枚举值的规则核对。
+- **`acp`、`ws` 适配包**：把 `protocol` 的类型按各自的线上格式编解码。适配包去适配对方的协议，协议中没有的部分（能力协商等）由适配包补足，不反过来修改 `protocol`；例如 ACP 的 `session/load` 由适配包用 `OpenSession` 加 `ListHistory` 拼出，ACP 的 `session/close` 由适配包先 `CancelTurn` 再 `CloseSession`。是否采用现成的 SDK 待定。
+- **远程入口的约束**：Atlas 没有权限审核，接入远程入口等同于获得本机用户的 shell。因此远程入口必须认证，默认只监听本机回环地址，并在设计中明确传输加密的方式，之后才能对外开放。
