@@ -17,17 +17,14 @@ type shell struct {
 	focus ui.Handle // 终端视图的标识，创建后用它把键盘焦点交给终端
 }
 
-// toggleTerminal 显示或收起当前会话的终端面板；首次打开时自动开一个终端。文件面板被扩展时，
-// 终端已经开着就只还原，没开就还原后打开。
+// toggleTerminal 显示或收起当前会话的终端面板；首次打开时自动开一个终端。
 func (a *App) toggleTerminal() {
 	ch := a.current
-	if ch.restoreFor(termPanel) {
-		return
-	}
-	ch.termOpen = !ch.termOpen
-	if ch.termOpen && len(ch.terms) == 0 {
-		a.newTerminal(ch)
-	}
+	a.togglePanel(termPanel, func() {
+		if len(ch.terms) == 0 {
+			a.newTerminal(ch)
+		}
+	}, nil)
 }
 
 // newTerminal 在会话的工作目录开一个终端标签并切换过去；失败时错误显示在面板里。
@@ -121,7 +118,7 @@ func (ch *chat) pruneTerms() {
 func (ch *chat) fitTab() {
 	ch.termTab = max(min(ch.termTab, len(ch.terms)-1), 0)
 	if len(ch.terms) == 0 {
-		ch.termOpen = false
+		ch.closePanel(termPanel)
 	}
 }
 
@@ -130,15 +127,14 @@ func (ch *chat) closeTerms() {
 	for _, sh := range ch.terms {
 		sh.term.Close()
 	}
-	ch.terms, ch.termTab, ch.termOpen = nil, 0, false
+	ch.terms, ch.termTab = nil, 0
+	ch.closePanel(termPanel)
 }
 
-// closePanels 关闭会话的终端，并停止文件面板的监视，在会话被删除、丢弃或应用退出时调用。
+// closePanels 关闭会话的终端，并停止监视工作目录，在会话被删除、丢弃或应用退出时调用。
 func (ch *chat) closePanels() {
 	ch.closeTerms()
-	if ch.files != nil {
-		ch.files.stopWatch()
-	}
+	ch.stopWatch()
 }
 
 // leave 在离开一个还没有保存的空白会话前关闭它的终端与文件面板：之后再也回不到它。文件面板里

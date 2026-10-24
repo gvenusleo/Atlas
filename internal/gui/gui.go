@@ -49,8 +49,9 @@ type App struct {
 	query         string
 	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
 	more          map[string]bool  // 已点“显示更多”的目录分组
-	sideWidth     float32          // 右侧栏的宽度，终端与文件面板共用
-	termHeight    float32          // 终端与文件面板叠放时，终端卡片的高度；0 时各占一半
+	sideWidth     float32          // 右侧栏的宽度，各面板共用
+	stackHeight   float32          // 两个面板上下叠放时，上面那张卡片的高度；0 时各占一半
+	leftWidth     float32          // 三个面板时左列的宽度；0 时两列各占一半
 	shells        int              // 已创建的终端数，用作终端标签的标识
 	sidebarHidden bool
 	err           string
@@ -168,6 +169,10 @@ func (a *App) Receive(n protocol.Notification) {
 				// 在别的会话时结束的运行，回到这个会话之前侧栏上标为未读。
 				ch.unread = ch != a.current && ch.err == ""
 				a.refresh()
+				// Agent 可能用 git 提交或暂存过，文件监视看不到 .git 里的变化。
+				if ch.changes != nil && ch.panelOpen(changesPanel) {
+					a.refreshChanges(ch)
+				}
 			}
 		default:
 			ch.apply(u)

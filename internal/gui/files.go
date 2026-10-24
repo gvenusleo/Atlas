@@ -5,6 +5,7 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,16 +18,19 @@ import (
 
 // filePanel 是会话的文件面板：文件树、筛选，以及打开的文件标签。
 type filePanel struct {
-	open       bool
 	treeHidden bool    // 文件树收起了，只显示文件内容
 	treeWidth  float32 // 文件树与内容之间分隔条的位置
 	prevWidth  float32 // 打开时右侧栏被拉宽过：拉宽之前的宽度，关闭时还原；0 为没拉宽
 
-	cwd      string                 // dirs 对应的工作目录
-	gen      int                    // 换一次工作目录加一，读目录的结果据此判断是否过时
-	dirs     map[string][]fileEntry // 读过的目录，键是相对工作目录的路径，根是 ""
-	expanded map[string]bool        // 展开着的目录
-	list     ui.ListState           // 文件树的滚动位置
+	// 文件树，见 tree.go。条目是相对工作目录的路径。
+	cwd    string                  // kids 对应的工作目录
+	gen    int                     // 换一次工作目录加一，读目录的结果据此判断是否过时
+	kids   map[string][]string     // 读过的目录里的条目，键是目录的路径，根是 ""
+	isDir  map[string]bool         // 条目是不是目录
+	tree   ui.OutlineState[string] // 展开着的目录与滚动位置
+	chosen ui.Selection[string]    // 选中的条目
+	opened map[string]bool         // 上一帧展开着的目录，用来发现新展开的
+	shown  string                  // 上一帧选中的当前标签的文件，它换了就重新选中
 
 	filter string                  // 筛选框里的文字，非空时文件树换成筛选结果
 	found  memo[rankKey, []string] // 筛选的结果
@@ -35,8 +39,6 @@ type filePanel struct {
 	active int // 当前标签
 	reveal int // 需要滚进可见范围的标签的标识
 	next   int // 已建的标签数，用作标签的标识
-
-	stop context.CancelFunc // 停止监视工作目录；没在监视时为空
 }
 
 // fileEntry 是目录里的一项。
@@ -93,7 +95,7 @@ func (tb *fileTab) previewText() string {
 }
 
 // filesOpen 报告文件面板是否开着。
-func (ch *chat) filesOpen() bool { return ch.files != nil && ch.files.open }
+func (ch *chat) filesOpen() bool { return ch.panelOpen(filesPanel) }
 
 // dirtyTabs 返回会话的文件面板里有未保存修改的标签数。
 func (ch *chat) dirtyTabs() int {
@@ -110,50 +112,29 @@ func (ch *chat) dirtyTabs() int {
 }
 
 // toggleFiles 显示或收起当前会话的文件面板；第一次打开时建面板，右侧栏不够宽时拉宽，
-// 关闭时在没被再拖过的情况下还原。打开时开始监视工作目录，并核对已打开的文件，收起时停止监视。
-// 终端被扩展时，文件面板已经开着就只还原，没开就还原后打开。
+// 关闭时在没被再拖过的情况下还原，打开时核对已打开的文件。
 func (a *App) toggleFiles() {
 	ch := a.current
-	if ch.restoreFor(filesPanel) {
-		return
-	}
 	if ch.files == nil {
 		ch.files = &filePanel{treeWidth: treeDefault}
 	}
 	fp := ch.files
-	fp.open = !fp.open
-	if !fp.open {
-		fp.stopWatch()
-		if fp.prevWidth != 0 && a.sideWidth == filesMin {
-			a.sideWidth = fp.prevWidth
+	a.togglePanel(filesPanel, func() {
+		a.widenSide(&fp.prevWidth)
+		for _, tb := range fp.tabs {
+			a.syncTab(tb)
 		}
-		fp.prevWidth = 0
-		return
-	}
-	fp.prevWidth = 0
-	if a.sideWidth < filesMin {
-		fp.prevWidth, a.sideWidth = a.sideWidth, filesMin
-	}
-	a.watchFiles(ch)
-	for _, tb := range fp.tabs {
-		a.syncTab(tb)
-	}
-}
-
-// stopWatch 停止监视工作目录。
-func (fp *filePanel) stopWatch() {
-	if fp.stop != nil {
-		fp.stop()
-		fp.stop = nil
-	}
+	}, func() { a.restoreSide(&fp.prevWidth) })
 }
 
 // reset 在换了工作目录时清掉文件树。
 func (fp *filePanel) reset(cwd string) {
 	fp.cwd = cwd
 	fp.gen++
-	fp.dirs = map[string][]fileEntry{}
-	fp.expanded = map[string]bool{}
+	fp.kids, fp.isDir, fp.opened = map[string][]string{}, map[string]bool{}, map[string]bool{}
+	fp.tree.Open.Clear()
+	fp.chosen.Clear()
+	fp.shown = ""
 }
 
 // readDir 在后台（重新）读取工作目录下相对路径 rel 的目录，读完之前先用旧的条目。
@@ -162,9 +143,15 @@ func (a *App) readDir(ch *chat, rel string) {
 	go func() {
 		entries := readEntries(filepath.Join(cwd, rel))
 		a.win.Update(func() {
-			if fp.gen == gen { // 读的时候换了工作目录的，结果作废
-				fp.dirs[rel] = entries
+			if fp.gen != gen { // 读的时候换了工作目录的，结果作废
+				return
 			}
+			kids := make([]string, len(entries)) // 空目录也不是 nil：树据此知道它是目录
+			for i, e := range entries {
+				kids[i] = path.Join(rel, e.name)
+				fp.isDir[kids[i]] = e.dir
+			}
+			fp.kids[rel] = kids
 		})
 	}()
 }
@@ -197,15 +184,6 @@ func readEntries(dir string) []fileEntry {
 			cmp.Compare(x.name, y.name))
 	})
 	return entries
-}
-
-// toggleDir 展开或收起相对路径 rel 的目录；展开时重新读取它，读完之前先显示旧的。
-func (a *App) toggleDir(ch *chat, rel string) {
-	fp := ch.files
-	fp.expanded[rel] = !fp.expanded[rel]
-	if fp.expanded[rel] {
-		a.readDir(ch, rel)
-	}
 }
 
 // openFile 在文件面板里打开工作目录下相对路径 rel 的文件：已经开着就切过去，否则新开一个标签。

@@ -1,15 +1,11 @@
 package gui
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui/editor"
 )
 
@@ -140,56 +136,4 @@ func (tb *fileTab) keep() {
 		tb.stat = fileStat{info.ModTime(), info.Size()}
 	}
 	tb.changed = false
-}
-
-// watchFiles 开始监视 ch 的工作目录：目录里的变化刷新文件树，打开的文件被别处改动时同步到
-// 标签。只要“某个目录里有变化”的提示（HintsOnly）：不给整棵树做快照，工作目录是家目录这样
-// 的大目录时也不费事，而我们本来就只是重读读过的目录、核对所有标签。目录太大监视不了时不监视，
-// 只在打开面板与切换标签时核对。
-func (a *App) watchFiles(ch *chat) {
-	fp, cwd := ch.files, ch.cwd
-	fp.stopWatch()
-	ctx, cancel := context.WithCancel(context.Background())
-	fp.stop = cancel
-	go func() {
-		opts := mygo.FileWatchOptions{Recursive: true, HintsOnly: true, Ignore: watchSkips}
-		w, err := mygo.WatchFiles(ctx, cwd, opts)
-		if err != nil {
-			return
-		}
-		defer w.Close()
-		for {
-			events, err := w.Next(ctx)
-			if err != nil {
-				return
-			}
-			a.win.Update(func() { a.filesChanged(ch, cwd, events) })
-		}
-	}()
-}
-
-// watchSkips 是监视时不看的目录：.git 里的变化太碎，node_modules 太大。
-func watchSkips(p string, isDir bool) bool {
-	name := path.Base(p)
-	return isDir && (name == ".git" || name == "node_modules")
-}
-
-// filesChanged 处理工作目录里的一批变化：读过的目录里有变化的重新读，打开的文件核对一遍。
-// 事件的 Path 是“其中或其下有变化”的目录，"." 是整个工作目录。
-func (a *App) filesChanged(ch *chat, cwd string, events []mygo.FileEvent) {
-	fp := ch.files
-	if fp == nil || !fp.open || fp.cwd != cwd {
-		return
-	}
-	for dir := range fp.dirs {
-		for _, ev := range events {
-			if ev.Path == "." || dir == ev.Path || strings.HasPrefix(dir, ev.Path+"/") {
-				a.readDir(ch, dir)
-				break
-			}
-		}
-	}
-	for _, tb := range fp.tabs {
-		a.syncTab(tb)
-	}
 }

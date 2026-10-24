@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"encoding/json/jsontext"
 	"fmt"
 	"slices"
@@ -92,18 +93,21 @@ type chat struct {
 	err         string
 	unread      bool // 在别的会话时运行结束，用户还没回来看过
 
-	menu  menuState  // 输入框上方补全列表的状态
-	index pathIndex  // 工作目录下的路径，@ 补全与文件面板的筛选共用
-	files *filePanel // 文件面板，第一次打开时才建
+	menu    menuState    // 输入框上方补全列表的状态
+	index   pathIndex    // 工作目录下的路径，@ 补全与文件面板的筛选共用
+	files   *filePanel   // 文件面板，第一次打开时才建
+	changes *changePanel // 更改面板，第一次打开时才建
+	repo    repoCheck    // 工作目录是不是 git 工作树
 
-	// 会话的终端面板：各个标签、当前标签、是否显示，以及创建失败的原因。
+	// 会话的终端面板：各个标签、当前标签，以及创建失败的原因。
 	terms      []*shell
 	termTab    int
-	termOpen   bool
 	termReveal int // 需要滚进可见范围的标签
 	termErr    string
 
-	expanded sidePanel // 扩展到整个主区的面板；没有时为 noPanel
+	order    []sidePanel        // 开着的面板，按打开的先后；右侧栏照这个顺序排布
+	expanded sidePanel          // 扩展到整个主区的面板；没有时为 noPanel
+	unwatch  context.CancelFunc // 停止监视工作目录；没在监视时为空
 }
 
 // fresh 报告会话是不是还没发过消息的新会话：它还没写进库，换工作目录就是换一个新会话。

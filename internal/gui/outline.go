@@ -118,7 +118,7 @@ func (a *App) fetchOlder(ch *chat) {
 
 // outlineButton 在标题栏画大纲：一个下拉，每条提问一行，选一条就滚到它。下拉的键盘操作、
 // 打开时滚到选中项、悬停高亮都由 mygo 的 Select 负责。
-func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat) {
+func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat, slot int) {
 	a.fetchOlder(ch)
 	o := &ch.outline
 	prompts := ch.outlinePrompts(ch.blocks())
@@ -130,7 +130,7 @@ func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	current := currentPrompt(prompts, top)
 
 	sel := ui.SelectBase(c.Key("outline"), &o.picked)
-	styleBarButton(c, t, sel.Trigger, 2, outlineIcon, "大纲", sel.Open())
+	styleBarButton(c, t, sel.Trigger, slot, outlineIcon, "大纲", sel.Open())
 	sel.Popup(func(panel ui.Element) {
 		popupPanel(panel, t).Width(outlineWidth).Margin(6, 0, 6, 0)
 		ui.Scroll(c).MaxHeight(outlineHeight).Children(func() {

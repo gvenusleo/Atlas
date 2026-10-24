@@ -27,12 +27,12 @@ const (
 	stackMin    = 160 // 右侧栏里叠放的卡片各自的最小高度
 	chatMin     = 320 // 打开右侧栏时对话区的最小宽度
 
-	treeMin       = 140 // 文件树的最小宽度
-	treeDefault   = 200 // 文件树的默认宽度
-	treeRowHeight = 24  // 文件树一行的高度
-	treeIndent    = 14  // 文件树每深一层缩进的宽度
-	barGap        = 4   // 标题栏右端相邻按钮的间距
-	barSlots      = 3   // 标题栏右端为开关留的位置：文件、终端、大纲
+	treeMin           = 140 // 文件树的最小宽度
+	treeDefault       = 200 // 文件树的默认宽度
+	changeTreeDefault = 180 // 更改树的默认宽度，右端要留得下增删行数与更改类型
+	treeIndent        = 14  // 文件树每深一层缩进的宽度
+	barGap            = 4   // 标题栏右端相邻按钮的间距
+	barSlots          = 4   // 标题栏右端为开关留的位置：文件、更改、终端、大纲
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度
@@ -95,6 +95,18 @@ var (
 // 图标按钮与标签用 buttonFill。
 func rowFill(t *ui.Theme) ui.Color    { return t.Text.Alpha(0.06) }
 func buttonFill(t *ui.Theme) ui.Color { return t.Text.Alpha(0.08) }
+
+// quietRows 让 fn 里创建的列表类部件（Outline、Tree 等）用本应用安静的行样式：选中的行是
+// SurfaceHover 的淡底、字色不变，悬停是更淡的 rowFill，与文件树一致。MyGo 的部件在创建时
+// 从主题取色，选中行用强调色，所以临时换一份主题。
+func quietRows(c *ui.Context, t *ui.Theme, fn func()) {
+	local := *t
+	local.Accent, local.AccentText = t.SurfaceHover, t.Text
+	local.SurfaceHover = rowFill(t)
+	c.SetTheme(&local)
+	fn()
+	c.SetTheme(t)
+}
 
 // applyTheme 在系统的亮色或暗色主题上换成 Atlas 的色板，返回本帧的主题。
 func applyTheme(c *ui.Context) *ui.Theme {

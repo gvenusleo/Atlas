@@ -8,25 +8,31 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// pathMenu 是文件树与筛选结果里一项（文件或目录）的右键菜单：复制名称或路径、
-// 在文件管理器中显示、移到废纸篓。rel 是它相对工作目录的路径。
-func (a *App) pathMenu(ch *chat, rel string) func(*ui.Menu) {
-	abs := filepath.Join(ch.cwd, rel)
-	return func(m *ui.Menu) {
-		m.Submenu("复制", func(m *ui.Menu) {
-			if m.Item("文件名").Chosen() {
-				mygo.Clipboard.WriteText(path.Base(rel))
-			}
-			if m.Item("相对路径").Chosen() {
-				mygo.Clipboard.WriteText(rel)
-			}
-			if m.Item("绝对路径").Chosen() {
-				mygo.Clipboard.WriteText(abs)
-			}
-		})
-		if m.Item(revealLabel()).Chosen() {
-			mygo.Shell.ShowItemInFolder(abs)
+// pathItems 是所有文件树共用的菜单项：复制名称或路径、在文件管理器中显示。rel 是文件或目录
+// 相对工作目录 cwd 的路径；exists 为假（文件已被删除）时，在文件管理器中显示不可选。
+func pathItems(m *ui.Menu, cwd, rel string, exists bool) {
+	abs := filepath.Join(cwd, rel)
+	m.Submenu("复制", func(m *ui.Menu) {
+		if m.Item("文件名").Chosen() {
+			mygo.Clipboard.WriteText(path.Base(rel))
 		}
+		if m.Item("相对路径").Chosen() {
+			mygo.Clipboard.WriteText(rel)
+		}
+		if m.Item("绝对路径").Chosen() {
+			mygo.Clipboard.WriteText(abs)
+		}
+	})
+	if m.Item(revealLabel()).Disabled(!exists).Chosen() {
+		mygo.Shell.ShowItemInFolder(abs)
+	}
+}
+
+// pathMenu 是文件面板的文件树与筛选结果里一项（文件或目录）的右键菜单：共用的菜单项，
+// 以及移到废纸篓。
+func (a *App) pathMenu(ch *chat, rel string) func(*ui.Menu) {
+	return func(m *ui.Menu) {
+		pathItems(m, ch.cwd, rel, true)
 		m.Separator()
 		if m.Item("删除").Chosen() {
 			a.trash(ch, rel)

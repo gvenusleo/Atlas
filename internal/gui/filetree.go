@@ -9,29 +9,31 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// treeRow 是文件树里要画的一行。
-type treeRow struct {
-	rel, name string // 相对工作目录的路径与文件名
-	dir, open bool
-	depth     int
+// noKids 是还没读完的目录的子项：空而不是 nil，树据此知道它是目录，先显示箭头。
+var noKids = []string{}
+
+// children 返回条目 item 的子项，文件没有（nil）。
+func (fp *filePanel) children(item string) []string {
+	if kids, read := fp.kids[item]; read {
+		return kids
+	}
+	if fp.isDir[item] {
+		return noKids
+	}
+	return nil
 }
 
-// treeRows 把展开着的目录压平成要画的行；还没读完的目录先不列。
-func (fp *filePanel) treeRows() []treeRow {
-	var rows []treeRow
-	var walk func(rel string, depth int)
-	walk = func(rel string, depth int) {
-		for _, e := range fp.dirs[rel] {
-			p := path.Join(rel, e.name)
-			open := e.dir && fp.expanded[p]
-			rows = append(rows, treeRow{p, e.name, e.dir, open, depth})
-			if open {
-				walk(p, depth+1)
-			}
-		}
+// activeRel 返回当前标签的文件相对工作目录 cwd 的路径；没有标签，或文件不在 cwd 下时为空。
+func (fp *filePanel) activeRel(cwd string) string {
+	abs := fp.activePath()
+	if abs == "" {
+		return ""
 	}
-	walk("", 0)
-	return rows
+	rel, err := filepath.Rel(cwd, abs)
+	if err != nil || !filepath.IsLocal(rel) {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // fileTree 画文件树一栏：上方是筛选框，其下是文件树，筛选时换成匹配的文件。
@@ -45,47 +47,64 @@ func (a *App) fileTree(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.filterResults(c, t, ch)
 			return
 		}
-		rows := fp.treeRows()
-		fp.list.Key = func(i int) any { return rows[i].rel }
-		ui.List(c, &fp.list, len(rows), func(i int) { a.treeRowView(c, t, ch, rows[i]) }).
-			Grow(1).Padding(4, 8, 8)
+		a.fileOutline(c, t, ch)
 	})
 }
 
-// treeRowView 画文件树里的一行：目录是箭头，文件是类型图标，其后是名称；点一下，
-// 目录展开或收起，文件在新标签里打开。当前标签的文件所在的行有底色。
-func (a *App) treeRowView(c *ui.Context, t *ui.Theme, ch *chat, r treeRow) {
-	row := ui.ButtonBase(c).Height(treeRowHeight).Justify(ui.Start).AlignItems(ui.Center).Gap(6).
-		Padding(0, 6, 0, 6+float32(r.depth)*treeIndent).Radius(controlRound).
-		Cursor(ui.CursorPointer).Label(r.name).ContextMenu(a.pathMenu(ch, r.rel))
-	switch {
-	case !r.dir && ch.files.activePath() == filepath.Join(ch.cwd, r.rel):
-		row.Background(t.SurfaceHover)
-	case row.Hovered():
-		row.Background(rowFill(t))
+// fileOutline 画文件树：目录有箭头，文件有类型图标，其后是名称。用户点一下文件，在标签里打开
+// 它；当前标签的文件是选中的。新展开的目录在这里读取。
+func (a *App) fileOutline(c *ui.Context, t *ui.Theme, ch *chat) {
+	fp := ch.files
+	if active := fp.activeRel(ch.cwd); active != fp.shown { // 当前标签的文件换了：选中它
+		fp.shown = active
+		fp.chosen.Clear()
+		if active != "" {
+			fp.chosen.Add(active)
+		}
 	}
-	row.OnClick(func() {
-		if r.dir {
-			a.toggleDir(ch, r.rel)
+	var clicked string // 点了的目录，树构建完再处理
+	outlineTree(c, t, &fp.tree, &fp.chosen, fp.kids[""], fp.children,
+		func(item string) { a.fileItem(c, t, ch, item, &clicked) }).
+		OnChange(func() { a.openChosen(ch) })
+	if clicked != "" {
+		chooseDir(&fp.chosen, &fp.tree.Open, clicked)
+	}
+	opened := make(map[string]bool)
+	for dir := range fp.tree.Open.All() {
+		opened[dir] = true
+		if !fp.opened[dir] && fp.isDir[dir] {
+			a.readDir(ch, dir) // 新展开的：读取，读完之前先显示旧的
+		}
+	}
+	fp.opened = opened
+}
+
+// openChosen 打开用户在树里选中的文件；选的是目录，或文件已经是当前标签时什么也不做。
+func (a *App) openChosen(ch *chat) {
+	fp := ch.files
+	active := fp.activeRel(ch.cwd)
+	for item := range fp.chosen.All() {
+		if !fp.isDir[item] && item != active {
+			a.openFile(ch, item)
 			return
 		}
-		a.openFile(ch, r.rel)
-	})
+	}
+}
+
+// fileItem 画文件树里一行的内容（箭头之后）：文件的类型图标与名称。右键菜单见 pathMenu。
+// 点了目录行的内容，目录记进 clicked。
+func (a *App) fileItem(c *ui.Context, t *ui.Theme, ch *chat, item string, clicked *string) {
+	isDir := ch.files.isDir[item]
+	row := treeItem(c, t, !isDir).ContextMenu(a.pathMenu(ch, item))
 	row.Children(func() {
-		ui.Row(c).Size(smallIconSize, smallIconSize).Shrink(0).Justify(ui.Center).
-			AlignItems(ui.Center).Children(func() {
-			if !r.dir {
-				ui.Image(c, fileIcon(r.rel)).Size(smallIconSize, smallIconSize)
-				return
-			}
-			angle := float32(0)
-			if r.open {
-				angle = 90
-			}
-			ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(angle)
-		})
-		ui.Text(c, r.name).FontSize(textSize).SingleLine()
+		if !isDir {
+			ui.Image(c, fileIcon(item)).Size(smallIconSize, smallIconSize).Shrink(0)
+		}
+		ui.Text(c, path.Base(item)).FontSize(textSize).SingleLine().Grow(1).MinWidth(0)
 	})
+	if isDir && row.Clicked() {
+		*clicked = item
+	}
 }
 
 // filterResults 画筛选框的结果：路径里包含输入内容（忽略大小写）的文件，不含目录。

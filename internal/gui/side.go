@@ -6,14 +6,21 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// panelButtons 画标题栏右端的开关：文件在最右，终端在它左边，再左边是会话的大纲
-// （提问多时才有，没有时位置空着）；面板打开时用强调色标出。
+// panelButtons 画标题栏右端的开关：文件在最右，其左是更改（工作目录是 git 工作树时才有），
+// 再左是终端，最左是会话的大纲（提问多时才有）；没有的不留空位。面板打开时用强调色标出。
 func (a *App) panelButtons(c *ui.Context, t *ui.Theme) {
 	ch := a.current
-	panelButton(c, t, 0, folderIcon, "文件", ch.filesOpen(), a.toggleFiles)
-	panelButton(c, t, 1, terminalIcon, "终端", ch.termOpen, a.toggleTerminal)
+	slot := 0
+	panelButton(c, t, slot, folderIcon, "文件", ch.filesOpen(), a.toggleFiles)
+	slot++
+	if ch.inRepo() {
+		panelButton(c, t, slot, diffIcon, "更改", ch.panelOpen(changesPanel), a.toggleChanges)
+		slot++
+	}
+	panelButton(c, t, slot, terminalIcon, "终端", ch.panelOpen(termPanel), a.toggleTerminal)
+	slot++
 	if ch.hasOutline() {
-		a.outlineButton(c, t, ch)
+		a.outlineButton(c, t, ch, slot)
 	}
 }
 
@@ -56,40 +63,89 @@ func (a *App) sideHandle(c *ui.Context) {
 	}
 }
 
-// stackHandle 是右侧栏里上下两张卡片之间的拖动条，上下拖动调整终端卡片的高度。
+// stackHandle 是右侧栏里上下两张卡片之间的拖动条，上下拖动调整上面那张卡片的高度。
 func (a *App) stackHandle(c *ui.Context) {
 	handle := ui.Box(c).Height(handleWidth).Shrink(0).Cursor(ui.CursorResizeNS)
 	if _, dy, ok := handle.Dragged(); ok {
-		a.termHeight += dy
+		a.stackHeight += dy
 	}
 }
 
-// sideColumn 是主区右侧的一栏：终端与文件面板的卡片竖着叠放，都开着时终端在上，中间的
-// 拖动条调整两者的高度；只开一个时它占满整栏。
+// columnHandle 是右侧栏里左右两列之间的拖动条，左右拖动调整左列的宽度。
+func (a *App) columnHandle(c *ui.Context) {
+	handle := ui.Box(c).Width(handleWidth).Shrink(0).Cursor(ui.CursorResizeEW)
+	if dx, _, ok := handle.Dragged(); ok {
+		a.leftWidth += dx
+	}
+}
+
+// sideColumn 是主区右侧的一栏：面板的卡片按打开的先后排布。一个占满整栏，两个上下排；
+// 三个时前两个上下排在左列，第三个占满右列。
 func (a *App) sideColumn(c *ui.Context, t *ui.Theme, ch *chat) {
 	top := cardTop(c)
-	both := ch.termOpen && ch.filesOpen()
-	var termHeight float32
-	if both {
-		// 叠放时终端的高度限制在范围内，两张卡片都留得下标签栏与一点内容。
-		_, window := c.Size()
-		room := window - top - edge - handleWidth
-		hi := max(room-stackMin, stackMin)
-		a.termHeight = min(max(cmp.Or(a.termHeight, room/2), stackMin), hi)
-		termHeight = a.termHeight
+	if len(ch.order) < 3 {
+		ui.Column(c.Key("side")).Width(a.sideWidth).Shrink(0).Margin(top, edge, edge, 0).
+			Children(func() { a.cardStack(c, t, ch, ch.order, top) })
+		return
 	}
-	ui.Column(c.Key("side")).Width(a.sideWidth).Shrink(0).Margin(top, edge, edge, 0).
-		Children(func() {
-			if ch.termOpen {
-				a.terminalCard(c, t, ch, termHeight)
-			}
-			if both {
-				a.stackHandle(c)
-			}
-			if ch.filesOpen() {
-				a.filesCard(c, t, ch)
-			}
+	// 左列的宽度限制在范围内，两列都留得下最小宽度。
+	room := a.sideWidth - handleWidth
+	a.leftWidth = min(max(cmp.Or(a.leftWidth, room/2), sideMin), max(room-sideMin, sideMin))
+	ui.Row(c.Key("side")).Width(a.sideWidth).Shrink(0).Margin(top, edge, edge, 0).
+		AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c.Key("side-left")).Width(a.leftWidth).Shrink(0).Children(func() {
+			a.cardStack(c, t, ch, ch.order[:2], top)
 		})
+		a.columnHandle(c)
+		ui.Column(c.Key("side-right")).Grow(1).MinWidth(0).Children(func() {
+			a.panelCard(c, t, ch, ch.order[2], 0)
+		})
+	})
+}
+
+// cardStack 把一两个面板的卡片竖着排在一列里；两个时中间的拖动条调整上面那张的高度。
+func (a *App) cardStack(c *ui.Context, t *ui.Theme, ch *chat, panels []sidePanel, top float32) {
+	if len(panels) == 1 {
+		a.panelCard(c, t, ch, panels[0], 0)
+		return
+	}
+	// 上面那张的高度限制在范围内，两张卡片都留得下标签栏与一点内容。
+	_, window := c.Size()
+	room := window - top - edge - handleWidth
+	hi := max(room-stackMin, stackMin)
+	a.stackHeight = min(max(cmp.Or(a.stackHeight, room/2), stackMin), hi)
+	a.panelCard(c, t, ch, panels[0], a.stackHeight)
+	a.stackHandle(c)
+	a.panelCard(c, t, ch, panels[1], 0)
+}
+
+// panelCard 画面板 p 的卡片；height 为 0 时占满所在列余下的高度。
+func (a *App) panelCard(c *ui.Context, t *ui.Theme, ch *chat, p sidePanel, height float32) {
+	switch p {
+	case termPanel:
+		a.terminalCard(c, t, ch, height)
+	case changesPanel:
+		a.changesCard(c, t, ch, height)
+	case filesPanel:
+		a.filesCard(c, t, ch, height)
+	}
+}
+
+// widenSide 把右侧栏拉到 filesMin 宽，放得下文件树与内容；原来更窄时记在 prev 里，供
+// restoreSide 还原。
+func (a *App) widenSide(prev *float32) {
+	*prev = 0
+	if a.sideWidth < filesMin {
+		*prev, a.sideWidth = a.sideWidth, filesMin
+	}
+}
+
+// restoreSide 在右侧栏没被再拖过的情况下，还原 widenSide 之前的宽度。
+func (a *App) restoreSide(prev *float32) {
+	if *prev != 0 && a.sideWidth == filesMin {
+		a.sideWidth = *prev
+	}
+	*prev = 0
 }
 
 // cardTop 是浮动卡片离窗口顶部的距离；窗口控件在右上角的平台上，卡片从标题栏下方开始。
@@ -109,11 +165,7 @@ func (a *App) expandedPanel(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c.Key("expanded")).Fill().Children(func() {
 		ui.Row(c).Height(top).Shrink(0).DragWindow()
 		ui.Column(c).Grow(1).MinHeight(0).Margin(0, edge, edge, edge).Children(func() {
-			if ch.expanded == termPanel {
-				a.terminalCard(c, t, ch, 0)
-			} else {
-				a.filesCard(c, t, ch)
-			}
+			a.panelCard(c, t, ch, ch.expanded, 0)
 		})
 	})
 }

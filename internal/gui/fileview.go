@@ -13,17 +13,17 @@ import (
 )
 
 // filesCard 是右侧栏里的文件面板卡片：顶部是标签栏，其下左边是文件树，右边是当前标签的内容。
-func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat) {
+func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
 	fp := ch.files
-	if fp.dirs == nil || fp.cwd != ch.cwd {
-		moved := fp.dirs != nil // 之前是另一个工作目录，监视要换到新的
+	if fp.kids == nil || fp.cwd != ch.cwd {
+		moved := fp.kids != nil // 之前是另一个工作目录，监视要换到新的
 		fp.reset(ch.cwd)
 		a.readDir(ch, "")
 		if moved {
 			a.watchFiles(ch)
 		}
 	}
-	sideCard(c, t, "files-card", 0).Children(func() {
+	sideCard(c, t, "files-card", height).Children(func() {
 		a.fileTabs(c, t, ch)
 		if fp.treeHidden {
 			a.fileContent(c, t, ch)
@@ -99,15 +99,8 @@ func (a *App) fileContent(c *ui.Context, t *ui.Theme, ch *chat) {
 // fileHeader 画内容区顶部：路径，所在的目录淡一些、文件名在最后；Markdown 文件在右端有预览与
 // 源码的切换按钮。
 func fileHeader(c *ui.Context, t *ui.Theme, rel string, tb *fileTab) {
-	dir, name := path.Split(filepath.ToSlash(rel))
 	ui.Row(c).AlignItems(ui.Center).Padding(4, 8, 4, 14).Children(func() {
-		ui.Row(c).Grow(1).MinWidth(0).Gap(4).ClipX().Children(func() {
-			if dir != "" {
-				dir = strings.ReplaceAll(strings.TrimSuffix(dir, "/"), "/", " / ") + " /"
-				ui.Text(c, dir).FontSize(textSize).TextColor(t.TextMuted).SingleLine().Shrink(0)
-			}
-			ui.Text(c, name).FontSize(textSize).SingleLine()
-		})
+		pathLabel(c, t, filepath.ToSlash(rel))
 		if tb.ed != nil && isMarkdown(tb.path) {
 			glyph, label := codeIcon, "查看源码"
 			if !tb.preview {
@@ -115,6 +108,19 @@ func fileHeader(c *ui.Context, t *ui.Theme, rel string, tb *fileTab) {
 			}
 			iconButton(c, t, glyph, label, barButton, func() { tb.preview = !tb.preview })
 		}
+	})
+}
+
+// pathLabel 画一个文件的路径（用 / 分隔，相对工作目录）：所在的目录淡一些、文件名在最后；
+// 放不下时裁掉右边。文件面板与更改面板的内容区顶部共用。
+func pathLabel(c *ui.Context, t *ui.Theme, rel string) {
+	dir, name := path.Split(rel)
+	dir = strings.ReplaceAll(strings.TrimSuffix(dir, "/"), "/", " / ")
+	ui.Row(c).Grow(1).MinWidth(0).Gap(4).ClipX().Children(func() {
+		if dir != "" {
+			ui.Text(c, dir+" /").FontSize(textSize).TextColor(t.TextMuted).SingleLine().Shrink(0)
+		}
+		ui.Text(c, name).FontSize(textSize).SingleLine()
 	})
 }
 

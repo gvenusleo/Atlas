@@ -108,7 +108,7 @@ func column(c *ui.Context, vertical float32, fn func()) {
 	})
 }
 
-// main 构建主区：对话在左，会话的终端或文件面板打开时，浮动的卡片在右侧一栏里；
+// main 构建主区：对话在左，会话的终端、更改或文件面板打开时，浮动的卡片在右侧一栏里；
 // 有面板被扩展时，主区只有这个面板。
 func (a *App) main(c *ui.Context, t *ui.Theme) {
 	ch := a.current
@@ -124,7 +124,7 @@ func (a *App) main(c *ui.Context, t *ui.Theme) {
 		ui.Column(c.Key("chat")).Grow(1).MinWidth(0).Children(func() {
 			a.conversation(c, t, ch)
 		})
-		if ch.termOpen || ch.filesOpen() {
+		if len(ch.order) > 0 {
 			a.sideHandle(c)
 			a.sideColumn(c, t, ch)
 		}
@@ -132,7 +132,11 @@ func (a *App) main(c *ui.Context, t *ui.Theme) {
 	// 右侧栏宽度限制在范围内，保证对话区不被挤得太窄。
 	window, _ := c.Size()
 	total := window - a.sidebarWidth*a.shown
-	a.sideWidth = min(max(a.sideWidth, sideMin), max(total-chatMin-handleWidth, sideMin))
+	least := float32(sideMin) // 三个面板时右侧栏有两列
+	if len(ch.order) > 2 {
+		least = 2*sideMin + handleWidth
+	}
+	a.sideWidth = min(max(a.sideWidth, least), max(total-chatMin-handleWidth, least))
 }
 
 // conversation 构建当前会话：新会话居中欢迎，其余为标题、消息列表和底部输入。
