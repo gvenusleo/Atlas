@@ -52,15 +52,15 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 	}
 	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
-		Children(func() {
-			treeToggle(c, t, fp)
-			if len(items) == 0 {
-				ui.Text(c, "文件").FontSize(textSize).Padding(0, 6)
-			}
-			a.tabStrip(c, t, "file", items, fp.active, &fp.reveal)
-			ui.Row(c).Grow(1)
-			a.cardActions(c, t, ch, filesPanel, "关闭文件面板", a.toggleFiles)
-		})
+		DragWindow().Children(func() {
+		treeToggle(c, t, fp)
+		if len(items) == 0 {
+			ui.Text(c, "文件").FontSize(textSize).Padding(0, 6)
+		}
+		a.tabStrip(c, t, "file", items, fp.active, &fp.reveal)
+		ui.Row(c).Grow(1)
+		a.cardActions(c, t, ch, filesPanel, "关闭文件面板", a.toggleFiles)
+	})
 }
 
 // treeToggle 是标签栏左端的文件树开关；文件树显示时用强调色标出。

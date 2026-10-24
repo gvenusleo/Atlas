@@ -198,10 +198,10 @@ func (a *App) termTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 	}
 	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
-		Children(func() {
-			a.tabStrip(c, t, "term", items, ch.termTab, &ch.termReveal)
-			iconButton(c, t, plusIcon, "新建终端", barButton, func() { a.newTerminal(ch) })
-			ui.Row(c).Grow(1)
-			a.cardActions(c, t, ch, termPanel, "收起终端", a.toggleTerminal)
-		})
+		DragWindow().Children(func() {
+		a.tabStrip(c, t, "term", items, ch.termTab, &ch.termReveal)
+		iconButton(c, t, plusIcon, "新建终端", barButton, func() { a.newTerminal(ch) })
+		ui.Row(c).Grow(1)
+		a.cardActions(c, t, ch, termPanel, "收起终端", a.toggleTerminal)
+	})
 }
