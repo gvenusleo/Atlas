@@ -9,6 +9,11 @@ run = "go tool mygo dev"
 description = "编译全部包"
 run = "go tool mygo build"
 
+[tasks.install]
+description = "安装 macOS App"
+depends = ["build"]
+run = "rm -rf /Applications/Atlas.app && ditto build/darwin-arm64/Atlas.app /Applications/Atlas.app"
+
 [tasks.icon]
 description = "重新生成应用图标（resources/icon.png 与 icon-dev.png）"
 run = "go run ./cmd/icon"
