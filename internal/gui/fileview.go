@@ -66,7 +66,7 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 // treeToggle 是标签栏左端的文件树开关；文件树显示时用强调色标出。
 func treeToggle(c *ui.Context, t *ui.Theme, fp *filePanel) {
 	btn := ui.ButtonBase(c).Size(barButton, barButton).Shrink(0).Radius(controlRound).
-		Cursor(ui.CursorPointer).Label("文件树").Tooltip("文件树")
+		Label("文件树").Tooltip("文件树")
 	color := t.TextMuted
 	switch {
 	case !fp.treeHidden:

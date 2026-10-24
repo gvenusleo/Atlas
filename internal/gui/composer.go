@@ -111,7 +111,7 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	if !ch.running && (!ch.hasDraft() || !ch.canSend()) {
 		btn = ui.Button(c, "").Disabled(true)
 	} else {
-		btn = ui.ButtonBase(c).Cursor(ui.CursorPointer).TextColor(t.Accent).
+		btn = ui.ButtonBase(c).TextColor(t.Accent).
 			OnClick(func() {
 				switch {
 				case ch.running:
@@ -145,8 +145,7 @@ func (a *App) imageButton(c *ui.Context, t *ui.Theme, ch *chat) {
 		label, color = "当前模型不接受图片", t.TextMuted.Alpha(0.4)
 	}
 	btn := ui.ButtonBase(c).Size(composerButton, composerButton).Padding(0).
-		Radius(composerButton / 2).AlignSelf(ui.End).Cursor(ui.CursorPointer).
-		Label("添加图片").Tooltip(label)
+		Radius(composerButton / 2).AlignSelf(ui.End).Label("添加图片").Tooltip(label)
 	if btn.Hovered() {
 		btn.Background(buttonFill(t))
 	}
@@ -194,8 +193,7 @@ func (a *App) thumbnail(c *ui.Context, t *ui.Theme, ch *chat, f *attachment) {
 			return
 		}
 		remove := ui.ButtonBase(c).Absolute().Top(4).Right(4).Size(removeSize, removeSize).
-			Padding(0).Radius(removeSize / 2).Background(ui.RGBA(0, 0, 0, 0.6)).
-			Cursor(ui.CursorPointer).Label("移除")
+			Padding(0).Radius(removeSize / 2).Background(ui.RGBA(0, 0, 0, 0.6)).Label("移除")
 		remove.OnClick(func() {
 			ch.attachments = slices.DeleteFunc(ch.attachments, func(p *attachment) bool {
 				return p == f

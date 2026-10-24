@@ -97,7 +97,7 @@ func (a *App) launcherList(c *ui.Context, t *ui.Theme, maxHeight float32) {
 // launcherRow 画一行结果：图标（会话没有）、名称、说明和行尾；点一下就调用 choose。
 func launcherRow(c *ui.Context, t *ui.Theme, r result, choose func()) ui.Element {
 	row := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(10).
-		Padding(6, 10).Radius(controlRound).Cursor(ui.CursorPointer).Label(r.name)
+		Padding(6, 10).Radius(controlRound).Label(r.name)
 	row.OnClick(choose)
 	row.Children(func() {
 		if r.icon != nil {

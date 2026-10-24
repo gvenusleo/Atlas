@@ -97,7 +97,7 @@ func entry(
 	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, primary bool, click func(),
 ) {
 	btn := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(8).Padding(4, 8).
-		Radius(controlRound).Cursor(ui.CursorPointer).Label(label)
+		Radius(controlRound).Label(label)
 	if btn.Hovered() {
 		btn.Background(t.SurfaceHover)
 	}
@@ -164,7 +164,7 @@ func (a *App) visible(g group, selected string) []protocol.SessionInfo {
 // showMore 画分组末尾的“显示更多”，点一下列出该目录的全部会话。
 func (a *App) showMore(c *ui.Context, t *ui.Theme, cwd string, hidden int) {
 	btn := ui.ButtonBase(c).Justify(ui.Start).Padding(4, 8).Radius(controlRound).
-		Cursor(ui.CursorPointer).Label("显示更多")
+		Label("显示更多")
 	if btn.Hovered() {
 		btn.Background(t.SurfaceHover)
 	}
@@ -237,7 +237,7 @@ func trail(
 				ui.Text(c, ago(updated)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 			}
 			more := ui.ButtonBase(c.Key("more")).Size(size, size).Shrink(0).Radius(controlRound).
-				Cursor(ui.CursorPointer).Label("更多").Disabled(!hovered)
+				Label("更多").Disabled(!hovered)
 			if hovered && more.Hovered() {
 				more.Background(t.Text.Alpha(0.1))
 			}

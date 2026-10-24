@@ -41,8 +41,7 @@ func styleBarButton(
 	top := (titleBarHeight(c) - barButton) / 2
 	right := barInset + c.TitleBar().Right + float32(slot)*(barButton+barGap)
 	btn.Absolute().Top(top).Right(right).
-		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
-		Label(label).Tooltip(label)
+		Size(barButton, barButton).Radius(controlRound).Label(label).Tooltip(label)
 	color := t.TextMuted
 	switch {
 	case open:

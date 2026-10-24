@@ -243,7 +243,7 @@ func expandable(
 	c *ui.Context, t *ui.Theme, open *bool, label string, card bool, head, body func(),
 ) {
 	p := ui.CollapsibleBase(c, open)
-	tr := p.Trigger.AlignItems(ui.Center).Gap(6).Cursor(ui.CursorPointer).Label(label)
+	tr := p.Trigger.AlignItems(ui.Center).Gap(6).Label(label)
 	if card {
 		tr.Padding(8, 12)
 		if tr.Hovered() {

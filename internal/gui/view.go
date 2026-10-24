@@ -78,8 +78,7 @@ func titleBarHeight(c *ui.Context) float32 {
 func (a *App) sidebarToggle(c *ui.Context, t *ui.Theme) {
 	top := (titleBarHeight(c) - barButton) / 2
 	btn := ui.ButtonBase(c).Absolute().Top(top).Left(c.TitleBar().Left+6).
-		Size(barButton, barButton).Radius(controlRound).Cursor(ui.CursorPointer).
-		Label("切换侧栏").Tooltip("切换侧栏")
+		Size(barButton, barButton).Radius(controlRound).Label("切换侧栏").Tooltip("切换侧栏")
 	if btn.Hovered() {
 		btn.Background(buttonFill(t))
 	}
@@ -232,7 +231,7 @@ func (a *App) jumpToLatest(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Row(c).Absolute().Left(0).Right(0).Bottom(10).Justify(ui.Center).Children(func() {
 		btn := ui.ButtonBase(c).Size(32, 32).Radius(16).
 			Background(t.Background).Border(1, t.Border).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.12)).
-			Cursor(ui.CursorPointer).Label("回到最新").Tooltip("回到最新")
+			Label("回到最新").Tooltip("回到最新")
 		if btn.Hovered() {
 			btn.Background(t.SurfaceHover)
 		}

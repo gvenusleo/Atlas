@@ -133,7 +133,7 @@ func (a *App) filterResults(c *ui.Context, t *ui.Theme, ch *chat) {
 func (a *App) resultRow(c *ui.Context, t *ui.Theme, ch *chat, p string) {
 	dir, name := path.Split(p)
 	row := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(8).Padding(4, 6).
-		Radius(controlRound).Cursor(ui.CursorPointer).Label(p).ContextMenu(a.pathMenu(ch, p))
+		Radius(controlRound).Label(p).ContextMenu(a.pathMenu(ch, p))
 	switch {
 	case ch.files.activePath() == filepath.Join(ch.cwd, p):
 		row.Background(t.SurfaceHover)

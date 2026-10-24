@@ -48,7 +48,7 @@ func (a *App) tabStrip(
 
 // tabBody 画一个标签的内容：点文字部分选中它，右侧是关闭按钮。
 func tabBody(c *ui.Context, t *ui.Theme, it tabItem) {
-	pick := ui.ButtonBase(c).Gap(6).AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(it.label)
+	pick := ui.ButtonBase(c).Gap(6).AlignItems(ui.Center).Label(it.label)
 	pick.OnClick(it.pick)
 	pick.Children(func() {
 		if it.icon != nil {
@@ -69,7 +69,7 @@ func tabBody(c *ui.Context, t *ui.Theme, it tabItem) {
 // 是无障碍名称与提示。调用方再设大小与内容。
 func quietButton(c *ui.Context, t *ui.Theme, label string, click func()) ui.Element {
 	btn := ui.ButtonBase(c).Radius(controlRound).Justify(ui.Center).AlignItems(ui.Center).
-		Cursor(ui.CursorPointer).Label(label).Tooltip(label)
+		Label(label).Tooltip(label)
 	if btn.Hovered() {
 		btn.Background(buttonFill(t))
 	}

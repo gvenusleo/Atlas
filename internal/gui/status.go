@@ -27,7 +27,7 @@ func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	var row ui.Element
 	if ch.fresh() {
-		row = ui.ButtonBase(c).Cursor(ui.CursorPointer).Label("更换工作目录")
+		row = ui.ButtonBase(c).Label("更换工作目录")
 		if row.Hovered() {
 			row.Background(rowFill(t))
 		}
@@ -97,7 +97,7 @@ func dropdown[T comparable](
 ) {
 	sel := ui.SelectBase(c.Key(label), value)
 	sel.Trigger.AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
-		Cursor(ui.CursorPointer).Label(label).Disabled(disabled).OnChange(onChange)
+		Label(label).Disabled(disabled).OnChange(onChange)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(rowFill(t))
 	}
