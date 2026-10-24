@@ -313,6 +313,7 @@ GUI 实现 `protocol.Subscriber`，把更新交给主线程。界面里只有两
 - 更换模型与思考深度：`SetConfigOption`，用响应中的配置项重绘选择器。
 - 侧栏：`ListSessions`，在自身操作之后以及收到 `session_info_update` 时重新读取。
 - 关闭会话标签：`CloseSession`。退出：核心的 `Close`（取消所有运行，等待收尾，关闭数据库）。
+- 终端、更改、文件是 GUI 本地的面板，不经 `protocol`。面板按打开的先后排布：一个占满右侧栏，两个上下排，三个时前两个上下排、第三个在它们右侧。更改面板只读，调用本机 `git`（`status`、`diff`、`show`）对比 HEAD 与工作区。
 
 ## 一轮的时序
 
