@@ -82,12 +82,28 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// entries 画列表上方不随之滚动的部分：搜索框，以及新对话与定时任务两个入口。
+// entries 画列表上方不随之滚动的部分：搜索按钮，以及新对话与定时任务两个入口。
 func (a *App) entries(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Padding(0, 8, 6).Gap(2).Children(func() {
-		ui.SearchField(c, &a.query).Label("搜索").Margin(0, 0, 6)
+		a.searchButton(c, t)
 		entry(c, t, plusIcon, "新对话", true, a.newChat)
 		entry(c, t, clockIcon, "定时任务", false, nil)
+	})
+}
+
+// searchButton 画样子像搜索框的按钮：点一下打开启动器，输入在启动器里进行。
+func (a *App) searchButton(c *ui.Context, t *ui.Theme) {
+	btn := ui.ButtonBase(c).AlignItems(ui.Center).Gap(8).Padding(5, 8).Margin(0, 0, 6).
+		Radius(controlRound).Background(t.Background).Border(1, t.Border).
+		Cursor(ui.CursorPointer).Label("搜索")
+	if btn.Hovered() {
+		btn.Background(t.SurfaceHover)
+	}
+	btn.OnClick(a.openLauncher)
+	btn.Children(func() {
+		ui.Icon(c, searchIcon).FontSize(iconSize).TextColor(t.TextMuted).Shrink(0)
+		ui.Text(c, "搜索").TextColor(t.TextMuted).SingleLine().Grow(1)
+		ui.Text(c, "⌘K").FontSize(smallSize).TextColor(t.TextMuted).Shrink(0)
 	})
 }
 

@@ -206,6 +206,14 @@ func (a *App) openFile(ch *chat, rel string) {
 	}()
 }
 
+// showFile 打开文件面板（已开着的就不动），并在其中打开相对工作目录的文件 rel。
+func (a *App) showFile(ch *chat, rel string) {
+	if !ch.filesOpen() || ch.expanded != noPanel && ch.expanded != filesPanel {
+		a.toggleFiles()
+	}
+	a.openFile(ch, rel)
+}
+
 // readTab 读取标签的文件，st 是读它之前它在磁盘上的样子；不能预览（太大、不是普通文件、
 // 不是 UTF-8 文本）时 note 是原因。
 func readTab(p string) (text string, st fileStat, note string) {

@@ -45,4 +45,5 @@ var (
 	eyeIcon       = icon("lucide/eye")
 	expandIcon    = icon("lucide/maximize-2")
 	restoreIcon   = icon("lucide/minimize-2")
+	searchIcon    = icon("lucide/search")
 )

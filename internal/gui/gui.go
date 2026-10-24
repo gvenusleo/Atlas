@@ -46,7 +46,7 @@ type App struct {
 	mdNote        markdown.Options // 面板里的小号 Markdown，如压缩的摘要
 	mdFile        markdown.Options // 文件面板里的 Markdown 预览
 	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
-	query         string
+	launch        launcher
 	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
 	more          map[string]bool  // 已点“显示更多”的目录分组
 	sideWidth     float32          // 右侧栏的宽度，各面板共用

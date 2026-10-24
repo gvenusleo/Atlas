@@ -33,33 +33,13 @@ type completion struct {
 
 // menuState 是输入框上方补全列表的状态。
 type menuState struct {
+	listNav
 	closed    string                  // 被 Esc 关掉、或刚补全完时输入框里的文本；文本变了就重新列出
-	index     int                     // 选中的行；文本变了回到第一行
-	moved     bool                    // 按键移动了选中行，下一帧要滚到可见
 	nameWidth float32                 // 上一帧视野内最长的名称的宽度，没有时为 0
-	pointer   [2]float32              // 指针上一次在窗口里的位置，还没见过时是 noPointer
 	caretAt   int                     // 补全之后光标该在的位置，rune 偏移
 	caretDue  bool                    // 下一帧要把输入框的光标放到 caretAt
 	cur       completion              // 上一帧列出的候选，按键作用于它
 	mention   memo[rankKey, []option] // @ 补全按查询排好的候选
-}
-
-// row 返回共 n 行的列表里选中的行。
-func (m *menuState) row(n int) int { return min(m.index, n-1) }
-
-// noPointer 是还没见过指针的位置：列表刚出现时，指针可能正停在某一行上，不算它动过。
-var noPointer = [2]float32{-1, -1}
-
-// pointerTo 记下指针在窗口里的位置 at，它正在第 i 行上：指针动了才选中这一行。
-// 指针没动、只是列表在它底下滚动换了行时，不抢走键盘选中的行。
-func (m *menuState) pointerTo(at [2]float32, i int) {
-	if at == m.pointer {
-		return
-	}
-	if m.pointer != noPointer {
-		m.index = i
-	}
-	m.pointer = at
 }
 
 // apply 把选中的项换进输入框里正在补全的词，返回此后输入框里的文本。换了文本，光标

@@ -141,6 +141,31 @@ func (a *App) refresh() {
 	}()
 }
 
+// loadAllSessions 翻页读出全部会话，供启动器搜索，侧栏只有第一页。读不全时启动器
+// 继续用侧栏的；打开启动器之后又打开过一次的（gen 对不上），结果作废。
+func (a *App) loadAllSessions(gen int) {
+	go func() {
+		var all []protocol.SessionInfo
+		var req protocol.ListSessionsRequest
+		for {
+			resp, err := a.service.ListSessions(context.Background(), req)
+			if err != nil {
+				return
+			}
+			all = append(all, resp.Sessions...)
+			if resp.NextCursor == "" {
+				break
+			}
+			req.Cursor = resp.NextCursor
+		}
+		a.win.Update(func() {
+			if a.launch.gen == gen {
+				a.launch.infos = all
+			}
+		})
+	}()
+}
+
 // choose 让核心换会话的模型或思考深度；完成前选择器仍显示原来的，失败时显示原因。
 func (a *App) choose(ch *chat, id, value string) {
 	req := protocol.SetConfigOptionRequest{SessionID: ch.id, ConfigID: id, Value: value}
