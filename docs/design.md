@@ -164,7 +164,7 @@ type Subscriber interface {
 | `notice` | 通知，如压缩失败、达到上限 |
 | `session_info_update` | 会话第一次保存（有了标题）与改名 |
 | `config_option_update` | 更换了模型或思考深度 |
-| `run_state` | 一轮开始与结束：`running`、`since`；结束时附带 `stopReason`（`end_turn`、`max_tokens`、`cancelled`）或 `error`。中途接入的客户端据此得知会话是否在运行 |
+| `run_state` | 一轮开始与结束：`running`、`since`；结束时附带 `stopReason`（`end_turn`、`max_tokens`、`max_turn_requests`、`cancelled`）或 `error`。中途接入的客户端据此得知会话是否在运行 |
 | `request_retry` | 一次模型请求失败，等待重试：`messageId`、第几次、等待多久、原因。客户端应丢弃这条消息已流出的内容 |
 
 工具的 `kind`：read 对应 `read`，write 与 edit 对应 `edit`，shell 对应 `execute`。`rawOutput` 是工具附带的结构化数据（`ReadDetails`、`WriteDetails`、`EditDetails`），其形状由 `protocol` 定义，GUI 用它绘制 diff、行号与图片；其他客户端只依据 `title`、`content` 也能正常使用。
@@ -205,7 +205,7 @@ type Subscriber interface {
 
 `SendPrompt` 的过程：
 
-1. **受理**（同步）：占用会话，不空闲则返回 `ErrBusy`；完成上文所述的检查，展开斜杠命令；取一份 `agent.Input` 快照；返回。
+1. **受理**（同步）：占用会话，不空闲则返回 `ErrBusy`；完成上文所述的检查，展开斜杠命令；取一份 `agent.Input` 快照，其中 `MaxRequests` 固定为 200，不可配置；返回。
 2. **运行**（异步，归会话所有）：推送 `run_state{running}`，运行 `agent.Run`。事件到来时：
    - 消息定稿（`MessageEnd`）：先写库，再修改内存，最后推送。
      - 尚未写库：创建会话，标题取这条用户消息的开头，同时写入系统提示词快照。
@@ -213,7 +213,7 @@ type Subscriber interface {
      - 消息 `Fold` 进上下文，推进序号。
      - 推送由它生成的更新。
    - 其他事件：直接推送由它生成的更新，不写库。
-3. **结束**：释放占用，推送 `run_state{idle, stopReason | error}`。会话没有订阅者时卸载。
+3. **结束**：释放占用，推送 `run_state{idle, stopReason | error}`；收到过“达到上限”事件的，停止原因是 `max_turn_requests`。会话没有订阅者时卸载。
 
 因此内存中的上下文始终等于数据库中的历史折叠出的结果。
 
@@ -241,10 +241,11 @@ type Input struct {
 	SystemPrompt string
 	Tools        []Tool
 	Messages     []Message // 上下文
+	MaxRequests  int       // 一轮最多请求模型的次数，0 为不限
 }
 
-// Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具或 ctx 取消；
-// 返回这一轮新产生的消息。
+// Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具、ctx 取消或达到
+// MaxRequests；返回这一轮新产生的消息。
 func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Message
 
 // Compact 把上下文中除保留段以外的部分压成摘要，返回新产生的消息。
@@ -257,7 +258,9 @@ func Fold(messages []Message, m Message) []Message
 
 消息类型（用户消息、助手消息、工具结果、系统提示词快照、通知、压缩记录）、`Tool`、`StreamFn` 是面向模型的格式，也是数据库中保存的格式，编解码由 `agent` 负责。`AssistantMessage.Model` 由循环按 `Input.Model.Ref` 填入。模型调用失败时的重试次数与退避间隔由包内的策略决定。
 
-事件只保留核心需要的几种：消息开始、增量、重试、消息定稿（任何一条消息定稿，每条历史记录恰好对应一个）、工具开始、压缩开始。工具的结束就是工具结果的消息定稿。
+`MaxRequests` 数的是这一轮里产生的助手消息个数；失败后重试与上下文溢出后重发的请求已作废，不计入，压缩时请求模型生成摘要也不计入。每次请求模型之前检查：已达上限就追加一条通知并返回，上限是策略，由核心设定。通知不进入上下文，上下文以工具结果结尾，之后的用户消息照常接上。最后一次回复若没有工具调用，这一轮自然结束，不触发上限。
+
+事件只保留核心需要的几种：消息开始、增量、重试、消息定稿（任何一条消息定稿，每条历史记录恰好对应一个）、工具开始、压缩开始、达到上限。工具的结束就是工具结果的消息定稿。
 
 ## store
 
@@ -351,13 +354,14 @@ SendPrompt ──────────► 受理：占用会话，检查，�
 - `Fold`：压缩、系统提示词快照、通知、普通消息得到的上下文。
 - 一条渲染路径：同一段对话，由实时更新建出的显示项，与由 `ListHistory` 回放建出的一致。
 - 并发：写入冲突让会话失效；一轮与连接解耦，关闭不中止一轮，`CancelTurn` 以 `cancelled` 结束；多订阅者都收到更新，未订阅的连接得到 `ErrNotFound`，运行中再次 `SendPrompt` 得到 `ErrBusy`；同一轮里连续的只读工具调用并发执行。
+- 单轮请求数上限：达到时追加通知并停止，停止原因是 `max_turn_requests`，通知能经 `ListHistory` 回放；没有触发时不出通知。
 
 ## 已知缺口
 
 - 新建与删除会话不会通知其他连接，其他连接的侧栏要到自己重新读取时才会更新；删除时仍订阅该会话的连接也不会被告知。
 - 不同进程之间没有实时通道，只能在写入时靠序号发现冲突。
 - 任何订阅者都能取消别人发起的一轮。
-- 一轮没有轮数、时长、费用的上限，目前只有取消能停下失控的循环。
+- 一轮只限制了模型请求的次数，没有时长、费用的上限；其他形式的失控只能靠取消。
 - 历史中的图片已外置，但 `ListHistory` 返回的更新仍内联图片数据；历史很长时分页读取的成本有待观察。
 
 ## 后续
