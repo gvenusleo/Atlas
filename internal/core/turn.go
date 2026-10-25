@@ -16,6 +16,9 @@ import (
 // saveTimeout 限制单条消息的保存耗时；保存不受取消影响。
 const saveTimeout = 5 * time.Second
 
+// maxRequests 是一轮最多请求模型的次数：模型反复调用失败的工具时，由它拦住失控的循环。
+const maxRequests = 200
+
 // titleRunes 是自动生成的会话标题的最大字数。
 const titleRunes = 30
 
@@ -68,7 +71,8 @@ func (s *session) start(drive drive) error {
 	}
 	s.mu.Lock()
 	in := agent.Input{Model: s.model, Thinking: s.thinking,
-		SystemPrompt: s.systemPrompt, Tools: s.tools, Messages: s.messages}
+		SystemPrompt: s.systemPrompt, Tools: s.tools, Messages: s.messages,
+		MaxRequests: maxRequests}
 	since := s.busy.since
 	s.mu.Unlock()
 	// 调用方的请求还没结束，Close 不会在这里错过它。
@@ -87,11 +91,13 @@ func (s *session) run(
 	s.broadcast(protocol.RunStateUpdate{Running: true, Since: since})
 
 	var saveErr error
+	limited := false
 	tr := &translator{s: s}
 	messages := drive(ctx, in, func(e agent.Event) {
 		if saveErr != nil {
 			return
 		}
+		limited = limited || e.Type == agent.EventLimit
 		var seq int64
 		if e.Type == agent.EventMessageEnd {
 			if seq, saveErr = s.save(ctx, e.Message); saveErr != nil {
@@ -112,6 +118,8 @@ func (s *session) run(
 		}
 	case ctx.Err() != nil:
 		state.StopReason = protocol.StopCancelled
+	case limited:
+		state.StopReason = protocol.StopMaxTurnRequests
 	default:
 		reason, err := stopReason(messages)
 		state.StopReason = reason

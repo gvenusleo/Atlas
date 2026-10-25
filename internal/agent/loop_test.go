@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -77,5 +78,45 @@ func TestExecuteToolCallsBatches(t *testing.T) {
 	if !(pos("end a") >= 0 && pos("end b") >= 0 && pos("end a") < pos("end w") &&
 		pos("end b") < pos("end w") && pos("end w") < pos("end c")) {
 		t.Errorf("执行顺序 = %v，期望 a、b 先于 w，w 先于 c", trace)
+	}
+}
+
+// 模型总是调用工具时，一轮在用完 MaxRequests 之后以通知收尾，不再请求模型；
+// 最后一次回复没有工具调用的，一轮自然结束，不触发上限。
+func TestRunStopsAtMaxRequests(t *testing.T) {
+	requests := 0
+	toolCalling := func(context.Context, StreamRequest, func(Delta)) AssistantMessage {
+		requests++
+		return AssistantMessage{StopReason: StopReasonToolUse,
+			Content: []Content{ToolCall{ID: strconv.Itoa(requests), Name: "t"}}}
+	}
+	plain := func(context.Context, StreamRequest, func(Delta)) AssistantMessage {
+		requests++
+		return AssistantMessage{StopReason: StopReasonStop}
+	}
+	tools := []Tool{{Name: "t", ReadOnly: true,
+		Execute: func(context.Context, string, jsontext.Value) (ToolResult, error) {
+			return ToolResult{}, nil
+		}}}
+	play := func(stream StreamFn, max int) (added []Message, limits int) {
+		requests = 0
+		in := Input{Model: Model{Stream: stream}, Tools: tools, MaxRequests: max}
+		added = Run(t.Context(), in, UserMessage{}, func(e Event) {
+			if e.Type == EventLimit {
+				limits++
+			}
+		})
+		return added, limits
+	}
+
+	added, limits := play(toolCalling, 3)
+	notice, ok := added[len(added)-1].(SystemMessage)
+	if requests != 3 || limits != 1 || !ok || notice.Type != SystemMessageTypeNotice {
+		t.Errorf("请求 %d 次、上限事件 %d 次、最后一条 %#v，期望 3 次、1 次、通知",
+			requests, limits, added[len(added)-1])
+	}
+	if added, limits = play(plain, 1); requests != 1 || limits != 0 || len(added) != 2 {
+		t.Errorf("没有工具调用时：请求 %d 次、上限事件 %d 次、新消息 %d 条，期望 1、0、2",
+			requests, limits, len(added))
 	}
 }

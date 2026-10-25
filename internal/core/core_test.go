@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -387,5 +388,39 @@ func TestImagesAndCompactionAcrossReopen(t *testing.T) {
 	// 上下文：摘要、保留的最后一条回复，加上这一轮的“继续”。
 	if seen != 3 {
 		t.Errorf("压缩后重新打开的请求有 %d 条消息，期望 3 条", seen)
+	}
+}
+
+// 一轮用完模型请求次数的上限时以 max_turn_requests 结束，说明原因的通知写进了历史，
+// 重新读出来仍在。
+func TestTurnStopsAtRequestLimit(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	client := newRecorder()
+	a := c.Connect(client)
+	resp, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	stub(t, c, resp.SessionID, func(
+		context.Context, agent.StreamRequest, func(agent.Delta),
+	) agent.AssistantMessage {
+		requests++ // 调用不存在的工具：得到错误结果，模型接着再调用
+		return agent.AssistantMessage{StopReason: agent.StopReasonToolUse,
+			Content: []agent.Content{agent.ToolCall{ID: strconv.Itoa(requests), Name: "none"}}}
+	})
+	end := sayAndWait(t, a, client, resp.SessionID, "开始")
+	if end.StopReason != protocol.StopMaxTurnRequests || requests != maxRequests {
+		t.Fatalf("结束时 run_state = %+v，请求 %d 次，期望 max_turn_requests、%d 次",
+			end, requests, maxRequests)
+	}
+	history, err := a.ListHistory(t.Context(),
+		protocol.ListHistoryRequest{SessionID: resp.SessionID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := history.Updates[len(history.Updates)-1]
+	if n, ok := last.(protocol.Notice); !ok || !strings.Contains(n.Title, "上限") {
+		t.Errorf("历史的最后一条 = %#v，期望说明上限的通知", last)
 	}
 }

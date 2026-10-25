@@ -310,6 +310,8 @@ const (
 	EventToolStart EventType = "tool_start"
 	// EventCompactionStart：开始压缩；结束是压缩记录或失败通知的 EventMessageEnd。
 	EventCompactionStart EventType = "compaction_start"
+	// EventLimit：这一轮达到了 Input.MaxRequests，已追加说明原因的通知，不再请求模型。
+	EventLimit EventType = "limit"
 )
 
 // Event 是一轮运行中的事件；Type 决定哪个载荷字段有效。
@@ -339,4 +341,6 @@ type Input struct {
 	SystemPrompt string
 	Tools        []Tool
 	Messages     []Message // 上下文，见 Fold
+	// MaxRequests 是一轮最多请求模型的次数，0 为不限；到了就追加通知并停止。
+	MaxRequests int
 }

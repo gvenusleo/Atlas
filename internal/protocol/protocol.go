@@ -136,9 +136,10 @@ type SendPromptResponse struct{}
 type StopReason string
 
 const (
-	StopEndTurn   StopReason = "end_turn"
-	StopMaxTokens StopReason = "max_tokens"
-	StopCancelled StopReason = "cancelled"
+	StopEndTurn         StopReason = "end_turn"
+	StopMaxTokens       StopReason = "max_tokens"
+	StopMaxTurnRequests StopReason = "max_turn_requests"
+	StopCancelled       StopReason = "cancelled"
 )
 
 type CancelTurnRequest struct {

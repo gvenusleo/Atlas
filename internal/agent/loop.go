@@ -8,13 +8,17 @@ import (
 	"time"
 )
 
-// Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具或 ctx 取消；
-// 返回这一轮新产生的消息。事件从调用 goroutine 串行发出；in 不被修改。
+// Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具、ctx 取消或达到
+// in.MaxRequests；返回这一轮新产生的消息。事件从调用 goroutine 串行发出；in 不被修改。
 func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Message {
 	r := newRun(in, emit)
 	comp := &compactor{r: r}
 	r.add(user)
-	for {
+	for requests := 0; ; requests++ {
+		if in.MaxRequests > 0 && requests >= in.MaxRequests {
+			stopAtLimit(r)
+			return r.added
+		}
 		comp.startTurn(ctx)
 		msg := streamResponse(ctx, r, func() bool { return comp.try(ctx) })
 		r.add(msg)
@@ -33,6 +37,18 @@ func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Me
 			return r.added
 		}
 	}
+}
+
+// stopAtLimit 在请求次数用完时收尾：追加说明原因的通知，再发出 EventLimit。
+// 通知不进入上下文，此时上下文以工具结果结尾，之后的用户消息照常接上。
+func stopAtLimit(r *run) {
+	r.add(SystemMessage{
+		Type: SystemMessageTypeNotice,
+		Content: fmt.Sprintf("本轮已达到 %d 次模型请求的上限，已停止；发送消息可以继续。",
+			r.MaxRequests),
+		Timestamp: time.Now(),
+	})
+	r.emit(Event{Type: EventLimit})
 }
 
 // run 是一轮的工作状态：Input 的副本，其中的上下文随新消息推进；added 是这一轮新产生的消息。
