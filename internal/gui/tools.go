@@ -429,7 +429,7 @@ func shellCommand(c *ui.Context, t *ui.Theme, v *callView) {
 	if v.code == nil {
 		v.code = readOnlyCode(v.args.Command, editor.LanguageNamed("bash"), "命令")
 	}
-	v.code.Theme = codeTheme(t)
+	v.code.Theme, v.code.Font = codeTheme(t), codeFont
 	ui.Row(c).AlignItems(ui.Start).Padding(8, 10).Background(boxColor(t)).Radius(boxRound).
 		Children(func() {
 			ui.Text(c, "$").Font(codeFont.Family).FontSize(codeFont.Size).TextColor(t.TextMuted)

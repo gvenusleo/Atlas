@@ -137,6 +137,7 @@ func (a *App) changeContent(c *ui.Context, t *ui.Theme, ch *chat) {
 			case v.diff == nil:
 				ui.Text(c, "正在读取…").FontSize(smallSize).TextColor(t.TextMuted).Padding(8, 14)
 			default:
+				v.diff.Font = codeFont
 				v.diff.Layout = editor.DiffUnified
 				if cp.split {
 					v.diff.Layout = editor.DiffSplit

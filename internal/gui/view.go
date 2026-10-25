@@ -10,11 +10,12 @@ import (
 
 // view 构建主窗口：左侧会话列表，右侧当前会话，以及重命名与删除的对话框。
 func (a *App) view(c *ui.Context) {
-	t := applyTheme(c)
+	t := a.applyTheme(c)
 	a.keyNav = false
 	c.OnShortcut(ui.Cmd, ui.KeyB, a.toggleSidebar)
 	c.OnShortcut(ui.Cmd, ui.KeyN, a.newChat)
 	c.OnShortcut(ui.Cmd, ui.KeyK, a.openLauncher)
+	c.OnShortcut(ui.Cmd, ui.KeyComma, a.openSettings)
 	c.OnShortcut(ui.Ctrl, ui.KeyBackquote, a.toggleTerminal)
 	ui.Column(c).Fill().Children(func() {
 		a.panes(c, t)
@@ -22,6 +23,7 @@ func (a *App) view(c *ui.Context) {
 	a.sidebarToggle(c, t)
 	a.dialogs(c)
 	a.launcherDialog(c, t)
+	a.settingsDialog(c, t)
 	if a.toast != "" {
 		c.Toast(a.toast)
 		a.toast = ""

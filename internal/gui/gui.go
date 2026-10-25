@@ -46,6 +46,8 @@ type App struct {
 	mdNote        markdown.Options // 面板里的小号 Markdown，如压缩的摘要
 	mdFile        markdown.Options // 文件面板里的 Markdown 预览
 	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
+	prefs         prefs
+	settings      settingsPage
 	launch        launcher
 	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
 	more          map[string]bool  // 已点“显示更多”的目录分组
@@ -76,6 +78,7 @@ func Run(
 	// 从 Dock 启动时没有 shell 配置里的环境变量，后台向登录 shell 要一份给子进程用。
 	shellenv.Warm()
 	a := newApp()
+	mygo.Theme.SetSource(a.prefs.Theme) // 窗口创建之前定下主题，启动时不闪一下系统的
 	a.service = connect(a)
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { a.confirmQuit(&e.Preventable) })
 	mygo.App.OnQuit(func() {
@@ -147,6 +150,8 @@ func newApp() *App {
 	file.Headings = a.md.Theme.Headings
 	file.Headings[4], file.Headings[5] = file.Headings[3], file.Headings[3]
 	a.mdFile.Theme = &file
+	a.prefs = loadAppPrefs()
+	a.applyFonts()
 	a.cwd, _ = os.UserHomeDir()
 	a.newChat()
 	return a

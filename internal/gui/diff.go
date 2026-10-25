@@ -90,7 +90,7 @@ func diffBody(c *ui.Context, t *ui.Theme, it *item, v *callView) {
 func diffBox(c *ui.Context, t *ui.Theme, ds []*editor.DiffState) {
 	boxed(c, t, func() {
 		for _, d := range ds {
-			d.Theme = codeTheme(t)
+			d.Theme, d.Font = codeTheme(t), codeFont
 			editor.DiffView(c, d).FillWidth()
 		}
 	})
@@ -98,7 +98,7 @@ func diffBox(c *ui.Context, t *ui.Theme, ds []*editor.DiffState) {
 
 // codeBox 把只读的代码视图放进同样的圆角框。
 func codeBox(c *ui.Context, t *ui.Theme, st *editor.State) {
-	st.Theme = codeTheme(t)
+	st.Theme, st.Font = codeTheme(t), codeFont
 	boxed(c, t, func() {
 		ui.Column(c).Padding(8, 10).Children(func() { editor.View(c, st).FillWidth() })
 	})

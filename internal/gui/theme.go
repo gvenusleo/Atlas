@@ -108,9 +108,10 @@ func quietRows(c *ui.Context, t *ui.Theme, fn func()) {
 	c.SetTheme(t)
 }
 
-// applyTheme 在系统的亮色或暗色主题上换成 Atlas 的色板，返回本帧的主题。
-func applyTheme(c *ui.Context) *ui.Theme {
+// applyTheme 在系统的亮色或暗色主题上换成 Atlas 的色板与选定的界面字体，返回本帧的主题。
+func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 	t := *c.Theme()
+	t.Font = a.prefs.uiFamily()
 	p := light
 	if t.Dark {
 		p = dark

@@ -171,6 +171,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		theme := editor.DefaultTheme(t)
 		theme.Background = t.Background
 		tb.ed.Theme = theme
+		tb.ed.Font = codeFont
 		editor.View(c, tb.ed).Grow(1).MinHeight(0)
 	}
 }

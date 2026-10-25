@@ -15,9 +15,8 @@ func (a *App) launcherDialog(c *ui.Context, t *ui.Theme) {
 	l := &a.launch
 	width, height := c.Size()
 	ui.DialogBase(c, &l.open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(0, 0, 0, 0.25)).Justify(ui.Start).Padding(launcherTop, 0, 0)
-		popupPanel(panel, t).Width(min(launcherWidth, width-2*gutter)).Radius(cardRound).
-			Padding(0).Shadow(0, 12, 32, 0, ui.RGBA(0, 0, 0, 0.25))
+		backdrop.Justify(ui.Start).Padding(launcherTop, 0, 0)
+		sheetPanel(backdrop, panel, t, min(launcherWidth, width-2*gutter))
 		if l.query != l.shownQuery {
 			l.index, l.shownQuery = 0, l.query
 		}
