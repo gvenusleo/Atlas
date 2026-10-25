@@ -28,6 +28,7 @@ go get github.com/egoist/mygo@main && go mod tidy
 - `auth.json`：以 provider 名为键的 API key，权限必须为 `0600`。API key 只从这个文件读取，
   不读环境变量。
 - `AGENTS.md`：全局指令。
+- `gui.json`：界面偏好（主题、界面字体、代码字体），由设置页写入，只有桌面端读取，缺失时用默认值。
 - `atlas.db`：会话数据库。
 
 最小的 `settings.json`：
