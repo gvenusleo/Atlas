@@ -70,8 +70,8 @@ func treeToggle(c *ui.Context, t *ui.Theme, fp *filePanel) {
 	color := t.TextMuted
 	switch {
 	case !fp.treeHidden:
-		btn.Background(t.Accent.Alpha(0.15))
-		color = t.Accent
+		btn.Background(accentFg(t).Alpha(0.15))
+		color = accentFg(t)
 	case btn.Hovered():
 		btn.Background(buttonFill(t))
 	}

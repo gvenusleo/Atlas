@@ -111,7 +111,7 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 	if !ch.running && (!ch.hasDraft() || !ch.canSend()) {
 		btn = ui.Button(c, "").Disabled(true)
 	} else {
-		btn = ui.ButtonBase(c).TextColor(t.Accent).
+		btn = ui.ButtonBase(c).TextColor(accentFg(t)).
 			OnClick(func() {
 				switch {
 				case ch.running:
@@ -128,7 +128,7 @@ func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
 		if btn.Hovered() {
 			alpha = 0.25
 		}
-		btn.Background(t.Accent.Alpha(alpha))
+		btn.Background(accentFg(t).Alpha(alpha))
 	}
 	btn.Size(composerButton, composerButton).Padding(0).Radius(composerButton / 2).
 		AlignSelf(ui.End).Label(label).Tooltip(label)

@@ -212,7 +212,7 @@ func dotColor(t *ui.Theme, ch *chat) (color ui.Color, ok bool) {
 	case ch.err != "":
 		return t.Danger, true
 	case ch.unread:
-		return t.Accent, true
+		return accentFg(t), true
 	}
 	return ui.Color{}, false
 }

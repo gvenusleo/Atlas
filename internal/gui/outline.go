@@ -159,7 +159,7 @@ func outlineRow(c *ui.Context, t *ui.Theme, item ui.Element, p prompt, current b
 	item.Children(func() {
 		text := ui.Text(c, p.text).FontSize(textSize).SingleLine().Grow(1).MinWidth(0)
 		if current {
-			text.TextColor(t.Accent)
+			text.TextColor(accentFg(t))
 		}
 		if !p.at.IsZero() {
 			ui.Text(c, since(p.at)).FontSize(smallSize).TextColor(t.TextMuted).

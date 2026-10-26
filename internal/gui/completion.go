@@ -195,7 +195,7 @@ func completionRow(
 		}
 		ui.Text(c, opt.name).FontSize(textSize).SingleLine().Width(nameW).Shrink(0)
 		if opt.tag != "" {
-			ui.Text(c, "["+opt.tag+"]").FontSize(smallSize).TextColor(t.Accent).
+			ui.Text(c, "["+opt.tag+"]").FontSize(smallSize).TextColor(accentFg(t)).
 				SingleLine().Shrink(0)
 		}
 		// 说明可能分了好几行，列表里只要一行。

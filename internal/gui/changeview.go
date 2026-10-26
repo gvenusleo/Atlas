@@ -115,7 +115,7 @@ func changeTags(c *ui.Context, t *ui.Theme, chg fileChange) {
 	case changeDeleted, changeConflict:
 		color = t.Danger
 	case changeRenamed:
-		color = t.Accent
+		color = accentFg(t)
 	}
 	tag(chg.kind.letter(), color)
 }

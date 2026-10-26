@@ -76,7 +76,7 @@ var (
 		ui.Hex("#484f58"), ui.Hex("#ff7b72"), ui.Hex("#3fb950"), ui.Hex("#d29922"),
 		ui.Hex("#58a6ff"), ui.Hex("#bc8cff"), ui.Hex("#39c5cf"), ui.Hex("#b1bac4"),
 		ui.Hex("#6e7681"), ui.Hex("#ffa198"), ui.Hex("#56d364"), ui.Hex("#e3b341"),
-		ui.Hex("#79c0ff"), ui.Hex("#d2a8ff"), ui.Hex("#56d4dd"), ui.Hex("#f0f6fc"),
+		ui.Hex("#79c0ff"), ui.Hex("#d2a8ff"), ui.Hex("#56d4dd"), ui.Hex("#ffffff"),
 	}
 )
 

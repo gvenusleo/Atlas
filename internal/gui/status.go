@@ -114,7 +114,7 @@ func dropdown[T comparable](
 			item.Children(func() {
 				text := ui.Text(c, name(option)).FontSize(smallSize).SingleLine()
 				if option == *value {
-					text.TextColor(t.Accent)
+					text.TextColor(accentFg(t))
 				}
 			})
 		}
