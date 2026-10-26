@@ -169,7 +169,7 @@ type Subscriber interface {
 | `run_state` | 一轮开始与结束：`running`、`since`；结束时附带 `stopReason`（`end_turn`、`max_tokens`、`max_turn_requests`、`cancelled`）或 `error`。中途接入的客户端据此得知会话是否在运行 |
 | `request_retry` | 一次模型请求失败，等待重试：`messageId`、第几次、等待多久、原因。客户端应丢弃这条消息已流出的内容 |
 
-工具的 `kind`：read 对应 `read`，write 与 edit 对应 `edit`，shell 对应 `execute`。`rawOutput` 是工具附带的结构化数据（`ReadDetails`、`WriteDetails`、`EditDetails`），其形状由 `protocol` 定义，GUI 用它绘制 diff、行号与图片；其他客户端只依据 `title`、`content` 也能正常使用。
+工具的 `kind`：read 对应 `read`，write 与 edit 对应 `edit`，shell 对应 `execute`，其余对应 `other`。`rawOutput` 是工具附带的结构化数据（`ReadDetails`、`WriteDetails`、`EditDetails`），其形状由 `protocol` 定义，GUI 用它绘制 diff、行号与图片；其他客户端只依据 `title`、`content` 也能正常使用。
 
 所有更新都由核心中同一组转换函数，根据 `agent` 的事件与消息生成：实时运行时由事件生成，`OpenSession` 之后用 `ListHistory` 读取的历史由数据库中的记录生成，定稿的消息在两种情形下都经过同一个转换。客户端因此只有一条渲染路径。
 
@@ -191,7 +191,7 @@ type Subscriber interface {
 
 ## core：会话的唯一权威
 
-核心持有本进程已加载的会话。每个会话的状态由这几项组成：工作目录、是否已写库、已知的最后序号、是否忙、模型与思考深度、系统提示词、工具与技能、上下文、订阅者。其中是否忙是唯一的控制状态：一轮、压缩、更换模型、删除都要先占用它，所以彼此互斥。一轮和压缩可以取消，并会推送 `run_state`；更换模型、删除这类很快的操作不可取消，也不推送。核心的锁只用于读写这些字段，从不跨越 IO。
+核心持有本进程已加载的会话。每个会话的状态由这几项组成：工作目录、是否已写库、已知的最后序号、是否忙、模型与思考深度、系统提示词、工具与技能、上下文、订阅者。其中是否忙是唯一的控制状态：一轮、压缩、更换模型、删除都要先占用它，所以彼此互斥。一轮和压缩可以取消，并会推送 `run_state`；更换模型、删除这类很快的操作不可取消，也不推送。核心的锁只用于读写这些字段，不跨越 IO；唯一的例外是让打开与卸载串行的锁，加载会话时一直持有它。
 
 ### 加载
 
@@ -216,6 +216,8 @@ type Subscriber interface {
      - 推送由它生成的更新。
    - 其他事件：直接推送由它生成的更新，不写库。
 3. **结束**：释放占用，推送 `run_state{idle, stopReason | error}`；收到过“达到上限”事件的，停止原因是 `max_turn_requests`。会话没有订阅者时卸载。
+
+运行中的 panic：工具的 panic 已收敛为错误结果；其余代码里的 panic 让这一轮以 `error` 结束，会话失效并被卸载，重新打开时从数据库恢复，不影响其他会话与进程。
 
 因此内存中的上下文始终等于数据库中的历史折叠出的结果。
 
