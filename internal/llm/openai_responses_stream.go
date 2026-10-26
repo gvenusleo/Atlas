@@ -117,7 +117,8 @@ func consume(
 			}
 			part, text = key, true
 			emit(agent.Delta{Type: agent.DeltaTypeText, Text: ev.Delta})
-		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
+		case "response.reasoning_text.delta", "response.reasoning_summary_text.delta",
+			"response.reasoning.delta":
 			text = false
 			if gap {
 				emit(agent.Delta{Type: agent.DeltaTypeThinking, Text: "\n\n"})
