@@ -110,14 +110,14 @@ func (a *App) actionResults(terms []string) []result {
 		{name: "新对话", icon: plusIcon, trail: "⌘N", run: a.newChat},
 		{name: "切换侧栏", icon: sidebarIcon, trail: "⌘B", run: a.toggleSidebar},
 		{name: "切换文件面板", icon: folderIcon, run: a.toggleFiles},
-		{name: "打开设置", icon: settingsIcon, trail: "⌘,", run: a.openSettings},
 	}
 	if a.current.inRepo() {
 		actions = append(actions,
 			result{name: "切换更改面板", icon: diffIcon, run: a.toggleChanges})
 	}
 	actions = append(actions,
-		result{name: "切换终端", icon: terminalIcon, trail: "⌃`", run: a.toggleTerminal})
+		result{name: "切换终端", icon: terminalIcon, trail: "⌃`", run: a.toggleTerminal},
+		result{name: "打开设置", icon: settingsIcon, trail: "⌘,", run: a.openSettings})
 	var results []result
 	for _, r := range actions {
 		if matchAll(strings.ToLower(r.name), terms) {
