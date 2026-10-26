@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -93,7 +95,7 @@ func (s *session) run(
 	var saveErr error
 	limited := false
 	tr := &translator{s: s}
-	messages := drive(ctx, in, func(e agent.Event) {
+	emit := func(e agent.Event) {
 		if saveErr != nil {
 			return
 		}
@@ -106,11 +108,15 @@ func (s *session) run(
 			}
 		}
 		s.broadcast(tr.event(e, seq)...)
-	})
+	}
+	messages, crashed := s.guarded(func() []agent.Message { return drive(ctx, in, emit) })
 	s.broadcast(tr.finish()...)
 
 	var state protocol.RunStateUpdate
 	switch {
+	case crashed != nil:
+		state.Error = fmt.Sprintf("内部错误：%v", crashed)
+		s.core.forget(s) // panic 打断了处理，内存里的会话不可信，重新打开时从库里恢复
 	case saveErr != nil:
 		state.Error = saveErr.Error()
 		if errors.Is(saveErr, protocol.ErrConflict) {
@@ -130,6 +136,18 @@ func (s *session) run(
 	end()
 	s.broadcast(state)
 	s.core.unloadIfIdle(s)
+}
+
+// guarded 运行一轮：事件的转换与保存、订阅者的 Receive、模型适配里的 panic 不让整个进程
+// 退出，记下现场后作为 crashed 返回。工具的 panic 在 agent 里已经收敛为错误结果。
+func (s *session) guarded(run func() []agent.Message) (messages []agent.Message, crashed any) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("会话 %s 的一轮 panic: %v\n%s", s.id, r, debug.Stack())
+			crashed = r
+		}
+	}()
+	return run(), nil
 }
 
 // save 写库并把消息并进上下文，返回它的序号。新会话的第一条消息（总是用户消息）连同系统提示词
@@ -168,12 +186,16 @@ func (s *session) save(ctx context.Context, m agent.Message) (int64, error) {
 	s.mu.Lock()
 	s.saved, s.seq = true, seq
 	s.fold(m, seq)
-	usage := s.usage()
+	var usage protocol.Usage
+	usageChanged := changesUsage(m)
+	if usageChanged {
+		usage = s.usage()
+	}
 	s.mu.Unlock()
 	if !saved {
 		s.broadcast(protocol.SessionInfoUpdate{Title: info.Title})
 	}
-	if changesUsage(m) {
+	if usageChanged {
 		s.broadcast(protocol.UsageUpdate{Usage: usage})
 	}
 	return seq, nil

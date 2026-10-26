@@ -29,8 +29,8 @@ type modelInfo struct {
 func listModels(settings *config.Settings) []modelInfo {
 	var models []modelInfo
 	for providerID, provider := range settings.Providers {
+		_, err := settings.Provider(providerID)
 		for modelID, metadata := range provider.Models {
-			_, err := settings.Provider(providerID)
 			models = append(models, modelInfo{
 				Ref:            providerID + "/" + modelID,
 				Name:           cmp.Or(metadata.Name, modelID),
