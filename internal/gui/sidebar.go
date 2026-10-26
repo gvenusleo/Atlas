@@ -188,8 +188,9 @@ func sidebarItem(c *ui.Context, t *ui.Theme, id, label, selected string) ui.Elem
 	return row
 }
 
-// session 构建一个会话项：标题之后是状态与行尾；行尾平时是相对时间，运行中是脉动的
-// 指示器，悬停时换成 ⋯ 菜单。右键菜单与 ⋯ 相同；悬停提示给出完整标题、目录与更新时间。
+// session 构建一个会话项：标题之后是行尾；行尾平时是相对时间，运行中是脉动的指示器，
+// 出错或运行结束还没看过时是一个状态点，悬停时换成 ⋯ 菜单。右键菜单与 ⋯ 相同；
+// 悬停提示给出完整标题、目录与更新时间。
 func (a *App) session(c *ui.Context, t *ui.Theme, info protocol.SessionInfo, selected string) {
 	label := info.Title
 	if label == "" {
@@ -200,43 +201,45 @@ func (a *App) session(c *ui.Context, t *ui.Theme, info protocol.SessionInfo, sel
 	row := sidebarItem(c, t, info.SessionID, label, selected).ContextMenu(menu).Tooltip(tip)
 	hovered := row.Hovered()
 	ch := a.chats[info.SessionID]
-	row.Children(func() {
-		status(c, t, ch)
-		trail(c, t, info.UpdatedAt, ch != nil && ch.running, hovered, menu)
-	})
+	row.Children(func() { trail(c, t, info.UpdatedAt, ch, hovered, menu) })
 }
 
-// status 在行尾之前画会话的状态点：出错是红点，运行结束但还没看过是蓝点。
-// 运行中由行尾的指示器表示。
-func status(c *ui.Context, t *ui.Theme, ch *chat) {
-	if ch == nil {
-		return
-	}
-	dot := func(color ui.Color) { ui.Row(c).Size(8, 8).Shrink(0).Radius(4).Background(color) }
+// dotColor 是会话行尾状态点的颜色：出错是红点，运行结束但还没看过是蓝点；没有状态点时
+// ok 为假。运行中由行尾的指示器表示，不在这里。
+func dotColor(t *ui.Theme, ch *chat) (color ui.Color, ok bool) {
 	switch {
+	case ch == nil:
 	case ch.err != "":
-		dot(t.Danger)
+		return t.Danger, true
 	case ch.unread:
-		dot(t.Accent)
+		return t.Accent, true
 	}
+	return ui.Color{}, false
 }
 
-// trail 画行尾：定宽的槽里平时是相对时间，运行中换成脉动的指示器，悬停时换成 ⋯ 按钮。
+// trail 画行尾：定宽的槽里平时是相对时间，运行中换成脉动的指示器，出错或未看过换成状态点，
+// 悬停时换成 ⋯ 按钮。状态点放在与指示器同大的方框里居中，两者的中心对齐。
 // 按钮始终存在，不悬停时只是零尺寸且禁用：菜单的选择要在它所在的下一帧回报，
-// 那时指针已在菜单上，悬停的状态可能已经没了。它用固定的键标识，因为它前面的时间或
-// 指示器时有时无，按位置算的标识会变，选择就找不到它了。
+// 那时指针已在菜单上，悬停的状态可能已经没了。它用固定的键标识，因为它前面的时间、
+// 指示器或状态点时有时无，按位置算的标识会变，选择就找不到它了。
 func trail(
-	c *ui.Context, t *ui.Theme, updated time.Time, running, hovered bool, menu func(*ui.Menu),
+	c *ui.Context, t *ui.Theme, updated time.Time, ch *chat, hovered bool, menu func(*ui.Menu),
 ) {
 	ui.Row(c).Width(timeWidth).Height(moreSize).Shrink(0).Justify(ui.End).AlignItems(ui.Center).
 		Children(func() {
 			size := float32(0)
+			dot, hasDot := dotColor(t, ch)
 			switch {
 			case hovered:
 				size = moreSize
-			case running:
+			case ch != nil && ch.running:
 				pulse := loading.Options{Size: runningSize, Color: t.TextMuted}
 				loading.Pulse(c, pulse).Label("运行中")
+			case hasDot:
+				ui.Row(c).Size(runningSize, runningSize).Shrink(0).Justify(ui.Center).
+					AlignItems(ui.Center).Children(func() {
+					ui.Row(c).Size(4, 4).Radius(2).Background(dot)
+				})
 			default:
 				ui.Text(c, ago(updated)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 			}
