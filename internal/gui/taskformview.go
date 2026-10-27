@@ -4,6 +4,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/gvenusleo/atlas/internal/protocol"
 	"github.com/gvenusleo/atlas/internal/schedule"
 )
 
@@ -73,14 +74,14 @@ func (a *App) taskFormFields(c *ui.Context, t *ui.Theme) {
 				Placeholder("例如：每日整理待办"), t)
 		})
 		ui.Column(c).Gap(6).Children(func() {
-			ui.Text(c, "用户消息")
+			ui.Text(c, "指令")
 			fieldBox(ui.TextAreaBase(c.Key("task-prompt"), &f.prompt).Lines(4, 10).
 				Padding(8, 10).Placeholder("到点发给 Agent 的内容"), t)
 		})
 		formRow(c, "工作目录", func() { a.taskDirButton(c, t, f) })
 		a.triggerRows(c, t, f)
-		a.taskOption(c, t, "模型", "model", &f.model)
-		a.taskOption(c, t, "思考深度", "thinking", &f.thinking)
+		a.taskOption(c, t, "模型", protocol.ConfigModel, &f.model)
+		a.taskOption(c, t, "思考深度", protocol.ConfigThinking, &f.thinking)
 	})
 }
 
@@ -191,9 +192,10 @@ func (a *App) pickTaskDir(f *taskForm) {
 	}()
 }
 
-// taskOption 画模型或思考深度的下拉：选项取自当前会话的配置项，第一项“默认”对应空值，
-// 即新会话自己的选择。任务指定的值不在当前列表里（比如换过配置）时也照样显示。
-func (a *App) taskOption(c *ui.Context, t *ui.Theme, label, id string, value *string) {
+// taskChoices 是任务的模型或思考深度（配置项 id）可选的值与各值的显示名：选项取自当前会话的
+// 配置项，第一项“默认”对应空值，即新会话自己的选择。任务指定的值 value 不在当前列表里
+// （比如换过配置）时也照样列出，显示它本身。任务面板与表单用它显示得一样。
+func (a *App) taskChoices(id, value string) ([]string, map[string]string) {
 	values, names := []string{""}, map[string]string{"": "默认"}
 	if opt, ok := a.current.option(id); ok {
 		for _, v := range opt.Options {
@@ -201,10 +203,16 @@ func (a *App) taskOption(c *ui.Context, t *ui.Theme, label, id string, value *st
 			names[v.Value] = v.Name
 		}
 	}
-	if _, ok := names[*value]; !ok {
-		values = append(values, *value)
-		names[*value] = *value
+	if _, ok := names[value]; !ok {
+		values = append(values, value)
+		names[value] = value
 	}
+	return values, names
+}
+
+// taskOption 画模型或思考深度的下拉，选项见 taskChoices。
+func (a *App) taskOption(c *ui.Context, t *ui.Theme, label, id string, value *string) {
+	values, names := a.taskChoices(id, *value)
 	formRow(c, label, func() {
 		dropdown(c, t, "任务的"+label, value, values, func(v string) string { return names[v] },
 			false, func() {})

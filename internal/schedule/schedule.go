@@ -55,13 +55,13 @@ type Task struct {
 	LastRun time.Time `json:"last_run,omitzero"`
 }
 
-// Validate 检查任务能不能保存：名称、用户消息与工作目录非空，规则完整。
+// Validate 检查任务能不能保存：名称、指令（Prompt）与工作目录非空，规则完整。
 func (t Task) Validate() error {
 	switch {
 	case strings.TrimSpace(t.Name) == "":
 		return errors.New("名称不能为空")
 	case strings.TrimSpace(t.Prompt) == "":
-		return errors.New("用户消息不能为空")
+		return errors.New("指令不能为空")
 	case t.Cwd == "":
 		return errors.New("请选择工作目录")
 	}

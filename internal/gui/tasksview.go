@@ -25,7 +25,7 @@ func weekdayName(d time.Weekday) string { return "周" + dayNames[d] }
 // taskTabs 是视图的两个标签，次序与 tasksPage.tab 一致。
 var taskTabs = []string{"任务", "历史"}
 
-// taskPanelInfoWidth 是任务面板右边一列（用户消息、工作目录等）的宽度。
+// taskPanelInfoWidth 是任务面板右边一列（指令、工作目录等）的宽度。
 const taskPanelInfoWidth = 260
 
 // openedTask 是任务面板里打开的任务；没有打开，或任务已经不在了时 ok 为假。
@@ -232,7 +232,7 @@ func (a *App) taskMenu(c *ui.Context, t *ui.Theme, task schedule.Task, panel boo
 }
 
 // taskPanel 画一个任务自己的一页：任务名、状态与下次触发，右上角是立即运行、编辑与菜单；
-// 其下左边是这个任务的历史记录，右边是用户消息、工作目录、重复频率、模型与思考深度。
+// 其下左边是这个任务的历史记录，右边是指令、工作目录、触发方式、模型与思考深度。
 func (a *App) taskPanel(c *ui.Context, t *ui.Theme, task schedule.Task) {
 	now := time.Now()
 	ui.Column(c).Gap(16).Padding(12, 0, 32).Children(func() {
@@ -272,11 +272,13 @@ func (a *App) taskInfo(c *ui.Context, t *ui.Theme, task schedule.Task, now time.
 		})
 	}
 	ui.Column(c).Width(taskPanelInfoWidth).Shrink(0).Gap(20).Children(func() {
-		section("用户消息", task.Prompt)
+		section("指令", task.Prompt)
 		section("工作目录", shortPath(task.Cwd))
-		section("重复频率", ruleText(task.Rule, now))
-		section("模型", cmp.Or(task.Model, "默认"))
-		section("思考深度", cmp.Or(task.Thinking, "默认"))
+		section("触发方式", ruleText(task.Rule, now))
+		_, models := a.taskChoices(protocol.ConfigModel, task.Model)
+		_, thinking := a.taskChoices(protocol.ConfigThinking, task.Thinking)
+		section("模型", models[task.Model])
+		section("思考深度", thinking[task.Thinking])
 	})
 }
 
