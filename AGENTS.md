@@ -12,7 +12,7 @@ Atlas 是用 Go 编写的桌面 AI Agent，界面用 MyGo，没有权限审核�
 
 ## 分层与依赖
 
-- `protocol` 只有接口和数据类型，不依赖其他包；`agent`、`store`、`skills`、`config` 也不依赖其他内部包。
+- `protocol` 只有接口和数据类型，不依赖其他包；`agent`、`store`、`skills`、`config`、`schedule` 也不依赖其他内部包。
 - `gui` 的会话功能只通过 `protocol` 使用核心，不 import `core`、`agent`、`store`；文件树、编辑器、终端是 GUI 本地功能，直接使用 `tools` 等包。
 - `core` 是会话运行时数据的唯一权威，对模型提供方只通过 `llm.Supports` 与 `llm.NewStream` 使用，不知道有哪些提供方。
 - `store` 只存取不透明的记录正文和二进制，不理解消息内容。

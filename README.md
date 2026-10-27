@@ -29,6 +29,7 @@ go get github.com/egoist/mygo@main && go mod tidy
   不读环境变量。
 - `AGENTS.md`：全局指令。
 - `gui.json`：界面偏好（主题、界面字体、代码字体），由设置页写入，只有桌面端读取，缺失时用默认值。
+- `schedule.json`：定时任务（名称、用户消息、工作目录、规则等），由定时任务视图写入，只有桌面端读写。
 - `atlas.db`：会话数据库。
 
 最小的 `settings.json`：
@@ -115,3 +116,4 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 | `internal/systemprompt`、`internal/skills` | 系统提示词、指令与技能发现 |
 | `internal/config` | `settings.json` 与凭据读取 |
 | `internal/store` | SQLite 会话存储，只做存取 |
+| `internal/schedule` | 定时任务：类型、`schedule.json` 的存取与触发判定，不依赖其他包 |
