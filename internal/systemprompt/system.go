@@ -93,18 +93,9 @@ func Build(cwd string) (Resources, error) {
 	return Resources{SystemPrompt: strings.Join(sections, "\n\n"), Skills: discoveredSkills}, nil
 }
 
-// loadInstructions 全局优先选择 Atlas 指令，再按根目录到工作目录加载 AGENTS.md。
+// loadInstructions 先加载全局的 ~/.atlas/AGENTS.md，再按根目录到工作目录加载各级的 AGENTS.md。
 func loadInstructions(home, cwd string) ([]string, error) {
-	atlasPath := filepath.Join(home, ".atlas", "AGENTS.md")
-	agentsPath := filepath.Join(home, ".agents", "AGENTS.md")
-	globalPath := atlasPath
-	// 按存在性选择，空文件或读取失败不回退；失效符号链接也交给读取时报错。
-	if _, err := os.Lstat(atlasPath); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%s 检查失败: %w", atlasPath, err)
-		}
-		globalPath = agentsPath
-	}
+	globalPath := filepath.Join(home, ".atlas", "AGENTS.md")
 	global, err := readInstruction(globalPath, "整个会话")
 	if err != nil {
 		return nil, err
@@ -124,7 +115,7 @@ func loadInstructions(home, cwd string) ([]string, error) {
 	slices.Reverse(dirs)
 	for _, dir := range dirs {
 		path := filepath.Join(dir, "AGENTS.md")
-		if path == atlasPath || path == agentsPath {
+		if path == globalPath {
 			continue
 		}
 		instruction, err := readInstruction(path, dir)
