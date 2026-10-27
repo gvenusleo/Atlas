@@ -17,6 +17,7 @@ import (
 	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
+	"github.com/egoist/mygo/ui/markdown/parser"
 
 	"github.com/gvenusleo/atlas/internal/protocol"
 	"github.com/gvenusleo/atlas/internal/shellenv"
@@ -131,6 +132,9 @@ func newApp() *App {
 		sections: map[string]*bool{}, more: map[string]bool{}, sideWidth: sideDefault}
 	// 按词显示以空格为界，中文没有空格，一段会整个冒出来；按字符才是匀速的。
 	a.md.Reveal = &markdown.Reveal{Unit: markdown.ByCharacter}
+	// 模型常把公式写在单个美元符之间；默认的扩展只认 $$ 与 \( \)。
+	a.md.Extensions = parser.Default | parser.ExtDollarMath
+	a.mdNote.Extensions = a.md.Extensions
 	a.md.Theme = &markdown.Theme{
 		FontSize:     bodySize,
 		CodeFont:     monoFamily,
