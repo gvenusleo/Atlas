@@ -24,6 +24,8 @@ func (a *App) view(c *ui.Context) {
 	a.dialogs(c)
 	a.launcherDialog(c, t)
 	a.settingsDialog(c, t)
+	a.taskFormDialog(c, t)
+	a.taskDialogs(c)
 	if a.toast != "" {
 		c.Toast(a.toast)
 		a.toast = ""
@@ -97,9 +99,14 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, title string) ui.Element {
 	// 侧栏收起时，标题让开悬浮的侧栏开关；随展开程度平滑过渡。
 	left := gutter + (1-a.shown)*max(bar.Left+40-gutter, 0)
 	right := bar.Right + barInset + barSlots*barButton + (barSlots-1)*barGap + 8
-	return ui.Row(c).Height(titleBarHeight(c)).AlignItems(ui.Center).
+	return ui.Row(c).Height(titleBarHeight(c)).AlignItems(ui.Center).Gap(8).
 		Padding(0, right, 0, left).DragWindow().Children(func() {
-		ui.Text(c, title).Grow(1).SingleLine()
+		if a.fromTasks {
+			a.runCrumbs(c, title)
+			ui.Box(c).Grow(1)
+		} else {
+			ui.Text(c, title).Grow(1).SingleLine()
+		}
 		a.panelButtons(c, t)
 	})
 }
@@ -114,6 +121,10 @@ func column(c *ui.Context, vertical float32, fn func()) {
 // main 构建主区：对话在左，会话的终端、更改或文件面板打开时，浮动的卡片在右侧一栏里；
 // 有面板被扩展时，主区只有这个面板。
 func (a *App) main(c *ui.Context, t *ui.Theme) {
+	if a.showTasks {
+		a.tasksView(c, t)
+		return
+	}
 	ch := a.current
 	// 被扩展的面板关掉了（不论从哪条路），就不再扩展；之后重新打开时回到右侧栏。
 	if ch.expanded != noPanel && !ch.panelOpen(ch.expanded) {

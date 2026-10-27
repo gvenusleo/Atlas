@@ -25,6 +25,22 @@ func (a *App) rename(id, name string) {
 	}()
 }
 
+// dropChat 在会话被删除之后，把它从已打开的会话里去掉；当前正显示它时换成一个新会话，
+// 但主区若是定时任务视图，仍显示视图。
+func (a *App) dropChat(id string) {
+	ch := a.chats[id]
+	if ch == nil {
+		return
+	}
+	ch.closePanels()
+	delete(a.chats, id)
+	if a.current == ch {
+		showTasks := a.showTasks
+		a.newChat()
+		a.showTasks = showTasks
+	}
+}
+
 // remove 删除会话；运行中的会话会被核心拒绝，错误显示在侧栏底部。
 func (a *App) remove(id string) {
 	go func() {
@@ -35,14 +51,9 @@ func (a *App) remove(id string) {
 				a.err = err.Error()
 				return
 			}
-			if ch := a.chats[id]; ch != nil {
-				ch.closePanels()
-				delete(a.chats, id)
-				if a.current == ch {
-					a.newChat()
-				}
-			}
+			a.dropChat(id)
 			a.refresh()
+			a.refreshHistory() // 删的可能是任务会话
 		})
 	}()
 }

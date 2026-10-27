@@ -48,6 +48,10 @@ type App struct {
 	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
 	prefs         prefs
 	settings      settingsPage
+	tasks         tasksPage
+	showTasks     bool // 主区显示定时任务视图，而不是当前会话
+	fromTasks     bool // 当前会话是从定时任务视图打开的：标题栏的面包屑通向视图
+	crumb         int  // 面包屑上刚点的一项
 	launch        launcher
 	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
 	more          map[string]bool  // 已点“显示更多”的目录分组
@@ -106,6 +110,7 @@ func Run(
 		a.win.OnClose(func(e *mygo.CloseEvent) { a.confirmQuit(&e.Preventable) })
 		a.refresh()
 		a.start(a.current)
+		a.watchTasks()
 	})
 	return mygo.App.Run()
 }
@@ -152,6 +157,7 @@ func newApp() *App {
 	a.mdFile.Theme = &file
 	a.prefs = loadAppPrefs()
 	a.applyFonts()
+	a.loadTasks()
 	a.cwd, _ = os.UserHomeDir()
 	a.newChat()
 	return a
@@ -167,13 +173,22 @@ func (a *App) Receive(n protocol.Notification) {
 		switch u := n.Update.(type) {
 		case protocol.SessionInfoUpdate:
 			ch.apply(u)
-			a.refresh()
+			if ch.job != nil {
+				a.titleTask(ch)
+			} else {
+				a.refresh()
+			}
 		case protocol.RunStateUpdate:
 			ch.apply(u)
 			if !u.Running {
-				// 在别的会话时结束的运行，回到这个会话之前侧栏上标为未读。
-				ch.unread = ch != a.current && ch.err == ""
-				a.refresh()
+				// 在别的会话时结束的运行，回到这个会话之前标为未读。普通会话出错时侧栏上是红点，
+				// 不再标未读；任务会话不在侧栏里，出错的也标未读，侧栏的入口才会提示。
+				ch.unread = ch != a.current && (ch.err == "" || ch.job != nil)
+				if ch.job != nil {
+					a.refreshHistory()
+				} else {
+					a.refresh()
+				}
 				// Agent 可能用 git 提交或暂存过，文件监视看不到 .git 里的变化。
 				if ch.changes != nil && ch.panelOpen(changesPanel) {
 					a.refreshChanges(ch)
@@ -190,6 +205,7 @@ func (a *App) newChat() {
 	if !a.leave() {
 		return
 	}
+	a.showTasks, a.fromTasks = false, false
 	a.keys++
 	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
 	a.start(a.current)

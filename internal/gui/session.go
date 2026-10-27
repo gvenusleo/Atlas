@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -17,23 +18,40 @@ import (
 // open 切换到已有会话，首次打开时加载最近一页历史并让核心打开它。历史直接读库，
 // 所以会话打不开（比如工作目录没了）也能看。
 func (a *App) open(id string) {
-	if !a.leave() {
-		return
+	info := protocol.SessionInfo{SessionID: id}
+	if i := slices.IndexFunc(a.infos, func(s protocol.SessionInfo) bool {
+		return s.SessionID == id
+	}); i >= 0 {
+		info = a.infos[i]
 	}
+	a.openSession(info)
+}
+
+// openRun 从定时任务视图打开一个任务会话；任务会话不在侧栏的列表里，info 来自视图的列表。
+// 标题栏上有回到定时任务视图的返回。
+func (a *App) openRun(info protocol.SessionInfo) {
+	if a.openSession(info) {
+		a.fromTasks = true
+	}
+}
+
+// openSession 切换到 info 描述的已有会话，返回是否切换了：有未保存的修改而用户取消时没有。
+func (a *App) openSession(info protocol.SessionInfo) bool {
+	if !a.leave() {
+		return false
+	}
+	a.showTasks, a.fromTasks = false, false
+	id := info.SessionID
 	if ch := a.chats[id]; ch != nil {
 		a.current, ch.unread = ch, false
-		return
+		return true
 	}
 	a.keys++
-	ch := &chat{key: "chat-" + strconv.Itoa(a.keys), id: id}
-	for _, info := range a.infos {
-		if info.SessionID == id {
-			ch.cwd, ch.title = info.Cwd, info.Title
-		}
-	}
+	ch := &chat{key: "chat-" + strconv.Itoa(a.keys), id: id, cwd: info.Cwd, title: info.Title}
 	a.chats[id], a.current = ch, ch
 	a.reload(ch)
 	a.start(ch)
+	return true
 }
 
 // reload 从头读最近一页历史，重建对话。
@@ -62,7 +80,11 @@ func (a *App) start(ch *chat) {
 		return
 	}
 	ch.starts++
-	gen, id, cwd := ch.starts, ch.id, ch.cwd
+	gen, id := ch.starts, ch.id
+	req := protocol.NewSessionRequest{Cwd: ch.cwd}
+	if ch.job != nil {
+		req.Type, req.OwnerID = protocol.SessionScheduled, ch.job.task.ID
+	}
 	go func() {
 		ctx := context.Background()
 		var options []protocol.ConfigOption
@@ -70,7 +92,7 @@ func (a *App) start(ch *chat) {
 		var err error
 		if id == "" {
 			var resp protocol.NewSessionResponse
-			resp, err = a.service.NewSession(ctx, protocol.NewSessionRequest{Cwd: cwd})
+			resp, err = a.service.NewSession(ctx, req)
 			id, options, state = resp.SessionID, resp.ConfigOptions, resp.State
 		} else {
 			var resp protocol.OpenSessionResponse
@@ -86,11 +108,18 @@ func (a *App) start(ch *chat) {
 				return
 			case err != nil:
 				ch.err = err.Error()
+				if ch.job != nil {
+					a.failTask(ch, err)
+				}
 				return
 			}
 			ch.id, ch.err = id, ""
 			a.chats[id] = ch
 			ch.attach(options, state)
+			if ch.job != nil {
+				a.sendTask(ch) // 后台触发的会话不改默认的工作目录
+				return
+			}
 			a.cwd = state.Cwd
 		})
 	}()

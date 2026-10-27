@@ -67,6 +67,9 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 		a.entries(c, t)
 		// 尚未创建的新对话不在列表里，此时列表中没有选中项。
 		selected := a.current.id
+		if a.showTasks {
+			selected = "" // 主区显示的是定时任务视图，没有哪个会话被选中
+		}
 		list := ui.Sidebar(c, &selected, func() {
 			for _, g := range groupByDir(a.infos) {
 				a.group(c, t, g, selected)
@@ -86,38 +89,56 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// entries 画列表上方不随之滚动的部分：新建、搜索（打开启动器）与定时任务三个入口。
+// entries 画列表上方不随之滚动的部分：新建、搜索（打开启动器）与定时任务（把主区换成定时任务视图）
+// 三个入口。
 func (a *App) entries(c *ui.Context, t *ui.Theme) {
 	ui.Column(c).Padding(0, 8, 6).Gap(2).Children(func() {
-		entry(c, t, plusIcon, "新建", true, a.newChat)
-		entry(c, t, searchIcon, "搜索", false, a.openLauncher)
-		entry(c, t, clockIcon, "定时任务", false, nil)
+		entry(c, t, entrySpec{icon: plusIcon, label: "新建", primary: true, click: a.newChat})
+		entry(c, t, entrySpec{icon: searchIcon, label: "搜索", click: a.openLauncher})
+		entry(c, t, entrySpec{icon: clockIcon, label: "定时任务", active: a.showTasks,
+			dot: a.tasksNeedLook(), click: a.openTasks})
 	})
 }
 
-// entry 画一个入口：图标加文字，外观与会话行一致；click 为空时是尚未实现的占位，点击没有反应。
-// primary 的图标放在圆形底色里，突出它是主要操作。
-func entry(
-	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, primary bool, click func(),
-) {
+// entrySpec 是侧栏一个入口的样子：primary 的图标放在圆形底色里，突出它是主要操作；
+// active 表示主区正显示它；dot 在行尾画状态点，提示里面有要看的东西。
+type entrySpec struct {
+	icon                 *ui.SVG
+	label                string
+	primary, active, dot bool
+	click                func()
+}
+
+// entry 画一个入口：图标加文字，外观与会话行一致，选中时与选中的会话行一样。
+func entry(c *ui.Context, t *ui.Theme, e entrySpec) {
 	btn := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(8).Padding(4, 8).
-		Radius(controlRound).Label(label)
-	if btn.Hovered() {
+		Radius(controlRound).Label(e.label)
+	switch {
+	case e.active:
+		btn.Background(t.Text.Alpha(0.09))
+	case btn.Hovered():
 		btn.Background(t.SurfaceHover)
 	}
-	if click != nil {
-		btn.OnClick(click)
-	}
+	btn.OnClick(e.click)
 	btn.Children(func() {
 		slot := ui.Row(c).Size(20, 20).Shrink(0).Radius(10).Justify(ui.Center).AlignItems(ui.Center)
 		size, color := float32(iconSize), t.TextMuted
-		if primary {
+		if e.primary {
 			slot.Background(buttonFill(t))
 			size, color = smallIconSize, t.Text
 		}
-		slot.Children(func() { ui.Icon(c, glyph).FontSize(size).TextColor(color) })
-		ui.Text(c, label).SingleLine()
+		slot.Children(func() { ui.Icon(c, e.icon).FontSize(size).TextColor(color) })
+		ui.Text(c, e.label).SingleLine().Grow(1)
+		if e.dot {
+			statusDot(c, accentFg(t))
+		}
 	})
+}
+
+// statusDot 画一个小圆点，放在与运行中指示器同大的方框里居中，两者的中心对齐。
+func statusDot(c *ui.Context, color ui.Color) {
+	ui.Row(c).Size(runningSize, runningSize).Shrink(0).Justify(ui.Center).AlignItems(ui.Center).
+		Children(func() { ui.Row(c).Size(4, 4).Radius(2).Background(color) })
 }
 
 // group 构建一个目录分组：标题可折叠，折叠后标题尾部显示会话数；
@@ -139,7 +160,7 @@ func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
 			a.session(c, t, info, selected)
 		}
 		if hidden := len(g.infos) - len(shown); hidden > 0 {
-			a.showMore(c, t, g.cwd, hidden)
+			showMore(c, t, hidden, t.SurfaceHover, func() { a.more[g.cwd] = true })
 		}
 	}).Tooltip(g.cwd).ContextMenu(func(m *ui.Menu) {
 		if m.Item("在此目录新建对话").Chosen() {
@@ -165,16 +186,20 @@ func (a *App) visible(g group, selected string) []protocol.SessionInfo {
 	return g.infos[:groupLimit]
 }
 
-// showMore 画分组末尾的“显示更多”，点一下列出该目录的全部会话。
-func (a *App) showMore(c *ui.Context, t *ui.Theme, cwd string, hidden int) {
+// showMore 画列表末尾的“显示更多”，hidden 是还没列出的个数，不知道有多少时为 0，点一下调用
+// click；hover 是悬停的底色，随所在的底色而定。
+func showMore(c *ui.Context, t *ui.Theme, hidden int, hover ui.Color, click func()) {
 	btn := ui.ButtonBase(c).Justify(ui.Start).Padding(4, 8).Radius(controlRound).
 		Label("显示更多")
 	if btn.Hovered() {
-		btn.Background(t.SurfaceHover)
+		btn.Background(hover)
 	}
-	btn.OnClick(func() { a.more[cwd] = true })
+	btn.OnClick(click)
 	btn.Children(func() {
-		text := fmt.Sprintf("显示更多（%d）", hidden)
+		text := "显示更多"
+		if hidden > 0 {
+			text = fmt.Sprintf("显示更多（%d）", hidden)
+		}
 		ui.Text(c, text).FontSize(textSize).TextColor(t.TextMuted)
 	})
 }
@@ -236,10 +261,7 @@ func trail(
 				pulse := loading.Options{Size: runningSize, Color: t.TextMuted}
 				loading.Pulse(c, pulse).Label("运行中")
 			case hasDot:
-				ui.Row(c).Size(runningSize, runningSize).Shrink(0).Justify(ui.Center).
-					AlignItems(ui.Center).Children(func() {
-					ui.Row(c).Size(4, 4).Radius(2).Background(dot)
-				})
+				statusDot(c, dot)
 			default:
 				ui.Text(c, ago(updated)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 			}

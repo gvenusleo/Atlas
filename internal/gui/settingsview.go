@@ -119,24 +119,12 @@ func (a *App) fontBox(c *ui.Context, t *ui.Theme, label string, value *string, o
 // themeSwitch 画主题的三个图标分段：太阳、月亮、显示器；悬停给出名称。
 func (a *App) themeSwitch(c *ui.Context, t *ui.Theme) {
 	s := &a.settings
-	seg := ui.SegmentedBase(c.Key("settings-theme"), &s.theme, len(themeChoices))
-	seg.Track.Gap(2).Padding(2).Radius(controlRound + 2).Background(rowFill(t)).Label("主题").
-		OnChange(func() { a.chooseTheme(s.theme) })
-	seg.Track.Children(func() {
-		for i, choice := range themeChoices {
-			item := seg.Segment(i).Size(32, 24).Radius(controlRound).Label(choice.label).
-				Tooltip(choice.label)
-			color := t.TextMuted
-			switch {
-			case i == s.theme:
-				item.Background(t.Background)
-				color = t.Text
-			case item.Hovered():
-				item.Background(buttonFill(t))
-			}
-			item.Children(func() { ui.Icon(c, choice.icon).FontSize(iconSize).TextColor(color) })
-		}
-	})
+	segmented(c, t, "settings-theme", "主题", &s.theme, len(themeChoices), 32,
+		func() { a.chooseTheme(s.theme) },
+		func(i int, color ui.Color) {
+			ui.Icon(c, themeChoices[i].icon).FontSize(iconSize).TextColor(color)
+		},
+		func(i int) string { return themeChoices[i].label })
 }
 
 // settingRow 画一项设置：左边是名称，右边是 control 画的控件。

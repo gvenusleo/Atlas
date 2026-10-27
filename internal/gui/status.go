@@ -104,6 +104,14 @@ func dropdown[T comparable](
 	sel.Trigger.Children(func() {
 		ui.Text(c, name(*value)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 	})
+	dropdownOptions(c, t, sel, value, options, name, smallSize)
+}
+
+// dropdownOptions 画下拉展开后的选项，字号是 size；当前值用强调色。触发器由调用方画。
+func dropdownOptions[T comparable](
+	c *ui.Context, t *ui.Theme, sel ui.SelectParts[T], value *T, options []T, name func(T) string,
+	size float32,
+) {
 	sel.Popup(func(panel ui.Element) {
 		popupPanel(panel, t).Margin(6, 0, 6, 0)
 		for _, option := range options {
@@ -112,7 +120,7 @@ func dropdown[T comparable](
 				item.Background(t.Text.Alpha(0.07))
 			}
 			item.Children(func() {
-				text := ui.Text(c, name(option)).FontSize(smallSize).SingleLine()
+				text := ui.Text(c, name(option)).FontSize(size).SingleLine()
 				if option == *value {
 					text.TextColor(accentFg(t))
 				}

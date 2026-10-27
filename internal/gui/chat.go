@@ -91,7 +91,8 @@ type chat struct {
 	attachments []*attachment
 	preparing   int
 	err         string
-	unread      bool // 在别的会话时运行结束，用户还没回来看过
+	unread      bool     // 在别的会话时运行结束，用户还没回来看过
+	job         *taskRun // 定时任务触发的会话：用户消息与标题由 gui 代为处理；其余会话为空
 
 	menu    menuState    // 输入框上方补全列表的状态
 	index   pathIndex    // 工作目录下的路径，@ 补全与文件面板的筛选共用
