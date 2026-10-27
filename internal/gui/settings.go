@@ -1,13 +1,20 @@
 package gui
 
 import (
+	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
 
 	"github.com/gvenusleo/atlas/internal/config"
+	"github.com/gvenusleo/atlas/internal/tools"
 )
 
 // defaultFont 是字体框里代表“用默认字体”的一项，对应偏好里的空串。
@@ -73,6 +80,16 @@ func (a *App) applyFonts() {
 	}
 }
 
+// globalInstructions 是“全局指令”文本框的状态。
+type globalInstructions struct {
+	text string
+	// stat 是打开或上次保存时文件的样子，用来发现别处的修改。
+	stat fileStat
+	// ready 为假（没能读到文件）时不显示文本框，免得改了就覆盖看不见的内容。
+	ready bool
+	err   string
+}
+
 // settingsPage 是设置页的状态。
 type settingsPage struct {
 	open     bool
@@ -83,6 +100,7 @@ type settingsPage struct {
 	loginOn  bool
 	loginErr string
 	menuBar  bool // 在菜单栏显示 Atlas 的开关，是偏好 HideTray 的反面
+	global   globalInstructions
 	// 两个字体框里显示的字体名，默认的显示为 defaultFont。
 	uiFont, codeFont string
 	// 字体框的选项，默认的在最前；系统字体取回之前只有默认的。
@@ -101,6 +119,56 @@ func (a *App) openSettings() {
 		uiFonts: []string{defaultFont}, codeFonts: []string{defaultFont},
 	}
 	a.loadFonts(s.gen)
+	a.loadInstructions()
+}
+
+// instructionsPath 是全局指令的文件 ~/.atlas/AGENTS.md。
+func instructionsPath() (string, error) {
+	dir, err := config.Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "AGENTS.md"), nil
+}
+
+// loadInstructions 读入全局指令，文件不存在时为空。文件很小，在主线程同步读。
+func (a *App) loadInstructions() {
+	g := &a.settings.global
+	path, err := instructionsPath()
+	if err != nil {
+		g.err = "读取全局指令失败：" + err.Error()
+		return
+	}
+	text, info, err := tools.ReadText(context.Background(), path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		g.ready = true
+	case err != nil:
+		g.err = "读取全局指令失败：" + err.Error()
+	default:
+		g.text, g.stat, g.ready = text, fileStat{info.ModTime(), info.Size()}, true
+	}
+}
+
+// saveInstructions 在全局指令框的文字变了之后保存。写法与文件面板的保存相同：符号链接写它
+// 指向的文件，文件在打开之后被别处改过就不覆盖；失败只提示，文字仍留在框里。
+func (a *App) saveInstructions() {
+	g := &a.settings.global
+	path, err := instructionsPath()
+	if err == nil {
+		err = os.MkdirAll(filepath.Dir(path), 0o700)
+	}
+	if err == nil {
+		var st fileStat
+		snap := editor.NewBuffer(g.text).Snapshot()
+		if st, err = writeFile(path, snap, g.stat); err == nil {
+			g.stat = st
+		}
+	}
+	g.err = ""
+	if err != nil {
+		g.err = "保存失败：" + err.Error()
+	}
 }
 
 // loadFonts 在后台列出系统字体：界面字体可以选全部，代码字体只能选等宽的。

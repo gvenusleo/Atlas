@@ -52,4 +52,5 @@ var (
 	moonIcon      = icon("lucide/moon")
 	monitorIcon   = icon("lucide/monitor")
 	computerIcon  = icon("lucide/computer")
+	scrollIcon    = icon("lucide/scroll-text")
 )

@@ -34,7 +34,9 @@ type settingsCategory struct {
 }
 
 // settingsCategories 是设置页左侧的分类。
-var settingsCategories = []settingsCategory{{"外观", paletteIcon}, {"系统", computerIcon}}
+var settingsCategories = []settingsCategory{
+	{"外观", paletteIcon}, {"系统", computerIcon}, {"全局指令", scrollIcon},
+}
 
 // settingsDialog 在设置页打开时画它：左侧是分类，右侧是当前分类的各项。
 func (a *App) settingsDialog(c *ui.Context, t *ui.Theme) {
@@ -77,7 +79,8 @@ func (a *App) settingsNav(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// settingsContent 画右侧：分类的标题固定在顶部，关闭按钮在右上角，其下的各项在放不下时滚动。
+// settingsContent 画右侧：分类的标题固定在顶部，关闭按钮在右上角，其下的各项在放不下时滚动；
+// “全局指令”是例外，它的文本框撑满面板，自己滚动。
 func (a *App) settingsContent(c *ui.Context, t *ui.Theme) {
 	s := &a.settings
 	ui.Column(c).Grow(1).MinWidth(0).Padding(settingsTop, 0, 0).Children(func() {
@@ -90,6 +93,12 @@ func (a *App) settingsContent(c *ui.Context, t *ui.Theme) {
 			Children(func() {
 				ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
 			})
+		// “全局指令”的文本框自己滚动并撑满面板；其余各项在放不下时整体滚动。
+		if s.category == 2 {
+			ui.Column(c).Grow(1).MinHeight(0).Gap(settingsGap).Padding(settingsPad).
+				Children(func() { a.instructions(c, t) })
+			return
+		}
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Gap(settingsGap).Padding(settingsPad).Children(func() {
 				if s.category == 0 {
@@ -128,6 +137,20 @@ func (a *App) system(c *ui.Context, t *ui.Theme) {
 			a.setPrefs(p)
 		})
 	})
+}
+
+// instructions 画“全局指令”：一个文本框，改动即保存到 ~/.atlas/AGENTS.md。
+func (a *App) instructions(c *ui.Context, t *ui.Theme) {
+	g := &a.settings.global
+	ui.Text(c, "对所有会话生效，保存在 ~/.atlas/AGENTS.md。").
+		FontSize(textSize).TextColor(t.TextMuted)
+	if g.ready {
+		fieldBox(ui.TextAreaBase(c.Key("settings-instructions"), &g.text).Grow(1).MinHeight(0).
+			Padding(8, 10).Placeholder("例如：用中文回复").OnChange(a.saveInstructions), t)
+	}
+	if g.err != "" {
+		ui.Text(c, g.err).FontSize(textSize).TextColor(t.Danger)
+	}
 }
 
 // fontBox 画一个带搜索的字体下拉；下拉里的行用本应用安静的样式，与模型、思考深度的下拉一致，
