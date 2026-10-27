@@ -251,7 +251,7 @@ func (a *App) taskPanel(c *ui.Context, t *ui.Theme, task schedule.Task) {
 		ui.Box(c).Height(1).Background(t.Text.Alpha(0.08))
 		ui.Row(c).Gap(40).AlignItems(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(10).Children(func() {
-				ui.Text(c, "历史记录").FontSize(bodySize).Bold().Margin(0, 8)
+				ui.Text(c, "历史记录").FontSize(bodySize).Bold()
 				if len(a.tasks.history) == 0 {
 					ui.Text(c, "还没有运行记录").FontSize(textSize).TextColor(t.TextMuted)
 					return
