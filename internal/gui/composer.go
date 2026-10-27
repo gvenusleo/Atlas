@@ -18,7 +18,8 @@ const (
 	composerButton = 30 // 输入框两侧圆形按钮的直径
 	thumbSize      = 56 // 待发送图片的缩略图的边长
 	removeSize     = 20 // 缩略图右上角移除按钮的直径
-	runBarHeight   = 24 // 输入框上方运行状态一行的高度
+	runBarHeight   = 18 // 运行状态一行的高度
+	runGap         = 8  // 运行状态离上方内容与下方输入框的间距
 	runDotsSize    = 14 // 其中跳动圆点的高度
 	// composerInset 是输入框里左侧按钮的图标离卡片左缘的距离，上方的缩略图与运行状态与它对齐。
 	composerInset = composerPad + (composerButton-iconSize)/2
@@ -71,21 +72,27 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// runStatus 在输入框上方画运行状态：跳动的圆点，与这次运行已经过的时间；没有运行时
-// 什么也不画。时间每秒变一次，所以在下一个整秒再画一帧。
+// runStatus 在消息列表的底端、输入框之上画运行状态：跳动的圆点，与这次运行已经过的时间；
+// 没有运行时什么也不画。它浮在列表上而不占位，落在列表底部预留的留白里，运行开始与结束时
+// 列表的高度不变，内容不会跳动。
+// 时间每秒变一次，所以在下一个整秒再画一帧。
 func (a *App) runStatus(c *ui.Context, t *ui.Theme, ch *chat) {
 	if !ch.running {
 		return
 	}
 	d := time.Since(ch.since)
 	c.After(time.Second - d%time.Second)
-	ui.Row(c).Height(runBarHeight).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, composerInset).
-		Children(func() {
-			dots := loading.Options{Size: runDotsSize, Color: t.TextMuted}
-			// 圆点在它的盒子里偏上，往下挪一点，才与文字居中。
-			loading.BouncingDots(c, dots).Label("运行中").Margin(3, 0, 0)
-			ui.Text(c, runTime(d)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
+	ui.Box(c).Absolute().Left(0).Right(0).Bottom(runGap).PassThrough().Children(func() {
+		column(c, 0, func() {
+			ui.Row(c).Height(runBarHeight).AlignItems(ui.Center).Gap(8).
+				Padding(0, 0, 0, composerInset).PassThrough().Children(func() {
+				dots := loading.Options{Size: runDotsSize, Color: t.TextMuted}
+				// 圆点在它的盒子里偏上，往下挪一点，才与文字居中。
+				loading.BouncingDots(c, dots).Label("运行中").Margin(3, 0, 0)
+				ui.Text(c, runTime(d)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
+			})
 		})
+	})
 }
 
 // runTime 把运行时长说成“12 秒”“3 分 05 秒”“1 小时 02 分”。

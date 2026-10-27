@@ -171,10 +171,7 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 		if ch.retry != "" {
 			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(textSize) })
 		}
-		column(c, 0, func() {
-			a.runStatus(c, t, ch)
-			a.composer(c, t, ch)
-		})
+		column(c, 0, func() { a.composer(c, t, ch) })
 		ui.Column(c).Height(12)
 	})
 }
@@ -202,12 +199,13 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
 			final := i < len(blocks)-1 || !ch.running
 			column(c, 5, func() { a.block(c, t, blocks[i], final) })
-		}).Grow(1).Padding(edgePad, 0).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
+		}).Grow(1).Padding(edgePad, 0, runBarHeight+2*runGap).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
 			if ch.loading {
 				loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 			}
 		})
 		edges(c, t)
+		a.runStatus(c, t, ch)
 		if len(blocks) > 0 && !ch.list.AtEnd() {
 			a.jumpToLatest(c, t, ch)
 		}
