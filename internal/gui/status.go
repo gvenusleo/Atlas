@@ -115,10 +115,7 @@ func dropdownOptions[T comparable](
 	sel.Popup(func(panel ui.Element) {
 		popupPanel(panel, t).Margin(6, 0, 6, 0)
 		for _, option := range options {
-			item := sel.Item(option).Padding(5, 10).Radius(controlRound)
-			if item.Highlighted() {
-				item.Background(t.Text.Alpha(0.07))
-			}
+			item := popupItem(sel.Item(option), t)
 			item.Children(func() {
 				text := ui.Text(c, name(option)).FontSize(size).SingleLine()
 				if option == *value {
@@ -140,8 +137,19 @@ func sheetPanel(backdrop, panel ui.Element, t *ui.Theme, width float32) ui.Eleme
 // popupPanel 是弹出面板的外观，下拉选项与输入框的补全列表共用；与触发元素之间的间距由
 // 各处自己的边距决定。
 func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
-	return panel.Padding(4).Radius(10).Background(t.Background).
+	return panel.Padding(4).Radius(popupRound).Background(t.Background).
 		Border(1, t.Border).Shadow(0, 4, 16, 0, ui.RGBA(0, 0, 0, 0.12))
+}
+
+// popupItem 是弹出面板里一行的外观：下拉的选项、大纲、补全列表与启动器共用；键盘或鼠标停在
+// 下拉的选项上时铺淡底。补全列表与启动器的行是按钮，没有这个状态，悬停与选中由它们自己画。
+// 内边距与 MyGo 的 Combobox 的选项一致，设置里的字体选择器因此同高。
+func popupItem(item ui.Element, t *ui.Theme) ui.Element {
+	item.Padding(6, 10).Radius(controlRound)
+	if item.Highlighted() {
+		item.Background(rowFill(t))
+	}
+	return item
 }
 
 // contextRing 用圆环显示上下文窗口的占用，悬停时给出具体数字；窗口大小未知时不显示。

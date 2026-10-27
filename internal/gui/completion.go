@@ -186,8 +186,8 @@ func (a *App) menuPanel(
 func completionRow(
 	c *ui.Context, t *ui.Theme, opt option, nameW float32, pick func(),
 ) ui.Element {
-	row := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(10).
-		Padding(5, 10).Radius(controlRound).Label(opt.name)
+	row := popupItem(ui.ButtonBase(c), t).Justify(ui.Start).AlignItems(ui.Center).Gap(10).
+		Label(opt.name)
 	row.OnClick(pick)
 	row.Children(func() {
 		if opt.icon != nil {

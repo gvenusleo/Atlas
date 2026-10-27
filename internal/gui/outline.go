@@ -152,11 +152,7 @@ func (a *App) outlineButton(c *ui.Context, t *ui.Theme, ch *chat, slot int) {
 
 // outlineRow 画大纲里的一行：提问的第一行文字，和它发出的时间；current 的一行文字用强调色。
 func outlineRow(c *ui.Context, t *ui.Theme, item ui.Element, p prompt, current bool) {
-	item.Padding(5, 10).Radius(controlRound).AlignItems(ui.Center).Gap(10)
-	if item.Highlighted() {
-		item.Background(t.Text.Alpha(0.07))
-	}
-	item.Children(func() {
+	popupItem(item, t).AlignItems(ui.Center).Gap(10).Children(func() {
 		text := ui.Text(c, p.text).FontSize(textSize).SingleLine().Grow(1).MinWidth(0)
 		if current {
 			text.TextColor(accentFg(t))

@@ -19,6 +19,9 @@ var (
 	weekOrder = []time.Weekday{1, 2, 3, 4, 5, 6, 0}
 )
 
+// weekdayName 是下拉里星期几的名称。
+func weekdayName(d time.Weekday) string { return "周" + dayNames[d] }
+
 // taskTabs 是视图的两个标签，次序与 tasksPage.tab 一致。
 var taskTabs = []string{"任务", "历史"}
 

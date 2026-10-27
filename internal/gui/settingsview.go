@@ -111,8 +111,14 @@ func (a *App) appearance(c *ui.Context, t *ui.Theme) {
 // 不用 MyGo 默认的强调色高亮。选了字体就存进偏好。
 func (a *App) fontBox(c *ui.Context, t *ui.Theme, label string, value *string, options []string) {
 	quietRows(c, t, func() {
+		// Combobox 的面板圆角是主题圆角加 2，选项行圆角是主题圆角，高亮的行用 Accent 做底：
+		// 面板取与 popupPanel 相同的圆角，高亮用与 popupItem 相同的淡底。
+		local := *c.Theme()
+		local.Radius, local.Accent = popupRound-2, rowFill(t)
+		c.SetTheme(&local)
 		ui.Combobox(c.Key("settings-"+label), value, options).Label(label).
-			Width(fontBoxWidth).Padding(3, 8).FontSize(textSize).OnChange(a.chooseFonts)
+			Width(fontBoxWidth).Padding(3, 8).Radius(controlRound).FontSize(textSize).
+			OnChange(a.chooseFonts)
 	})
 }
 

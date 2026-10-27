@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"time"
-
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
@@ -91,7 +89,7 @@ func (a *App) taskFormFields(c *ui.Context, t *ui.Theme) {
 func (a *App) triggerRows(c *ui.Context, t *ui.Theme, f *taskForm) {
 	formRow(c, "触发方式", func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			kindSelect(c, t, &f.kind)
+			pillSelect(c, t, "触发方式", &f.kind, kindChoices, kindName)
 			switch ruleKinds[f.kind].kind {
 			case schedule.Interval:
 				fieldBox(ui.TextInputBase(c.Key("task-every"), &f.every).Width(64).
@@ -100,7 +98,7 @@ func (a *App) triggerRows(c *ui.Context, t *ui.Theme, f *taskForm) {
 			case schedule.Daily:
 				timeField(c, f)
 			case schedule.Weekly:
-				weekdaySelect(c, t, f)
+				pillSelect(c, t, "星期", &f.weekday, weekOrder, weekdayName)
 				timeField(c, f)
 			case schedule.Once:
 				dateField(c, t, f)
@@ -115,29 +113,33 @@ func timeField(c *ui.Context, f *taskForm) {
 	ui.TimeInput(c.Key("task-at"), &f.at).Label("时刻").Height(fieldHeight)
 }
 
-// pill 给下拉的触发器配上淡底的小块外观，悬停时深一点。
-func pill(trigger ui.Element, t *ui.Theme) ui.Element {
-	trigger.AlignItems(ui.Center).Gap(6).Height(fieldHeight).Padding(0, 10).Radius(controlRound).
-		Background(rowFill(t))
+// kindChoices 是规则种类下拉的各项，值是 ruleKinds 里的下标。
+var kindChoices = func() []int {
+	choices := make([]int, len(ruleKinds))
+	for i := range choices {
+		choices[i] = i
+	}
+	return choices
+}()
+
+func kindName(i int) string { return ruleKinds[i].label }
+
+// pillSelect 画表单里的下拉：触发器是淡底的小块，悬停时深一点，显示当前值与向下的箭头，
+// 选项在其下展开。
+func pillSelect[T comparable](
+	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
+) {
+	sel := ui.SelectBase(c.Key(label), value)
+	trigger := sel.Trigger.Label(label).AlignItems(ui.Center).Gap(6).Height(fieldHeight).
+		Padding(0, 10).Radius(controlRound).Background(rowFill(t))
 	if trigger.Hovered() {
 		trigger.Background(buttonFill(t))
 	}
-	return trigger
-}
-
-// kindSelect 画规则种类的下拉：触发器显示当前的种类与向下的箭头。
-func kindSelect(c *ui.Context, t *ui.Theme, kind *int) {
-	kinds := make([]int, len(ruleKinds))
-	for i := range kinds {
-		kinds[i] = i
-	}
-	sel := ui.SelectBase(c.Key("task-kind"), kind)
-	pill(sel.Trigger.Label("触发方式"), t).Children(func() {
-		ui.Text(c, ruleKinds[*kind].label).FontSize(textSize).SingleLine()
+	trigger.Children(func() {
+		ui.Text(c, name(*value)).FontSize(textSize).SingleLine()
 		ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(90)
 	})
-	dropdownOptions(c, t, sel, kind, kinds, func(i int) string { return ruleKinds[i].label },
-		textSize)
+	dropdownOptions(c, t, sel, value, options, name, textSize)
 }
 
 // dateField 画一次性任务的日期：外观与时刻一样，点开是月历，选了一天就收起。不用控件自带的
@@ -158,17 +160,6 @@ func dateField(c *ui.Context, t *ui.Theme, f *taskForm) {
 			f.dateOpen = false
 		}
 	})
-}
-
-// weekdaySelect 画每周的星期几：一次选一天，样式与规则种类的下拉一样。
-func weekdaySelect(c *ui.Context, t *ui.Theme, f *taskForm) {
-	name := func(d time.Weekday) string { return "周" + dayNames[d] }
-	sel := ui.SelectBase(c.Key("task-weekday"), &f.weekday)
-	pill(sel.Trigger.Label("星期"), t).Children(func() {
-		ui.Text(c, name(f.weekday)).FontSize(textSize).SingleLine()
-		ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(90)
-	})
-	dropdownOptions(c, t, sel, &f.weekday, weekOrder, name, textSize)
 }
 
 // taskDirButton 画工作目录：点开选择目录的对话框；与表单里的输入框同高。

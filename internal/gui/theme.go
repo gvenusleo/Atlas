@@ -13,6 +13,7 @@ const (
 	boxRound     = 8   // 代码框与对比框的圆角
 	inputRound   = 16  // 输入框圆角
 	cardRound    = 12  // 浮动卡片圆角
+	popupRound   = 10  // 弹出面板圆角
 	edge         = 6   // 浮动卡片与窗口边缘的空隙
 	handleWidth  = 6   // 卡片拖动条的宽度
 	barButton    = 24  // 标题栏按钮的边长
