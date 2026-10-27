@@ -6,10 +6,16 @@ import (
 	"fmt"
 )
 
-// schemaVersion 是当前的结构版本，记录在 SQLite 的 user_version 里。1 是正式发布的第一版。
+// schemaVersion 是当前的结构版本，记录在 SQLite 的 user_version 里。1 是正式发布的第一版，
+// 2 给会话加了类型与属主。
 // 改表结构必须同时做三件事：升这个版本、在 migrations 末尾追加把上一版升上来的迁移、
 // 更新 schemaSQL（全新建库用的当前结构）。
-const schemaVersion = 1
+const schemaVersion = 2
+
+// defaultSessionType 是没有指定类型的会话的类型，也是版本 1 的旧会话迁移之后的类型。
+// store 不解释类型，只在这里给出默认值，取值的含义见 protocol.SessionType；它必须与
+// protocol.SessionInteractive 一致，schemaSQL 与迁移里的默认值也是它。
+const defaultSessionType = "interactive"
 
 // schemaSQL 是当前版本的完整结构，用来初始化全新的库；旧版本的库由 migrations 升上来，
 // 两条路径得到的结构必须一致。
@@ -23,9 +29,12 @@ CREATE TABLE sessions (
     last_seq INTEGER NOT NULL DEFAULT 0 CHECK (last_seq >= 0),
     context_from INTEGER NOT NULL DEFAULT 1 CHECK (context_from >= 1),
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    session_type TEXT NOT NULL DEFAULT 'interactive',
+    owner_id TEXT NOT NULL DEFAULT ''
 ) STRICT;
-CREATE INDEX sessions_updated ON sessions(updated_at DESC, id DESC);
+CREATE INDEX sessions_type_updated ON sessions(session_type, updated_at DESC, id DESC);
+CREATE INDEX sessions_owner_updated ON sessions(owner_id, updated_at DESC, id DESC);
 CREATE INDEX sessions_cwd_updated ON sessions(cwd, updated_at DESC, id DESC);
 CREATE TABLE messages (
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -46,7 +55,19 @@ CREATE TABLE blobs (
 
 // migrations 把旧版本的库逐版本升级：migrations[n-1] 把版本 n 升到 n+1，在调用方的事务里
 // 执行，失败时整个升级回滚，库保持原样。长度必须是 schemaVersion-1。
-var migrations []func(ctx context.Context, tx *sql.Tx) error
+var migrations = []func(ctx context.Context, tx *sql.Tx) error{addSessionType}
+
+// addSessionType 把版本 1 升到 2：会话加类型与属主，旧会话都是 interactive、没有属主；
+// 列表按类型筛选，原来只按更新时间的索引用不上了，换成带类型的与带属主的。
+func addSessionType(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+ALTER TABLE sessions ADD COLUMN session_type TEXT NOT NULL DEFAULT 'interactive';
+ALTER TABLE sessions ADD COLUMN owner_id TEXT NOT NULL DEFAULT '';
+DROP INDEX sessions_updated;
+CREATE INDEX sessions_type_updated ON sessions(session_type, updated_at DESC, id DESC);
+CREATE INDEX sessions_owner_updated ON sessions(owner_id, updated_at DESC, id DESC);`)
+	return err
+}
 
 // initSchema 在事务中让库达到当前版本：全新的库直接建当前结构，旧版本的库按顺序迁移，
 // 比程序支持的更新的版本报错。

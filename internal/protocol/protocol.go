@@ -64,8 +64,20 @@ type Subscriber interface {
 
 // ---- 会话 ----
 
+// SessionType 是会话的种类，建会话时定下，之后不变，决定它在哪里列出。
+type SessionType string
+
+const (
+	SessionInteractive SessionType = "interactive" // 用户自己发起、在其中来回对话的会话
+	SessionScheduled   SessionType = "scheduled"   // 定时任务触发的会话
+)
+
 type NewSessionRequest struct {
 	Cwd string `json:"cwd"` // 绝对路径
+	// Type 缺省是 SessionInteractive。OwnerID 是会话的属主：SessionScheduled 的会话必须带，
+	// 是定时任务的标识；普通会话没有属主。
+	Type    SessionType `json:"type,omitempty"`
+	OwnerID string      `json:"ownerId,omitempty"`
 }
 
 type NewSessionResponse struct {
@@ -94,8 +106,11 @@ type SessionState struct {
 }
 
 type ListSessionsRequest struct {
-	Cwd    string `json:"cwd,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
+	Cwd string `json:"cwd,omitempty"`
+	// Type 缺省是 SessionInteractive，只列这一种；OwnerID 不为空时只列这个属主的会话。
+	Type    SessionType `json:"type,omitempty"`
+	OwnerID string      `json:"ownerId,omitempty"`
+	Cursor  string      `json:"cursor,omitempty"`
 }
 
 type ListSessionsResponse struct {
@@ -108,6 +123,9 @@ type SessionInfo struct {
 	Cwd       string    `json:"cwd"`
 	Title     string    `json:"title,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Type 与 OwnerID 见 NewSessionRequest。
+	Type    SessionType `json:"type"`
+	OwnerID string      `json:"ownerId,omitempty"`
 }
 
 type DeleteSessionRequest struct {

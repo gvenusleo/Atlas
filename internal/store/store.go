@@ -4,6 +4,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -35,6 +36,10 @@ type Info struct {
 	Cwd      string
 	Model    string // 上次选的模型，provider/model-id
 	Thinking string
+	// Type 是会话的类型，不理解它的含义，只用来筛选；建会话时留空就是 defaultSessionType。
+	// OwnerID 是会话的属主，没有时为空串。两者建会话之后不变。
+	Type    string
+	OwnerID string
 	// LastSeq 是最后一条记录的序号，从 1 起；0 表示还没有记录。
 	LastSeq int64
 	// ContextFrom 是上下文的起点：读出上下文只需要从这个序号开始的记录。
@@ -100,16 +105,18 @@ func (d *DB) Create(ctx context.Context, info Info, first ...Entry) (Info, error
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	info.CreatedAt, info.UpdatedAt = now, now
 	info.LastSeq, info.ContextFrom = int64(len(first)), 1
+	info.Type = cmp.Or(info.Type, defaultSessionType)
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Info{}, err
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions
-        (id, title, cwd, model, thinking, last_seq, context_from, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, title, cwd, model, thinking, last_seq, context_from, created_at, updated_at,
+         session_type, owner_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		info.ID, info.Title, info.Cwd, info.Model, info.Thinking, info.LastSeq,
-		info.ContextFrom, now.UnixMilli(), now.UnixMilli()); err != nil {
+		info.ContextFrom, now.UnixMilli(), now.UnixMilli(), info.Type, info.OwnerID); err != nil {
 		return Info{}, err
 	}
 	for i, e := range first {
@@ -124,7 +131,7 @@ func (d *DB) Create(ctx context.Context, info Info, first ...Entry) (Info, error
 }
 
 const infoColumns = "id, title, cwd, model, thinking, last_seq, context_from, " +
-	"created_at, updated_at"
+	"created_at, updated_at, session_type, owner_id"
 
 type scanner interface {
 	Scan(...any) error
@@ -135,7 +142,7 @@ func scanInfo(row scanner) (Info, error) {
 	var info Info
 	var created, updated int64
 	err := row.Scan(&info.ID, &info.Title, &info.Cwd, &info.Model, &info.Thinking,
-		&info.LastSeq, &info.ContextFrom, &created, &updated)
+		&info.LastSeq, &info.ContextFrom, &created, &updated, &info.Type, &info.OwnerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Info{}, ErrNotFound
 	}
@@ -159,13 +166,22 @@ type Cursor struct {
 	ID        string
 }
 
-// List 按更新时间倒序列出 limit 个会话；cwd 为空时列出所有工作目录的。
-func (d *DB) List(ctx context.Context, cwd string, before *Cursor, limit int) ([]Info, error) {
+// Filter 是列表的筛选条件，空的字段不筛选。
+type Filter struct {
+	Cwd, Type, OwnerID string
+}
+
+// List 按更新时间倒序列出 limit 个符合 filter 的会话。
+func (d *DB) List(ctx context.Context, filter Filter, before *Cursor, limit int) ([]Info, error) {
 	query := "SELECT " + infoColumns + " FROM sessions WHERE 1 = 1"
 	var args []any
-	if cwd != "" {
-		query += " AND cwd = ?"
-		args = append(args, cwd)
+	for _, c := range []struct{ column, value string }{
+		{"cwd", filter.Cwd}, {"session_type", filter.Type}, {"owner_id", filter.OwnerID},
+	} {
+		if c.value != "" {
+			query += " AND " + c.column + " = ?"
+			args = append(args, c.value)
+		}
 	}
 	if before != nil {
 		query += " AND (updated_at, id) < (?, ?)"

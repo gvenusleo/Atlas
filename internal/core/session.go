@@ -1,8 +1,10 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"sync"
@@ -26,9 +28,11 @@ type session struct {
 
 	mu           sync.Mutex
 	cwd          string
-	saved        bool  // 已写进库；之前只在内存里
-	seq          int64 // 本进程写入或读到的最后序号
-	busy         *busy // 占用会话的操作；nil 表示空闲。这是唯一的控制状态
+	sessionType  protocol.SessionType
+	ownerID      string // 会话的属主，见 protocol.NewSessionRequest
+	saved        bool   // 已写进库；之前只在内存里
+	seq          int64  // 本进程写入或读到的最后序号
+	busy         *busy  // 占用会话的操作；nil 表示空闲。这是唯一的控制状态
 	model        agent.Model
 	thinking     agent.ThinkingLevel
 	systemPrompt string
@@ -49,8 +53,14 @@ type busy struct {
 }
 
 // create 建一个新会话：选好模型，按工作目录组装系统提示词与工具，还只在内存里，也还没有登记。
-func (c *Core) create(cwd string) (*session, error) {
+func (c *Core) create(
+	cwd string, sessionType protocol.SessionType, ownerID string,
+) (*session, error) {
 	if err := checkCwd(cwd); err != nil {
+		return nil, err
+	}
+	sessionType, err := checkSessionType(sessionType, ownerID)
+	if err != nil {
 		return nil, err
 	}
 	settings, err := config.Load()
@@ -62,8 +72,26 @@ func (c *Core) create(cwd string) (*session, error) {
 		return nil, err
 	}
 	thinking, model := chooseModel(settings, "", "")
-	return &session{id: uuid.NewV7().String(), core: c, cwd: cwd, model: model, thinking: thinking,
-		systemPrompt: resources.SystemPrompt, tools: toolset(cwd), skills: resources.Skills}, nil
+	return &session{id: uuid.NewV7().String(), core: c, cwd: cwd, sessionType: sessionType,
+		ownerID: ownerID, model: model, thinking: thinking, systemPrompt: resources.SystemPrompt,
+		tools: toolset(cwd), skills: resources.Skills}, nil
+}
+
+// checkSessionType 检查建会话请求里的类型与属主：类型缺省是普通会话；定时任务的会话必须有
+// 属主，普通会话没有。
+func checkSessionType(
+	sessionType protocol.SessionType, ownerID string,
+) (protocol.SessionType, error) {
+	sessionType = cmp.Or(sessionType, protocol.SessionInteractive)
+	switch {
+	case sessionType != protocol.SessionInteractive && sessionType != protocol.SessionScheduled:
+		return "", fmt.Errorf("不认识的会话类型 %q", sessionType)
+	case sessionType == protocol.SessionScheduled && ownerID == "":
+		return "", errors.New("定时任务的会话必须有属主")
+	case sessionType == protocol.SessionInteractive && ownerID != "":
+		return "", errors.New("普通会话没有属主")
+	}
+	return sessionType, nil
 }
 
 // load 从库里加载会话：读出上下文起点之后的记录，折叠得到上下文；上次的模型失效了就退到别的
@@ -76,7 +104,8 @@ func (c *Core) load(ctx context.Context, id string) (*session, error) {
 	if err := checkCwd(info.Cwd); err != nil {
 		return nil, err
 	}
-	s := &session{id: id, core: c, cwd: info.Cwd, saved: true, seq: info.LastSeq}
+	s := &session{id: id, core: c, cwd: info.Cwd, saved: true, seq: info.LastSeq,
+		sessionType: protocol.SessionType(info.Type), ownerID: info.OwnerID}
 	for _, r := range records {
 		m, err := c.decodeWithImages(ctx, id, r)
 		if err != nil {

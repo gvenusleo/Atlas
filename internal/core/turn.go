@@ -161,7 +161,8 @@ func (s *session) save(ctx context.Context, m agent.Message) (int64, error) {
 	}
 	s.mu.Lock()
 	saved, seq := s.saved, s.seq
-	info := store.Info{ID: s.id, Cwd: s.cwd, Model: s.model.Ref, Thinking: string(s.thinking)}
+	info := store.Info{ID: s.id, Cwd: s.cwd, Model: s.model.Ref, Thinking: string(s.thinking),
+		Type: string(s.sessionType), OwnerID: s.ownerID}
 	systemPrompt := s.systemPrompt
 	if sm, ok := m.(agent.SystemMessage); ok && sm.Type == agent.SystemMessageTypeCompaction {
 		entry.ContextFrom = s.contextFrom(sm)

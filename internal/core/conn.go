@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"strconv"
@@ -40,7 +41,7 @@ func (c *conn) NewSession(
 		return protocol.NewSessionResponse{}, err
 	}
 	defer end()
-	s, err := c.core.create(req.Cwd)
+	s, err := c.core.create(req.Cwd, req.Type, req.OwnerID)
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
@@ -95,7 +96,11 @@ func (c *conn) ListSessions(
 		}
 		before = &store.Cursor{UpdatedAt: time.UnixMilli(ms), ID: id}
 	}
-	infos, err := c.core.db.List(ctx, req.Cwd, before, listPage)
+	filter := store.Filter{
+		Cwd: req.Cwd, Type: string(cmp.Or(req.Type, protocol.SessionInteractive)),
+		OwnerID: req.OwnerID,
+	}
+	infos, err := c.core.db.List(ctx, filter, before, listPage)
 	if err != nil {
 		return protocol.ListSessionsResponse{}, err
 	}
@@ -103,6 +108,7 @@ func (c *conn) ListSessions(
 	for _, info := range infos {
 		resp.Sessions = append(resp.Sessions, protocol.SessionInfo{
 			SessionID: info.ID, Cwd: info.Cwd, Title: info.Title, UpdatedAt: info.UpdatedAt,
+			Type: protocol.SessionType(info.Type), OwnerID: info.OwnerID,
 		})
 	}
 	if len(infos) == listPage {

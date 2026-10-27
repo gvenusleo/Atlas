@@ -424,3 +424,78 @@ func TestTurnStopsAtRequestLimit(t *testing.T) {
 		t.Errorf("历史的最后一条 = %#v，期望说明上限的通知", last)
 	}
 }
+
+// 类型与属主不合法的建会话请求被拒绝：任务会话没有属主、普通会话有属主、不认识的类型。
+func TestNewSessionRejectsBadTypeAndOwner(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	a := c.Connect(newRecorder())
+	for _, bad := range []protocol.NewSessionRequest{
+		{Cwd: t.TempDir(), Type: protocol.SessionScheduled},
+		{Cwd: t.TempDir(), OwnerID: "t1"},
+		{Cwd: t.TempDir(), Type: "other"},
+	} {
+		if _, err := a.NewSession(t.Context(), bad); err == nil {
+			t.Errorf("NewSession(%+v) 应当被拒绝", bad)
+		}
+	}
+}
+
+// 任务会话带着类型与属主保存：默认的列表（侧栏用）只有普通会话，按类型与属主才列得出任务会话，
+// 重新打开核心之后仍然如此。
+func TestScheduledSessionsAreListedSeparately(t *testing.T) {
+	path := home(t, settingsJSON)
+	c := open(t, path)
+	client := newRecorder()
+	a := c.Connect(client)
+	newSession := func(sessionType protocol.SessionType, owner string) string {
+		t.Helper()
+		resp, err := a.NewSession(t.Context(), protocol.NewSessionRequest{
+			Cwd: t.TempDir(), Type: sessionType, OwnerID: owner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stub(t, c, resp.SessionID, reply("好", nil))
+		sayAndWait(t, a, client, resp.SessionID, "做事")
+		return resp.SessionID
+	}
+	chat := newSession("", "")
+	first := newSession(protocol.SessionScheduled, "t1")
+	newSession(protocol.SessionScheduled, "t1")
+	newSession(protocol.SessionScheduled, "t2")
+
+	count := func(a protocol.Service, req protocol.ListSessionsRequest) []protocol.SessionInfo {
+		t.Helper()
+		resp, err := a.ListSessions(t.Context(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.Sessions
+	}
+	check := func(a protocol.Service) {
+		t.Helper()
+		got := count(a, protocol.ListSessionsRequest{})
+		if len(got) != 1 || got[0].SessionID != chat {
+			t.Errorf("默认的列表 = %+v，期望只有普通会话", got)
+		}
+		scheduled := protocol.ListSessionsRequest{Type: protocol.SessionScheduled}
+		if got := count(a, scheduled); len(got) != 3 {
+			t.Errorf("所有任务会话 = %d 个，期望 3 个", len(got))
+		}
+		scheduled.OwnerID = "t1"
+		got = count(a, scheduled)
+		if len(got) != 2 || got[0].OwnerID != "t1" || got[0].Type != protocol.SessionScheduled {
+			t.Errorf("t1 的任务会话 = %+v，期望 2 个，带着类型与属主", got)
+		}
+	}
+	check(a)
+
+	// 重新打开：类型与属主存在库里；任务会话再打开、再保存，也不会变。
+	c2 := open(t, path)
+	client2 := newRecorder()
+	a2 := c2.Connect(client2)
+	check(a2)
+	openSession(t, a2, first)
+	stub(t, c2, first, reply("再来", nil))
+	sayAndWait(t, a2, client2, first, "又一条")
+	check(a2)
+}
