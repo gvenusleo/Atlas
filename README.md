@@ -27,7 +27,7 @@ go get github.com/egoist/mygo@main && go mod tidy
 - `settings.json`：当前模型与 provider 清单，不含凭据。
 - `auth.json`：以 provider 名为键的 API key，权限必须为 `0600`。API key 只从这个文件读取，
   不读环境变量。
-- `AGENTS.md`：全局指令。
+- `AGENTS.md`：全局指令，可在设置页的“全局指令”里编辑；目录里的 `AGENTS.md` 作用于该目录及其子目录。
 - `gui.json`：界面偏好（主题、界面字体、代码字体、是否在菜单栏显示），由设置页写入，只有桌面端读取，缺失时用默认值。
 - `schedule.json`：定时任务（名称、用户消息、工作目录、规则等），由定时任务视图写入，只有桌面端读写。
 - `atlas.db`：会话数据库。
