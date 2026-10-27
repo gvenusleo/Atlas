@@ -65,13 +65,15 @@ func (a *App) dirtyTabs() int {
 	return n
 }
 
-// confirmQuit 在有未保存的修改时拦下退出或关窗口，问用户是否丢弃；确认后再退出一次。
+// confirmQuit 在有未保存的修改时拦下退出，问用户是否丢弃；确认后再退出一次。关窗口只是隐藏
+// 窗口，不经过这里。
 func (a *App) confirmQuit(e *mygo.Preventable) {
 	n := a.dirtyTabs()
 	if n == 0 || a.discardOK {
 		return
 	}
 	e.PreventDefault()
+	a.reveal() // 窗口可能藏在后台，确认框要有地方出现
 	go func() {
 		r, err := mygo.Dialog.Message(mygo.MessageOptions{
 			Parent: a.win, Type: mygo.MessageWarning, Buttons: []string{"丢弃修改并退出", "取消"},

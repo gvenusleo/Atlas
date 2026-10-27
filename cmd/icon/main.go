@@ -1,8 +1,9 @@
 // Command icon 画出 Atlas 的应用图标并写成 PNG：三个在底部相切的圆，由外向内逐个收小，
 // 像一层层叠起的球，层与层之间用软影分开，放在淡色的底板上。生成两张：正式版 icon.png，
-// 与开发版 icon-dev.png，后者换一个主题色，在 Dock 里与正式版区分。
+// 与开发版 icon-dev.png，后者换一个主题色，在 Dock 里与正式版区分。另有托盘用的模板图标
+// tray.png（见 tray.go），放在 gui 包里内嵌。
 //
-//	go run ./cmd/icon [-o resources]
+//	go run ./cmd/icon [-o resources] [-tray internal/gui/tray.png]
 package main
 
 import (
@@ -50,7 +51,12 @@ var styles = map[string]style{
 
 func main() {
 	dir := flag.String("o", "resources", "输出目录")
+	tray := flag.String("tray", "internal/gui/tray.png", "托盘图标的路径")
 	flag.Parse()
+	if err := writeTray(*tray); err != nil {
+		fmt.Fprintln(os.Stderr, "icon:", err)
+		os.Exit(1)
+	}
 	for name, st := range styles {
 		if err := write(filepath.Join(*dir, name), st); err != nil {
 			fmt.Fprintln(os.Stderr, "icon:", err)

@@ -71,6 +71,9 @@ type App struct {
 
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
 	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
+
+	tray     *mygo.Tray // 托盘图标；偏好为不显示、或建不起来时为空
+	quitting bool       // 退出已经确认，窗口接着关闭
 }
 
 // Run 打开窗口，连接核心，阻塞到应用退出；退出时用 shutdown 关闭核心。
@@ -84,7 +87,12 @@ func Run(
 	a := newApp()
 	mygo.Theme.SetSource(a.prefs.Theme) // 窗口创建之前定下主题，启动时不闪一下系统的
 	a.service = connect(a)
-	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { a.confirmQuit(&e.Preventable) })
+	mygo.App.OnBeforeQuit(a.beforeQuit)
+	mygo.App.OnActivate(func(visible bool) { // 点 Dock 图标：窗口隐藏着就显示它
+		if !visible && a.win != nil {
+			a.win.Update(a.reveal)
+		}
+	})
 	mygo.App.OnQuit(func() {
 		a.closeAllPanels()
 		ctx, cancel := context.WithTimeout(context.Background(), closeTimeout)
@@ -94,7 +102,9 @@ func Run(
 		}
 	})
 	mygo.App.WhenReady(func() {
+		a.syncTray()
 		a.win = mygo.NewWindow(mygo.WindowOptions{
+			Hidden:    mygo.App.WasOpenedAtLogin(), // 登录时启动不弹窗口
 			Title:     "Atlas",
 			Width:     1100,
 			Height:    760,
@@ -107,7 +117,7 @@ func Run(
 			TrafficLightPosition: &mygo.Point{X: 16, Y: 16},
 			Content:              ui.View(a.view),
 		})
-		a.win.OnClose(func(e *mygo.CloseEvent) { a.confirmQuit(&e.Preventable) })
+		a.win.OnClose(a.closeWindow)
 		a.refresh()
 		a.start(a.current)
 		a.watchTasks()

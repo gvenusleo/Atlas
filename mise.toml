@@ -15,7 +15,7 @@ depends = ["build"]
 run = "rm -rf /Applications/Atlas.app && ditto build/darwin-arm64/Atlas.app /Applications/Atlas.app"
 
 [tasks.icon]
-description = "重新生成应用图标（resources/icon.png 与 icon-dev.png）"
+description = "重新生成应用图标（resources/icon.png、icon-dev.png）与托盘图标（internal/gui/tray.png）"
 run = "go run ./cmd/icon"
 
 [tasks.skills]

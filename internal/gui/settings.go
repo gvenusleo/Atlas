@@ -48,6 +48,9 @@ func (a *App) setPrefs(p prefs) {
 		// SetSource 会通知窗口重新取主题，所以不在构建视图的过程中调用，放到这一帧之后。
 		a.win.Update(func() { mygo.Theme.SetSource(source) })
 	}
+	if p.HideTray != a.prefs.HideTray {
+		a.win.Update(a.syncTray) // 同样不在构建视图的过程中增删托盘
+	}
 	a.prefs = p
 	a.applyFonts()
 	dir, err := config.Dir()
@@ -74,8 +77,12 @@ func (a *App) applyFonts() {
 type settingsPage struct {
 	open     bool
 	gen      int // 打开的次数，后台取系统字体的结果据此作废
-	category int // 左侧选中的分类，目前只有“外观”
+	category int // 左侧选中的分类，见 settingsCategories
 	theme    int // 主题分段控件选中的一项，见 themeChoices
+	// 开机时启动的开关取自系统的登录项，不在偏好里；设置失败的原因显示在开关下面。
+	loginOn  bool
+	loginErr string
+	menuBar  bool // 在菜单栏显示 Atlas 的开关，是偏好 HideTray 的反面
 	// 两个字体框里显示的字体名，默认的显示为 defaultFont。
 	uiFont, codeFont string
 	// 字体框的选项，默认的在最前；系统字体取回之前只有默认的。
@@ -87,8 +94,10 @@ func (a *App) openSettings() {
 	s := &a.settings
 	*s = settingsPage{
 		open: true, gen: s.gen + 1,
-		theme:  themeIndex(a.prefs.Theme),
-		uiFont: fontLabel(a.prefs.UIFont), codeFont: fontLabel(a.prefs.CodeFont),
+		theme:   themeIndex(a.prefs.Theme),
+		loginOn: mygo.App.OpenAtLogin(),
+		menuBar: !a.prefs.HideTray,
+		uiFont:  fontLabel(a.prefs.UIFont), codeFont: fontLabel(a.prefs.CodeFont),
 		uiFonts: []string{defaultFont}, codeFonts: []string{defaultFont},
 	}
 	a.loadFonts(s.gen)
@@ -142,4 +151,15 @@ func (a *App) chooseFonts() {
 	p := a.prefs
 	p.UIFont, p.CodeFont = fontPref(a.settings.uiFont), fontPref(a.settings.codeFont)
 	a.setPrefs(p)
+}
+
+// setOpenAtLogin 把开机时启动的开关交给系统；失败（如未打包的开发版）时记下原因，
+// 开关回到系统实际的状态。
+func (a *App) setOpenAtLogin(on bool) {
+	s := &a.settings
+	s.loginErr = ""
+	if err := mygo.App.SetOpenAtLogin(on); err != nil {
+		s.loginErr = "设置失败：" + err.Error()
+	}
+	s.loginOn = mygo.App.OpenAtLogin()
 }

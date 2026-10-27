@@ -34,7 +34,7 @@ type settingsCategory struct {
 }
 
 // settingsCategories 是设置页左侧的分类。
-var settingsCategories = []settingsCategory{{"外观", paletteIcon}}
+var settingsCategories = []settingsCategory{{"外观", paletteIcon}, {"系统", computerIcon}}
 
 // settingsDialog 在设置页打开时画它：左侧是分类，右侧是当前分类的各项。
 func (a *App) settingsDialog(c *ui.Context, t *ui.Theme) {
@@ -92,7 +92,11 @@ func (a *App) settingsContent(c *ui.Context, t *ui.Theme) {
 			})
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Gap(settingsGap).Padding(settingsPad).Children(func() {
-				a.appearance(c, t)
+				if s.category == 0 {
+					a.appearance(c, t)
+				} else {
+					a.system(c, t)
+				}
 			})
 		})
 	})
@@ -105,6 +109,25 @@ func (a *App) appearance(c *ui.Context, t *ui.Theme) {
 	settingRow(c, "界面字体", func() { a.fontBox(c, t, "界面字体", &s.uiFont, s.uiFonts) })
 	settingRow(c, "代码字体", func() { a.fontBox(c, t, "代码字体", &s.codeFont, s.codeFonts) })
 	fontPreview(c, t)
+}
+
+// system 画“系统”：开机时启动，在菜单栏显示 Atlas。
+func (a *App) system(c *ui.Context, t *ui.Theme) {
+	s := &a.settings
+	settingRow(c, "开机时启动", func() {
+		ui.Switch(c.Key("settings-login"), &s.loginOn).Label("开机时启动").
+			OnChange(func() { a.setOpenAtLogin(s.loginOn) })
+	})
+	if s.loginErr != "" {
+		ui.Text(c, s.loginErr).FontSize(textSize).TextColor(t.Danger)
+	}
+	settingRow(c, "在菜单栏显示 Atlas", func() {
+		ui.Switch(c.Key("settings-menubar"), &s.menuBar).Label("在菜单栏显示 Atlas").OnChange(func() {
+			p := a.prefs
+			p.HideTray = !s.menuBar
+			a.setPrefs(p)
+		})
+	})
 }
 
 // fontBox 画一个带搜索的字体下拉；下拉里的行用本应用安静的样式，与模型、思考深度的下拉一致，

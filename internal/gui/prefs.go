@@ -15,11 +15,12 @@ import (
 const prefsFile = "gui.json"
 
 // prefs 是界面偏好，只有 gui 读写；空串表示默认：主题跟随系统，界面字体用系统的，
-// 代码字体用 monoFamily。
+// 代码字体用 monoFamily，菜单栏里显示托盘图标（所以记的是隐藏，默认值才是零值）。
 type prefs struct {
 	Theme    mygo.ThemeSource `json:"theme,omitzero"`
 	UIFont   string           `json:"ui_font,omitzero"`
 	CodeFont string           `json:"code_font,omitzero"`
+	HideTray bool             `json:"hide_tray,omitzero"`
 }
 
 // loadPrefs 读取 dir 下的偏好。文件缺失、损坏或值不认识时用默认值，不阻止启动。

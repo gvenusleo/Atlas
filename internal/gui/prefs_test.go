@@ -31,7 +31,7 @@ func TestPrefsFile(t *testing.T) {
 		t.Errorf("主题不认识时 = %+v，期望只有代码字体", got)
 	}
 
-	want := prefs{Theme: mygo.ThemeDark, UIFont: "Inter", CodeFont: "Menlo"}
+	want := prefs{Theme: mygo.ThemeDark, UIFont: "Inter", CodeFont: "Menlo", HideTray: true}
 	if err := savePrefs(dir, want); err != nil {
 		t.Fatal(err)
 	}
