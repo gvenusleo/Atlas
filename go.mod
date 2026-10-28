@@ -5,7 +5,7 @@ go 1.27.3
 tool github.com/egoist/mygo/cmd/mygo
 
 require (
-	github.com/egoist/mygo v0.7.2-0.20261027060310-8e7c49cf1c9e
+	github.com/egoist/mygo v0.7.2-0.20261028022740-b02f13981d96
 	github.com/openai/openai-go/v3 v3.86.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/image v0.47.0
