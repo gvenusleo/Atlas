@@ -24,9 +24,9 @@ go get github.com/egoist/mygo@main && go mod tidy
 
 配置与数据位于 `~/.atlas/`：
 
-- `settings.json`：当前模型与 provider 清单，不含凭据。
-- `auth.json`：以 provider 名为键的 API key，权限必须为 `0600`。API key 只从这个文件读取，
-  不读环境变量。
+- `settings.json`：当前模型与 provider 清单，不含凭据；可在设置页的“模型接入”里编辑。
+- `auth.json`：以 provider 名为键的 API key。API key 只从这个文件读取，
+  不读环境变量；设置页的“模型接入”里填的 key 也写在这里。
 - `AGENTS.md`：全局指令，可在设置页的“全局指令”里编辑；目录里的 `AGENTS.md` 作用于该目录及其子目录。
 - `gui.json`：界面偏好（主题、界面字体、代码字体、是否在菜单栏显示），由设置页写入，只有桌面端读取，缺失时用默认值。
 - `schedule.json`：定时任务（名称、用户消息、工作目录、规则等），由定时任务视图写入，只有桌面端读写。
@@ -61,6 +61,8 @@ go get github.com/egoist/mygo@main && go mod tidy
 Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用圆环也依赖它。没有填写时只在
 请求被拒绝为上下文超限之后才压缩。在输入框里输入 `/` 会列出可用的命令，其中 `/compact`
 可以随时手动压缩：除最后一条消息外的对话都会换成摘要，与有没有填写 `context_window` 无关。
+
+模型的 `max_output`（单次回复的输出上限，token）可选：填写后每次请求都会带上它，没有填写时由服务端决定。
 
 列表里还有工作目录下发现的技能（`.agents/skills`、`.atlas/skills`，以及主目录下的同名目录）：
 输入 `/技能名 参数` 显式调用它，Atlas 会把技能的 SKILL.md 全文连同你的输入一起交给模型，
