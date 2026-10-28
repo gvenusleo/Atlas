@@ -8,8 +8,10 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/egoist/mygo/netproxy"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/ssestream"
@@ -31,9 +33,12 @@ type pendingCall struct {
 func OpenAIResponses(
 	baseURL, apiKey, modelID string, images bool, maxOutput int64,
 ) agent.StreamFn {
+	// 默认的传输层只认 HTTP(S)_PROXY 环境变量，而从 Dock 启动的应用拿不到 shell 里设的；
+	// netproxy 在没有环境变量时按系统设置里的代理走，与浏览器一致。不设整体超时，流可以很长。
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(baseURL),
+		option.WithHTTPClient(&http.Client{Transport: netproxy.Transport()}),
 		option.WithMaxRetries(0),
 	)
 	stream := responsesStream(client)
