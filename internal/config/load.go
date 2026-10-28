@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	dirName      = ".atlas"
-	settingsFile = "settings.json"
+	dirName = ".atlas"
+	// SettingsFile 是 settings.json 在配置目录下的文件名。
+	SettingsFile = "settings.json"
 )
 
 // Dir 返回配置目录 ~/.atlas。
@@ -35,7 +36,7 @@ func Load() (*Settings, error) {
 // LoadFrom 读取 dir 下的 settings.json 并校验。文件缺失视为零配置；
 // 解析与校验错误必须带文件路径。
 func LoadFrom(dir string) (*Settings, error) {
-	path := filepath.Join(dir, settingsFile)
+	path := filepath.Join(dir, SettingsFile)
 	s := &Settings{}
 	data, err := os.ReadFile(path)
 	if err != nil {
