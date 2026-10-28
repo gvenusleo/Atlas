@@ -33,9 +33,18 @@ type settingsCategory struct {
 	icon *ui.SVG
 }
 
+// 设置页左侧各分类的序号，与 settingsCategories 的次序一致。
+const (
+	categoryAppearance = iota
+	categorySystem
+	categoryModels
+	categoryInstructions
+)
+
 // settingsCategories 是设置页左侧的分类。
 var settingsCategories = []settingsCategory{
-	{"外观", paletteIcon}, {"系统", computerIcon}, {"全局指令", scrollIcon},
+	{"外观", paletteIcon}, {"系统", computerIcon},
+	{"模型接入", packageIcon}, {"全局指令", scrollIcon},
 }
 
 // settingsDialog 在设置页打开时画它：左侧是分类，右侧是当前分类的各项。
@@ -94,17 +103,20 @@ func (a *App) settingsContent(c *ui.Context, t *ui.Theme) {
 				ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
 			})
 		// “全局指令”的文本框自己滚动并撑满面板；其余各项在放不下时整体滚动。
-		if s.category == 2 {
+		if s.category == categoryInstructions {
 			ui.Column(c).Grow(1).MinHeight(0).Gap(settingsGap).Padding(settingsPad).
 				Children(func() { a.instructions(c, t) })
 			return
 		}
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Gap(settingsGap).Padding(settingsPad).Children(func() {
-				if s.category == 0 {
+				switch s.category {
+				case categoryAppearance:
 					a.appearance(c, t)
-				} else {
+				case categorySystem:
 					a.system(c, t)
+				case categoryModels:
+					a.modelSettings(c, t)
 				}
 			})
 		})

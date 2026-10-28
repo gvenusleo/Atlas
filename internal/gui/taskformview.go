@@ -8,26 +8,8 @@ import (
 	"github.com/gvenusleo/atlas/internal/schedule"
 )
 
-// 新建与编辑任务的对话框的宽度，表单每一项的最小高度，以及触发方式那一行里各个控件的统一高度。
-const (
-	taskFormWidth = 560
-	formRowHeight = 32
-	fieldHeight   = 28
-)
-
-// fieldBox 给输入框配上本应用的样式：淡的细边框与圆角，不用控件自带的强调色。
-func fieldBox(input ui.Element, t *ui.Theme) ui.Element {
-	return input.Radius(controlRound).Border(1, t.Text.Alpha(0.12))
-}
-
-// formRow 画表单的一项：与设置页的项一样，左边是名称，右边是控件；但每项至少 formRowHeight
-// 高，输入框、分段控件与小号的下拉排在一起，行距才匀。
-func formRow(c *ui.Context, name string, control func()) {
-	ui.Row(c).MinHeight(formRowHeight).AlignItems(ui.Center).Gap(16).Children(func() {
-		ui.Text(c, name).Grow(1).MinWidth(0)
-		control()
-	})
-}
+// taskFormWidth 是新建与编辑任务的对话框的宽度。
+const taskFormWidth = 560
 
 // taskFormDialog 在新建或编辑任务时画对话框：标题与关闭，表单，底部是错误与取消、保存；
 // 内容多时表单在框内滚动。对话框自己关掉（按 Esc、点遮罩）时丢弃表单。
@@ -49,19 +31,13 @@ func (a *App) taskFormDialog(c *ui.Context, t *ui.Theme) {
 	}
 }
 
-// taskFormHeader 画对话框的标题与右上角的关闭，边距与设置页的角落一致。
+// taskFormHeader 画任务表单的标题栏。
 func (a *App) taskFormHeader(c *ui.Context, t *ui.Theme) {
 	title := "新建定时任务"
 	if a.tasks.form.id != "" {
 		title = "编辑定时任务"
 	}
-	ui.Row(c).Height(barButton).AlignItems(ui.Center).Padding(0, 0, 0, settingsPad).
-		Children(func() { ui.Text(c, title).FontSize(dialogSize).Bold() })
-	quietButton(c, t, "关闭", func() { a.tasks.form = nil }).
-		Absolute().Top(settingsCloseTop).Right(settingsCloseRight).Size(barButton, barButton).
-		Children(func() {
-			ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
-		})
+	dialogHeader(c, t, title, func() { a.tasks.form = nil })
 }
 
 // taskFormFields 画表单：每项左边是名称，右边是控件，与设置页一致。
@@ -124,24 +100,6 @@ var kindChoices = func() []int {
 }()
 
 func kindName(i int) string { return ruleKinds[i].label }
-
-// pillSelect 画表单里的下拉：触发器是淡底的小块，悬停时深一点，显示当前值与向下的箭头，
-// 选项在其下展开。
-func pillSelect[T comparable](
-	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
-) {
-	sel := ui.SelectBase(c.Key(label), value)
-	trigger := sel.Trigger.Label(label).AlignItems(ui.Center).Gap(6).Height(fieldHeight).
-		Padding(0, 10).Radius(controlRound).Background(rowFill(t))
-	if trigger.Hovered() {
-		trigger.Background(buttonFill(t))
-	}
-	trigger.Children(func() {
-		ui.Text(c, name(*value)).FontSize(textSize).SingleLine()
-		ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(90)
-	})
-	dropdownOptions(c, t, sel, value, options, name, textSize)
-}
 
 // dateField 画一次性任务的日期：外观与时刻一样，点开是月历，选了一天就收起。不用控件自带的
 // DateInput，它带着一个日历图标，去不掉。
@@ -219,18 +177,7 @@ func (a *App) taskOption(c *ui.Context, t *ui.Theme, label, id string, value *st
 	})
 }
 
-// taskFormButtons 画对话框底部：校验的错误，右边是取消与保存；保存用淡的强调色，不抢眼。
+// taskFormButtons 画任务表单的底部。
 func (a *App) taskFormButtons(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(12, settingsPad).Children(func() {
-		ui.Text(c, a.tasks.form.err).FontSize(textSize).TextColor(t.Danger).Grow(1).MinWidth(0)
-		quietButton(c, t, "取消", func() { a.tasks.form = nil }).Height(28).Padding(0, 14).
-			Children(func() { ui.Text(c, "取消").FontSize(textSize) })
-		save := ui.ButtonBase(c).Height(28).Padding(0, 14).Radius(controlRound).Label("保存")
-		alpha := float32(0.15)
-		if save.Hovered() {
-			alpha = 0.25
-		}
-		save.Background(accentFg(t).Alpha(alpha)).OnClick(a.saveForm)
-		save.Children(func() { ui.Text(c, "保存").FontSize(textSize).TextColor(accentFg(t)) })
-	})
+	dialogButtons(c, t, a.tasks.form.err, nil, func() { a.tasks.form = nil }, a.saveForm)
 }

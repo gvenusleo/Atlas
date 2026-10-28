@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -216,12 +217,46 @@ func (a *App) setCwd(ch *chat, cwd string) {
 	if !ch.fresh() {
 		return
 	}
+	ch.cwd, a.cwd = cwd, cwd
+	a.restart(ch)
+}
+
+// restart 丢掉还没发过消息的新会话在核心里的那一个，按它现在的工作目录再建一个。
+func (a *App) restart(ch *chat) {
 	if ch.id != "" {
 		a.discard(ch)
 	}
 	ch.id, ch.ready, ch.err, ch.options, ch.commands = "", false, "", nil, nil
-	ch.cwd, a.cwd = cwd, cwd
 	a.start(ch)
+}
+
+// refreshOptions 在设置里的模型清单变了之后，让已打开的会话的配置项（也就是模型下拉）跟上：
+// 配置项只在打开会话时读设置，不刷新的话，要等会话重新打开才看得到新加的模型。还没发过消息的
+// 新会话不在库里，没法重新打开，按原来的工作目录再建一个；其余的重新打开一次，核心对已加载的
+// 会话只是重新订阅，并给出最新的配置项。定时任务的会话不用管。
+func (a *App) refreshOptions() {
+	for _, ch := range slices.Collect(maps.Values(a.chats)) {
+		if ch.job != nil || !ch.ready {
+			continue
+		}
+		if ch.fresh() {
+			a.restart(ch)
+			continue
+		}
+		id := ch.id
+		go func() {
+			resp, err := a.service.OpenSession(context.Background(),
+				protocol.OpenSessionRequest{SessionID: id})
+			if err != nil {
+				return
+			}
+			a.win.Update(func() {
+				if a.chats[id] == ch && ch.id == id {
+					ch.options = resp.ConfigOptions
+				}
+			})
+		}()
+	}
 }
 
 // discard 让核心不再保留这个会话，并从已打开的会话里去掉它。

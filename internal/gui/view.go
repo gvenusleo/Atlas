@@ -24,6 +24,7 @@ func (a *App) view(c *ui.Context) {
 	a.dialogs(c)
 	a.launcherDialog(c, t)
 	a.settingsDialog(c, t)
+	a.serviceDialog(c, t)
 	a.taskFormDialog(c, t)
 	a.taskDialogs(c)
 	if a.toast != "" {

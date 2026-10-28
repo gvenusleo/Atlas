@@ -43,6 +43,7 @@ var (
 	outlineIcon   = icon("lucide/table-of-contents")
 	codeIcon      = icon("lucide/code")
 	eyeIcon       = icon("lucide/eye")
+	eyeOffIcon    = icon("lucide/eye-off")
 	expandIcon    = icon("lucide/maximize-2")
 	restoreIcon   = icon("lucide/minimize-2")
 	searchIcon    = icon("lucide/search")
@@ -53,4 +54,5 @@ var (
 	monitorIcon   = icon("lucide/monitor")
 	computerIcon  = icon("lucide/computer")
 	scrollIcon    = icon("lucide/scroll-text")
+	packageIcon   = icon("lucide/package")
 )

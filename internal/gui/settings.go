@@ -101,6 +101,7 @@ type settingsPage struct {
 	loginErr string
 	menuBar  bool // 在菜单栏显示 Atlas 的开关，是偏好 HideTray 的反面
 	global   globalInstructions
+	models   modelsPage
 	// 两个字体框里显示的字体名，默认的显示为 defaultFont。
 	uiFont, codeFont string
 	// 字体框的选项，默认的在最前；系统字体取回之前只有默认的。
@@ -120,6 +121,7 @@ func (a *App) openSettings() {
 	}
 	a.loadFonts(s.gen)
 	a.loadInstructions()
+	a.loadModels()
 }
 
 // instructionsPath 是全局指令的文件 ~/.atlas/AGENTS.md。
