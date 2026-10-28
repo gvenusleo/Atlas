@@ -26,8 +26,11 @@ type pendingCall struct {
 
 // OpenAIResponses 返回一个模型的 StreamFn：以 apiKey 连接 baseURL 上的 OpenAI Responses API，
 // 请求里的模型是 modelID（循环交来的是完整引用 provider/model-id，provider 已体现在 baseURL 上）。
-// images 为假时，请求里的图片换成一句说明，见 withoutImages。
-func OpenAIResponses(baseURL, apiKey, modelID string, images bool) agent.StreamFn {
+// images 为假时，请求里的图片换成一句说明，见 withoutImages。maxOutput 大于 0 时作为每次请求的
+// 输出上限（max_output_tokens）。
+func OpenAIResponses(
+	baseURL, apiKey, modelID string, images bool, maxOutput int64,
+) agent.StreamFn {
 	client := openai.NewClient(
 		option.WithAPIKey(apiKey),
 		option.WithBaseURL(baseURL),
@@ -40,7 +43,7 @@ func OpenAIResponses(baseURL, apiKey, modelID string, images bool) agent.StreamF
 	return func(
 		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
 	) agent.AssistantMessage {
-		req.Model = modelID
+		req.Model, req.MaxOutput = modelID, maxOutput
 		return stream(ctx, req, emit)
 	}
 }

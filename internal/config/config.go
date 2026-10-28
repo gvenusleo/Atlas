@@ -1,5 +1,5 @@
 // Package config 读取 ~/.atlas/ 下的 settings.json 与 auth.json。
-// settings.json 管接入配置（可展示、可备份），auth.json 管 API key（0600，永不共享）。
+// settings.json 管接入配置（可展示、可备份），auth.json 管 API key（永不共享）。
 package config
 
 import "slices"
@@ -31,8 +31,6 @@ type Model struct {
 	ContextWindow    int64             `json:"context_window,omitzero"` // 上下文窗口（token）
 	MaxOutput        int64             `json:"max_output,omitzero"`     // 输出上限（token）
 	Modalities       Modalities        `json:"modalities,omitzero"`     // 输入/输出模态（能力门控）
-	Tools            *bool             `json:"tools,omitzero"`          // nil 视为支持
-	Temperature      *bool             `json:"temperature,omitzero"`    // nil 视为支持
 	Reasoning        bool              `json:"reasoning,omitzero"`      // 是否支持思考
 	ReasoningOptions []ReasoningOption `json:"reasoning_options,omitempty"`
 }

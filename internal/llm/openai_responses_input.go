@@ -29,6 +29,9 @@ func requestOf(req agent.StreamRequest) (responses.ResponseNewParams, error) {
 		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: input},
 		Tools: toolsOf(req.Tools),
 	}
+	if req.MaxOutput > 0 {
+		params.MaxOutputTokens = openai.Int(req.MaxOutput)
+	}
 	switch level := req.ThinkingLevel; {
 	case level == "":
 	case level == agent.ThinkingOff:

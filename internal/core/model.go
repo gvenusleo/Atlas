@@ -36,8 +36,7 @@ func listModels(settings *config.Settings) []modelInfo {
 				Name:           cmp.Or(metadata.Name, modelID),
 				Images:         metadata.Modalities.AcceptsImages(),
 				ThinkingLevels: usableThinkingLevels(metadata),
-				Supported: err == nil && llm.Supports(string(provider.WireAPI)) &&
-					(metadata.Tools == nil || *metadata.Tools),
+				Supported:      err == nil && llm.Supports(string(provider.WireAPI)),
 			})
 		}
 	}
@@ -160,9 +159,6 @@ func modelConfig(
 	if !llm.Supports(string(provider.WireAPI)) {
 		return agent.Model{}, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
 	}
-	if metadata.Tools != nil && !*metadata.Tools {
-		return agent.Model{}, fmt.Errorf("模型 %q 不支持工具调用，无法用于当前 Agent", modelRef)
-	}
 	if thinkingLevel != "" && !slices.Contains(usableThinkingLevels(metadata), thinkingLevel) {
 		return agent.Model{}, fmt.Errorf("模型 %q 未声明支持思考档位 %q", modelRef, thinkingLevel)
 	}
@@ -176,7 +172,7 @@ func modelConfig(
 		return agent.Model{}, err
 	}
 	stream, err := llm.NewStream(string(provider.WireAPI), provider.BaseURL, key, modelID,
-		metadata.Modalities.AcceptsImages())
+		metadata.Modalities.AcceptsImages(), metadata.MaxOutput)
 	if err != nil {
 		return agent.Model{}, err
 	}

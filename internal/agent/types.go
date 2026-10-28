@@ -265,6 +265,9 @@ type StreamRequest struct {
 	Tools        []Tool
 	// ThinkingLevel 为空时采用服务端默认深度；off 表示请求关闭思考。
 	ThinkingLevel ThinkingLevel
+	// MaxOutput 是单次回复的输出上限（token），0 表示不限制。循环不设它，由模型的 StreamFn 按
+	// 设置填入。
+	MaxOutput int64
 }
 
 // DeltaType 是随 message_update 事件发出的流式增量种类。
