@@ -15,6 +15,7 @@ import (
 
 	"github.com/egoist/mygo"
 	_ "github.com/egoist/mygo/locales/zh-Hans"
+	"github.com/egoist/mygo/plugins/updater/native"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -83,6 +84,8 @@ func Run(
 ) error {
 	// 界面是中文的：控件自带的文字（搜索框、编辑菜单等）也用中文。
 	mygo.App.SetLanguages("zh-Hans")
+	// 更新窗口用原生界面画，Linux 与 Windows 不需要网页视图；开发版与包管理器装的不检查。
+	mygo.Use(native.Plugin)
 	// 从 Dock 启动时没有 shell 配置里的环境变量，后台向登录 shell 要一份给子进程用。
 	shellenv.Warm()
 	a := newApp()

@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -132,7 +134,7 @@ func (a *App) appearance(c *ui.Context, t *ui.Theme) {
 	fontPreview(c, t)
 }
 
-// system 画“系统”：开机时启动，在菜单栏显示 Atlas。
+// system 画“系统”：开机时启动，在菜单栏显示 Atlas，当前版本与检查更新。
 func (a *App) system(c *ui.Context, t *ui.Theme) {
 	s := &a.settings
 	settingRow(c, "开机时启动", func() {
@@ -148,6 +150,9 @@ func (a *App) system(c *ui.Context, t *ui.Theme) {
 			p.HideTray = !s.menuBar
 			a.setPrefs(p)
 		})
+	})
+	settingRow(c, "Atlas "+mygo.App.Version(), func() {
+		fillButton(c, t, nil, "检查更新…", updater.CheckForUpdates)
 	})
 }
 
