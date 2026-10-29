@@ -6,7 +6,7 @@ description = "启动桌面应用（热重载）"
 run = "go tool mygo dev"
 
 [tasks.build]
-description = "编译全部包"
+description = "编译安装包"
 run = "go tool mygo build"
 
 [tasks.install]

@@ -1,0 +1,31 @@
+name: ci
+
+# PR 上触发，绑定 ci 环境，管理员批准后才执行。
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    environment: ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # 与 mise run ci 一致，不跑 build。
+      - name: 格式、vet、测试、漏洞扫描
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go tool mygo vet .
+          go test ./... -count=1 -race
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
