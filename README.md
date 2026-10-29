@@ -20,6 +20,20 @@ MyGo 不等发版，`go.mod` 固定在它 main 分支的某个提交（伪版本
 go get github.com/egoist/mygo@main && go mod tidy
 ```
 
+## 安装
+
+从 [Releases](https://github.com/gvenusleo/Atlas/releases) 下载对应平台的安装包，或用一行命令安装：
+
+```sh
+curl -fsSL https://github.com/gvenusleo/Atlas/releases/latest/download/install.sh | sh
+```
+
+```powershell
+irm https://github.com/gvenusleo/Atlas/releases/latest/download/install.ps1 | iex
+```
+
+macOS 的应用没有经过苹果公证，用浏览器下载的 `.dmg` 首次打开会被拦下：到“系统设置 → 隐私与安全性”点“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/Atlas.app`；一行命令安装不受影响。Windows 的安装包没有签名，SmartScreen 会警告，点“更多信息 → 仍要运行”。Linux 也可以用 `.deb`，由包管理器更新。已安装的应用会自动检查更新，也可以在设置页的“系统”里手动检查。
+
 ## 配置
 
 配置与数据位于 `~/.atlas/`：
