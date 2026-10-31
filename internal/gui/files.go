@@ -63,9 +63,10 @@ type fileTab struct {
 	gone    bool     // 文件在磁盘上没了
 	err     string   // 最近一次保存失败的原因
 
-	render bool                   // 显示渲染后的样子（Markdown 预览、CSV 表格），否则是源码
+	render bool                   // 显示渲染后的样子（Markdown 与 SVG 的预览、CSV 表格），否则是源码
 	edited memo[uint64, bool]     // 有没有未保存的修改，按缓冲区的 version 缓存
 	md     memo[uint64, string]   // Markdown 预览用的文本，按缓冲区的 version 缓存
+	svg    memo[uint64, svgImage] // SVG 解析出来的图，按缓冲区的 version 缓存
 	csv    memo[uint64, csvTable] // 表格，按缓冲区的 version 缓存
 	table  ui.ListState           // 表格视图的选中与滚动
 }
@@ -229,7 +230,7 @@ func (a *App) showFile(ch *chat, rel string) {
 // readTab 读取标签的文件，st 是读它之前它在磁盘上的样子。图片解码，文本读成 UTF-8；
 // 不能预览（太大、不是普通文件、不是 UTF-8 文本）时 note 是原因。
 func readTab(p string) tabContent {
-	if isImage(p) {
+	if isRaster(p) {
 		return readImage(p)
 	}
 	text, info, err := tools.ReadText(context.Background(), p)
@@ -255,6 +256,7 @@ func (tb *fileTab) load(content tabContent) {
 	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.stat, content.img
 	tb.edited.forget() // 新的缓冲区，旧的缓存不能用
 	tb.md.forget()
+	tb.svg.forget()
 	tb.csv.forget()
 	if content.note != "" || content.img != nil {
 		tb.ed = nil
@@ -262,10 +264,10 @@ func (tb *fileTab) load(content tabContent) {
 	}
 	buf := editor.NewBuffer(content.text)
 	buf.SetLanguage(editor.LanguageFor(tb.path))
-	tb.render = isMarkdown(tb.path) || isCSV(tb.path)
+	tb.render = isMarkdown(tb.path) || isCSV(tb.path) || isSVG(tb.path)
 	tb.ed = &editor.State{
 		Buffer:   buf,
-		SoftWrap: (tb.render && isMarkdown(tb.path)) || strings.EqualFold(extOf(tb.path), ".txt"),
+		SoftWrap: (tb.render && isMarkdown(tb.path)) || extOf(tb.path) == ".txt",
 		Font:     codeFont, Label: filepath.Base(tb.path),
 		OnInput: func(ev ui.InputEvent) bool {
 			if ev.Kind == ui.InputKeyDown && ev.Mods == ui.Cmd && ev.Key == ui.KeyS {

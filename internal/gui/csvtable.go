@@ -28,7 +28,8 @@ type csvTable struct {
 // 解析出错时保留出错前读到的部分。
 func parseCSV(text string, comma rune) csvTable {
 	var table csvTable
-	r := csv.NewReader(strings.NewReader(text))
+	// Excel 导出的 CSV 常带 BOM，不去掉的话第一个表头会多一个看不见的字符。
+	r := csv.NewReader(strings.NewReader(strings.TrimPrefix(text, "\ufeff")))
 	r.Comma, r.FieldsPerRecord, r.LazyQuotes = comma, -1, true
 	for {
 		record, err := r.Read()
@@ -83,8 +84,6 @@ func csvComma(p string) rune {
 	}
 	return ','
 }
-
-// extOf 是路径的小写扩展名，带点。
 
 // note 返回表格没能完整显示的原因。
 func (t csvTable) note() string {

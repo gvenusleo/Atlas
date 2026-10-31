@@ -23,20 +23,36 @@ const (
 // errImageTooBig 说明图片文件超过了 imageMaxBytes，读的时候才发现。
 var errImageTooBig = errors.New("图片太大")
 
-// fileImageExts 是文件面板能查看的图片扩展名：imaging 解得了的位图格式，加上 SVG。
+// fileRasterExts 是文件面板按位图读取的图片扩展名，与 imaging 解得了的格式一致。
 // 附件的 imageExts（attach.go）是另一回事，那是能发给模型的图片。
-var fileImageExts = []string{"png", "jpg", "jpeg", "webp", "gif", "svg"}
+var fileRasterExts = []string{"png", "jpg", "jpeg", "webp", "gif"}
 
-// isImage 报告路径是不是文件面板能查看的图片。
-func isImage(p string) bool {
-	return slices.Contains(fileImageExts, strings.TrimPrefix(extOf(p), "."))
+// isRaster 报告路径是不是要按位图读取的图片。SVG 是可编辑的文本，走文本那条路，
+// 预览另算（parseSVG）。
+func isRaster(p string) bool {
+	return slices.Contains(fileRasterExts, strings.TrimPrefix(extOf(p), "."))
 }
 
 // isSVG 报告路径是不是 SVG。
 func isSVG(p string) bool { return extOf(p) == ".svg" }
 
-// readImage 读取并解码一个图片文件：位图按 EXIF 转正、长边缩到 imageEdge 以内，
-// SVG 解析成矢量。解码不便宜，调用方要放在后台。
+// svgImage 是把 SVG 文本解析成图的结果：src 不为空时画它，note 不为空时是解析失败的原因。
+type svgImage struct {
+	src  ui.ImageSource
+	note string
+}
+
+// parseSVG 把 SVG 文本解析成可以画的图。预览跟着缓冲区走，所以按文本解析，而不是按文件。
+func parseSVG(text string) svgImage {
+	svg, err := ui.ParseSVG([]byte(text))
+	if err != nil {
+		return svgImage{note: "无法解析 SVG：" + err.Error()}
+	}
+	return svgImage{src: svg}
+}
+
+// readImage 读取并解码一个位图：按 EXIF 转正，长边缩到 imageEdge 以内。
+// 解码不便宜，调用方要放在后台。
 func readImage(p string) tabContent {
 	info, err := os.Stat(p)
 	if err != nil {
@@ -55,15 +71,6 @@ func readImage(p string) tabContent {
 		return content
 	case err != nil:
 		content.note = noteOf(p, err)
-		return content
-	}
-	if isSVG(p) {
-		svg, err := ui.ParseSVG(data)
-		if err != nil {
-			content.note = "无法解析 SVG：" + err.Error()
-			return content
-		}
-		content.img = svg
 		return content
 	}
 	img, err := imaging.Decode(data, imageEdge)

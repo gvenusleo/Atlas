@@ -100,22 +100,29 @@ func (a *App) fileContent(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// fileHeader 画内容区顶部：路径，所在的目录淡一些、文件名在最后；Markdown 与 CSV/TSV
-// 在右端有渲染与源码的切换按钮。
+// fileHeader 画内容区顶部：路径，所在的目录淡一些、文件名在最后；能渲染的文件在右端有
+// 预览与源码的切换按钮。
 func fileHeader(c *ui.Context, t *ui.Theme, rel string, tb *fileTab) {
 	ui.Row(c).AlignItems(ui.Center).Padding(4, 8, 4, 14).Children(func() {
 		pathLabel(c, t, filepath.ToSlash(rel))
-		if tb.ed != nil && (isMarkdown(tb.path) || isCSV(tb.path)) {
-			glyph, label := codeIcon, "查看源码"
-			if !tb.render {
-				glyph, label = eyeIcon, "预览"
-				if isCSV(tb.path) {
-					label = "查看表格"
-				}
-			}
-			iconButton(c, t, glyph, label, barButton, func() { tb.render = !tb.render })
-		}
+		renderToggle(c, t, tb)
 	})
+}
+
+// renderToggle 是内容区右上角的按钮，在渲染后的样子（Markdown 与 SVG 的预览、CSV 的表格）
+// 与源码之间切换；只有源码一种视图的文件不画。
+func renderToggle(c *ui.Context, t *ui.Theme, tb *fileTab) {
+	if tb.ed == nil || !(isMarkdown(tb.path) || isSVG(tb.path) || isCSV(tb.path)) {
+		return
+	}
+	glyph, label := codeIcon, "查看源码"
+	if !tb.render {
+		glyph, label = eyeIcon, "预览"
+		if isCSV(tb.path) {
+			label = "查看表格"
+		}
+	}
+	iconButton(c, t, glyph, label, barButton, func() { tb.render = !tb.render })
 }
 
 // pathLabel 画一个文件的路径（用 / 分隔，相对工作目录）：所在的目录淡一些、文件名在最后；
@@ -166,7 +173,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.loading:
 		loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 	case tb.img != nil:
-		a.fileImage(c, tb)
+		imagePreview(c, tb.img, filepath.Base(tb.path))
 	case tb.ed == nil:
 		// 不能预览的文件：一句原因，以及在默认应用中打开的入口。
 		ui.Column(c).Gap(12).AlignItems(ui.Center).Margin(ui.Auto).Children(func() {
@@ -179,6 +186,8 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		})
 	case tb.render && isCSV(tb.path):
 		a.fileTable(c, t, tb)
+	case tb.render && isSVG(tb.path):
+		a.svgPreview(c, t, tb)
 	case tb.render:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
@@ -194,15 +203,26 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	}
 }
 
-// fileImage 画标签里的图片：按面板宽度等比缩放，不放大。
-func (a *App) fileImage(c *ui.Context, tb *fileTab) {
-	w, _ := ui.ImageSize(tb.img)
-	name := filepath.Base(tb.path)
+// imagePreview 在可滚动区域里画一张图：按面板宽度等比缩放，不放大。
+func imagePreview(c *ui.Context, src ui.ImageSource, name string) {
+	w, _ := ui.ImageSize(src)
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Padding(imageInset).Children(func() {
-			ui.Image(c, tb.img).FillWidth().MaxWidth(w).Radius(boxRound).Label(name)
+			ui.Image(c, src).FillWidth().MaxWidth(w).Radius(boxRound).Label(name)
 		})
 	})
+}
+
+// svgPreview 画 SVG 的预览：从缓冲区里的文本解析，改了源码预览跟着变。
+func (a *App) svgPreview(c *ui.Context, t *ui.Theme, tb *fileTab) {
+	img := tb.svg.get(tb.ed.Buffer.Version(), func() svgImage {
+		return parseSVG(tb.ed.Buffer.String())
+	})
+	if img.note != "" {
+		ui.Text(c, img.note).FontSize(smallSize).TextColor(t.TextMuted).Padding(8, 14)
+		return
+	}
+	imagePreview(c, img.src, filepath.Base(tb.path))
 }
 
 // fileTable 画 CSV/TSV 的表格：首行作表头，只建视口里的行。解析结果按缓冲区版本缓存，
