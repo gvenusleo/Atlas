@@ -5,14 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
-	"strconv"
 	"strings"
-
-	"github.com/egoist/mygo/ui"
 )
 
-// CSV 解析的上限：再大就不是用来看的了，源码视图仍然完整。
+// CSV 解析的上限：再大就不是用来查看的了，源码视图仍然完整。
 const (
 	csvMaxRows = 2000
 	csvMaxCols = 64
@@ -21,10 +17,11 @@ const (
 // csvTable 是一个 CSV/TSV 文件解析出来的表格：head 是第一行，其后是数据行；
 // 解析失败或截断时 note 说明原因。
 type csvTable struct {
-	head      []string
-	rows      [][]string
-	err       string
-	truncated bool
+	head    []string
+	rows    [][]string
+	err     string
+	rowsCut bool // 行数超过上限，只取了一部分
+	colsCut bool // 列数超过上限，每行只取了一部分
 }
 
 // parseCSV 把文本解析成表格：第一行作表头，行宽不齐也照收，引号不严也照收。
@@ -43,13 +40,13 @@ func parseCSV(text string, comma rune) csvTable {
 			return table
 		}
 		record, cut := cutRow(record)
-		table.truncated = table.truncated || cut
+		table.colsCut = table.colsCut || cut
 		if table.head == nil {
 			table.head = record
 			continue
 		}
 		if len(table.rows) == csvMaxRows {
-			table.truncated = true
+			table.rowsCut = true
 			return table
 		}
 		table.rows = append(table.rows, record)
@@ -62,6 +59,15 @@ func cutRow(record []string) ([]string, bool) {
 		return record, false
 	}
 	return record[:csvMaxCols], true
+}
+
+// width 是表格的列数：取表头与最宽的数据行里大的那个，行比表头宽时不丢数据。
+func (t csvTable) width() int {
+	n := len(t.head)
+	for _, row := range t.rows {
+		n = max(n, len(row))
+	}
+	return n
 }
 
 // isCSV 报告路径是不是 CSV 或 TSV。
@@ -79,24 +85,18 @@ func csvComma(p string) rune {
 }
 
 // extOf 是路径的小写扩展名，带点。
-func extOf(p string) string { return strings.ToLower(filepath.Ext(p)) }
-
-// columns 把表头变成表格的列：标识用序号，表头可能是空的或重复的。
-func (t csvTable) columns() []ui.TableColumn {
-	cols := make([]ui.TableColumn, len(t.head))
-	for i, title := range t.head {
-		cols[i] = ui.TableColumn{Title: title, ID: strconv.Itoa(i)}
-	}
-	return cols
-}
 
 // note 返回表格没能完整显示的原因。
 func (t csvTable) note() string {
 	switch {
 	case t.err != "":
 		return "无法解析为表格：" + t.err + "，可以查看源码。"
-	case t.truncated:
+	case t.rowsCut && t.colsCut:
 		return fmt.Sprintf("表格只显示前 %d 行、每行前 %d 列。", csvMaxRows, csvMaxCols)
+	case t.rowsCut:
+		return fmt.Sprintf("表格只显示前 %d 行。", csvMaxRows)
+	case t.colsCut:
+		return fmt.Sprintf("每行只显示前 %d 列。", csvMaxCols)
 	}
 	return ""
 }

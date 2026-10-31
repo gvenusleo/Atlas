@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -68,6 +69,9 @@ func relOrAbs(cwd, p string) string {
 // skipped 报告文件树不显示的名字：.git 目录与 macOS 自动生成的 .DS_Store。
 // 文件树与路径列表共用，两处的口径一致。
 func skipped(name string) bool { return name == ".git" || name == ".DS_Store" }
+
+// extOf 是路径的小写扩展名，带点。
+func extOf(p string) string { return strings.ToLower(filepath.Ext(p)) }
 
 // listPaths 列出工作目录下的文件与目录，供补全消息里的 @ 引用与文件面板的筛选：路径相对
 // 工作目录、用 / 分隔，目录以 / 结尾。自浅入深遍历，超过 walkLimit 时只列到浅处；

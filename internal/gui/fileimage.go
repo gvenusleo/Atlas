@@ -1,7 +1,9 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,12 +20,16 @@ const (
 	imageEdge     = 2048
 )
 
-// isImage 报告路径是不是文件面板能查看的图片：attach 认的位图格式，加上 SVG。
+// errImageTooBig 说明图片文件超过了 imageMaxBytes，读的时候才发现。
+var errImageTooBig = errors.New("图片太大")
+
+// fileImageExts 是文件面板能查看的图片扩展名：imaging 解得了的位图格式，加上 SVG。
+// 附件的 imageExts（attach.go）是另一回事，那是能发给模型的图片。
+var fileImageExts = []string{"png", "jpg", "jpeg", "webp", "gif", "svg"}
+
+// isImage 报告路径是不是文件面板能查看的图片。
 func isImage(p string) bool {
-	if isSVG(p) {
-		return true
-	}
-	return slices.Contains(imageExts, strings.TrimPrefix(extOf(p), "."))
+	return slices.Contains(fileImageExts, strings.TrimPrefix(extOf(p), "."))
 }
 
 // isSVG 报告路径是不是 SVG。
@@ -34,21 +40,21 @@ func isSVG(p string) bool { return extOf(p) == ".svg" }
 func readImage(p string) tabContent {
 	info, err := os.Stat(p)
 	if err != nil {
-		return tabContent{note: fileName(p, err)}
+		return tabContent{note: noteOf(p, err)}
 	}
-	content := tabContent{st: fileStat{mtime: info.ModTime(), size: info.Size()}}
-	switch {
-	case !info.Mode().IsRegular():
+	content := tabContent{stat: fileStat{mtime: info.ModTime(), size: info.Size()}}
+	if !info.Mode().IsRegular() {
 		content.note = filepath.Base(p) + " 不是普通文件"
 		return content
-	case info.Size() > imageMaxBytes:
+	}
+	data, err := readImageData(p)
+	switch {
+	case errors.Is(err, errImageTooBig):
 		content.note = fmt.Sprintf("%s 文件大小超过 %d MiB 限制",
 			filepath.Base(p), imageMaxBytes>>20)
 		return content
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		content.note = fileName(p, err)
+	case err != nil:
+		content.note = noteOf(p, err)
 		return content
 	}
 	if isSVG(p) {
@@ -69,7 +75,21 @@ func readImage(p string) tabContent {
 	return content
 }
 
-// fileName 把错误里的完整路径换成文件名，内容区里放不下完整路径。
-func fileName(p string, err error) string {
+// readImageData 读取图片文件。文件可能在 Stat 之后长大，所以读取本身也要有上限。
+func readImageData(p string) ([]byte, error) {
+	file, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, imageMaxBytes+1))
+	if err == nil && len(data) > imageMaxBytes {
+		return nil, errImageTooBig
+	}
+	return data, err
+}
+
+// noteOf 把错误里的完整路径换成文件名，内容区里放不下完整路径。
+func noteOf(p string, err error) string {
 	return strings.ReplaceAll(err.Error(), p, filepath.Base(p))
 }

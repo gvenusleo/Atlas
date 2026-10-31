@@ -123,7 +123,7 @@ func (tb *fileTab) reload(content tabContent, force bool) {
 	case tb.ed != nil && content.note == "" && content.img == nil:
 		tb.ed.Buffer.Reset(content.text)
 		tb.edited.forget()
-		tb.stat, tb.changed, tb.gone = content.st, false, false
+		tb.stat, tb.changed, tb.gone = content.stat, false, false
 	default: // 以前不能预览现在可以，或现在不能预览了：重新建
 		tb.load(content)
 		tb.changed, tb.gone = false, false

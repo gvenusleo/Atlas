@@ -81,7 +81,7 @@ type fileStat struct {
 type tabContent struct {
 	text string
 	img  ui.ImageSource
-	st   fileStat
+	stat fileStat
 	note string
 }
 
@@ -235,24 +235,24 @@ func readTab(p string) tabContent {
 	text, info, err := tools.ReadText(context.Background(), p)
 	content := tabContent{text: text}
 	if info != nil {
-		content.st = fileStat{mtime: info.ModTime(), size: info.Size()}
+		content.stat = fileStat{mtime: info.ModTime(), size: info.Size()}
 	}
 	if err != nil {
-		content.text, content.note = "", fileName(p, err)
+		content.text, content.note = "", noteOf(p, err)
 	}
 	return content
 }
 
 // isMarkdown 报告路径是不是 Markdown 文件。
 func isMarkdown(p string) bool {
-	ext := strings.ToLower(filepath.Ext(p))
+	ext := extOf(p)
 	return ext == ".md" || ext == ".markdown"
 }
 
 // load 在文件读完后建出编辑器或记下图片；note 不空时不能预览。Markdown 与 CSV/TSV 先
 // 显示渲染后的样子，Markdown 与纯文本自动换行。
 func (tb *fileTab) load(content tabContent) {
-	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.st, content.img
+	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.stat, content.img
 	tb.edited.forget() // 新的缓冲区，旧的缓存不能用
 	tb.md.forget()
 	tb.csv.forget()

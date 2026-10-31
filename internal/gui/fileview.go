@@ -13,6 +13,9 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 )
 
+// imageInset 是文件面板里图片四周的留白。
+const imageInset = 16
+
 // filesCard 是右侧栏里的文件面板卡片：顶部是标签栏，其下左边是文件树，右边是当前标签的内容。
 func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
 	fp := ch.files
@@ -157,9 +160,6 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	})
 }
 
-// imageInset 是文件面板里图片四周的留白。
-const imageInset = 16
-
 // fileBody 画标签的内容：读取中、图片、不能预览的原因、表格、Markdown 的预览，或编辑器。
 func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	switch {
@@ -178,7 +178,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 			}
 		})
 	case tb.render && isCSV(tb.path):
-		a.csvView(c, t, tb)
+		a.fileTable(c, t, tb)
 	case tb.render:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
@@ -194,39 +194,35 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	}
 }
 
-// fileImage 画标签里的图片：在可滚动区域里按比例缩到面板宽度以内，不放大。
-// 缩放按上一帧量到的宽度算，第一帧还不知道时就先不画，免得先把面板撑宽。
+// fileImage 画标签里的图片：按面板宽度等比缩放，不放大。
 func (a *App) fileImage(c *ui.Context, tb *fileTab) {
-	w, h := ui.ImageSize(tb.img)
+	w, _ := ui.ImageSize(tb.img)
+	name := filepath.Base(tb.path)
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		box := ui.Column(c).Padding(imageInset).ClipX()
-		room := box.Bounds().W - 2*imageInset
-		if room <= 0 || w <= 0 {
-			return
-		}
-		scale := min(1, room/w)
-		name := filepath.Base(tb.path)
-		box.Children(func() {
-			ui.Image(c, tb.img).Size(w*scale, h*scale).Radius(boxRound).Label(name)
+		ui.Column(c).Padding(imageInset).Children(func() {
+			ui.Image(c, tb.img).FillWidth().MaxWidth(w).Radius(boxRound).Label(name)
 		})
 	})
 }
 
-// csvView 画 CSV/TSV 的表格：首行作表头，只建视口里的行。解析结果按缓冲区版本缓存，
-// 改过源码再切回来就是新的。
-func (a *App) csvView(c *ui.Context, t *ui.Theme, tb *fileTab) {
+// fileTable 画 CSV/TSV 的表格：首行作表头，只建视口里的行。解析结果按缓冲区版本缓存，
+// 在源码里改过、切回来就是新的。
+func (a *App) fileTable(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	table := tb.csv.get(tb.ed.Buffer.Version(), func() csvTable {
 		return parseCSV(tb.ed.Buffer.String(), csvComma(tb.path))
 	})
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-		if note := table.note(); note != "" {
+		note := table.note()
+		if note != "" {
 			ui.Text(c, note).FontSize(smallSize).TextColor(t.TextMuted).Padding(6, 14)
 		}
 		if len(table.head) == 0 {
-			ui.Text(c, "文件是空的。").FontSize(textSize).TextColor(t.TextMuted).Margin(ui.Auto)
-			return
+			if note == "" {
+				ui.Text(c, "文件是空的。").FontSize(textSize).TextColor(t.TextMuted).Margin(ui.Auto)
+			}
+			return // 解析就失败了，原因上面已经写过
 		}
-		ui.Table(c, &tb.table, table.columns(), len(table.rows), func(row, col int) {
+		ui.Table(c, &tb.table, tableColumns(table), len(table.rows), func(row, col int) {
 			cell := ""
 			if col < len(table.rows[row]) {
 				cell = table.rows[row][col]
@@ -234,6 +230,20 @@ func (a *App) csvView(c *ui.Context, t *ui.Theme, tb *fileTab) {
 			ui.Text(c, cell).SingleLine()
 		}).Grow(1).MinHeight(0)
 	})
+}
+
+// tableColumns 把表头变成表格的列：标识用序号，表头可能有空的或重复的；数据行比表头宽时
+// 后面的列没有标题。
+func tableColumns(table csvTable) []ui.TableColumn {
+	cols := make([]ui.TableColumn, table.width())
+	for i := range cols {
+		title := ""
+		if i < len(table.head) {
+			title = table.head[i]
+		}
+		cols[i] = ui.TableColumn{Title: title, ID: strconv.Itoa(i)}
+	}
+	return cols
 }
 
 // emptyFiles 是没有打开文件时内容区的说明。
