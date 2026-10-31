@@ -6,11 +6,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
 )
+
+// imageInset 是文件面板里图片四周的留白。
+const imageInset = 16
 
 // filesCard 是右侧栏里的文件面板卡片：顶部是标签栏，其下左边是文件树，右边是当前标签的内容。
 func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
@@ -96,19 +100,29 @@ func (a *App) fileContent(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// fileHeader 画内容区顶部：路径，所在的目录淡一些、文件名在最后；Markdown 文件在右端有预览与
-// 源码的切换按钮。
+// fileHeader 画内容区顶部：路径，所在的目录淡一些、文件名在最后；能渲染的文件在右端有
+// 预览与源码的切换按钮。
 func fileHeader(c *ui.Context, t *ui.Theme, rel string, tb *fileTab) {
 	ui.Row(c).AlignItems(ui.Center).Padding(4, 8, 4, 14).Children(func() {
 		pathLabel(c, t, filepath.ToSlash(rel))
-		if tb.ed != nil && isMarkdown(tb.path) {
-			glyph, label := codeIcon, "查看源码"
-			if !tb.preview {
-				glyph, label = eyeIcon, "预览"
-			}
-			iconButton(c, t, glyph, label, barButton, func() { tb.preview = !tb.preview })
-		}
+		renderToggle(c, t, tb)
 	})
+}
+
+// renderToggle 是内容区右上角的按钮，在渲染后的样子（Markdown 与 SVG 的预览、CSV 的表格）
+// 与源码之间切换；只有源码一种视图的文件不画。
+func renderToggle(c *ui.Context, t *ui.Theme, tb *fileTab) {
+	if tb.ed == nil || !(isMarkdown(tb.path) || isSVG(tb.path) || isCSV(tb.path)) {
+		return
+	}
+	glyph, label := codeIcon, "查看源码"
+	if !tb.render {
+		glyph, label = eyeIcon, "预览"
+		if isCSV(tb.path) {
+			label = "查看表格"
+		}
+	}
+	iconButton(c, t, glyph, label, barButton, func() { tb.render = !tb.render })
 }
 
 // pathLabel 画一个文件的路径（用 / 分隔，相对工作目录）：所在的目录淡一些、文件名在最后；
@@ -153,15 +167,28 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	})
 }
 
-// fileBody 画标签的内容：读取中、不能预览的原因、Markdown 的预览，或编辑器。
+// fileBody 画标签的内容：读取中、图片、不能预览的原因、表格、Markdown 的预览，或编辑器。
 func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	switch {
 	case tb.loading:
 		loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
+	case tb.img != nil:
+		imagePreview(c, tb.img, filepath.Base(tb.path))
 	case tb.ed == nil:
-		ui.Text(c, tb.note).FontSize(textSize).TextColor(t.TextMuted).TextAlign(ui.Center).
-			Margin(ui.Auto)
-	case tb.preview:
+		// 不能预览的文件：一句原因，以及在默认应用中打开的入口。
+		ui.Column(c).Gap(12).AlignItems(ui.Center).Margin(ui.Auto).Children(func() {
+			ui.Text(c, tb.note).FontSize(textSize).TextColor(t.TextMuted).TextAlign(ui.Center)
+			if ui.Button(c, "在默认应用中打开").Disabled(tb.gone).Clicked() {
+				if err := mygo.Shell.OpenPath(tb.path); err != nil {
+					a.toast = "打开失败：" + err.Error()
+				}
+			}
+		})
+	case tb.render && isCSV(tb.path):
+		a.fileTable(c, t, tb)
+	case tb.render && isSVG(tb.path):
+		a.svgPreview(c, t, tb)
+	case tb.render:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
 				markdown.View(c, tb.previewText(), &a.mdFile)
@@ -174,6 +201,85 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		tb.ed.Font = codeFont
 		editor.View(c, tb.ed).Grow(1).MinHeight(0)
 	}
+}
+
+// imagePreview 在可滚动区域里画一张图：按面板宽度等比缩放，不放大。
+func imagePreview(c *ui.Context, src ui.ImageSource, name string) {
+	w, _ := ui.ImageSize(src)
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Column(c).Padding(imageInset).Children(func() {
+			ui.Image(c, src).FillWidth().MaxWidth(w).Radius(boxRound).Label(name)
+		})
+	})
+}
+
+// svgPreview 画 SVG 的预览：从缓冲区里的文本解析，改了源码预览跟着变。
+func (a *App) svgPreview(c *ui.Context, t *ui.Theme, tb *fileTab) {
+	img := tb.svg.get(tb.ed.Buffer.Version(), func() svgImage {
+		return parseSVG(tb.ed.Buffer.String())
+	})
+	if img.note != "" {
+		ui.Text(c, img.note).FontSize(smallSize).TextColor(t.TextMuted).Padding(8, 14)
+		return
+	}
+	imagePreview(c, img.src, filepath.Base(tb.path))
+}
+
+// fileTable 画 CSV/TSV 的表格：首行作表头，只建视口里的行。解析结果按缓冲区版本缓存，
+// 在源码里改过、切回来就是新的；排序只改显示顺序，不碰缓冲区。
+func (a *App) fileTable(c *ui.Context, t *ui.Theme, tb *fileTab) {
+	table := tb.csv.get(tb.ed.Buffer.Version(), func() csvTable {
+		return parseCSV(tb.ed.Buffer.String(), csvComma(tb.path))
+	})
+	tb.table.Sort = &tb.sort
+	if tb.sorted != tb.sort {
+		// 排序变了就读回表头：排完还停在原处，看到的既不是开头也不是刚才那一行。
+		tb.sorted = tb.sort
+		tb.table.ScrollTo(0, ui.Start)
+	}
+	key := orderKey{
+		version:    tb.ed.Buffer.Version(),
+		column:     tb.sort.Column,
+		descending: tb.sort.Descending,
+	}
+	order := tb.order.get(key, func() []int {
+		col, err := strconv.Atoi(tb.sort.Column)
+		if err != nil {
+			col = -1
+		}
+		return table.order(col, tb.sort.Descending)
+	})
+	tb.table.Key = func(row int) any { return order[row] }
+	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
+		note := table.note()
+		if note != "" {
+			ui.Text(c, note).FontSize(smallSize).TextColor(t.TextMuted).Padding(6, 14)
+		}
+		if len(table.head) == 0 {
+			if note == "" {
+				ui.Text(c, "文件是空的。").FontSize(textSize).TextColor(t.TextMuted).Margin(ui.Auto)
+			}
+			return // 解析就失败了，原因上面已经写过
+		}
+		// 顶上的那条线把表格与上面的内容分开，表头下面的一条是表格自己的。
+		ui.Table(c, &tb.table, tableColumns(table), len(order), func(row, col int) {
+			ui.Text(c, table.cell(order[row], col)).SingleLine()
+		}).Grow(1).MinHeight(0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
+	})
+}
+
+// tableColumns 把表头变成表格的列：标识用序号，表头可能有空的或重复的；数据行比表头宽时
+// 后面的列没有标题。列可以排序。
+func tableColumns(table csvTable) []ui.TableColumn {
+	cols := make([]ui.TableColumn, table.width())
+	for i := range cols {
+		title := ""
+		if i < len(table.head) {
+			title = table.head[i]
+		}
+		cols[i] = ui.TableColumn{Title: title, ID: strconv.Itoa(i), Sortable: true}
+	}
+	return cols
 }
 
 // emptyFiles 是没有打开文件时内容区的说明。

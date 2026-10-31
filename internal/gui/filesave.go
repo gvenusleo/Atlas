@@ -109,23 +109,23 @@ func (a *App) syncTab(tb *fileTab) {
 // reloadTab 在后台重新读入标签的文件；force 为真时丢掉未保存的修改。
 func (a *App) reloadTab(tb *fileTab, force bool) {
 	go func() {
-		text, st, note := readTab(tb.path)
-		a.win.Update(func() { tb.reload(text, st, note, force) })
+		content := readTab(tb.path)
+		a.win.Update(func() { tb.reload(content, force) })
 	}()
 }
 
 // reload 用重新读到的内容换掉标签里的。force 为假时，读的时候用户又改了就不换，
 // 改成提示冲突。
-func (tb *fileTab) reload(text string, st fileStat, note string, force bool) {
+func (tb *fileTab) reload(content tabContent, force bool) {
 	switch {
 	case tb.ed != nil && !force && tb.dirty():
 		tb.changed = true
-	case tb.ed != nil && note == "":
-		tb.ed.Buffer.Reset(text)
+	case tb.ed != nil && content.note == "" && content.img == nil:
+		tb.ed.Buffer.Reset(content.text)
 		tb.edited.forget()
-		tb.stat, tb.changed, tb.gone = st, false, false
+		tb.stat, tb.changed, tb.gone = content.stat, false, false
 	default: // 以前不能预览现在可以，或现在不能预览了：重新建
-		tb.load(text, st, note)
+		tb.load(content)
 		tb.changed, tb.gone = false, false
 	}
 }

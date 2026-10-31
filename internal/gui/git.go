@@ -204,8 +204,11 @@ func fillCounts(files []fileChange, numstat string) {
 }
 
 // readChange 读出一个更改前后的文本：前是 HEAD 里的，后是磁盘上的；新增的前为空，删除的后为空。
-// 不能显示（太大、不是 UTF-8 文本）时 note 是原因。
+// 不能显示（图片、太大、不是 UTF-8 文本）时 note 是原因。
 func readChange(cwd string, c fileChange, hasHead bool) (before, after, note string) {
+	if isRaster(c.path) {
+		return "", "", "图片，不显示更改。"
+	}
 	if c.kind != changeAdded && hasHead {
 		ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 		defer cancel()
@@ -221,9 +224,11 @@ func readChange(cwd string, c fileChange, hasHead bool) (before, after, note str
 		before = string(out)
 	}
 	if c.kind != changeDeleted {
-		if after, _, note = readTab(filepath.Join(cwd, c.path)); note != "" {
-			return "", "", note
+		content := readTab(filepath.Join(cwd, c.path))
+		if content.note != "" {
+			return "", "", content.note
 		}
+		after = content.text
 	}
 	return before, after, ""
 }
