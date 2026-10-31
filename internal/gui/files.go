@@ -63,9 +63,11 @@ type fileTab struct {
 	gone    bool     // 文件在磁盘上没了
 	err     string   // 最近一次保存失败的原因
 
-	preview bool                 // Markdown：显示渲染后的预览，否则是源码
-	edited  memo[uint64, bool]   // 有没有未保存的修改，按缓冲区的 version 缓存
-	md      memo[uint64, string] // Markdown 预览用的文本，按缓冲区的 version 缓存
+	render bool                   // 显示渲染后的样子（Markdown 预览、CSV 表格），否则是源码
+	edited memo[uint64, bool]     // 有没有未保存的修改，按缓冲区的 version 缓存
+	md     memo[uint64, string]   // Markdown 预览用的文本，按缓冲区的 version 缓存
+	csv    memo[uint64, csvTable] // 表格，按缓冲区的 version 缓存
+	table  ui.ListState           // 表格视图的选中与滚动
 }
 
 // fileStat 是磁盘上一个文件的修改时间与大小，一样就当作没有变过。
@@ -247,22 +249,24 @@ func isMarkdown(p string) bool {
 	return ext == ".md" || ext == ".markdown"
 }
 
-// load 在文件读完后建出编辑器或记下图片；note 不空时不能预览。Markdown 先显示预览，
-// Markdown 与纯文本自动换行。
+// load 在文件读完后建出编辑器或记下图片；note 不空时不能预览。Markdown 与 CSV/TSV 先
+// 显示渲染后的样子，Markdown 与纯文本自动换行。
 func (tb *fileTab) load(content tabContent) {
 	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.st, content.img
 	tb.edited.forget() // 新的缓冲区，旧的缓存不能用
 	tb.md.forget()
+	tb.csv.forget()
 	if content.note != "" || content.img != nil {
 		tb.ed = nil
 		return
 	}
 	buf := editor.NewBuffer(content.text)
 	buf.SetLanguage(editor.LanguageFor(tb.path))
-	tb.preview = isMarkdown(tb.path)
+	tb.render = isMarkdown(tb.path) || isCSV(tb.path)
 	tb.ed = &editor.State{
-		Buffer: buf, SoftWrap: tb.preview || strings.EqualFold(filepath.Ext(tb.path), ".txt"),
-		Font: codeFont, Label: filepath.Base(tb.path),
+		Buffer:   buf,
+		SoftWrap: (tb.render && isMarkdown(tb.path)) || strings.EqualFold(extOf(tb.path), ".txt"),
+		Font:     codeFont, Label: filepath.Base(tb.path),
 		OnInput: func(ev ui.InputEvent) bool {
 			if ev.Kind == ui.InputKeyDown && ev.Mods == ui.Cmd && ev.Key == ui.KeyS {
 				tb.onSave()

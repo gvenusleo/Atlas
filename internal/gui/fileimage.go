@@ -23,11 +23,11 @@ func isImage(p string) bool {
 	if isSVG(p) {
 		return true
 	}
-	return slices.Contains(imageExts, strings.ToLower(strings.TrimPrefix(filepath.Ext(p), ".")))
+	return slices.Contains(imageExts, strings.TrimPrefix(extOf(p), "."))
 }
 
 // isSVG 报告路径是不是 SVG。
-func isSVG(p string) bool { return strings.EqualFold(filepath.Ext(p), ".svg") }
+func isSVG(p string) bool { return extOf(p) == ".svg" }
 
 // readImage 读取并解码一个图片文件：位图按 EXIF 转正、长边缩到 imageEdge 以内，
 // SVG 解析成矢量。解码不便宜，调用方要放在后台。
