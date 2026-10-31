@@ -50,10 +50,11 @@ type fileEntry struct {
 // fileTab 是文件面板里打开的一个文件。
 type fileTab struct {
 	id      int
-	path    string        // 绝对路径
-	loading bool          // 还在读
-	ed      *editor.State // 文本的编辑器；不能预览时为空
-	note    string        // 不能预览的原因
+	path    string         // 绝对路径
+	loading bool           // 还在读
+	ed      *editor.State  // 文本的编辑器；不能预览、或是图片时为空
+	img     ui.ImageSource // 图片；文本与不能预览时为空
+	note    string         // 不能预览的原因
 
 	onSave  func()   // 保存这个标签的文件，在编辑器里按 Cmd+S 时调用
 	stat    fileStat // 打开或保存时磁盘上的文件，用来发现外部修改
@@ -71,6 +72,15 @@ type fileTab struct {
 type fileStat struct {
 	mtime time.Time
 	size  int64
+}
+
+// tabContent 是读一个文件的结果：文本进编辑器，img 不为空时是图片，note 不为空时是
+// 不能预览的原因；三者只有一项成立。
+type tabContent struct {
+	text string
+	img  ui.ImageSource
+	st   fileStat
+	note string
 }
 
 // same 报告磁盘上的文件 info 与 s 一样。
@@ -201,8 +211,8 @@ func (a *App) openFile(ch *chat, rel string) {
 	fp.tabs = append(fp.tabs, tb)
 	fp.active, fp.reveal = len(fp.tabs)-1, tb.id
 	go func() {
-		text, st, note := readTab(abs)
-		a.win.Update(func() { tb.load(text, st, note) })
+		content := readTab(abs)
+		a.win.Update(func() { tb.load(content) })
 	}()
 }
 
@@ -214,18 +224,21 @@ func (a *App) showFile(ch *chat, rel string) {
 	a.openFile(ch, rel)
 }
 
-// readTab 读取标签的文件，st 是读它之前它在磁盘上的样子；不能预览（太大、不是普通文件、
-// 不是 UTF-8 文本）时 note 是原因。
-func readTab(p string) (text string, st fileStat, note string) {
+// readTab 读取标签的文件，st 是读它之前它在磁盘上的样子。图片解码，文本读成 UTF-8；
+// 不能预览（太大、不是普通文件、不是 UTF-8 文本）时 note 是原因。
+func readTab(p string) tabContent {
+	if isImage(p) {
+		return readImage(p)
+	}
 	text, info, err := tools.ReadText(context.Background(), p)
+	content := tabContent{text: text}
 	if info != nil {
-		st = fileStat{info.ModTime(), info.Size()}
+		content.st = fileStat{mtime: info.ModTime(), size: info.Size()}
 	}
 	if err != nil {
-		// 错误里的完整路径在内容区太长，换成文件名。
-		return "", st, strings.ReplaceAll(err.Error(), p, filepath.Base(p))
+		content.text, content.note = "", fileName(p, err)
 	}
-	return text, st, ""
+	return content
 }
 
 // isMarkdown 报告路径是不是 Markdown 文件。
@@ -234,17 +247,17 @@ func isMarkdown(p string) bool {
 	return ext == ".md" || ext == ".markdown"
 }
 
-// load 在文件读完后建出编辑器；note 不空时不能预览。Markdown 先显示预览，Markdown 与
-// 纯文本自动换行。
-func (tb *fileTab) load(text string, st fileStat, note string) {
-	tb.loading, tb.note, tb.stat = false, note, st
+// load 在文件读完后建出编辑器或记下图片；note 不空时不能预览。Markdown 先显示预览，
+// Markdown 与纯文本自动换行。
+func (tb *fileTab) load(content tabContent) {
+	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.st, content.img
 	tb.edited.forget() // 新的缓冲区，旧的缓存不能用
 	tb.md.forget()
-	if note != "" {
+	if content.note != "" || content.img != nil {
 		tb.ed = nil
 		return
 	}
-	buf := editor.NewBuffer(text)
+	buf := editor.NewBuffer(content.text)
 	buf.SetLanguage(editor.LanguageFor(tb.path))
 	tb.preview = isMarkdown(tb.path)
 	tb.ed = &editor.State{

@@ -221,9 +221,14 @@ func readChange(cwd string, c fileChange, hasHead bool) (before, after, note str
 		before = string(out)
 	}
 	if c.kind != changeDeleted {
-		if after, _, note = readTab(filepath.Join(cwd, c.path)); note != "" {
-			return "", "", note
+		content := readTab(filepath.Join(cwd, c.path))
+		switch {
+		case content.note != "":
+			return "", "", content.note
+		case content.img != nil:
+			return "", "", "图片，不显示更改。"
 		}
+		after = content.text
 	}
 	return before, after, ""
 }

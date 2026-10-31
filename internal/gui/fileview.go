@@ -154,11 +154,16 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	})
 }
 
+// imageInset 是文件面板里图片四周的留白。
+const imageInset = 16
+
 // fileBody 画标签的内容：读取中、图片、不能预览的原因、Markdown 的预览，或编辑器。
 func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	switch {
 	case tb.loading:
 		loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
+	case tb.img != nil:
+		a.fileImage(c, tb)
 	case tb.ed == nil:
 		// 不能预览的文件：一句原因，以及在默认应用中打开的入口。
 		ui.Column(c).Gap(12).AlignItems(ui.Center).Margin(ui.Auto).Children(func() {
@@ -182,6 +187,23 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		tb.ed.Font = codeFont
 		editor.View(c, tb.ed).Grow(1).MinHeight(0)
 	}
+}
+
+// fileImage 画标签里的图片：在可滚动区域里按比例缩到面板宽度以内，不放大。
+// 缩放按上一帧量到的宽度算，第一帧还不知道时就先不画，免得先把面板撑宽。
+func (a *App) fileImage(c *ui.Context, tb *fileTab) {
+	w, h := ui.ImageSize(tb.img)
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		box := ui.Column(c).Padding(imageInset).ClipX()
+		room := box.Bounds().W - 2*imageInset
+		if room <= 0 || w <= 0 {
+			return
+		}
+		scale := min(1, room/w)
+		box.Children(func() {
+			ui.Image(c, tb.img).Size(w*scale, h*scale).Radius(boxRound).Label(filepath.Base(tb.path))
+		})
+	})
 }
 
 // emptyFiles 是没有打开文件时内容区的说明。
