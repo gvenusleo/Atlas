@@ -68,13 +68,23 @@ type fileTab struct {
 	md     memo[uint64, string]   // Markdown 预览用的文本，按缓冲区的 version 缓存
 	svg    memo[uint64, svgImage] // SVG 解析出来的图，按缓冲区的 version 缓存
 	csv    memo[uint64, csvTable] // 表格，按缓冲区的 version 缓存
+	order  memo[orderKey, []int]  // 表格要显示的行号，按内容与排序缓存
 	table  ui.ListState           // 表格视图的选中与滚动
+	sort   ui.SortOrder           // 表格按哪一列排，零值是不排
+	sorted ui.SortOrder           // 表格现在按哪个排序显示，用来发现排序变了
 }
 
 // fileStat 是磁盘上一个文件的修改时间与大小，一样就当作没有变过。
 type fileStat struct {
 	mtime time.Time
 	size  int64
+}
+
+// orderKey 是显示顺序的缓存键：内容变了或者排序变了才重排。
+type orderKey struct {
+	version    uint64
+	column     string
+	descending bool
 }
 
 // tabContent 是读一个文件的结果：文本进编辑器，img 不为空时是图片，note 不为空时是
@@ -258,6 +268,7 @@ func (tb *fileTab) load(content tabContent) {
 	tb.md.forget()
 	tb.svg.forget()
 	tb.csv.forget()
+	tb.order.forget()
 	if content.note != "" || content.img != nil {
 		tb.ed = nil
 		return

@@ -1,10 +1,14 @@
 package gui
 
 import (
+	"cmp"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -69,6 +73,67 @@ func (t csvTable) width() int {
 		n = max(n, len(row))
 	}
 	return n
+}
+
+// cell 返回第 row 行第 col 列的文字，行不够长时为空。
+func (t csvTable) cell(row, col int) string {
+	if row < 0 || row >= len(t.rows) || col < 0 || col >= len(t.rows[row]) {
+		return ""
+	}
+	return t.rows[row][col]
+}
+
+// order 返回要显示的行号：col 为负时就是原文件的顺序，否则按该列排，相同的值保持原文件的
+// 顺序。一列里只要有一个非空的值不是数字，整列就按文字比，免得同一列里两种比法打架。
+func (t csvTable) order(col int, descending bool) []int {
+	order := make([]int, len(t.rows))
+	for i := range order {
+		order[i] = i
+	}
+	if col < 0 {
+		return order
+	}
+	numeric := t.numbers(col)
+	slices.SortStableFunc(order, func(a, b int) int {
+		n := t.compare(a, b, col, numeric)
+		if descending {
+			n = -n
+		}
+		return n
+	})
+	return order
+}
+
+// compare 比较两行在第 col 列上的值：numeric 为真时按数字比，否则按文字比。
+func (t csvTable) compare(a, b, col int, numeric bool) int {
+	x, y := t.cell(a, col), t.cell(b, col)
+	if !numeric {
+		return strings.Compare(x, y)
+	}
+	return cmp.Compare(number(x), number(y))
+}
+
+// numbers 报告第 col 列是不是数字列：非空的单元格都能读成数字。
+func (t csvTable) numbers(col int) bool {
+	for i := range t.rows {
+		s := strings.TrimSpace(t.cell(i, col))
+		if s == "" {
+			continue
+		}
+		if _, err := strconv.ParseFloat(s, 64); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// number 把单元格读成数字，读不成的当作负无穷：空单元格因此排在数字前面。
+func number(s string) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return math.Inf(-1)
+	}
+	return v
 }
 
 // isCSV 报告路径是不是 CSV 或 TSV。

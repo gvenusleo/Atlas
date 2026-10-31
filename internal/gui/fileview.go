@@ -226,11 +226,30 @@ func (a *App) svgPreview(c *ui.Context, t *ui.Theme, tb *fileTab) {
 }
 
 // fileTable 画 CSV/TSV 的表格：首行作表头，只建视口里的行。解析结果按缓冲区版本缓存，
-// 在源码里改过、切回来就是新的。
+// 在源码里改过、切回来就是新的；排序只改显示顺序，不碰缓冲区。
 func (a *App) fileTable(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	table := tb.csv.get(tb.ed.Buffer.Version(), func() csvTable {
 		return parseCSV(tb.ed.Buffer.String(), csvComma(tb.path))
 	})
+	tb.table.Sort = &tb.sort
+	if tb.sorted != tb.sort {
+		// 排序变了就读回表头：排完还停在原处，看到的既不是开头也不是刚才那一行。
+		tb.sorted = tb.sort
+		tb.table.ScrollTo(0, ui.Start)
+	}
+	key := orderKey{
+		version:    tb.ed.Buffer.Version(),
+		column:     tb.sort.Column,
+		descending: tb.sort.Descending,
+	}
+	order := tb.order.get(key, func() []int {
+		col, err := strconv.Atoi(tb.sort.Column)
+		if err != nil {
+			col = -1
+		}
+		return table.order(col, tb.sort.Descending)
+	})
+	tb.table.Key = func(row int) any { return order[row] }
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 		note := table.note()
 		if note != "" {
@@ -242,18 +261,15 @@ func (a *App) fileTable(c *ui.Context, t *ui.Theme, tb *fileTab) {
 			}
 			return // 解析就失败了，原因上面已经写过
 		}
-		ui.Table(c, &tb.table, tableColumns(table), len(table.rows), func(row, col int) {
-			cell := ""
-			if col < len(table.rows[row]) {
-				cell = table.rows[row][col]
-			}
-			ui.Text(c, cell).SingleLine()
-		}).Grow(1).MinHeight(0)
+		// 顶上的那条线把表格与上面的内容分开，表头下面的一条是表格自己的。
+		ui.Table(c, &tb.table, tableColumns(table), len(order), func(row, col int) {
+			ui.Text(c, table.cell(order[row], col)).SingleLine()
+		}).Grow(1).MinHeight(0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
 	})
 }
 
 // tableColumns 把表头变成表格的列：标识用序号，表头可能有空的或重复的；数据行比表头宽时
-// 后面的列没有标题。
+// 后面的列没有标题。列可以排序。
 func tableColumns(table csvTable) []ui.TableColumn {
 	cols := make([]ui.TableColumn, table.width())
 	for i := range cols {
@@ -261,7 +277,7 @@ func tableColumns(table csvTable) []ui.TableColumn {
 		if i < len(table.head) {
 			title = table.head[i]
 		}
-		cols[i] = ui.TableColumn{Title: title, ID: strconv.Itoa(i)}
+		cols[i] = ui.TableColumn{Title: title, ID: strconv.Itoa(i), Sortable: true}
 	}
 	return cols
 }
