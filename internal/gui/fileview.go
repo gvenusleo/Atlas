@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/loading"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
@@ -153,14 +154,21 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	})
 }
 
-// fileBody 画标签的内容：读取中、不能预览的原因、Markdown 的预览，或编辑器。
+// fileBody 画标签的内容：读取中、图片、不能预览的原因、Markdown 的预览，或编辑器。
 func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	switch {
 	case tb.loading:
 		loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 	case tb.ed == nil:
-		ui.Text(c, tb.note).FontSize(textSize).TextColor(t.TextMuted).TextAlign(ui.Center).
-			Margin(ui.Auto)
+		// 不能预览的文件：一句原因，以及在默认应用中打开的入口。
+		ui.Column(c).Gap(12).AlignItems(ui.Center).Margin(ui.Auto).Children(func() {
+			ui.Text(c, tb.note).FontSize(textSize).TextColor(t.TextMuted).TextAlign(ui.Center)
+			if ui.Button(c, "在默认应用中打开").Disabled(tb.gone).Clicked() {
+				if err := mygo.Shell.OpenPath(tb.path); err != nil {
+					a.toast = "打开失败：" + err.Error()
+				}
+			}
+		})
 	case tb.preview:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
