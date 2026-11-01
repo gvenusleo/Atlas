@@ -38,10 +38,12 @@ func (a *App) newTerminal(ch *chat) {
 	term, err := terminal.New(terminal.Options{
 		Dir:       dir,
 		Font:      termFont,
-		Theme:     termTheme(light, lightANSI),
-		DarkTheme: termTheme(dark, darkANSI),
-		OnTitle:   func(string) { a.win.Invalidate() },
-		OnExit:    func(int) { a.win.Update(ch.pruneTerms) },
+		Theme:     termTheme(activeScheme.light, activeScheme.lightANSI),
+		DarkTheme: termTheme(activeScheme.dark, activeScheme.darkANSI),
+		// 配色里的 ANSI 黑与白常与底色相同或相近，程序用它们写字会看不见。
+		MinimumContrast: termContrast,
+		OnTitle:         func(string) { a.win.Invalidate() },
+		OnExit:          func(int) { a.win.Update(ch.pruneTerms) },
 	})
 	if err != nil {
 		ch.termErr = err.Error()
@@ -64,29 +66,40 @@ func (ch *chat) focusTerm() {
 // termFont 是终端的字体。
 var termFont = terminal.Font{Family: monoFamily, Size: codeSize}
 
-// 终端的 16 色，取自 GitHub 的 VS Code 主题：黑红绿黄蓝品青白，再是它们的亮色。
-var (
-	lightANSI = [16]ui.Color{
-		ui.Hex("#24292f"), ui.Hex("#cf222e"), ui.Hex("#116329"), ui.Hex("#4d2d00"),
-		ui.Hex("#0969da"), ui.Hex("#8250df"), ui.Hex("#1b7c83"), ui.Hex("#6e7781"),
-		ui.Hex("#57606a"), ui.Hex("#a40e26"), ui.Hex("#1a7f37"), ui.Hex("#633c01"),
-		ui.Hex("#218bff"), ui.Hex("#a475f9"), ui.Hex("#3192aa"), ui.Hex("#8c959f"),
-	}
-	darkANSI = [16]ui.Color{
-		ui.Hex("#484f58"), ui.Hex("#ff7b72"), ui.Hex("#3fb950"), ui.Hex("#d29922"),
-		ui.Hex("#58a6ff"), ui.Hex("#bc8cff"), ui.Hex("#39c5cf"), ui.Hex("#b1bac4"),
-		ui.Hex("#6e7681"), ui.Hex("#ffa198"), ui.Hex("#56d364"), ui.Hex("#e3b341"),
-		ui.Hex("#79c0ff"), ui.Hex("#d2a8ff"), ui.Hex("#56d4dd"), ui.Hex("#ffffff"),
-	}
-)
+// termContrast 是终端文字与底色的最小对比度（WCAG 比值）；够用即止，不改程序刻意选的色相。
+const termContrast = 3
 
-// termTheme 用 Atlas 的前景、面板底色与选区色，加上给定的 16 色组成终端配色。
+// termTheme 用配色的前景、面板底色与选区色，加上给定的 16 色组成终端配色。
+// 光标用前景色，搜索高亮用配色的黄与强调色；SelectionText 留零，
+// 选中的文字就保留程序自己的颜色。
 func termTheme(p palette, ansi [16]ui.Color) *terminal.Theme {
 	return &terminal.Theme{
-		Foreground: p.text,
-		Background: p.canvas,
-		Selection:  p.accent.Alpha(0.25),
-		Palette:    ansi,
+		Foreground:         p.text,
+		Background:         p.canvas,
+		Cursor:             p.text,
+		CursorText:         p.canvas,
+		Selection:          p.accent.Alpha(0.25),
+		Search:             p.running.Alpha(0.35),
+		SearchText:         p.text,
+		SearchSelected:     p.accent.Alpha(0.55),
+		SearchSelectedText: p.text,
+		Palette:            ansi,
+	}
+}
+
+// rethemeTerminals 把已打开的终端换成当前配色的颜色；字体不跟着变，新开的终端才用新字体。
+func (a *App) rethemeTerminals() {
+	light := termTheme(activeScheme.light, activeScheme.lightANSI)
+	dark := termTheme(activeScheme.dark, activeScheme.darkANSI)
+	for _, ch := range a.chats {
+		for _, sh := range ch.terms {
+			sh.term.SetTheme(light, dark)
+		}
+	}
+	if a.chats[a.current.id] != a.current { // 还没创建的新会话不在 a.chats 里
+		for _, sh := range a.current.terms {
+			sh.term.SetTheme(light, dark)
+		}
 	}
 }
 

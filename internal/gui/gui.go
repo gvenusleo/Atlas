@@ -17,6 +17,7 @@ import (
 	_ "github.com/egoist/mygo/locales/zh-Hans"
 	"github.com/egoist/mygo/plugins/updater/native"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/egoist/mygo/ui/markdown/parser"
 
@@ -47,6 +48,7 @@ type App struct {
 	md            markdown.Options
 	mdNote        markdown.Options // 面板里的小号 Markdown，如压缩的摘要
 	mdFile        markdown.Options // 文件面板里的 Markdown 预览
+	code          *editor.Theme    // 代码高亮，内容不变时沿用同一个指针，Markdown 才不会每帧重算
 	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
 	prefs         prefs
 	settings      settingsPage
@@ -173,6 +175,7 @@ func newApp() *App {
 	file.Headings[4], file.Headings[5] = file.Headings[3], file.Headings[3]
 	a.mdFile.Theme = &file
 	a.prefs = loadAppPrefs()
+	useScheme(a.prefs.Palette)
 	a.applyFonts()
 	a.loadTasks()
 	a.cwd, _ = os.UserHomeDir()

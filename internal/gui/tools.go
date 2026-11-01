@@ -405,16 +405,6 @@ func (a *App) toolDetail(c *ui.Context, t *ui.Theme, it *item) {
 	})
 }
 
-// boxColor 是代码框的底色：文字色淡淡地铺在背景上。
-func boxColor(t *ui.Theme) ui.Color { return t.Text.Alpha(0.04).Over(t.Background) }
-
-// codeTheme 是代码与对比的配色：窗口主题的色板，底色换成代码框的。
-func codeTheme(t *ui.Theme) *editor.Theme {
-	th := editor.DefaultTheme(t)
-	th.Background = boxColor(t)
-	return th
-}
-
 // readOnlyCode 是只读的代码视图：带高亮、自动换行、没有行号，高度随内容，由外层滚动。
 func readOnlyCode(text string, lang *editor.Language, label string) *editor.State {
 	buf := editor.NewBuffer(text)

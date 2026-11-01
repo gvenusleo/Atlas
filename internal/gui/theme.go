@@ -2,6 +2,7 @@ package gui
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
 )
 
@@ -65,47 +66,44 @@ const (
 	emptyIconSize = 28 // 空状态里的大图标
 )
 
-// palette 是一套主题色，取自 GitHub Primer（@primer/primitives）的默认亮色与暗色。
-// Primer 把强调色分成两个：accent 是实心填充用的（bgColor-accent-emphasis，上面放白字），
-// accentFg 是文字、图标与淡底用的（fgColor-accent）。暗色里两者不同，亮色里相同；
-// running 取 fgColor-attention，因为它用作文字。
+// palette 是一套主题色。强调色分成两个：accent 是实心填充用的，上面放 onAccent 的字；
+// accentFg 是文字、图标与链接用的。暗色主题里两者通常不是同一个色。
+// running 用作文字（任务进行中），所以取的是能当文字看的那个黄。
 type palette struct {
 	canvas, subtle           ui.Color // 主区底色、次级底色（侧栏、用户消息）
-	hover, pressed           ui.Color // 控件悬停与按下
 	border                   ui.Color
 	text, muted              ui.Color
 	accent, accentHover      ui.Color
 	accentPressed, accentFg  ui.Color
+	onAccent                 ui.Color // 放在 accent 上的文字
 	danger, success, running ui.Color
 }
 
-var (
-	light = palette{
-		canvas: ui.Hex("#FFFFFF"), subtle: ui.Hex("#F6F8FA"),
-		hover: ui.Hex("#EFF2F5"), pressed: ui.Hex("#E6EAEF"),
-		border: ui.Hex("#D1D9E0"),
-		text:   ui.Hex("#1F2328"), muted: ui.Hex("#59636E"),
-		accent: ui.Hex("#0969DA"), accentHover: ui.Hex("#0860CA"), accentPressed: ui.Hex("#0550AE"),
-		accentFg: ui.Hex("#0969DA"),
-		danger:   ui.Hex("#D1242F"), success: ui.Hex("#1A7F37"), running: ui.Hex("#9A6700"),
-	}
-	dark = palette{
-		canvas: ui.Hex("#0D1117"), subtle: ui.Hex("#151B23"),
-		hover: ui.Hex("#262C36"), pressed: ui.Hex("#2A313C"),
-		border: ui.Hex("#3D444D"),
-		text:   ui.Hex("#F0F6FC"), muted: ui.Hex("#9198A1"),
-		accent: ui.Hex("#1F6FEB"), accentHover: ui.Hex("#388BFD"), accentPressed: ui.Hex("#1158C7"),
-		accentFg: ui.Hex("#4493F8"),
-		danger:   ui.Hex("#F85149"), success: ui.Hex("#3FB950"), running: ui.Hex("#D29922"),
-	}
-)
+// scheme 是一套配色：亮暗两个应用色板、两组终端的 16 色，以及两组代码高亮色。
+// 终端的前景、底色与选区取自 palette，不另存；代码高亮的六种颜色是单独调的，
+// 保证在各自底色上都能当文字看，所以与 16 色里的同色系不必相等。
+type scheme struct {
+	light, dark         palette
+	lightANSI, darkANSI [16]ui.Color
+	// tokens 依次是关键字、字符串、数字、函数、类型与标签的颜色。
+	lightTokens, darkTokens [6]ui.Color
+}
+
+// activeScheme 是当前配色，只经 useScheme 在主线程改写；样式函数遍布各文件，
+// 不便都改成 App 的方法，所以放在包里。
+var activeScheme = schemeChoices[schemeIndex(defaultScheme)].scheme
+
+// useScheme 换用 id 对应的配色；不认识时用默认配色。
+func useScheme(id string) {
+	activeScheme = schemeChoices[schemeIndex(id)].scheme
+}
 
 // accentFg 是当前主题里文字、图标与淡底用的强调色；实心填充用 t.Accent。
 func accentFg(t *ui.Theme) ui.Color {
 	if t.Dark {
-		return dark.accentFg
+		return activeScheme.dark.accentFg
 	}
-	return light.accentFg
+	return activeScheme.light.accentFg
 }
 
 // rowFill 与 buttonFill 是悬停或选中时铺在背景上的淡色：行与下拉触发器用 rowFill，
@@ -125,26 +123,125 @@ func quietRows(c *ui.Context, t *ui.Theme, fn func()) {
 	c.SetTheme(t)
 }
 
-// applyTheme 在系统的亮色或暗色主题上换成 Atlas 的色板与选定的界面字体，返回本帧的主题。
+// applyTheme 在系统的亮色或暗色主题上换成当前配色的色板与选定的界面字体，返回本帧的主题。
+// 除 Dark（来自系统或偏好）之外，每个字段都显式填上，不靠 MyGo 的默认值。
 func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 	t := *c.Theme()
-	t.Font = a.prefs.uiFamily()
-	p := light
+	p := activeScheme.light
 	if t.Dark {
-		p = dark
+		p = activeScheme.dark
 	}
 	t.Background, t.Surface = p.canvas, p.subtle
-	t.SurfaceHover, t.SurfacePressed = p.hover, p.pressed
+	// 悬停与按下的底色是文字色叠在底色上：暗色里侧栏等次级底色比主区亮，
+	// 叠得太淡就与它分不开，所以暗色叠得更多。
+	hover, pressed := float32(0.08), float32(0.12)
+	if t.Dark {
+		hover, pressed = 0.12, 0.16
+	}
+	t.SurfaceHover = p.text.Alpha(hover).Over(p.canvas)
+	t.SurfacePressed = p.text.Alpha(pressed).Over(p.canvas)
 	t.Border, t.Text, t.TextMuted = p.border, p.text, p.muted
 	t.Accent, t.AccentHover, t.AccentPressed = p.accent, p.accentHover, p.accentPressed
-	t.AccentText = ui.Hex("#FFFFFF")
-	t.Danger, t.Success, t.Warning = p.danger, p.success, p.running
-	t.Focus, t.Selection = p.accent, p.accent.Alpha(0.25)
-	t.Radius, t.FontSize = controlRound, bodySize
-	// 链接是文字，用文字的强调色；MyGo 默认取 t.Accent，暗色下对比度不够。
+	t.AccentText = p.onAccent
+	t.Danger, t.Warning, t.Success = p.danger, p.running, p.success
+	t.Selection, t.Focus = p.accent.Alpha(0.25), p.accent
+	t.Inverse, t.InverseText = p.text, p.canvas
+	t.Scrollbar, t.ScrollbarWidth = p.text.Alpha(0.32), 6
+	t.Radius, t.Spacing, t.FontSize = controlRound, 4, bodySize
+	t.Font = a.prefs.uiFamily()
+	// 链接与代码高亮都跟着配色走；MyGo 默认拿 t.Accent 当链接色，暗色下对比度不够。
+	// 内容没变就沿用旧指针：Markdown 按指针判断主题变没变，每帧换新指针会让它每帧重算，
+	// 而内容变了必须换指针，它才会重新高亮。
+	if code := codeTheme(&t); a.code == nil || *a.code != *code {
+		a.code = code
+	}
 	for _, theme := range []*markdown.Theme{a.md.Theme, a.mdNote.Theme, a.mdFile.Theme} {
-		theme.Link = p.accentFg
+		theme.Link, theme.CodeColors = p.accentFg, a.code
 	}
 	c.SetTheme(&t)
 	return &t
+}
+
+// boxColor 是代码框的底色：文字色淡淡地铺在背景上。
+func boxColor(t *ui.Theme) ui.Color { return t.Text.Alpha(0.04).Over(t.Background) }
+
+// codeTheme 是代码与对比的配色。编辑器主题的每个字段都显式填上，不靠 MyGo 的默认值；
+// 与配色无关的装饰色（当前行、括号、搜索命中）只随亮暗变，用黑白的透明度。
+// 对比里的增删改取终端的亮绿、亮红与亮蓝：MyGo 把它们按比例混进底色，要用饱和的亮色才
+// 看得出；配色的 success 与 danger 是给文字调的，混进去几乎没有颜色。
+func codeTheme(t *ui.Theme) *editor.Theme {
+	tok, ansi := activeScheme.lightTokens, activeScheme.lightANSI
+	if t.Dark {
+		tok, ansi = activeScheme.darkTokens, activeScheme.darkANSI
+	}
+	th := &editor.Theme{
+		Background: boxColor(t),
+		Text:       t.Text,
+
+		LineNumber:        t.TextMuted.Alpha(0.75),
+		ActiveLineNumber:  t.Text,
+		ActiveLine:        ui.RGBA(0, 0, 0, 0.035),
+		Selection:         t.Selection,
+		InactiveSelection: t.Selection.Alpha(0.55),
+		Cursor:            t.Accent,
+		MatchingBracket:   ui.RGBA(0, 0, 0, 0.3),
+		Match:             ui.RGBA(255, 200, 0, 0.3),
+		CurrentMatch:      ui.RGBA(255, 140, 0, 0.45),
+		Occurrence:        ui.RGBA(0, 0, 0, 0.07),
+		IndentGuide:       t.Border.Alpha(0.55),
+		ActiveIndentGuide: t.TextMuted.Alpha(0.6),
+		WrapGuide:         t.Border.Alpha(0.6),
+		Whitespace:        t.TextMuted.Alpha(0.45),
+
+		Error:   t.Danger,
+		Warning: t.Warning,
+		Info:    accentFg(t),
+		Hint:    t.TextMuted,
+
+		Added:    ansi[10],
+		Deleted:  ansi[9],
+		Modified: ansi[12],
+	}
+	if t.Dark {
+		th.ActiveLine = ui.RGBA(255, 255, 255, 0.045)
+		th.MatchingBracket = ui.RGBA(255, 255, 255, 0.35)
+		th.Match = ui.RGBA(255, 210, 60, 0.22)
+		th.CurrentMatch = ui.RGBA(255, 160, 40, 0.5)
+		th.Occurrence = ui.RGBA(255, 255, 255, 0.1)
+	}
+	setTokens(th, t, tok)
+	return th
+}
+
+// setTokens 给 25 种 token 全部显式设色，tok 是配色的六种代码色。
+// Emphasis 斜体、Strong 与 Heading 的粗体是字形，不在颜色里，单独设。
+func setTokens(th *editor.Theme, t *ui.Theme, tok [6]ui.Color) {
+	th.Tokens[editor.TokenText].Color = t.Text
+	th.Tokens[editor.TokenVariable].Color = t.Text
+	th.Tokens[editor.TokenPunctuation].Color = t.Text
+	th.Tokens[editor.TokenEmphasis].Color = t.Text
+	th.Tokens[editor.TokenStrong].Color = t.Text
+	th.Tokens[editor.TokenKeyword].Color = tok[0]
+	th.Tokens[editor.TokenOperator].Color = tok[0]
+	th.Tokens[editor.TokenString].Color = tok[1]
+	th.Tokens[editor.TokenLink].Color = tok[1]
+	th.Tokens[editor.TokenCode].Color = tok[1]
+	th.Tokens[editor.TokenInserted].Color = t.Success
+	th.Tokens[editor.TokenNumber].Color = tok[2]
+	th.Tokens[editor.TokenConstant].Color = tok[2]
+	th.Tokens[editor.TokenProperty].Color = tok[2]
+	th.Tokens[editor.TokenAttribute].Color = tok[2]
+	th.Tokens[editor.TokenEscape].Color = tok[2]
+	th.Tokens[editor.TokenHeading].Color = tok[2]
+	th.Tokens[editor.TokenFunction].Color = tok[3]
+	th.Tokens[editor.TokenMeta].Color = tok[3]
+	th.Tokens[editor.TokenType].Color = tok[4]
+	th.Tokens[editor.TokenTag].Color = tok[5]
+	th.Tokens[editor.TokenRegexp].Color = tok[5]
+	th.Tokens[editor.TokenComment].Color = t.TextMuted
+	th.Tokens[editor.TokenDeleted].Color = t.Danger
+	th.Tokens[editor.TokenInvalid].Color = t.Danger
+	th.Tokens[editor.TokenEmphasis].Italic = true
+	th.Tokens[editor.TokenStrong].Bold = true
+	th.Tokens[editor.TokenHeading].Bold = true
 }
