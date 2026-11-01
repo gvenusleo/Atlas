@@ -77,7 +77,7 @@ func (a *App) confirmQuit(e *mygo.Preventable) {
 	go func() {
 		r, err := mygo.Dialog.Message(mygo.MessageOptions{
 			Parent: a.win, Type: mygo.MessageWarning, Buttons: []string{"丢弃修改并退出", "取消"},
-			DefaultButton: 1, CancelButton: 1,
+			DefaultButton: 1, CancelButton: 1, DestructiveButtons: []int{0},
 			Message: fmt.Sprintf("有 %d 个文件的修改还没保存", n),
 			Detail:  "现在退出会丢掉这些修改。",
 		})
