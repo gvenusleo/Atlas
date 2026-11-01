@@ -38,7 +38,7 @@ func (a *App) changesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) 
 	})
 }
 
-// changeBar 画卡片顶部的标题栏：标题与文件数，右端是刷新、对比布局的切换与关闭按钮；
+// changeBar 画卡片顶部的标题栏：标题与文件数，右端是对比布局的切换与关闭按钮；
 // 空白处可拖动窗口。
 func (a *App) changeBar(c *ui.Context, t *ui.Theme, ch *chat) {
 	cp := ch.changes
@@ -49,11 +49,6 @@ func (a *App) changeBar(c *ui.Context, t *ui.Theme, ch *chat) {
 			ui.Badge(c, strconv.Itoa(n))
 		}
 		ui.Row(c).Grow(1)
-		label := "刷新"
-		if cp.loading {
-			label = "读取中…"
-		}
-		textButton(c, t, label, "重新读取更改", func() { a.refreshChanges(ch) })
 		layout := "并排"
 		if cp.split {
 			layout = "合并"
