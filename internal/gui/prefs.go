@@ -14,7 +14,7 @@ import (
 // prefsFile 是界面偏好的文件名，在配置目录下。
 const prefsFile = "gui.json"
 
-// prefs 是界面偏好，只有 gui 读写；空串表示默认：主题跟随系统，配色用第一套，
+// prefs 是界面偏好，只有 gui 读写；空串表示默认：主题跟随系统，配色用 GitHub，
 // 界面字体用系统的，代码字体用 monoFamily，菜单栏里显示托盘图标（所以记的是隐藏，
 // 默认值才是零值）。
 type prefs struct {
