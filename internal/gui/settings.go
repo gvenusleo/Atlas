@@ -55,6 +55,10 @@ func (a *App) setPrefs(p prefs) {
 		// SetSource 会通知窗口重新取主题，所以不在构建视图的过程中调用，放到这一帧之后。
 		a.win.Update(func() { mygo.Theme.SetSource(source) })
 	}
+	if p.Palette != a.prefs.Palette {
+		useScheme(p.Palette)
+		a.rethemeTerminals()
+	}
 	if p.HideTray != a.prefs.HideTray {
 		a.win.Update(a.syncTray) // 同样不在构建视图的过程中增删托盘
 	}
@@ -213,6 +217,13 @@ func fontPref(label string) string {
 func (a *App) chooseTheme(i int) {
 	p := a.prefs
 	p.Theme = themeChoices[i].source
+	a.setPrefs(p)
+}
+
+// choosePalette 选了配色后立即生效并保存。
+func (a *App) choosePalette(id string) {
+	p := a.prefs
+	p.Palette = id
 	a.setPrefs(p)
 }
 

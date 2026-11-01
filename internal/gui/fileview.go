@@ -195,7 +195,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 			})
 		})
 	default:
-		theme := editor.DefaultTheme(t)
+		theme := codeTheme(t)
 		theme.Background = t.Background
 		tb.ed.Theme = theme
 		tb.ed.Font = codeFont
