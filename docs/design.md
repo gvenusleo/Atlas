@@ -324,7 +324,7 @@ GUI 实现 `protocol.Subscriber`，把更新交给主线程。界面里只有两
 具体做法：
 
 - 新建会话：`NewSession`。更换工作目录：用新目录再调用一次 `NewSession`，并丢弃尚未发送过消息的旧会话。
-- 打开已有会话：`OpenSession`，同时用 `ListHistory` 读取最近一页；向上滚动时继续读取更早的页。
+- 打开已有会话：`OpenSession`，同时用 `ListHistory` 读取最近一页；向上滚动时继续读取更早的页。工作目录已不存在时打开或发送会失败，历史照常能看，并弹出对话框让用户新建目录或删除会话；取消后重新进入这个会话会再次弹出。新建只在原路径上创建一级目录，失败的原因留在对话框里。
 - 发送：调用 `SendPrompt`（很快返回）；界面不预先绘制自己发出的消息，而是等待 `user_message_chunk`。能否发送取决于视图中的“是否在运行”，它只来自 `run_state`。
 - 更换模型与思考深度：`SetConfigOption`，用响应中的配置项重绘选择器。
 - 侧栏：`ListSessions`，在自身操作之后以及收到 `session_info_update` 时重新读取。

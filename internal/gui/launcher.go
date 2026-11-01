@@ -92,7 +92,7 @@ func (a *App) sessionResults(terms []string) []result {
 		}
 		r := result{
 			group: "会话", name: title, hint: filepath.Base(info.Cwd), trail: ago(info.UpdatedAt),
-			run: func() { a.open(info.SessionID) },
+			run: func() { a.openSession(info) },
 		}
 		if len(terms) > 0 && strings.HasPrefix(lower, terms[0]) {
 			first = append(first, r)

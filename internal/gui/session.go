@@ -3,7 +3,9 @@ package gui
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"maps"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -42,9 +44,13 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 		return false
 	}
 	a.showTasks, a.fromTasks = false, false
+	a.cwdGoneOpen, a.cwdGoneErr = false, ""
 	id := info.SessionID
 	if ch := a.chats[id]; ch != nil {
 		a.current, ch.unread = ch, false
+		if ch.cwdGone { // 目录可能已经恢复，重新打开一次
+			a.start(ch)
+		}
 		return true
 	}
 	a.keys++
@@ -109,6 +115,9 @@ func (a *App) start(ch *chat) {
 				return
 			case err != nil:
 				ch.err = err.Error()
+				if errors.Is(err, fs.ErrNotExist) {
+					a.askCwdGone(ch)
+				}
 				if ch.job != nil {
 					a.failTask(ch, err)
 				}
@@ -124,6 +133,51 @@ func (a *App) start(ch *chat) {
 			a.cwd = state.Cwd
 		})
 	}()
+}
+
+// askCwdGone 在会话的工作目录已不存在时打开恢复对话框；不是当前会话时只记下来，等用户
+// 进入这个会话时重新打开。后台任务不改该用户的视图。
+func (a *App) askCwdGone(ch *chat) {
+	if ch.job != nil || !cwdMissing(ch.cwd) {
+		return
+	}
+	ch.cwdGone = true
+	if a.current == ch {
+		a.cwdGoneChat, a.cwdGoneErr, a.cwdGoneOpen = ch, "", true
+	}
+}
+
+// cwdMissing 报告会话的工作目录是否已经不可用。空路径不算：拿不到路径时无从新建。
+func cwdMissing(cwd string) bool {
+	if cwd == "" {
+		return false
+	}
+	info, err := os.Stat(cwd)
+	return err != nil || !info.IsDir()
+}
+
+// createCwd 在会话原来的路径上建目录，建好后重新打开。只建一级：父目录不在时多半是磁盘
+// 没挂载，多建几级会造出一个空目录。失败时把原因留给对话框，用户改完可以再试。
+func (a *App) createCwd(ch *chat) {
+	done := func() {
+		ch.cwdGone, a.cwdGoneOpen, a.cwdGoneErr = false, false, ""
+		a.start(ch)
+	}
+	err := os.Mkdir(ch.cwd, 0o755)
+	switch {
+	case err == nil:
+		done()
+	case errors.Is(err, fs.ErrExist):
+		if info, statErr := os.Stat(ch.cwd); statErr != nil || !info.IsDir() {
+			a.cwdGoneErr = "同名文件已存在，请先处理它。"
+			return
+		}
+		done()
+	case errors.Is(err, fs.ErrNotExist):
+		a.cwdGoneErr = "父目录不存在，请检查磁盘是否已挂载。"
+	default:
+		a.cwdGoneErr = "新建目录失败：" + err.Error()
+	}
 }
 
 // loadOlder 在列表滚近顶部时再取前面一页记录；没有更早的记录或正在取时什么也不做。
@@ -313,6 +367,10 @@ func (a *App) finish(ch *chat, err error) {
 		a.toast = err.Error()
 	case err != nil:
 		ch.err = err.Error()
+		// 发送时才发现工作目录没了：与打开时一样给出恢复的对话框。
+		if errors.Is(err, fs.ErrNotExist) {
+			a.askCwdGone(ch)
+		}
 	}
 }
 

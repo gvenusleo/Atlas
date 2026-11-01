@@ -73,6 +73,11 @@ type App struct {
 	deleteID             string
 	deleteOpen           bool
 
+	// 工作目录不存在时的提示：指向打不开的会话，以及上一次新建目录失败的原因。
+	cwdGoneChat *chat
+	cwdGoneErr  string
+	cwdGoneOpen bool
+
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
 	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
 

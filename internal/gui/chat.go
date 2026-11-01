@@ -77,6 +77,7 @@ type chat struct {
 	next      int
 
 	// 界面自己的状态。
+	cwdGone bool  // 工作目录已不存在：由打开或发送的错误判断写入，只用来决定是否提示
 	starts  int   // 让核心打开它的次数，用来认出过时的响应，见 App.start
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
 	loading bool  // 正在加载最近一页历史
@@ -126,6 +127,7 @@ func (ch *chat) attach(options []protocol.ConfigOption, state protocol.SessionSt
 	ch.ready, ch.options, ch.commands = true, options, state.Commands
 	ch.usage, ch.running, ch.since = state.Usage, state.Running, state.Since
 	ch.cwd, ch.title = state.Cwd, state.Title
+	ch.cwdGone = false
 }
 
 // add 追加一个已定稿的显示项。

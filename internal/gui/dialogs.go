@@ -83,5 +83,42 @@ func (a *App) dialogs(c *ui.Context) {
 	if ui.AlertDialog(c, &a.deleteOpen, "删除这个会话？", message, "取消", "删除") == 1 {
 		a.remove(a.deleteID)
 	}
+	a.cwdGoneDialog(c)
 	a.unsavedDialog(c)
+}
+
+// cwdGoneDialog 在会话的工作目录已不存在时让用户新建目录或删除会话。取消后会话仍然打不开，
+// 原因留在会话页上。
+func (a *App) cwdGoneDialog(c *ui.Context) {
+	ch := a.cwdGoneChat
+	if ch == nil || (ch.id != "" && a.chats[ch.id] != ch) {
+		a.cwdGoneOpen = false
+		return
+	}
+	t := c.Theme()
+	ui.Modal(c, &a.cwdGoneOpen, func() {
+		ui.Text(c, "工作目录不存在").FontSize(dialogSize).Bold()
+		ui.Text(c, "工作目录 "+shortPath(ch.cwd)+" 已不存在。可以在原路径新建一个空目录，"+
+			"或删除这个会话；删除后无法恢复。").TextColor(t.TextMuted).Width(360)
+		if a.cwdGoneErr != "" {
+			ui.Text(c, a.cwdGoneErr).TextColor(t.Danger).Width(360)
+		}
+		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			cancel := ui.Button(c, "取消").Clicked()
+			del := false
+			if ch.id != "" {
+				del = ui.Button(c, "删除会话").Clicked()
+			}
+			rebuild := ui.PrimaryButton(c, "新建目录").Clicked()
+			switch {
+			case rebuild:
+				a.createCwd(ch)
+			case del:
+				a.cwdGoneOpen, a.cwdGoneErr = false, ""
+				a.remove(ch.id)
+			case cancel:
+				a.cwdGoneOpen, a.cwdGoneErr = false, ""
+			}
+		})
+	})
 }
