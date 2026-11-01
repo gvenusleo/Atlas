@@ -58,7 +58,6 @@ macOS 的应用没有经过苹果公证，用浏览器下载的 `.dmg` 首次打
       "models": {
         "model-id": {
           "context_window": 200000,
-          "reasoning": true,
           "reasoning_options": [{ "type": "effort", "values": ["low", "high"] }]
         }
       }
@@ -77,6 +76,8 @@ Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用�
 可以随时手动压缩：除最后一条消息外的对话都会换成摘要，与有没有填写 `context_window` 无关。
 
 模型的 `max_output`（单次回复的输出上限，token）可选：填写后每次请求都会带上它，没有填写时由服务端决定。
+
+模型的思考深度由 `reasoning_options` 声明：`{"type": "effort", "values": ["low", "high"]}` 是可调档位，第一个是默认档；`{"type": "toggle"}` 表示只能开或关，默认开。目前只认这两种写法，只写 `budget_tokens` 时不出现思考深度；完全不写时请求里也不带相关参数，始终思考而不可配置的模型就该这样写。旧的 `reasoning` 字段已废弃，以 `reasoning_options` 为准。
 
 列表里还有工作目录下发现的技能（`.agents/skills`、`.atlas/skills`，以及主目录下的同名目录）：
 输入 `/技能名 参数` 显式调用它，Atlas 会把技能的 SKILL.md 全文连同你的输入一起交给模型，
