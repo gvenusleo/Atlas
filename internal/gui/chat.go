@@ -65,6 +65,7 @@ type chat struct {
 
 	// 会话的视图。
 	ready     bool // 核心已经打开了这个会话
+	cwdGone   bool // 打开失败是因为工作目录已不存在
 	title     string
 	options   []protocol.ConfigOption
 	commands  []protocol.Command
