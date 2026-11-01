@@ -165,20 +165,14 @@ func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 // boxColor 是代码框的底色：文字色淡淡地铺在背景上。
 func boxColor(t *ui.Theme) ui.Color { return t.Text.Alpha(0.04).Over(t.Background) }
 
-// 对比里的增删改：MyGo 为混进底色专门调的亮色。它们不跟配色走，
-// 因为配色的 success 与 danger 是给文字调的，混成背景后几乎看不出颜色。
-var (
-	diffLight = [3]ui.Color{ui.Hex("#0DBE4E"), ui.Hex("#FF2E3F"), ui.Hex("#009FFF")}
-	diffDark  = [3]ui.Color{ui.Hex("#5ECC71"), ui.Hex("#FF6762"), ui.Hex("#69B1FF")}
-)
-
 // codeTheme 是代码与对比的配色。编辑器主题的每个字段都显式填上，不靠 MyGo 的默认值；
 // 与配色无关的装饰色（当前行、括号、搜索命中）只随亮暗变，用黑白的透明度。
+// 对比里的增删改取终端的亮绿、亮红与亮蓝：MyGo 把它们按比例混进底色，要用饱和的亮色才
+// 看得出；配色的 success 与 danger 是给文字调的，混进去几乎没有颜色。
 func codeTheme(t *ui.Theme) *editor.Theme {
-	tok := activeScheme.lightTokens
-	diff := diffLight
+	tok, ansi := activeScheme.lightTokens, activeScheme.lightANSI
 	if t.Dark {
-		tok, diff = activeScheme.darkTokens, diffDark
+		tok, ansi = activeScheme.darkTokens, activeScheme.darkANSI
 	}
 	th := &editor.Theme{
 		Background: boxColor(t),
@@ -204,9 +198,9 @@ func codeTheme(t *ui.Theme) *editor.Theme {
 		Info:    accentFg(t),
 		Hint:    t.TextMuted,
 
-		Added:    diff[0],
-		Deleted:  diff[1],
-		Modified: diff[2],
+		Added:    ansi[10],
+		Deleted:  ansi[9],
+		Modified: ansi[12],
 	}
 	if t.Dark {
 		th.ActiveLine = ui.RGBA(255, 255, 255, 0.045)
