@@ -35,7 +35,7 @@ func listModels(settings *config.Settings) []modelInfo {
 				Ref:            providerID + "/" + modelID,
 				Name:           cmp.Or(metadata.Name, modelID),
 				Images:         metadata.Modalities.AcceptsImages(),
-				ThinkingLevels: usableThinkingLevels(metadata),
+				ThinkingLevels: thinkingOptions(metadata),
 				Supported:      err == nil && llm.Supports(string(provider.WireAPI)),
 			})
 		}
@@ -48,7 +48,7 @@ func listModels(settings *config.Settings) []modelInfo {
 }
 
 // pickModel 为会话选模型：preferred（上次用的）可用就用它，否则用配置的默认模型，再否则用清单里
-// 第一个可用的。思考档位 thinking 新选的模型支持就保留，否则用它的默认档。一个可用的模型都没有时
+// 第一个可用的。thinking 在新模型里受支持就保留，否则用它默认的。一个可用的模型都没有时
 // 返回错误。
 func pickModel(
 	settings *config.Settings, preferred string, thinking agent.ThinkingLevel,
@@ -83,7 +83,8 @@ func chooseModel(
 	return level, model
 }
 
-// fitLevel 返回 model 支持的思考档位：thinking 在其中就是它，否则是 model 的默认档，没有档位时为空。
+// fitLevel 返回 model 支持的思考取值：thinking 在其中就是它，否则是 model 的默认档；
+// 没有可选项时为空。
 func fitLevel(model modelInfo, thinking agent.ThinkingLevel) agent.ThinkingLevel {
 	switch {
 	case slices.Contains(model.ThinkingLevels, thinking):
@@ -94,27 +95,33 @@ func fitLevel(model modelInfo, thinking agent.ThinkingLevel) agent.ThinkingLevel
 	return ""
 }
 
-// usableThinkingLevels 保留配置中的有效 effort 档位顺序并去重。
-func usableThinkingLevels(metadata config.Model) []agent.ThinkingLevel {
-	if !metadata.Reasoning {
-		return nil
-	}
+// thinkingOptions 是模型可选的思考档位，由配置的 reasoning_options 展开：effort 给出档位，
+// toggle 只有开与关，其余类型不影响选择。空表示没有可选项。
+func thinkingOptions(metadata config.Model) []agent.ThinkingLevel {
 	var levels []agent.ThinkingLevel
-	for _, option := range metadata.ReasoningOptions {
-		if option.Type != config.ReasoningTypeEffort {
-			continue
+	add := func(level agent.ThinkingLevel) {
+		if !slices.Contains(levels, level) {
+			levels = append(levels, level)
 		}
-		for _, value := range option.Values {
-			level := agent.ThinkingLevel(value)
-			if level.Valid() && !slices.Contains(levels, level) {
-				levels = append(levels, level)
+	}
+	for _, option := range metadata.ReasoningOptions {
+		switch option.Type {
+		case config.ReasoningTypeEffort:
+			for _, value := range option.Values {
+				// on 属于开关型，写在 effort 里不作数。
+				if level := agent.ThinkingLevel(value); level.Valid() && level != agent.ThinkingOn {
+					add(level)
+				}
 			}
+		case config.ReasoningTypeToggle:
+			add(agent.ThinkingOn)
+			add(agent.ThinkingOff)
 		}
 	}
 	return levels
 }
 
-// configOptions 是会话的配置项：模型，以及当前模型支持思考时的思考深度。
+// configOptions 是会话的配置项：模型，以及当前模型支持思考时的思考选项。
 func configOptions(
 	settings *config.Settings, ref string, thinking agent.ThinkingLevel,
 ) []protocol.ConfigOption {
@@ -145,7 +152,7 @@ func configOptions(
 	return options
 }
 
-// modelConfig 校验协议和思考档位、加载凭据并创建客户端，不发起模型请求。
+// modelConfig 校验协议和思考取值、加载凭据并创建客户端，不发起模型请求。
 func modelConfig(
 	settings *config.Settings, modelRef string, thinkingLevel agent.ThinkingLevel,
 ) (agent.Model, error) {
@@ -159,8 +166,8 @@ func modelConfig(
 	if !llm.Supports(string(provider.WireAPI)) {
 		return agent.Model{}, fmt.Errorf("协议 %q 尚未实现", provider.WireAPI)
 	}
-	if thinkingLevel != "" && !slices.Contains(usableThinkingLevels(metadata), thinkingLevel) {
-		return agent.Model{}, fmt.Errorf("模型 %q 未声明支持思考档位 %q", modelRef, thinkingLevel)
+	if thinkingLevel != "" && !slices.Contains(thinkingOptions(metadata), thinkingLevel) {
+		return agent.Model{}, fmt.Errorf("模型 %q 未声明支持思考取值 %q", modelRef, thinkingLevel)
 	}
 	providerID, _, _ := config.ParseModel(modelRef)
 	dir, err := config.Dir()

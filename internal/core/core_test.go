@@ -18,7 +18,7 @@ import (
 )
 
 const settingsJSON = `{"model": "p/a", "providers": {"p": {"api": "openai-responses",
-	"base_url": "http://x", "models": {"a": {"reasoning": true,
+	"base_url": "http://x", "models": {"a": {
 	"reasoning_options": [{"type": "effort", "values": ["low", "high"]}]}, "b": {}}}}}`
 
 // home 把 HOME 指到临时目录，写入 settings.json 与 p 的 API key，返回数据库路径。

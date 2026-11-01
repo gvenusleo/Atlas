@@ -27,11 +27,11 @@ type Provider struct {
 
 // Model 是单个模型的元数据。
 type Model struct {
-	Name             string            `json:"name,omitempty"`          // 展示名，缺省用模型 id
-	ContextWindow    int64             `json:"context_window,omitzero"` // 上下文窗口（token）
-	MaxOutput        int64             `json:"max_output,omitzero"`     // 输出上限（token）
-	Modalities       Modalities        `json:"modalities,omitzero"`     // 输入/输出模态（能力门控）
-	Reasoning        bool              `json:"reasoning,omitzero"`      // 是否支持思考
+	Name          string     `json:"name,omitempty"`          // 展示名，缺省用模型 id
+	ContextWindow int64      `json:"context_window,omitzero"` // 上下文窗口（token）
+	MaxOutput     int64      `json:"max_output,omitzero"`     // 输出上限（token）
+	Modalities    Modalities `json:"modalities,omitzero"`     // 输入/输出模态（能力门控）
+	// ReasoningOptions 是思考深度的控制方式；存在 effort 或 toggle 时模型支持思考。
 	ReasoningOptions []ReasoningOption `json:"reasoning_options,omitempty"`
 }
 

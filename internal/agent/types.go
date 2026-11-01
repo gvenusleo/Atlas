@@ -233,11 +233,12 @@ type Tool struct {
 
 // ---- 流式调用 ----
 
-// ThinkingLevel 是规范思考档位词表，用于解析用户输入与构建请求；
-// 具体模型支持哪些档位由配置的 reasoning_options.values（其子集）声明。
+// ThinkingLevel 是规范思考取值词表，用于解析用户输入与构建请求；
+// 具体模型支持哪些由配置的 reasoning_options 声明：effort 给出档位，toggle 给出开与关。
 type ThinkingLevel string
 
 const (
+	ThinkingOn      ThinkingLevel = "on" // 开关型模型的开，不是 effort 档位
 	ThinkingOff     ThinkingLevel = "off"
 	ThinkingMinimal ThinkingLevel = "minimal"
 	ThinkingLow     ThinkingLevel = "low"
@@ -247,10 +248,10 @@ const (
 	ThinkingMax     ThinkingLevel = "max"
 )
 
-// Valid 判断档位是否属于规范词表。
+// Valid 判断取值是否属于规范词表。
 func (l ThinkingLevel) Valid() bool {
 	switch l {
-	case ThinkingOff, ThinkingMinimal, ThinkingLow, ThinkingMedium,
+	case ThinkingOn, ThinkingOff, ThinkingMinimal, ThinkingLow, ThinkingMedium,
 		ThinkingHigh, ThinkingXHigh, ThinkingMax:
 		return true
 	}
@@ -263,7 +264,7 @@ type StreamRequest struct {
 	SystemPrompt string // 本次生效的系统提示词，不属于对话历史。
 	Messages     []Message
 	Tools        []Tool
-	// ThinkingLevel 为空时采用服务端默认深度；off 表示请求关闭思考。
+	// ThinkingLevel 为空或 on 时采用服务端默认深度，off 请求关闭思考。
 	ThinkingLevel ThinkingLevel
 	// MaxOutput 是单次回复的输出上限（token），0 表示不限制。循环不设它，由模型的 StreamFn 按
 	// 设置填入。
@@ -339,7 +340,7 @@ type Model struct {
 // Input 是一轮看到的全部，由调用方给出快照，循环不修改它。
 type Input struct {
 	Model Model
-	// Thinking 为空时采用服务端默认深度。
+	// Thinking 为空或 on 时采用服务端默认深度，off 请求关闭思考。
 	Thinking     ThinkingLevel
 	SystemPrompt string
 	Tools        []Tool

@@ -66,7 +66,7 @@ func (a *App) taskFormFields(c *ui.Context, t *ui.Theme) {
 func (a *App) triggerRows(c *ui.Context, t *ui.Theme, f *taskForm) {
 	formRow(c, "触发方式", func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			pillSelect(c, t, "触发方式", &f.kind, kindChoices, kindName)
+			pillSelect(c, t, "触发方式", "触发方式", &f.kind, kindChoices, kindName)
 			switch ruleKinds[f.kind].kind {
 			case schedule.Interval:
 				fieldBox(ui.TextInputBase(c.Key("task-every"), &f.every).Width(64).
@@ -75,7 +75,7 @@ func (a *App) triggerRows(c *ui.Context, t *ui.Theme, f *taskForm) {
 			case schedule.Daily:
 				timeField(c, f)
 			case schedule.Weekly:
-				pillSelect(c, t, "星期", &f.weekday, weekOrder, weekdayName)
+				pillSelect(c, t, "星期", "星期", &f.weekday, weekOrder, weekdayName)
 				timeField(c, f)
 			case schedule.Once:
 				dateField(c, t, f)

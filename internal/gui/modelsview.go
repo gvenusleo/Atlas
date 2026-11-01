@@ -81,6 +81,20 @@ func wireAPIName(api config.WireAPI) string {
 	return string(api)
 }
 
+// thinkingKinds 是“思考”下拉的各项。
+var thinkingKinds = []thinkingKind{thinkingNone, thinkingToggle, thinkingEffort}
+
+// thinkingKindName 是思考方式在界面上的名称。
+func thinkingKindName(kind thinkingKind) string {
+	switch kind {
+	case thinkingToggle:
+		return "开关"
+	case thinkingEffort:
+		return "档位"
+	}
+	return "无"
+}
+
 // serviceDialog 在新建或编辑模型服务时画对话框，结构与任务表单的一样：标题与关闭，表单，底部是
 // 错误与取消、保存。对话框自己关掉（按 Esc、点遮罩）时丢弃表单。
 func (a *App) serviceDialog(c *ui.Context, t *ui.Theme) {
@@ -115,7 +129,7 @@ func (a *App) serviceFields(c *ui.Context, t *ui.Theme) {
 			textField(c, t, "service-name", &f.name, "例如：openai").Grow(1).MinWidth(0)
 		})
 		fieldRow(c, "接口类型", func() {
-			pillSelect(c, t, "接口类型", &f.api, f.apis, wireAPIName)
+			pillSelect(c, t, "接口类型", "接口类型", &f.api, f.apis, wireAPIName)
 		})
 		fieldRow(c, "接口地址", func() {
 			textField(c, t, "service-url", &f.baseURL, "https://api.example.com/v1").
@@ -218,13 +232,18 @@ func (a *App) modelFields(c *ui.Context, t *ui.Theme, m *modelForm, key string) 
 		textField(c, t, key+"output", &m.output, "token 数").Width(150)
 	})
 	fieldRow(c, "接受图片", func() { ui.Switch(c.Key(key+"images"), &m.images).Label("接受图片") })
-	fieldRow(c, "思考档位", func() {
-		ui.Row(c).Wrap().Gap(6).Grow(1).MinWidth(0).Padding(4, 0).Children(func() {
-			for i, level := range thinkingLevels {
-				levelChip(c, t, key+level, level, &m.levels[i])
-			}
-		})
+	fieldRow(c, "思考", func() {
+		pillSelect(c, t, key+"kind", "思考", &m.kind, thinkingKinds, thinkingKindName)
 	})
+	if m.kind == thinkingEffort {
+		fieldRow(c, "思考档位", func() {
+			ui.Row(c).Wrap().Gap(6).Grow(1).MinWidth(0).Padding(4, 0).Children(func() {
+				for i, level := range thinkingLevels {
+					levelChip(c, t, key+level, level, &m.levels[i])
+				}
+			})
+		})
+	}
 }
 
 // levelChip 画一个思考档位的标签按钮：选中时是淡的强调色底，没选中时是主区底色，点一下切换。
