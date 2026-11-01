@@ -95,6 +95,15 @@ func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
 // userTop 是用户消息上方的额外空白：提问是新的一轮，与上一轮之间留得比块之间更大。
 const userTop = 14
 
+// userFolded 是长消息在气泡里保留的字数。
+const userFolded = 300
+
+// userBubblePad 是气泡左右的内边距；折叠的渐隐带要比文字宽出这些，盖到气泡边缘。
+const userBubblePad = 16
+
+// userFade 是折叠时文字底部渐隐带的高度。
+const userFade = 28
+
 // userMessage 把用户消息和它下面的一行操作放在一起：指针在其上时，操作行显示发送时间与
 // 复制按钮。有图片时，图片排在文字上方，靠右对齐；只有图片时没有文字块与复制按钮。
 func (a *App) userMessage(c *ui.Context, t *ui.Theme, it *item) {
@@ -110,11 +119,42 @@ func (a *App) userMessage(c *ui.Context, t *ui.Theme, it *item) {
 				})
 			}
 			if it.text != "" {
-				ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
-					Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
+				userBubble(c, t, it)
 			}
 			a.actions(c, t, it, it.at, it.text, hovered && it.done)
 		})
+	})
+}
+
+// userBubble 画用户消息的文字气泡：超过 userFolded 时只显示开头，底部渐隐，下面一行
+// “显示更多”，展开后换成“收起”。复制按钮拿的仍是全文。
+func userBubble(c *ui.Context, t *ui.Theme, it *item) {
+	// 渐隐带靠这个色盖住文字，所以不能是半透明的：文字的淡色叠在窗口底色上，看起来一样。
+	fill := rowFill(t).Over(t.Background)
+	bubble := ui.Column(c).Gap(6).Padding(10, userBubblePad).Radius(14).Background(fill).
+		MaxWidth(bubbleWidth)
+	bubble.Children(func() {
+		if len([]rune(it.text)) <= userFolded {
+			ui.Text(c, it.text).Selectable().FontSize(bodySize)
+			return
+		}
+		text, label, tip := it.text, "收起", "收起这条消息"
+		if !it.open {
+			text, label, tip = truncate(text, userFolded), "显示更多", "展开这条消息"
+		}
+		textBox := ui.Column(c)
+		textBox.Children(func() {
+			ui.Text(c, text).Selectable().FontSize(bodySize)
+			if !it.open {
+				fade := ui.Box(c).Absolute().Left(-userBubblePad).Right(-userBubblePad).
+					Bottom(0).Height(userFade).PassThrough()
+				fade.LinearGradient(ui.LinearGradient{Angle: 180, Stops: []ui.GradientStop{
+					{Color: fill.Alpha(0), At: 0},
+					{Color: fill, At: 1},
+				}})
+			}
+		})
+		textButton(c, t, label, tip, func() { it.open = !it.open }).AlignSelf(ui.Start)
 	})
 }
 

@@ -87,8 +87,10 @@ func iconButton(
 }
 
 // textButton 画一个只有小字的按钮；tip 是悬停时的提示。
-func textButton(c *ui.Context, t *ui.Theme, label, tip string, click func()) {
-	quietButton(c, t, label, click).Height(tabHeight).Padding(0, 8).Tooltip(tip).Children(func() {
+func textButton(c *ui.Context, t *ui.Theme, label, tip string, click func()) ui.Element {
+	btn := quietButton(c, t, label, click).Height(tabHeight).Padding(0, 8).Tooltip(tip)
+	btn.Children(func() {
 		ui.Text(c, label).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 	})
+	return btn
 }
