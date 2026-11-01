@@ -24,6 +24,8 @@ func (a *App) block(c *ui.Context, t *ui.Theme, b block, final bool) {
 
 // reply 构建一次 run 的全部输出：助手文字直接排成正文，思考与工具为安静的单行，可点开
 // 查看细节。一次 run 里的各段连成一体，只在末尾有一行操作，复制的是所有助手文字。
+// 没有文字时这一行也占着高度：系统事件与只有步骤的一轮后面也要留出同样的空白，
+// 块与块的距离才一致，下一条用户消息不会贴着上一轮的最后一行。
 func (a *App) reply(c *ui.Context, t *ui.Theme, items []*item, final bool) {
 	text, at := replyText(items)
 	col := ui.Column(c)
@@ -34,9 +36,7 @@ func (a *App) reply(c *ui.Context, t *ui.Theme, items []*item, final bool) {
 				ui.Column(c.Key(p[0].id)).Children(func() { a.part(c, t, p) })
 			}
 		})
-		if text != "" {
-			a.actions(c, t, items[0], at, text, hovered && final)
-		}
+		a.actions(c, t, items[0], at, text, hovered && final)
 	})
 }
 
@@ -92,24 +92,29 @@ func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
 	})
 }
 
+// userTop 是用户消息上方的额外空白：提问是新的一轮，与上一轮之间留得比块之间更大。
+const userTop = 14
+
 // userMessage 把用户消息和它下面的一行操作放在一起：指针在其上时，操作行显示发送时间与
 // 复制按钮。有图片时，图片排在文字上方，靠右对齐；只有图片时没有文字块与复制按钮。
 func (a *App) userMessage(c *ui.Context, t *ui.Theme, it *item) {
-	col := ui.Column(c).AlignItems(ui.End).Gap(6)
-	hovered := col.Hovered()
-	col.Children(func() {
-		if len(it.pictures) > 0 {
-			ui.Row(c).Wrap().Gap(8).Justify(ui.End).MaxWidth(bubbleWidth).Children(func() {
-				for _, p := range it.pictures {
-					a.userPicture(c, t, p)
-				}
-			})
-		}
-		if it.text != "" {
-			ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
-				Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
-		}
-		a.actions(c, t, it, it.at, it.text, hovered && it.done)
+	ui.Column(c).Padding(userTop, 0, 0).Children(func() {
+		col := ui.Column(c).AlignItems(ui.End).Gap(6)
+		hovered := col.Hovered()
+		col.Children(func() {
+			if len(it.pictures) > 0 {
+				ui.Row(c).Wrap().Gap(8).Justify(ui.End).MaxWidth(bubbleWidth).Children(func() {
+					for _, p := range it.pictures {
+						a.userPicture(c, t, p)
+					}
+				})
+			}
+			if it.text != "" {
+				ui.Text(c, it.text).Selectable().FontSize(bodySize).Padding(10, 16).Radius(14).
+					Background(t.Text.Alpha(0.06)).MaxWidth(bubbleWidth)
+			}
+			a.actions(c, t, it, it.at, it.text, hovered && it.done)
+		})
 	})
 }
 
