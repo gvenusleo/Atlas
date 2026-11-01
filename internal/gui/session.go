@@ -115,16 +115,15 @@ func (a *App) start(ch *chat) {
 				return
 			case err != nil:
 				ch.err = err.Error()
-				ch.cwdGone = cwdMissing(ch.cwd)
-				if ch.job == nil && ch.cwdGone {
-					a.cwdGoneChat, a.cwdGoneErr, a.cwdGoneOpen = ch, "", true
+				if errors.Is(err, fs.ErrNotExist) {
+					a.askCwdGone(ch)
 				}
 				if ch.job != nil {
 					a.failTask(ch, err)
 				}
 				return
 			}
-			ch.id, ch.err, ch.cwdGone = id, "", false
+			ch.id, ch.err = id, ""
 			a.chats[id] = ch
 			ch.attach(options, state)
 			if ch.job != nil {
@@ -136,15 +135,18 @@ func (a *App) start(ch *chat) {
 	}()
 }
 
-// cwdMissing 报告工作目录是否已经不存在。其他读不了的情况不算，仍按错误原文处理。
-func cwdMissing(cwd string) bool {
-	_, err := os.Stat(cwd)
-	return errors.Is(err, fs.ErrNotExist)
+// askCwdGone 在会话的工作目录已不存在时打开恢复对话框；后台任务不改该用户的视图。
+func (a *App) askCwdGone(ch *chat) {
+	if ch.job != nil {
+		return
+	}
+	ch.cwdGone = true
+	a.cwdGoneChat, a.cwdGoneErr, a.cwdGoneOpen = ch, "", true
 }
 
-// rebuildCwd 在会话原来的路径上建目录，建好后重新打开。只建一级：父目录不在时多半是磁盘
+// createCwd 在会话原来的路径上建目录，建好后重新打开。只建一级：父目录不在时多半是磁盘
 // 没挂载，多建几级会造出一个空目录。失败时把原因留给对话框，用户改完可以再试。
-func (a *App) rebuildCwd(ch *chat) {
+func (a *App) createCwd(ch *chat) {
 	err := os.Mkdir(ch.cwd, 0o755)
 	switch {
 	case err == nil, errors.Is(err, fs.ErrExist):
@@ -345,9 +347,8 @@ func (a *App) finish(ch *chat, err error) {
 	case err != nil:
 		ch.err = err.Error()
 		// 发送时才发现工作目录没了：与打开时一样给出恢复的对话框。
-		if ch.job == nil && cwdMissing(ch.cwd) {
-			ch.cwdGone = true
-			a.cwdGoneChat, a.cwdGoneErr, a.cwdGoneOpen = ch, "", true
+		if errors.Is(err, fs.ErrNotExist) {
+			a.askCwdGone(ch)
 		}
 	}
 }

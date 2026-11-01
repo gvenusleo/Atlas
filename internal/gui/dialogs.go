@@ -112,7 +112,7 @@ func (a *App) cwdGoneDialog(c *ui.Context) {
 			rebuild := ui.PrimaryButton(c, "新建目录").Clicked()
 			switch {
 			case rebuild:
-				a.rebuildCwd(ch)
+				a.createCwd(ch)
 			case del:
 				a.cwdGoneOpen, a.cwdGoneErr = false, ""
 				a.remove(ch.id)
