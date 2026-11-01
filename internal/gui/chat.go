@@ -33,7 +33,7 @@ type item struct {
 	msg   string // 所属消息的 ID；重试时这条消息的内容一起丢掉
 	text  string // 用户、助手、思考的文本，或系统通知
 	done  bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
-	open  bool   // 思考、工具与技能卡片是否展开
+	open  bool   // 思考、工具、技能卡片与长用户消息是否展开
 	skill string // 技能的名称
 
 	at       time.Time // 用户与助手消息的时间，未知时为零
