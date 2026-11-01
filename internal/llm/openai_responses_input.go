@@ -33,7 +33,8 @@ func requestOf(req agent.StreamRequest) (responses.ResponseNewParams, error) {
 		params.MaxOutputTokens = openai.Int(req.MaxOutput)
 	}
 	switch level := req.ThinkingLevel; {
-	case level == "":
+	// Responses 只有 effort，没有单独的开关；on 同样不传，由服务端默认。
+	case level == "", level == agent.ThinkingOn:
 	case level == agent.ThinkingOff:
 		params.Reasoning.Effort = shared.ReasoningEffortNone
 	case level.Valid():

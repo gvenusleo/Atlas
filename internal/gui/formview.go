@@ -41,11 +41,11 @@ func fieldRow(c *ui.Context, name string, control func()) {
 }
 
 // pillSelect 画表单里的下拉：触发器是淡底的小块，悬停时深一点，显示当前值与向下的箭头，
-// 选项在其下展开。
+// 选项在其下展开。key 是控件的身份，同一表单里有多个同类控件时靠它区分；label 是读屏用的名称。
 func pillSelect[T comparable](
-	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
+	c *ui.Context, t *ui.Theme, key, label string, value *T, options []T, name func(T) string,
 ) {
-	sel := ui.SelectBase(c.Key(label), value)
+	sel := ui.SelectBase(c.Key(key), value)
 	trigger := sel.Trigger.Label(label).AlignItems(ui.Center).Gap(6).Height(fieldHeight).
 		Padding(0, 10).Radius(controlRound).Background(rowFill(t))
 	if trigger.Hovered() {

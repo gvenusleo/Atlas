@@ -17,9 +17,18 @@ import (
 // 这个文件是设置页“模型接入”一类的状态与逻辑：读写 ~/.atlas/settings.json 与 auth.json
 // （见 config），界面在 modelsview.go。
 
-// thinkingLevels 是思考深度可选的档位，由浅到深。它与 agent 的档位词表一致；gui 不依赖 agent，
+// thinkingLevels 是档位方式可选的档位，由浅到深；开关型不用这些值。gui 不依赖 agent，
 // 所以这里再列一遍。
 var thinkingLevels = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
+
+// thinkingKind 是模型的思考配置方式，对应“思考”下拉的各项。
+type thinkingKind int
+
+const (
+	thinkingNone   thinkingKind = iota // 不支持思考，或始终思考而不可配置
+	thinkingToggle                     // 只能开或关
+	thinkingEffort                     // 可调档位
+)
 
 // modelsPage 是“模型接入”一类的状态。
 type modelsPage struct {
@@ -159,9 +168,11 @@ type modelForm struct {
 	context string // 上下文窗口，token 数
 	output  string // 单次回复的输出上限，token 数
 	images  bool
-	levels  []bool       // 与 thinkingLevels 一一对应：这个模型支持哪些思考档位
+	kind    thinkingKind // 思考的配置方式：无、开关、档位
+	levels  []bool       // 与 thinkingLevels 一一对应：档位方式下勾选了哪些
 	orig    config.Model // 原来的样子，界面里没有的字段原样带回去
 	images0 bool
+	kind0   thinkingKind
 	levels0 []bool
 }
 
@@ -206,12 +217,13 @@ func (f *serviceForm) modelOf(id string, m config.Model) *modelForm {
 			continue
 		}
 		for _, v := range option.Values {
-			if i := slices.Index(thinkingLevels, v); i >= 0 && m.Reasoning {
+			if i := slices.Index(thinkingLevels, v); i >= 0 {
 				row.levels[i] = true
 			}
 		}
 	}
-	row.images0, row.levels0 = row.images, slices.Clone(row.levels)
+	row.images0, row.kind0, row.levels0 = row.images, thinkingKindOf(m), slices.Clone(row.levels)
+	row.kind = row.kind0
 	return row
 }
 
@@ -240,8 +252,8 @@ func (f *serviceForm) removeModel(m *modelForm) {
 	f.models = slices.DeleteFunc(f.models, func(row *modelForm) bool { return row == m })
 }
 
-// model 返回这一行填成的模型：界面里有的字段取表单的值，其余照原样；没改过的项（图片、思考
-// 档位）不动原来的写法。
+// model 返回这一行填成的模型：界面里有的字段取表单的值，其余照原样；没改过的项（图片、思考）
+// 不动原来的写法。
 func (m *modelForm) model() (config.Model, error) {
 	out := m.orig
 	out.Name = strings.TrimSpace(m.name)
@@ -255,8 +267,11 @@ func (m *modelForm) model() (config.Model, error) {
 	if m.images != m.images0 {
 		out.Modalities.Input = withImage(out.Modalities.Input, m.images)
 	}
-	if !slices.Equal(m.levels, m.levels0) {
-		withLevels(&out, m.levels)
+	if m.kind != m.kind0 || !slices.Equal(m.levels, m.levels0) {
+		if m.kind == thinkingEffort && !slices.Contains(m.levels, true) {
+			return config.Model{}, errors.New("模型 " + m.id + " 选了档位方式，至少要选一个档位")
+		}
+		withThinking(&out, m.kind, m.levels)
 	}
 	return out, nil
 }
@@ -289,22 +304,45 @@ func withImage(in []config.Modality, on bool) []config.Modality {
 	return append(in, config.ModalityImage)
 }
 
-// withLevels 把模型的思考档位换成 levels 选中的；其他种类的思考选项原样保留。
-func withLevels(m *config.Model, levels []bool) {
-	isEffort := func(o config.ReasoningOption) bool { return o.Type == config.ReasoningTypeEffort }
-	options := slices.DeleteFunc(slices.Clone(m.ReasoningOptions), isEffort)
-	var values []string
-	for i, on := range levels {
-		if on {
-			values = append(values, thinkingLevels[i])
-		}
+// thinkingKindOf 是模型现在的思考配置方式：有 effort 档位就是档位，否则看有没有开关。
+func thinkingKindOf(m config.Model) thinkingKind {
+	if slices.ContainsFunc(m.ReasoningOptions, func(o config.ReasoningOption) bool {
+		return o.Type == config.ReasoningTypeEffort && len(o.Values) > 0
+	}) {
+		return thinkingEffort
 	}
-	if len(values) > 0 {
-		effort := config.ReasoningOption{Type: config.ReasoningTypeEffort, Values: values}
-		options = append([]config.ReasoningOption{effort}, options...)
+	if slices.ContainsFunc(m.ReasoningOptions, func(o config.ReasoningOption) bool {
+		return o.Type == config.ReasoningTypeToggle
+	}) {
+		return thinkingToggle
+	}
+	return thinkingNone
+}
+
+// withThinking 把模型的思考配置换成 kind 选中的方式；档位方式取 levels 勾选的值，
+// 其他种类的思考选项原样保留。
+func withThinking(m *config.Model, kind thinkingKind, levels []bool) {
+	isThinkingOption := func(o config.ReasoningOption) bool {
+		return o.Type == config.ReasoningTypeEffort || o.Type == config.ReasoningTypeToggle
+	}
+	options := slices.DeleteFunc(slices.Clone(m.ReasoningOptions), isThinkingOption)
+	switch kind {
+	case thinkingEffort:
+		var values []string
+		for i, on := range levels {
+			if on {
+				values = append(values, thinkingLevels[i])
+			}
+		}
+		if len(values) > 0 {
+			options = append([]config.ReasoningOption{{
+				Type: config.ReasoningTypeEffort, Values: values,
+			}}, options...)
+		}
+	case thinkingToggle:
+		options = append([]config.ReasoningOption{{Type: config.ReasoningTypeToggle}}, options...)
 	}
 	m.ReasoningOptions = options
-	m.Reasoning = len(options) > 0
 }
 
 // provider 校验表单并返回服务的名称与内容；cfg 是现有的设置，用来查重名。
