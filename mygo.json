@@ -2,7 +2,7 @@
   "name": "Atlas",
   "identifier": "xin.liuyu.atlas",
   "main": "./cmd/atlas",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "copyright": "© 2026 liuyuxin",
   "out": "build",
   "macos": {
