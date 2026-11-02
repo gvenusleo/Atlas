@@ -87,7 +87,7 @@ func (a *App) start(ch *chat) {
 		return
 	}
 	ch.starts++
-	// 工作目录可能换了：旧目录的分支与 git 目录的监视都作废，按新目录重读。
+	// 工作目录可能已变更，旧分支状态与 Git 目录监视需要重新建立。
 	ch.branch = branchState{}
 	ch.stopWatchHead()
 	a.refreshBranch(ch, true)
@@ -319,6 +319,12 @@ func (a *App) refreshOptions() {
 
 // discard 让核心不再保留这个会话，并从已打开的会话里去掉它。
 func (a *App) discard(ch *chat) {
+	ch.starts++ // 使尚未返回的会话与分支结果失效
+	ch.stopWatchHead()
+	ch.branch = branchState{}
+	if ch.id == "" {
+		return
+	}
 	delete(a.chats, ch.id)
 	a.closeSession(ch.id)
 }

@@ -53,6 +53,7 @@ type fileTab struct {
 	path      string         // 绝对路径
 	loading   bool           // 还在读
 	reloading bool           // 正在重读，期间继续显示已有内容
+	resync    bool           // 重读期间收到文件变化，完成后再次读取
 	ed        *editor.State  // 文本的编辑器；不能预览、或是图片时为空
 	img       ui.ImageSource // 图片；文本与不能预览时为空
 	note      string         // 不能预览的原因

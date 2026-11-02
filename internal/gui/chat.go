@@ -111,7 +111,7 @@ type chat struct {
 	order       []sidePanel        // 开着的面板，按打开的先后；右侧栏照这个顺序排布
 	expanded    sidePanel          // 扩展到整个主区的面板；没有时为 noPanel
 	unwatch     context.CancelFunc // 停止监视工作目录；没在监视时为空
-	unwatchHead context.CancelFunc // 停止盯着 git 目录，见 App.watchHead；没在盯时为空
+	unwatchHead context.CancelFunc // 停止监视 Git 目录；未监视时为空，见 App.watchHead
 }
 
 // fresh 报告会话是不是还没发过消息的新会话：它还没写进库，换工作目录就是换一个新会话。

@@ -38,7 +38,7 @@ func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	} else {
 		row = ui.Row(c)
 	}
-	// 路径太长时收缩，用省略号截断；按钮默认不收缩，所以显式写 Shrink。
+	// 允许路径收缩，避免长路径挤占分支与模型选择器的空间。
 	row.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).MinWidth(0).Shrink(1)
 	row.Children(func() {
 		ui.Icon(c, folderIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Shrink(0)
@@ -69,7 +69,7 @@ type branchPick struct {
 }
 
 // branchPicker 是状态行里的分支下拉，与模型、思考深度是同一个控件：当前分支就是它的值，
-// 选项是本地与远程分支，选中即切换；同一目录有会话在运行时点不开。
+// 选项是本地与远程分支，选中即切换；同一工作树有会话运行时禁用。
 func (a *App) branchPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 	b := ch.branch
 	if b.name == "" {
@@ -123,25 +123,25 @@ func (a *App) configPicker(c *ui.Context, t *ui.Theme, ch *chat, id string) {
 	})
 }
 
-// dropdownMaxHeight 是下拉展开后列表的最高高度：选项多时（分支、字体）滚动查看，不至于顶出窗口。
+// dropdownMaxHeight 限制选项列表高度，选项较多时通过滚动查看。
 const dropdownMaxHeight = 320
 
-// dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开。icon 画在当前值前面，
-// 可为空。value 指向当前值的本帧副本，选了新值后 onChange 里读它；disabled 时点不开。
+// dropdown 构建下拉选择器，glyph 可为空。value 指向当前值的本帧副本，
+// onChange 在选择完成后读取它；disabled 为真时禁用。
 func dropdown[T comparable](
-	c *ui.Context, t *ui.Theme, label string, icon *ui.SVG, value *T, options []T,
+	c *ui.Context, t *ui.Theme, label string, glyph *ui.SVG, value *T, options []T,
 	name func(T) string, disabled bool, onChange func(),
 ) {
 	sel := ui.SelectBase(c.Key(label), value)
-	// 状态行放不下时（路径与分支名都很长）可以收缩，名字用省略号截断。
+	// 长名称允许收缩并省略，避免超出状态行宽度。
 	sel.Trigger.AlignItems(ui.Center).Gap(6).Padding(3, 6).Radius(controlRound).
 		MinWidth(0).Shrink(1).Label(label).Disabled(disabled).OnChange(onChange)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(rowFill(t))
 	}
 	sel.Trigger.Children(func() {
-		if icon != nil {
-			ui.Icon(c, icon).FontSize(smallIconSize).TextColor(t.TextMuted).Shrink(0)
+		if glyph != nil {
+			ui.Icon(c, glyph).FontSize(smallIconSize).TextColor(t.TextMuted).Shrink(0)
 		}
 		ui.Text(c, name(*value)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().
 			MinWidth(0)

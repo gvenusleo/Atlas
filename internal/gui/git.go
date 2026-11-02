@@ -233,8 +233,8 @@ func readChange(cwd string, c fileChange, hasHead bool) (before, after, note str
 	return before, after, ""
 }
 
-// readBranch 读出 cwd 所在仓库的当前分支，分离头指针时是短哈希。还没提交的仓库也有分支名，
-// 所以先问 symbolic-ref。
+// readBranch 读取当前分支；未提交的仓库也有符号引用，因此先读取 symbolic-ref，
+// 分离 HEAD 时再读取短哈希。
 func readBranch(cwd string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
@@ -267,8 +267,8 @@ func readBranches(cwd string) branchList {
 	}
 }
 
-// refNames 是 ns 下的引用短名，最近提交的在前，最多 branchMax 个，免得分支成千的仓库每次
-// 重读都很慢；远程的 HEAD 不是分支，不算。
+// refNames 返回 ns 下按最近提交排序的引用短名。限制数量以控制大型仓库的读取成本，
+// 并排除不代表分支的远程 HEAD 引用。
 func refNames(ctx context.Context, cwd, ns string) []string {
 	out, err := gitOut(ctx, cwd, "for-each-ref", "--sort=-committerdate",
 		"--count="+strconv.Itoa(branchMax), "--format=%(refname)", ns)
@@ -286,8 +286,8 @@ func refNames(ctx context.Context, cwd, ns string) []string {
 	return names
 }
 
-// switchBranch 切到分支 name。remote 说明 name 是远程分支（如 origin/main）：本地有同名
-// 分支就直接切，没有就按它建一个跟踪分支。
+// switchBranch 切换到分支 name。remote 表示远程分支（如 origin/main）：本地存在同名分支时
+// 直接切换，否则建立跟踪分支。
 func switchBranch(cwd, name string, remote bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
@@ -308,13 +308,13 @@ func switchBranch(cwd, name string, remote bool) error {
 	return nil
 }
 
-// hasBranch 报告仓库里有没有叫 name 的本地分支。
+// hasBranch 检查本地分支 name 是否存在。
 func hasBranch(ctx context.Context, cwd, name string) bool {
 	_, err := gitOut(ctx, cwd, "rev-parse", "--verify", "-q", "refs/heads/"+name)
 	return err == nil
 }
 
-// gitDir 是 cwd 所在仓库的 git 目录；链接的工作树是它自己的那个。
+// gitDir 返回解析符号链接后的 Git 目录；独立 worktree 使用各自的 Git 目录。
 func gitDir(cwd string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
@@ -322,5 +322,5 @@ func gitDir(cwd string) (string, error) {
 	if err != nil {
 		return "", errors.New(gitError(err))
 	}
-	return strings.TrimSpace(string(out)), nil
+	return filepath.EvalSymlinks(strings.TrimSpace(string(out)))
 }

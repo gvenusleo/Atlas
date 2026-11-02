@@ -2,23 +2,23 @@ package gui
 
 import "time"
 
-// 这个文件是会话当前分支的状态：从工作目录所在的仓库读出来，供状态行的分支下拉使用，并在
-// 切换之后让界面跟上。分支属于目录而不属于会话，所以同一个目录的其它会话要一起重读。
+// 本文件管理会话工作目录所在工作树的分支状态；同一工作树的会话共享分支保护与刷新范围。
 
-// branchAge 是分支结论用多久就要重读，与 gitCheckAge 同量级。
+// branchAge 是分支状态的缓存时长。
 const branchAge = 3 * time.Second
 
 // branchState 是会话工作目录所在仓库的当前分支，以及可切换的分支。
 type branchState struct {
+	dir     string // 解析符号链接后的 Git 目录，独立 worktree 各不相同
 	name    string // 分支名；分离头指针时是短哈希
 	list    branchList
 	at      time.Time // 上次读到分支的时刻
 	loading bool      // 正在读
-	again   bool      // 读的时候又被要求重读，读完后再读一次，不并发地跑两轮 git
+	again   bool      // 读取期间收到刷新请求，完成后再次读取
 }
 
-// refreshBranch 在后台重读会话的分支；force 为假时刚读过的跳过。工作目录只在重新打开会话时
-// 才会换（见 App.start），在途的结果据 chat.starts 认出过时的。
+// refreshBranch 在后台重新读取分支；force 为假时使用未过期的缓存。
+// 工作目录变更或会话被丢弃后，通过 chat.starts 丢弃在途结果。
 func (a *App) refreshBranch(ch *chat, force bool) {
 	if !ch.inRepo() {
 		ch.branch = branchState{}
@@ -35,13 +35,17 @@ func (a *App) refreshBranch(ch *chat, force bool) {
 	b.loading = true
 	cwd, starts := ch.cwd, ch.starts
 	go func() {
-		name, err := readBranch(cwd)
+		dir, err := gitDir(cwd)
+		var name string
 		var list branchList
+		if err == nil {
+			name, err = readBranch(cwd)
+		}
 		if err == nil {
 			list = readBranches(cwd)
 		}
 		a.win.Update(func() {
-			if ch.starts != starts { // 读的时候重新打开了会话，结果作废
+			if ch.starts != starts { // 会话已重建或丢弃
 				return
 			}
 			again := b.again
@@ -49,7 +53,7 @@ func (a *App) refreshBranch(ch *chat, force bool) {
 				*b = branchState{at: time.Now()}
 				return
 			}
-			*b = branchState{name: name, list: list, at: time.Now()}
+			*b = branchState{dir: dir, name: name, list: list, at: time.Now()}
 			a.watchHead(ch)
 			if again {
 				a.refreshBranch(ch, true)
@@ -58,26 +62,33 @@ func (a *App) refreshBranch(ch *chat, force bool) {
 	}()
 }
 
-// branchBusy 报告 ch 的工作目录里有没有会话正在运行：分支属于目录，运行中的 Agent 脚下的
-// 文件不能换掉。
+// branchBusy 检查同一工作树是否有会话正在运行，避免切换分支替换运行中的文件。
+// 运行会话的工作树尚未确定时，暂时禁止切换。
 func (a *App) branchBusy(ch *chat) bool {
-	if ch.running {
+	if ch.running || ch.branch.dir == "" {
 		return true
 	}
 	for _, other := range a.chats {
-		if other.cwd == ch.cwd && other.running {
+		if other.running && other.inRepo() &&
+			(other.branch.dir == "" || other.branch.dir == ch.branch.dir) {
 			return true
 		}
 	}
 	return false
 }
 
-// chooseBranch 在后台切到用户选中的分支；成功后重读分支、刷新更改面板，并让同目录的其它会话跟上。
+// chooseBranch 在后台切换分支，成功后刷新同一工作树的会话与更改面板。
 func (a *App) chooseBranch(ch *chat, name string, remote bool) {
-	cwd := ch.cwd // 切换期间换了工作目录的，不能切到新目录的仓库里
+	if a.branchBusy(ch) {
+		return
+	}
+	cwd, starts := ch.cwd, ch.starts
 	go func() {
 		err := switchBranch(cwd, name, remote)
 		a.win.Update(func() {
+			if ch.starts != starts {
+				return
+			}
 			if err != nil {
 				a.toast = "切换分支失败：" + err.Error()
 				return
@@ -91,10 +102,10 @@ func (a *App) chooseBranch(ch *chat, name string, remote bool) {
 	}()
 }
 
-// branchChanged 让同工作目录的其它会话重读分支：分支属于目录，不属于会话。
+// branchChanged 重新读取同一工作树中其他会话的分支与更改。
 func (a *App) branchChanged(ch *chat) {
 	for _, other := range a.chats {
-		if other == ch || other.cwd != ch.cwd {
+		if other == ch || ch.branch.dir == "" || other.branch.dir != ch.branch.dir {
 			continue
 		}
 		a.refreshBranch(other, true)

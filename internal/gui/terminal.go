@@ -147,6 +147,7 @@ func (ch *chat) closeTerms() {
 // closePanels 关闭会话的终端，并停止监视工作目录与 git 目录，在会话被删除、丢弃或应用退出时
 // 调用。
 func (ch *chat) closePanels() {
+	ch.starts++ // 关闭后不再接受在途会话或分支结果
 	ch.closeTerms()
 	ch.stopWatch()
 	ch.stopWatchHead()

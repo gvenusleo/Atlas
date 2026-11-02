@@ -125,7 +125,7 @@ func (a *App) showChosen(ch *chat) {
 	}
 }
 
-// stepFile 显示文件树顺序里相邻的文件：delta 为 -1 是上一个，为 1 是下一个；到头时不动。
+// stepFile 按文件树顺序选择相邻文件：delta 为 -1 表示前一项，为 1 表示后一项；到达边界时保持不变。
 func (a *App) stepFile(ch *chat, delta int) {
 	cp := ch.changes
 	index := slices.Index(cp.paths, cp.selected) + delta
@@ -138,8 +138,7 @@ func (a *App) stepFile(ch *chat, delta int) {
 	a.loadDiff(ch)
 }
 
-// openChangeFile 在文件面板里打开正在对比的文件，光标放在对比里所在的位置；删除了的文件
-// 没有可打开的。
+// openChangeFile 在文件面板中打开当前对比文件，并定位到对比中的源码位置；已删除文件不可打开。
 func (a *App) openChangeFile(ch *chat) {
 	v := ch.changes.view
 	chg, ok := ch.changes.files[ch.changes.selected]
@@ -280,8 +279,7 @@ func (cp *changePanel) buildTree() {
 	}
 }
 
-// updateFiles 在读到新的更改后重建树，并让审阅的文件顺序（paths）与树一致；正显示的文件
-// 没有了，就改选原位置的下一项。
+// updateFiles 更新文件树与审阅顺序（paths）；当前文件不再存在时，沿原顺序选择下一项。
 func (cp *changePanel) updateFiles() {
 	cp.buildTree()
 	_, present := cp.files[cp.selected]
@@ -321,7 +319,7 @@ func (cp *changePanel) findRemainingFile() string {
 	return ""
 }
 
-// appendFiles 把 items 里的文件按树从上到下的顺序追加到 paths，目录换成它里面的文件。
+// appendFiles 按文件树顺序追加 items 中的文件，递归遍历目录，不受折叠状态影响。
 func (cp *changePanel) appendFiles(items []string) {
 	for _, item := range items {
 		if kids := cp.kids[item]; kids != nil {
