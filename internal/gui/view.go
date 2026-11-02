@@ -164,11 +164,7 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		a.titleBar(c, t, cmp.Or(ch.title, "新对话"))
 		ui.Box(c).Grow(1).Children(func() { a.messages(c, t, ch) })
-		if ch.err != "" {
-			column(c, 4, func() {
-				ui.Text(c, ch.err).TextColor(t.Danger).FontSize(textSize).Selectable()
-			})
-		}
+		errorLine(c, t, ch)
 		if ch.retry != "" {
 			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(textSize) })
 		}
@@ -184,7 +180,18 @@ func (a *App) welcome(c *ui.Context, t *ui.Theme, ch *chat) {
 			ui.Text(c, "今天想做点什么？").FontSize(titleSize).Padding(0, 0, 28).
 				TextAlign(ui.Center)
 			a.composer(c, t, ch)
+			errorLine(c, t, ch)
 		})
+	})
+}
+
+// errorLine 显示核心未受理请求的原因，确保空白新会话中的错误可见。
+func errorLine(c *ui.Context, t *ui.Theme, ch *chat) {
+	if ch.err == "" {
+		return
+	}
+	column(c, 4, func() {
+		ui.Text(c, ch.err).TextColor(t.Danger).FontSize(textSize).Selectable()
 	})
 }
 

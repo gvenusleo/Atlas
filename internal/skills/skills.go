@@ -32,7 +32,8 @@ type Skill struct {
 	FilePath    string `xml:"filePath"`
 }
 
-// Discover 从全局和工作区的 .agents、.atlas 目录发现技能，统一四个来源。
+// Discover 从工作区与主目录的 .atlas、.agents 目录发现技能，统一四个来源，按优先级从高到低
+// 依次扫描：工作区优先于主目录，同一处 .atlas 优先于 .agents。
 func Discover(cwd string) ([]Skill, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -43,17 +44,18 @@ func Discover(cwd string) ([]Skill, error) {
 		return nil, fmt.Errorf("工作目录解析失败: %w", err)
 	}
 	return Load(
-		filepath.Join(home, ".agents", "skills"),
-		filepath.Join(home, ".atlas", "skills"),
-		filepath.Join(cwd, ".agents", "skills"),
 		filepath.Join(cwd, ".atlas", "skills"),
+		filepath.Join(cwd, ".agents", "skills"),
+		filepath.Join(home, ".atlas", "skills"),
+		filepath.Join(home, ".agents", "skills"),
 	)
 }
 
-// Load 扫描 skills 来源的子目录，按名称排序；缺失目录略过，加载错误直接返回。
+// Load 按传入顺序扫描技能来源的子目录，按名称排序；缺失目录略过，同名技能保留首次加载的结果，
+// 加载失败时立即返回错误。
 func Load(dirs ...string) ([]Skill, error) {
 	var skills []Skill
-	names := make(map[string]string)
+	names := make(map[string]bool)
 	paths := make(map[string]bool)
 
 	for _, dir := range dirs {
@@ -79,10 +81,10 @@ func Load(dirs ...string) ([]Skill, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s 加载失败: %w", path, err)
 			}
-			if previous, exists := names[skill.Name]; exists {
-				return nil, fmt.Errorf("技能 %q 同名冲突: %s 与 %s", skill.Name, previous, path)
+			if names[skill.Name] {
+				continue
 			}
-			names[skill.Name] = path
+			names[skill.Name] = true
 			paths[realPath] = true
 			skills = append(skills, skill)
 		}
