@@ -51,8 +51,8 @@ func Discover(cwd string) ([]Skill, error) {
 	)
 }
 
-// Load 按给的先后扫描 skills 来源的子目录，按名称排序；缺失目录略过，同名时先扫到的留下，
-// 后面的跳过，加载错误直接返回。
+// Load 按传入顺序扫描技能来源的子目录，按名称排序；缺失目录略过，同名技能保留首次加载的结果，
+// 加载失败时立即返回错误。
 func Load(dirs ...string) ([]Skill, error) {
 	var skills []Skill
 	names := make(map[string]bool)
