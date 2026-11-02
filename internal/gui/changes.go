@@ -2,6 +2,7 @@ package gui
 
 import (
 	"cmp"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -28,10 +29,15 @@ type changePanel struct {
 	tree   ui.OutlineState[string] // 展开着的目录与滚动位置
 	chosen ui.Selection[string]    // 选中的条目
 
-	selected  string // 对比里显示的文件；没有时为空
-	view      *changeView
-	treeWidth float32 // 文件树与对比之间分隔条的位置
-	split     bool    // 对比并排显示，否则上下合并
+	selected   string // 对比里显示的文件；没有时为空
+	view       *changeView
+	views      map[string]*changeView // 保留读过的文件的阅读位置
+	paths      []string               // 与文件树一致的文件顺序，包含收起目录里的文件
+	reveal     bool                   // 下次显示文件树时将选中文件滚入可见范围
+	focus      ui.Handle
+	treeHidden bool
+	treeWidth  float32 // 文件树与对比之间分隔条的位置
+	split      bool    // 对比并排显示，否则上下合并
 }
 
 // changeView 是选中文件的对比。
@@ -66,7 +72,9 @@ func (cp *changePanel) reset(cwd string) {
 	cp.roots, cp.kids, cp.files, cp.seen = nil, nil, nil, map[string]bool{}
 	cp.tree.Open.Clear()
 	cp.chosen.Clear()
-	cp.selected, cp.view = "", nil
+	cp.selected, cp.view, cp.paths = "", nil, nil
+	cp.views = map[string]*changeView{}
+	cp.reveal = false
 }
 
 // refreshChanges 在后台重新读取更改；正在读时记下，读完后再读一次，不并发地跑两个 git。
@@ -87,11 +95,7 @@ func (a *App) refreshChanges(ch *chat) {
 			}
 			cp.loading = false
 			cp.set, cp.loaded = set, true
-			cp.buildTree()
-			if _, ok := cp.files[cp.selected]; !ok {
-				cp.selected = cp.firstFile()
-			}
-			cp.choose(cp.selected)
+			cp.updateFiles()
 			a.loadDiff(ch)
 			if cp.again {
 				cp.again = false
@@ -121,6 +125,34 @@ func (a *App) showChosen(ch *chat) {
 	}
 }
 
+// stepFile 显示文件树顺序里相邻的文件：delta 为 -1 是上一个，为 1 是下一个；到头时不动。
+func (a *App) stepFile(ch *chat, delta int) {
+	cp := ch.changes
+	index := slices.Index(cp.paths, cp.selected) + delta
+	if index < 0 || index >= len(cp.paths) {
+		return
+	}
+	cp.selected = cp.paths[index]
+	cp.choose(cp.selected)
+	cp.revealFile()
+	a.loadDiff(ch)
+}
+
+// openChangeFile 在文件面板里打开正在对比的文件，光标放在对比里所在的位置；删除了的文件
+// 没有可打开的。
+func (a *App) openChangeFile(ch *chat) {
+	v := ch.changes.view
+	chg, ok := ch.changes.files[ch.changes.selected]
+	if !ok || chg.kind == changeDeleted || v == nil {
+		return
+	}
+	a.showFile(ch, v.path)
+	if v.diff != nil {
+		tb := ch.files.tabs[ch.files.active]
+		tb.showPosition(v.findSourcePosition())
+	}
+}
+
 // loadDiff 在后台读出选中文件的对比。是同一个文件时保留已有的对比，只换文本，滚动位置不变。
 func (a *App) loadDiff(ch *chat) {
 	cp := ch.changes
@@ -131,7 +163,11 @@ func (a *App) loadDiff(ch *chat) {
 	}
 	cwd, gen, hasHead := cp.cwd, cp.gen, cp.set.hasHead
 	if cp.view == nil || cp.view.path != chg.path {
-		cp.view = &changeView{path: chg.path}
+		cp.view = cp.views[chg.path]
+		if cp.view == nil {
+			cp.view = &changeView{path: chg.path}
+			cp.views[chg.path] = cp.view
+		}
 	}
 	view := cp.view
 	view.seq++
@@ -170,6 +206,37 @@ func (v *changeView) show(before, after, note string) {
 	old.SetLanguage(lang)
 	text.SetLanguage(lang)
 	v.diff = &editor.DiffState{Old: old, New: text, Wrap: true, Font: codeFont}
+	v.diff.GoToHunk(0)
+}
+
+// findHunk 在两处改动之间向上跳转时，停在前一处改动。
+func (v *changeView) findHunk(delta int) int {
+	i, inside := v.diff.CurrentHunk()
+	if delta > 0 || inside {
+		i += delta
+	}
+	return i
+}
+
+// findSourcePosition 将旧版本中的位置映射到工作区；删除的行落在改动起点。
+func (v *changeView) findSourcePosition() editor.Pos {
+	d := v.diff
+	pos := d.CursorPos()
+	if d.ActiveSide() != editor.DiffOld {
+		return pos
+	}
+	delta := 0
+	for _, h := range d.Hunks() {
+		if pos.Line < h.OldStart {
+			break
+		}
+		if pos.Line < h.OldEnd {
+			return editor.Pos{Line: h.NewStart}
+		}
+		delta = h.NewEnd - h.OldEnd
+	}
+	pos.Line += delta
+	return pos
 }
 
 // buildTree 由读到的更改建出树：目录在前、文件在后，各自按名称不分大小写排序。第一次见到
@@ -213,21 +280,67 @@ func (cp *changePanel) buildTree() {
 	}
 }
 
-// firstFile 返回树里从上往下的第一个文件，没有文件时为空。
-func (cp *changePanel) firstFile() string {
-	var find func(items []string) string
-	find = func(items []string) string {
-		for _, item := range items {
-			if cp.kids[item] == nil {
-				return item
-			}
-			if f := find(cp.kids[item]); f != "" {
-				return f
-			}
-		}
-		return ""
+// updateFiles 在读到新的更改后重建树，并让审阅的文件顺序（paths）与树一致；正显示的文件
+// 没有了，就改选原位置的下一项。
+func (cp *changePanel) updateFiles() {
+	cp.buildTree()
+	_, present := cp.files[cp.selected]
+	if !present {
+		cp.selected = cp.findRemainingFile()
 	}
-	return find(cp.roots)
+	cp.paths = cp.paths[:0]
+	cp.appendFiles(cp.roots)
+	maps.DeleteFunc(cp.views, func(rel string, _ *changeView) bool {
+		_, ok := cp.files[rel]
+		return !ok
+	})
+	if !present {
+		if cp.selected == "" && len(cp.paths) > 0 {
+			cp.selected = cp.paths[0]
+		}
+		cp.revealFile()
+	}
+	cp.choose(cp.selected)
+}
+
+// findRemainingFile 沿刷新前的顺序找选中文件之后还在的下一项，没有时向前回退，避免批量移除
+// 导致下标错位。
+func (cp *changePanel) findRemainingFile() string {
+	index := slices.Index(cp.paths, cp.selected)
+	for _, rel := range cp.paths[index+1:] {
+		if _, ok := cp.files[rel]; ok {
+			return rel
+		}
+	}
+	for i := index - 1; i >= 0; i-- {
+		rel := cp.paths[i]
+		if _, ok := cp.files[rel]; ok {
+			return rel
+		}
+	}
+	return ""
+}
+
+// appendFiles 把 items 里的文件按树从上到下的顺序追加到 paths，目录换成它里面的文件。
+func (cp *changePanel) appendFiles(items []string) {
+	for _, item := range items {
+		if kids := cp.kids[item]; kids != nil {
+			cp.appendFiles(kids)
+		} else {
+			cp.paths = append(cp.paths, item)
+		}
+	}
+}
+
+// revealFile 展开选中文件的祖先目录；文件树收起时延后滚动。
+func (cp *changePanel) revealFile() {
+	if cp.selected == "" {
+		return
+	}
+	for dir := path.Dir(cp.selected); dir != "."; dir = path.Dir(dir) {
+		cp.tree.Open.Add(dir)
+	}
+	cp.reveal = true
 }
 
 // children 返回条目 item 的子项，文件没有（nil）。

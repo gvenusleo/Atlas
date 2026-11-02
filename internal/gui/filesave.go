@@ -88,7 +88,7 @@ func (tb *fileTab) finishSave(version uint64, st fileStat, err error) {
 // syncTab 核对标签的文件在磁盘上有没有变过：没有未保存的修改就重新读入，有就提示冲突，
 // 文件没了也提示。
 func (a *App) syncTab(tb *fileTab) {
-	if tb.loading || tb.saving {
+	if tb.loading || tb.reloading || tb.saving {
 		return
 	}
 	info, err := os.Stat(tb.path)
@@ -108,8 +108,13 @@ func (a *App) syncTab(tb *fileTab) {
 
 // reloadTab 在后台重新读入标签的文件；force 为真时丢掉未保存的修改。
 func (a *App) reloadTab(tb *fileTab, force bool) {
+	if tb.reloading {
+		return
+	}
+	tb.reloading = true
+	p := tb.path
 	go func() {
-		content := readTab(tb.path)
+		content := readTab(p)
 		a.win.Update(func() { tb.reload(content, force) })
 	}()
 }
@@ -117,6 +122,7 @@ func (a *App) reloadTab(tb *fileTab, force bool) {
 // reload 用重新读到的内容换掉标签里的。force 为假时，读的时候用户又改了就不换，
 // 改成提示冲突。
 func (tb *fileTab) reload(content tabContent, force bool) {
+	tb.reloading = false
 	switch {
 	case tb.ed != nil && !force && tb.dirty():
 		tb.changed = true
@@ -127,6 +133,9 @@ func (tb *fileTab) reload(content tabContent, force bool) {
 	default: // 以前不能预览现在可以，或现在不能预览了：重新建
 		tb.load(content)
 		tb.changed, tb.gone = false, false
+	}
+	if tb.position != nil {
+		tb.showPosition(*tb.position)
 	}
 }
 

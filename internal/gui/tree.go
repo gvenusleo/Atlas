@@ -22,6 +22,22 @@ func outlineTree(
 	return el
 }
 
+// treeToggle 是标签栏左端的文件树开关；文件树显示时用强调色标出。
+func treeToggle(c *ui.Context, t *ui.Theme, hidden *bool) {
+	btn := ui.ButtonBase(c).Size(barButton, barButton).Shrink(0).Radius(controlRound).
+		Label("文件树").Tooltip("文件树")
+	color := t.TextMuted
+	switch {
+	case !*hidden:
+		btn.Background(accentFg(t).Alpha(0.15))
+		color = accentFg(t)
+	case btn.Hovered():
+		btn.Background(buttonFill(t))
+	}
+	btn.OnClick(func() { *hidden = !*hidden })
+	btn.Children(func() { ui.Icon(c, listIcon).FontSize(iconSize).TextColor(color) })
+}
+
 // treeItem 是树里一行箭头之后的内容的容器。Outline 给每一行（文件也一样）留一个箭头的位置，
 // 文件缩进过多；leaf 为真时把内容左移这个宽度，让文件的图标落在目录箭头的位置。点击不夺走
 // 树的键盘焦点。

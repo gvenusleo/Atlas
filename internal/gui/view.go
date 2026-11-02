@@ -249,7 +249,7 @@ func (a *App) jumpToLatest(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		btn.OnClick(ch.list.ScrollToEnd)
 		btn.Children(func() {
-			ui.Icon(c, sendIcon).FontSize(iconSize).TextColor(t.TextMuted).Rotate(180)
+			ui.Icon(c, arrowDownIcon).FontSize(iconSize).TextColor(t.TextMuted)
 		})
 	})
 }

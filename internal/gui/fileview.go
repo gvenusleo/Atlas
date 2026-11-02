@@ -57,7 +57,7 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
 		DragWindow().Children(func() {
-		treeToggle(c, t, fp)
+		treeToggle(c, t, &fp.treeHidden)
 		if len(items) == 0 {
 			ui.Text(c, "文件").FontSize(textSize).Padding(0, 6)
 		}
@@ -65,22 +65,6 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 		ui.Row(c).Grow(1)
 		a.cardActions(c, t, ch, filesPanel, "关闭文件面板", a.toggleFiles)
 	})
-}
-
-// treeToggle 是标签栏左端的文件树开关；文件树显示时用强调色标出。
-func treeToggle(c *ui.Context, t *ui.Theme, fp *filePanel) {
-	btn := ui.ButtonBase(c).Size(barButton, barButton).Shrink(0).Radius(controlRound).
-		Label("文件树").Tooltip("文件树")
-	color := t.TextMuted
-	switch {
-	case !fp.treeHidden:
-		btn.Background(accentFg(t).Alpha(0.15))
-		color = accentFg(t)
-	case btn.Hovered():
-		btn.Background(buttonFill(t))
-	}
-	btn.OnClick(func() { fp.treeHidden = !fp.treeHidden })
-	btn.Children(func() { ui.Icon(c, listIcon).FontSize(iconSize).TextColor(color) })
 }
 
 // fileContent 画内容区：没有标签时是说明，否则是当前标签的路径与内容。

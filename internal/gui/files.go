@@ -49,12 +49,14 @@ type fileEntry struct {
 
 // fileTab 是文件面板里打开的一个文件。
 type fileTab struct {
-	id      int
-	path    string         // 绝对路径
-	loading bool           // 还在读
-	ed      *editor.State  // 文本的编辑器；不能预览、或是图片时为空
-	img     ui.ImageSource // 图片；文本与不能预览时为空
-	note    string         // 不能预览的原因
+	id        int
+	path      string         // 绝对路径
+	loading   bool           // 还在读
+	reloading bool           // 正在重读，期间继续显示已有内容
+	ed        *editor.State  // 文本的编辑器；不能预览、或是图片时为空
+	img       ui.ImageSource // 图片；文本与不能预览时为空
+	note      string         // 不能预览的原因
+	position  *editor.Pos    // 异步读完后需要定位到的源码位置
 
 	onSave  func()   // 保存这个标签的文件，在编辑器里按 Cmd+S 时调用
 	stat    fileStat // 打开或保存时磁盘上的文件，用来发现外部修改
@@ -270,7 +272,7 @@ func (tb *fileTab) load(content tabContent) {
 	tb.csv.forget()
 	tb.order.forget()
 	if content.note != "" || content.img != nil {
-		tb.ed = nil
+		tb.ed, tb.position = nil, nil
 		return
 	}
 	buf := editor.NewBuffer(content.text)
@@ -287,6 +289,22 @@ func (tb *fileTab) load(content tabContent) {
 			}
 			return false
 		},
+	}
+	if tb.position != nil {
+		tb.showPosition(*tb.position)
+	}
+}
+
+// showPosition 在源码中定位；文件尚未读完时保留请求，读完后再定位。
+func (tb *fileTab) showPosition(pos editor.Pos) {
+	if tb.loading || tb.reloading {
+		tb.position = &pos
+		return
+	}
+	tb.position = nil
+	if tb.ed != nil {
+		tb.render = false
+		tb.ed.GoTo(pos)
 	}
 }
 

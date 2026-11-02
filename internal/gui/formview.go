@@ -53,7 +53,7 @@ func pillSelect[T comparable](
 	}
 	trigger.Children(func() {
 		ui.Text(c, name(*value)).FontSize(textSize).SingleLine()
-		ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(90)
+		ui.Icon(c, chevronDownIcon).FontSize(smallIconSize).TextColor(t.TextMuted)
 	})
 	dropdownOptions(c, t, sel, value, options, name, textSize)
 }
