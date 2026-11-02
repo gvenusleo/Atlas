@@ -21,7 +21,7 @@ func (a *App) modelSettings(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	settingRow(c, "默认模型", func() {
-		dropdown(c, t, "默认模型", &p.pick, p.modelRefs(), p.modelLabel, false,
+		dropdown(c, t, "默认模型", nil, &p.pick, p.modelRefs(), p.modelLabel, false,
 			a.chooseDefaultModel)
 	})
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
@@ -204,10 +204,11 @@ func (a *App) modelHead(c *ui.Context, t *ui.Theme, m *modelForm, key string) {
 		Padding(10, 12).Radius(controlRound + 2).Label(title)
 	head.OnClick(func() { m.open = !m.open })
 	head.Children(func() {
-		arrow := ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted)
+		glyph := chevronIcon
 		if m.open {
-			arrow.Rotate(90)
+			glyph = chevronDownIcon
 		}
+		ui.Icon(c, glyph).FontSize(smallIconSize).TextColor(t.TextMuted)
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			ui.Text(c, title).FontSize(textSize).Bold().SingleLine()
 			if name := strings.TrimSpace(m.name); name != "" {

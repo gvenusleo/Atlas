@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strconv"
 
 	"github.com/egoist/mygo/ui"
@@ -21,7 +22,8 @@ func (a *App) changesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) 
 			a.watchFiles(ch)
 		}
 	}
-	sideCard(c, t, "changes-card", height).Children(func() {
+	sideCard(c, t, "changes-card", height).Focusable().Bind(&cp.focus).Children(func() {
+		a.changeShortcuts(c, ch)
 		a.changeBar(c, t, ch)
 		switch {
 		case cp.set.err != "":
@@ -30,6 +32,8 @@ func (a *App) changesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) 
 			ui.Text(c, "正在读取…").TextColor(t.TextMuted).FontSize(textSize).Padding(12)
 		case len(cp.set.files) == 0:
 			emptyChanges(c, t)
+		case cp.treeHidden:
+			a.changeContent(c, t, ch)
 		default:
 			cp.treeWidth = min(max(cp.treeWidth, treeMin), max(a.sideWidth/2, treeMin))
 			ui.Split(c, &cp.treeWidth, func() { a.changeOutline(c, t, ch) },
@@ -38,22 +42,35 @@ func (a *App) changesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) 
 	})
 }
 
-// changeBar 画卡片顶部的标题栏：标题与文件数，右端是刷新、对比布局的切换与关闭按钮；
+// changeShortcuts 的作用域限于更改卡片，输入框与其他面板不接收这些操作。
+func (a *App) changeShortcuts(c *ui.Context, ch *chat) {
+	cp := ch.changes
+	c.OnShortcut(ui.Alt, ui.KeyPageUp, func() {
+		a.stepFile(ch, -1)
+		cp.focus.Focus(c)
+	})
+	c.OnShortcut(ui.Alt, ui.KeyPageDown, func() {
+		a.stepFile(ch, 1)
+		cp.focus.Focus(c)
+	})
+	if v := cp.view; v != nil && v.diff != nil {
+		c.OnShortcut(ui.Shift, ui.KeyF7, func() { v.diff.GoToHunk(v.findHunk(-1)) })
+		c.OnShortcut(0, ui.KeyF7, func() { v.diff.GoToHunk(v.findHunk(1)) })
+	}
+}
+
+// changeBar 画卡片顶部的标题栏：标题与文件数，右端是对比布局的切换与关闭按钮；
 // 空白处可拖动窗口。
 func (a *App) changeBar(c *ui.Context, t *ui.Theme, ch *chat) {
 	cp := ch.changes
 	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(6).Padding(0, tabInset, 0, 12).
 		DragWindow().Children(func() {
+		treeToggle(c, t, &cp.treeHidden)
 		ui.Text(c, "更改").FontSize(textSize)
 		if n := len(cp.set.files); n > 0 {
 			ui.Badge(c, strconv.Itoa(n))
 		}
 		ui.Row(c).Grow(1)
-		label := "刷新"
-		if cp.loading {
-			label = "读取中…"
-		}
-		textButton(c, t, label, "重新读取更改", func() { a.refreshChanges(ch) })
 		layout := "并排"
 		if cp.split {
 			layout = "合并"
@@ -71,6 +88,15 @@ func (a *App) changeOutline(c *ui.Context, t *ui.Theme, ch *chat) {
 	outlineTree(c, t, &cp.tree, &cp.chosen, cp.roots, cp.children,
 		func(item string) { a.changeItem(c, t, ch, item, &clicked) }).
 		OnChange(func() { a.showChosen(ch) })
+	if cp.reveal {
+		for i := range cp.tree.Rows() {
+			if cp.tree.Item(i) == cp.selected {
+				cp.tree.List.ScrollIntoView(i)
+				cp.reveal = false
+				break
+			}
+		}
+	}
 	if clicked != "" {
 		chooseDir(&cp.chosen, &cp.tree.Open, clicked)
 	}
@@ -130,7 +156,7 @@ func (a *App) changeContent(c *ui.Context, t *ui.Theme, ch *chat) {
 			return
 		}
 		ui.Column(c.Key("change-" + v.path)).Grow(1).MinHeight(0).Children(func() {
-			changeHeader(c, t, v)
+			a.changeHeader(c, t, ch)
 			switch {
 			case v.note != "":
 				ui.Text(c, v.note).FontSize(smallSize).TextColor(t.TextMuted).Padding(8, 14)
@@ -148,23 +174,47 @@ func (a *App) changeContent(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// changeHeader 画内容区顶部：第一行是路径，所在的目录淡一些、文件名在最后；第二行是增删统计
-// 与改动间的跳转。
-func changeHeader(c *ui.Context, t *ui.Theme, v *changeView) {
+// changeHeader 将文件导航与文件内的改动导航分开，文件树收起时仍可连续审阅。
+func (a *App) changeHeader(c *ui.Context, t *ui.Theme, ch *chat) {
+	cp, v := ch.changes, ch.changes.view
 	ui.Column(c).Padding(4, 8, 4, 14).Children(func() {
 		ui.Row(c).Height(tabHeight).AlignItems(ui.Center).Children(func() {
 			pathLabel(c, t, v.path)
+			chg := cp.files[v.path]
+			textButton(c, t, "打开", "在文件面板打开", func() { a.openChangeFile(ch) }).
+				Disabled(chg.kind == changeDeleted)
 		})
-		if v.diff != nil {
-			ui.Row(c).AlignItems(ui.Center).Gap(2).ClipX().Children(func() {
-				changeStats(c, t, v.diff)
-			})
-		}
+		ui.Row(c).AlignItems(ui.Center).Gap(2).ClipX().Children(func() {
+			a.changeFiles(c, t, ch)
+			ui.Spacer(c)
+			if v.diff != nil {
+				changeStats(c, t, v)
+			}
+		})
 	})
 }
 
-// changeStats 画增删统计与改动间的跳转：“+3 −1”、当前是第几处，以及上一处与下一处。
-func changeStats(c *ui.Context, t *ui.Theme, d *editor.DiffState) {
+// changeFiles 画文件间的导航：上一个、第几个、下一个。
+func (a *App) changeFiles(c *ui.Context, t *ui.Theme, ch *chat) {
+	cp := ch.changes
+	index := slices.Index(cp.paths, cp.selected)
+	changeButton(c.Key("previous-file"), t, chevronLeftIcon, "上一个文件", index <= 0,
+		func() {
+			a.stepFile(ch, -1)
+			cp.focus.Focus(c)
+		}).Tooltip("上一个文件（Alt+PageUp）")
+	ui.Text(c, fmt.Sprintf("文件 %d / %d", index+1, len(cp.paths))).
+		FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
+	changeButton(c.Key("next-file"), t, chevronIcon, "下一个文件", index+1 >= len(cp.paths),
+		func() {
+			a.stepFile(ch, 1)
+			cp.focus.Focus(c)
+		}).Tooltip("下一个文件（Alt+PageDown）")
+}
+
+// changeStats 画选中文件的增删统计与改动间的导航：当前是第几处，以及上一处与下一处。
+func changeStats(c *ui.Context, t *ui.Theme, v *changeView) {
+	d := v.diff
 	added, removed := d.Stats()
 	if added+removed > 0 {
 		diffPill(c, t, added, removed)
@@ -173,25 +223,29 @@ func changeStats(c *ui.Context, t *ui.Theme, d *editor.DiffState) {
 	if n == 0 {
 		return
 	}
-	i, inside := d.CurrentHunk()
-	label := fmt.Sprintf("%d 处", n)
-	if i >= 0 {
-		label = fmt.Sprintf("%d / %d", i+1, n)
+	i, _ := d.CurrentHunk()
+	ui.Text(c, fmt.Sprintf("改动 %d / %d", max(i+1, 0), n)).FontSize(smallSize).
+		TextColor(t.TextMuted).SingleLine().Padding(0, 4)
+	prev, next := v.findHunk(-1), v.findHunk(1)
+	changeButton(c.Key("previous-hunk"), t, arrowUpIcon, "上一处改动", prev < 0,
+		func() { d.GoToHunk(prev) }).Tooltip("上一处改动（Shift+F7）")
+	changeButton(c.Key("next-hunk"), t, arrowDownIcon, "下一处改动", next >= n,
+		func() { d.GoToHunk(next) }).Tooltip("下一处改动（F7）")
+}
+
+// changeButton 画审阅导航里的方形图标按钮；disabled 时图标变淡。
+func changeButton(
+	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, disabled bool, click func(),
+) ui.Element {
+	btn := quietButton(c, t, label, click).Size(barButton, barButton).Shrink(0).Disabled(disabled)
+	color := t.TextMuted
+	if disabled {
+		color = color.Alpha(0.4)
 	}
-	ui.Text(c, label).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().Padding(0, 4)
-	iconButton(c, t, arrowUpIcon, "上一处改动", barButton, func() {
-		if inside {
-			i--
-		}
-		if i >= 0 {
-			d.GoToHunk(i)
-		}
+	btn.Children(func() {
+		ui.Icon(c, glyph).FontSize(smallIconSize).TextColor(color)
 	})
-	iconButton(c, t, arrowDownIcon, "下一处改动", barButton, func() {
-		if i+1 < n {
-			d.GoToHunk(i + 1)
-		}
-	})
+	return btn
 }
 
 // emptyChanges 在没有更改、或没有可显示的文件时说明情况。

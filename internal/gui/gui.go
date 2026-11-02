@@ -218,6 +218,7 @@ func (a *App) Receive(n protocol.Notification) {
 				if ch.changes != nil && ch.panelOpen(changesPanel) {
 					a.refreshChanges(ch)
 				}
+				a.refreshBranch(ch, true)
 			}
 		default:
 			ch.apply(u)

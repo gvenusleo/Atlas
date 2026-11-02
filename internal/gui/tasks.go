@@ -230,10 +230,7 @@ func (a *App) sendTask(ch *chat) {
 				SessionID: id, Prompt: []protocol.ContentBlock{protocol.Text(task.Prompt)}})
 		}
 		if err != nil {
-			a.win.Update(func() {
-				a.failTask(ch, err)
-				a.discard(ch)
-			})
+			a.win.Update(func() { a.failTask(ch, err) })
 		}
 	}()
 }
@@ -256,9 +253,10 @@ func (a *App) configureTask(ctx context.Context, id string, task schedule.Task) 
 	return nil
 }
 
-// failTask 记下这个会话对应的触发失败的原因，显示在任务上。
+// failTask 记录触发失败的原因，并丢弃失败会话及其后台监视。
 func (a *App) failTask(ch *chat, err error) {
 	a.tasks.errs[ch.job.task.ID] = err.Error()
+	a.discard(ch)
 }
 
 // titleTask 在任务会话保存了第一条消息（标题随之更新）之后，把标题改成触发的日期时间：

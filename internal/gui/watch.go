@@ -34,6 +34,46 @@ func (a *App) watchFiles(ch *chat) {
 	}()
 }
 
+// watchHead 监视 Git 目录的直接子项，覆盖 HEAD 与索引变化；分支和已打开的更改面板
+// 均需刷新。监视随会话存在，面板关闭时仍保留，过时或已取消的事件不再受理。
+func (a *App) watchHead(ch *chat) {
+	if ch.unwatchHead != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ch.unwatchHead = cancel
+	dir, starts := ch.branch.dir, ch.starts
+	go func() {
+		w, err := mygo.WatchFiles(ctx, dir, mygo.FileWatchOptions{HintsOnly: true})
+		if err != nil {
+			return
+		}
+		defer w.Close()
+		for {
+			if _, err := w.Next(ctx); err != nil {
+				return
+			}
+			a.win.Update(func() {
+				if ctx.Err() != nil || ch.starts != starts {
+					return
+				}
+				a.refreshBranch(ch, true)
+				if cp := ch.changes; cp != nil && ch.panelOpen(changesPanel) && cp.cwd == ch.cwd {
+					a.refreshChanges(ch)
+				}
+			})
+		}
+	}()
+}
+
+// stopWatchHead 停止监视 Git 目录。
+func (ch *chat) stopWatchHead() {
+	if ch.unwatchHead != nil {
+		ch.unwatchHead()
+		ch.unwatchHead = nil
+	}
+}
+
 // syncWatch 让监视与面板一致：文件或更改面板开着就监视工作目录，都关了就停止。
 func (a *App) syncWatch(ch *chat) {
 	if !ch.filesOpen() && !ch.panelOpen(changesPanel) {

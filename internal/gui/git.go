@@ -232,3 +232,95 @@ func readChange(cwd string, c fileChange, hasHead bool) (before, after, note str
 	}
 	return before, after, ""
 }
+
+// readBranch 读取当前分支；未提交的仓库也有符号引用，因此先读取 symbolic-ref，
+// 分离 HEAD 时再读取短哈希。
+func readBranch(cwd string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	if out, err := gitOut(ctx, cwd, "symbolic-ref", "--short", "-q", "HEAD"); err == nil {
+		return strings.TrimSpace(string(out)), nil
+	}
+	out, err := gitOut(ctx, cwd, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		return "", errors.New(gitError(err))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// branchMax 是本地与远程各最多列出的分支数。
+const branchMax = 200
+
+// branchList 是可切换的分支：本地与远程，各自最近提交的在前。
+type branchList struct {
+	local  []string // 如 main
+	remote []string // 带远程前缀，如 origin/main
+}
+
+// readBranches 读出 cwd 所在仓库的本地与远程分支。
+func readBranches(cwd string) branchList {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	return branchList{
+		local:  refNames(ctx, cwd, "refs/heads"),
+		remote: refNames(ctx, cwd, "refs/remotes"),
+	}
+}
+
+// refNames 返回 ns 下按最近提交排序的引用短名。限制数量以控制大型仓库的读取成本，
+// 并排除不代表分支的远程 HEAD 引用。
+func refNames(ctx context.Context, cwd, ns string) []string {
+	out, err := gitOut(ctx, cwd, "for-each-ref", "--sort=-committerdate",
+		"--count="+strconv.Itoa(branchMax), "--format=%(refname)", ns)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		name, ok := strings.CutPrefix(line, ns+"/")
+		if !ok || strings.HasSuffix(name, "/HEAD") {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// switchBranch 切换到分支 name。remote 表示远程分支（如 origin/main）：本地存在同名分支时
+// 直接切换，否则建立跟踪分支。
+func switchBranch(cwd, name string, remote bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	args := []string{"switch", name}
+	if remote {
+		branch := name
+		if _, after, ok := strings.Cut(name, "/"); ok { // 去掉远程名
+			branch = after
+		}
+		args = []string{"switch", "-c", branch, "--track", name}
+		if hasBranch(ctx, cwd, branch) {
+			args = []string{"switch", branch}
+		}
+	}
+	if _, err := gitOut(ctx, cwd, args...); err != nil {
+		return errors.New(gitError(err))
+	}
+	return nil
+}
+
+// hasBranch 检查本地分支 name 是否存在。
+func hasBranch(ctx context.Context, cwd, name string) bool {
+	_, err := gitOut(ctx, cwd, "rev-parse", "--verify", "-q", "refs/heads/"+name)
+	return err == nil
+}
+
+// gitDir 返回解析符号链接后的 Git 目录；独立 worktree 使用各自的 Git 目录。
+func gitDir(cwd string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	out, err := gitOut(ctx, cwd, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", errors.New(gitError(err))
+	}
+	return filepath.EvalSymlinks(strings.TrimSpace(string(out)))
+}
