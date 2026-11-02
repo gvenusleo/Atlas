@@ -71,6 +71,7 @@ func (cp *changePanel) reset(cwd string) {
 
 // refreshChanges 在后台重新读取更改；正在读时记下，读完后再读一次，不并发地跑两个 git。
 func (a *App) refreshChanges(ch *chat) {
+	a.refreshBranch(ch, false)
 	cp := ch.changes
 	if cp.loading {
 		cp.again = true

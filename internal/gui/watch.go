@@ -34,6 +34,44 @@ func (a *App) watchFiles(ch *chat) {
 	}()
 }
 
+// watchHead 盯着 ch 所在仓库的 git 目录这一层（不递归，里面的 objects 与 refs 不关心），HEAD
+// 变了就重读分支。分支一直显示在状态行里，所以不像 watchFiles 那样跟着面板开关，会话读到
+// 分支之后就一直盯着。索引等别的变化也会带来提示，重读由 refreshBranch 合并，不会一次提示
+// 跑一轮 git。调用方已经确认过 cwd 在仓库里，所以这里不再检查有没有 git。
+func (a *App) watchHead(ch *chat) {
+	if ch.unwatchHead != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ch.unwatchHead = cancel
+	cwd := ch.cwd
+	go func() {
+		dir, err := gitDir(cwd)
+		if err != nil {
+			return
+		}
+		w, err := mygo.WatchFiles(ctx, dir, mygo.FileWatchOptions{HintsOnly: true})
+		if err != nil {
+			return
+		}
+		defer w.Close()
+		for {
+			if _, err := w.Next(ctx); err != nil {
+				return
+			}
+			a.win.Update(func() { a.refreshBranch(ch, true) })
+		}
+	}()
+}
+
+// stopWatchHead 停止盯着 git 目录。
+func (ch *chat) stopWatchHead() {
+	if ch.unwatchHead != nil {
+		ch.unwatchHead()
+		ch.unwatchHead = nil
+	}
+}
+
 // syncWatch 让监视与面板一致：文件或更改面板开着就监视工作目录，都关了就停止。
 func (a *App) syncWatch(ch *chat) {
 	if !ch.filesOpen() && !ch.panelOpen(changesPanel) {

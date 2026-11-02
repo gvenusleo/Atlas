@@ -16,7 +16,10 @@ import (
 // statusRow 是输入框下方的一行：左侧是工作目录，右侧是模型、思考深度与上下文占用。
 func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Row(c).AlignItems(ui.Center).Gap(2).Padding(0, 6).Children(func() {
-		ui.Row(c).Grow(1).MinWidth(0).Children(func() { a.folder(c, t, ch) })
+		ui.Row(c).Grow(1).MinWidth(0).Children(func() {
+			a.folder(c, t, ch)
+			a.branchPicker(c, t, ch)
+		})
 		a.modelPicker(c, t, ch)
 		a.thinkingPicker(c, t, ch)
 		a.contextRing(c, t, ch)
@@ -35,10 +38,12 @@ func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	} else {
 		row = ui.Row(c)
 	}
-	row.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound)
+	// 路径太长时收缩，用省略号截断；按钮默认不收缩，所以显式写 Shrink。
+	row.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).MinWidth(0).Shrink(1)
 	row.Children(func() {
-		ui.Icon(c, folderIcon).FontSize(smallIconSize).TextColor(t.TextMuted)
-		ui.Text(c, shortPath(ch.cwd)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
+		ui.Icon(c, folderIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Shrink(0)
+		ui.Text(c, shortPath(ch.cwd)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().
+			MinWidth(0)
 	})
 }
 
@@ -55,6 +60,35 @@ func shortPath(path string) string {
 		return filepath.Join("~", rel)
 	}
 	return path
+}
+
+// branchPick 是分支列表里的一项：分支名，以及它是不是远程分支。
+type branchPick struct {
+	name   string
+	remote bool
+}
+
+// branchPicker 是状态行里的分支下拉，与模型、思考深度是同一个控件：当前分支就是它的值，
+// 选项是本地与远程分支，选中即切换；同一目录有会话在运行时点不开。
+func (a *App) branchPicker(c *ui.Context, t *ui.Theme, ch *chat) {
+	b := ch.branch
+	if b.name == "" {
+		return
+	}
+	options := make([]branchPick, 0, len(b.list.local)+len(b.list.remote))
+	for _, name := range b.list.local {
+		options = append(options, branchPick{name: name})
+	}
+	for _, name := range b.list.remote {
+		options = append(options, branchPick{name: name, remote: true})
+	}
+	value := branchPick{name: b.name}
+	dropdown(c, t, "分支", branchIcon, &value, options,
+		func(p branchPick) string { return p.name }, a.branchBusy(ch), func() {
+			if value.name != b.name { // 选了当前分支就不动
+				a.chooseBranch(ch, value.name, value.remote)
+			}
+		})
 }
 
 // modelPicker 选择会话使用的模型，thinkingPicker 选择思考深度：都照着核心给的配置项画，
@@ -84,25 +118,33 @@ func (a *App) configPicker(c *ui.Context, t *ui.Theme, ch *chat, id string) {
 		return value
 	}
 	value := opt.CurrentValue
-	dropdown(c, t, opt.Name, &value, values, name, !ch.ready || ch.running, func() {
+	dropdown(c, t, opt.Name, nil, &value, values, name, !ch.ready || ch.running, func() {
 		a.choose(ch, id, value)
 	})
 }
 
-// dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开。value 指向当前值的本帧副本，
-// 选了新值后 onChange 里读它；disabled 时点不开。
+// dropdownMaxHeight 是下拉展开后列表的最高高度：选项多时（分支、字体）滚动查看，不至于顶出窗口。
+const dropdownMaxHeight = 320
+
+// dropdown 画一个安静的下拉：只显示当前值，选项在上方或下方展开。icon 画在当前值前面，
+// 可为空。value 指向当前值的本帧副本，选了新值后 onChange 里读它；disabled 时点不开。
 func dropdown[T comparable](
-	c *ui.Context, t *ui.Theme, label string, value *T, options []T, name func(T) string,
-	disabled bool, onChange func(),
+	c *ui.Context, t *ui.Theme, label string, icon *ui.SVG, value *T, options []T,
+	name func(T) string, disabled bool, onChange func(),
 ) {
 	sel := ui.SelectBase(c.Key(label), value)
-	sel.Trigger.AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).
-		Label(label).Disabled(disabled).OnChange(onChange)
+	// 状态行放不下时（路径与分支名都很长）可以收缩，名字用省略号截断。
+	sel.Trigger.AlignItems(ui.Center).Gap(6).Padding(3, 6).Radius(controlRound).
+		MinWidth(0).Shrink(1).Label(label).Disabled(disabled).OnChange(onChange)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(rowFill(t))
 	}
 	sel.Trigger.Children(func() {
-		ui.Text(c, name(*value)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
+		if icon != nil {
+			ui.Icon(c, icon).FontSize(smallIconSize).TextColor(t.TextMuted).Shrink(0)
+		}
+		ui.Text(c, name(*value)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().
+			MinWidth(0)
 	})
 	dropdownOptions(c, t, sel, value, options, name, smallSize)
 }
@@ -113,16 +155,19 @@ func dropdownOptions[T comparable](
 	size float32,
 ) {
 	sel.Popup(func(panel ui.Element) {
-		popupPanel(panel, t).Margin(6, 0, 6, 0)
-		for _, option := range options {
-			item := popupItem(sel.Item(option), t)
-			item.Children(func() {
-				text := ui.Text(c, name(option)).FontSize(size).SingleLine()
-				if option == *value {
-					text.TextColor(accentFg(t))
+		popupPanel(panel, t).Margin(6, 0, 6, 0).Children(func() {
+			ui.Scroll(c).MaxHeight(dropdownMaxHeight).Children(func() {
+				for _, option := range options {
+					item := popupItem(sel.Item(option), t)
+					item.Children(func() {
+						text := ui.Text(c, name(option)).FontSize(size).SingleLine()
+						if option == *value {
+							text.TextColor(accentFg(t))
+						}
+					})
 				}
 			})
-		}
+		})
 	})
 }
 

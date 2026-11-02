@@ -144,10 +144,12 @@ func (ch *chat) closeTerms() {
 	ch.closePanel(termPanel)
 }
 
-// closePanels 关闭会话的终端，并停止监视工作目录，在会话被删除、丢弃或应用退出时调用。
+// closePanels 关闭会话的终端，并停止监视工作目录与 git 目录，在会话被删除、丢弃或应用退出时
+// 调用。
 func (ch *chat) closePanels() {
 	ch.closeTerms()
 	ch.stopWatch()
+	ch.stopWatchHead()
 }
 
 // leave 在离开一个还没有保存的空白会话前关闭它的终端与文件面板：之后再也回不到它。文件面板里

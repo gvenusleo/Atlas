@@ -87,6 +87,10 @@ func (a *App) start(ch *chat) {
 		return
 	}
 	ch.starts++
+	// 工作目录可能换了：旧目录的分支与 git 目录的监视都作废，按新目录重读。
+	ch.branch = branchState{}
+	ch.stopWatchHead()
+	a.refreshBranch(ch, true)
 	gen, id := ch.starts, ch.id
 	req := protocol.NewSessionRequest{Cwd: ch.cwd}
 	if ch.job != nil {

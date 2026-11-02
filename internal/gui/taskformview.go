@@ -172,8 +172,8 @@ func (a *App) taskChoices(id, value string) ([]string, map[string]string) {
 func (a *App) taskOption(c *ui.Context, t *ui.Theme, label, id string, value *string) {
 	values, names := a.taskChoices(id, *value)
 	formRow(c, label, func() {
-		dropdown(c, t, "任务的"+label, value, values, func(v string) string { return names[v] },
-			false, func() {})
+		name := func(v string) string { return names[v] }
+		dropdown(c, t, "任务的"+label, nil, value, values, name, false, func() {})
 	})
 }
 

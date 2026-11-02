@@ -32,6 +32,7 @@ var (
 	chevronIcon   = icon("lucide/chevron-right")
 	closeIcon     = icon("lucide/x")
 	folderIcon    = icon("lucide/folder")
+	branchIcon    = icon("lucide/git-branch")
 	terminalIcon  = icon("lucide/terminal")
 	diffIcon      = icon("lucide/file-diff")
 	arrowDownIcon = icon("lucide/arrow-down")

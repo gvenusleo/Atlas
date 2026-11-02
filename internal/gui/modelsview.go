@@ -21,7 +21,7 @@ func (a *App) modelSettings(c *ui.Context, t *ui.Theme) {
 		return
 	}
 	settingRow(c, "默认模型", func() {
-		dropdown(c, t, "默认模型", &p.pick, p.modelRefs(), p.modelLabel, false,
+		dropdown(c, t, "默认模型", nil, &p.pick, p.modelRefs(), p.modelLabel, false,
 			a.chooseDefaultModel)
 	})
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
