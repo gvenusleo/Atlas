@@ -281,6 +281,7 @@ func (a *App) restart(ch *chat) {
 		a.discard(ch)
 	}
 	ch.id, ch.ready, ch.err, ch.options, ch.commands = "", false, "", nil, nil
+	ch.usage = protocol.Usage{}
 	a.start(ch)
 }
 
