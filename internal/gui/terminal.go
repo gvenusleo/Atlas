@@ -54,7 +54,7 @@ func (a *App) newTerminal(ch *chat) {
 	sh := &shell{id: a.shells, term: term}
 	ch.termErr = ""
 	ch.terms = append(ch.terms, sh)
-	ch.termTab, ch.termReveal = len(ch.terms)-1, sh.id
+	ch.termTab, ch.termBar.reveal = len(ch.terms)-1, sh.id
 	ch.focusTerm()
 }
 
@@ -205,7 +205,7 @@ func (a *App) termTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 			id: sh.id, label: "终端 " + strconv.Itoa(i+1), note: sh.term.Title(),
 			closeLabel: "关闭终端",
 			pick: func() {
-				ch.termTab, ch.termReveal = i, sh.id
+				ch.termTab, ch.termBar.reveal = i, sh.id
 				ch.focusTerm()
 			},
 			close: func() { ch.closeTerm(i) },
@@ -213,7 +213,7 @@ func (a *App) termTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 	}
 	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
 		DragWindow().Children(func() {
-		a.tabStrip(c, t, "term", items, ch.termTab, &ch.termReveal)
+		a.tabStrip(c, t, "term", items, ch.termTab, &ch.termBar)
 		iconButton(c, t, plusIcon, "新建终端", barButton, func() { a.newTerminal(ch) })
 		ui.Row(c).Grow(1)
 		a.cardActions(c, t, ch, termPanel, "收起终端", a.toggleTerminal)
