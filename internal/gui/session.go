@@ -173,12 +173,12 @@ func (a *App) createCwd(ch *chat) {
 		done()
 	case errors.Is(err, fs.ErrExist):
 		if info, statErr := os.Stat(ch.cwd); statErr != nil || !info.IsDir() {
-			a.cwdGoneErr = "同名文件已存在，请先处理它。"
+			a.cwdGoneErr = "同名文件已存在，请先处理它"
 			return
 		}
 		done()
 	case errors.Is(err, fs.ErrNotExist):
-		a.cwdGoneErr = "父目录不存在，请检查磁盘是否已挂载。"
+		a.cwdGoneErr = "父目录不存在，请检查磁盘是否已挂载"
 	default:
 		a.cwdGoneErr = "新建目录失败：" + err.Error()
 	}

@@ -154,13 +154,13 @@ func csvComma(p string) rune {
 func (t csvTable) note() string {
 	switch {
 	case t.err != "":
-		return "无法解析为表格：" + t.err + "，可以查看源码。"
+		return "无法解析为表格：" + t.err + "，可以查看源码"
 	case t.rowsCut && t.colsCut:
-		return fmt.Sprintf("表格只显示前 %d 行、每行前 %d 列。", csvMaxRows, csvMaxCols)
+		return fmt.Sprintf("表格只显示前 %d 行、每行前 %d 列", csvMaxRows, csvMaxCols)
 	case t.rowsCut:
-		return fmt.Sprintf("表格只显示前 %d 行。", csvMaxRows)
+		return fmt.Sprintf("表格只显示前 %d 行", csvMaxRows)
 	case t.colsCut:
-		return fmt.Sprintf("每行只显示前 %d 列。", csvMaxCols)
+		return fmt.Sprintf("每行只显示前 %d 列", csvMaxCols)
 	}
 	return ""
 }

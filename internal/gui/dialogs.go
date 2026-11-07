@@ -74,10 +74,10 @@ func (a *App) dialogs(c *ui.Context) {
 			}
 		})
 	})
-	message := "删除后无法恢复。"
+	message := "删除后无法恢复"
 	if ch := a.chats[a.deleteID]; ch != nil {
 		if n := ch.dirtyTabs(); n > 0 {
-			message = fmt.Sprintf("删除后无法恢复，文件面板里 %d 个未保存的修改也会丢掉。", n)
+			message = fmt.Sprintf("删除后无法恢复，文件面板里 %d 个未保存的修改也会丢掉", n)
 		}
 	}
 	if ui.AlertDialog(c, &a.deleteOpen, "删除这个会话？", message, "取消", "删除") == 1 {
@@ -99,7 +99,7 @@ func (a *App) cwdGoneDialog(c *ui.Context) {
 	ui.Modal(c, &a.cwdGoneOpen, func() {
 		ui.Text(c, "工作目录不存在").FontSize(dialogSize).Bold()
 		ui.Text(c, "工作目录 "+shortPath(ch.cwd)+" 已不存在。可以在原路径新建一个空目录，"+
-			"或删除这个会话；删除后无法恢复。").TextColor(t.TextMuted).Width(360)
+			"或删除这个会话；删除后无法恢复").TextColor(t.TextMuted).Width(360)
 		if a.cwdGoneErr != "" {
 			ui.Text(c, a.cwdGoneErr).TextColor(t.Danger).Width(360)
 		}

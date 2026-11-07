@@ -254,6 +254,6 @@ func emptyChanges(c *ui.Context, t *ui.Theme) {
 		Children(func() {
 			ui.Icon(c, diffIcon).FontSize(emptyIconSize).TextColor(t.TextMuted)
 			ui.Text(c, "没有更改").FontSize(bodySize)
-			ui.Text(c, "工作目录与 HEAD 一致。").FontSize(smallSize).TextColor(t.TextMuted)
+			ui.Text(c, "工作目录与 HEAD 一致").FontSize(smallSize).TextColor(t.TextMuted)
 		})
 }

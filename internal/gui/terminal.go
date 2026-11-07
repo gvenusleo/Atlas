@@ -161,7 +161,7 @@ func (a *App) leave() bool {
 		return true
 	}
 	if n := ch.dirtyTabs(); n > 0 {
-		a.toast = fmt.Sprintf("文件面板里有 %d 个未保存的修改，先保存或关闭它们。", n)
+		a.toast = fmt.Sprintf("文件面板里有 %d 个未保存的修改，先保存或关闭它们", n)
 		return false
 	}
 	ch.closePanels()
