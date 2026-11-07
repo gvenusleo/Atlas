@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"time"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
@@ -124,7 +126,8 @@ func quietRows(c *ui.Context, t *ui.Theme, fn func()) {
 }
 
 // applyTheme 在系统的亮色或暗色主题上换成当前配色的色板与选定的界面字体，返回本帧的主题。
-// 除 Dark（来自系统或偏好）之外，每个字段都显式填上，不靠 MyGo 的默认值。
+// 除 Dark（来自系统或偏好）之外，每个字段都显式填上，不靠 MyGo 的默认值；InactiveAccent
+// 显式留零，原因见下。
 func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 	t := *c.Theme()
 	p := activeScheme.light
@@ -144,10 +147,15 @@ func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 	t.Accent, t.AccentHover, t.AccentPressed = p.accent, p.accentHover, p.accentPressed
 	t.AccentText = p.onAccent
 	t.Danger, t.Warning, t.Success = p.danger, p.running, p.success
+	// 留零时 MyGo 取一种与 AccentText 对比够读的灰，窗口不在前台时强调色褪成它，与原生应用
+	// 一致；从色板里另挑反而顾不全各配色的 AccentText。
+	t.InactiveAccent = ui.Transparent
 	t.Selection, t.Focus = p.accent.Alpha(0.25), p.accent
+	t.FocusRingWidth, t.FocusRingOffset = 2, 1
 	t.Inverse, t.InverseText = p.text, p.canvas
 	t.Scrollbar, t.ScrollbarWidth = p.text.Alpha(0.32), 6
 	t.Radius, t.Spacing, t.FontSize = controlRound, 4, bodySize
+	t.TooltipDelay = 600 * time.Millisecond
 	t.Font = a.prefs.uiFamily()
 	// 链接与代码高亮都跟着配色走；MyGo 默认拿 t.Accent 当链接色，暗色下对比度不够。
 	// 内容没变就沿用旧指针：Markdown 按指针判断主题变没变，每帧换新指针会让它每帧重算，

@@ -42,8 +42,10 @@ func (a *App) newTerminal(ch *chat) {
 		DarkTheme: termTheme(activeScheme.dark, activeScheme.darkANSI),
 		// 配色里的 ANSI 黑与白常与底色相同或相近，程序用它们写字会看不见。
 		MinimumContrast: termContrast,
-		OnTitle:         func(string) { a.win.Invalidate() },
-		OnExit:          func(int) { a.win.Update(ch.pruneTerms) },
+		// 终端随拖动条频繁改变大小；zsh 重画提示符前先清掉旧的，不留下错位的残行。
+		ShellIntegration: true,
+		OnTitle:          func(string) { a.win.Invalidate() },
+		OnExit:           func(int) { a.win.Update(ch.pruneTerms) },
 	})
 	if err != nil {
 		ch.termErr = err.Error()

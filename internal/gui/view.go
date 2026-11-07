@@ -54,7 +54,8 @@ func (a *App) panes(c *ui.Context, t *ui.Theme) {
 	a.sidebarWidth = clampSidebar(a.sidebarWidth)
 	switch {
 	case a.shown >= 1:
-		ui.Split(c, &a.sidebarWidth, func() { a.sidebar(c, t) }, func() { a.main(c, t) }).Fill()
+		ui.Split(c, &a.sidebarWidth, func() { a.sidebar(c, t) }, func() { a.main(c, t) }).
+			SplitReset(sidebarDefault).Fill()
 		// Split 只保证两侧各留 40，宽度范围在这里限制，拖动结束的同一帧生效。
 		a.sidebarWidth = clampSidebar(a.sidebarWidth)
 	case a.shown > 0:

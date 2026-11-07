@@ -36,7 +36,7 @@ func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
 		// 文件树不超过卡片宽度的一半，内容区至少留得下。
 		fp.treeWidth = min(max(fp.treeWidth, treeMin), max(a.sideWidth/2, treeMin))
 		ui.Split(c, &fp.treeWidth, func() { a.fileTree(c, t, ch) },
-			func() { a.fileContent(c, t, ch) }).Grow(1).MinHeight(0)
+			func() { a.fileContent(c, t, ch) }).SplitReset(treeDefault).Grow(1).MinHeight(0)
 	})
 }
 
@@ -175,7 +175,8 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.render:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
-				markdown.View(c, tb.previewText(), &a.mdFile)
+				o := a.useLinks(&a.mdFile, &tb.anchor, filepath.Dir(tb.path))
+				markdown.View(c, tb.previewText(), o)
 			})
 		})
 	default:

@@ -53,12 +53,17 @@ func styleBarButton(
 	btn.Children(func() { ui.Icon(c, glyph).FontSize(iconSize).TextColor(color) })
 }
 
+// 右侧栏的拖动条与 ui.Split 的分隔条一样，双击恢复默认的大小。
+
 // sideHandle 是对话区与右侧栏之间的拖动条：不可见，悬停时显示左右拖动的光标，
 // 左右拖动调整右侧栏的宽度。
 func (a *App) sideHandle(c *ui.Context) {
 	handle := ui.Box(c).Width(handleWidth).Shrink(0).Cursor(ui.CursorResizeEW)
 	if dx, _, ok := handle.Dragged(); ok {
 		a.sideWidth -= dx
+	}
+	if handle.DoubleClicked() {
+		a.sideWidth = sideDefault
 	}
 }
 
@@ -68,6 +73,9 @@ func (a *App) stackHandle(c *ui.Context) {
 	if _, dy, ok := handle.Dragged(); ok {
 		a.stackHeight += dy
 	}
+	if handle.DoubleClicked() {
+		a.stackHeight = 0 // 0 是各占一半
+	}
 }
 
 // columnHandle 是右侧栏里左右两列之间的拖动条，左右拖动调整左列的宽度。
@@ -75,6 +83,9 @@ func (a *App) columnHandle(c *ui.Context) {
 	handle := ui.Box(c).Width(handleWidth).Shrink(0).Cursor(ui.CursorResizeEW)
 	if dx, _, ok := handle.Dragged(); ok {
 		a.leftWidth += dx
+	}
+	if handle.DoubleClicked() {
+		a.leftWidth = 0 // 0 是两列各占一半
 	}
 }
 
