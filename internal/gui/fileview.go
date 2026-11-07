@@ -175,7 +175,8 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.render:
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
-				markdown.View(c, tb.previewText(), &a.mdFile)
+				o := a.useLinks(&a.mdFile, &tb.anchor, filepath.Dir(tb.path))
+				markdown.View(c, tb.previewText(), o)
 			})
 		})
 	default:

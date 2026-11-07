@@ -28,13 +28,14 @@ const (
 
 // item 是对话中的一块可显示内容，只在主线程读写。
 type item struct {
-	id    int
-	kind  itemKind
-	msg   string // 所属消息的 ID；重试时这条消息的内容一起丢掉
-	text  string // 用户、助手、思考的文本，或系统通知
-	done  bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
-	open  bool   // 思考、工具、技能卡片与长用户消息是否展开
-	skill string // 技能的名称
+	id     int
+	kind   itemKind
+	msg    string // 所属消息的 ID；重试时这条消息的内容一起丢掉
+	text   string // 用户、助手、思考的文本，或系统通知
+	done   bool   // 文本已定稿；助手文本定稿后改用完整 Markdown 渲染
+	open   bool   // 思考、工具、技能卡片与长用户消息是否展开
+	skill  string // 技能的名称
+	anchor string // 正文的 Markdown 里点过、还没滚过去的 #标题 链接
 
 	at       time.Time // 用户与助手消息的时间，未知时为零
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”

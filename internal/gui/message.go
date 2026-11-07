@@ -45,10 +45,11 @@ func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
 	it := items[0]
 	switch it.kind {
 	case itemAssistant:
+		o := a.useLinks(&a.md, &it.anchor, a.current.cwd)
 		if it.done {
-			markdown.View(c, it.text, &a.md)
+			markdown.View(c, it.text, o)
 		} else {
-			markdown.Stream(c, it.text, &a.md)
+			markdown.Stream(c, it.text, o)
 		}
 	case itemThinking, itemTool:
 		a.stepGroup(c, t, items)
@@ -75,7 +76,8 @@ func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
-			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })
+			o := a.useLinks(&a.mdNote, &it.anchor, a.current.cwd)
+			scrolled(c, func() { markdown.View(c, it.text, o) })
 		})
 	})
 }
@@ -87,7 +89,8 @@ func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
 		ui.Text(c, it.skill).FontSize(bodySize).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
-			scrolled(c, func() { markdown.View(c, it.text, &a.mdNote) })
+			o := a.useLinks(&a.mdNote, &it.anchor, a.current.cwd)
+			scrolled(c, func() { markdown.View(c, it.text, o) })
 		})
 	})
 }
