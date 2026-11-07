@@ -104,10 +104,10 @@ type chat struct {
 	branch  branchState  // 工作目录所在仓库的当前分支
 
 	// 会话的终端面板：各个标签、当前标签，以及创建失败的原因。
-	terms      []*shell
-	termTab    int
-	termReveal int // 需要滚进可见范围的标签
-	termErr    string
+	terms   []*shell
+	termTab int
+	termBar tabBar
+	termErr string
 
 	order       []sidePanel        // 开着的面板，按打开的先后；右侧栏照这个顺序排布
 	expanded    sidePanel          // 扩展到整个主区的面板；没有时为 noPanel

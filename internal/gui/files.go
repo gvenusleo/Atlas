@@ -37,7 +37,7 @@ type filePanel struct {
 
 	tabs   []*fileTab
 	active int // 当前标签
-	reveal int // 需要滚进可见范围的标签的标识
+	bar    tabBar
 	next   int // 已建的标签数，用作标签的标识
 }
 
@@ -68,7 +68,7 @@ type fileTab struct {
 
 	render bool                   // 显示渲染后的样子（Markdown 与 SVG 的预览、CSV 表格），否则是源码
 	anchor string                 // Markdown 预览里点过、还没滚过去的 #标题 链接
-	scroll ui.ScrollState         // 预览（Markdown、图片、SVG）滚到的位置，切走标签再回来时还在
+	scroll ui.ScrollState         // 预览（Markdown、图片、SVG）滚到的位置，切走再回来时还在
 	edited memo[uint64, bool]     // 有没有未保存的修改，按缓冲区的 version 缓存
 	md     memo[uint64, string]   // Markdown 预览用的文本，按缓冲区的 version 缓存
 	svg    memo[uint64, svgImage] // SVG 解析出来的图，按缓冲区的 version 缓存
@@ -219,7 +219,7 @@ func (a *App) openFile(ch *chat, rel string) {
 	fp := ch.files
 	abs := filepath.Join(ch.cwd, rel)
 	if i := slices.IndexFunc(fp.tabs, func(tb *fileTab) bool { return tb.path == abs }); i >= 0 {
-		fp.active, fp.reveal = i, fp.tabs[i].id
+		fp.active, fp.bar.reveal = i, fp.tabs[i].id
 		a.syncTab(fp.tabs[i])
 		return
 	}
@@ -227,7 +227,7 @@ func (a *App) openFile(ch *chat, rel string) {
 	tb := &fileTab{id: fp.next, path: abs, loading: true}
 	tb.onSave = func() { a.saveTab(tb, nil) }
 	fp.tabs = append(fp.tabs, tb)
-	fp.active, fp.reveal = len(fp.tabs)-1, tb.id
+	fp.active, fp.bar.reveal = len(fp.tabs)-1, tb.id
 	go func() {
 		content := readTab(abs)
 		a.win.Update(func() { tb.load(content) })

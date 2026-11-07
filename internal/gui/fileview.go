@@ -49,7 +49,7 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 			id: tb.id, icon: fileIcon(tb.path), label: filepath.Base(tb.path),
 			dirty: tb.dirty(), closeLabel: "关闭文件",
 			pick: func() {
-				fp.active, fp.reveal = i, tb.id
+				fp.active, fp.bar.reveal = i, tb.id
 				a.syncTab(tb)
 			},
 			close: func() { a.closeFileTab(ch, tb) },
@@ -61,7 +61,7 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 		if len(items) == 0 {
 			ui.Text(c, "文件").FontSize(textSize).Padding(0, 6)
 		}
-		a.tabStrip(c, t, "file", items, fp.active, &fp.reveal)
+		a.tabStrip(c, t, "file", items, fp.active, &fp.bar)
 		ui.Row(c).Grow(1)
 		a.cardActions(c, t, ch, filesPanel, "关闭文件面板", a.toggleFiles)
 	})
