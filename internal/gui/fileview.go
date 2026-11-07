@@ -130,9 +130,9 @@ func (a *App) fileBanner(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.err != "":
 		msg, color = tb.err, t.Danger
 	case tb.changed:
-		msg = "文件已在磁盘上更改。"
+		msg = "文件已在磁盘上更改"
 	case tb.gone:
-		msg = "文件已被删除，保存会重新创建它。"
+		msg = "文件已被删除，保存会重新创建它"
 	default:
 		return
 	}
@@ -241,7 +241,7 @@ func (a *App) fileTable(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		}
 		if len(table.head) == 0 {
 			if note == "" {
-				ui.Text(c, "文件是空的。").FontSize(textSize).TextColor(t.TextMuted).Margin(ui.Auto)
+				ui.Text(c, "文件是空的").FontSize(textSize).TextColor(t.TextMuted).Margin(ui.Auto)
 			}
 			return // 解析就失败了，原因上面已经写过
 		}
@@ -272,6 +272,6 @@ func emptyFiles(c *ui.Context, t *ui.Theme) {
 		Children(func() {
 			ui.Icon(c, folderIcon).FontSize(emptyIconSize).TextColor(t.TextMuted)
 			ui.Text(c, "打开的文件显示在这里").FontSize(bodySize)
-			ui.Text(c, "请在文件树中选择一个文件。").FontSize(smallSize).TextColor(t.TextMuted)
+			ui.Text(c, "请在文件树中选择一个文件").FontSize(smallSize).TextColor(t.TextMuted)
 		})
 }

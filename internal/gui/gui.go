@@ -39,6 +39,7 @@ type App struct {
 	service       protocol.Service
 	win           *mygo.Window
 	infos         []protocol.SessionInfo // 侧栏会话，按更新时间倒序
+	listed        bool                   // 会话列表至少读到过一次；之前列表为空不说明没有会话
 	chats         map[string]*chat       // 已打开的会话，按会话 ID
 	current       *chat
 	cwd           string // 新会话默认的工作目录

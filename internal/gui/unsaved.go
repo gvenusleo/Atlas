@@ -34,7 +34,7 @@ func (a *App) unsavedDialog(c *ui.Context) {
 			return
 		}
 		ui.Text(c, "要保存“"+filepath.Base(tb.path)+"”的修改吗？").FontSize(dialogSize).Bold()
-		ui.Text(c, "不保存的话，这些修改会丢掉。").TextColor(c.Theme().TextMuted)
+		ui.Text(c, "不保存的话，这些修改会丢掉").TextColor(c.Theme().TextMuted)
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			cancel := ui.Button(c, "取消").Clicked()
 			discard := ui.Button(c, "不保存").Clicked()
@@ -79,7 +79,7 @@ func (a *App) confirmQuit(e *mygo.Preventable) {
 			Parent: a.win, Type: mygo.MessageWarning, Buttons: []string{"丢弃修改并退出", "取消"},
 			DefaultButton: 1, CancelButton: 1, DestructiveButtons: []int{0},
 			Message: fmt.Sprintf("有 %d 个文件的修改还没保存", n),
-			Detail:  "现在退出会丢掉这些修改。",
+			Detail:  "现在退出会丢掉这些修改",
 		})
 		if err == nil && r.Button == 0 {
 			a.win.Update(func() {

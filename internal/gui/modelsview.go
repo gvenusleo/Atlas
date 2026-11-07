@@ -16,7 +16,7 @@ const serviceFormWidth = 560
 func (a *App) modelSettings(c *ui.Context, t *ui.Theme) {
 	p := &a.settings.models
 	if p.cfg == nil {
-		ui.Text(c, "没能读取模型设置：请先修正 ~/.atlas/settings.json。\n"+p.loadErr).
+		ui.Text(c, "没能读取模型设置：请先修正 ~/.atlas/settings.json\n"+p.loadErr).
 			FontSize(textSize).TextColor(t.Danger).Selectable()
 		return
 	}
@@ -34,7 +34,7 @@ func (a *App) modelSettings(c *ui.Context, t *ui.Theme) {
 		}
 	})
 	if len(p.cfg.Providers) == 0 {
-		ui.Text(c, "还没有模型服务。添加一个，填上接口地址和 API key，再声明它的模型。").
+		ui.Text(c, "还没有模型服务。添加一个，填上接口地址和 API key，再声明它的模型").
 			FontSize(textSize).TextColor(t.TextMuted)
 	}
 	if p.saveErr != "" {
@@ -160,7 +160,7 @@ func (a *App) serviceFields(c *ui.Context, t *ui.Theme) {
 			})
 		})
 		if len(f.models) == 0 {
-			ui.Text(c, "还没有模型。点“添加模型”声明一个，没有声明的模型选不到。").
+			ui.Text(c, "还没有模型。点“添加模型”声明一个，没有声明的模型选不到").
 				FontSize(textSize).TextColor(t.TextMuted)
 		}
 		ui.Column(c).Gap(8).Children(func() {

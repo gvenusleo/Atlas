@@ -167,7 +167,7 @@ func (a *App) system(c *ui.Context, t *ui.Theme) {
 // instructions 画“全局指令”：一个文本框，改动即保存到 ~/.atlas/AGENTS.md。
 func (a *App) instructions(c *ui.Context, t *ui.Theme) {
 	g := &a.settings.global
-	ui.Text(c, "对所有会话生效，保存在 ~/.atlas/AGENTS.md。").
+	ui.Text(c, "对所有会话生效，保存在 ~/.atlas/AGENTS.md").
 		FontSize(textSize).TextColor(t.TextMuted)
 	if g.ready {
 		fieldBox(ui.TextAreaBase(c.Key("settings-instructions"), &g.text).Grow(1).MinHeight(0).

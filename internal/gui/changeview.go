@@ -60,13 +60,13 @@ func (a *App) changeShortcuts(c *ui.Context, ch *chat) {
 }
 
 // changeBar 画卡片顶部的标题栏：标题与文件数，右端是对比布局的切换与关闭按钮；
-// 空白处可拖动窗口。
+// 空白处可拖动窗口。边距与间距和文件面板的标签栏一致，两者的文件树开关与按钮对齐。
 func (a *App) changeBar(c *ui.Context, t *ui.Theme, ch *chat) {
 	cp := ch.changes
-	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(6).Padding(0, tabInset, 0, 12).
+	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
 		DragWindow().Children(func() {
 		treeToggle(c, t, &cp.treeHidden)
-		ui.Text(c, "更改").FontSize(textSize)
+		ui.Text(c, "更改").FontSize(textSize).Padding(0, 6)
 		if n := len(cp.set.files); n > 0 {
 			ui.Badge(c, strconv.Itoa(n))
 		}
@@ -254,6 +254,6 @@ func emptyChanges(c *ui.Context, t *ui.Theme) {
 		Children(func() {
 			ui.Icon(c, diffIcon).FontSize(emptyIconSize).TextColor(t.TextMuted)
 			ui.Text(c, "没有更改").FontSize(bodySize)
-			ui.Text(c, "工作目录与 HEAD 一致。").FontSize(smallSize).TextColor(t.TextMuted)
+			ui.Text(c, "工作目录与 HEAD 一致").FontSize(smallSize).TextColor(t.TextMuted)
 		})
 }

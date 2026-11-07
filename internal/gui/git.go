@@ -207,7 +207,7 @@ func fillCounts(files []fileChange, numstat string) {
 // 不能显示（图片、太大、不是 UTF-8 文本）时 note 是原因。
 func readChange(cwd string, c fileChange, hasHead bool) (before, after, note string) {
 	if isRaster(c.path) {
-		return "", "", "图片，不显示更改。"
+		return "", "", "图片，不显示更改"
 	}
 	if c.kind != changeAdded && hasHead {
 		ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
@@ -217,9 +217,9 @@ func readChange(cwd string, c fileChange, hasHead bool) (before, after, note str
 		case err != nil:
 			return "", "", "无法读取 HEAD 里的文件：" + gitError(err)
 		case len(out) > diffMaxBytes:
-			return "", "", "文件太大，不显示更改。"
+			return "", "", "文件太大，不显示更改"
 		case !utf8.Valid(out) || bytes.IndexByte(out, 0) >= 0:
-			return "", "", "不是 UTF-8 文本，不显示更改。"
+			return "", "", "不是 UTF-8 文本，不显示更改"
 		}
 		before = string(out)
 	}

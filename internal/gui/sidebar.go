@@ -70,23 +70,37 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 		if a.showTasks {
 			selected = "" // 主区显示的是定时任务视图，没有哪个会话被选中
 		}
-		list := ui.Sidebar(c, &selected, func() {
-			for _, g := range groupByDir(a.infos) {
-				a.group(c, t, g, selected)
+		if a.listed && len(a.infos) == 0 {
+			emptySessions(c, t)
+		} else {
+			list := ui.Sidebar(c, &selected, func() {
+				for _, g := range groupByDir(a.infos) {
+					a.group(c, t, g, selected)
+				}
+			}).Grow(1).Padding(6, 8, 6)
+			a.keyNav = list.FocusVisible()
+			if list.Changed() {
+				a.open(selected)
 			}
-		}).Grow(1).Padding(6, 8, 6)
-		a.keyNav = list.FocusVisible()
-		if list.Changed() {
-			a.open(selected)
 		}
 		if a.err != "" {
 			ui.Text(c, a.err).FontSize(smallSize).TextColor(t.Danger).Selectable().Padding(8)
 		}
-		// 只有一个图标，放在左下角；图标与上面各入口的图标左右居中对齐。
-		ui.Row(c).Padding(0, 14, 12).Children(func() {
+		// 只有一个图标，放在左下角；图标与上面各入口的图标左右居中对齐，离左边与离底边一样远。
+		ui.Row(c).Padding(0, 14, 14).Children(func() {
 			iconButton(c, t, settingsIcon, "设置", barButton, a.openSettings)
 		})
 	})
+}
+
+// emptySessions 在还没有任何会话时占住列表的位置，说明会话从哪里来、会列在哪里。
+func emptySessions(c *ui.Context, t *ui.Theme) {
+	ui.Column(c).Grow(1).Justify(ui.Center).AlignItems(ui.Center).Gap(4).Padding(24, 16).
+		Children(func() {
+			ui.Text(c, "没有会话").FontSize(textSize)
+			ui.Text(c, "发送消息后，会话会列在这里").FontSize(smallSize).
+				TextColor(t.TextMuted).TextAlign(ui.Center)
+		})
 }
 
 // entries 画列表上方不随之滚动的部分：新建、搜索（打开启动器）与定时任务（把主区换成定时任务视图）
