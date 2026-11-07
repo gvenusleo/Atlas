@@ -157,7 +157,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.loading:
 		loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 	case tb.img != nil:
-		imagePreview(c, tb.img, filepath.Base(tb.path))
+		imagePreview(c, tb, tb.img)
 	case tb.ed == nil:
 		// 不能预览的文件：一句原因，以及在默认应用中打开的入口。
 		ui.Column(c).Gap(12).AlignItems(ui.Center).Margin(ui.Auto).Children(func() {
@@ -173,7 +173,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	case tb.render && isSVG(tb.path):
 		a.svgPreview(c, t, tb)
 	case tb.render:
-		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Scroll(c).TrackScroll(&tb.scroll).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(4, 28, 28).Children(func() {
 				o := a.useLinks(&a.mdFile, &tb.anchor, filepath.Dir(tb.path))
 				markdown.View(c, tb.previewText(), o)
@@ -188,12 +188,12 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 	}
 }
 
-// imagePreview 在可滚动区域里画一张图：按面板宽度等比缩放，不放大。
-func imagePreview(c *ui.Context, src ui.ImageSource, name string) {
+// imagePreview 在标签的可滚动区域里画一张图：按面板宽度等比缩放，不放大。
+func imagePreview(c *ui.Context, tb *fileTab, src ui.ImageSource) {
 	w, _ := ui.ImageSize(src)
-	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+	ui.Scroll(c).TrackScroll(&tb.scroll).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Padding(imageInset).Children(func() {
-			ui.Image(c, src).FillWidth().MaxWidth(w).Radius(boxRound).Label(name)
+			ui.Image(c, src).FillWidth().MaxWidth(w).Radius(boxRound).Label(filepath.Base(tb.path))
 		})
 	})
 }
@@ -207,7 +207,7 @@ func (a *App) svgPreview(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		ui.Text(c, img.note).FontSize(smallSize).TextColor(t.TextMuted).Padding(8, 14)
 		return
 	}
-	imagePreview(c, img.src, filepath.Base(tb.path))
+	imagePreview(c, tb, img.src)
 }
 
 // fileTable 画 CSV/TSV 的表格：首行作表头，只建视口里的行。解析结果按缓冲区版本缓存，
