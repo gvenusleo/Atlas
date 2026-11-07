@@ -68,6 +68,7 @@ type fileTab struct {
 
 	render bool                   // 显示渲染后的样子（Markdown 与 SVG 的预览、CSV 表格），否则是源码
 	anchor string                 // Markdown 预览里点过、还没滚过去的 #标题 链接
+	scroll ui.ScrollState         // 预览（Markdown、图片、SVG）滚到的位置，切走标签再回来时还在
 	edited memo[uint64, bool]     // 有没有未保存的修改，按缓冲区的 version 缓存
 	md     memo[uint64, string]   // Markdown 预览用的文本，按缓冲区的 version 缓存
 	svg    memo[uint64, svgImage] // SVG 解析出来的图，按缓冲区的 version 缓存
