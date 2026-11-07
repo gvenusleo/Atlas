@@ -1,5 +1,5 @@
 // Command icon 画出 Atlas 的应用图标并写成 PNG：三个在底部相切的圆，由外向内逐个收小，
-// 像一层层叠起的球，层与层之间用软影分开，放在淡色的底板上。生成两张：正式版 icon.png，
+// 像一层层叠起的球，层与层之间留一道露出底板的缝，放在淡色的底板上。生成两张：正式版 icon.png，
 // 与开发版 icon-dev.png，后者换一个主题色，在 Dock 里与正式版区分。另有托盘用的模板图标
 // tray.png（见 tray.go），放在 gui 包里内嵌。
 //
@@ -9,6 +9,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
 	"os"
@@ -17,30 +18,26 @@ import (
 
 // style 是一张图标的配色。
 type style struct {
-	plate  [2]color.RGBA    // 底板渐变的两端，左上到右下
-	balls  [3][2]color.RGBA // 三个圆由外向内，各自从上到下的渐变
-	shadow color.NRGBA      // 层与层之间的软影
+	plate [2]color.RGBA    // 底板渐变的两端，左上到右下
+	balls [3][2]color.RGBA // 三个圆由外向内，各自从上到下的渐变
 }
 
 func rgb(v uint32) color.RGBA { return color.RGBA{uint8(v >> 16), uint8(v >> 8), uint8(v), 255} }
 
 // themed 以主题色配出一套图标：最里一层就是主题色，中间一层是它的浅色，最外一层与
-// 底板是更淡的底，层间的软影取自它的深色。
+// 底板是更淡的底。
 func themed(theme uint32) style {
-	c, white, black := rgb(theme), rgb(0xFFFFFF), rgb(0x000000)
+	c, white := rgb(theme), rgb(0xFFFFFF)
 	tint := func(t float64) color.RGBA { return lerp(white, c, t) } // t 越大越接近主题色
-	darken := func(x color.RGBA, t float64) color.RGBA { return lerp(x, black, t) }
 	// 一个圆上浅下深的渐变，以 x 为中点：圆心的高度上正是 x。
 	ball := func(x color.RGBA) [2]color.RGBA {
 		top := lerp(x, white, 0.03)
 		mirror := func(m, t uint8) uint8 { return uint8(max(0, 2*int(m)-int(t))) }
 		return [2]color.RGBA{top, {mirror(x.R, top.R), mirror(x.G, top.G), mirror(x.B, top.B), 255}}
 	}
-	s := darken(c, 0.7)
 	return style{
-		plate:  [2]color.RGBA{tint(0.03), tint(0.12)},
-		balls:  [3][2]color.RGBA{ball(tint(0.22)), ball(tint(0.55)), ball(c)},
-		shadow: color.NRGBA{s.R, s.G, s.B, 75},
+		plate: [2]color.RGBA{tint(0.03), tint(0.12)},
+		balls: [3][2]color.RGBA{ball(tint(0.22)), ball(tint(0.55)), ball(c)},
 	}
 }
 
@@ -82,15 +79,16 @@ func write(path string, st style) error {
 	return f.Close()
 }
 
-// draw 由外向内画三个圆：每个圆先把软影投在包着它的各层上，再画自己。
+// draw 在画好的底板上由外向内画三个圆：每个圆先在包着它的各层上重铺一圈底板，挖出缝，
+// 再画自己。
 func (c *canvas) draw(st style) {
-	var below []poly
+	plate := image.NewRGBA(c.img.Bounds())
+	copy(plate.Pix, c.img.Pix)
 	for i, r := range radii {
-		ball := disc(size/2, floor-r, r)
-		if len(below) > 0 {
-			c.shade(st.shadow, 4, 14, 12, c.mask(below...), ball)
+		if i > 0 {
+			c.fill(plate, []poly{disc(size/2, floor-r, r+gap)})
 		}
+		ball := disc(size/2, floor-r, r)
 		c.fill(ramp(floor-2*r, floor, st.balls[i][0], st.balls[i][1]), []poly{ball})
-		below = append(below, ball)
 	}
 }
