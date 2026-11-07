@@ -224,7 +224,7 @@ func (a *App) refresh() {
 				a.err = err.Error()
 				return
 			}
-			a.err, a.infos = "", list.Sessions
+			a.err, a.infos, a.listed = "", list.Sessions, true
 		})
 	}()
 }
