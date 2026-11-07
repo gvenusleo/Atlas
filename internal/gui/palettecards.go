@@ -9,10 +9,12 @@ import (
 // 配色卡片的版式，单位为 DIP。
 const (
 	paletteColumns = 4  // 每行几张卡片
-	sampleHeight   = 44 // 缩影的高度
+	sampleHeight   = 44 // 色样的高度
+	accentDot      = 9  // 色样里强调色圆点的直径，比其余的大，一眼看出主色
+	colorDot       = 5  // 色样里其余圆点的直径
 )
 
-// paletteCards 画配色的色板卡片：每张是该配色在当前亮暗下的缩影，点一下选用。
+// paletteCards 画配色的色板卡片：每张是该配色亮暗两套颜色的色样，点一下选用。
 // 选中的是偏好里的配色，不另存状态。
 func (a *App) paletteCards(c *ui.Context, t *ui.Theme) {
 	selected := schemeChoices[schemeIndex(a.prefs.Palette)].id
@@ -31,57 +33,58 @@ func (a *App) paletteCards(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// paletteCard 画一张配色卡片：上面是缩影，下面是名称。选中的与本应用其他列表一样
-// 是淡底，名称加粗并用正文色；悬停的是更淡的底。
+// paletteCard 画一张配色卡片：上面是色样，下面是名称。选中的色样外有一圈强调色的描边，
+// 名称用正文色；不加粗，免得名称变宽。悬停的卡片是淡底。
 func (a *App) paletteCard(c *ui.Context, t *ui.Theme, it schemeChoice, on bool) {
-	card := ui.ButtonBase(c.Key("palette-" + it.id)).Grow(1).MinWidth(0).Padding(4).
+	card := ui.ButtonBase(c.Key("palette-" + it.id)).Grow(1).MinWidth(0).Padding(2).
 		Radius(boxRound).Label(it.name)
-	switch {
-	case on:
-		card.Background(t.SurfaceHover)
-	case card.Hovered():
+	if !on && card.Hovered() {
 		card.Background(rowFill(t))
 	}
 	card.OnClick(func() { a.choosePalette(it.id) })
 	card.Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(2).AlignItems(ui.Center).Children(func() {
-			paletteSample(c, t, it.scheme)
+		ui.Column(c).Grow(1).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
+			// 描边与色样之间留一道缝；没选中时描边透明，各卡片的色样一样大。
+			ring := ui.Column(c).AlignSelf(ui.Stretch).Padding(2).Radius(controlRound+4).
+				Border(2, ui.Color{})
+			if on {
+				ring.BorderColor(accentFg(t))
+			}
+			ring.Children(func() { paletteSample(c, t, it.scheme) })
 			name := ui.Text(c, it.name).FontSize(smallSize).TextColor(t.TextMuted).SingleLine()
 			if on {
-				name.TextColor(t.Text).Bold()
+				name.TextColor(t.Text)
 			}
 		})
 	})
 }
 
-// paletteSample 画配色的缩影：主区底色上一条侧栏、一枚强调色的按钮、两行字，
-// 以及关键字、字符串、函数的代码色。
+// paletteSample 画配色的色样：左半是亮色、右半是暗色，配色之间亮色常常相近，
+// 差别多在暗色里，并排放才分得开。外框用当前主题的边框色，与周围一致。
 func paletteSample(c *ui.Context, t *ui.Theme, sc scheme) {
-	p, tok := sc.light, sc.lightTokens
-	if t.Dark {
-		p, tok = sc.dark, sc.darkTokens
-	}
-	ui.Row(c).AlignSelf(ui.Stretch).Height(sampleHeight).Radius(controlRound).Clip().
-		Background(p.canvas).Border(1, p.border).Children(func() {
-		ui.Column(c).Width(20).Gap(4).Padding(8, 5).Background(p.subtle).Children(func() {
-			sampleBar(c, 10, p.muted)
-			sampleBar(c, 10, p.muted)
-		})
-		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Padding(8).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(5).Children(func() {
-				ui.Row(c).Size(16, 8).Shrink(0).Radius(4).Background(p.accent)
-				sampleBar(c, 28, p.text)
-			})
-			ui.Row(c).Gap(4).Children(func() {
-				for _, i := range []int{0, 1, 3} {
-					ui.Row(c).Size(6, 6).Shrink(0).Radius(3).Background(tok[i])
-				}
-			})
+	ui.Row(c).AlignSelf(ui.Stretch).AlignItems(ui.Stretch).Height(sampleHeight).
+		Radius(controlRound).Clip().Border(1, t.Border).Children(func() {
+		sampleHalf(c, sc.light, sc.lightTokens)
+		sampleHalf(c, sc.dark, sc.darkTokens)
+	})
+}
+
+// sampleHalf 画色样的一半：底色上一行文字色的“Aa”，其下是强调色、成功、运行、危险，
+// 以及关键字与函数的代码色。
+func sampleHalf(c *ui.Context, p palette, tok [6]ui.Color) {
+	ui.Column(c).Grow(1).MinWidth(0).Justify(ui.Center).AlignItems(ui.Center).Gap(4).
+		Background(p.canvas).Children(func() {
+		ui.Text(c, "Aa").FontSize(smallSize).TextColor(p.text).FontWeight(500).SingleLine()
+		ui.Row(c).AlignItems(ui.Center).Gap(2).Children(func() {
+			sampleDot(c, accentDot, p.accent).Margin(0, 1, 0, 0)
+			for _, color := range []ui.Color{p.success, p.running, p.danger, tok[0], tok[3]} {
+				sampleDot(c, colorDot, color)
+			}
 		})
 	})
 }
 
-// sampleBar 画缩影里代表一段文字的细条。
-func sampleBar(c *ui.Context, width float32, color ui.Color) {
-	ui.Row(c).Size(width, 4).Shrink(0).Radius(2).Background(color)
+// sampleDot 画色样里的一个圆点。
+func sampleDot(c *ui.Context, size float32, color ui.Color) ui.Element {
+	return ui.Row(c).Size(size, size).Shrink(0).Radius(size / 2).Background(color)
 }
