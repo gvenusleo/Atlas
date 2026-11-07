@@ -37,7 +37,8 @@ func (a *App) changesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) 
 		default:
 			cp.treeWidth = min(max(cp.treeWidth, treeMin), max(a.sideWidth/2, treeMin))
 			ui.Split(c, &cp.treeWidth, func() { a.changeOutline(c, t, ch) },
-				func() { a.changeContent(c, t, ch) }).Grow(1).MinHeight(0)
+				func() { a.changeContent(c, t, ch) }).SplitReset(changeTreeDefault).
+				Grow(1).MinHeight(0)
 		}
 	})
 }

@@ -36,7 +36,7 @@ func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
 		// 文件树不超过卡片宽度的一半，内容区至少留得下。
 		fp.treeWidth = min(max(fp.treeWidth, treeMin), max(a.sideWidth/2, treeMin))
 		ui.Split(c, &fp.treeWidth, func() { a.fileTree(c, t, ch) },
-			func() { a.fileContent(c, t, ch) }).Grow(1).MinHeight(0)
+			func() { a.fileContent(c, t, ch) }).SplitReset(treeDefault).Grow(1).MinHeight(0)
 	})
 }
 
