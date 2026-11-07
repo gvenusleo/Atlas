@@ -82,8 +82,8 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 		if a.err != "" {
 			ui.Text(c, a.err).FontSize(smallSize).TextColor(t.Danger).Selectable().Padding(8)
 		}
-		// 只有一个图标，放在左下角；图标与上面各入口的图标左右居中对齐。
-		ui.Row(c).Padding(0, 14, 12).Children(func() {
+		// 只有一个图标，放在左下角；图标与上面各入口的图标左右居中对齐，离左边与离底边一样远。
+		ui.Row(c).Padding(0, 14, 14).Children(func() {
 			iconButton(c, t, settingsIcon, "设置", barButton, a.openSettings)
 		})
 	})
