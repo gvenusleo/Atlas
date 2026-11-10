@@ -97,9 +97,10 @@ type globalInstructions struct {
 // settingsPage 是设置页的状态。
 type settingsPage struct {
 	open     bool
-	gen      int // 打开的次数，后台取系统字体的结果据此作废
-	category int // 左侧选中的分类，见 settingsCategories
-	theme    int // 主题分段控件选中的一项，见 themeChoices
+	gen      int    // 打开的次数，后台取系统字体的结果据此作废
+	category int    // 左侧选中的分类，见 settingsCategories
+	theme    int    // 主题分段控件选中的一项，见 themeChoices
+	palette  string // 配色卡片选中的配色的 id，见 schemeChoices
 	// 开机时启动的开关取自系统的登录项，不在偏好里；设置失败的原因显示在开关下面。
 	loginOn  bool
 	loginErr string
@@ -118,6 +119,7 @@ func (a *App) openSettings() {
 	*s = settingsPage{
 		open: true, gen: s.gen + 1,
 		theme:   themeIndex(a.prefs.Theme),
+		palette: schemeChoices[schemeIndex(a.prefs.Palette)].id,
 		loginOn: mygo.App.OpenAtLogin(),
 		menuBar: !a.prefs.HideTray,
 		uiFont:  fontLabel(a.prefs.UIFont), codeFont: fontLabel(a.prefs.CodeFont),

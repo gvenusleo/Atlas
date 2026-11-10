@@ -238,7 +238,8 @@ func changeStats(c *ui.Context, t *ui.Theme, v *changeView) {
 func changeButton(
 	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, disabled bool, click func(),
 ) ui.Element {
-	btn := quietButton(c, t, label, click).Size(barButton, barButton).Shrink(0).Disabled(disabled)
+	btn := quietButton(c, t, label, click).Size(barButton, barButton).Shrink(0).Tooltip(label).
+		Disabled(disabled)
 	color := t.TextMuted
 	if disabled {
 		color = color.Alpha(0.4)

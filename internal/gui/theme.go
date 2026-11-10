@@ -69,14 +69,13 @@ const (
 )
 
 // palette 是一套主题色。强调色分成两个：accent 是实心填充用的，上面放 onAccent 的字；
-// accentFg 是文字、图标与链接用的。暗色主题里两者通常不是同一个色。
-// running 用作文字（任务进行中），所以取的是能当文字看的那个黄。
+// accentFg 是文字、图标与链接用的。暗色主题里两者通常不是同一个色。悬停与按下的强调色
+// 由 accent 推出，见 applyTheme。running 用作文字（任务进行中），所以取的是能当文字看的那个黄。
 type palette struct {
-	canvas, subtle           ui.Color // 主区底色、次级底色（侧栏、用户消息）
+	canvas, subtle           ui.Color // 主区底色、次级底色（侧栏、用户消息）；亮色里次级底色更深
 	border                   ui.Color
 	text, muted              ui.Color
-	accent, accentHover      ui.Color
-	accentPressed, accentFg  ui.Color
+	accent, accentFg         ui.Color
 	onAccent                 ui.Color // 放在 accent 上的文字
 	danger, success, running ui.Color
 }
@@ -108,17 +107,24 @@ func accentFg(t *ui.Theme) ui.Color {
 	return activeScheme.light.accentFg
 }
 
-// rowFill 与 buttonFill 是悬停或选中时铺在背景上的淡色：行与下拉触发器用 rowFill，
-// 图标按钮与标签用 buttonFill。
-func rowFill(t *ui.Theme) ui.Color    { return t.Text.Alpha(0.06) }
-func buttonFill(t *ui.Theme) ui.Color { return t.Text.Alpha(0.08) }
+// 铺在背景上的淡色，由浅到深：rowFill 是行与下拉触发器的悬停（也是淡底按钮的静止态），
+// buttonFill 是图标按钮与标签的悬停，selectedFill 是侧栏与设置分类里选中的一项，pressFill 是
+// 按下；activeFill 是开着的开关与选中的档位，用淡的强调色；fieldBorder 是输入框的细边框。
+func rowFill(t *ui.Theme) ui.Color      { return t.Text.Alpha(0.06) }
+func buttonFill(t *ui.Theme) ui.Color   { return t.Text.Alpha(0.08) }
+func selectedFill(t *ui.Theme) ui.Color { return t.Text.Alpha(0.09) }
+func pressFill(t *ui.Theme) ui.Color    { return t.Text.Alpha(0.12) }
+func activeFill(t *ui.Theme) ui.Color   { return accentFg(t).Alpha(0.15) }
+func fieldBorder(t *ui.Theme) ui.Color  { return t.Text.Alpha(0.12) }
 
 // quietRows 让 fn 里创建的列表类部件（Outline、Tree 等）用本应用安静的行样式：选中的行是
 // SurfaceHover 的淡底、字色不变，悬停是更淡的 rowFill，与文件树一致。MyGo 的部件在创建时
-// 从主题取色，选中行用强调色，所以临时换一份主题。
+// 从主题取色，选中行用强调色，所以临时换一份主题。InactiveAccent 设成同一个淡底：留零时
+// 窗口不在前台，MyGo 会把选中行换成由 AccentText（这里是正文色）推出的中灰，反而更重。
 func quietRows(c *ui.Context, t *ui.Theme, fn func()) {
 	local := *t
 	local.Accent, local.AccentText = t.SurfaceHover, t.Text
+	local.InactiveAccent = local.Accent
 	local.SurfaceHover = rowFill(t)
 	c.SetTheme(&local)
 	fn()
@@ -126,8 +132,8 @@ func quietRows(c *ui.Context, t *ui.Theme, fn func()) {
 }
 
 // applyTheme 在系统的亮色或暗色主题上换成当前配色的色板与选定的界面字体，返回本帧的主题。
-// 除 Dark（来自系统或偏好）之外，每个字段都显式填上，不靠 MyGo 的默认值；InactiveAccent
-// 显式留零，原因见下。
+// 除 Dark（来自系统或偏好）与 ScrollbarStyle（留零即按 Scrollbar 与 ScrollbarWidth 画）之外，
+// 每个字段都显式填上，不靠 MyGo 的默认值；InactiveAccent 显式留零，原因见下。
 func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 	t := *c.Theme()
 	p := activeScheme.light
@@ -144,7 +150,14 @@ func (a *App) applyTheme(c *ui.Context) *ui.Theme {
 	t.SurfaceHover = p.text.Alpha(hover).Over(p.canvas)
 	t.SurfacePressed = p.text.Alpha(pressed).Over(p.canvas)
 	t.Border, t.Text, t.TextMuted = p.border, p.text, p.muted
-	t.Accent, t.AccentHover, t.AccentPressed = p.accent, p.accentHover, p.accentPressed
+	// 悬停与按下的强调色由 accent 推出，各配色的手感因此一致：亮色里悬停变深、按下更深；
+	// 暗色里悬停变亮、按下变深，与 MyGo 的默认主题相同。
+	black, white := ui.RGB(0, 0, 0), ui.RGB(255, 255, 255)
+	t.Accent = p.accent
+	t.AccentHover, t.AccentPressed = p.accent.Mix(black, 0.1), p.accent.Mix(black, 0.2)
+	if t.Dark {
+		t.AccentHover, t.AccentPressed = p.accent.Mix(white, 0.12), p.accent.Mix(black, 0.15)
+	}
 	t.AccentText = p.onAccent
 	t.Danger, t.Warning, t.Success = p.danger, p.running, p.success
 	// 留零时 MyGo 取一种与 AccentText 对比够读的灰，窗口不在前台时强调色褪成它，与原生应用
@@ -175,8 +188,8 @@ func boxColor(t *ui.Theme) ui.Color { return t.Text.Alpha(0.04).Over(t.Backgroun
 
 // codeTheme 是代码与对比的配色。编辑器主题的每个字段都显式填上，不靠 MyGo 的默认值；
 // 与配色无关的装饰色（当前行、括号、搜索命中）只随亮暗变，用黑白的透明度。
-// 对比里的增删改取终端的亮绿、亮红与亮蓝：MyGo 把它们按比例混进底色，要用饱和的亮色才
-// 看得出；配色的 success 与 danger 是给文字调的，混进去几乎没有颜色。
+// 对比里的增删改取终端的绿、红与蓝：MyGo 把它们按比例混进底色，要用饱和的亮色才看得出；
+// 配色的 success 与 danger 是给文字调的，混进去几乎没有颜色。见 diffColor。
 func codeTheme(t *ui.Theme) *editor.Theme {
 	tok, ansi := activeScheme.lightTokens, activeScheme.lightANSI
 	if t.Dark {
@@ -206,9 +219,9 @@ func codeTheme(t *ui.Theme) *editor.Theme {
 		Info:    accentFg(t),
 		Hint:    t.TextMuted,
 
-		Added:    ansi[10],
-		Deleted:  ansi[9],
-		Modified: ansi[12],
+		Added:    diffColor(t, ansi[2], ansi[10]),
+		Deleted:  diffColor(t, ansi[1], ansi[9]),
+		Modified: diffColor(t, ansi[4], ansi[12]),
 	}
 	if t.Dark {
 		th.ActiveLine = ui.RGBA(255, 255, 255, 0.045)
@@ -219,6 +232,20 @@ func codeTheme(t *ui.Theme) *editor.Theme {
 	}
 	setTokens(th, t, tok)
 	return th
+}
+
+// diffColor 从终端的一对常规色与亮色里挑对比用的那个：亮色主题取亮色，暗色主题取两者中更亮
+// 的。多数配色的亮色更亮，但 Flexoki 暗色的亮色反而更暗，混进暗底就看不见了。
+func diffColor(t *ui.Theme, normal, bright ui.Color) ui.Color {
+	if t.Dark && lightness(normal) > lightness(bright) {
+		return normal
+	}
+	return bright
+}
+
+// lightness 是颜色的相对亮度（Rec. 709 的权重），只用来比较两个颜色谁更亮。
+func lightness(c ui.Color) float32 {
+	return 0.2126*float32(c.R) + 0.7152*float32(c.G) + 0.0722*float32(c.B)
 }
 
 // setTokens 给 25 种 token 全部显式设色，tok 是配色的六种代码色。

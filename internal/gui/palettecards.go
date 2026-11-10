@@ -14,15 +14,14 @@ const (
 	colorDot       = 5  // 色样里其余圆点的直径
 )
 
-// paletteCards 画配色的色板卡片：每张是该配色亮暗两套颜色的色样，点一下选用。
-// 选中的是偏好里的配色，不另存状态。
+// paletteCards 画配色的色板卡片：每张是该配色亮暗两套颜色的色样，一组单选，点一下或用方向键
+// 选用，选了立即生效。
 func (a *App) paletteCards(c *ui.Context, t *ui.Theme) {
-	selected := schemeChoices[schemeIndex(a.prefs.Palette)].id
-	ui.Column(c).Gap(4).Children(func() {
+	ui.RadioGroup(c.Key("settings-palette"), func() {
 		for row := range slices.Chunk(schemeChoices, paletteColumns) {
 			ui.Row(c).Gap(4).Children(func() {
 				for _, it := range row {
-					a.paletteCard(c, t, it, it.id == selected)
+					a.paletteCard(c, t, it)
 				}
 				// 最后一行不满时用空位补齐，卡片才与上面各行一样宽。
 				for range paletteColumns - len(row) {
@@ -30,18 +29,24 @@ func (a *App) paletteCards(c *ui.Context, t *ui.Theme) {
 				}
 			})
 		}
-	})
+	}).Gap(4).Label("配色")
 }
 
 // paletteCard 画一张配色卡片：上面是色样，下面是名称。选中的色样外有一圈强调色的描边，
-// 名称用正文色；不加粗，免得名称变宽。悬停的卡片是淡底。
-func (a *App) paletteCard(c *ui.Context, t *ui.Theme, it schemeChoice, on bool) {
-	card := ui.ButtonBase(c.Key("palette-" + it.id)).Grow(1).MinWidth(0).Padding(2).
-		Radius(boxRound).Label(it.name)
-	if !on && card.Hovered() {
+// 名称用正文色；不加粗，免得名称变宽。没选中的卡片悬停是淡底，按下深一些。
+func (a *App) paletteCard(c *ui.Context, t *ui.Theme, it schemeChoice) {
+	s := &a.settings
+	on := s.palette == it.id
+	card := ui.RadioBase(c.Key("palette-"+it.id), &s.palette, it.id).Grow(1).MinWidth(0).
+		Padding(2).Radius(boxRound).Label(it.name)
+	switch {
+	case on:
+	case card.Pressed():
+		card.Background(pressFill(t))
+	case card.Hovered():
 		card.Background(rowFill(t))
 	}
-	card.OnClick(func() { a.choosePalette(it.id) })
+	card.OnChange(func() { a.choosePalette(s.palette) })
 	card.Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
 			// 描边与色样之间留一道缝；没选中时描边透明，各卡片的色样一样大。

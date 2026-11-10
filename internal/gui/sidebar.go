@@ -129,7 +129,7 @@ func entry(c *ui.Context, t *ui.Theme, e entrySpec) {
 		Radius(controlRound).Label(e.label)
 	switch {
 	case e.active:
-		btn.Background(t.Text.Alpha(0.09))
+		btn.Background(selectedFill(t))
 	case btn.Hovered():
 		btn.Background(t.SurfaceHover)
 	}
@@ -222,7 +222,7 @@ func showMore(c *ui.Context, t *ui.Theme, hidden int, hover ui.Color, click func
 func sidebarItem(c *ui.Context, t *ui.Theme, id, label, selected string) ui.Element {
 	row := ui.SidebarItem(c, id, nil, label).Padding(4, 8)
 	if id == selected {
-		row.Background(t.Text.Alpha(0.09)).TextColor(t.Text)
+		row.Background(selectedFill(t)).TextColor(t.Text)
 	}
 	return row
 }
@@ -282,7 +282,7 @@ func trail(
 			more := ui.ButtonBase(c.Key("more")).Size(size, size).Shrink(0).Radius(controlRound).
 				Label("更多").Disabled(!hovered)
 			if hovered && more.Hovered() {
-				more.Background(t.Text.Alpha(0.1))
+				more.Background(buttonFill(t))
 			}
 			more.Menu(menu)
 			if hovered {

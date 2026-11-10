@@ -63,30 +63,35 @@ func (a *App) settingsDialog(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// settingsNav 画左侧的分类列表。
+// settingsNav 画左侧的分类：一列竖排的标签，点击或上下方向键切换。
 func (a *App) settingsNav(c *ui.Context, t *ui.Theme) {
 	s := &a.settings
-	ui.Column(c).Width(settingsNavW).Shrink(0).Padding(settingsTop, settingsNavSide).Gap(2).
+	ui.Column(c).Width(settingsNavW).Shrink(0).Padding(settingsTop, settingsNavSide).
 		Background(t.Surface).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-		ui.Row(c).Height(barButton).AlignItems(ui.Center).Padding(0, 8).Margin(0, 0, 12).
+		ui.Row(c).Height(barButton).AlignItems(ui.Center).Padding(0, 8).Margin(0, 0, 14).
 			Children(func() { ui.Text(c, "设置").FontSize(dialogSize).Bold() })
-		for i, category := range settingsCategories {
-			row := ui.ButtonBase(c).Justify(ui.Start).AlignItems(ui.Center).Gap(8).
-				Padding(6, 8).Radius(controlRound).Label(category.name)
-			color := t.TextMuted
-			switch {
-			case i == s.category:
-				row.Background(t.Text.Alpha(0.09))
-				color = t.Text
-			case row.Hovered():
-				row.Background(rowFill(t))
-			}
-			row.OnClick(func() { s.category = i })
-			row.Children(func() {
-				ui.Icon(c, category.icon).FontSize(iconSize).TextColor(color)
-				ui.Text(c, category.name)
+		tabs := ui.TabsBase(c.Key("settings-nav"), &s.category, len(settingsCategories))
+		tabs.List.Column().FocusGroup(ui.Vertical).AlignItems(ui.Stretch).Gap(2).Label("设置分类").
+			Children(func() {
+				for i, category := range settingsCategories {
+					tab := tabs.Tab(i).AlignItems(ui.Center).Gap(8).Padding(6, 8).
+						Radius(controlRound).Label(category.name)
+					color := t.TextMuted
+					switch {
+					case i == s.category:
+						tab.Background(selectedFill(t))
+						color = t.Text
+					case tab.Pressed():
+						tab.Background(pressFill(t))
+					case tab.Hovered():
+						tab.Background(rowFill(t))
+					}
+					tab.Children(func() {
+						ui.Icon(c, category.icon).FontSize(iconSize).TextColor(color)
+						ui.Text(c, category.name)
+					})
+				}
 			})
-		}
 	})
 }
 
@@ -99,7 +104,7 @@ func (a *App) settingsContent(c *ui.Context, t *ui.Theme) {
 			Children(func() {
 				ui.Text(c, settingsCategories[s.category].name).FontSize(dialogSize).Bold()
 			})
-		quietButton(c, t, "关闭设置", func() { s.open = false }).
+		quietButton(c, t, "关闭设置", func() { s.open = false }).Tooltip("关闭设置").
 			Absolute().Top(settingsCloseTop).Right(settingsCloseRight).Size(barButton, barButton).
 			Children(func() {
 				ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
@@ -188,6 +193,7 @@ func (a *App) comboBox(
 		// 面板取与 popupPanel 相同的圆角，高亮用与 popupItem 相同的淡底。
 		local := *c.Theme()
 		local.Radius, local.Accent = popupRound-2, rowFill(t)
+		local.InactiveAccent = local.Accent // 原因见 quietRows
 		c.SetTheme(&local)
 		ui.Combobox(c.Key("settings-"+label), value, options).Label(label).
 			Width(comboWidth).Padding(3, 8).Radius(controlRound).FontSize(textSize).

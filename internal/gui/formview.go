@@ -14,7 +14,7 @@ const (
 
 // fieldBox 给输入框配上本应用的样式：淡的细边框与圆角，不用控件自带的强调色。
 func fieldBox(input ui.Element, t *ui.Theme) ui.Element {
-	return input.Radius(controlRound).Border(1, t.Text.Alpha(0.12))
+	return input.Radius(controlRound).Border(1, fieldBorder(t))
 }
 
 // textField 画表单里的单行输入框，样式见 fieldBox。
@@ -48,7 +48,10 @@ func pillSelect[T comparable](
 	sel := ui.SelectBase(c.Key(key), value)
 	trigger := sel.Trigger.Label(label).AlignItems(ui.Center).Gap(6).Height(fieldHeight).
 		Padding(0, 10).Radius(controlRound).Background(rowFill(t))
-	if trigger.Hovered() {
+	switch {
+	case trigger.Pressed():
+		trigger.Background(pressFill(t))
+	case trigger.Hovered():
 		trigger.Background(buttonFill(t))
 	}
 	trigger.Children(func() {
@@ -62,7 +65,7 @@ func pillSelect[T comparable](
 func dialogHeader(c *ui.Context, t *ui.Theme, title string, closeDialog func()) {
 	ui.Row(c).Height(barButton).AlignItems(ui.Center).Padding(0, 0, 0, settingsPad).
 		Children(func() { ui.Text(c, title).FontSize(dialogSize).Bold() })
-	quietButton(c, t, "关闭", closeDialog).
+	quietButton(c, t, "关闭", closeDialog).Tooltip("关闭").
 		Absolute().Top(settingsCloseTop).Right(settingsCloseRight).Size(barButton, barButton).
 		Children(func() {
 			ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
@@ -70,21 +73,14 @@ func dialogHeader(c *ui.Context, t *ui.Theme, title string, closeDialog func()) 
 }
 
 // dialogButtons 画对话框底部：左边是 extra 画的内容（可为空），其后是校验的错误，右边是取消与
-// 保存；保存用淡的强调色，不抢眼。
+// 保存；按钮与重命名等对话框一样用 MyGo 的 Button 与 PrimaryButton。
 func dialogButtons(c *ui.Context, t *ui.Theme, err string, extra, cancel, save func()) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(12, settingsPad).Children(func() {
 		if extra != nil {
 			extra()
 		}
 		ui.Text(c, err).FontSize(textSize).TextColor(t.Danger).Grow(1).MinWidth(0)
-		quietButton(c, t, "取消", cancel).Height(28).Padding(0, 14).
-			Children(func() { ui.Text(c, "取消").FontSize(textSize) })
-		btn := ui.ButtonBase(c).Height(28).Padding(0, 14).Radius(controlRound).Label("保存")
-		alpha := float32(0.15)
-		if btn.Hovered() {
-			alpha = 0.25
-		}
-		btn.Background(accentFg(t).Alpha(alpha)).OnClick(save)
-		btn.Children(func() { ui.Text(c, "保存").FontSize(textSize).TextColor(accentFg(t)) })
+		ui.Button(c, "取消").OnClick(cancel)
+		ui.PrimaryButton(c, "保存").OnClick(save)
 	})
 }

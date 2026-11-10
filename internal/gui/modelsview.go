@@ -147,7 +147,7 @@ func (a *App) serviceFields(c *ui.Context, t *ui.Theme) {
 				if f.showKey {
 					label, glyph = "隐藏 API key", eyeOffIcon
 				}
-				quietButton(c, t, label, func() { f.showKey = !f.showKey }).
+				quietButton(c, t, label, func() { f.showKey = !f.showKey }).Tooltip(label).
 					Size(fieldHeight, fieldHeight).Shrink(0).Children(func() {
 					ui.Icon(c, glyph).FontSize(iconSize).TextColor(t.TextMuted)
 				})
@@ -181,34 +181,33 @@ func (a *App) modelCard(c *ui.Context, t *ui.Theme, f *serviceForm, m *modelForm
 		if header.Hovered() {
 			header.Background(buttonFill(t))
 		}
+		var p ui.CollapsibleParts
 		header.Children(func() {
-			a.modelHead(c, t, m, key)
+			p = a.modelHead(c, t, m, key)
 			quietButton(c, t, "删除模型", func() { f.removeModel(m) }).Size(barButton, barButton).
-				Shrink(0).Children(func() {
+				Shrink(0).Tooltip("删除模型").Children(func() {
 				ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
 			})
 		})
-		if m.open {
-			ui.Column(c).Gap(6).Padding(2, 14, 14).Children(func() { a.modelFields(c, t, m, key) })
-		}
+		p.Panel(func() { a.modelFields(c, t, m, key) }).Gap(6).Padding(2, 14, 14)
 	})
 }
 
-// modelHead 画模型卡片收起时的一行：向右（展开时向下）的箭头，模型 ID，有展示名时其下是展示名。
-func (a *App) modelHead(c *ui.Context, t *ui.Theme, m *modelForm, key string) {
+// modelHead 画模型卡片收起时的一行：箭头（展开时转向下），模型 ID，有展示名时其下是展示名。
+// 它是可折叠部件的触发行，返回的部件由 modelCard 在卡片里画出展开的面板。
+func (a *App) modelHead(
+	c *ui.Context, t *ui.Theme, m *modelForm, key string,
+) ui.CollapsibleParts {
 	title := strings.TrimSpace(m.id)
 	if title == "" {
 		title = "新模型"
 	}
-	head := ui.ButtonBase(c.Key(key+"head")).Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(10).
+	p := ui.CollapsibleBase(c.Key(key+"head"), &m.open)
+	head := p.Trigger.Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(10).
 		Padding(10, 12).Radius(controlRound + 2).Label(title)
-	head.OnClick(func() { m.open = !m.open })
 	head.Children(func() {
-		glyph := chevronIcon
-		if m.open {
-			glyph = chevronDownIcon
-		}
-		ui.Icon(c, glyph).FontSize(smallIconSize).TextColor(t.TextMuted)
+		ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).
+			Rotate(90 * p.Progress())
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			ui.Text(c, title).FontSize(textSize).Bold().SingleLine()
 			if name := strings.TrimSpace(m.name); name != "" {
@@ -216,6 +215,7 @@ func (a *App) modelHead(c *ui.Context, t *ui.Theme, m *modelForm, key string) {
 			}
 		})
 	})
+	return p
 }
 
 // modelFields 画展开的模型的各个字段。
@@ -249,19 +249,18 @@ func (a *App) modelFields(c *ui.Context, t *ui.Theme, m *modelForm, key string) 
 
 // levelChip 画一个思考档位的标签按钮：选中时是淡的强调色底，没选中时是主区底色，点一下切换。
 func levelChip(c *ui.Context, t *ui.Theme, key, label string, on *bool) {
-	chip := ui.ButtonBase(c.Key(key)).Height(26).Padding(0, 12).Radius(controlRound).
-		AlignItems(ui.Center).Label(label)
+	chip := ui.ToggleBase(c.Key(key), on).Height(26).Padding(0, 12).Radius(controlRound).
+		Label(label)
 	color := t.TextMuted
 	switch {
 	case *on:
-		chip.Background(accentFg(t).Alpha(0.15))
+		chip.Background(activeFill(t))
 		color = accentFg(t)
 	case chip.Hovered():
 		chip.Background(buttonFill(t).Over(t.Background))
 	default:
 		chip.Background(t.Background)
 	}
-	chip.OnClick(func() { *on = !*on })
 	chip.Children(func() { ui.Text(c, label).FontSize(textSize).TextColor(color) })
 }
 
@@ -275,6 +274,5 @@ func (a *App) deleteButton(c *ui.Context, t *ui.Theme) {
 	if f.confirmDelete {
 		label = "确认删除，同时删除 API key"
 	}
-	quietButton(c, t, label, a.deleteService).Height(28).Padding(0, 12).Shrink(0).
-		Children(func() { ui.Text(c, label).FontSize(textSize).TextColor(t.Danger) })
+	ui.Button(c, label).TextColor(t.Danger).Shrink(0).OnClick(a.deleteService)
 }
