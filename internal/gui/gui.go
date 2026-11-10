@@ -83,7 +83,7 @@ type App struct {
 	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
 
 	tray     *mygo.Tray // 托盘图标；偏好为不显示、或建不起来时为空
-	quitting bool       // 退出已经确认，窗口接着关闭
+	quitting bool       // 退出已经确认，窗口接着关闭；退出被取消时清除
 }
 
 // Run 打开窗口，连接核心，阻塞到应用退出；退出时用 shutdown 关闭核心。
@@ -100,6 +100,7 @@ func Run(
 	mygo.Theme.SetSource(a.prefs.Theme) // 窗口创建之前定下主题，启动时不闪一下系统的
 	a.service = connect(a)
 	mygo.App.OnBeforeQuit(a.beforeQuit)
+	mygo.App.OnQuitCanceled(func() { a.quitting = false })
 	mygo.App.OnActivate(func(visible bool) { // 点 Dock 图标：窗口隐藏着就显示它
 		if !visible && a.win != nil {
 			a.win.Update(a.reveal)
@@ -114,6 +115,8 @@ func Run(
 		}
 	})
 	mygo.App.WhenReady(func() {
+		// 窗口隐藏后会话与定时任务仍在运行，App Nap 会拖慢它们；持有到进程结束。
+		mygo.Power.KeepRunning("运行会话与定时任务")
 		a.syncTray()
 		a.win = mygo.NewWindow(mygo.WindowOptions{
 			Hidden:    mygo.App.WasOpenedAtLogin(), // 登录时启动不弹窗口
