@@ -147,7 +147,7 @@ func (a *App) serviceFields(c *ui.Context, t *ui.Theme) {
 				if f.showKey {
 					label, glyph = "隐藏 API key", eyeOffIcon
 				}
-				quietButton(c, t, label, func() { f.showKey = !f.showKey }).
+				quietButton(c, t, label, func() { f.showKey = !f.showKey }).Tooltip(label).
 					Size(fieldHeight, fieldHeight).Shrink(0).Children(func() {
 					ui.Icon(c, glyph).FontSize(iconSize).TextColor(t.TextMuted)
 				})
@@ -184,7 +184,7 @@ func (a *App) modelCard(c *ui.Context, t *ui.Theme, f *serviceForm, m *modelForm
 		header.Children(func() {
 			a.modelHead(c, t, m, key)
 			quietButton(c, t, "删除模型", func() { f.removeModel(m) }).Size(barButton, barButton).
-				Shrink(0).Children(func() {
+				Shrink(0).Tooltip("删除模型").Children(func() {
 				ui.Icon(c, closeIcon).FontSize(barButton * 0.6).TextColor(t.TextMuted)
 			})
 		})
@@ -254,7 +254,7 @@ func levelChip(c *ui.Context, t *ui.Theme, key, label string, on *bool) {
 	color := t.TextMuted
 	switch {
 	case *on:
-		chip.Background(accentFg(t).Alpha(0.15))
+		chip.Background(activeFill(t))
 		color = accentFg(t)
 	case chip.Hovered():
 		chip.Background(buttonFill(t).Over(t.Background))
@@ -275,6 +275,5 @@ func (a *App) deleteButton(c *ui.Context, t *ui.Theme) {
 	if f.confirmDelete {
 		label = "确认删除，同时删除 API key"
 	}
-	quietButton(c, t, label, a.deleteService).Height(28).Padding(0, 12).Shrink(0).
-		Children(func() { ui.Text(c, label).FontSize(textSize).TextColor(t.Danger) })
+	ui.Button(c, label).TextColor(t.Danger).Shrink(0).OnClick(a.deleteService)
 }

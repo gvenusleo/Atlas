@@ -34,7 +34,7 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 		if files := card.DroppedFiles(); len(files) > 0 {
 			a.dropFiles(ch, files)
 		}
-		border := t.Text.Alpha(0.12)
+		border := fieldBorder(t)
 		if card.FileDragOver() {
 			border = t.Accent
 		}

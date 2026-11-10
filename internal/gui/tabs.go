@@ -109,23 +109,26 @@ func tabBody(c *ui.Context, t *ui.Theme, it tabItem) {
 	iconButton(c, t, closeIcon, it.closeLabel, 18, it.close)
 }
 
-// quietButton 是标签栏与卡片顶部的按钮的共同样式：平时没有底色，悬停才有淡底；label 同时
-// 是无障碍名称与提示。调用方再设大小与内容。
+// quietButton 是标签栏与卡片顶部的按钮的共同样式：平时没有底色，悬停与按下才有淡底；label
+// 是无障碍名称。调用方再设大小与内容；只有图标的按钮由调用方加上同名的提示。
 func quietButton(c *ui.Context, t *ui.Theme, label string, click func()) ui.Element {
 	btn := ui.ButtonBase(c).Radius(controlRound).Justify(ui.Center).AlignItems(ui.Center).
-		Label(label).Tooltip(label)
-	if btn.Hovered() {
+		Label(label)
+	switch {
+	case btn.Pressed():
+		btn.Background(pressFill(t))
+	case btn.Hovered():
 		btn.Background(buttonFill(t))
 	}
 	btn.OnClick(click)
 	return btn
 }
 
-// iconButton 画一个只有图标的方形小按钮，图标取边长的 0.6。
+// iconButton 画一个只有图标的方形小按钮，图标取边长的 0.6；看不到文字，悬停时给出名称。
 func iconButton(
 	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, size float32, click func(),
 ) {
-	quietButton(c, t, label, click).Size(size, size).Children(func() {
+	quietButton(c, t, label, click).Size(size, size).Tooltip(label).Children(func() {
 		ui.Icon(c, glyph).FontSize(size * 0.6).TextColor(t.TextMuted)
 	})
 }

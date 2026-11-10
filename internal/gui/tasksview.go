@@ -127,9 +127,12 @@ func (a *App) tasksHeader(c *ui.Context, t *ui.Theme) {
 
 // fillButton 画本应用安静的按钮：淡底，悬停时深一点；icon 为空时只有文字。
 func fillButton(c *ui.Context, t *ui.Theme, icon *ui.SVG, label string, click func()) {
-	btn := ui.ButtonBase(c).AlignItems(ui.Center).Gap(6).Height(28).Padding(0, 12).
+	btn := ui.ButtonBase(c).AlignItems(ui.Center).Gap(6).Height(fieldHeight).Padding(0, 12).
 		Radius(controlRound).Background(rowFill(t)).Label(label)
-	if btn.Hovered() {
+	switch {
+	case btn.Pressed():
+		btn.Background(pressFill(t))
+	case btn.Hovered():
 		btn.Background(buttonFill(t))
 	}
 	btn.OnClick(click)
