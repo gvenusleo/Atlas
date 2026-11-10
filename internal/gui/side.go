@@ -24,11 +24,12 @@ func (a *App) panelButtons(c *ui.Context, t *ui.Theme) {
 	}
 }
 
-// panelButton 画标题栏右端从右数第 slot 个开关，点一下调用 click。
+// panelButton 画标题栏右端从右数第 slot 个开关，点一下调用 click。面板开着与否由会话决定，
+// 开关绑定的只是本帧的副本：点击时由 click 去改真正的状态。
 func panelButton(
 	c *ui.Context, t *ui.Theme, slot int, glyph *ui.SVG, label string, open bool, click func(),
 ) {
-	btn := ui.ButtonBase(c)
+	btn := ui.ToggleBase(c, &open)
 	styleBarButton(c, t, btn, slot, glyph, label, open)
 	btn.OnClick(click)
 }

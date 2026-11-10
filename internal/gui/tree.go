@@ -22,13 +22,15 @@ func outlineTree(
 	return el
 }
 
-// treeToggle 是标签栏左端的文件树开关；文件树显示时用强调色标出。
+// treeToggle 是标签栏左端的文件树开关；文件树显示时用强调色标出。状态存的是“隐藏”，开关
+// 绑定的是它的反面在本帧的副本，点击时再改回 hidden。
 func treeToggle(c *ui.Context, t *ui.Theme, hidden *bool) {
-	btn := ui.ButtonBase(c).Size(barButton, barButton).Shrink(0).Radius(controlRound).
+	shown := !*hidden
+	btn := ui.ToggleBase(c, &shown).Size(barButton, barButton).Radius(controlRound).
 		Label("文件树").Tooltip("文件树")
 	color := t.TextMuted
 	switch {
-	case !*hidden:
+	case shown:
 		btn.Background(activeFill(t))
 		color = accentFg(t)
 	case btn.Hovered():

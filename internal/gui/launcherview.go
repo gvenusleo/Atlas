@@ -21,20 +21,26 @@ func (a *App) launcherDialog(c *ui.Context, t *ui.Theme) {
 			l.index, l.shownQuery = 0, l.query
 		}
 		l.results = a.launcherResults()
-		a.launcherInput(c, t)
-		a.launcherList(c, t, min(launcherHeight, height-launcherTop-90))
+		input := a.launcherInput(c, t)
+		list, selected := a.launcherList(c, t, min(launcherHeight, height-launcherTop-90))
+		// 键盘焦点一直在输入框里：告诉读屏它控制下面的结果，↑↓ 停在的是哪一项。
+		input.Expanded(len(l.results) > 0).Controls(list).ActiveDescendant(selected)
 		launcherHelp(c, t)
 	})
 }
 
-// launcherInput 画输入框，↑↓ 与 Enter 由 launcherKey 处理。
-func (a *App) launcherInput(c *ui.Context, t *ui.Theme) {
+// launcherInput 画输入框并返回它，↑↓ 与 Enter 由 launcherKey 处理。结果不是弹出的，而是排在
+// 输入框下面，所以不用 ComboboxBase（它的选项是挂在输入框下的浮层），只借用组合框的语义。
+func (a *App) launcherInput(c *ui.Context, t *ui.Theme) ui.Element {
+	var input ui.Element
 	ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(12, 16).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		ui.Icon(c, searchIcon).FontSize(iconSize).TextColor(t.TextMuted).Shrink(0)
-		ui.TextInputBase(c.Key("launcher-input"), &a.launch.query).AutoFocus().
-			Placeholder("搜索会话、操作和文件").Grow(1).MinWidth(0).OnTextKey(a.launcherKey)
+		input = ui.TextInputBase(c.Key("launcher-input"), &a.launch.query).AutoFocus().
+			Placeholder("搜索会话、操作和文件").Label("搜索").Role(ui.RoleComboBox).
+			AutoComplete(ui.AutoCompleteList).Grow(1).MinWidth(0).OnTextKey(a.launcherKey)
 	})
+	return input
 }
 
 // launcherKey 处理输入框里的按键：↑↓ 移动高亮，Enter 执行高亮的一项；返回是否已处理。
@@ -59,16 +65,20 @@ func (a *App) launcherKey(k ui.TextKey) bool {
 }
 
 // launcherList 画结果，每组前有标题；高亮的一项是 Enter 作用的项，键盘与指针选的是同一行。
-func (a *App) launcherList(c *ui.Context, t *ui.Theme, maxHeight float32) {
+// 返回结果的列表与高亮的那一行，没有结果时都是零值。
+func (a *App) launcherList(
+	c *ui.Context, t *ui.Theme, maxHeight float32,
+) (list, highlighted ui.Element) {
 	l := &a.launch
 	if len(l.results) == 0 {
 		ui.Text(c, "没有匹配").TextColor(t.TextMuted).FontSize(textSize).Padding(24).
 			TextAlign(ui.Center)
-		return
+		return list, highlighted
 	}
 	selected := l.row(len(l.results))
 	ui.Scroll(c).MaxHeight(maxHeight).Children(func() {
-		ui.Column(c).Padding(6).Children(func() {
+		list = ui.Column(c).Padding(6).Role(ui.RoleListBox).Label("结果")
+		list.Children(func() {
 			group := ""
 			for i, r := range l.results {
 				if r.group != group {
@@ -81,7 +91,9 @@ func (a *App) launcherList(c *ui.Context, t *ui.Theme, maxHeight float32) {
 					b := row.Bounds()
 					l.pointerTo([2]float32{b.X + x, b.Y + y}, i)
 				}
+				row.AccessSelected(i == selected)
 				if i == selected {
+					highlighted = row
 					row.Background(t.SurfaceHover)
 					if l.moved {
 						row.ScrollIntoView()
@@ -91,12 +103,14 @@ func (a *App) launcherList(c *ui.Context, t *ui.Theme, maxHeight float32) {
 		})
 	})
 	l.moved = false
+	return list, highlighted
 }
 
 // launcherRow 画一行结果：图标（会话没有）、名称、说明和行尾；点一下就调用 choose。
+// 它是结果列表里的一个选项，点击不夺走输入框的焦点。
 func launcherRow(c *ui.Context, t *ui.Theme, r result, choose func()) ui.Element {
 	row := popupItem(ui.ButtonBase(c), t).Justify(ui.Start).AlignItems(ui.Center).Gap(10).
-		Label(r.name)
+		Label(r.name).Role(ui.RoleOption).KeepFocus()
 	row.OnClick(choose)
 	row.Children(func() {
 		if r.icon != nil {
