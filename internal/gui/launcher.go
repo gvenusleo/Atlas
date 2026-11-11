@@ -111,7 +111,7 @@ func (a *App) actionResults(terms []string) []result {
 		{name: "切换侧栏", icon: sidebarIcon, trail: "⌘B", run: a.toggleSidebar},
 		{name: "切换文件面板", icon: folderIcon, run: a.toggleFiles},
 	}
-	if a.current.inRepo() {
+	if a.hasRepos(a.current) {
 		actions = append(actions,
 			result{name: "切换更改面板", icon: diffIcon, run: a.toggleChanges})
 	}

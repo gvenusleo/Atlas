@@ -101,6 +101,7 @@ type chat struct {
 	files   *filePanel   // 文件面板，第一次打开时才建
 	changes *changePanel // 更改面板，第一次打开时才建
 	repo    repoCheck    // 工作目录是不是 git 工作树
+	subs    repoCheck    // 工作目录不在 git 工作树里时，其下有没有子仓库
 	branch  branchState  // 工作目录所在仓库的当前分支
 
 	// 会话的终端面板：各个标签、当前标签，以及创建失败的原因。

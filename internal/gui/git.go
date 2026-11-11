@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -43,17 +44,18 @@ func (k changeKind) letter() string {
 // fileChange 是工作区里一个文件相对 HEAD 的更改。
 type fileChange struct {
 	path           string // 相对工作目录，用 / 分隔
+	repo           string // 所在仓库相对工作目录的路径；工作目录自己所在的仓库是 "."
 	orig           string // 它在 HEAD 里相对仓库根的路径；新增的没有
 	kind           changeKind
-	added, removed int // 增删的行数，还没跟踪或不是文本的文件为 0
+	added, removed int  // 增删的行数，还没跟踪或不是文本的文件为 0
+	hasHead        bool // 所在仓库有提交；没有时所有文件都算新增
 }
 
 // changeSet 是一次读到的全部更改。
 type changeSet struct {
 	files     []fileChange
-	hasHead   bool   // 仓库有提交；没有时所有文件都算新增
 	truncated bool   // 超过 changeLimit，只列了一部分
-	err       string // 读取失败的原因
+	err       string // 读取失败的原因，多个仓库失败时每个一行
 }
 
 // findGit 报告 dir 或它的上层目录里有没有 .git（工作树与子模块里它是文件）。
@@ -74,19 +76,83 @@ func findGit(dir string) bool {
 // gitCheckAge 是“工作目录是不是 git 工作树”的结论用多久就要重查，之后运行 git init 的也认得。
 const gitCheckAge = 3 * time.Second
 
-// repoCheck 是会话的工作目录是不是 git 工作树的结论，按工作目录缓存。
+// repoCheck 是会话的工作目录是不是 git 工作树（或其下有没有子仓库）的结论，按工作目录缓存。
 type repoCheck struct {
-	cwd string    // 结论对应的工作目录
-	at  time.Time // 查的时刻
-	ok  bool
+	cwd      string    // 结论对应的工作目录
+	at       time.Time // 查的时刻
+	ok       bool
+	scanning bool // 正在后台查，只用于子仓库
 }
 
-// inRepo 报告会话的工作目录是不是 git 工作树，标题栏据此决定有没有更改按钮。
+// inRepo 报告会话的工作目录是不是 git 工作树，分支栏据此决定显不显示。
 func (ch *chat) inRepo() bool {
 	if ch.repo.cwd != ch.cwd || time.Since(ch.repo.at) > gitCheckAge {
-		ch.repo = repoCheck{ch.cwd, time.Now(), findGit(ch.cwd)}
+		ch.repo = repoCheck{cwd: ch.cwd, at: time.Now(), ok: findGit(ch.cwd)}
 	}
 	return ch.repo.ok
+}
+
+// hasRepos 报告更改面板有没有可看的仓库：工作目录在 git 工作树里，或其下有子仓库。
+// 找子仓库要遍历目录，放到后台；结果回来之前沿用上次的结论。
+func (a *App) hasRepos(ch *chat) bool {
+	if ch.inRepo() {
+		return true
+	}
+	r := &ch.subs
+	ok := r.cwd == ch.cwd && r.ok
+	if r.scanning || (r.cwd == ch.cwd && time.Since(r.at) <= gitCheckAge) {
+		return ok
+	}
+	r.scanning = true
+	cwd := ch.cwd
+	go func() {
+		found := len(findRepos(cwd)) > 0
+		a.win.Update(func() { ch.subs = repoCheck{cwd: cwd, at: time.Now(), ok: found} })
+	}()
+	return ok
+}
+
+// 找子仓库的范围：最多往下 repoDepth 层，最多读 repoScanMax 个目录，免得工作目录是家目录
+// 这类大目录时遍历太久。
+const (
+	repoDepth   = 3
+	repoScanMax = 1000
+)
+
+// findRepos 返回更改面板要看的仓库，路径相对 cwd、用 / 分隔：cwd 在 git 工作树里时只有 "."，
+// 否则是它的子仓库。找到仓库后不再进入其内部；跳过隐藏目录、node_modules 与符号链接，
+// 后者免得绕回上层。
+func findRepos(cwd string) []string {
+	if findGit(cwd) {
+		return []string{"."}
+	}
+	var repos []string
+	level, scanned := []string{"."}, 0
+	for range repoDepth {
+		var next []string
+		for _, dir := range level {
+			if scanned >= repoScanMax {
+				break
+			}
+			scanned++
+			entries, _ := os.ReadDir(filepath.Join(cwd, dir))
+			for _, e := range entries {
+				name := e.Name()
+				if !e.IsDir() || strings.HasPrefix(name, ".") || name == "node_modules" {
+					continue
+				}
+				rel := path.Join(dir, name)
+				if _, err := os.Lstat(filepath.Join(cwd, rel, ".git")); err == nil {
+					repos = append(repos, rel)
+				} else {
+					next = append(next, rel)
+				}
+			}
+		}
+		level = next
+	}
+	slices.Sort(repos)
+	return repos
 }
 
 // gitOut 在 dir 运行 git 并返回标准输出。GIT_OPTIONAL_LOCKS=0 让 status 不去抢索引的锁，
@@ -110,38 +176,69 @@ func gitError(err error) string {
 	return err.Error()
 }
 
-// loadChanges 读出工作目录下相对 HEAD 的全部更改：已暂存的、未暂存的与还没跟踪的。
+// loadChanges 读出工作目录下各仓库相对各自 HEAD 的全部更改：已暂存的、未暂存的与还没跟踪的。
+// 一个仓库读取失败时记下原因，其余照常列出。
 func loadChanges(cwd string) changeSet {
+	repos := findRepos(cwd)
+	if len(repos) == 0 {
+		return changeSet{err: "工作目录下没有 git 仓库"}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
-	prefix, err := gitOut(ctx, cwd, "rev-parse", "--show-prefix")
-	if err != nil {
-		return changeSet{err: gitError(err)}
+	var set changeSet
+	var errs []string
+	for _, repo := range repos {
+		files, err := loadRepoChanges(ctx, filepath.Join(cwd, repo))
+		if err != nil {
+			if repo != "." {
+				err = errors.New(repo + "：" + err.Error())
+			}
+			errs = append(errs, err.Error())
+			continue
+		}
+		for i := range files {
+			files[i].repo = repo
+			files[i].path = path.Join(repo, files[i].path)
+		}
+		set.files = append(set.files, files...)
 	}
-	status, err := gitOut(ctx, cwd, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-		"--", ".")
-	if err != nil {
-		return changeSet{err: gitError(err)}
-	}
-	set := changeSet{files: parseStatus(string(status), strings.TrimSpace(string(prefix)))}
+	set.err = strings.Join(errs, "\n")
+	slices.SortFunc(set.files, func(a, b fileChange) int { return strings.Compare(a.path, b.path) })
 	if len(set.files) > changeLimit {
 		set.files, set.truncated = set.files[:changeLimit], true
-	}
-	if _, err := gitOut(ctx, cwd, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
-		return set
-	}
-	set.hasHead = true
-	// 重命名在这里拆成删除与新增，路径才与状态里的一一对应；统计只是参考，读不到就没有。
-	numstat, err := gitOut(ctx, cwd, "diff", "HEAD", "--numstat", "-z", "--no-renames",
-		"--relative", "--", ".")
-	if err == nil {
-		fillCounts(set.files, string(numstat))
 	}
 	return set
 }
 
+// loadRepoChanges 读出 dir 下相对它所在仓库 HEAD 的更改，路径相对 dir。
+func loadRepoChanges(ctx context.Context, dir string) ([]fileChange, error) {
+	prefix, err := gitOut(ctx, dir, "rev-parse", "--show-prefix")
+	if err != nil {
+		return nil, errors.New(gitError(err))
+	}
+	status, err := gitOut(ctx, dir, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+		"--", ".")
+	if err != nil {
+		return nil, errors.New(gitError(err))
+	}
+	files := parseStatus(string(status), strings.TrimSpace(string(prefix)))
+	if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
+		return files, nil
+	}
+	for i := range files {
+		files[i].hasHead = true
+	}
+	// 重命名在这里拆成删除与新增，路径才与状态里的一一对应；统计只是参考，读不到就没有。
+	numstat, err := gitOut(ctx, dir, "diff", "HEAD", "--numstat", "-z", "--no-renames",
+		"--relative", "--", ".")
+	if err == nil {
+		fillCounts(files, string(numstat))
+	}
+	return files, nil
+}
+
 // parseStatus 解析 git status --porcelain=v1 -z 的输出：每项是“XY 路径”，重命名后面还跟着
-// 原路径。路径相对仓库根，prefix 是工作目录相对仓库根的路径，要去掉。结果按路径排序。
+// 原路径。路径相对仓库根，prefix 是工作目录相对仓库根的路径，要去掉。
 func parseStatus(out, prefix string) []fileChange {
 	var files []fileChange
 	fields := strings.Split(out, "\x00")
@@ -175,7 +272,6 @@ func parseStatus(out, prefix string) []fileChange {
 		}
 		files = append(files, c)
 	}
-	slices.SortFunc(files, func(a, b fileChange) int { return strings.Compare(a.path, b.path) })
 	return files
 }
 
@@ -205,14 +301,14 @@ func fillCounts(files []fileChange, numstat string) {
 
 // readChange 读出一个更改前后的文本：前是 HEAD 里的，后是磁盘上的；新增的前为空，删除的后为空。
 // 不能显示（图片、太大、不是 UTF-8 文本）时 note 是原因。
-func readChange(cwd string, c fileChange, hasHead bool) (before, after, note string) {
+func readChange(cwd string, c fileChange) (before, after, note string) {
 	if isRaster(c.path) {
 		return "", "", "图片，不显示更改"
 	}
-	if c.kind != changeAdded && hasHead {
+	if c.kind != changeAdded && c.hasHead {
 		ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 		defer cancel()
-		out, err := gitOut(ctx, cwd, "show", "HEAD:"+c.orig)
+		out, err := gitOut(ctx, filepath.Join(cwd, c.repo), "show", "HEAD:"+c.orig)
 		switch {
 		case err != nil:
 			return "", "", "无法读取 HEAD 里的文件：" + gitError(err)

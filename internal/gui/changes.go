@@ -160,7 +160,7 @@ func (a *App) loadDiff(ch *chat) {
 		cp.view = nil
 		return
 	}
-	cwd, gen, hasHead := cp.cwd, cp.gen, cp.set.hasHead
+	cwd, gen := cp.cwd, cp.gen
 	if cp.view == nil || cp.view.path != chg.path {
 		cp.view = cp.views[chg.path]
 		if cp.view == nil {
@@ -172,7 +172,7 @@ func (a *App) loadDiff(ch *chat) {
 	view.seq++
 	seq := view.seq
 	go func() {
-		before, after, note := readChange(cwd, chg, hasHead)
+		before, after, note := readChange(cwd, chg)
 		a.win.Update(func() {
 			if cp.gen != gen || cp.view != view || view.seq != seq { // 读的时候又换了的，结果作废
 				return
