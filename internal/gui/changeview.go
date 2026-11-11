@@ -25,9 +25,11 @@ func (a *App) changesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) 
 	sideCard(c, t, "changes-card", height).Focusable().Bind(&cp.focus).Children(func() {
 		a.changeShortcuts(c, ch)
 		a.changeBar(c, t, ch)
-		switch {
-		case cp.set.err != "":
+		if cp.set.err != "" { // 有的仓库读成功时，原因列在它们的更改之上
 			ui.Text(c, cp.set.err).TextColor(t.Danger).FontSize(textSize).Selectable().Padding(12)
+		}
+		switch {
+		case cp.set.err != "" && len(cp.set.files) == 0: // 只有失败的原因，上面已经显示
 		case !cp.loaded:
 			ui.Text(c, "正在读取…").TextColor(t.TextMuted).FontSize(textSize).Padding(12)
 		case len(cp.set.files) == 0:

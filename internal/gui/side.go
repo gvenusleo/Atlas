@@ -6,14 +6,14 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// panelButtons 画标题栏右端的开关：文件在最右，其左是更改（工作目录是 git 工作树时才有），
-// 再左是终端，最左是会话的大纲（提问多时才有）；没有的不留空位。面板打开时用强调色标出。
+// panelButtons 画标题栏右端的开关：文件在最右，其左是更改（有可看的仓库时才有），再左是终端，
+// 最左是会话的大纲（提问多时才有）；没有的不留空位。面板打开时用强调色标出。
 func (a *App) panelButtons(c *ui.Context, t *ui.Theme) {
 	ch := a.current
 	slot := 0
 	panelButton(c, t, slot, folderIcon, "文件", ch.filesOpen(), a.toggleFiles)
 	slot++
-	if ch.inRepo() {
+	if a.hasRepos(ch) {
 		panelButton(c, t, slot, diffIcon, "更改", ch.panelOpen(changesPanel), a.toggleChanges)
 		slot++
 	}
