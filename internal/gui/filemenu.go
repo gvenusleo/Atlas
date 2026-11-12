@@ -28,15 +28,30 @@ func pathItems(m *ui.Menu, cwd, rel string, exists bool) {
 	}
 }
 
-// pathMenu 是文件面板的文件树与筛选结果里一项（文件或目录）的右键菜单：共用的菜单项，
-// 以及移到废纸篓。
+// pathMenu 是文件面板的文件树与筛选结果里一项（文件或目录）的右键菜单。
 func (a *App) pathMenu(ch *chat, rel string) func(*ui.Menu) {
 	return func(m *ui.Menu) {
+		dir := rel
+		if !ch.files.isDir[rel] {
+			dir = path.Dir(rel)
+		}
+		a.createItems(m, ch, dir)
+		m.Separator()
 		pathItems(m, ch.cwd, rel, true)
 		m.Separator()
 		if m.Item("删除").Chosen() {
 			a.trash(ch, rel)
 		}
+	}
+}
+
+// createItems 在条目与空白处共用，空白处的父目录是工作目录。
+func (a *App) createItems(m *ui.Menu, ch *chat, dir string) {
+	if m.Item("新建目录…").Chosen() {
+		a.beginFileCreate(ch, dir, true)
+	}
+	if m.Item("新建文本文件…").Chosen() {
+		a.beginFileCreate(ch, dir, false)
 	}
 }
 

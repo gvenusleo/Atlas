@@ -85,6 +85,7 @@ func (a *App) dialogs(c *ui.Context) {
 	}
 	a.cwdGoneDialog(c)
 	a.unsavedDialog(c)
+	a.fileCreateDialog(c)
 }
 
 // cwdGoneDialog 在会话的工作目录已不存在时让用户新建目录或删除会话。取消后会话仍然打不开，
