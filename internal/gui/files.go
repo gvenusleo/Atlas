@@ -31,6 +31,7 @@ type filePanel struct {
 	chosen ui.Selection[string]    // 选中的条目
 	opened map[string]bool         // 上一帧展开着的目录，用来发现新展开的
 	shown  string                  // 上一帧选中的当前标签的文件，它换了就重新选中
+	reveal string                  // 创建后等待目录读完，再将这一项滚入可见范围
 
 	filter string                  // 筛选框里的文字，非空时文件树换成筛选结果
 	found  memo[rankKey, []string] // 筛选的结果
@@ -162,7 +163,7 @@ func (fp *filePanel) reset(cwd string) {
 	fp.kids, fp.isDir, fp.opened = map[string][]string{}, map[string]bool{}, map[string]bool{}
 	fp.tree.Open.Clear()
 	fp.chosen.Clear()
-	fp.shown = ""
+	fp.shown, fp.reveal = "", ""
 }
 
 // readDir 在后台（重新）读取工作目录下相对路径 rel 的目录，读完之前先用旧的条目。

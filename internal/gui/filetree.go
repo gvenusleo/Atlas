@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -39,7 +40,9 @@ func (fp *filePanel) activeRel(cwd string) string {
 // fileTree 画文件树一栏：上方是筛选框，其下是文件树，筛选时换成匹配的文件。
 func (a *App) fileTree(c *ui.Context, t *ui.Theme, ch *chat) {
 	fp := ch.files
-	ui.Column(c).Fill().Children(func() {
+	container := ui.Column(c).Fill()
+	container.ContextMenu(func(m *ui.Menu) { a.createItems(m, ch, "") })
+	container.Children(func() {
 		// 筛选框不要底色、字小一点、上下内边距压紧，不抢文件树的视线。
 		ui.SearchField(c, &fp.filter).Label("筛选文件").FontSize(smallSize).
 			Background(ui.Transparent).Padding(3, 8).Margin(8, 8, 4)
@@ -63,9 +66,24 @@ func (a *App) fileOutline(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 	}
 	var clicked string // 点了的目录，树构建完再处理
+	var prefix ui.Element
+	fp.tree.Prefix = func(r ui.OutlineRow) { prefix = filePrefix(c, t, r) }
 	outlineTree(c, t, &fp.tree, &fp.chosen, fp.kids[""], fp.children,
-		func(item string) { a.fileItem(c, t, ch, item, &clicked) }).
-		OnChange(func() { a.openChosen(ch) })
+		func(item string) {
+			prefix.ContextMenu(a.pathMenu(ch, item))
+			a.fileItem(c, t, ch, item, &clicked)
+		}).OnChange(func() { a.openChosen(ch) })
+	// Prefix 只用于本次构建，不让树状态保留临时元素。
+	fp.tree.Prefix = nil
+	if fp.reveal != "" {
+		for i := range fp.tree.Rows() {
+			if fp.tree.Item(i) == fp.reveal {
+				fp.tree.List.ScrollIntoView(i)
+				fp.reveal = ""
+				break
+			}
+		}
+	}
 	if clicked != "" {
 		chooseDir(&fp.chosen, &fp.tree.Open, clicked)
 	}
@@ -77,6 +95,26 @@ func (a *App) fileOutline(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 	}
 	fp.opened = opened
+}
+
+// filePrefix 将缩进与原生箭头放在同一个菜单容器里，左键仍由 Outline 处理。
+func filePrefix(c *ui.Context, t *ui.Theme, r ui.OutlineRow) ui.Element {
+	prefix := ui.Row(c.Key("prefix")).AlignItems(ui.Center).
+		Padding(t.Space(1), t.Space(1), t.Space(1), t.Space(2)+float32(r.Depth)*treeIndent)
+	prefix.Children(func() {
+		arrow := r.Arrow().Size(t.Space(4), t.Space(4)).Center()
+		if r.Branch {
+			turn := float32(0)
+			if r.Open {
+				turn = 90
+			}
+			turn = arrow.AnimateTo("open", turn, ui.Animation{Duration: 150 * time.Millisecond})
+			arrow.Children(func() {
+				ui.Icon(c, chevronIcon).FontSize(smallIconSize).TextColor(t.TextMuted).Rotate(turn)
+			})
+		}
+	})
+	return prefix
 }
 
 // openChosen 打开用户在树里选中的文件；选的是目录，或文件已经是当前标签时什么也不做。
@@ -95,7 +133,8 @@ func (a *App) openChosen(ch *chat) {
 // 点了目录行的内容，目录记进 clicked。
 func (a *App) fileItem(c *ui.Context, t *ui.Theme, ch *chat, item string, clicked *string) {
 	isDir := ch.files.isDir[item]
-	row := treeItem(c, t, !isDir).ContextMenu(a.pathMenu(ch, item))
+	row := treeItem(c, t, !isDir).Padding(t.Space(1), t.Space(2), t.Space(1), 0).
+		ContextMenu(a.pathMenu(ch, item))
 	row.Children(func() {
 		if !isDir {
 			ui.Image(c, fileIcon(item)).Size(smallIconSize, smallIconSize).Shrink(0)

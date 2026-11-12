@@ -79,6 +79,8 @@ type App struct {
 	cwdGoneErr  string
 	cwdGoneOpen bool
 
+	fileCreate *fileCreateForm
+
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
 	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
 
