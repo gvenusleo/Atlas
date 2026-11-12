@@ -79,6 +79,9 @@ type App struct {
 	cwdGoneErr  string
 	cwdGoneOpen bool
 
+	reopenChat *chat
+	reopenOpen bool
+
 	fileCreate *fileCreateForm
 
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
@@ -211,6 +214,9 @@ func (a *App) Receive(n protocol.Notification) {
 			}
 		case protocol.RunStateUpdate:
 			ch.apply(u)
+			if u.Error == protocol.ErrConflict.Error() || u.Error == protocol.ErrNotFound.Error() {
+				a.askReopen(ch)
+			}
 			if !u.Running {
 				// 在别的会话时结束的运行，回到这个会话之前标为未读。普通会话出错时侧栏上是红点，
 				// 不再标未读；任务会话不在侧栏里，出错的也标未读，侧栏的入口才会提示。
