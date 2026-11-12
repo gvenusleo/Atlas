@@ -186,9 +186,9 @@ func (a *App) welcome(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// errorLine 显示核心未受理请求的原因，确保空白新会话中的错误可见。
+// errorLine 显示请求或运行失败的原因；会话失效的错误由恢复对话框显示。
 func errorLine(c *ui.Context, t *ui.Theme, ch *chat) {
-	if ch.err == "" {
+	if ch.err == "" || ch.needsReopen {
 		return
 	}
 	column(c, 4, func() {
