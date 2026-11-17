@@ -84,8 +84,28 @@ func (a *App) dialogs(c *ui.Context) {
 		a.remove(a.deleteID)
 	}
 	a.cwdGoneDialog(c)
+	a.reopenDialog(c)
 	a.unsavedDialog(c)
 	a.fileCreateDialog(c)
+}
+
+// reopenDialog 让用户在会话失效后显式恢复，失败时保留对话框供再次尝试。
+func (a *App) reopenDialog(c *ui.Context) {
+	ch := a.reopenChat
+	if ch == nil || a.current != ch || a.showTasks || a.chats[ch.id] != ch {
+		a.reopenOpen = false
+		return
+	}
+	ui.Modal(c.Key("reopen-dialog"), &a.reopenOpen, func() {
+		ui.Text(c, "需要重新打开会话").FontSize(dialogSize).Bold()
+		ui.Text(c, ch.err).TextColor(c.Theme().TextMuted).Width(360)
+		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			ui.Button(c, "取消").OnClick(func() { a.reopenOpen = false })
+			ui.PrimaryButton(c, "重新打开").
+				Disabled(ch.running || ch.loading || ch.paging).
+				OnClick(func() { a.reopen(ch) })
+		})
+	})
 }
 
 // cwdGoneDialog 在会话的工作目录已不存在时让用户新建目录或删除会话。取消后会话仍然打不开，

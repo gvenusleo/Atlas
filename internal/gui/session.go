@@ -44,10 +44,13 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 		return false
 	}
 	a.showTasks, a.fromTasks = false, false
-	a.cwdGoneOpen, a.cwdGoneErr = false, ""
+	a.cwdGoneOpen, a.cwdGoneErr, a.reopenOpen = false, "", false
 	id := info.SessionID
 	if ch := a.chats[id]; ch != nil {
 		a.current, ch.unread = ch, false
+		if ch.needsReopen {
+			a.askReopen(ch)
+		}
 		if ch.cwdGone { // 目录可能已经恢复，重新打开一次
 			a.start(ch)
 		}
@@ -59,6 +62,49 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 	a.reload(ch)
 	a.start(ch)
 	return true
+}
+
+// askReopen 保留失效状态；后台会话等用户切回后再提示，避免打断当前会话。
+func (a *App) askReopen(ch *chat) {
+	ch.ready, ch.needsReopen = false, true
+	if a.current == ch && !a.showTasks {
+		a.reopenChat, a.reopenOpen = ch, true
+	}
+}
+
+// reopen 从数据库恢复会话与最近一页历史，保留界面的草稿、附件和本地面板。
+func (a *App) reopen(ch *chat) {
+	if ch.id == "" || ch.running || ch.loading || ch.paging {
+		return
+	}
+	ch.ready, ch.loading = false, true
+	id, gen := ch.id, ch.starts
+	go func() {
+		ctx := context.Background()
+		resp, err := a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
+		var history protocol.ListHistoryResponse
+		if err == nil {
+			history, err = a.service.ListHistory(ctx,
+				protocol.ListHistoryRequest{SessionID: id, Limit: historyPage})
+		}
+		a.win.Update(func() {
+			if ch.starts != gen || ch.id != id || a.chats[id] != ch {
+				return
+			}
+			ch.loading = false
+			if err != nil {
+				ch.err = err.Error()
+				a.askReopen(ch)
+				return
+			}
+			ch.err, ch.seekSeq = "", 0
+			if a.reopenChat == ch {
+				a.reopenOpen = false
+			}
+			ch.attach(resp.ConfigOptions, resp.State)
+			ch.load(history.Updates, history.Oldest)
+		})
+	}()
 }
 
 // reload 从头读最近一页历史，重建对话。
@@ -345,6 +391,10 @@ func (a *App) send(ch *chat, text string) bool {
 	if text == "" && len(ch.attachments) == 0 || !ch.canSend() {
 		return false
 	}
+	if ch.needsReopen {
+		a.askReopen(ch)
+		return false
+	}
 	if len(ch.attachments) > 0 && !ch.acceptsImages() {
 		a.toast = noImagesHint // 附上图片后又换了模型
 		return false
@@ -378,6 +428,9 @@ func (a *App) finish(ch *chat, err error) {
 		a.toast = err.Error()
 	case err != nil:
 		ch.err = err.Error()
+		if errors.Is(err, protocol.ErrConflict) || errors.Is(err, protocol.ErrNotFound) {
+			a.askReopen(ch)
+		}
 		// 发送时才发现工作目录没了：与打开时一样给出恢复的对话框。
 		if errors.Is(err, fs.ErrNotExist) {
 			a.askCwdGone(ch)

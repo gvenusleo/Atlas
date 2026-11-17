@@ -22,6 +22,7 @@ type outline struct {
 	older   []prompt // 查到的、前面还没加载进对话的更早的提问，正序
 	fetched bool     // 已经去查过更早的提问
 	picked  int      // 下拉绑定的值，见 outlineButton
+	gen     int      // 重建对话后递增，用来丢弃在途的旧查询
 }
 
 // prompt 是大纲里的一条提问：已加载进对话的有显示项 ID，从历史里查到的只有记录序号。
@@ -94,19 +95,22 @@ func currentPrompt(prompts []prompt, first int) int {
 	return current
 }
 
-// fetchOlder 在后台从历史里查出前面还没加载进对话的提问，每个会话只查一次：更早的记录不会
-// 再变，之后加载进对话的那部分由 outlinePrompts 滤掉。
+// fetchOlder 在后台查出更早的提问，每次重建对话后只查一次：更早的记录不会再变，
+// 向上翻页时由 outlinePrompts 滤掉已加载的部分。
 func (a *App) fetchOlder(ch *chat) {
 	o := &ch.outline
 	if o.fetched || ch.id == "" || ch.oldest <= 1 {
 		return
 	}
 	o.fetched = true
-	id, before := ch.id, ch.oldest
+	id, before, gen := ch.id, ch.oldest, o.gen
 	go func() {
 		resp, err := a.service.ListUserMessages(context.Background(),
 			protocol.ListUserMessagesRequest{SessionID: id, Before: before})
 		a.win.Update(func() {
+			if o.gen != gen {
+				return
+			}
 			if err != nil {
 				ch.err = err.Error()
 				return

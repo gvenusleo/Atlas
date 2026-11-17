@@ -78,6 +78,8 @@ type chat struct {
 	next      int
 
 	// 界面自己的状态。
+	needsReopen bool // 核心已使会话失效，错误只在恢复对话框中显示
+
 	cwdGone bool  // 工作目录已不存在：由打开或发送的错误判断写入，只用来决定是否提示
 	starts  int   // 让核心打开它的次数，用来认出过时的响应，见 App.start
 	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
@@ -131,7 +133,7 @@ func (ch *chat) attach(options []protocol.ConfigOption, state protocol.SessionSt
 	ch.ready, ch.options, ch.commands = true, options, state.Commands
 	ch.usage, ch.running, ch.since = state.Usage, state.Running, state.Since
 	ch.cwd, ch.title = state.Cwd, state.Title
-	ch.cwdGone = false
+	ch.cwdGone, ch.needsReopen = false, false
 }
 
 // add 追加一个已定稿的显示项。
@@ -258,6 +260,8 @@ func replyText(items []*item) (text string, at time.Time) {
 
 // load 用一页历史重建对话；oldest 是这一页最早一条的记录序号。
 func (ch *chat) load(updates []protocol.Update, oldest int64) {
+	// 重建后历史边界可能前移，大纲需要按新的范围重新查询。
+	ch.outline = outline{gen: ch.outline.gen + 1}
 	ch.items, ch.streaming = nil, nil
 	for _, u := range updates {
 		ch.apply(u)
