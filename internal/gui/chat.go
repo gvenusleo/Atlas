@@ -260,6 +260,8 @@ func replyText(items []*item) (text string, at time.Time) {
 
 // load 用一页历史重建对话；oldest 是这一页最早一条的记录序号。
 func (ch *chat) load(updates []protocol.Update, oldest int64) {
+	// 重建后历史边界可能前移，大纲需要按新的范围重新查询。
+	ch.outline = outline{gen: ch.outline.gen + 1}
 	ch.items, ch.streaming = nil, nil
 	for _, u := range updates {
 		ch.apply(u)
