@@ -171,7 +171,20 @@ func dropdownOptions[T comparable](
 	})
 }
 
-// sheetPanel 是居中浮层（启动器、设置页）的外观：遮罩半透明，面板宽 width、圆角、阴影较重、
+// MyGo 的 Modal 固定使用较深的遮罩，搜索与设置共用较浅的遮罩。
+func showModal(c *ui.Context, open *bool, fn func()) ui.Element {
+	return ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
+		t := c.Theme()
+		width, height := c.Size()
+		backdrop.Background(ui.RGBA(0, 0, 0, 0.25))
+		panel.Background(t.Background).Radius(t.Space(2.5)).
+			MaxWidth(width-t.Space(10)).MaxHeight(height-t.Space(10)).
+			Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.3))
+		fn()
+	})
+}
+
+// sheetPanel 是表单对话框的外观：遮罩半透明，面板宽 width、圆角、阴影较重，
 // 没有内边距，内容自己排版。返回面板，调用方接着设高度等。
 func sheetPanel(backdrop, panel ui.Element, t *ui.Theme, width float32) ui.Element {
 	backdrop.Background(ui.RGBA(0, 0, 0, 0.25))

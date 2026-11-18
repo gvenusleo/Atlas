@@ -53,14 +53,12 @@ var settingsCategories = []settingsCategory{
 func (a *App) settingsDialog(c *ui.Context, t *ui.Theme) {
 	s := &a.settings
 	width, height := c.Size()
-	ui.DialogBase(c, &s.open, func(backdrop, panel ui.Element) {
-		sheetPanel(backdrop, panel, t, min(settingsWidth, width-2*gutter)).
-			Height(min(settingsHeight, height-2*gutter)).Clip()
+	showModal(c.Key("settings-dialog"), &s.open, func() {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 			a.settingsNav(c, t)
 			a.settingsContent(c, t)
 		})
-	})
+	}).Width(min(settingsWidth, width-2*gutter)).Height(min(settingsHeight, height-2*gutter)).Clip()
 }
 
 // settingsNav 画左侧的分类：一列竖排的标签，点击或上下方向键切换。
