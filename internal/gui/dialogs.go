@@ -107,22 +107,6 @@ func (a *App) rename(id, name string) {
 	}()
 }
 
-// dropChat 在会话被删除之后，把它从已打开的会话里去掉；当前正显示它时换成一个新会话，
-// 但主区若是定时任务视图，仍显示视图。
-func (a *App) dropChat(id string) {
-	ch := a.chats[id]
-	if ch == nil {
-		return
-	}
-	ch.closePanels()
-	delete(a.chats, id)
-	if a.current == ch {
-		showTasks := a.showTasks
-		a.newChat()
-		a.showTasks = showTasks
-	}
-}
-
 // remove 删除会话；运行中的会话会被核心拒绝，错误显示在侧栏底部。
 func (a *App) remove(id string) {
 	go func() {
@@ -170,6 +154,39 @@ func (a *App) dialogs(c *ui.Context) {
 	a.reopenDialog(c)
 	a.unsavedDialog(c)
 	a.fileCreateDialog(c)
+	a.groupDeleteDialog(c)
+}
+
+// groupDeleteDialog 提示将被永久删除的会话与未保存的文件修改。
+func (a *App) groupDeleteDialog(c *ui.Context) {
+	p := &a.groupDelete
+	if p.deleting {
+		if showAlert(c, "group-delete-progress", &p.deleting,
+			"正在删除会话…", "") == ui.AlertDismissed {
+			p.deleting = true
+		}
+		return
+	}
+	if !p.open {
+		return
+	}
+	dirty := 0
+	for _, id := range p.ids {
+		if ch := a.chats[id]; ch != nil {
+			dirty += ch.dirtyTabs()
+		}
+	}
+	message := p.cwd + "\n删除后无法恢复"
+	if dirty > 0 {
+		message += fmt.Sprintf("，文件面板里 %d 个未保存的修改也会丢失", dirty)
+	}
+	title := fmt.Sprintf("删除此目录的 %d 个会话？", len(p.ids))
+	result := showAlert(c, "group-delete", &p.open, title, message, "删除", "取消")
+	if result == 0 {
+		a.deleteGroup()
+	} else if !p.open {
+		*p = groupDeletion{}
+	}
 }
 
 // reopenDialog 让用户在会话失效后显式恢复，失败时保留对话框供再次尝试。
