@@ -13,12 +13,7 @@ mise run ci        # 格式检查、vet、测试、编译、漏洞扫描
 mise run icon      # 重新生成应用图标，改了 cmd/icon 之后用
 ```
 
-MyGo 不等发版，`go.mod` 固定在它 main 分支的某个提交（伪版本），本地和 CI 用的是同一份。
-要用 MyGo 的最新提交：
-
-```sh
-go get github.com/egoist/mygo@main && go mod tidy
-```
+本地 Go 版本由 `mise.toml` 固定，CI 和发布流程从 `go.mod` 读取 Go 版本。MyGo 的库和命令行工具共用 `go.mod` 中固定的稳定版。
 
 ## 安装
 
