@@ -281,35 +281,17 @@ func (a *App) refresh() {
 	}()
 }
 
-// listAllSessions 按同一筛选条件读完所有页，供启动器和删除前的确认使用。
-func (a *App) listAllSessions(
-	ctx context.Context, req protocol.ListSessionsRequest,
-) ([]protocol.SessionInfo, error) {
-	var all []protocol.SessionInfo
-	for {
-		resp, err := a.service.ListSessions(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, resp.Sessions...)
-		if resp.NextCursor == "" {
-			return all, nil
-		}
-		req.Cursor = resp.NextCursor
-	}
-}
-
-// loadAllSessions 翻页读出全部会话，供启动器搜索，侧栏只有第一页。读不全时启动器
-// 继续用侧栏的；打开启动器之后又打开过一次的（gen 对不上），结果作废。
+// loadAllSessions 为启动器读取全部会话。请求失败时沿用侧栏列表，重开启动器后忽略旧结果。
 func (a *App) loadAllSessions(gen int) {
 	go func() {
-		all, err := a.listAllSessions(context.Background(), protocol.ListSessionsRequest{})
+		req := protocol.ListSessionsRequest{All: true}
+		list, err := a.service.ListSessions(context.Background(), req)
 		if err != nil {
 			return
 		}
 		a.win.Update(func() {
 			if a.launch.gen == gen {
-				a.launch.infos = all
+				a.launch.infos = list.Sessions
 			}
 		})
 	}()
@@ -347,10 +329,10 @@ func (a *App) askDeleteGroup(cwd string) {
 	}
 	a.groupDelete.cwd = cwd
 	go func() {
-		req := protocol.ListSessionsRequest{Cwd: cwd, Type: protocol.SessionInteractive}
-		infos, err := a.listAllSessions(context.Background(), req)
-		ids := make([]string, 0, len(infos))
-		for _, info := range infos {
+		req := protocol.ListSessionsRequest{Cwd: cwd, Type: protocol.SessionInteractive, All: true}
+		list, err := a.service.ListSessions(context.Background(), req)
+		ids := make([]string, 0, len(list.Sessions))
+		for _, info := range list.Sessions {
 			ids = append(ids, info.SessionID)
 		}
 		a.win.Update(func() {

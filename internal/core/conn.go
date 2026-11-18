@@ -87,6 +87,13 @@ func (c *conn) ListSessions(
 		return protocol.ListSessionsResponse{}, err
 	}
 	defer end()
+	limit := listPage
+	if req.All {
+		if req.Cursor != "" {
+			return protocol.ListSessionsResponse{}, errors.New("读取全部会话时不能指定游标")
+		}
+		limit = -1 // SQLite 的负数 LIMIT 读取同一快照中的所有匹配记录。
+	}
 	var before *store.Cursor
 	if req.Cursor != "" {
 		at, id, _ := strings.Cut(req.Cursor, "/")
@@ -100,7 +107,7 @@ func (c *conn) ListSessions(
 		Cwd: req.Cwd, Type: string(cmp.Or(req.Type, protocol.SessionInteractive)),
 		OwnerID: req.OwnerID,
 	}
-	infos, err := c.core.db.List(ctx, filter, before, listPage)
+	infos, err := c.core.db.List(ctx, filter, before, limit)
 	if err != nil {
 		return protocol.ListSessionsResponse{}, err
 	}
@@ -111,7 +118,7 @@ func (c *conn) ListSessions(
 			Type: protocol.SessionType(info.Type), OwnerID: info.OwnerID,
 		})
 	}
-	if len(infos) == listPage {
+	if !req.All && len(infos) == listPage {
 		last := infos[len(infos)-1]
 		resp.NextCursor = strconv.FormatInt(last.UpdatedAt.UnixMilli(), 10) + "/" + last.ID
 	}
