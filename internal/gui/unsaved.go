@@ -88,12 +88,11 @@ func (a *App) quitDialog(c *ui.Context) {
 	}
 	open := true
 	title := fmt.Sprintf("有 %d 个文件的修改还没保存", a.quitDirty)
-	result := showAlert(c, "quit-unsaved", &open, title, "现在退出会丢掉这些修改",
-		"丢弃修改并退出", "取消")
+	confirmed := showAlert(c, "quit-unsaved", &open, title, "现在退出会丢掉这些修改", "丢弃修改并退出")
 	if !open {
 		a.quitDirty = 0
 	}
-	if result == 0 {
+	if confirmed {
 		a.discardOK = true
 		mygo.App.Quit()
 	}

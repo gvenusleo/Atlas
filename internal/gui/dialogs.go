@@ -46,50 +46,47 @@ func compactModal(c *ui.Context, key string, open *bool, fn func()) {
 	showModal(c, key, open, fn).Padding(t.Space(5)).Gap(t.Space(3))
 }
 
-// showAlert 使用同一外观。只有按钮或 Esc 可以关闭确认，最后一个按钮是默认操作。
-func showAlert(c *ui.Context, key string, open *bool, title, message string, buttons ...string) int {
+// showAlert 返回用户是否确认操作。没有操作按钮时只显示进度，由调用方关闭。
+func showAlert(c *ui.Context, key string, open *bool, title, message, action string) bool {
 	if !*open {
-		return -1
+		return false
 	}
 	t := c.Theme()
 	width, _ := c.Size()
-	chosen := -1
+	confirmed := false
 	ui.Overlay(c, func() {
-		// 点击遮罩时保留默认按钮的焦点，避免下一次按回车落到首个按钮。
 		backdrop := ui.Box(c.Key(key)).Absolute().Left(0).Top(0).Right(0).Bottom(0).
 			Center().Modal().KeepFocus()
-		if backdrop.OverlayShortcut(0, ui.KeyEscape) {
-			chosen = ui.AlertDismissed
+		if backdrop.OverlayShortcut(0, ui.KeyEscape) && action != "" {
+			*open = false
 		}
 		backdrop.Children(func() {
 			panel := ui.Column(c).Role(ui.RoleAlertDialog).Label(title).Description(message)
-			modalPanel(c, backdrop, panel).MinWidth(min(t.Space(75), width-t.Space(10))).
+			modalPanel(c, backdrop, panel).Width(min(t.Space(100), width-t.Space(10))).
 				Padding(t.Space(5)).Gap(t.Space(3)).Children(func() {
-				ui.Text(c, title).FontSize(dialogSize).Bold().Width(0).MinWidthPercent(100)
+				ui.Text(c, title).FontSize(dialogSize).Bold().Shrink(0)
 				if message != "" {
-					ui.Text(c, message).TextColor(t.TextMuted).Width(0).MinWidthPercent(100)
-				}
-				ui.Row(c).Wrap().Gap(t.Space(2)).Justify(ui.End).Margin(t.Space(2), 0, 0, 0).
-					Children(func() {
-						for i, label := range buttons {
-							var button ui.Element
-							if i == len(buttons)-1 {
-								button = ui.PrimaryButton(c, label).AutoFocus()
-							} else {
-								button = ui.Button(c, label)
-							}
-							if button.MaxWidthPercent(100).Clicked() {
-								chosen = i
-							}
-						}
+					ui.Scroll(c).MinHeight(0).Shrink(1).Children(func() {
+						ui.Text(c, message).TextColor(t.TextMuted).Shrink(0)
 					})
+				}
+				if action == "" {
+					return
+				}
+				ui.Row(c).Wrap().Gap(t.Space(2)).Justify(ui.End).Shrink(0).Children(func() {
+					// 上层对话框关闭时 MyGo 可能聚焦首个按钮，取消必须排在首位。
+					if ui.PrimaryButton(c, "取消").AutoFocus().Clicked() {
+						*open = false
+					}
+					if ui.Button(c, action).TextColor(t.Danger).Clicked() {
+						confirmed = true
+						*open = false
+					}
+				})
 			})
 		})
 	})
-	if chosen != -1 {
-		*open = false
-	}
-	return chosen
+	return confirmed
 }
 
 // rename 把会话改名；名称为空时清除名称。
@@ -147,7 +144,7 @@ func (a *App) dialogs(c *ui.Context) {
 		}
 	}
 	if showAlert(c, "delete-session", &a.deleteOpen,
-		"删除这个会话？", message, "取消", "删除") == 1 {
+		"删除这个会话？", message, "删除会话") {
 		a.remove(a.deleteID)
 	}
 	a.cwdGoneDialog(c)
@@ -161,10 +158,7 @@ func (a *App) dialogs(c *ui.Context) {
 func (a *App) groupDeleteDialog(c *ui.Context) {
 	p := &a.groupDelete
 	if p.deleting {
-		if showAlert(c, "group-delete-progress", &p.deleting,
-			"正在删除会话…", "") == ui.AlertDismissed {
-			p.deleting = true
-		}
+		showAlert(c, "group-delete-progress", &p.deleting, "正在删除会话…", "", "")
 		return
 	}
 	if !p.open {
@@ -176,13 +170,13 @@ func (a *App) groupDeleteDialog(c *ui.Context) {
 			dirty += ch.dirtyTabs()
 		}
 	}
-	message := p.cwd + "\n删除后无法恢复"
+	title := fmt.Sprintf("永久删除 %d 个会话？", len(p.ids))
+	message := "会话记录删除后无法恢复。文件和运行中的会话将保留。"
 	if dirty > 0 {
-		message += fmt.Sprintf("，文件面板里 %d 个未保存的修改也会丢失", dirty)
+		message += fmt.Sprintf("\n有 %d 个文件标签尚未保存，删除对应会话会丢失这些修改。", dirty)
 	}
-	title := fmt.Sprintf("删除此目录的 %d 个会话？", len(p.ids))
-	result := showAlert(c, "group-delete", &p.open, title, message, "删除", "取消")
-	if result == 0 {
+	message += "\n工作目录：" + p.cwd
+	if showAlert(c, "group-delete", &p.open, title, message, "删除会话") {
 		a.deleteGroup()
 	} else if !p.open {
 		*p = groupDeletion{}
