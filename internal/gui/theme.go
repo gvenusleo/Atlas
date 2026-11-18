@@ -47,11 +47,10 @@ const (
 )
 
 // 界面的字号，单位为 DIP。没指定字号的文字用 bodySize，见 applyTheme。
-// mygo 的部件按主题字号（即 bodySize）推导自己的字号：侧栏分组标题与提示框小 1，
-// 徽标小 2，对话框标题（ui.AlertDialog）大 1。改 bodySize 时它们跟着变。
+// MyGo 的侧栏分组标题与提示框比主题字号小 1，徽标小 2。
 const (
 	titleSize  = 22           // 空会话的标题
-	dialogSize = bodySize + 1 // 对话框的标题，与 ui.AlertDialog 的标题一样大
+	dialogSize = bodySize + 1 // 对话框的标题
 	bodySize   = 14           // 正文：对话、输入框、标题栏与侧栏，以及步骤标题
 	textSize   = 13           // 面板、列表、标签、补全里的文字
 	smallSize  = 12           // 状态栏、时间、说明、徽标

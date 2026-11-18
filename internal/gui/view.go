@@ -27,6 +27,7 @@ func (a *App) view(c *ui.Context) {
 	a.serviceDialog(c, t)
 	a.taskFormDialog(c, t)
 	a.taskDialogs(c)
+	a.quitDialog(c)
 	if a.toast != "" {
 		c.Toast(a.toast)
 		a.toast = ""

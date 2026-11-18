@@ -17,15 +17,13 @@ func (a *App) taskFormDialog(c *ui.Context, t *ui.Theme) {
 	p := &a.tasks
 	open := p.form != nil
 	width, height := c.Size()
-	ui.DialogBase(c, &open, func(backdrop, panel ui.Element) {
-		sheetPanel(backdrop, panel, t, min(taskFormWidth, width-2*gutter)).
-			MaxHeight(height - 2*gutter).Clip()
+	showModal(c, "task-form", &open, func() {
 		ui.Column(c).Grow(1).MinHeight(0).Padding(settingsTop, 0, 0).Children(func() {
 			a.taskFormHeader(c, t)
 			ui.Scroll(c).Grow(1).MinHeight(0).Children(func() { a.taskFormFields(c, t) })
 			a.taskFormButtons(c, t)
 		})
-	})
+	}).Width(min(taskFormWidth, width-2*gutter)).MaxHeight(height - 2*gutter).Clip()
 	if !open {
 		p.form = nil
 	}

@@ -9,7 +9,7 @@ import (
 func (a *App) fileCreateDialog(c *ui.Context) {
 	f := a.fileCreate
 	open := f != nil && f.matchesChat(a.current)
-	ui.Modal(c.Key("file-create"), &open, func() {
+	compactModal(c, "file-create", &open, func() {
 		title := "新建文本文件"
 		if f.dir {
 			title = "新建目录"

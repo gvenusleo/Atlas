@@ -85,6 +85,7 @@ type App struct {
 	fileCreate *fileCreateForm
 
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
+	quitDirty int        // 等待确认退出时，有未保存修改的文件标签数
 	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
 
 	tray     *mygo.Tray // 托盘图标；偏好为不显示、或建不起来时为空

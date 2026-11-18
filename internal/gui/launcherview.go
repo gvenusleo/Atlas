@@ -12,7 +12,7 @@ const (
 func (a *App) launcherDialog(c *ui.Context, t *ui.Theme) {
 	l := &a.launch
 	width, height := c.Size()
-	showModal(c.Key("launcher-dialog"), &l.open, func() {
+	showModal(c, "launcher-dialog", &l.open, func() {
 		if l.query != l.shownQuery {
 			l.index, l.shownQuery = 0, l.query
 		}

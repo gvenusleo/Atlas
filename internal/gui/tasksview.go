@@ -418,7 +418,8 @@ func sameDay(a, b time.Time) bool {
 func (a *App) taskDialogs(c *ui.Context) {
 	p := &a.tasks
 	const message = "删除后无法恢复，它的任务会话也会一起删除"
-	if ui.AlertDialog(c, &p.deleteOpen, "删除这个定时任务？", message, "取消", "删除") == 1 {
+	if showAlert(c, "delete-task", &p.deleteOpen,
+		"删除这个定时任务？", message, "取消", "删除") == 1 {
 		a.removeTask(p.deleteID)
 	}
 }

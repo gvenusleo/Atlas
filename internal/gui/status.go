@@ -171,34 +171,6 @@ func dropdownOptions[T comparable](
 	})
 }
 
-// MyGo 的 Modal 固定使用较深的遮罩，搜索与设置共用较浅的遮罩。
-func showModal(c *ui.Context, open *bool, fn func()) ui.Element {
-	return ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
-		t := c.Theme()
-		width, height := c.Size()
-		backdrop.Background(ui.RGBA(0, 0, 0, 0.25))
-		panel.Background(t.Background).Radius(t.Space(2.5)).
-			MaxWidth(width-t.Space(10)).MaxHeight(height-t.Space(10)).
-			Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.3))
-		fn()
-	})
-}
-
-// sheetPanel 是表单对话框的外观：遮罩半透明，面板宽 width、圆角、阴影较重，
-// 没有内边距，内容自己排版。返回面板，调用方接着设高度等。
-func sheetPanel(backdrop, panel ui.Element, t *ui.Theme, width float32) ui.Element {
-	backdrop.Background(ui.RGBA(0, 0, 0, 0.25))
-	return popupPanel(panel, t).Width(width).Radius(cardRound).Padding(0).
-		Shadow(0, 12, 32, 0, ui.RGBA(0, 0, 0, 0.25))
-}
-
-// popupPanel 是弹出面板的外观，下拉选项与输入框的补全列表共用；与触发元素之间的间距由
-// 各处自己的边距决定。
-func popupPanel(panel ui.Element, t *ui.Theme) ui.Element {
-	return panel.Padding(4).Radius(popupRound).Background(t.Background).
-		Border(1, t.Border).Shadow(0, 4, 16, 0, ui.RGBA(0, 0, 0, 0.12))
-}
-
 // popupItem 是弹出面板里一行的外观：下拉的选项、大纲、补全列表与启动器共用；键盘或鼠标停在
 // 下拉的选项上时铺淡底。补全列表与启动器的行是按钮，没有这个状态，悬停与选中由它们自己画。
 // 内边距与 MyGo 的 Combobox 的选项一致，设置里的字体选择器因此同高。

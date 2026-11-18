@@ -53,7 +53,7 @@ var settingsCategories = []settingsCategory{
 func (a *App) settingsDialog(c *ui.Context, t *ui.Theme) {
 	s := &a.settings
 	width, height := c.Size()
-	showModal(c.Key("settings-dialog"), &s.open, func() {
+	showModal(c, "settings-dialog", &s.open, func() {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 			a.settingsNav(c, t)
 			a.settingsContent(c, t)
@@ -187,8 +187,6 @@ func (a *App) comboBox(
 	c *ui.Context, t *ui.Theme, label string, value *string, options []string, onChange func(),
 ) {
 	quietRows(c, t, func() {
-		// Combobox 的面板圆角是主题圆角加 2，选项行圆角是主题圆角，高亮的行用 Accent 做底：
-		// 面板取与 popupPanel 相同的圆角，高亮用与 popupItem 相同的淡底。
 		local := *c.Theme()
 		local.Radius, local.Accent = popupRound-2, rowFill(t)
 		local.InactiveAccent = local.Accent // 原因见 quietRows
