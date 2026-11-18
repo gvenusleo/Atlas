@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"maps"
 	"os"
@@ -263,9 +264,14 @@ func (a *App) loadOlder(ch *chat) {
 
 // refresh 重新读取侧栏的会话列表。
 func (a *App) refresh() {
+	a.listRefresh++
+	gen := a.listRefresh
 	go func() {
 		list, err := a.service.ListSessions(context.Background(), protocol.ListSessionsRequest{})
 		a.win.Update(func() {
+			if gen != a.listRefresh {
+				return
+			}
 			if err != nil {
 				a.err = err.Error()
 				return
@@ -275,26 +281,100 @@ func (a *App) refresh() {
 	}()
 }
 
-// loadAllSessions 翻页读出全部会话，供启动器搜索，侧栏只有第一页。读不全时启动器
-// 继续用侧栏的；打开启动器之后又打开过一次的（gen 对不上），结果作废。
+// loadAllSessions 为启动器读取全部会话。请求失败时沿用侧栏列表，重开启动器后忽略旧结果。
 func (a *App) loadAllSessions(gen int) {
 	go func() {
-		var all []protocol.SessionInfo
-		var req protocol.ListSessionsRequest
-		for {
-			resp, err := a.service.ListSessions(context.Background(), req)
-			if err != nil {
-				return
-			}
-			all = append(all, resp.Sessions...)
-			if resp.NextCursor == "" {
-				break
-			}
-			req.Cursor = resp.NextCursor
+		req := protocol.ListSessionsRequest{All: true}
+		list, err := a.service.ListSessions(context.Background(), req)
+		if err != nil {
+			return
 		}
 		a.win.Update(func() {
 			if a.launch.gen == gen {
-				a.launch.infos = all
+				a.launch.infos = list.Sessions
+			}
+		})
+	}()
+}
+
+// dropChat 在会话被删除后关闭本地面板。若删的是当前会话，清空它再新建，避免已确认
+// 丢弃的未保存修改再次拦截切换。定时任务视图仍保持打开。
+func (a *App) dropChat(id string) {
+	ch := a.chats[id]
+	if ch == nil {
+		return
+	}
+	ch.closePanels()
+	delete(a.chats, id)
+	if a.current == ch {
+		showTasks := a.showTasks
+		a.current = nil
+		a.newChat()
+		a.showTasks = showTasks
+	}
+}
+
+// groupDeletion 记录一次批量删除的确认范围与执行状态。cwd 非空表示操作尚未结束。
+type groupDeletion struct {
+	cwd      string
+	ids      []string
+	open     bool
+	deleting bool
+}
+
+// askDeleteGroup 先读齐会话再打开确认框，避免侧栏的显示上限缩小删除范围。
+func (a *App) askDeleteGroup(cwd string) {
+	if cwd == "" || a.groupDelete.cwd != "" {
+		return
+	}
+	a.groupDelete.cwd = cwd
+	go func() {
+		req := protocol.ListSessionsRequest{Cwd: cwd, Type: protocol.SessionInteractive, All: true}
+		list, err := a.service.ListSessions(context.Background(), req)
+		ids := make([]string, 0, len(list.Sessions))
+		for _, info := range list.Sessions {
+			ids = append(ids, info.SessionID)
+		}
+		a.win.Update(func() {
+			switch {
+			case err != nil:
+				a.groupDelete = groupDeletion{}
+				a.toast = "读取目录会话失败：" + err.Error()
+			case len(ids) == 0:
+				a.groupDelete = groupDeletion{}
+				a.toast = "此目录没有可删除的会话"
+				a.refresh()
+			default:
+				a.groupDelete.ids, a.groupDelete.open = ids, true
+			}
+		})
+	}()
+}
+
+// deleteGroup 逐个删除已经确认的会话，让忙碌会话或单条失败不影响其余会话。
+func (a *App) deleteGroup() {
+	a.groupDelete.deleting = true
+	ids := a.groupDelete.ids
+	go func() {
+		ctx := context.Background()
+		var deleted, reasons []string
+		for _, id := range ids {
+			err := a.service.DeleteSession(ctx, protocol.DeleteSessionRequest{SessionID: id})
+			if err == nil {
+				deleted = append(deleted, id)
+			} else if reason := err.Error(); !slices.Contains(reasons, reason) {
+				reasons = append(reasons, reason)
+			}
+		}
+		a.win.Update(func() {
+			for _, id := range deleted {
+				a.dropChat(id)
+			}
+			a.groupDelete = groupDeletion{}
+			a.refresh()
+			if len(reasons) > 0 {
+				a.toast = fmt.Sprintf("已删除 %d 个会话，保留 %d 个：%s",
+					len(deleted), len(ids)-len(deleted), strings.Join(reasons, "、"))
 			}
 		})
 	}()

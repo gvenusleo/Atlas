@@ -111,6 +111,7 @@ type ListSessionsRequest struct {
 	Type    SessionType `json:"type,omitempty"`
 	OwnerID string      `json:"ownerId,omitempty"`
 	Cursor  string      `json:"cursor,omitempty"`
+	All     bool        `json:"all,omitzero"` // 一次读取完整快照，与 Cursor 互斥
 }
 
 type ListSessionsResponse struct {

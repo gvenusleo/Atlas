@@ -28,7 +28,7 @@ func (a *App) closeFileTab(ch *chat, tb *fileTab) {
 
 // unsavedDialog 在关闭有未保存修改的文件标签时问：保存、不保存，还是取消。
 func (a *App) unsavedDialog(c *ui.Context) {
-	ui.Modal(c, &a.unsaved.open, func() {
+	compactModal(c, "unsaved-file", &a.unsaved.open, func() {
 		ch, tb := a.unsaved.ch, a.unsaved.tb
 		if tb == nil {
 			return
@@ -65,27 +65,35 @@ func (a *App) dirtyTabs() int {
 	return n
 }
 
-// confirmQuit 在有未保存的修改时拦下退出，问用户是否丢弃；确认后再退出一次。关窗口只是隐藏
-// 窗口，不经过这里。
-func (a *App) confirmQuit(e *mygo.Preventable) {
+// confirmQuit 在有未保存的修改时拦下退出并打开确认框。关窗口只是隐藏，不经过这里。
+func (a *App) confirmQuit(e *mygo.QuitEvent) {
+	if e.SessionEnding || a.discardOK {
+		return
+	}
 	n := a.dirtyTabs()
-	if n == 0 || a.discardOK {
+	if n == 0 {
 		return
 	}
 	e.PreventDefault()
-	a.reveal() // 窗口可能藏在后台，确认框要有地方出现
-	go func() {
-		r, err := mygo.Dialog.Message(mygo.MessageOptions{
-			Parent: a.win, Type: mygo.MessageWarning, Buttons: []string{"丢弃修改并退出", "取消"},
-			DefaultButton: 1, CancelButton: 1, DestructiveButtons: []int{0},
-			Message: fmt.Sprintf("有 %d 个文件的修改还没保存", n),
-			Detail:  "现在退出会丢掉这些修改",
-		})
-		if err == nil && r.Button == 0 {
-			a.win.Update(func() {
-				a.discardOK = true
-				mygo.App.Quit()
-			})
-		}
-	}()
+	a.win.Update(func() {
+		a.quitDirty = n
+		a.reveal()
+	})
+}
+
+// quitDialog 在确认丢弃未保存的修改后接着退出。
+func (a *App) quitDialog(c *ui.Context) {
+	if a.quitDirty == 0 {
+		return
+	}
+	open := true
+	title := fmt.Sprintf("有 %d 个文件的修改还没保存", a.quitDirty)
+	confirmed := showAlert(c, "quit-unsaved", &open, title, "现在退出会丢掉这些修改", "丢弃修改并退出")
+	if !open {
+		a.quitDirty = 0
+	}
+	if confirmed {
+		a.discardOK = true
+		mygo.App.Quit()
+	}
 }

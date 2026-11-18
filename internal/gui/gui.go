@@ -40,6 +40,7 @@ type App struct {
 	win           *mygo.Window
 	infos         []protocol.SessionInfo // 侧栏会话，按更新时间倒序
 	listed        bool                   // 会话列表至少读到过一次；之前列表为空不说明没有会话
+	listRefresh   int                    // 只接受最后一次发起的侧栏刷新结果
 	chats         map[string]*chat       // 已打开的会话，按会话 ID
 	current       *chat
 	cwd           string // 新会话默认的工作目录
@@ -73,6 +74,7 @@ type App struct {
 	renameOpen           bool
 	deleteID             string
 	deleteOpen           bool
+	groupDelete          groupDeletion
 
 	// 工作目录不存在时的提示：指向打不开的会话，以及上一次新建目录失败的原因。
 	cwdGoneChat *chat
@@ -85,6 +87,7 @@ type App struct {
 	fileCreate *fileCreateForm
 
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
+	quitDirty int        // 等待确认退出时，有未保存修改的文件标签数
 	discardOK bool       // 用户确认了丢弃未保存的修改，再退出一次就不再问
 
 	tray     *mygo.Tray // 托盘图标；偏好为不显示、或建不起来时为空

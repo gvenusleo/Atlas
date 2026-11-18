@@ -54,7 +54,7 @@ func (a *App) reveal() {
 // beforeQuit 在退出开始、窗口关闭之前先确认；确认通过后记下正在退出，之后窗口的关闭才不会
 // 被当作隐藏而拦下。
 func (a *App) beforeQuit(e *mygo.QuitEvent) {
-	a.confirmQuit(&e.Preventable)
+	a.confirmQuit(e)
 	a.quitting = !e.DefaultPrevented()
 }
 

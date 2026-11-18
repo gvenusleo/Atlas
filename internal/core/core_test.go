@@ -440,6 +440,55 @@ func TestNewSessionRejectsBadTypeAndOwner(t *testing.T) {
 	}
 }
 
+// 更新最早的会话会把它移到游标之前。目录删除需要一次拿到全部标识，才能固定确认范围。
+func TestDirectorySessionSnapshot(t *testing.T) {
+	ctx := t.Context()
+	c := open(t, filepath.Join(t.TempDir(), "sessions.db"))
+	a := c.Connect(newRecorder())
+	cwd := t.TempDir()
+	for i := range listPage + 1 {
+		if _, err := c.db.Create(ctx, store.Info{ID: strconv.Itoa(i), Cwd: cwd}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, info := range []store.Info{
+		{ID: "other", Cwd: t.TempDir()},
+		{ID: "task", Cwd: cwd, Type: string(protocol.SessionScheduled), OwnerID: "task"},
+	} {
+		if _, err := c.db.Create(ctx, info); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := protocol.ListSessionsRequest{Cwd: cwd}
+	page, err := a.ListSessions(ctx, req)
+	if err != nil || len(page.Sessions) != listPage || page.NextCursor == "" {
+		t.Fatalf("目录第一页包含 %d 个会话，游标 %q：%v", len(page.Sessions), page.NextCursor, err)
+	}
+	req.Cursor = page.NextCursor
+	tail, err := a.ListSessions(ctx, req)
+	if err != nil || len(tail.Sessions) != 1 {
+		t.Fatalf("目录第二页包含 %d 个会话：%v", len(tail.Sessions), err)
+	}
+	last := tail.Sessions[0].SessionID
+	if err := c.db.Rename(ctx, last, "新标题"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := a.ListSessions(ctx, protocol.ListSessionsRequest{Cwd: cwd, All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make(map[string]bool)
+	for _, info := range snapshot.Sessions {
+		ids[info.SessionID] = true
+	}
+	if !ids[last] || ids["task"] || ids["other"] {
+		t.Fatalf("目录快照中会话标识与筛选范围不符：%v", ids)
+	}
+	if snapshot.NextCursor != "" || len(ids) != listPage+1 {
+		t.Fatalf("目录快照包含 %d 个会话，游标 %q", len(ids), snapshot.NextCursor)
+	}
+}
+
 // 任务会话带着类型与属主保存：默认的列表（侧栏用）只有普通会话，按类型与属主才列得出任务会话，
 // 重新打开核心之后仍然如此。
 func TestScheduledSessionsAreListedSeparately(t *testing.T) {

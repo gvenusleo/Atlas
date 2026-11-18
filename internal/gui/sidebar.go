@@ -157,7 +157,7 @@ func statusDot(c *ui.Context, color ui.Color) {
 
 // group 构建一个目录分组：标题可折叠，折叠后标题尾部显示会话数；
 // 默认只列出最近的 groupLimit 个，其余在“显示更多”之后。
-// 悬停标题显示完整路径，右键菜单可在该目录新建对话。
+// 悬停标题显示完整路径，右键菜单提供目录和会话操作。
 func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
 	open := a.sections[g.cwd]
 	if open == nil {
@@ -169,7 +169,7 @@ func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
 		title += " · " + strconv.Itoa(len(g.infos))
 	}
 	shown := a.visible(g, selected)
-	ui.SidebarSection(c, title, open, func() {
+	ui.SidebarSection(c.Key(g.cwd), title, open, func() {
 		for _, info := range shown {
 			a.session(c, t, info, selected)
 		}
@@ -183,6 +183,10 @@ func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
 		}
 		m.Separator()
 		dirItems(m, g.cwd)
+		m.Separator()
+		if m.Item("删除此目录所有会话").Disabled(g.cwd == "" || a.groupDelete.cwd != "").Chosen() {
+			a.askDeleteGroup(g.cwd)
+		}
 	})
 }
 

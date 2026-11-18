@@ -101,9 +101,7 @@ func (a *App) serviceDialog(c *ui.Context, t *ui.Theme) {
 	p := &a.settings.models
 	open := p.form != nil
 	width, height := c.Size()
-	ui.DialogBase(c, &open, func(backdrop, panel ui.Element) {
-		sheetPanel(backdrop, panel, t, min(serviceFormWidth, width-2*gutter)).
-			MaxHeight(height - 2*gutter).Clip()
+	showModal(c, "model-service", &open, func() {
 		ui.Column(c).Grow(1).MinHeight(0).Padding(settingsTop, 0, 0).Children(func() {
 			title := "添加模型服务"
 			if p.form.orig != "" {
@@ -114,7 +112,7 @@ func (a *App) serviceDialog(c *ui.Context, t *ui.Theme) {
 			dialogButtons(c, t, p.form.err, func() { a.deleteButton(c, t) },
 				func() { p.form = nil }, a.saveService)
 		})
-	})
+	}).Width(min(serviceFormWidth, width-2*gutter)).MaxHeight(height - 2*gutter).Clip()
 	if !open {
 		p.form = nil
 	}
