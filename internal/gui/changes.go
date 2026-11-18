@@ -42,10 +42,11 @@ type changePanel struct {
 
 // changeView 是选中文件的对比。
 type changeView struct {
-	path string
-	seq  int               // 读过几次，后读的结果才有效
-	note string            // 不能显示的原因
-	diff *editor.DiffState // 不能显示或还没读到时为空
+	path             string
+	seq              int               // 读过几次，后读的结果才有效
+	note             string            // 不能显示的原因
+	diff             *editor.DiffState // 不能显示或还没读到时为空
+	firstHunkPending bool
 }
 
 // toggleChanges 显示或收起当前会话的更改面板；第一次打开时建面板，右侧栏不够宽时拉宽，
@@ -146,7 +147,7 @@ func (a *App) openChangeFile(ch *chat) {
 		return
 	}
 	a.showFile(ch, v.path)
-	if v.diff != nil {
+	if v.diff != nil && !v.firstHunkPending && !v.diff.Comparing() {
 		tb := ch.files.tabs[ch.files.active]
 		tb.showPosition(v.findSourcePosition())
 	}
@@ -189,8 +190,6 @@ func (v *changeView) show(before, after, note string) {
 		v.diff = nil
 		return
 	}
-	// 末尾的换行不显示成多出来的一行。
-	before, after = strings.TrimSuffix(before, "\n"), strings.TrimSuffix(after, "\n")
 	if v.diff != nil {
 		if v.diff.Old.String() != before {
 			v.diff.Old.Reset(before)
@@ -204,17 +203,18 @@ func (v *changeView) show(before, after, note string) {
 	lang := editor.LanguageFor(v.path)
 	old.SetLanguage(lang)
 	text.SetLanguage(lang)
-	v.diff = &editor.DiffState{Old: old, New: text, Wrap: true, Font: codeFont}
-	v.diff.GoToHunk(0)
+	v.diff = &editor.DiffState{
+		Old: old, New: text, Wrap: true, Font: codeFont, ScrollPastEnd: true,
+	}
+	v.firstHunkPending = true
 }
 
-// findHunk 在两处改动之间向上跳转时，停在前一处改动。
-func (v *changeView) findHunk(delta int) int {
-	i, inside := v.diff.CurrentHunk()
-	if delta > 0 || inside {
-		i += delta
+// navigateDiff 在命令成功后将焦点交给对比视图，便于继续用键盘审阅。
+func (v *changeView) navigateDiff(command editor.Command) {
+	d := v.diff
+	if !v.firstHunkPending && !d.Comparing() && d.Run(command) {
+		d.Focus()
 	}
-	return i
 }
 
 // findSourcePosition 将旧版本中的位置映射到工作区；删除的行落在改动起点。

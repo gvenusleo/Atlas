@@ -186,9 +186,8 @@ func diffState() *editor.DiffState {
 // fileDiff 对比文件前后的内容，行号从 1 数起：新建文件时 old 为空，整份都是新增；
 // 覆盖时没有改动的行按 DiffView 原生的做法折叠。
 func fileDiff(path, old, text string) *editor.DiffState {
-	// 末尾的换行不显示成多出来的一行。
-	before := editor.NewBuffer(strings.TrimSuffix(old, "\n"))
-	after := editor.NewBuffer(strings.TrimSuffix(text, "\n"))
+	before := editor.NewBuffer(old)
+	after := editor.NewBuffer(text)
 	lang := editor.LanguageFor(path)
 	before.SetLanguage(lang)
 	after.SetLanguage(lang)

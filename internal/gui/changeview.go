@@ -57,8 +57,8 @@ func (a *App) changeShortcuts(c *ui.Context, ch *chat) {
 		cp.focus.Focus(c)
 	})
 	if v := cp.view; v != nil && v.diff != nil {
-		c.OnShortcut(ui.Shift, ui.KeyF7, func() { v.diff.GoToHunk(v.findHunk(-1)) })
-		c.OnShortcut(0, ui.KeyF7, func() { v.diff.GoToHunk(v.findHunk(1)) })
+		c.OnShortcut(ui.Shift, ui.KeyF7, func() { v.navigateDiff(editor.PreviousHunk) })
+		c.OnShortcut(0, ui.KeyF7, func() { v.navigateDiff(editor.NextHunk) })
 	}
 }
 
@@ -172,6 +172,12 @@ func (a *App) changeContent(c *ui.Context, t *ui.Theme, ch *chat) {
 					v.diff.Layout = editor.DiffSplit
 				}
 				editor.DiffView(c, v.diff).Grow(1).FillWidth()
+				// 挂载后大文件才能在后台比较，结果就绪时再定位。
+				if v.firstHunkPending && !v.diff.Comparing() {
+					v.firstHunkPending = false
+					v.diff.GoToHunk(0)
+					c.Invalidate()
+				}
 			}
 		})
 	})
@@ -218,6 +224,10 @@ func (a *App) changeFiles(c *ui.Context, t *ui.Theme, ch *chat) {
 // changeStats 画选中文件的增删统计与改动间的导航：当前是第几处，以及上一处与下一处。
 func changeStats(c *ui.Context, t *ui.Theme, v *changeView) {
 	d := v.diff
+	if v.firstHunkPending || d.Comparing() {
+		ui.Text(c, "正在比较…").FontSize(smallSize).TextColor(t.TextMuted)
+		return
+	}
 	added, removed := d.Stats()
 	if added+removed > 0 {
 		diffPill(c, t, added, removed)
@@ -229,11 +239,10 @@ func changeStats(c *ui.Context, t *ui.Theme, v *changeView) {
 	i, _ := d.CurrentHunk()
 	ui.Text(c, fmt.Sprintf("改动 %d / %d", max(i+1, 0), n)).FontSize(smallSize).
 		TextColor(t.TextMuted).SingleLine().Padding(0, 4)
-	prev, next := v.findHunk(-1), v.findHunk(1)
-	changeButton(c.Key("previous-hunk"), t, arrowUpIcon, "上一处改动", prev < 0,
-		func() { d.GoToHunk(prev) }).Tooltip("上一处改动（Shift+F7）")
-	changeButton(c.Key("next-hunk"), t, arrowDownIcon, "下一处改动", next >= n,
-		func() { d.GoToHunk(next) }).Tooltip("下一处改动（F7）")
+	changeButton(c.Key("previous-hunk"), t, arrowUpIcon, "上一处改动", false,
+		func() { v.navigateDiff(editor.PreviousHunk) }).Tooltip("上一处改动（Shift+F7）")
+	changeButton(c.Key("next-hunk"), t, arrowDownIcon, "下一处改动", false,
+		func() { v.navigateDiff(editor.NextHunk) }).Tooltip("下一处改动（F7）")
 }
 
 // changeButton 画审阅导航里的方形图标按钮；disabled 时图标变淡。
