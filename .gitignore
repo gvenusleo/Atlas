@@ -24,4 +24,5 @@ auth.json
 /.mygo/
 
 # 本机文件
+/mise.local.toml
 .DS_Store
