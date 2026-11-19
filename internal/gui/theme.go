@@ -34,12 +34,11 @@ const (
 	stackMin    = 160 // 右侧栏里叠放的卡片各自的最小高度
 	chatMin     = 320 // 打开右侧栏时对话区的最小宽度
 
-	treeMin           = 140 // 文件树的最小宽度
-	treeDefault       = 200 // 文件树的默认宽度
-	changeTreeDefault = 180 // 更改树的默认宽度，右端要留得下增删行数与更改类型
-	treeIndent        = 14  // 文件树每深一层缩进的宽度
-	barGap            = 4   // 标题栏右端相邻按钮的间距
-	barSlots          = 4   // 标题栏右端为开关留的位置：文件、更改、终端、大纲
+	treeMin     = 140 // 文件树的最小宽度
+	treeDefault = 200 // 文件树的默认宽度
+	treeIndent  = 14  // 文件树每深一层缩进的宽度
+	barGap      = 4   // 标题栏右端相邻按钮的间距
+	barSlots    = 4   // 标题栏右端为开关留的位置：文件、更改、终端、大纲
 
 	sidebarMin     = 200 // 侧栏可拖动到的最小宽度
 	sidebarMax     = 400 // 侧栏可拖动到的最大宽度

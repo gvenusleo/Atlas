@@ -54,7 +54,7 @@ type changeView struct {
 func (a *App) toggleChanges() {
 	ch := a.current
 	if ch.changes == nil {
-		ch.changes = &changePanel{treeWidth: changeTreeDefault}
+		ch.changes = &changePanel{treeWidth: treeDefault}
 	}
 	cp := ch.changes
 	a.togglePanel(changesPanel, func() {
