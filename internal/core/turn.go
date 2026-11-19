@@ -27,11 +27,11 @@ const titleRunes = 30
 // drive 是一轮里要跑的：一轮对话或一次压缩。
 type drive func(ctx context.Context, in agent.Input, emit func(agent.Event)) []agent.Message
 
-// sendPrompt 受理一条用户消息，随后这一轮在会话内异步运行。/compact 压缩上下文；
-// /技能名 开头时在原文后附上技能全文。
+// sendPrompt 受理一条用户消息，随后这一轮在会话内异步运行。单独发送 /compact 压缩上下文。
 func (s *session) sendPrompt(blocks []protocol.ContentBlock) error {
 	user := userMessage(blocks)
-	if strings.TrimSpace(agent.TextOf(user.Content)) == "/compact" {
+	text := agent.TextOf(user.Content)
+	if strings.TrimSpace(text) == "/compact" {
 		s.mu.Lock()
 		compactable := agent.Compactable(s.messages)
 		s.mu.Unlock()
@@ -43,7 +43,7 @@ func (s *session) sendPrompt(blocks []protocol.ContentBlock) error {
 	s.mu.Lock()
 	list := s.skills
 	s.mu.Unlock()
-	user, err := withSkill(user, list)
+	user, err := withSkills(user, skills.Invoked(list, text))
 	if err != nil {
 		return err
 	}
@@ -247,18 +247,17 @@ func userMessage(blocks []protocol.ContentBlock) agent.UserMessage {
 	return m
 }
 
-// withSkill 在用户消息以 /技能名 开头时，在原文后附上技能块，让模型直接得到技能的内容；
-// 开头不是技能时原样返回。
-func withSkill(m agent.UserMessage, list []skills.Skill) (agent.UserMessage, error) {
-	skill, ok := skills.Invoked(list, agent.TextOf(m.Content))
-	if !ok {
-		return m, nil
+// withSkills 在原文后附上显式调用的技能块，让模型直接得到技能内容。
+func withSkills(m agent.UserMessage, list []skills.Skill) (agent.UserMessage, error) {
+	content := m.Content
+	for _, skill := range list {
+		block, err := skills.InvocationBlock(skill)
+		if err != nil {
+			return m, err
+		}
+		content = append(content, agent.TextContent{Text: block})
 	}
-	block, err := skills.InvocationBlock(skill)
-	if err != nil {
-		return m, err
-	}
-	m.Content = append(m.Content, agent.TextContent{Text: block})
+	m.Content = content
 	return m, nil
 }
 

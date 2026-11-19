@@ -39,8 +39,8 @@ type Service interface {
 	// RenameSession 修改标题；空标题表示清除。
 	RenameSession(ctx context.Context, req RenameSessionRequest) error
 	// SendPrompt 发送一条用户消息。受理成功即返回，这一轮在会话内异步运行；停止原因与
-	// 出错信息通过 RunStateUpdate 送达。以 / 开头的是命令：/compact 压缩上下文，
-	// /技能名 参数 在原文后附上技能全文再运行。
+	// 出错信息通过 RunStateUpdate 送达。单独发送 /compact 压缩上下文。消息中由空白或
+	// 消息边界分隔的 /技能名 会在原文后附上技能全文。
 	SendPrompt(ctx context.Context, req SendPromptRequest) (SendPromptResponse, error)
 	// CancelTurn 取消正在运行的一轮，该轮以 StopCancelled 结束；没有正在运行的一轮时不报错。
 	CancelTurn(ctx context.Context, req CancelTurnRequest) error

@@ -34,7 +34,8 @@ type completion struct {
 // menuState 是输入框上方补全列表的状态。
 type menuState struct {
 	listNav
-	closed    string                  // 被 Esc 关掉、或刚补全完时输入框里的文本；文本变了就重新列出
+	closed    string                  // 被 Esc 关掉或刚补全完时的输入框文本
+	closedAt  int                     // 被关闭的词在 closed 中的位置
 	nameWidth float32                 // 上一帧视野内最长的名称的宽度，没有时为 0
 	caretAt   int                     // 补全之后光标该在的位置，rune 偏移
 	caretDue  bool                    // 下一帧要把输入框的光标放到 caretAt
@@ -48,7 +49,7 @@ func (m *menuState) apply(cur completion, opt option) string {
 	runes := []rune(cur.text)
 	text := string(runes[:cur.from]) + opt.insert + string(runes[cur.to:])
 	m.caretAt, m.caretDue = cur.from+utf8.RuneCountInString(opt.insert), true
-	m.closed = text
+	m.closed, m.closedAt = text, cur.from
 	return text
 }
 
@@ -60,18 +61,20 @@ func (m *menuState) placeCaret(input ui.Element) {
 	}
 }
 
-// completionOf 返回输入框里正在补全的词：以 / 开头且还没有空白的整段文本是命令，
-// 否则光标处的 @ 词是文件。加载中或被 Esc 关掉时没有。命令列表里的技能取自会话，
-// @ 的路径在第一次用到时才在后台取。
-func (a *App) completionOf(ch *chat, input ui.Element) completion {
-	text := ch.input
-	switch {
-	case ch.loading || text == ch.menu.closed:
+// findCompletion 按光标处的词补全斜杠命令或 @ 文件引用。
+func (a *App) findCompletion(ch *chat, input ui.Element) completion {
+	if ch.loading {
 		return completion{}
-	case strings.HasPrefix(text, "/") && !strings.ContainsAny(text, " \t\r\n"):
-		return ch.commandCompletion(text)
 	}
-	return a.mentionCompletion(ch, input)
+	caret, end := input.TextSelection()
+	cur := ch.findCommandCompletion(ch.input, caret, end)
+	if cur.text == "" {
+		cur = a.mentionCompletion(ch, input)
+	}
+	if cur.text == ch.menu.closed && cur.from == ch.menu.closedAt {
+		return completion{}
+	}
+	return cur
 }
 
 // activate 选中一个选项，返回此后输入框里的文本：内置命令直接执行，输入框清空；
@@ -100,7 +103,7 @@ func (a *App) completionKey(ch *chat, k ui.TextKey) bool {
 	case ui.KeyTab:
 		k.SetText(m.apply(cur, cur.options[i]))
 	case ui.KeyEscape:
-		m.closed = text
+		m.closed, m.closedAt = text, cur.from
 	case ui.KeyEnter:
 		k.SetText(a.activate(ch, cur, cur.options[i]))
 	default:
@@ -117,12 +120,12 @@ func (a *App) completionMenu(c *ui.Context, t *ui.Theme, ch *chat, card, input u
 	if ch.input != m.closed {
 		m.closed = ""
 	}
-	cur := a.completionOf(ch, input)
+	cur := a.findCompletion(ch, input)
 	if len(cur.options) == 0 || !input.Focused() {
 		m.cur, m.pointer = completion{}, noPointer
 		return
 	}
-	if cur.text != m.cur.text {
+	if cur.text != m.cur.text || cur.from != m.cur.from {
 		m.index = 0
 	}
 	m.cur = cur

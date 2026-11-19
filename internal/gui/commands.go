@@ -1,36 +1,52 @@
 package gui
 
 import (
+	"cmp"
 	"strings"
-	"unicode/utf8"
+	"unicode"
 )
 
-// commandList 是可用的命令，来自核心：/compact 在前，其后是会话的技能。在输入框里输入 / 时
-// 列出。带参数的命令（技能）补全后接着输入参数，不直接执行。
-func (ch *chat) commandList() []option {
-	var list []option
-	for _, c := range ch.commands {
-		name := "/" + c.Name
-		opt := option{name: name, hint: c.Description, insert: name, run: c.Input == nil}
-		if c.Input != nil {
-			opt.tag, opt.insert = "Skill", name+" "
-		}
-		list = append(list, opt)
+// findCommandCompletion 查找光标处的斜杠命令候选。内置命令必须单独发送，因为选中后会立即执行。
+func (ch *chat) findCommandCompletion(text string, caret, end int) completion {
+	if ch.running || caret != end {
+		return completion{}
 	}
-	return list
-}
-
-// commandCompletion 返回 text 正在输入的命令：命令名以 text 开头。运行中没有。
-func (ch *chat) commandCompletion(text string) completion {
-	cur := completion{text: text, to: utf8.RuneCountInString(text)}
-	if ch.running {
-		return cur
+	runes := []rune(text)
+	if caret > len(runes) {
+		return completion{}
 	}
-	prefix := strings.ToLower(text)
-	for _, opt := range ch.commandList() {
-		if strings.HasPrefix(opt.name, prefix) {
-			cur.options = append(cur.options, opt)
+	from := caret
+	for from > 0 && !unicode.IsSpace(runes[from-1]) {
+		from--
+	}
+	if from == caret || runes[from] != '/' {
+		return completion{}
+	}
+	to := caret
+	for to < len(runes) && !unicode.IsSpace(runes[to]) {
+		to++
+	}
+	word := string(runes[from:to])
+	prefix := strings.ToLower(word)
+	standalone := strings.TrimSpace(text) == word
+	// 将已有的分隔空白原样插回，使补全后的光标落在分隔符之后。
+	var separator string
+	if to < len(runes) {
+		separator = string(runes[to])
+		to++
+	}
+	cur := completion{text: text, from: from, to: to}
+	for _, cmd := range ch.commands {
+		name := "/" + cmd.Name
+		run := cmd.Input == nil
+		if (run && !standalone) || !strings.HasPrefix(name, prefix) {
+			continue
 		}
+		opt := option{name: name, hint: cmd.Description, insert: name + separator, run: run}
+		if !run {
+			opt.tag, opt.insert = "Skill", name+cmp.Or(separator, " ")
+		}
+		cur.options = append(cur.options, opt)
 	}
 	return cur
 }
