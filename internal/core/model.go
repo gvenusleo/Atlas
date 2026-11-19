@@ -204,20 +204,27 @@ func checkCwd(cwd string) error {
 
 // setConfig 换模型或思考深度：配好新模型，保存，再采用；返回完整的配置项，并推送给所有订阅者。
 func (s *session) setConfig(
-	ctx context.Context, id, value string,
+	ctx context.Context, sub protocol.Subscriber, id, value string,
 ) ([]protocol.ConfigOption, error) {
-	end, err := s.begin()
-	if err != nil {
-		return nil, err
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.mu.Lock()
+	if s.runState.Invalidated || !slices.Contains(s.subscribers, sub) {
+		s.mu.Unlock()
+		return nil, protocol.ErrNotFound
 	}
-	defer end()
+	ref, thinking, saved := s.model.Ref, s.thinking, s.saved
+	s.configuring = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.configuring = false
+		s.mu.Unlock()
+	}()
 	settings, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	ref, thinking, saved := s.model.Ref, s.thinking, s.saved
-	s.mu.Unlock()
 	switch id {
 	case protocol.ConfigModel:
 		ref = value
@@ -260,8 +267,17 @@ func (s *session) options() ([]protocol.ConfigOption, error) {
 	return configOptions(settings, s.model.Ref, s.thinking), nil
 }
 
+// readModel 让一条请求拿到相互匹配的模型和思考深度。
+func (s *session) readModel() (agent.Model, agent.ThinkingLevel) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.model, s.thinking
+}
+
 // ensureModel 在会话没有可用的模型时再选一次（设置可能已经改好了）；仍然选不出就返回原因。
 func (s *session) ensureModel(ctx context.Context) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	s.mu.Lock()
 	ref, thinking, ok, saved := s.model.Ref, s.thinking, s.model.Stream != nil, s.saved
 	s.mu.Unlock()

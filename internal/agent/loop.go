@@ -16,8 +16,11 @@ func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Me
 	r.add(user)
 	var pending []UserMessage
 	for requests := 1; ctx.Err() == nil; requests++ {
-		if requests > 1 && len(pending) == 0 && in.PollPrompts != nil {
-			pending, _ = in.PollPrompts(false, false)
+		if requests > 1 && len(pending) == 0 {
+			r.readModel()
+			if in.PollPrompts != nil {
+				pending, _ = in.PollPrompts(r.Model.Images, false, false)
+			}
 		}
 		for _, prompt := range pending {
 			if ctx.Err() != nil {
@@ -43,18 +46,19 @@ func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Me
 		} else {
 			executeToolCalls(ctx, r, calls)
 		}
-		if ctx.Err() != nil {
-			break
-		}
 		ending := len(calls) == 0
-		if ending && msg.StopReason == StopReasonMaxOutputTokens {
+		if ctx.Err() != nil || ending && msg.StopReason == StopReasonMaxOutputTokens {
 			break
 		}
 		atLimit := in.MaxRequests > 0 && requests >= in.MaxRequests
 		pending = nil
 		var waiting bool
 		if (ending || atLimit) && in.PollPrompts != nil {
-			pending, waiting = in.PollPrompts(ending, atLimit)
+			// 收尾时领取的新消息须按下一次请求的模型校验图片。
+			if !atLimit {
+				r.readModel()
+			}
+			pending, waiting = in.PollPrompts(r.Model.Images, ending, atLimit)
 		}
 		if atLimit && (!ending || waiting) {
 			stopAtLimit(r)
@@ -94,6 +98,12 @@ func newRun(in Input, emit func(Event)) *run {
 	return &run{Input: in, emit: emit}
 }
 
+func (r *run) readModel() {
+	if r.ReadModel != nil {
+		r.Model, r.Thinking = r.ReadModel()
+	}
+}
+
 // add 把一条定稿的消息并进上下文，记入这一轮的结果，并发出 EventMessageEnd。
 func (r *run) add(m Message) {
 	r.Messages = Fold(r.Messages, m)
@@ -123,7 +133,7 @@ func streamResponse(ctx context.Context, r *run, onOverflow func() bool) Assista
 		final.StopReason = StopReasonError
 		final.ErrorMessage = "StreamFn 违反契约：返回了空 StopReason 的消息"
 	}
-	final.Model = r.Model.Ref // 记下产生它的模型：以 Input 为准，不论流函数回报的是什么
+	final.Model = r.Model.Ref
 	final.Timestamp = time.Now()
 	return final
 }

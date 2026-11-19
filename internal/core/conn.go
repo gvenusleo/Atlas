@@ -140,12 +140,17 @@ func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequ
 			return err
 		}
 		defer done()
+		s.writeMu.Lock()
+		defer s.writeMu.Unlock()
 	}
 	err = c.core.db.Delete(ctx, req.SessionID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) { // 还没保存的新会话不在库里
 		return err
 	}
 	if s != nil {
+		s.mu.Lock()
+		s.runState.Invalidated = true
+		s.mu.Unlock()
 		c.core.forget(s)
 	}
 	return nil
@@ -251,7 +256,7 @@ func (c *conn) SetConfigOption(
 	if err != nil {
 		return protocol.SetConfigOptionResponse{}, err
 	}
-	options, err := s.setConfig(ctx, req.ConfigID, req.Value)
+	options, err := s.setConfig(ctx, c.sub, req.ConfigID, req.Value)
 	c.core.unloadIfIdle(s) // 期间若所有订阅者都关闭了会话，现在可以卸载
 	return protocol.SetConfigOptionResponse{ConfigOptions: options}, err
 }

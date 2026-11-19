@@ -2,7 +2,12 @@ package core
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -159,6 +164,173 @@ func sayAndWait(
 		t.Fatal(err)
 	}
 	return r.end(t)
+}
+
+// 运行中保存配置后，当前回复的重试仍用旧模型，同一轮的下一次请求使用新配置。
+func TestConfigChangeDuringTurn(t *testing.T) {
+	path, requests := configChangeProvider(t)
+	c := open(t, path)
+	r := newRecorder()
+	client := c.Connect(r)
+	resp, err := client.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := resp.SessionID
+	attempts, release := stubConfigChange(t, c, id)
+	if err := say(t, client, id, "开场"); err != nil {
+		t.Fatal(err)
+	}
+	assertModelAttempt(t, attempts, "p/a", agent.ThinkingLow)
+	set := func(option, value string) []protocol.ConfigOption {
+		t.Helper()
+		resp, err := client.SetConfigOption(t.Context(), protocol.SetConfigOptionRequest{
+			SessionID: id, ConfigID: option, Value: value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.ConfigOptions
+	}
+	options := set(protocol.ConfigModel, "q/a")
+	if !slices.ContainsFunc(options, func(o protocol.ConfigOption) bool {
+		return o.ID == protocol.ConfigThinking && o.CurrentValue == "medium"
+	}) {
+		t.Fatalf("新模型的思考深度错误：%+v", options)
+	}
+	set(protocol.ConfigThinking, "high")
+	if _, err := client.SetConfigOption(t.Context(), protocol.SetConfigOptionRequest{
+		SessionID: id, ConfigID: protocol.ConfigThinking, Value: "low",
+	}); err == nil {
+		t.Fatal("接受了新模型不支持的思考深度")
+	}
+	close(release)
+	assertModelAttempt(t, attempts, "p/a", agent.ThinkingLow)
+	assertSwitchedRequest(t, awaitPromptEvent(t, requests), false)
+	if state := r.end(t); state.Error != "" || state.StopReason != protocol.StopEndTurn {
+		t.Fatalf("切换后的同一轮没有完成：%+v", state)
+	}
+	other := newRecorder()
+	reopened := open(t, path).Connect(other)
+	openSession(t, reopened, id)
+	if state := sayAndWait(t, reopened, other, id, "继续"); state.Error != "" {
+		t.Fatalf("重新打开会话后发送失败：%+v", state)
+	}
+	assertSwitchedRequest(t, awaitPromptEvent(t, requests), true)
+}
+
+func configChangeProvider(t *testing.T) (string, <-chan []byte) {
+	t.Helper()
+	requests := make(chan []byte, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		select {
+		case requests <- body:
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		const done = `{"type":"response.completed","response":{"status":"completed","output":[` +
+			`{"type":"reasoning","id":"rs_new","summary":[]}]}}`
+		fmt.Fprint(w, "data: "+done+"\n\n")
+	}))
+	t.Cleanup(server.Close)
+	settings := `{"model":"p/a","providers":{"p":{"api":"openai-responses",
+		"base_url":"http://x","models":{"a":{"reasoning_options":[{"type":"effort",
+		"values":["low"]}]}}},"q":{"api":"openai-responses","base_url":` +
+		strconv.Quote(server.URL) + `,"models":{"a":{"reasoning_options":[{"type":"effort",
+		"values":["medium","high"]}]}}}}}`
+	path := home(t, settings)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), ".atlas", "auth.json"),
+		[]byte(`{"p":"key","q":"key"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, requests
+}
+
+func stubConfigChange(t *testing.T, c *Core, id string) (
+	attempts chan agent.StreamRequest, release chan struct{},
+) {
+	t.Helper()
+	attempts = make(chan agent.StreamRequest, 4)
+	release = make(chan struct{})
+	first := true
+	stub(t, c, id, func(ctx context.Context, req agent.StreamRequest,
+		_ func(agent.Delta),
+	) agent.AssistantMessage {
+		select {
+		case attempts <- req:
+		case <-ctx.Done():
+			return agent.AssistantMessage{StopReason: agent.StopReasonCanceled}
+		}
+		if first {
+			first = false
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return agent.AssistantMessage{StopReason: agent.StopReasonCanceled}
+			}
+			return agent.AssistantMessage{StopReason: agent.StopReasonError,
+				ErrorKind: agent.ErrorKindRetryable, ErrorMessage: "暂时失败"}
+		}
+		return agent.AssistantMessage{StopReason: agent.StopReasonToolUse,
+			Content: []agent.Content{
+				agent.ThinkingContent{Thinking: "原始思考",
+					Signature: `{"type":"reasoning","id":"rs_old","summary":[]}`},
+				agent.TextContent{Text: "工具调用前的正文"},
+				agent.ToolCall{ID: "call_1", Name: "missing", Arguments: []byte(`{}`)},
+			}}
+	})
+	return attempts, release
+}
+
+func assertModelAttempt(
+	t *testing.T, attempts <-chan agent.StreamRequest, want string, depth agent.ThinkingLevel,
+) {
+	t.Helper()
+	if req := awaitPromptEvent(t, attempts); req.Model != want || req.ThinkingLevel != depth {
+		t.Fatalf("模型 = %q，思考深度 = %q，期望 %q、%q", req.Model, req.ThinkingLevel, want, depth)
+	}
+}
+
+func assertSwitchedRequest(t *testing.T, body []byte, wantReasoning bool) {
+	t.Helper()
+	var req struct {
+		Model     string `json:"model"`
+		Reasoning struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
+		Input []struct {
+			Type   string `json:"type"`
+			CallID string `json:"call_id"`
+			ID     string `json:"id"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	var calls, results int
+	var reasoning bool
+	for _, item := range req.Input {
+		switch {
+		case item.Type == "reasoning":
+			if item.ID != "rs_new" {
+				t.Fatalf("跨提供方请求携带了旧的推理项：%q", item.ID)
+			}
+			reasoning = true
+		case item.Type == "function_call" && item.CallID == "call_1":
+			calls++
+		case item.Type == "function_call_output" && item.CallID == "call_1":
+			results++
+		}
+	}
+	if req.Model != "a" || req.Reasoning.Effort != "high" || calls != 1 || results != 1 ||
+		reasoning != wantReasoning || !strings.Contains(string(body), "工具调用前的正文") {
+		t.Fatalf("切换后的请求缺少模型配置、正文或工具记录：%s", body)
+	}
 }
 
 // 新会话先只在内存里，第一条用户消息保存时写库并以它作标题；客户端只从更新里看到对话，

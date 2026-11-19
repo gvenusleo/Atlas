@@ -41,14 +41,14 @@ func OpenAIResponses(
 		option.WithHTTPClient(&http.Client{Transport: netproxy.Transport()}),
 		option.WithMaxRetries(0),
 	)
-	stream := responsesStream(client)
+	stream := responsesStream(client, modelID)
 	if !images {
 		stream = withoutImages(stream)
 	}
 	return func(
 		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
 	) agent.AssistantMessage {
-		req.Model, req.MaxOutput = modelID, maxOutput
+		req.MaxOutput = maxOutput
 		return stream(ctx, req, emit)
 	}
 }
@@ -57,13 +57,13 @@ func OpenAIResponses(
 // 失败按契约编码进返回消息：ctx 取消 → StopReasonCanceled，其余 → StopReasonError，
 // 其中暂时性的（限流、服务端故障、连接中断）标出 ErrorKind 供循环重试；
 // 请求构造类错误在发起 HTTP 之前返回。
-func responsesStream(client openai.Client) agent.StreamFn {
+func responsesStream(client openai.Client, modelID string) agent.StreamFn {
 	return func(
 		ctx context.Context, req agent.StreamRequest, emit func(agent.Delta),
 	) agent.AssistantMessage {
-		params, err := requestOf(req)
+		params, err := requestOf(req, modelID)
 		if err != nil {
-			return failure(req.Model, agent.StopReasonError, err.Error(), "")
+			return failure(modelID, agent.StopReasonError, err.Error(), "")
 		}
 
 		stream := client.Responses.NewStreaming(ctx, params)
@@ -71,24 +71,24 @@ func responsesStream(client openai.Client) agent.StreamFn {
 
 		final, detail, aborted := consume(stream, emit)
 		if aborted {
-			return failure(req.Model, agent.StopReasonError, detail.text, "")
+			return failure(modelID, agent.StopReasonError, detail.text, "")
 		}
 		if err := stream.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
-				return failure(req.Model, agent.StopReasonCanceled, err.Error(), "")
+				return failure(modelID, agent.StopReasonCanceled, err.Error(), "")
 			}
-			return failure(req.Model, agent.StopReasonError, err.Error(), errorKind(err))
+			return failure(modelID, agent.StopReasonError, err.Error(), errorKind(err))
 		}
 		if final == nil {
 			// 没有 error 事件就结束的流是被截断了，可以重试；有错误码的按错误码判断。
 			if detail == (streamDetail{}) {
-				return failure(req.Model, agent.StopReasonError,
+				return failure(modelID, agent.StopReasonError,
 					"流结束但未收到终态事件", agent.ErrorKindRetryable)
 			}
 			text := cmp.Or(detail.text, detail.code)
-			return failure(req.Model, agent.StopReasonError, text, codeKind(detail.code))
+			return failure(modelID, agent.StopReasonError, text, codeKind(detail.code))
 		}
-		return messageOf(*final, req.Model)
+		return messageOf(*final, modelID)
 	}
 }
 

@@ -108,7 +108,7 @@ func TestRunCompactsAfterInsertingPrompts(t *testing.T) {
 		}
 		return AssistantMessage{StopReason: StopReasonStop}
 	}
-	in.PollPrompts = func(_, _ bool) ([]UserMessage, bool) {
+	in.PollPrompts = func(_, _, _ bool) ([]UserMessage, bool) {
 		if ordinary == 1 {
 			return []UserMessage{inserted}, true
 		}

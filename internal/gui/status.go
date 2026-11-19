@@ -92,7 +92,7 @@ func (a *App) branchPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 }
 
 // modelPicker 选择会话使用的模型，thinkingPicker 选择思考深度：都照着核心给的配置项画，
-// 会话没打开或模型不支持思考时没有。运行中不能换。
+// 会话没打开或模型不支持思考时没有。
 func (a *App) modelPicker(c *ui.Context, t *ui.Theme, ch *chat) {
 	a.configPicker(c, t, ch, protocol.ConfigModel)
 }
@@ -118,7 +118,7 @@ func (a *App) configPicker(c *ui.Context, t *ui.Theme, ch *chat, id string) {
 		return value
 	}
 	value := opt.CurrentValue
-	dropdown(c, t, opt.Name, nil, &value, values, name, !ch.ready || ch.run.Running, func() {
+	dropdown(c, t, opt.Name, nil, &value, values, name, !ch.ready || ch.choosing, func() {
 		a.choose(ch, id, value)
 	})
 }
@@ -135,7 +135,7 @@ func dropdown[T comparable](
 	sel := ui.SelectBase(c.Key(label), value)
 	// 长名称允许收缩并省略，避免超出状态行宽度。
 	sel.Trigger.AlignItems(ui.Center).Gap(6).Padding(3, 6).Radius(controlRound).
-		MinWidth(0).Shrink(1).Label(label).Disabled(disabled).OnChange(onChange)
+		MinWidth(0).Shrink(1).Label(label).Disabled(disabled).DimDisabled(false).OnChange(onChange)
 	if sel.Trigger.Hovered() {
 		sel.Trigger.Background(rowFill(t))
 	}

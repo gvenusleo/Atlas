@@ -99,7 +99,7 @@ func (s *session) prepareTurn(
 	s.mu.Lock()
 	in := agent.Input{Model: s.model, Thinking: s.thinking,
 		SystemPrompt: s.systemPrompt, Tools: s.tools, Messages: s.messages,
-		MaxRequests: maxRequests}
+		MaxRequests: maxRequests, ReadModel: s.readModel}
 	s.mu.Unlock()
 	if t.kind == protocol.RunCompaction {
 		return in, agent.UserMessage{}, t.ctx.Err()
@@ -161,6 +161,10 @@ func (s *session) activateTurn(t *turn, previous protocol.RunStateUpdate) protoc
 }
 
 func (s *session) finishTurn(t *turn, state protocol.RunStateUpdate) *turn {
+	if state.Invalidated {
+		s.writeMu.Lock()
+		defer s.writeMu.Unlock()
+	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	s.mu.Lock()
@@ -206,11 +210,11 @@ func (s *session) runTurn(
 	if t.queued.ID != 0 {
 		pendingIDs = append(pendingIDs, t.queued.ID)
 	}
-	in.PollPrompts = func(ending, atLimit bool) ([]agent.UserMessage, bool) {
+	in.PollPrompts = func(acceptsImages, ending, atLimit bool) ([]agent.UserMessage, bool) {
 		items, waiting := s.takeTurnPrompts(t, ending, atLimit)
 		var prompts []agent.UserMessage
 		for _, item := range items {
-			prompt, err := s.prepareUserPrompt(item.Prompt, !in.Model.Images)
+			prompt, err := s.prepareUserPrompt(item.Prompt, !acceptsImages)
 			if err != nil {
 				runErr = err
 				t.cancel()
@@ -311,12 +315,14 @@ func (s *session) guarded(run func() []agent.Message) (messages []agent.Message,
 // save 写库并把消息并进上下文，返回它的序号。新会话的第一条消息（总是用户消息）连同系统提示词
 // 快照一起建会话，标题取这条消息的开头。保存不受这一轮取消的影响，但有独立的超时。
 func (s *session) save(ctx context.Context, m agent.Message) (int64, error) {
-	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
-	defer stop()
 	entry, err := encode(m)
 	if err != nil {
 		return 0, err
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	ctx, stop := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
+	defer stop()
 	s.mu.Lock()
 	saved, seq := s.saved, s.seq
 	info := store.Info{ID: s.id, Cwd: s.cwd, Model: s.model.Ref, Thinking: string(s.thinking),

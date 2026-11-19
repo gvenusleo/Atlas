@@ -97,6 +97,7 @@ type chat struct {
 	queueEditing *promptQueueEdit
 	focusInput   bool
 	resuming     bool
+	choosing     bool // 正在保存模型或思考深度
 	err          string
 	unread       bool     // 在别的会话时运行结束，用户还没回来看过
 	job          *taskRun // 定时任务触发的会话：用户消息与标题由 gui 代为处理；其余会话为空
