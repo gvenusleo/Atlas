@@ -510,29 +510,32 @@ func (a *App) sendNext(ch *chat) {
 	id, ready, gen := ch.id, ch.ready, ch.starts
 	go func() {
 		ctx := context.Background()
-		var resp protocol.OpenSessionResponse
 		var err error
 		if !ready {
+			var resp protocol.OpenSessionResponse
 			resp, err = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
+			if err == nil {
+				// 打开时的快照须先于此次发送产生的更新进入主线程队列。
+				a.win.Update(func() {
+					if ch.starts == gen && a.chats[id] == ch {
+						ch.attach(resp.ConfigOptions, resp.State)
+					}
+				})
+			}
 		}
 		if err == nil {
 			_, err = a.service.SendPrompt(ctx, submission.request)
 		}
-		a.win.Update(func() { a.finishSubmission(ch, submission, gen, resp, err) })
+		a.win.Update(func() { a.finishSubmission(ch, submission, gen, err) })
 	}()
 }
 
-func (a *App) finishSubmission(
-	ch *chat, finished promptSubmission, gen int, resp protocol.OpenSessionResponse, err error,
-) {
+func (a *App) finishSubmission(ch *chat, finished promptSubmission, gen int, err error) {
 	id := finished.request.SessionID
 	if ch.id != id || a.chats[id] != ch || len(ch.submissions) == 0 {
 		return
 	}
 	ch.submissions = slices.Delete(ch.submissions, 0, 1)
-	if ch.starts == gen && resp.State.Cwd != "" {
-		ch.attach(resp.ConfigOptions, resp.State)
-	}
 	if err != nil {
 		if ch.queueEditing == nil && !ch.hasDraft() && ch.preparing == 0 &&
 			len(ch.submissions) == 0 && len(ch.failedDrafts) == 0 {

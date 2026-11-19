@@ -155,6 +155,7 @@ func (a *App) deleteQueuedPrompt(ch *chat, item protocol.QueuedPrompt) {
 }
 
 func (a *App) resumePromptQueue(ch *chat) {
+	ch.err = ""
 	ch.resuming = true
 	req := protocol.ResumePromptQueueRequest{SessionID: ch.id}
 	go func() {

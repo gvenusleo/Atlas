@@ -67,11 +67,16 @@ func (a *App) composerInput(c *ui.Context, t *ui.Theme, ch *chat) (ui.Element, u
 
 // composerText 让队列编辑与普通草稿各自使用 MyGo 的撤销历史。
 func (a *App) composerText(c *ui.Context, ch *chat, locked bool) ui.Element {
-	key := any("input-" + ch.key)
+	draftKey := "input-" + ch.key
+	var input ui.Element
 	if edit := ch.queueEditing; edit != nil {
-		key = edit
+		// 普通输入框在编辑期间仍需参与构建，MyGo 才会保留它的撤销历史。
+		ui.TextAreaBase(c.Key(draftKey), &edit.original.input).Hidden(true)
+		input = ui.TextAreaBase(c.Key(edit), &ch.input)
+	} else {
+		input = ui.TextAreaBase(c.Key(draftKey), &ch.input)
 	}
-	input := ui.TextAreaBase(c.Key(key), &ch.input).FocusRing(false).
+	input.FocusRing(false).
 		Placeholder(composerHint(ch)).Lines(1, 10).Grow(1).Padding(5, 0).
 		Disabled(ch.loading).ReadOnly(locked).
 		OnPaste(func(text string) bool { return !locked && a.pasteImages(ch, text) }).
