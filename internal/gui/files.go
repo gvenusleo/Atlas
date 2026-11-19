@@ -67,17 +67,18 @@ type fileTab struct {
 	gone    bool     // 文件在磁盘上没了
 	err     string   // 最近一次保存失败的原因
 
-	render bool                   // 显示渲染后的样子（Markdown 与 SVG 的预览、CSV 表格），否则是源码
-	anchor string                 // Markdown 预览里点过、还没滚过去的 #标题 链接
-	scroll ui.ScrollState         // 预览（Markdown、图片、SVG）滚到的位置，切走再回来时还在
-	edited memo[uint64, bool]     // 有没有未保存的修改，按缓冲区的 version 缓存
-	md     memo[uint64, string]   // Markdown 预览用的文本，按缓冲区的 version 缓存
-	svg    memo[uint64, svgImage] // SVG 解析出来的图，按缓冲区的 version 缓存
-	csv    memo[uint64, csvTable] // 表格，按缓冲区的 version 缓存
-	order  memo[orderKey, []int]  // 表格要显示的行号，按内容与排序缓存
-	table  ui.ListState           // 表格视图的选中与滚动
-	sort   ui.SortOrder           // 表格按哪一列排，零值是不排
-	sorted ui.SortOrder           // 表格现在按哪个排序显示，用来发现排序变了
+	render   bool                 // 显示渲染后的样子（Markdown 与 SVG 的预览、CSV 表格），否则是源码
+	anchor   string               // Markdown 预览里点过、还没滚过去的 #标题 链接
+	scroll   ui.ScrollState       // 预览（Markdown、图片、SVG）滚到的位置，切走再回来时还在
+	edited   memo[uint64, bool]   // 有没有未保存的修改，按缓冲区的 version 缓存
+	md       memo[uint64, string] // Markdown 预览用的文本，按缓冲区的 version 缓存
+	mdImages markdownImages
+	svg      memo[uint64, svgImage] // SVG 解析出来的图，按缓冲区的 version 缓存
+	csv      memo[uint64, csvTable] // 表格，按缓冲区的 version 缓存
+	order    memo[orderKey, []int]  // 表格要显示的行号，按内容与排序缓存
+	table    ui.ListState           // 表格视图的选中与滚动
+	sort     ui.SortOrder           // 表格按哪一列排，零值是不排
+	sorted   ui.SortOrder           // 表格现在按哪个排序显示，用来发现排序变了
 }
 
 // fileStat 是磁盘上一个文件的修改时间与大小，一样就当作没有变过。
@@ -274,6 +275,7 @@ func (tb *fileTab) load(content tabContent) {
 	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.stat, content.img
 	tb.edited.forget() // 新的缓冲区，旧的缓存不能用
 	tb.md.forget()
+	tb.mdImages.forgetLocalImages()
 	tb.svg.forget()
 	tb.csv.forget()
 	tb.order.forget()

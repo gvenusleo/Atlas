@@ -44,52 +44,68 @@ type svgImage struct {
 
 // parseSVG 把 SVG 文本解析成可以画的图。预览跟着缓冲区走，所以按文本解析，而不是按文件。
 func parseSVG(text string) svgImage {
-	svg, err := ui.ParseSVG([]byte(text))
+	img, err := decodePreviewImage([]byte(text), true)
 	if err != nil {
-		return svgImage{note: "无法解析 SVG：" + err.Error()}
+		return svgImage{note: err.Error()}
 	}
-	return svgImage{src: svg}
+	return svgImage{src: img}
 }
 
-// readImage 读取并解码一个位图：按 EXIF 转正，长边缩到 imageEdge 以内。
-// 解码不便宜，调用方要放在后台。
+// readImage 将图片读取结果整理成文件标签所需的数据与错误提示。
 func readImage(p string) tabContent {
-	info, err := os.Stat(p)
-	if err != nil {
-		return tabContent{note: noteOf(p, err)}
-	}
-	content := tabContent{stat: fileStat{mtime: info.ModTime(), size: info.Size()}}
-	if !info.Mode().IsRegular() {
-		content.note = filepath.Base(p) + " 不是普通文件"
-		return content
-	}
-	data, err := readImageData(p)
+	img, stat, err := readImageFile(p)
+	content := tabContent{img: img, stat: stat}
 	switch {
 	case errors.Is(err, errImageTooBig):
 		content.note = fmt.Sprintf("%s 文件大小超过 %d MiB 限制",
 			filepath.Base(p), imageMaxBytes>>20)
-		return content
 	case err != nil:
 		content.note = noteOf(p, err)
-		return content
 	}
-	img, err := imaging.Decode(data, imageEdge)
-	if err != nil {
-		content.note = err.Error()
-		return content
-	}
-	content.img = ui.NewBitmap(img)
 	return content
 }
 
-// readImageData 读取图片文件。文件可能在 Stat 之后长大，所以读取本身也要有上限。
-func readImageData(p string) ([]byte, error) {
+// readImageFile 只读普通文件。位图按 EXIF 方向转正，长边缩到 imageEdge 以内。
+func readImageFile(p string) (ui.ImageSource, fileStat, error) {
+	info, err := os.Stat(p)
+	if err != nil {
+		return nil, fileStat{}, err
+	}
+	stat := fileStat{mtime: info.ModTime(), size: info.Size()}
+	if !info.Mode().IsRegular() {
+		return nil, stat, fmt.Errorf("%s 不是普通文件", filepath.Base(p))
+	}
 	file, err := os.Open(p)
+	if err != nil {
+		return nil, stat, err
+	}
+	defer file.Close()
+	data, err := readImageData(file)
+	if err != nil {
+		return nil, stat, err
+	}
+	img, err := decodePreviewImage(data, isSVG(p))
+	return img, stat, err
+}
+
+func decodePreviewImage(data []byte, svg bool) (ui.ImageSource, error) {
+	if svg {
+		img, err := ui.ParseSVG(data)
+		if err != nil {
+			return nil, fmt.Errorf("无法解析 SVG：%w", err)
+		}
+		return img, nil
+	}
+	img, err := imaging.Decode(data, imageEdge)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, imageMaxBytes+1))
+	return ui.NewBitmap(img), nil
+}
+
+// readImageData 限制实际读取的大小，文件大小和响应头都可能与内容不符。
+func readImageData(r io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, imageMaxBytes+1))
 	if err == nil && len(data) > imageMaxBytes {
 		return nil, errImageTooBig
 	}
