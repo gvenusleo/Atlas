@@ -115,8 +115,8 @@ func (a *App) titleBar(c *ui.Context, t *ui.Theme, title string) ui.Element {
 }
 
 // column 把内容放进居中的阅读栏，两侧留白；vertical 是上下留白。
-func column(c *ui.Context, vertical float32, fn func()) {
-	ui.Row(c).Justify(ui.Center).Padding(vertical, gutter).Children(func() {
+func column(c *ui.Context, vertical float32, fn func()) ui.Element {
+	return ui.Row(c).Justify(ui.Center).Padding(vertical, gutter).Children(func() {
 		ui.Column(c).Grow(1).MaxWidth(contentWidth).Children(fn)
 	})
 }
@@ -166,6 +166,7 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 		}
 		a.titleBar(c, t, cmp.Or(ch.title, "新对话"))
 		ui.Box(c).Grow(1).Children(func() { a.messages(c, t, ch) })
+		column(c, 0, func() { a.drawRunStatus(c, t, ch) })
 		errorLine(c, t, ch)
 		if ch.retry != "" {
 			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(textSize) })
@@ -205,17 +206,24 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	ch.list.FollowAnimation = &ui.Smooth
 	ch.seek(blocks)
 	a.loadOlder(ch)
-	ui.Column(c).Fill().Children(func() {
+	ui.Column(c).Fill().ClipY().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
+			// 留白随首末消息块滚动，避免把留白算进视口的最小高度。
+			var top, bottom float32
+			if i == 0 {
+				top = edgePad
+			}
+			if i == len(blocks)-1 {
+				bottom = edgePad
+			}
 			final := i < len(blocks)-1 || !ch.run.Running
-			column(c, 5, func() { a.block(c, t, blocks[i], final) })
-		}).Grow(1).Padding(edgePad, 0, runBarHeight+2*runGap).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
+			column(c, 5, func() { a.block(c, t, blocks[i], final) }).Margin(top, 0, bottom)
+		}).Grow(1).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
 			if ch.loading {
 				loading.Ring(c, loading.Options{Color: t.TextMuted}).Margin(ui.Auto)
 			}
 		})
 		edges(c, t)
-		a.runStatus(c, t, ch)
 		if len(blocks) > 0 && !ch.list.AtEnd() {
 			a.jumpToLatest(c, t, ch)
 		}
@@ -223,7 +231,7 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 }
 
 // edges 在消息列表的上下沿各铺一条带：背景色从边缘处的完全不透明，缓缓过渡到透明，
-// 滚到边缘的内容渐渐淡出，与标题栏、输入框相接处没有被切断的字。带只在对话列里，
+// 滚到边缘的内容渐渐淡出，与标题栏、运行状态行相接处没有被切断的字。带只在对话列里，
 // 不影响旁边的终端面板；它画在“回到最新”按钮之前，按钮不会被它盖住。
 func edges(c *ui.Context, t *ui.Theme) {
 	// 背景色的不透明度按二次曲线下降：边缘处完全遮住，离开边缘后很快露出内容，
@@ -248,9 +256,12 @@ func edges(c *ui.Context, t *ui.Theme) {
 }
 
 // jumpToLatest 在用户上滚离开末尾时，于列表底部居中显示“回到最新”按钮。
+// 消息区较矮时，先让出按钮下方的留白，再压缩按钮高度。
 func (a *App) jumpToLatest(c *ui.Context, t *ui.Theme, ch *chat) {
-	ui.Row(c).Absolute().Left(0).Right(0).Bottom(10).Justify(ui.Center).Children(func() {
-		btn := ui.ButtonBase(c).Size(32, 32).Radius(16).
+	const size, gap = 32, 10
+	ui.Column(c.Key("jump-to-latest")).Absolute().Left(0).Right(0).Bottom(0).
+		Height(size + gap).MaxHeightPercent(100).AlignItems(ui.Center).Children(func() {
+		btn := ui.ButtonBase(c).Size(size, size).MaxHeightPercent(100).Radius(size/2).
 			Background(t.Background).Border(1, t.Border).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.12)).
 			Label("回到最新").Tooltip("回到最新")
 		if btn.Hovered() {
