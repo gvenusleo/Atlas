@@ -131,13 +131,22 @@ type ConfigOptionUpdate struct {
 	ConfigOptions []ConfigOption `json:"configOptions"`
 }
 
-// RunStateUpdate 报告一轮开始或结束，中途接入的客户端靠它知道会话在不在运行。
-// 结束时（Running 为 false）带着停止原因，或者出错的原因。
+// RunStateUpdate 报告运行的开始、结束或两轮之间的交接。交接时携带上一轮的结果。
 type RunStateUpdate struct {
-	Running    bool       `json:"running"`
-	Since      time.Time  `json:"since,omitzero"`
-	StopReason StopReason `json:"stopReason,omitempty"`
-	Error      string     `json:"error,omitempty"`
+	Version       uint64     `json:"version"`
+	Running       bool       `json:"running"`
+	Since         time.Time  `json:"since,omitzero"`
+	RunID         uint64     `json:"runId,omitzero"`
+	Kind          RunKind    `json:"kind,omitempty"`
+	PreviousRunID uint64     `json:"previousRunId,omitzero"`
+	StopReason    StopReason `json:"stopReason,omitempty"`
+	Error         string     `json:"error,omitempty"`
+	Invalidated   bool       `json:"invalidated,omitzero"`
+}
+
+// PromptQueueUpdate 报告待发消息的最新完整快照。
+type PromptQueueUpdate struct {
+	PromptQueue
 }
 
 // RequestRetryUpdate 报告一次模型请求失败、等待重试：这条消息已流出的内容作废。
@@ -160,4 +169,5 @@ func (Notice) Type() string             { return "notice" }
 func (SessionInfoUpdate) Type() string  { return "session_info_update" }
 func (ConfigOptionUpdate) Type() string { return "config_option_update" }
 func (RunStateUpdate) Type() string     { return "run_state" }
+func (PromptQueueUpdate) Type() string  { return "prompt_queue_update" }
 func (RequestRetryUpdate) Type() string { return "request_retry" }

@@ -215,7 +215,7 @@ func (a *App) runTask(task schedule.Task, at time.Time) {
 
 // inFlight 报告会话还没结束：正在运行，或者还在建。
 func (ch *chat) inFlight() bool {
-	return ch.running || ch.id == "" && ch.err == ""
+	return ch.run.Running || ch.id == "" && ch.err == ""
 }
 
 // sendTask 在任务会话建好之后换上任务指定的模型与思考深度，再发出用户消息；任何一步失败，

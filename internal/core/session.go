@@ -32,7 +32,10 @@ type session struct {
 	ownerID      string // 会话的属主，见 protocol.NewSessionRequest
 	saved        bool   // 已写进库；之前只在内存里
 	seq          int64  // 本进程写入或读到的最后序号
-	busy         *busy  // 占用会话的操作；nil 表示空闲。这是唯一的控制状态
+	busy         *busy  // 占用会话的操作，nil 表示空闲
+	runState     protocol.RunStateUpdate
+	queue        protocol.PromptQueue
+	runMu        sync.Mutex // 使运行状态按发布顺序送达，避免前一轮的收尾晚于新一轮开始
 	model        agent.Model
 	thinking     agent.ThinkingLevel
 	systemPrompt string
@@ -48,8 +51,7 @@ type session struct {
 // busy 是占用会话的操作。一轮或压缩有 cancel，可以取消，会通知订阅者；
 // 换模型、删除这类很快的操作没有。
 type busy struct {
-	cancel context.CancelFunc
-	since  time.Time
+	turn *turn
 }
 
 // create 建一个新会话：选好模型，按工作目录组装系统提示词与工具，还只在内存里，也还没有登记。
@@ -223,11 +225,11 @@ func (s *session) subscribed(sub protocol.Subscriber) bool {
 	return slices.Contains(s.subscribers, sub)
 }
 
-// idle 报告会话是否没有订阅者、也不忙。
+// idle 报告会话能否卸载。没有订阅者时也保留队列，直到用户回来处理。
 func (s *session) idle() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.subscribers) == 0 && s.busy == nil
+	return len(s.subscribers) == 0 && s.busy == nil && len(s.queue.Items) == 0
 }
 
 // broadcast 把更新推送给每个订阅该会话的连接。
@@ -254,12 +256,8 @@ func (s *session) newID() string {
 func (s *session) state(title string) protocol.SessionState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state := protocol.SessionState{Cwd: s.cwd, Title: title, Commands: commands(s.skills),
-		Usage: s.usage()}
-	if s.busy != nil && s.busy.cancel != nil {
-		state.Running, state.Since = true, s.busy.since
-	}
-	return state
+	return protocol.SessionState{Cwd: s.cwd, Title: title, Commands: commands(s.skills),
+		Usage: s.usage(), Run: s.runState, Queue: s.queueSnapshot()}
 }
 
 // usage 是上下文的占用；调用方持有 mu。
@@ -278,15 +276,17 @@ func commands(list []skills.Skill) []protocol.Command {
 	return commands
 }
 
-// begin 开始一个独占的操作；会话不空闲时返回 ErrBusy。cancel 不为空的是一轮或压缩。
-// 成功后调用方必须调用 end。
-func (s *session) begin(cancel context.CancelFunc) (end func(), err error) {
+// begin 占用会话来更换配置或删除。运行有自己的受理与交接流程。
+func (s *session) begin() (end func(), err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.runState.Invalidated {
+		return nil, protocol.ErrNotFound
+	}
 	if s.busy != nil {
 		return nil, protocol.ErrBusy
 	}
-	s.busy = &busy{cancel: cancel, since: time.Now()}
+	s.busy = &busy{}
 	return func() {
 		s.mu.Lock()
 		s.busy = nil
@@ -294,11 +294,11 @@ func (s *session) begin(cancel context.CancelFunc) (end func(), err error) {
 	}, nil
 }
 
-// cancelTurn 取消正在运行的一轮；没有时什么也不做。
-func (s *session) cancelTurn() {
+// cancelTurn 在会话锁内校验目标，避免迟到的停止请求取消已接手的下一轮。
+func (s *session) cancelTurn(id uint64) {
 	s.mu.Lock()
-	if s.busy != nil && s.busy.cancel != nil {
-		s.busy.cancel()
+	defer s.mu.Unlock()
+	if s.busy != nil && s.busy.turn != nil && (id == 0 || s.busy.turn.id == id) {
+		s.busy.turn.cancel()
 	}
-	s.mu.Unlock()
 }

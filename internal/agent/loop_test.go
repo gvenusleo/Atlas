@@ -5,6 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -78,6 +79,52 @@ func TestExecuteToolCallsBatches(t *testing.T) {
 	if !(pos("end a") >= 0 && pos("end b") >= 0 && pos("end a") < pos("end w") &&
 		pos("end b") < pos("end w") && pos("end w") < pos("end c")) {
 		t.Errorf("执行顺序 = %v，期望 a、b 先于 w，w 先于 c", trace)
+	}
+}
+
+// 插入的新消息应参加容量判断，并在压缩及重放时保留原文。
+func TestRunCompactsAfterInsertingPrompts(t *testing.T) {
+	opening := UserMessage{Content: []Content{TextContent{Text: strings.Repeat("始", 375)}}}
+	inserted := UserMessage{Content: []Content{TextContent{Text: strings.Repeat("新", 525)}}}
+	var ordinary int
+	in := Input{Model: Model{ContextWindow: 1000}}
+	in.Model.Stream = func(_ context.Context, req StreamRequest, _ func(Delta)) AssistantMessage {
+		if req.SystemPrompt == summarySystemPrompt {
+			return AssistantMessage{StopReason: StopReasonStop,
+				Content: []Content{TextContent{Text: "摘要"}}}
+		}
+		ordinary++
+		if ordinary == 1 {
+			return AssistantMessage{StopReason: StopReasonStop, Usage: Usage{TotalTokens: 900},
+				Content: []Content{TextContent{Text: strings.Repeat("旧", 280)}}}
+		}
+		if Tokens(req.Messages) > 800 {
+			return AssistantMessage{StopReason: StopReasonError,
+				ErrorKind: ErrorKindContextOverflow, ErrorMessage: "上下文不足"}
+		}
+		if last, ok := req.Messages[len(req.Messages)-1].(UserMessage); !ok ||
+			TextOf(last.Content) != TextOf(inserted.Content) {
+			t.Error("压缩后的模型请求丢失了插入消息的原文")
+		}
+		return AssistantMessage{StopReason: StopReasonStop}
+	}
+	in.PollPrompts = func(_, _ bool) ([]UserMessage, bool) {
+		if ordinary == 1 {
+			return []UserMessage{inserted}, true
+		}
+		return nil, false
+	}
+	messages := Run(t.Context(), in, opening, nil)
+	last, ok := messages[len(messages)-1].(AssistantMessage)
+	if !ok || last.StopReason != StopReasonStop || ordinary != 2 {
+		t.Fatalf("插入后没有完成下一次模型请求：请求数=%d，最后一条=%+v", ordinary, last)
+	}
+	var replay []Message
+	for _, message := range messages {
+		replay = Fold(replay, message)
+	}
+	if len(replay) != 3 || !isCompaction(replay[0]) || replay[1].Role() != RoleUser {
+		t.Fatalf("重放没有恢复摘要和插入的用户消息：共 %d 条", len(replay))
 	}
 }
 

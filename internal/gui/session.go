@@ -75,7 +75,7 @@ func (a *App) askReopen(ch *chat) {
 
 // reopen 从数据库恢复会话与最近一页历史，保留界面的草稿、附件和本地面板。
 func (a *App) reopen(ch *chat) {
-	if ch.id == "" || ch.running || ch.loading || ch.paging {
+	if ch.id == "" || ch.run.Running || ch.loading || ch.paging {
 		return
 	}
 	ch.ready, ch.loading = false, true
@@ -464,11 +464,10 @@ func (a *App) closeSession(id string) {
 	}()
 }
 
-// send 受理输入框里的文本与待发送的图片，在后台发给核心（/compact 与 /技能名 由核心处理）；
-// 返回是否已受理。这一轮的结果经 run_state 更新送达。
-func (a *App) send(ch *chat, text string) bool {
-	text = strings.TrimSpace(text)
-	if text == "" && len(ch.attachments) == 0 || !ch.canSend() {
+// send 记下按键时看到的轮次。运行中仍可继续输入，由 sendNext 按提交顺序交给核心。
+func (a *App) send(ch *chat, text string, nextTurn bool) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" && len(ch.attachments) == 0 || !ch.canSend() {
 		return false
 	}
 	if ch.needsReopen {
@@ -476,29 +475,81 @@ func (a *App) send(ch *chat, text string) bool {
 		return false
 	}
 	if len(ch.attachments) > 0 && !ch.acceptsImages() {
-		a.toast = noImagesHint // 附上图片后又换了模型
+		a.toast = noImagesHint
 		return false
 	}
-	prompt := draftPrompt(text, ch.attachments)
+	req := protocol.SendPromptRequest{
+		SessionID: ch.id,
+		Prompt:    draftPrompt(trimmed, ch.attachments),
+	}
+	if ch.run.Running {
+		if trimmed == "/compact" && len(ch.attachments) == 0 {
+			a.toast = "请在会话空闲时发送 /compact"
+			return false
+		}
+		req.RunID = ch.run.RunID
+		req.Delivery = protocol.PromptInTurn
+		if nextTurn {
+			req.Delivery = protocol.PromptNextTurn
+		} else if ch.run.Kind == protocol.RunCompaction {
+			a.toast = "手动压缩期间请按 ⌘Enter 排到下一轮"
+			return false
+		}
+	}
+	ch.submissions = append(ch.submissions, promptSubmission{request: req,
+		draft: promptDraft{input: text, attachments: ch.attachments}})
 	ch.attachments, ch.err = nil, ""
-	id, ready := ch.id, ch.ready
+	if len(ch.submissions) == 1 {
+		a.sendNext(ch)
+	}
+	return true
+}
+
+func (a *App) sendNext(ch *chat) {
+	submission := ch.submissions[0]
+	id, ready, gen := ch.id, ch.ready, ch.starts
 	go func() {
 		ctx := context.Background()
 		var err error
-		if !ready { // 上次没打开（比如工作目录当时不在），再试一次
+		if !ready {
 			var resp protocol.OpenSessionResponse
 			resp, err = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
 			if err == nil {
-				a.win.Update(func() { ch.attach(resp.ConfigOptions, resp.State) })
+				// 打开时的快照须先于此次发送产生的更新进入主线程队列。
+				a.win.Update(func() {
+					if ch.starts == gen && a.chats[id] == ch {
+						ch.attach(resp.ConfigOptions, resp.State)
+					}
+				})
 			}
 		}
 		if err == nil {
-			_, err = a.service.SendPrompt(ctx,
-				protocol.SendPromptRequest{SessionID: id, Prompt: prompt})
+			_, err = a.service.SendPrompt(ctx, submission.request)
 		}
-		a.win.Update(func() { a.finish(ch, err) })
+		a.win.Update(func() { a.finishSubmission(ch, submission, gen, err) })
 	}()
-	return true
+}
+
+func (a *App) finishSubmission(ch *chat, finished promptSubmission, gen int, err error) {
+	id := finished.request.SessionID
+	if ch.id != id || a.chats[id] != ch || len(ch.submissions) == 0 {
+		return
+	}
+	ch.submissions = slices.Delete(ch.submissions, 0, 1)
+	if err != nil {
+		if ch.queueEditing == nil && !ch.hasDraft() && ch.preparing == 0 &&
+			len(ch.submissions) == 0 && len(ch.failedDrafts) == 0 {
+			ch.promptDraft = finished.draft
+		} else {
+			ch.keepFailedDraft(finished.draft, err.Error())
+		}
+		if ch.starts == gen {
+			a.finish(ch, err)
+		}
+	}
+	if len(ch.submissions) != 0 {
+		a.sendNext(ch)
+	}
 }
 
 // finish 显示核心没有受理这条消息的原因；受理之后的错误经 run_state 更新送达。

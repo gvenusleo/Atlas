@@ -8,35 +8,63 @@ import (
 	"time"
 )
 
-// Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具、ctx 取消或达到
-// in.MaxRequests；返回这一轮新产生的消息。事件从调用 goroutine 串行发出；in 不被修改。
+// Run 把用户消息加进上下文，循环请求模型、执行工具，在请求之间接收插入的用户消息。
+// 事件从调用 goroutine 串行发出，in 不被修改。
 func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Message {
 	r := newRun(in, emit)
 	comp := &compactor{r: r}
 	r.add(user)
-	for requests := 0; ; requests++ {
-		if in.MaxRequests > 0 && requests >= in.MaxRequests {
-			stopAtLimit(r)
-			return r.added
+	var pending []UserMessage
+	for requests := 1; ctx.Err() == nil; requests++ {
+		if requests > 1 && len(pending) == 0 && in.PollPrompts != nil {
+			pending, _ = in.PollPrompts(false, false)
 		}
-		comp.startTurn(ctx)
+		for _, prompt := range pending {
+			if ctx.Err() != nil {
+				return r.added
+			}
+			r.add(prompt)
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		comp.prepareRequest(ctx, len(pending))
+		if ctx.Err() != nil {
+			break
+		}
 		msg := streamResponse(ctx, r, func() bool { return comp.try(ctx) })
 		r.add(msg)
-		n := len(r.added)
-
-		// 正常结束的回复若仍包含工具调用，也要执行；失败、取消或截断的回复不执行工具。
-		switch calls := toolCallsOf(msg); {
-		case isHardStop(msg.StopReason):
-		case len(calls) == 0:
-		case msg.StopReason == StopReasonMaxOutputTokens:
+		if isHardStop(msg.StopReason) {
+			break
+		}
+		calls := toolCallsOf(msg)
+		if msg.StopReason == StopReasonMaxOutputTokens {
 			failTruncated(r, calls)
-		default:
+		} else {
 			executeToolCalls(ctx, r, calls)
 		}
-		if len(r.added) == n || ctx.Err() != nil {
-			return r.added
+		if ctx.Err() != nil {
+			break
+		}
+		ending := len(calls) == 0
+		if ending && msg.StopReason == StopReasonMaxOutputTokens {
+			break
+		}
+		atLimit := in.MaxRequests > 0 && requests >= in.MaxRequests
+		pending = nil
+		var waiting bool
+		if (ending || atLimit) && in.PollPrompts != nil {
+			pending, waiting = in.PollPrompts(ending, atLimit)
+		}
+		if atLimit && (!ending || waiting) {
+			stopAtLimit(r)
+			break
+		}
+		if ending && len(pending) == 0 {
+			break
 		}
 	}
+	return r.added
 }
 
 // stopAtLimit 在请求次数用完时收尾：追加说明原因的通知，再发出 EventLimit。

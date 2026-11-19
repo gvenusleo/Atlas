@@ -22,7 +22,7 @@
 | 用语 | 含义 |
 | --- | --- |
 | 会话（session） | 用户与 Agent 之间的一段对话，各自保存自己的上下文、历史与状态 |
-| 一轮（turn） | 从一条用户消息开始，到 Agent 回答完毕为止的完整过程，其间可能多次请求模型、调用工具。由一次 `SendPrompt` 调用受理，结束时给出停止原因（stop reason） |
+| 一轮（turn） | 从一条用户消息开始，到 Agent 回答完毕为止的完整过程，其间可以接收更多用户消息、多次请求模型和调用工具。结束时给出停止原因（stop reason） |
 | 用户消息 | 用户发给 Agent 的一条消息：文字、图片或技能调用。方法名里的 `Prompt` 专指用户消息，系统提示词一律写 `SystemPrompt` |
 | 系统提示词（system prompt） | `systemprompt` 包按工作目录组装、放在每次模型请求最前面的指令；其中的指令来自全局的 `~/.atlas/AGENTS.md`，以及从根目录到工作目录各级的 `AGENTS.md` |
 | 系统提示词快照 | 系统提示词变化时记入历史的一条记录，仅用于判断是否需要追加新快照，不进入上下文 |
@@ -104,6 +104,9 @@ type Service interface {
 	CloseSession(ctx context.Context, req CloseSessionRequest) error
 	RenameSession(ctx context.Context, req RenameSessionRequest) error
 	SendPrompt(ctx context.Context, req SendPromptRequest) (SendPromptResponse, error)
+	UpdateQueuedPrompt(ctx context.Context, req UpdateQueuedPromptRequest) error
+	DeleteQueuedPrompt(ctx context.Context, req DeleteQueuedPromptRequest) error
+	ResumePromptQueue(ctx context.Context, req ResumePromptQueueRequest) error
 	CancelTurn(ctx context.Context, req CancelTurnRequest) error
 	SetConfigOption(ctx context.Context, req SetConfigOptionRequest) (SetConfigOptionResponse, error)
 	ListHistory(ctx context.Context, req ListHistoryRequest) (ListHistoryResponse, error)
@@ -129,10 +132,13 @@ type Subscriber interface {
 | `OpenSession{sessionId}` | 加载会话并订阅，返回配置项与当前状态，不回放历史；历史用 `ListHistory` 分页读取 |
 | `ListSessions{cwd?, type?, ownerId?, cursor?, all?}` | 按更新时间倒序列出已保存的会话，返回 `sessionId`、`cwd`、`title`、`updatedAt`、`type`、`ownerId`。`type` 缺省为 `interactive`，`cwd` 和 `ownerId` 分别按工作目录和属主筛选。默认按游标分页，`all` 从同一数据库快照取全，不能与游标同时使用 |
 | `DeleteSession{sessionId}` | 删除空闲的会话；会话不存在时不报错 |
-| `CloseSession{sessionId}` | 取消当前连接对该会话的订阅，不影响正在进行的一轮。会话没有订阅者且空闲时卸载；若正忙，待这一轮结束后卸载 |
+| `CloseSession{sessionId}` | 取消当前连接的订阅。会话没有订阅者、空闲且队列为空时卸载 |
 | `RenameSession{sessionId, title}` | 修改标题 |
-| `SendPrompt{sessionId, prompt}` | 发送一条用户消息（`prompt` 是内容块列表）。受理成功即返回，这一轮在会话内异步运行；停止原因与出错信息通过 `run_state` 送达。受理前的检查失败时返回错误 |
-| `CancelTurn{sessionId}` | 取消正在运行的一轮，该轮以 `cancelled` 结束；没有正在运行的一轮时不报错 |
+| `SendPrompt{sessionId, prompt, delivery?, runId?}` | 立即发送用户消息或为指定的运行排队。受理成功后返回，运行结果经 `run_state` 送达 |
+| `UpdateQueuedPrompt{sessionId, id, version, prompt}` | 替换一条当前仍待发的消息内容 |
+| `DeleteQueuedPrompt{sessionId, id, version}` | 从队列中移除一条当前仍待发的消息 |
+| `ResumePromptQueue{sessionId}` | 空闲时恢复队列，从队首继续发送 |
+| `CancelTurn{sessionId, runId?}` | 取消指定的一轮，省略 `runId` 时取消当前运行。目标已经结束时不报错 |
 | `SetConfigOption{sessionId, configId, value}` | 更换模型或思考深度，保存后返回完整的配置项 |
 | `ListHistory{sessionId, before, limit}` | 返回一页历史（以更新的形式），供界面向前翻页 |
 | `ListUserMessages{sessionId, before}` | 返回全部用户消息的摘要，供会话大纲使用 |
@@ -141,13 +147,13 @@ type Subscriber interface {
 
 每个方法的结果都通过响应返回给调用方。会改变会话视图的变化（新消息、标题、配置项、运行状态等）另以更新推送给所有订阅者，包括调用方自己，所以 `RenameSession` 这类只返回成功或失败的方法，其结果也由更新体现。
 
-`SendPrompt` 受理前会检查会话是否存在且空闲、工作目录是否仍然有效。没有可用模型时会重新选择一次，仍然没有则返回原因。单独发送 `/compact` 会压缩上下文。其他用户消息中，任意位置的 `/技能名` 都可以显式调用会话中的技能，两侧须是空白或消息边界。核心按首次出现的顺序将各技能的全文附在原文后，再运行。
+立即发送前，核心检查会话是否空闲。开始一轮时检查工作目录并准备模型，没有可用模型时重新选择一次。单独发送 `/compact` 会压缩上下文。其他用户消息中，任意位置的 `/技能名` 都可以显式调用会话中的技能，两侧须是空白或消息边界。核心按首次出现的顺序将各技能的全文附在原文后，再运行。
 
-打开会话时，当前状态随响应一并给出（`state`，即 `protocol.SessionState`）：工作目录、标题、可用的命令（`compact` 与全部技能）、上下文占用、是否在运行，此后由更新推进。工作目录在会话中不变，技能随工作目录而定，因此命令不再单独推送更新。
+打开会话时，当前状态随响应一并给出（`state`，即 `protocol.SessionState`）：工作目录、标题、可用的命令（`compact` 与全部技能）、上下文占用、运行状态与队列快照，此后由更新推进。工作目录在会话中不变，技能随工作目录而定，因此命令不再单独推送更新。
 
 不支持更换工作目录：工作目录在新建会话时确定。需要换目录时，新建一个会话。
 
-会话归订阅它的连接所有：`SendPrompt`、`CancelTurn`、`SetConfigOption`、`CloseSession` 只对本连接订阅着的会话有效，也就是在本连接上新建或打开、且还没有关闭的会话。`DeleteSession`、`RenameSession`、`ListHistory`、`ListUserMessages` 不要求先打开会话。连接本身不记录会话，会话由核心持有，所以会话被卸载或失效后，连接上的后续请求同样得到 `ErrNotFound`。打开与卸载串行进行，因此不会出现连接订阅到正在卸载的会话上的情况。
+会话归订阅它的连接所有：`SendPrompt`、`CancelTurn`、队列操作、`SetConfigOption`、`CloseSession` 只对本连接订阅着的会话有效，也就是在本连接上新建或打开、且还没有关闭的会话。`DeleteSession`、`RenameSession`、`ListHistory`、`ListUserMessages` 不要求先打开会话。连接本身不记录会话，会话由核心持有，所以会话被卸载或失效后，连接上的后续请求同样得到 `ErrNotFound`。打开与卸载串行进行，因此不会出现连接订阅到正在卸载的会话上的情况。
 
 ### 配置项
 
@@ -173,7 +179,8 @@ type Subscriber interface {
 | `notice` | 通知，如压缩失败、达到上限 |
 | `session_info_update` | 会话第一次保存（有了标题）与改名 |
 | `config_option_update` | 更换了模型或思考深度 |
-| `run_state` | 一轮开始与结束：`running`、`since`；结束时附带 `stopReason`（`end_turn`、`max_tokens`、`max_turn_requests`、`cancelled`）或 `error`。中途接入的客户端据此得知会话是否在运行 |
+| `run_state` | 报告一轮开始、结束或两轮之间的交接。运行中带 `runId`、`kind`、`since`，一轮结束时带 `previousRunId` 与 `stopReason` 或 `error` |
+| `prompt_queue_update` | 一份完整的待发队列快照，包含顺序、发送中状态、暂停状态和版本 |
 | `request_retry` | 一次模型请求失败，等待重试：`messageId`、第几次、等待多久、原因。客户端应丢弃这条消息已流出的内容 |
 
 工具的 `kind`：read 对应 `read`，write 与 edit 对应 `edit`，shell 对应 `execute`，其余对应 `other`。`rawOutput` 是工具附带的结构化数据（`ReadDetails`、`WriteDetails`、`EditDetails`），其形状由 `protocol` 定义，GUI 用它绘制 diff、行号与图片；其他客户端只依据 `title`、`content` 也能正常使用。
@@ -186,6 +193,8 @@ type Subscriber interface {
 | --- | --- | --- |
 | `ErrNotFound` | 会话不存在，或当前连接没有打开它（包括已卸载、已失效） | 重新打开或新建会话 |
 | `ErrBusy` | 会话正忙，不能受理 | 等待当前操作结束后重试 |
+| `ErrTurnChanged` | 目标运行已停止受理消息 | 保留草稿 |
+| `ErrQueuedPromptChanged` | 队列项已被领取、删除或修改 | 保留编辑草稿，按最新快照显示队列 |
 | `ErrConflict` | 写入时发现其他进程已写入该会话；会话在本进程内失效 | 重新打开会话 |
 | `ErrNothingToCompact` | 上下文里没有可压缩的内容 | 无需处理 |
 | `ErrClosed` | Atlas 正在关闭 | 放弃请求 |
@@ -198,7 +207,7 @@ type Subscriber interface {
 
 ## core：会话的唯一权威
 
-核心持有本进程已加载的会话。每个会话的状态由这几项组成：工作目录、是否已写库、已知的最后序号、是否忙、模型与思考深度、系统提示词、工具与技能、上下文、订阅者。其中是否忙是唯一的控制状态：一轮、压缩、更换模型、删除都要先占用它，所以彼此互斥。一轮和压缩可以取消，并会推送 `run_state`；更换模型、删除这类很快的操作不可取消，也不推送。核心的锁只用于读写这些字段，不跨越 IO；唯一的例外是让打开与卸载串行的锁，加载会话时一直持有它。
+核心持有本进程已加载的会话。每个会话的状态由这几项组成：工作目录、持久化进度、运行状态、待发队列、模型与思考深度、系统提示词、工具与技能、上下文和订阅者。一轮、压缩、更换模型、删除都需要独占会话。队列操作与运行共用会话锁，运行状态按发布顺序推送。
 
 ### 加载
 
@@ -212,17 +221,17 @@ type Subscriber interface {
 
 ### 一轮
 
-`SendPrompt` 的过程：
+立即发送一条用户消息的过程：
 
-1. **受理**（同步）：占用会话，不空闲则返回 `ErrBusy`；完成上文所述的检查，展开斜杠命令；取一份 `agent.Input` 快照，其中 `MaxRequests` 固定为 200，不可配置；返回。
-2. **运行**（异步，归会话所有）：推送 `run_state{running}`，运行 `agent.Run`。事件到来时：
+1. **受理**（同步）：占用会话，不空闲则返回 `ErrBusy`；完成上文所述的检查，展开斜杠命令；取一份 `agent.Input` 快照，其中 `MaxRequests` 固定为 200，不可配置；发布 `run_state{running}` 后返回。
+2. **运行**（异步，归会话所有）：运行 `agent.Run`。事件到来时：
    - 消息定稿（`MessageEnd`）：先写库，再修改内存，最后推送。
      - 尚未写库：创建会话，标题取这条用户消息的开头，同时写入系统提示词快照。
      - 追加记录时带上期望的最后序号；序号不符返回 `ErrConflict`。任何写库错误都会停止这一轮，之后的事件全部丢弃。冲突之外的写库失败，会话仍然可用；发生冲突则会话失效，被卸载。
      - 消息 `Fold` 进上下文，推进序号。
      - 推送由它生成的更新。
    - 其他事件：直接推送由它生成的更新，不写库。
-3. **结束**：释放占用，推送 `run_state{idle, stopReason | error}`；收到过“达到上限”事件的，停止原因是 `max_turn_requests`。会话没有订阅者时卸载。
+3. **结束**：队列可以继续发送时，先预留下轮，再发布交接状态。其余情况释放占用并发布结束状态。会话没有订阅者且队列为空时卸载。
 
 运行中的 panic：工具的 panic 已收敛为错误结果；其余代码里的 panic 让这一轮以 `error` 结束，会话失效并被卸载，重新打开时从数据库恢复，不影响其他会话与进程。
 
@@ -242,6 +251,7 @@ type Subscriber interface {
 type Model struct {
 	Ref           string   // provider/model-id，唯一标识一个模型
 	ContextWindow int64    // 上下文窗口（token），未知为 0
+	Images        bool     // 接受用户消息里的图片
 	Stream        StreamFn // 已绑定客户端与模型 ID
 }
 
@@ -253,10 +263,10 @@ type Input struct {
 	Tools        []Tool
 	Messages     []Message // 上下文
 	MaxRequests  int       // 一轮最多请求模型的次数，0 为不限
+	PollPrompts  func(ending, atLimit bool) (prompts []UserMessage, waiting bool)
 }
 
-// Run 把 user 加进上下文，循环请求模型、执行工具，直到模型不再调用工具、ctx 取消或达到
-// MaxRequests；返回这一轮新产生的消息。
+// Run 把用户消息加进上下文，循环请求模型、执行工具，在请求之间接收插入的用户消息。
 func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Message
 
 // Compact 把上下文中除保留段以外的部分压成摘要，返回新产生的消息。
@@ -269,7 +279,7 @@ func Fold(messages []Message, m Message) []Message
 
 消息类型（用户消息、助手消息、工具结果、系统提示词快照、通知、压缩记录）、`Tool`、`StreamFn` 是面向模型的格式，也是数据库中保存的格式，编解码由 `agent` 负责。`AssistantMessage.Model` 由循环按 `Input.Model.Ref` 填入。模型调用失败时的重试次数与退避间隔由包内的策略决定。
 
-`MaxRequests` 数的是这一轮里产生的助手消息个数；失败后重试与上下文溢出后重发的请求已作废，不计入，压缩时请求模型生成摘要也不计入。每次请求模型之前检查：已达上限就追加一条通知并返回，上限是策略，由核心设定。通知不进入上下文，上下文以工具结果结尾，之后的用户消息照常接上。最后一次回复若没有工具调用，这一轮自然结束，不触发上限。
+`MaxRequests` 数的是这一轮里产生的助手消息个数；失败后重试与上下文溢出后重发的请求已作废，不计入，压缩时请求模型生成摘要也不计入。每次请求模型之前检查：已达上限就追加一条通知并返回，上限是策略，由核心设定。通知不进入上下文，上下文以工具结果结尾，之后的用户消息照常接上。最后一次回复没有工具调用且没有待插入的消息时，这一轮自然结束。
 
 事件只保留核心需要的几种：消息开始、增量、重试、消息定稿（任何一条消息定稿，每条历史记录恰好对应一个）、工具开始、压缩开始、达到上限。工具的结束就是工具结果的消息定稿。
 
@@ -326,7 +336,7 @@ GUI 实现 `protocol.Subscriber`，把更新交给主线程。界面里只有两
 
 - 新建会话：`NewSession`。更换工作目录：用新目录再调用一次 `NewSession`，并丢弃尚未发送过消息的旧会话。
 - 打开已有会话：`OpenSession`，同时用 `ListHistory` 读取最近一页；向上滚动时继续读取更早的页。工作目录已不存在时打开或发送会失败，历史照常能看，并弹出对话框让用户新建目录或删除会话；取消后重新进入这个会话会再次弹出。新建只在原路径上创建一级目录，失败的原因留在对话框里。
-- 发送：调用 `SendPrompt`（很快返回）；界面不预先绘制自己发出的消息，而是等待 `user_message_chunk`。能否发送取决于视图中的“是否在运行”，它只来自 `run_state`。
+- 发送：调用 `SendPrompt`，运行中的投递方式由快捷键指定。队列由 `prompt_queue_update` 推进，对话由 `user_message_chunk` 推进。
 - 更换模型与思考深度：`SetConfigOption`，用响应中的配置项重绘选择器。
 - 侧栏：`ListSessions`，在自身操作之后以及收到 `session_info_update` 时重新读取。按目录删除前，一次取全该工作目录中已保存的交互会话。用户确认后只删除清单中的会话，忙碌或删除失败的会话保留。
 - 关闭会话标签：`CloseSession`。退出：核心的 `Close`（取消所有运行，等待收尾，关闭数据库）。
@@ -355,9 +365,9 @@ GUI 实现 `protocol.Subscriber`，把更新交给主线程。界面里只有两
 ```
 GUI 主线程             core                                    agent.Run          store
 SendPrompt ──────────► 受理：占用会话，检查，取 Input 快照
-◄── 已受理 ◄──────────┘
                        推送 run_state{running}
-◄── apply ◄──────────┘
+◄── apply ◄──────────┤
+◄── 已受理 ◄──────────┘
                        agent.Run(ctx, in, user, emit) ─────► 请求模型，执行工具
                        MessageEnd(user)：
                          第一次保存 ───────────────────────────────────────────► 创建会话
@@ -374,7 +384,7 @@ SendPrompt ──────────► 受理：占用会话，检查，�
 
 - **设置**：`settings.json` 只在加载、更换模型，以及 `SendPrompt` 时发现没有可用模型的情况下读取，结果只进入会话的模型，并经配置项告知客户端。程序里只有设置页的“模型接入”会写 `settings.json` 与 `auth.json`；保存后核心不会得到通知，由 `gui` 对已打开的会话再调用一次 `OpenSession`，取回最新的配置项。
 - **数据**：历史只在消息定稿时写库；上下文只由 `Fold` 推进；客户端的对话只由更新推进。
-- **状态**：只有会话是否忙，经 `run_state` 告知客户端。
+- **状态**：运行与队列分别经 `run_state` 和 `prompt_queue_update` 告知客户端。
 
 ## 需要自动测试保证的行为
 
@@ -383,7 +393,7 @@ SendPrompt ──────────► 受理：占用会话，检查，�
 - 持久化：消息的 JSON 无损往返；`store` 的追加、冲突、上下文起点、blob；图片与压缩在重新打开会话之后仍然正确。
 - `Fold`：压缩、系统提示词快照、通知、普通消息得到的上下文。
 - 一条渲染路径：同一段对话，由实时更新建出的显示项，与由 `ListHistory` 回放建出的一致。
-- 并发：写入冲突让会话失效；一轮与连接解耦，关闭不中止一轮，`CancelTurn` 以 `cancelled` 结束；多订阅者都收到更新，未订阅的连接得到 `ErrNotFound`，运行中再次 `SendPrompt` 得到 `ErrBusy`；同一轮里连续的只读工具调用并发执行。
+- 并发：写入冲突让会话失效；一轮与连接解耦，关闭不中止一轮，`CancelTurn` 以 `cancelled` 结束；多订阅者都收到更新，未订阅的连接得到 `ErrNotFound`，运行中以立即发送方式调用 `SendPrompt` 得到 `ErrBusy`，交错提交的队列按投递方式与受理顺序处理，自动交接维持会话占用，取消或部分写库失败后只恢复未发消息。同一轮里连续的只读工具调用并发执行。
 - 界面并发：同一工作树的子目录与符号链接共享分支运行保护，独立 worktree 互不阻塞；同一工作树的刷新请求合并，失败任务取消监视并使在途结果失效；文件重读期间的变化、未保存修改与源码定位不丢失。
 - 单轮请求数上限：达到时追加通知并停止，停止原因是 `max_turn_requests`，通知能经 `ListHistory` 回放；没有触发时不出通知。
 - 定时任务：触发判定（`Latest`、`Next` 在跨日、跨周、跨月与夏令时的取值；容忍内触发，超出算错过；同一个触发点不重复；一次性任务触发后停用）与 `schedule.json` 的往返、损坏时改名。
@@ -397,6 +407,17 @@ SendPrompt ──────────► 受理：占用会话，检查，�
 - 历史中的图片已外置，但 `ListHistory` 返回的更新仍内联图片数据；历史很长时分页读取的成本有待观察。
 - 定时任务只在 App 进程运行时触发（关窗口不退出，进程还在就仍在运行），错过的不补跑；`acp` 子进程不调度。同时运行两个 App 进程会各触发一次，并且各自把自己内存里的任务清单整个写回 `schedule.json`，后保存的一方会覆盖先保存的一方的修改，不报错；`gui.json` 同理。不要同时运行两个 App。
 - 间隔很短的任务每次触发都留下一个任务会话，历史默认只列最近几个，其余留在库里，除非删除任务，没有别的清理办法。
+
+## 会话消息队列
+
+一轮由一条用户消息开始，可以接收后续的用户消息。同一会话仍然只有一个运行者。会话在核心中持有一份待发队列，每项保留原始内容块、稳定标识和投递方式。切换会话或隐藏窗口时继续处理队列，退订后有待发消息的会话继续驻留。待发内容只存在于当前进程，写入历史的时机是实际发送。
+
+- 空闲时两个快捷键都直接发送。运行中按 `Enter` 提交「插入本轮」，按 `⌘Enter` 提交「下一轮发送」。GUI 在按键时记录目标运行标识，并按同一会话的按键顺序提交请求。核心按受理顺序排列同一种投递方式的消息。该运行已结束时退回请求，客户端保留草稿；输入框已有新内容时另行保留退回的草稿。手动压缩期间可排下一轮。单独发送 `/compact` 在空闲时执行。
+- 本轮的模型回复定稿、该回复的全部工具结果都写库之后，循环在下一次普通模型请求前领取当时所有「插入本轮」的待发消息，按顺序逐条纳入本轮。领取后新到的插入消息等本轮的下一个请求边界。每条都沿用 `MessageEnd` 写库、折叠和推送，模型收到普通的用户消息。自然结束前仍有本轮待发消息且有请求额度时，继续用同一轮请求模型。检查待发消息与关闭本轮受理在同一个临界区完成。
+- 对话自然结束或手动压缩成功后，核心按顺序为队首预留会话占用，再用原有发送流程启动新一轮。连续两轮的交接在同一临界区预留下轮并更新运行状态，下轮开始前发布包含上一轮结果的更新。客户端在交接期间持续显示忙碌，停止请求对应用户操作时看到的轮次。每轮只取一条「下一轮发送」消息。取消、异常结束、以输出或请求上限结束、手动压缩失败或队首发送失败时暂停自动发送并保留待发消息。此前未发送的「插入本轮」转为后续消息，排在普通后续消息之前。空闲时可显式继续发送，队列清空时解除暂停。会话因为写库冲突或内部错误失效时，客户端已有的队列快照可供复制，重新打开的会话根据已写入的历史恢复。
+- `SendPrompt` 的 `delivery` 取 `in_turn` 或 `next_turn` 时携带目标 `runId`。省略 `delivery` 时立即发送，忙碌时返回 `ErrBusy`。队列快照随会话状态返回，变更后推送 `prompt_queue_update`。运行状态与队列快照分别按版本应用，避免迟到的响应或更新覆盖较新的状态。
+- 核心在同一把会话锁内决定修改、删除或领取队列项。修改和删除都要验证该项仍待发且版本与请求一致。修改只替换内容，保留投递方式和组内位置。领取后等待写库结果，成功才移出队列，失败则保留未写入的项。核心在发送前按原有规则校验内容并展开技能调用，对话仍由持久化后的消息更新绘制。
+- 输入框上方的面板按预计发送顺序显示，上方是「插入本轮」，下方是「下一轮起依次发送」，各组从最早提交的消息开始显示，空组隐藏。已领取的项显示为发送中，队列暂停时显示「继续发送」。队列项在主输入框中编辑，待发消息和普通草稿各自保留撤销历史，保存或取消后恢复原有草稿。若编辑时队列项已被领取，保留修改稿供用户决定是否重新提交。
 
 ## 后续
 

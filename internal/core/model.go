@@ -183,7 +183,8 @@ func modelConfig(
 	if err != nil {
 		return agent.Model{}, err
 	}
-	return agent.Model{Ref: modelRef, ContextWindow: metadata.ContextWindow, Stream: stream}, nil
+	return agent.Model{Ref: modelRef, ContextWindow: metadata.ContextWindow,
+		Images: metadata.Modalities.AcceptsImages(), Stream: stream}, nil
 }
 
 // checkCwd 要求工作目录是仍然存在的绝对目录。
@@ -205,7 +206,7 @@ func checkCwd(cwd string) error {
 func (s *session) setConfig(
 	ctx context.Context, id, value string,
 ) ([]protocol.ConfigOption, error) {
-	end, err := s.begin(nil)
+	end, err := s.begin()
 	if err != nil {
 		return nil, err
 	}

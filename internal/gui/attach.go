@@ -44,6 +44,17 @@ type attachment struct {
 	bitmap *ui.Bitmap            // 缩略图；解码失败时为空
 }
 
+// promptDraft 是输入框里尚未提交的文字与图片。
+type promptDraft struct {
+	input       string
+	attachments []*attachment
+	preparing   int
+}
+
+func (d *promptDraft) hasDraft() bool {
+	return strings.TrimSpace(d.input) != "" || len(d.attachments) != 0
+}
+
 // draftPrompt 把输入框里的文字与图片排成一条消息的内容：文字在前，图片在后。
 func draftPrompt(text string, attachments []*attachment) []protocol.ContentBlock {
 	var prompt []protocol.ContentBlock
@@ -58,6 +69,7 @@ func draftPrompt(text string, attachments []*attachment) []protocol.ContentBlock
 
 // pickImages 让用户选图片文件，加进会话的待发送图片。
 func (a *App) pickImages(ch *chat) {
+	ch.preparing++
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:   a.win,
@@ -65,17 +77,21 @@ func (a *App) pickImages(ch *chat) {
 			Filters:  []mygo.FileFilter{{Name: "图片", Extensions: imageExts}},
 			Multiple: true,
 		})
-		if err != nil || len(paths) == 0 {
-			return
-		}
-		a.win.Update(func() { a.addImageFiles(ch, paths) })
+		a.win.Update(func() {
+			ch.preparing--
+			if err == nil {
+				a.addImageFiles(ch, paths)
+			}
+		})
 	}()
 }
 
 // addImageFiles 把这些文件当作图片加进会话的待发送图片。
 func (a *App) addImageFiles(ch *chat, paths []string) {
 	for _, path := range paths {
-		a.addImage(ch, filepath.Base(path), func() (io.ReadCloser, error) { return os.Open(path) })
+		a.addImage(ch, filepath.Base(path), func() (io.ReadCloser, error) {
+			return os.Open(path)
+		})
 	}
 }
 

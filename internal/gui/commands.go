@@ -8,7 +8,7 @@ import (
 
 // findCommandCompletion 查找光标处的斜杠命令候选。内置命令必须单独发送，因为选中后会立即执行。
 func (ch *chat) findCommandCompletion(text string, caret, end int) completion {
-	if ch.running || caret != end {
+	if caret != end {
 		return completion{}
 	}
 	runes := []rune(text)
@@ -39,7 +39,8 @@ func (ch *chat) findCommandCompletion(text string, caret, end int) completion {
 	for _, cmd := range ch.commands {
 		name := "/" + cmd.Name
 		run := cmd.Input == nil
-		if (run && !standalone) || !strings.HasPrefix(name, prefix) {
+		canRun := standalone && !ch.run.Running && ch.queueEditing == nil
+		if (run && !canRun) || !strings.HasPrefix(name, prefix) {
 			continue
 		}
 		opt := option{name: name, hint: cmd.Description, insert: name + separator, run: run}

@@ -334,6 +334,7 @@ type Model struct {
 	Ref string // 完整引用 provider/model-id，唯一指出一个模型
 	// ContextWindow 是上下文窗口（token）；0 表示未知：不按阈值压缩，只在请求溢出时压缩。
 	ContextWindow int64
+	Images        bool     // 接受用户消息里的图片
 	Stream        StreamFn // 已绑定客户端与模型 ID
 }
 
@@ -347,4 +348,7 @@ type Input struct {
 	Messages     []Message // 上下文，见 Fold
 	// MaxRequests 是一轮最多请求模型的次数，0 为不限；到了就追加通知并停止。
 	MaxRequests int
+	// PollPrompts 在回复与工具结果定稿后取本轮的新消息。ending 表示没有工具需要继续，
+	// atLimit 表示只检查是否有待发消息，此时不得取出消息。
+	PollPrompts func(ending, atLimit bool) (prompts []UserMessage, waiting bool)
 }

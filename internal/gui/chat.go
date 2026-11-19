@@ -70,8 +70,8 @@ type chat struct {
 	options   []protocol.ConfigOption
 	commands  []protocol.Command
 	usage     protocol.Usage
-	running   bool
-	since     time.Time // 这一轮开始的时刻，运行中输入框上方的计时从它算起
+	run       protocol.RunStateUpdate
+	queue     protocol.PromptQueue
 	items     []*item
 	streaming *item  // 正在流出的文字或思考
 	retry     string // 正在重试时的提示，下一个增量或这一轮结束时清掉
@@ -90,13 +90,15 @@ type chat struct {
 	seekSeq int64
 	list    ui.ListState
 	outline outline // 会话大纲
-	input   string
-	// 输入框里待发送的图片，与 input 一样是草稿；preparing 是还在后台整理的张数。
-	attachments []*attachment
-	preparing   int
-	err         string
-	unread      bool     // 在别的会话时运行结束，用户还没回来看过
-	job         *taskRun // 定时任务触发的会话：用户消息与标题由 gui 代为处理；其余会话为空
+	promptDraft
+	submissions  []promptSubmission
+	failedDrafts []failedPrompt
+	queueEditing *promptQueueEdit
+	focusInput   bool
+	resuming     bool
+	err          string
+	unread       bool     // 在别的会话时运行结束，用户还没回来看过
+	job          *taskRun // 定时任务触发的会话：用户消息与标题由 gui 代为处理；其余会话为空
 
 	menu    menuState    // 输入框上方补全列表的状态
 	index   pathIndex    // 工作目录下的路径，@ 补全与文件面板的筛选共用
@@ -120,20 +122,24 @@ type chat struct {
 
 // fresh 报告会话是不是还没发过消息的新会话：它还没写进库，换工作目录就是换一个新会话。
 func (ch *chat) fresh() bool {
-	return !ch.loading && ch.oldest == 0 && len(ch.items) == 0 && !ch.running
+	return !ch.loading && !ch.run.Running && len(ch.submissions) == 0 &&
+		ch.oldest == 0 && len(ch.items) == 0
 }
 
-// canSend 报告现在能不能发送：会话建好了，没在运行，历史与图片都准备好了。
+// canSend 报告输入是否就绪。空闲时要先等上一条普通发送完成受理。
 func (ch *chat) canSend() bool {
-	return ch.id != "" && !ch.running && !ch.loading && ch.preparing == 0
+	return ch.id != "" && !ch.loading && ch.queueEditing == nil && ch.preparing == 0 &&
+		(ch.run.Running || len(ch.submissions) == 0 && !ch.resuming)
 }
 
 // attach 记下核心打开会话时给的配置项与状态。
 func (ch *chat) attach(options []protocol.ConfigOption, state protocol.SessionState) {
-	ch.ready, ch.options, ch.commands = true, options, state.Commands
-	ch.usage, ch.running, ch.since = state.Usage, state.Running, state.Since
+	ch.options, ch.commands = options, state.Commands
+	ch.usage = state.Usage
+	ch.apply(state.Run)
+	ch.apply(protocol.PromptQueueUpdate{PromptQueue: state.Queue})
 	ch.cwd, ch.title = state.Cwd, state.Title
-	ch.cwdGone, ch.needsReopen = false, false
+	ch.cwdGone, ch.needsReopen, ch.ready = false, ch.run.Invalidated, !ch.run.Invalidated
 }
 
 // add 追加一个已定稿的显示项。
@@ -322,9 +328,16 @@ func (ch *chat) apply(u protocol.Update) {
 		ch.title = u.Title
 	case protocol.ConfigOptionUpdate:
 		ch.options = u.ConfigOptions
+	case protocol.PromptQueueUpdate:
+		if u.Version > ch.queue.Version {
+			ch.queue = u.PromptQueue
+		}
 	case protocol.RunStateUpdate:
-		ch.running, ch.since = u.Running, u.Since
-		if !u.Running {
+		if !ch.acceptsRunState(u) {
+			return
+		}
+		ch.run = u
+		if !u.Running || u.PreviousRunID != 0 {
 			ch.retry = ""
 			ch.settle("已中断")
 			if u.Error != "" {
@@ -339,6 +352,10 @@ func (ch *chat) apply(u protocol.Update) {
 		})
 		ch.retry = retryNotice(u)
 	}
+}
+
+func (ch *chat) acceptsRunState(u protocol.RunStateUpdate) bool {
+	return u.Version > ch.run.Version || u.Version == 0 && ch.run.Version == 0
 }
 
 // userChunk 把用户消息的一块排进对话：同一条消息的文字与图片在一项里，技能全文另成一项。
@@ -395,11 +412,6 @@ func (ch *chat) compaction(u protocol.CompactionUpdate) {
 	case protocol.CompactionFailed:
 		ch.add(itemNotice, u.Error)
 	}
-}
-
-// hasDraft 报告输入框里有没有可发送的内容：文字或图片。
-func (ch *chat) hasDraft() bool {
-	return strings.TrimSpace(ch.input) != "" || len(ch.attachments) > 0
 }
 
 // finishCall 记录工具调用的结果；展示数据依赖结果，所以丢掉按进行中的状态算出的。

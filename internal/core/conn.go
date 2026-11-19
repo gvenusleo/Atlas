@@ -135,7 +135,7 @@ func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequ
 	defer end()
 	s, _ := c.core.lookup(req.SessionID)
 	if s != nil {
-		done, err := s.begin(nil)
+		done, err := s.begin()
 		if err != nil {
 			return err
 		}
@@ -192,7 +192,37 @@ func (c *conn) SendPrompt(
 	if err != nil {
 		return protocol.SendPromptResponse{}, err
 	}
-	return protocol.SendPromptResponse{}, s.sendPrompt(req.Prompt)
+	return protocol.SendPromptResponse{}, s.sendPrompt(req)
+}
+
+func (c *conn) UpdateQueuedPrompt(_ context.Context, req protocol.UpdateQueuedPromptRequest) error {
+	return c.withPromptQueue(req.SessionID, func(s *session) error {
+		return s.changeQueuedPrompt(req.ID, req.Version, &req.Prompt)
+	})
+}
+
+func (c *conn) DeleteQueuedPrompt(_ context.Context, req protocol.DeleteQueuedPromptRequest) error {
+	return c.withPromptQueue(req.SessionID, func(s *session) error {
+		return s.changeQueuedPrompt(req.ID, req.Version, nil)
+	})
+}
+
+func (c *conn) ResumePromptQueue(_ context.Context, req protocol.ResumePromptQueueRequest) error {
+	return c.withPromptQueue(req.SessionID, (*session).resumePromptQueue)
+}
+
+func (c *conn) withPromptQueue(id string, action func(*session) error) error {
+	end, err := c.core.begin()
+	if err != nil {
+		return err
+	}
+	defer end()
+	s, err := c.session(id)
+	if err != nil {
+		return err
+	}
+	defer c.core.unloadIfIdle(s)
+	return action(s)
 }
 
 func (c *conn) CancelTurn(_ context.Context, req protocol.CancelTurnRequest) error {
@@ -205,7 +235,7 @@ func (c *conn) CancelTurn(_ context.Context, req protocol.CancelTurnRequest) err
 	if err != nil {
 		return err
 	}
-	s.cancelTurn()
+	s.cancelTurn(req.RunID)
 	return nil
 }
 

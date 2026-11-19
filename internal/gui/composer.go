@@ -25,51 +25,111 @@ const (
 	composerInset = composerPad + (composerButton-iconSize)/2
 )
 
-// composer 构建输入区：圆角输入框，其下是工作目录、模型与上下文占用。
+// composer 把待发队列和输入框接在一起，下面留出状态栏的间距。
 func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c).Gap(6).Children(func() {
-		card := ui.Column(c).Radius(inputRound).Background(t.Background).
-			Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06))
-		// 从别的应用拖来的图片可以放在输入框上；拖在上面时边框变成强调色。
+		ui.Column(c.Key("composer-stack")).Children(func() {
+			a.promptQueuePanel(c, t, ch)
+			card, input := a.composerInput(c, t, ch)
+			a.completionMenu(c, t, ch, card, input)
+		})
+		a.statusRow(c, t, ch)
+	})
+}
+
+func (a *App) composerInput(c *ui.Context, t *ui.Theme, ch *chat) (ui.Element, ui.Element) {
+	locked := ch.queueEditing != nil && ch.queueEditing.saving
+	card := ui.Column(c.Key("composer-card")).Radius(inputRound).Background(t.Background).
+		Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.06))
+	border := fieldBorder(t)
+	if !locked {
 		if files := card.DroppedFiles(); len(files) > 0 {
 			a.dropFiles(ch, files)
 		}
-		border := fieldBorder(t)
 		if card.FileDragOver() {
 			border = t.Accent
 		}
-		card.Border(1, border)
-		var input ui.Element
-		card.Children(func() {
-			a.imageStrip(c, t, ch)
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(composerPad).Children(func() {
-				a.imageButton(c, t, ch)
-				input = ui.TextAreaBase(c.Key("input-"+ch.key), &ch.input).FocusRing(false).
-					Placeholder("发送消息").Lines(1, 10).Grow(1).Padding(5, 0).Disabled(ch.loading).
-					OnPaste(func(text string) bool { return a.pasteImages(ch, text) }).
-					OnTextKey(func(k ui.TextKey) bool {
-						if a.completionKey(ch, k) {
-							return true
-						}
-						if k.Key != ui.KeyEnter || k.Mods != 0 {
-							return false
-						}
-						if a.send(ch, k.Text()) {
-							k.SetText("")
-						}
-						return true
-					})
-				ch.menu.placeCaret(input)
-				// 侧栏在用键盘、或终端面板打开时，新出现的输入框不抢走焦点。
-				if !a.keyNav && !ch.panelOpen(termPanel) {
-					input.AutoFocus()
-				}
-				a.sendButton(c, t, ch)
-			})
+	}
+	card.Border(1, border)
+	var input ui.Element
+	card.Children(func() {
+		a.queueEditActions(c, t, ch)
+		a.imageStrip(c, t, ch, locked)
+		ui.Row(c.Key("composer-row")).Gap(6).AlignItems(ui.Center).
+			Padding(composerPad).Children(func() {
+			a.imageButton(c, t, ch, locked)
+			input = a.composerText(c, ch, locked)
+			a.sendButton(c, t, ch)
 		})
-		a.completionMenu(c, t, ch, card, input)
-		a.statusRow(c, t, ch)
 	})
+	return card, input
+}
+
+// composerText 让队列编辑与普通草稿各自使用 MyGo 的撤销历史。
+func (a *App) composerText(c *ui.Context, ch *chat, locked bool) ui.Element {
+	draftKey := "input-" + ch.key
+	var input ui.Element
+	if edit := ch.queueEditing; edit != nil {
+		// 普通输入框在编辑期间仍需参与构建，MyGo 才会保留它的撤销历史。
+		ui.TextAreaBase(c.Key(draftKey), &edit.original.input).Hidden(true)
+		input = ui.TextAreaBase(c.Key(edit), &ch.input)
+	} else {
+		input = ui.TextAreaBase(c.Key(draftKey), &ch.input)
+	}
+	input.FocusRing(false).
+		Placeholder(composerHint(ch)).Lines(1, 10).Grow(1).Padding(5, 0).
+		Disabled(ch.loading).ReadOnly(locked).
+		OnPaste(func(text string) bool { return !locked && a.pasteImages(ch, text) }).
+		OnTextKey(func(k ui.TextKey) bool { return a.composerKey(ch, k) })
+	ch.menu.placeCaret(input)
+	switch {
+	case ch.focusInput && !ch.loading:
+		input.Focus()
+		ch.focusInput = false
+	case !a.keyNav && !ch.panelOpen(termPanel):
+		input.AutoFocus()
+	}
+	return input
+}
+
+func (a *App) composerKey(ch *chat, k ui.TextKey) bool {
+	if a.completionKey(ch, k) {
+		return true
+	}
+	if edit := ch.queueEditing; edit != nil {
+		switch {
+		case k.Key == ui.KeyEscape && k.Mods == 0:
+			if !edit.saving && ch.preparing == 0 {
+				ch.closeQueueEdit()
+			}
+			return true
+		case k.Key == ui.KeyEnter && (k.Mods == 0 || k.Mods == ui.Cmd):
+			a.saveQueueEdit(ch, k.Text())
+			return true
+		default:
+			return false
+		}
+	}
+	if k.Key != ui.KeyEnter || k.Mods != 0 && k.Mods != ui.Cmd {
+		return false
+	}
+	if a.send(ch, k.Text(), k.Mods == ui.Cmd) {
+		k.SetText("")
+	}
+	return true
+}
+
+func composerHint(ch *chat) string {
+	switch {
+	case ch.queueEditing != nil:
+		return "编辑待发消息"
+	case !ch.run.Running:
+		return "发送消息"
+	case ch.run.Kind == protocol.RunCompaction:
+		return "⌘Enter 下一轮发送"
+	default:
+		return "Enter 插入本轮 · ⌘Enter 下一轮发送"
+	}
 }
 
 // runStatus 在消息列表的底端、输入框之上画运行状态：跳动的圆点，与这次运行已经过的时间；
@@ -77,10 +137,10 @@ func (a *App) composer(c *ui.Context, t *ui.Theme, ch *chat) {
 // 列表的高度不变，内容不会跳动。
 // 时间每秒变一次，所以在下一个整秒再画一帧。
 func (a *App) runStatus(c *ui.Context, t *ui.Theme, ch *chat) {
-	if !ch.running {
+	if !ch.run.Running {
 		return
 	}
-	d := time.Since(ch.since)
+	d := time.Since(ch.run.Since)
 	c.After(time.Second - d%time.Second)
 	ui.Box(c).Absolute().Left(0).Right(0).Bottom(runGap).PassThrough().Children(func() {
 		column(c, 0, func() {
@@ -107,52 +167,55 @@ func runTime(d time.Duration) string {
 	}
 }
 
-// sendButton 是输入框右侧的圆形按钮：有内容时发送，运行时停止，空闲且为空时为灰色。
-// 可用时是浅色的强调底加强调色图标，与终端按钮的选中态一致。
+// sendButton 在运行时保留独立的停止按钮，输入框有内容时也可通过鼠标发送。
 func (a *App) sendButton(c *ui.Context, t *ui.Theme, ch *chat) {
-	glyph, label := sendIcon, "发送"
-	if ch.running {
-		glyph, label = stopIcon, "停止"
+	if ch.queueEditing == nil && (!ch.run.Running || ch.hasDraft()) {
+		label := "发送"
+		if ch.run.Running {
+			label = "插入本轮"
+			if ch.run.Kind == protocol.RunCompaction {
+				label = "下一轮发送"
+			}
+		}
+		composerAction(c.Key("send"), t, sendIcon, label, !ch.hasDraft() || !ch.canSend(), func() {
+			if a.send(ch, ch.input, ch.run.Kind == protocol.RunCompaction) {
+				ch.input = ""
+			}
+		})
 	}
-	var btn ui.Element
-	if !ch.running && (!ch.hasDraft() || !ch.canSend()) {
-		btn = ui.Button(c, "").Disabled(true)
-	} else {
-		btn = ui.ButtonBase(c).TextColor(accentFg(t)).
-			OnClick(func() {
-				switch {
-				case ch.running:
-					id := ch.id
-					go func() {
-						_ = a.service.CancelTurn(context.Background(),
-							protocol.CancelTurnRequest{SessionID: id})
-					}()
-				case a.send(ch, ch.input):
-					ch.input = ""
-				}
-			})
+	if ch.run.Running {
+		req := protocol.CancelTurnRequest{SessionID: ch.id, RunID: ch.run.RunID}
+		composerAction(c.Key("stop"), t, stopIcon, "停止", false, func() {
+			go func() { _ = a.service.CancelTurn(context.Background(), req) }()
+		})
+	}
+}
+
+func composerAction(
+	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, disabled bool, click func(),
+) {
+	btn := ui.ButtonBase(c).Disabled(disabled).OnClick(click)
+	if !disabled {
 		alpha := float32(0.15)
 		if btn.Hovered() {
 			alpha = 0.25
 		}
-		btn.Background(accentFg(t).Alpha(alpha))
+		btn.Background(accentFg(t).Alpha(alpha)).TextColor(accentFg(t))
 	}
 	btn.Size(composerButton, composerButton).Padding(0).Radius(composerButton / 2).
 		AlignSelf(ui.End).Label(label).Tooltip(label)
-	btn.Children(func() {
-		ui.Icon(c, glyph).FontSize(iconSize)
-	})
+	btn.Children(func() { ui.Icon(c, glyph).FontSize(iconSize) })
 }
 
 // imageButton 是输入框左侧的按钮，点一下选图片。当前模型不接受图片时变淡，点了提示原因。
-func (a *App) imageButton(c *ui.Context, t *ui.Theme, ch *chat) {
+func (a *App) imageButton(c *ui.Context, t *ui.Theme, ch *chat, locked bool) {
 	can := ch.acceptsImages()
 	label, color := "添加图片", t.TextMuted
 	if !can {
 		label, color = "当前模型不接受图片", t.TextMuted.Alpha(0.4)
 	}
 	btn := ui.ButtonBase(c).Size(composerButton, composerButton).Padding(0).
-		Radius(composerButton / 2).AlignSelf(ui.End).Label("添加图片").Tooltip(label)
+		Radius(composerButton / 2).AlignSelf(ui.End).Label("添加图片").Tooltip(label).Disabled(locked)
 	if btn.Hovered() {
 		btn.Background(buttonFill(t))
 	}
@@ -170,13 +233,13 @@ func (a *App) imageButton(c *ui.Context, t *ui.Theme, ch *chat) {
 
 // imageStrip 画输入框上方待发送图片的缩略图，整理中的图片先是一个转圈的方块；
 // 没有图片时什么也不画。左边与下面按钮的图标对齐。
-func (a *App) imageStrip(c *ui.Context, t *ui.Theme, ch *chat) {
+func (a *App) imageStrip(c *ui.Context, t *ui.Theme, ch *chat, locked bool) {
 	if len(ch.attachments) == 0 && ch.preparing == 0 {
 		return
 	}
 	ui.Row(c).Wrap().Gap(8).Padding(10, 10, 0, composerInset).Children(func() {
 		for _, f := range ch.attachments {
-			a.thumbnail(c, t, ch, f)
+			a.thumbnail(c, t, ch, f, locked)
 		}
 		for range ch.preparing {
 			ui.Row(c).Size(thumbSize, thumbSize).Justify(ui.Center).AlignItems(ui.Center).
@@ -188,7 +251,7 @@ func (a *App) imageStrip(c *ui.Context, t *ui.Theme, ch *chat) {
 }
 
 // thumbnail 画一张待发送图片的缩略图；指针在其上时，右上角出现移除按钮。
-func (a *App) thumbnail(c *ui.Context, t *ui.Theme, ch *chat, f *attachment) {
+func (a *App) thumbnail(c *ui.Context, t *ui.Theme, ch *chat, f *attachment, locked bool) {
 	tile := ui.Column(c.Key(f.id)).Size(thumbSize, thumbSize).Radius(boxRound).
 		Background(rowFill(t)).Tooltip(f.name)
 	hovered := tile.Hovered()
@@ -196,7 +259,7 @@ func (a *App) thumbnail(c *ui.Context, t *ui.Theme, ch *chat, f *attachment) {
 		if f.bitmap != nil {
 			ui.Image(c, f.bitmap).Size(thumbSize, thumbSize).Fit(ui.Cover).Radius(boxRound)
 		}
-		if !hovered {
+		if !hovered || locked {
 			return
 		}
 		remove := ui.ButtonBase(c).Absolute().Top(4).Right(4).Size(removeSize, removeSize).

@@ -216,8 +216,12 @@ func (a *App) Receive(n protocol.Notification) {
 				a.refresh()
 			}
 		case protocol.RunStateUpdate:
+			if !ch.acceptsRunState(u) {
+				return
+			}
 			ch.apply(u)
-			if u.Error == protocol.ErrConflict.Error() || u.Error == protocol.ErrNotFound.Error() {
+			if u.Invalidated {
+				ch.recoverQueue()
 				a.askReopen(ch)
 			}
 			if !u.Running {

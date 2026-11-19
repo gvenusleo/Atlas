@@ -21,6 +21,10 @@ var (
 	ErrClosed = errors.New("Atlas 正在关闭")
 	// ErrNothingToCompact 表示上下文里没有可压缩的内容。
 	ErrNothingToCompact = errors.New("没有可压缩的内容")
+	// ErrTurnChanged 表示提交所针对的运行已停止受理用户消息。
+	ErrTurnChanged = errors.New("该轮已结束或正在收尾")
+	// ErrQueuedPromptChanged 表示队列项已被发送、删除或修改。
+	ErrQueuedPromptChanged = errors.New("待发消息已变更或正在发送")
 )
 
 // Service 是 Atlas 对一个客户端连接开放的接口。
@@ -34,7 +38,7 @@ type Service interface {
 	// DeleteSession 删除空闲的会话；会话不存在时不报错。
 	DeleteSession(ctx context.Context, req DeleteSessionRequest) error
 	// CloseSession 取消当前连接对该会话的订阅，不影响正在进行的一轮。会话没有订阅者且
-	// 空闲时卸载；若正忙，待这一轮结束后卸载。
+	// 空闲且队列为空时卸载。
 	CloseSession(ctx context.Context, req CloseSessionRequest) error
 	// RenameSession 修改标题；空标题表示清除。
 	RenameSession(ctx context.Context, req RenameSessionRequest) error
@@ -42,7 +46,10 @@ type Service interface {
 	// 出错信息通过 RunStateUpdate 送达。单独发送 /compact 压缩上下文。消息中由空白或
 	// 消息边界分隔的 /技能名 会在原文后附上技能全文。
 	SendPrompt(ctx context.Context, req SendPromptRequest) (SendPromptResponse, error)
-	// CancelTurn 取消正在运行的一轮，该轮以 StopCancelled 结束；没有正在运行的一轮时不报错。
+	UpdateQueuedPrompt(ctx context.Context, req UpdateQueuedPromptRequest) error
+	DeleteQueuedPrompt(ctx context.Context, req DeleteQueuedPromptRequest) error
+	ResumePromptQueue(ctx context.Context, req ResumePromptQueueRequest) error
+	// CancelTurn 取消指定的一轮。该轮已结束或没有正在运行的一轮时不报错。
 	CancelTurn(ctx context.Context, req CancelTurnRequest) error
 	// SetConfigOption 更换模型或思考深度，保存后返回完整的配置项。
 	SetConfigOption(
@@ -97,12 +104,12 @@ type OpenSessionResponse struct {
 
 // SessionState 是打开会话时它的当前状态，随响应给出，之后由更新推进。
 type SessionState struct {
-	Cwd      string    `json:"cwd"`
-	Title    string    `json:"title,omitempty"`
-	Commands []Command `json:"commands,omitempty"`
-	Usage    Usage     `json:"usage"`
-	Running  bool      `json:"running,omitzero"`
-	Since    time.Time `json:"since,omitzero"` // 正在运行的一轮开始的时刻
+	Cwd      string         `json:"cwd"`
+	Title    string         `json:"title,omitempty"`
+	Commands []Command      `json:"commands,omitempty"`
+	Usage    Usage          `json:"usage"`
+	Run      RunStateUpdate `json:"run"`
+	Queue    PromptQueue    `json:"queue"`
 }
 
 type ListSessionsRequest struct {
@@ -144,12 +151,64 @@ type RenameSessionRequest struct {
 
 // ---- 一轮 ----
 
+// PromptDelivery 指定运行中提交的消息何时发送。零值只允许在空闲时发送。
+type PromptDelivery string
+
+const (
+	PromptInTurn   PromptDelivery = "in_turn"
+	PromptNextTurn PromptDelivery = "next_turn"
+)
+
 type SendPromptRequest struct {
 	SessionID string         `json:"sessionId"`
 	Prompt    []ContentBlock `json:"prompt"`
+	Delivery  PromptDelivery `json:"delivery,omitempty"`
+	RunID     uint64         `json:"runId,omitzero"`
 }
 
 type SendPromptResponse struct{}
+
+// QueuedPrompt 保留提交时的原始内容，发送成功前一直可在队列中查看。
+type QueuedPrompt struct {
+	ID       uint64         `json:"id"`
+	Version  uint64         `json:"version"`
+	Delivery PromptDelivery `json:"delivery"`
+	Prompt   []ContentBlock `json:"prompt"`
+	Sending  bool           `json:"sending,omitzero"`
+}
+
+// PromptQueue 是一个会话的待发队列快照，按预计发送顺序排列。
+type PromptQueue struct {
+	Version uint64         `json:"version"`
+	Items   []QueuedPrompt `json:"items,omitempty"`
+	Paused  bool           `json:"paused,omitzero"`
+	Error   string         `json:"error,omitempty"`
+}
+
+type UpdateQueuedPromptRequest struct {
+	SessionID string         `json:"sessionId"`
+	ID        uint64         `json:"id"`
+	Version   uint64         `json:"version"`
+	Prompt    []ContentBlock `json:"prompt"`
+}
+
+type DeleteQueuedPromptRequest struct {
+	SessionID string `json:"sessionId"`
+	ID        uint64 `json:"id"`
+	Version   uint64 `json:"version"`
+}
+
+type ResumePromptQueueRequest struct {
+	SessionID string `json:"sessionId"`
+}
+
+// RunKind 区分能接收本轮消息的对话和手动压缩。
+type RunKind string
+
+const (
+	RunConversation RunKind = "conversation"
+	RunCompaction   RunKind = "compaction"
+)
 
 // StopReason 是一轮结束的原因。模型调用失败不是结束原因，由 RunStateUpdate 的 Error 给出。
 type StopReason string
@@ -163,6 +222,7 @@ const (
 
 type CancelTurnRequest struct {
 	SessionID string `json:"sessionId"`
+	RunID     uint64 `json:"runId,omitzero"` // 省略时取消当前运行
 }
 
 // ---- 配置项 ----

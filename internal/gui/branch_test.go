@@ -48,7 +48,8 @@ func TestBranchBusyAcrossDirectories(t *testing.T) {
 		cwd  string
 		busy bool
 	}{{cwd, true}, {sub, true}, {alias, true}, {linked, false}} {
-		running := &chat{cwd: sub, running: true, branch: testBranch(t, sub)}
+		running := &chat{cwd: sub, run: protocol.RunStateUpdate{Running: true},
+			branch: testBranch(t, sub)}
 		idle := &chat{cwd: target.cwd, branch: testBranch(t, target.cwd)}
 		a := &App{chats: map[string]*chat{"running": running}}
 		if got := a.branchBusy(idle); got != target.busy {

@@ -24,118 +24,276 @@ const maxRequests = 200
 // titleRunes 是自动生成的会话标题的最大字数。
 const titleRunes = 30
 
-// drive 是一轮里要跑的：一轮对话或一次压缩。
-type drive func(ctx context.Context, in agent.Input, emit func(agent.Event)) []agent.Message
-
-// sendPrompt 受理一条用户消息，随后这一轮在会话内异步运行。单独发送 /compact 压缩上下文。
-func (s *session) sendPrompt(blocks []protocol.ContentBlock) error {
-	user := userMessage(blocks)
-	text := agent.TextOf(user.Content)
-	if strings.TrimSpace(text) == "/compact" {
-		s.mu.Lock()
-		compactable := agent.Compactable(s.messages)
-		s.mu.Unlock()
-		if !compactable {
-			return protocol.ErrNothingToCompact
-		}
-		return s.start(agent.Compact)
-	}
-	s.mu.Lock()
-	list := s.skills
-	s.mu.Unlock()
-	user, err := withSkills(user, skills.Invoked(list, text))
-	if err != nil {
-		return err
-	}
-	return s.start(func(
-		ctx context.Context, in agent.Input, emit func(agent.Event),
-	) []agent.Message {
-		return agent.Run(ctx, in, user, emit)
-	})
+type turn struct {
+	id        uint64
+	kind      protocol.RunKind
+	since     time.Time
+	ctx       context.Context
+	cancel    context.CancelFunc
+	accepting bool // 由会话锁保护
+	queued    protocol.QueuedPrompt
 }
 
-// start 受理一轮：占用会话，检查工作目录与模型，取一份输入快照；通过之后在新的 goroutine 里
-// 运行。这一轮归会话所有：用核心的 ctx，与发起它的请求无关。
-func (s *session) start(drive drive) error {
-	if err := checkCwd(s.cwd); err != nil {
-		return err
+func (s *session) sendPrompt(req protocol.SendPromptRequest) error {
+	switch req.Delivery {
+	case protocol.PromptInTurn, protocol.PromptNextTurn:
+		return s.enqueuePrompt(req)
+	case "":
+		return s.startTurn(req.Prompt)
+	default:
+		return fmt.Errorf("不认识的消息投递方式 %q", req.Delivery)
 	}
-	ctx, cancel := context.WithCancel(s.core.ctx)
-	end, err := s.begin(cancel)
+}
+
+func (s *session) startTurn(blocks []protocol.ContentBlock) error {
+	kind := protocol.RunConversation
+	if strings.TrimSpace(agent.TextOf(userMessage(blocks).Content)) == "/compact" {
+		kind = protocol.RunCompaction
+	}
+	s.mu.Lock()
+	switch {
+	case s.runState.Invalidated:
+		s.mu.Unlock()
+		return protocol.ErrNotFound
+	case s.busy != nil:
+		s.mu.Unlock()
+		return protocol.ErrBusy
+	case kind == protocol.RunCompaction && !agent.Compactable(s.messages):
+		s.mu.Unlock()
+		return protocol.ErrNothingToCompact
+	}
+	t := s.reserveTurn(kind)
+	s.mu.Unlock()
+	in, user, err := s.prepareTurn(t, blocks)
 	if err != nil {
-		cancel()
+		t.cancel()
+		s.mu.Lock()
+		s.busy = nil
+		s.mu.Unlock()
+		s.core.unloadIfIdle(s)
 		return err
 	}
-	if err := s.ensureModel(ctx); err != nil {
-		end()
-		cancel()
-		return err
+	// 客户端收到受理响应后即可发下一条消息，此前须公布本轮的标识。
+	s.publishTurnStart(t)
+	s.core.working.Go(func() { s.runTurns(t, in, user) })
+	return nil
+}
+
+// reserveTurn 在会话锁内完成占用。运行随会话而非请求取消，交接时可直接换成下一轮。
+func (s *session) reserveTurn(kind protocol.RunKind) *turn {
+	ctx, cancel := context.WithCancel(s.core.ctx)
+	t := &turn{id: s.core.versions.Add(1), kind: kind, since: time.Now(), ctx: ctx, cancel: cancel}
+	s.busy = &busy{turn: t}
+	return t
+}
+
+func (s *session) prepareTurn(
+	t *turn, blocks []protocol.ContentBlock,
+) (agent.Input, agent.UserMessage, error) {
+	if err := checkCwd(s.cwd); err != nil {
+		return agent.Input{}, agent.UserMessage{}, err
+	}
+	if err := s.ensureModel(t.ctx); err != nil {
+		return agent.Input{}, agent.UserMessage{}, err
 	}
 	s.mu.Lock()
 	in := agent.Input{Model: s.model, Thinking: s.thinking,
 		SystemPrompt: s.systemPrompt, Tools: s.tools, Messages: s.messages,
 		MaxRequests: maxRequests}
-	since := s.busy.since
 	s.mu.Unlock()
-	// 调用方的请求还没结束，Close 不会在这里错过它。
-	s.core.working.Go(func() { s.run(ctx, cancel, end, in, since, drive) })
+	if t.kind == protocol.RunCompaction {
+		return in, agent.UserMessage{}, t.ctx.Err()
+	}
+	checkImages := t.queued.ID != 0 && !in.Model.Images
+	user, err := s.prepareUserPrompt(blocks, checkImages)
+	if err == nil {
+		err = t.ctx.Err()
+	}
+	return in, user, err
+}
+
+func (s *session) prepareUserPrompt(
+	blocks []protocol.ContentBlock, checkImages bool,
+) (agent.UserMessage, error) {
+	if checkImages {
+		for _, block := range blocks {
+			if block.Type == protocol.ContentImage {
+				return agent.UserMessage{}, errors.New("当前模型不接受图片")
+			}
+		}
+	}
+	user := userMessage(blocks)
+	return withSkills(user, skills.Invoked(s.skills, agent.TextOf(user.Content)))
+}
+
+// runTurns 串行交接已预留的轮次。下一轮的预检失败时，队首仍留在队列中。
+func (s *session) runTurns(t *turn, in agent.Input, user agent.UserMessage) {
+	defer s.core.unloadIfIdle(s)
+	for t != nil {
+		if t.queued.ID != 0 {
+			var err error
+			in, user, err = s.prepareTurn(t, t.queued.Prompt)
+			if err != nil {
+				s.finishTurn(t, turnResult(t, nil, false, err, nil))
+				return
+			}
+		}
+		t = s.finishTurn(t, s.runTurn(t, in, user))
+	}
+}
+
+func (s *session) publishTurnStart(t *turn) {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	s.mu.Lock()
+	state := s.activateTurn(t, protocol.RunStateUpdate{})
+	s.mu.Unlock()
+	s.broadcast(state)
+}
+
+// activateTurn 的调用方持有会话锁。预留下轮时同时更新状态，取消与提交看到同一个目标。
+func (s *session) activateTurn(t *turn, previous protocol.RunStateUpdate) protocol.RunStateUpdate {
+	t.accepting = true
+	s.runState = protocol.RunStateUpdate{Version: s.core.versions.Add(1), Running: true,
+		RunID: t.id, Kind: t.kind, Since: t.since,
+		PreviousRunID: previous.PreviousRunID, StopReason: previous.StopReason}
+	return s.runState
+}
+
+func (s *session) finishTurn(t *turn, state protocol.RunStateUpdate) *turn {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	s.mu.Lock()
+	if t.ctx.Err() != nil && state.Error == "" {
+		state.StopReason = protocol.StopCancelled
+	}
+	t.accepting = false
+	t.cancel()
+	normal := state.Error == "" && state.StopReason == protocol.StopEndTurn
+	var queue *protocol.PromptQueueUpdate
+	if len(s.queue.Items) != 0 {
+		if !normal {
+			queue = new(s.pausePromptQueue(state.Error))
+		} else if !s.queue.Paused {
+			next := s.reserveQueuedTurn()
+			run := s.activateTurn(next, state)
+			update := s.queueChanged()
+			s.mu.Unlock()
+			s.broadcast(run, update)
+			return next
+		}
+	}
+	s.busy = nil
+	state.Version = s.core.versions.Add(1)
+	s.runState = state
+	s.mu.Unlock()
+	if state.Invalidated {
+		s.core.forget(s)
+	}
+	if queue != nil {
+		s.broadcast(*queue)
+	}
+	s.broadcast(state)
 	return nil
 }
 
-// run 运行一轮：每条定稿的消息先写库、再并进上下文、最后推送给订阅者。写库失败时这一轮停止，
-// 之后的事件都丢掉；写入冲突还会让会话失效。结束时释放占用，推送停止原因或出错的原因，
-// 没有订阅者的会话随即卸载。
-func (s *session) run(
-	ctx context.Context, cancel context.CancelFunc, end func(),
-	in agent.Input, since time.Time, drive drive,
-) {
-	defer cancel()
-	s.broadcast(protocol.RunStateUpdate{Running: true, Since: since})
-
-	var saveErr error
+// runTurn 的队列项在对应的用户消息写库后才移出。失败时取消循环，剩余项由 finishTurn 恢复。
+func (s *session) runTurn(
+	t *turn, in agent.Input, user agent.UserMessage,
+) protocol.RunStateUpdate {
+	var runErr error
+	var pendingIDs []uint64
+	if t.queued.ID != 0 {
+		pendingIDs = append(pendingIDs, t.queued.ID)
+	}
+	in.PollPrompts = func(ending, atLimit bool) ([]agent.UserMessage, bool) {
+		items, waiting := s.takeTurnPrompts(t, ending, atLimit)
+		var prompts []agent.UserMessage
+		for _, item := range items {
+			prompt, err := s.prepareUserPrompt(item.Prompt, !in.Model.Images)
+			if err != nil {
+				runErr = err
+				t.cancel()
+				return nil, waiting
+			}
+			pendingIDs = append(pendingIDs, item.ID)
+			prompts = append(prompts, prompt)
+		}
+		return prompts, waiting
+	}
 	limited := false
 	tr := &translator{s: s}
 	emit := func(e agent.Event) {
-		if saveErr != nil {
+		if runErr != nil {
 			return
 		}
 		limited = limited || e.Type == agent.EventLimit
 		var seq int64
+		var queue *protocol.PromptQueueUpdate
 		if e.Type == agent.EventMessageEnd {
-			if seq, saveErr = s.save(ctx, e.Message); saveErr != nil {
-				cancel()
+			if seq, runErr = s.save(t.ctx, e.Message); runErr != nil {
+				t.cancel()
 				return
+			}
+			if _, ok := e.Message.(agent.UserMessage); ok && len(pendingIDs) != 0 {
+				queue = new(s.promptSaved(pendingIDs[0]))
+				pendingIDs = pendingIDs[1:]
 			}
 		}
 		s.broadcast(tr.event(e, seq)...)
+		if queue != nil {
+			s.broadcast(*queue)
+		}
 	}
-	messages, crashed := s.guarded(func() []agent.Message { return drive(ctx, in, emit) })
-	s.broadcast(tr.finish()...)
+	messages, crashed := s.guarded(func() []agent.Message {
+		defer func() { s.broadcast(tr.finish()...) }()
+		if t.ctx.Err() != nil && t.queued.ID != 0 {
+			return nil
+		}
+		if t.kind == protocol.RunCompaction {
+			return agent.Compact(t.ctx, in, emit)
+		}
+		return agent.Run(t.ctx, in, user, emit)
+	})
+	return turnResult(t, messages, limited, runErr, crashed)
+}
 
-	var state protocol.RunStateUpdate
+func turnResult(
+	t *turn, messages []agent.Message, limited bool, runErr error, crashed any,
+) protocol.RunStateUpdate {
+	state := protocol.RunStateUpdate{PreviousRunID: t.id}
 	switch {
 	case crashed != nil:
-		state.Error = fmt.Sprintf("内部错误：%v", crashed)
-		s.core.forget(s) // panic 打断了处理，内存里的会话不可信，重新打开时从库里恢复
-	case saveErr != nil:
-		state.Error = saveErr.Error()
-		if errors.Is(saveErr, protocol.ErrConflict) {
-			s.core.forget(s) // 内存里的会话已经过时，需要重新打开
-		}
-	case ctx.Err() != nil:
+		state.Error, state.Invalidated = fmt.Sprintf("内部错误：%v", crashed), true
+	case errors.Is(runErr, context.Canceled):
+		state.StopReason = protocol.StopCancelled
+	case runErr != nil:
+		state.Error, state.Invalidated = runErr.Error(), invalidSessionError(runErr)
+	case t.ctx.Err() != nil:
 		state.StopReason = protocol.StopCancelled
 	case limited:
 		state.StopReason = protocol.StopMaxTurnRequests
 	default:
+		if t.kind == protocol.RunCompaction {
+			for _, message := range messages {
+				if m, ok := message.(agent.SystemMessage); ok &&
+					m.Type == agent.SystemMessageTypeNotice {
+					state.Error = m.Content
+					return state
+				}
+			}
+		}
 		reason, err := stopReason(messages)
 		state.StopReason = reason
 		if err != nil {
 			state.Error = err.Error()
 		}
 	}
-	end()
-	s.broadcast(state)
-	s.core.unloadIfIdle(s)
+	return state
+}
+
+func invalidSessionError(err error) bool {
+	return errors.Is(err, protocol.ErrConflict) || errors.Is(err, protocol.ErrNotFound)
 }
 
 // guarded 运行一轮：事件的转换与保存、订阅者的 Receive、模型适配里的 panic 不让整个进程
