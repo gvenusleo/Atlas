@@ -18,7 +18,7 @@ type tabItem struct {
 	icon       *ui.SVG // 标签文字前的图标，没有时为空
 	label      string
 	note       string // 标签文字后面的次要文字，如终端程序设置的标题
-	dirty      bool   // 有没保存的修改：关闭按钮前有一个圆点
+	dirty      bool   // 有未保存的修改
 	closeLabel string
 	pick       func()
 	close      func()
@@ -56,7 +56,8 @@ func (a *App) tabStrip(
 				row.ScrollIntoView()
 				a.win.Update(func() { bar.reveal = 0 })
 			}
-			row.Children(func() { tabBody(c, t, it) })
+			hovered := it.dirty && row.Hovered()
+			row.Children(func() { tabBody(c, t, it, hovered) })
 		}
 	})
 }
@@ -91,8 +92,11 @@ func tabFadeMask(c *ui.Context, s *ui.ScrollState) (ui.LinearGradient, bool) {
 }
 
 // tabBody 画一个标签的内容：点文字部分选中它，右侧是关闭按钮。
-func tabBody(c *ui.Context, t *ui.Theme, it tabItem) {
+func tabBody(c *ui.Context, t *ui.Theme, it tabItem, hovered bool) {
 	pick := ui.ButtonBase(c).Gap(6).AlignItems(ui.Center).Label(it.label)
+	if it.dirty {
+		pick.Description("有未保存的修改")
+	}
 	pick.OnClick(it.pick)
 	pick.Children(func() {
 		if it.icon != nil {
@@ -103,10 +107,18 @@ func tabBody(c *ui.Context, t *ui.Theme, it tabItem) {
 			ui.Text(c, truncate(it.note, 16)).FontSize(textSize).TextColor(t.TextMuted).SingleLine()
 		}
 	})
-	if it.dirty {
-		ui.Box(c).Size(7, 7).Shrink(0).Radius(3.5).Background(t.TextMuted)
-	}
-	iconButton(c, t, closeIcon, it.closeLabel, 18, it.close)
+	const closeSize = 18
+	closeButton := quietButton(c.Key("close"), t, it.closeLabel, it.close).
+		Size(closeSize, closeSize).Tooltip(it.closeLabel)
+	showDot := it.dirty && !hovered && !closeButton.Focused()
+	closeButton.Children(func() {
+		if showDot {
+			const dotSize = 4
+			ui.Box(c).Size(dotSize, dotSize).Radius(dotSize / 2).Background(t.TextMuted)
+			return
+		}
+		ui.Icon(c, closeIcon).FontSize(closeSize * 0.6).TextColor(t.TextMuted)
+	})
 }
 
 // quietButton 是标签栏与卡片顶部的按钮的共同样式：平时没有底色，悬停与按下才有淡底；label
