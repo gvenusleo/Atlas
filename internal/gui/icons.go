@@ -41,6 +41,8 @@ var (
 	clockIcon       = icon("lucide/clock")
 	moreIcon        = icon("lucide/ellipsis")
 	copyIcon        = icon("lucide/copy")
+	pencilIcon      = icon("lucide/pencil")
+	trashIcon       = icon("lucide/trash-2")
 	checkIcon       = icon("lucide/check")
 	listIcon        = icon("lucide/list")
 	outlineIcon     = icon("lucide/table-of-contents")

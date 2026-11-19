@@ -65,11 +65,11 @@ func (a *App) refreshBranch(ch *chat, force bool) {
 // branchBusy 检查同一工作树是否有会话正在运行，避免切换分支替换运行中的文件。
 // 运行会话的工作树尚未确定时，暂时禁止切换。
 func (a *App) branchBusy(ch *chat) bool {
-	if ch.running || ch.branch.dir == "" {
+	if ch.run.Running || ch.branch.dir == "" {
 		return true
 	}
 	for _, other := range a.chats {
-		if other.running && other.inRepo() &&
+		if other.run.Running && other.inRepo() &&
 			(other.branch.dir == "" || other.branch.dir == ch.branch.dir) {
 			return true
 		}

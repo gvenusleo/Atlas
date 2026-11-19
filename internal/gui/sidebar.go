@@ -275,7 +275,7 @@ func trail(
 			switch {
 			case hovered:
 				size = moreSize
-			case ch != nil && ch.running:
+			case ch != nil && ch.run.Running:
 				pulse := loading.Options{Size: runningSize, Color: t.TextMuted}
 				loading.Pulse(c, pulse).Label("运行中")
 			case hasDot:

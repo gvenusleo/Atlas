@@ -196,7 +196,7 @@ func (a *App) reopenDialog(c *ui.Context) {
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 			ui.Button(c, "取消").OnClick(func() { a.reopenOpen = false })
 			ui.PrimaryButton(c, "重新打开").
-				Disabled(ch.running || ch.loading || ch.paging).
+				Disabled(ch.run.Running || ch.loading || ch.paging).
 				OnClick(func() { a.reopen(ch) })
 		})
 	})

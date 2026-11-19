@@ -61,7 +61,7 @@ func TestLiveAndReplayAgree(t *testing.T) {
 	if got := shape(ch); len(ch.items) != 3 || !slices.Equal(got, shape(history)) {
 		t.Errorf("实时 = %q\n回放 = %q，期望一样的三项", got, shape(history))
 	}
-	if ch.running {
+	if ch.run.Running {
 		t.Error("一轮结束后仍在运行")
 	}
 }

@@ -118,7 +118,7 @@ func (a *App) configPicker(c *ui.Context, t *ui.Theme, ch *chat, id string) {
 		return value
 	}
 	value := opt.CurrentValue
-	dropdown(c, t, opt.Name, nil, &value, values, name, !ch.ready || ch.running, func() {
+	dropdown(c, t, opt.Name, nil, &value, values, name, !ch.ready || ch.run.Running, func() {
 		a.choose(ch, id, value)
 	})
 }

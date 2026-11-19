@@ -13,6 +13,7 @@ package core
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gvenusleo/atlas/internal/protocol"
 	"github.com/gvenusleo/atlas/internal/store"
@@ -28,6 +29,7 @@ type Core struct {
 	sessions map[string]*session // 本进程加载的会话
 	closing  bool
 	working  sync.WaitGroup // 进行中的请求与一轮，Close 等它们结束再关库
+	versions atomic.Uint64  // 运行和队列的标识与版本，重新加载会话时也单调递增
 	// opening 让打开与卸载串行：同一会话不会被加载两次，也不会有连接订阅到正在卸载的会话上。
 	opening sync.Mutex
 }
@@ -107,8 +109,7 @@ func (c *Core) adopt(s *session, sub protocol.Subscriber) {
 	s.subscribe(sub)
 }
 
-// release 让 sub 不再订阅会话；没有订阅者且空闲的会话卸载掉。正忙的会话在操作结束时卸载：
-// 一轮结束时由 run 卸载，换模型这类快速操作结束时由对应的请求卸载。
+// release 取消订阅。运行结束、队列清空或配置更新后，会再次检查是否可以卸载。
 func (c *Core) release(s *session, sub protocol.Subscriber) {
 	c.opening.Lock()
 	defer c.opening.Unlock()
@@ -118,7 +119,7 @@ func (c *Core) release(s *session, sub protocol.Subscriber) {
 	}
 }
 
-// unloadIfIdle 在会话没有订阅者且空闲时卸载它。
+// unloadIfIdle 仅在会话没有订阅者、没有进行中的操作且队列为空时卸载。
 func (c *Core) unloadIfIdle(s *session) {
 	c.opening.Lock()
 	defer c.opening.Unlock()
@@ -129,6 +130,8 @@ func (c *Core) unloadIfIdle(s *session) {
 
 // register 登记一个加载了的会话。
 func (c *Core) register(s *session) {
+	version := c.versions.Add(1)
+	s.runState.Version, s.queue.Version = version, version
 	c.mu.Lock()
 	c.sessions[s.id] = s
 	c.mu.Unlock()

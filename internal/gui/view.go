@@ -159,7 +159,7 @@ func (a *App) main(c *ui.Context, t *ui.Theme) {
 // conversation 构建当前会话：新会话居中欢迎，其余为标题、消息列表和底部输入。
 func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 	ui.Column(c.Key(ch.key)).Fill().Background(t.Background).Children(func() {
-		if len(ch.items) == 0 && !ch.loading && !ch.running {
+		if len(ch.items) == 0 && !ch.loading && !ch.run.Running {
 			a.titleBar(c, t, "")
 			a.welcome(c, t, ch)
 			return
@@ -207,7 +207,7 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	a.loadOlder(ch)
 	ui.Column(c).Fill().Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
-			final := i < len(blocks)-1 || !ch.running
+			final := i < len(blocks)-1 || !ch.run.Running
 			column(c, 5, func() { a.block(c, t, blocks[i], final) })
 		}).Grow(1).Padding(edgePad, 0, runBarHeight+2*runGap).ScrollbarInsets(edgeHeight, 0, edgeHeight).Children(func() {
 			if ch.loading {

@@ -66,14 +66,15 @@ func limits(window int64) (reserve, keep int64) {
 
 // compactor 记录一轮里压缩的状态：每次请求前最多试一次，失败过一次后这一轮不再试。
 type compactor struct {
-	r      *run
-	failed bool
-	tried  bool // 这次请求前已经试过
+	r            *run
+	failed       bool
+	tried        bool // 这次请求前已经试过
+	keepMessages int  // 刚插入的用户消息须保留原文
 }
 
-// startTurn 在每次请求模型之前调用：上下文接近窗口上限时先压缩。
-func (c *compactor) startTurn(ctx context.Context) {
-	c.tried = false
+// prepareRequest 按插入后的上下文决定是否压缩，并保留刚插入的消息。
+func (c *compactor) prepareRequest(ctx context.Context, keepMessages int) {
+	c.tried, c.keepMessages = false, keepMessages
 	if window := c.r.Model.ContextWindow; window > 0 {
 		reserve, _ := limits(window)
 		if Tokens(c.r.Messages) > window-reserve {
@@ -88,7 +89,7 @@ func (c *compactor) try(ctx context.Context) bool {
 		return false
 	}
 	c.tried = true
-	compacted, failed := compact(ctx, c.r, autoKeep(c.r))
+	compacted, failed := compact(ctx, c.r, autoKeep(c.r), c.keepMessages)
 	c.failed = failed
 	return compacted
 }
@@ -108,7 +109,7 @@ func autoKeep(r *run) int64 {
 // 没有可压缩的内容时返回空。in 不被修改。
 func Compact(ctx context.Context, in Input, emit func(Event)) []Message {
 	r := newRun(in, emit)
-	compact(ctx, r, 0)
+	compact(ctx, r, 0, 0)
 	return r.added
 }
 
@@ -136,9 +137,9 @@ func Fold(messages []Message, m Message) []Message {
 
 // compact 把较早的上下文换成摘要，保留约 keep 个 token 的最近消息。没有可压缩的内容时
 // 什么也不发生；摘要失败时追加一条通知，继续使用原上下文。
-func compact(ctx context.Context, r *run, keep int64) (compacted, failed bool) {
-	cut := cutPoint(r.Messages, keep)
-	if cut < 0 {
+func compact(ctx context.Context, r *run, keep int64, keepMessages int) (compacted, failed bool) {
+	cut := min(cutPoint(r.Messages, keep), len(r.Messages)-keepMessages)
+	if cut <= 0 || cut == 1 && isCompaction(r.Messages[0]) {
 		return false, false
 	}
 	r.emit(Event{Type: EventCompactionStart})

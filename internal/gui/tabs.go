@@ -127,10 +127,12 @@ func quietButton(c *ui.Context, t *ui.Theme, label string, click func()) ui.Elem
 // iconButton 画一个只有图标的方形小按钮，图标取边长的 0.6；看不到文字，悬停时给出名称。
 func iconButton(
 	c *ui.Context, t *ui.Theme, glyph *ui.SVG, label string, size float32, click func(),
-) {
-	quietButton(c, t, label, click).Size(size, size).Tooltip(label).Children(func() {
+) ui.Element {
+	btn := quietButton(c, t, label, click).Size(size, size).Tooltip(label)
+	btn.Children(func() {
 		ui.Icon(c, glyph).FontSize(size * 0.6).TextColor(t.TextMuted)
 	})
+	return btn
 }
 
 // textButton 画一个只有小字的按钮；tip 是悬停时的提示。

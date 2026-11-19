@@ -80,7 +80,7 @@ func (a *App) findCompletion(ch *chat, input ui.Element) completion {
 // activate 选中一个选项，返回此后输入框里的文本：内置命令直接执行，输入框清空；
 // 其余换进输入框里正在补全的词。
 func (a *App) activate(ch *chat, cur completion, opt option) string {
-	if opt.run && a.send(ch, opt.name) {
+	if opt.run && a.send(ch, opt.name, false) {
 		return ""
 	}
 	return ch.menu.apply(cur, opt)
