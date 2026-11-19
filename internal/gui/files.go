@@ -215,10 +215,13 @@ func readEntries(dir string) []fileEntry {
 	return entries
 }
 
-// openFile 在文件面板里打开工作目录下相对路径 rel 的文件：已经开着就切过去，否则新开一个标签。
-func (a *App) openFile(ch *chat, rel string) {
+// openFile 打开文件标签。p 可以是绝对路径，也可以相对工作目录；已有标签按绝对路径复用。
+func (a *App) openFile(ch *chat, p string) {
 	fp := ch.files
-	abs := filepath.Join(ch.cwd, rel)
+	abs := p
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(ch.cwd, abs)
+	}
 	if i := slices.IndexFunc(fp.tabs, func(tb *fileTab) bool { return tb.path == abs }); i >= 0 {
 		fp.active, fp.bar.reveal = i, fp.tabs[i].id
 		a.syncTab(fp.tabs[i])
@@ -235,12 +238,11 @@ func (a *App) openFile(ch *chat, rel string) {
 	}()
 }
 
-// showFile 打开文件面板（已开着的就不动），并在其中打开相对工作目录的文件 rel。
-func (a *App) showFile(ch *chat, rel string) {
+func (a *App) showFile(ch *chat, p string) {
 	if !ch.filesOpen() || ch.expanded != noPanel && ch.expanded != filesPanel {
 		a.toggleFiles()
 	}
-	a.openFile(ch, rel)
+	a.openFile(ch, p)
 }
 
 // readTab 读取标签的文件，st 是读它之前它在磁盘上的样子。图片解码，文本读成 UTF-8；
