@@ -168,7 +168,7 @@ const (
 // AssistantMessage 是一次模型响应的完整消息。
 type AssistantMessage struct {
 	Content []Content `json:"content"`
-	// Model 是产生这条消息的模型的完整引用 provider/model-id，由循环按 Input.Model.Ref 记下。
+	// Model 是生成这条消息的模型的完整引用 provider/model-id。
 	Model        string     `json:"model"`
 	Usage        Usage      `json:"usage,omitzero"`
 	StopReason   StopReason `json:"stop_reason"`
@@ -260,7 +260,7 @@ func (l ThinkingLevel) Valid() bool {
 
 // StreamRequest 是一次模型调用的输入。
 type StreamRequest struct {
-	Model        string // 完整引用 provider/model-id，即 Input.Model.Ref。
+	Model        string // 本次请求实际使用的完整模型引用 provider/model-id。
 	SystemPrompt string // 本次生效的系统提示词，不属于对话历史。
 	Messages     []Message
 	Tools        []Tool
@@ -338,7 +338,7 @@ type Model struct {
 	Stream        StreamFn // 已绑定客户端与模型 ID
 }
 
-// Input 是一轮看到的全部，由调用方给出快照，循环不修改它。
+// Input 是调用方给出的初始快照及运行过程中用到的回调。
 type Input struct {
 	Model Model
 	// Thinking 为空或 on 时采用服务端默认深度，off 请求关闭思考。
@@ -348,7 +348,9 @@ type Input struct {
 	Messages     []Message // 上下文，见 Fold
 	// MaxRequests 是一轮最多请求模型的次数，0 为不限；到了就追加通知并停止。
 	MaxRequests int
-	// PollPrompts 在回复与工具结果定稿后取本轮的新消息。ending 表示没有工具需要继续，
+	// ReadModel 在准备后续对话请求时成对读取模型和思考深度。首个请求使用初始值。
+	ReadModel func() (Model, ThinkingLevel)
+	// PollPrompts 按下一次请求的图片支持情况取本轮的新消息。ending 表示没有工具需要继续，
 	// atLimit 表示只检查是否有待发消息，此时不得取出消息。
-	PollPrompts func(ending, atLimit bool) (prompts []UserMessage, waiting bool)
+	PollPrompts func(acceptsImages, ending, atLimit bool) (prompts []UserMessage, waiting bool)
 }

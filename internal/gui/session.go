@@ -134,6 +134,7 @@ func (a *App) start(ch *chat) {
 		return
 	}
 	ch.starts++
+	ch.choosing = false
 	// 工作目录可能已变更，旧分支状态与 Git 目录监视需要重新建立。
 	ch.branch = branchState{}
 	ch.stopWatchHead()
@@ -380,17 +381,24 @@ func (a *App) deleteGroup() {
 	}()
 }
 
-// choose 让核心换会话的模型或思考深度；完成前选择器仍显示原来的，失败时显示原因。
+// choose 让核心保存选择，由配置项更新重绘选择器。等待响应期间串行处理两种选择。
 func (a *App) choose(ch *chat, id, value string) {
+	if !ch.ready || ch.choosing {
+		return
+	}
+	ch.choosing = true
+	starts := ch.starts
 	req := protocol.SetConfigOptionRequest{SessionID: ch.id, ConfigID: id, Value: value}
 	go func() {
-		resp, err := a.service.SetConfigOption(context.Background(), req)
+		_, err := a.service.SetConfigOption(context.Background(), req)
 		a.win.Update(func() {
-			if err != nil {
-				ch.err = err.Error()
+			if ch.starts != starts {
 				return
 			}
-			ch.options = resp.ConfigOptions
+			ch.choosing = false
+			if err != nil && ch.ready {
+				ch.err = err.Error()
+			}
 		})
 	}()
 }

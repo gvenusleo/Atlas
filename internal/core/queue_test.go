@@ -307,6 +307,66 @@ func assertHandoffCancellation(t *testing.T, client protocol.Service, r *handoff
 	}
 }
 
+// 队首图片通过预检后切换模型，首个请求仍须用通过校验的模型发送原图。
+func TestQueuedImageUsesPreparedModel(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	r := newRecorder()
+	client := c.Connect(r)
+	resp, err := client.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := resp.SessionID
+	s, err := c.lookup(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request agent.StreamRequest
+	stream := func(
+		_ context.Context, req agent.StreamRequest, _ func(agent.Delta),
+	) agent.AssistantMessage {
+		request = req
+		return agent.AssistantMessage{StopReason: agent.StopReasonStop}
+	}
+	stub(t, c, id, stream)
+	if end := sayAndWait(t, client, r, id, "开场"); end.StopReason != protocol.StopEndTurn {
+		t.Fatalf("开场没有正常结束：%+v", end)
+	}
+	image := protocol.Image("AQID", "image/png")
+	s.mu.Lock()
+	s.model.Images = true
+	s.queue.Items = []protocol.QueuedPrompt{{ID: 1, Version: 1, Delivery: protocol.PromptNextTurn,
+		Prompt: []protocol.ContentBlock{image}}}
+	queuedTurn := s.reserveQueuedTurn()
+	s.activateTurn(queuedTurn, protocol.RunStateUpdate{})
+	s.mu.Unlock()
+	t.Cleanup(queuedTurn.cancel)
+	in, user, err := s.prepareTurn(queuedTurn, queuedTurn.queued.Prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SetConfigOption(t.Context(), protocol.SetConfigOptionRequest{
+		SessionID: id, ConfigID: protocol.ConfigModel, Value: "p/b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stub(t, c, id, stream)
+	state := s.runTurn(queuedTurn, in, user)
+	s.finishTurn(queuedTurn, state)
+	if state.StopReason != protocol.StopEndTurn || request.Model != "p/a" ||
+		request.ThinkingLevel != agent.ThinkingLow || len(request.Messages) == 0 {
+		t.Fatalf("预检后的首个请求使用了 %q、%q，结束状态：%+v",
+			request.Model, request.ThinkingLevel, state)
+	}
+	last, ok := request.Messages[len(request.Messages)-1].(agent.UserMessage)
+	if !ok || !slices.ContainsFunc(last.Content, func(content agent.Content) bool {
+		img, ok := content.(agent.ImageContent)
+		return ok && img.Data == image.Data
+	}) {
+		t.Fatal("首个请求没有收到队首图片")
+	}
+}
+
 // 同批插入中途写入失败时，继续发送从失败处开始。
 func TestPromptQueueKeepsUnwrittenMessages(t *testing.T) {
 	c := open(t, home(t, settingsJSON))

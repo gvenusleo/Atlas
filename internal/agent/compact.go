@@ -172,6 +172,7 @@ func summarize(ctx context.Context, r *run, messages []Message) (string, error) 
 	request := func() StreamRequest {
 		return StreamRequest{
 			Model: r.Model.Ref, SystemPrompt: summarySystemPrompt, Messages: []Message{prompt},
+			ThinkingLevel: r.Thinking,
 		}
 	}
 	final := streamWithRetry(ctx, r, request, func(Delta) {}, nil)

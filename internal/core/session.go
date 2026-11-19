@@ -20,19 +20,20 @@ import (
 	"github.com/gvenusleo/atlas/internal/tools"
 )
 
-// session 是一个加载了的会话。字段都由 mu 保护，锁只在读写字段时持有，从不跨 IO；
-// 修改配置与写库只由占用会话（busy）的一方进行，所以同一时刻只有一个 goroutine 在修改它们。
+// session 是一个加载了的会话。mu 保护内存状态，writeMu 使写库与对应的更新按顺序完成。
 type session struct {
 	id   string
 	core *Core
 
 	mu           sync.Mutex
+	writeMu      sync.Mutex // 串行保存消息、修改配置与删除，首次写库时才能取到正确的配置
 	cwd          string
 	sessionType  protocol.SessionType
 	ownerID      string // 会话的属主，见 protocol.NewSessionRequest
 	saved        bool   // 已写进库；之前只在内存里
 	seq          int64  // 本进程写入或读到的最后序号
-	busy         *busy  // 占用会话的操作，nil 表示空闲
+	busy         *busy  // 占用会话的操作，nil 表示没有独占操作
+	configuring  bool   // 配置保存期间，即使最后一位订阅者离开也要保留会话
 	runState     protocol.RunStateUpdate
 	queue        protocol.PromptQueue
 	runMu        sync.Mutex // 使运行状态按发布顺序送达，避免前一轮的收尾晚于新一轮开始
@@ -48,8 +49,7 @@ type session struct {
 	ids         int                   // 已分配的消息 ID 数
 }
 
-// busy 是占用会话的操作。一轮或压缩有 cancel，可以取消，会通知订阅者；
-// 换模型、删除这类很快的操作没有。
+// busy 是占用会话的操作。删除不关联可取消的运行。
 type busy struct {
 	turn *turn
 }
@@ -229,7 +229,7 @@ func (s *session) subscribed(sub protocol.Subscriber) bool {
 func (s *session) idle() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.subscribers) == 0 && s.busy == nil && len(s.queue.Items) == 0
+	return len(s.subscribers) == 0 && s.busy == nil && !s.configuring && len(s.queue.Items) == 0
 }
 
 // broadcast 把更新推送给每个订阅该会话的连接。
@@ -276,7 +276,7 @@ func commands(list []skills.Skill) []protocol.Command {
 	return commands
 }
 
-// begin 占用会话来更换配置或删除。运行有自己的受理与交接流程。
+// begin 占用会话以便删除。运行有自己的受理与交接流程。
 func (s *session) begin() (end func(), err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

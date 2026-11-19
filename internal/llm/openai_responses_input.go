@@ -19,13 +19,13 @@ import (
 type inputItem = responses.ResponseInputItemUnionParam
 
 // requestOf 组装一次请求的参数；本地可判定的错误在这里全部拦下，不消耗网络调用。
-func requestOf(req agent.StreamRequest) (responses.ResponseNewParams, error) {
-	input, err := inputOf(req.SystemPrompt, req.Messages)
+func requestOf(req agent.StreamRequest, modelID string) (responses.ResponseNewParams, error) {
+	input, err := inputOf(req.Model, req.SystemPrompt, req.Messages)
 	if err != nil {
 		return responses.ResponseNewParams{}, err
 	}
 	params := responses.ResponseNewParams{
-		Model: shared.ResponsesModel(req.Model),
+		Model: shared.ResponsesModel(modelID),
 		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: input},
 		Tools: toolsOf(req.Tools),
 	}
@@ -54,13 +54,15 @@ func requestOf(req agent.StreamRequest) (responses.ResponseNewParams, error) {
 // inputOf 先放入本次系统提示词，再转换请求历史；缺失工具结果临时补齐，失败或取消的响应跳过。
 // 历史中的 system 只允许压缩记录，系统提示词快照、通知与未知类型报错。
 // 图片允许出现在 user 消息与工具结果；assistant 图片报错而非丢弃。
-func inputOf(systemPrompt string, msgs []agent.Message) (responses.ResponseInputParam, error) {
+func inputOf(
+	modelRef, systemPrompt string, msgs []agent.Message,
+) (responses.ResponseInputParam, error) {
 	var items responses.ResponseInputParam
 	if systemPrompt != "" {
 		items = append(items, textItem(responses.EasyInputMessageRoleSystem, systemPrompt))
 	}
 	for _, m := range messagesForRequest(msgs) {
-		converted, err := itemsOf(m)
+		converted, err := itemsOf(modelRef, m)
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +72,7 @@ func inputOf(systemPrompt string, msgs []agent.Message) (responses.ResponseInput
 }
 
 // itemsOf 把一条历史消息转换为零到多个输入项。
-func itemsOf(m agent.Message) ([]inputItem, error) {
+func itemsOf(modelRef string, m agent.Message) ([]inputItem, error) {
 	switch v := m.(type) {
 	case agent.SystemMessage:
 		switch v.Type {
@@ -91,7 +93,7 @@ func itemsOf(m agent.Message) ([]inputItem, error) {
 		}
 		return []inputItem{easyContent(responses.EasyInputMessageRoleUser, content)}, nil
 	case agent.AssistantMessage:
-		return assistantItems(v)
+		return assistantItems(v, v.Model == modelRef)
 	case agent.ToolResultMessage:
 		output, err := toolOutput(v.Content)
 		if err != nil {
@@ -109,11 +111,15 @@ func itemsOf(m agent.Message) ([]inputItem, error) {
 }
 
 // assistantItems 把助手内容块按原顺序转换为推理项、文本消息与工具调用。
-func assistantItems(m agent.AssistantMessage) ([]inputItem, error) {
+func assistantItems(m agent.AssistantMessage, sameModel bool) ([]inputItem, error) {
 	var items []inputItem
 	for _, c := range m.Content {
 		switch p := c.(type) {
 		case agent.ThinkingContent:
+			// 原始推理项可能携带只有生成它的模型服务才能解密的数据。
+			if !sameModel {
+				continue
+			}
 			item, err := reasoningItem(p)
 			if err != nil {
 				return nil, err
