@@ -74,10 +74,10 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 			emptySessions(c, t)
 		} else {
 			list := ui.Sidebar(c, &selected, func() {
-				for _, g := range groupByDir(a.infos) {
-					a.group(c, t, g, selected)
+				for i, g := range groupByDir(a.infos) {
+					a.group(c, t, g, selected, i == 0)
 				}
-			}).Grow(1).Padding(6, 8, 6)
+			}).Grow(1).Padding(4, 8, 4)
 			a.keyNav = list.FocusVisible()
 			if list.Changed() {
 				a.open(selected)
@@ -87,7 +87,7 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 			ui.Text(c, a.err).FontSize(smallSize).TextColor(t.Danger).Selectable().Padding(8)
 		}
 		// 只有一个图标，放在左下角；图标与上面各入口的图标左右居中对齐，离左边与离底边一样远。
-		ui.Row(c).Padding(0, 14, 14).Children(func() {
+		ui.Row(c).Padding(4, 14, 14).Children(func() {
 			iconButton(c, t, settingsIcon, "设置", barButton, a.openSettings)
 		})
 	})
@@ -106,7 +106,7 @@ func emptySessions(c *ui.Context, t *ui.Theme) {
 // entries 画列表上方不随之滚动的部分：新建、搜索（打开启动器）与定时任务（把主区换成定时任务视图）
 // 三个入口。
 func (a *App) entries(c *ui.Context, t *ui.Theme) {
-	ui.Column(c).Padding(0, 8, 6).Gap(2).Children(func() {
+	ui.Column(c).Padding(0, 8, 4).Gap(2).Children(func() {
 		entry(c, t, entrySpec{icon: plusIcon, label: "新建", primary: true, click: a.newChat})
 		entry(c, t, entrySpec{icon: searchIcon, label: "搜索", click: a.openLauncher})
 		entry(c, t, entrySpec{icon: clockIcon, label: "定时任务", active: a.showTasks,
@@ -158,7 +158,7 @@ func statusDot(c *ui.Context, color ui.Color) {
 // group 构建一个目录分组：标题可折叠，折叠后标题尾部显示会话数；
 // 默认只列出最近的 groupLimit 个，其余在“显示更多”之后。
 // 悬停标题显示完整路径，右键菜单提供目录和会话操作。
-func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
+func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string, first bool) {
 	open := a.sections[g.cwd]
 	if open == nil {
 		open = new(true)
@@ -169,14 +169,18 @@ func (a *App) group(c *ui.Context, t *ui.Theme, g group, selected string) {
 		title += " · " + strconv.Itoa(len(g.infos))
 	}
 	shown := a.visible(g, selected)
-	ui.SidebarSection(c.Key(g.cwd), title, open, func() {
+	section := ui.SidebarSection(c.Key(g.cwd), title, open, func() {
 		for _, info := range shown {
 			a.session(c, t, info, selected)
 		}
 		if hidden := len(g.infos) - len(shown); hidden > 0 {
 			showMore(c, t, hidden, t.SurfaceHover, func() { a.more[g.cwd] = true })
 		}
-	}).Tooltip(g.cwd).ContextMenu(func(m *ui.Menu) {
+	})
+	if !first {
+		section.Margin(t.Space(1.5), 0, 0, 0)
+	}
+	section.Tooltip(g.cwd).ContextMenu(func(m *ui.Menu) {
 		if m.Item("在此目录新建对话").Chosen() {
 			a.cwd = g.cwd
 			a.newChat()
