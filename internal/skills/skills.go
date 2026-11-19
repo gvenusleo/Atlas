@@ -248,17 +248,21 @@ func validateName(name string) error {
 	return nil
 }
 
-// Invoked 返回 text 显式调用的技能：以 / 加技能名开头，其后是空白或结尾。
-func Invoked(list []Skill, text string) (Skill, bool) {
+// Invoked 返回 text 中显式调用的技能，按首次出现的顺序排列。
+func Invoked(list []Skill, text string) []Skill {
+	var invoked []Skill
+	seen := make(map[string]bool)
 	for word := range strings.FieldsSeq(text) {
-		if name, ok := strings.CutPrefix(word, "/"); ok {
-			if i := slices.IndexFunc(list, func(s Skill) bool { return s.Name == name }); i >= 0 {
-				return list[i], true
-			}
+		name, ok := strings.CutPrefix(word, "/")
+		if !ok || seen[name] {
+			continue
 		}
-		break // 只看第一个词
+		if i := slices.IndexFunc(list, func(s Skill) bool { return s.Name == name }); i >= 0 {
+			invoked = append(invoked, list[i])
+			seen[name] = true
+		}
 	}
-	return Skill{}, false
+	return invoked
 }
 
 // invocationPrefix 是技能块的开头，InvocationBlock 生成、ParseInvocationBlock 识别。
