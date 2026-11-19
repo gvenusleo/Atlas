@@ -58,21 +58,19 @@ func (a *App) followLink(anchor *string, base, dest string) {
 	}
 }
 
-// openLinkPath 打开链接指向的路径：工作目录里的文件在文件面板打开，有行号时定位到那一行；
-// 目录与工作目录之外的在文件管理器中显示，不用系统程序打开。
+// openLinkPath 在文件面板打开链接指向的文件，有行号时定位到该行。目录在文件管理器中显示。
 func (a *App) openLinkPath(p string, line int) {
 	info, err := os.Stat(p)
 	if err != nil {
 		a.toast = "文件不存在：" + p
 		return
 	}
-	ch := a.current
-	rel := relOrAbs(ch.cwd, p)
-	if info.IsDir() || filepath.IsAbs(rel) {
+	if info.IsDir() {
 		mygo.Shell.ShowItemInFolder(p)
 		return
 	}
-	a.showFile(ch, rel)
+	ch := a.current
+	a.showFile(ch, p)
 	if line > 0 {
 		ch.files.tabs[ch.files.active].showPosition(editor.Pos{Line: line - 1})
 	}
@@ -126,8 +124,17 @@ func linkTarget(base, dest string) (p string, line int, ok bool) {
 		}
 		p = u.Path
 	}
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(base, p)
+	if !filepath.IsAbs(p) && base != "" {
+		if !os.IsPathSeparator(base[len(base)-1]) {
+			base += string(os.PathSeparator)
+		}
+		p = base + p
+	}
+	// 符号链接后面的 .. 取决于链接的目标，须先按文件系统解析。
+	if filepath.Clean(p) != p {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			p = resolved
+		}
 	}
 	return p, line, true
 }
