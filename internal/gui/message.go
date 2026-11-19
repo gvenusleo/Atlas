@@ -45,7 +45,8 @@ func (a *App) part(c *ui.Context, t *ui.Theme, items []*item) {
 	it := items[0]
 	switch it.kind {
 	case itemAssistant:
-		o := a.useLinks(&a.md, &it.anchor, a.current.cwd)
+		ch := a.current
+		o := a.useMarkdown(&a.md, &ch.mdImages, &it.anchor, ch.cwd)
 		if it.done {
 			markdown.View(c, it.text, o)
 		} else {
@@ -76,7 +77,8 @@ func (a *App) compaction(c *ui.Context, t *ui.Theme, it *item) {
 		ui.Text(c, label).FontSize(bodySize).TextColor(t.TextMuted).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
-			o := a.useLinks(&a.mdNote, &it.anchor, a.current.cwd)
+			ch := a.current
+			o := a.useMarkdown(&a.mdNote, &ch.mdImages, &it.anchor, ch.cwd)
 			scrolled(c, func() { markdown.View(c, it.text, o) })
 		})
 	})
@@ -89,7 +91,8 @@ func (a *App) skillRow(c *ui.Context, t *ui.Theme, it *item) {
 		ui.Text(c, it.skill).FontSize(bodySize).SingleLine()
 	}, func() {
 		panelBody(c, t, false, func() {
-			o := a.useLinks(&a.mdNote, &it.anchor, a.current.cwd)
+			ch := a.current
+			o := a.useMarkdown(&a.mdNote, &ch.mdImages, &it.anchor, ch.cwd)
 			scrolled(c, func() { markdown.View(c, it.text, o) })
 		})
 	})

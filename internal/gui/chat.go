@@ -87,9 +87,10 @@ type chat struct {
 	paging  bool  // 正在加载更早的记录
 	// seekSeq 是大纲要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
 	// 0 表示没有。
-	seekSeq int64
-	list    ui.ListState
-	outline outline // 会话大纲
+	seekSeq  int64
+	list     ui.ListState
+	outline  outline // 会话大纲
+	mdImages markdownImages
 	promptDraft
 	submissions  []promptSubmission
 	failedDrafts []failedPrompt
