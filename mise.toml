@@ -11,11 +11,8 @@ run = "go tool mygo build"
 
 [tasks.install]
 description = "安装 macOS App"
-# 在 mise.local.toml 中设置 ATLAS_MACOS_SIGNING_IDENTITY 可指定本机签名身份。
-run = """
-go tool mygo build -sign "${ATLAS_MACOS_SIGNING_IDENTITY:-}" &&
-rm -rf /Applications/Atlas.app && ditto build/darwin-arm64/Atlas.app /Applications/Atlas.app
-"""
+depends = ["build"]
+run = "rm -rf /Applications/Atlas.app && ditto build/darwin-arm64/Atlas.app /Applications/Atlas.app"
 
 [tasks.icon]
 description = "重新生成应用图标（resources/icon.png、icon-dev.png）与托盘图标（internal/gui/tray.png）"

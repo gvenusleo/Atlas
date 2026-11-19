@@ -6,7 +6,8 @@
   "copyright": "© 2026 liuyuxin",
   "out": "build",
   "macos": {
-    "minimumSystemVersion": "13.0"
+    "minimumSystemVersion": "13.0",
+    "signingIdentity": "FA69ED0C1AE020718C546994B3AB48450341180F"
   },
   "linux": {
     "maintainer": "liuyuxin <gvenusleo@gmail.com>",

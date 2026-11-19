@@ -52,8 +52,8 @@ jobs:
         env:
           ATLAS_MACOS_CERTIFICATE_P12: ${{ secrets.ATLAS_MACOS_CERTIFICATE_P12 }}
           ATLAS_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.ATLAS_MACOS_CERTIFICATE_PASSWORD }}
-          ATLAS_MACOS_SIGNING_IDENTITY: FA69ED0C1AE020718C546994B3AB48450341180F
         run: |
+          identity=$(jq -er '.macos.signingIdentity | select(test("^[0-9A-Fa-f]{40}$")) | ascii_upcase' mygo.json)
           : "${ATLAS_MACOS_CERTIFICATE_P12:?未配置 macOS 签名证书}"
           : "${ATLAS_MACOS_CERTIFICATE_PASSWORD:?未配置 macOS 签名证书密码}"
           certificate=$(mktemp "$RUNNER_TEMP/atlas-certificate.XXXXXX")
@@ -71,18 +71,15 @@ jobs:
           security list-keychains -d user -s "$keychain" login.keychain
 
           if ! security find-identity -v -p codesigning "$keychain" |
-            awk -v identity="$ATLAS_MACOS_SIGNING_IDENTITY" '
+            awk -v identity="$identity" '
               $2 == identity { found = 1 }
               END { exit !found }
             '; then
-            echo '找不到与 Atlas 本机安装一致的有效签名身份' >&2
+            echo '找不到与 mygo.json 配置一致的有效签名身份' >&2
             exit 1
           fi
-          printf 'ATLAS_MACOS_SIGNING_IDENTITY=%s\n' "$ATLAS_MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
       - name: 构建并上传
         env:
           GH_TOKEN: ${{ github.token }}
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.ATLAS_MYGO_UPDATER_PRIVATE_KEY }}
-        run: |
-          go tool mygo build -platform "${{ matrix.platform }}" \
-            -sign "${ATLAS_MACOS_SIGNING_IDENTITY:-}" -upload
+        run: go tool mygo build -platform "${{ matrix.platform }}" -upload
