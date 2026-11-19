@@ -5,24 +5,30 @@ import "github.com/egoist/mygo/ui"
 const (
 	launcherWidth       = 560
 	launcherHeight      = 360
-	launcherListReserve = 186 // 小窗口中为结果列表之外的区域预留空间
+	launcherListReserve = 120 // 为输入框、按键提示和面板下方的留白预留空间
 )
 
 // launcherDialog 在启动器打开时画它：顶部是输入框，其下是结果，底部是按键提示。
 func (a *App) launcherDialog(c *ui.Context, t *ui.Theme) {
 	l := &a.launch
+	if !l.open {
+		return
+	}
 	width, height := c.Size()
-	showModal(c, "launcher-dialog", &l.open, func() {
+	top := height * 0.12
+	ui.DialogBase(c.Key("launcher-dialog"), &l.open, func(backdrop, panel ui.Element) {
+		backdrop.Justify(ui.Start).Padding(top, 0, 0)
+		modalPanel(c, backdrop, panel).Width(min(launcherWidth, width-2*gutter))
 		if l.query != l.shownQuery {
 			l.index, l.shownQuery = 0, l.query
 		}
 		l.results = a.launcherResults()
 		input := a.launcherInput(c, t)
-		list, selected := a.launcherList(c, t, min(launcherHeight, height-launcherListReserve))
+		list, selected := a.launcherList(c, t, min(launcherHeight, height-top-launcherListReserve))
 		// 键盘焦点一直在输入框里：告诉读屏它控制下面的结果，↑↓ 停在的是哪一项。
 		input.Expanded(len(l.results) > 0).Controls(list).ActiveDescendant(selected)
 		launcherHelp(c, t)
-	}).Width(min(launcherWidth, width-2*gutter))
+	})
 }
 
 // launcherInput 画输入框并返回它，↑↓ 与 Enter 由 launcherKey 处理。结果不是弹出的，而是排在
