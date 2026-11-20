@@ -26,17 +26,26 @@ func (a *App) statusRow(c *ui.Context, t *ui.Theme, ch *chat) {
 	})
 }
 
-// folder 显示会话的工作目录；还没有保存的新会话可以点击更换。
+// folder 显示会话的工作目录。新会话可以换目录，Git 工作树还可以打开管理入口。
 func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 	var row ui.Element
-	if ch.fresh() {
-		row = ui.ButtonBase(c).Label("更换工作目录")
-		if row.Hovered() {
-			row.Background(rowFill(t))
+	git := !ch.cwdGone && ch.inRepo()
+	switch {
+	case git:
+		label := "工作树"
+		if ch.fresh() {
+			label = "选择工作目录"
 		}
-		row.OnClick(func() { a.pickDir(ch) })
-	} else {
+		row = ui.ButtonBase(c.Key("worktree-folder")).Label(label).Tooltip(label).
+			OnClick(func() { a.openWorktrees(ch) })
+	case ch.fresh():
+		row = ui.ButtonBase(c.Key("plain-folder")).Label("更换工作目录").
+			OnClick(func() { a.pickDir(ch) })
+	default:
 		row = ui.Row(c)
+	}
+	if row.Hovered() && (ch.fresh() || git) {
+		row.Background(rowFill(t))
 	}
 	// 允许路径收缩，避免长路径挤占分支与模型选择器的空间。
 	row.Gap(6).AlignItems(ui.Center).Padding(3, 6).Radius(controlRound).MinWidth(0).Shrink(1)
@@ -45,6 +54,9 @@ func (a *App) folder(c *ui.Context, t *ui.Theme, ch *chat) {
 		ui.Text(c, shortPath(ch.cwd)).FontSize(smallSize).TextColor(t.TextMuted).SingleLine().
 			MinWidth(0)
 	})
+	if git {
+		a.worktreeMenu(c, t, ch, row)
+	}
 }
 
 // shortPath 把主目录缩写为 ~。

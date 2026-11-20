@@ -20,7 +20,7 @@ type branchState struct {
 // refreshBranch 在后台重新读取分支；force 为假时使用未过期的缓存。
 // 工作目录变更或会话被丢弃后，通过 chat.starts 丢弃在途结果。
 func (a *App) refreshBranch(ch *chat, force bool) {
-	if !ch.inRepo() {
+	if a.worktreeRecoveries[ch.id].Root != "" || !ch.inRepo() {
 		ch.branch = branchState{}
 		return
 	}
@@ -65,7 +65,8 @@ func (a *App) refreshBranch(ch *chat, force bool) {
 // branchBusy 检查同一工作树是否有会话正在运行，避免切换分支替换运行中的文件。
 // 运行会话的工作树尚未确定时，暂时禁止切换。
 func (a *App) branchBusy(ch *chat) bool {
-	if ch.run.Running || ch.branch.dir == "" {
+	if ch.run.Running || ch.branch.dir == "" || a.switchingBranches[ch.branch.dir] != "" ||
+		a.worktreeBlocked(ch.cwd) {
 		return true
 	}
 	for _, other := range a.chats {
@@ -82,10 +83,15 @@ func (a *App) chooseBranch(ch *chat, name string, remote bool) {
 	if a.branchBusy(ch) {
 		return
 	}
-	cwd, starts := ch.cwd, ch.starts
+	cwd, starts, dir := ch.cwd, ch.starts, ch.branch.dir
+	if a.switchingBranches == nil {
+		a.switchingBranches = make(map[string]string)
+	}
+	a.switchingBranches[dir] = cwd
 	go func() {
 		err := switchBranch(cwd, name, remote)
 		a.win.Update(func() {
+			delete(a.switchingBranches, dir)
 			if ch.starts != starts {
 				return
 			}

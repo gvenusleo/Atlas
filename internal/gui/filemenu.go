@@ -57,7 +57,12 @@ func (a *App) createItems(m *ui.Menu, ch *chat, dir string) {
 
 // trash 把 rel 移到废纸篓，失败时提示原因；成功后立即重读它所在的目录，不等文件监视。
 func (a *App) trash(ch *chat, rel string) {
-	if err := mygo.Shell.TrashItem(filepath.Join(ch.cwd, rel)); err != nil {
+	abs := filepath.Join(ch.cwd, rel)
+	if a.worktreeRecoveries[ch.id].Root != "" || a.worktreeBlocked(abs) {
+		a.toast = "工作树不可用，请稍后再试或先恢复工作树"
+		return
+	}
+	if err := mygo.Shell.TrashItem(abs); err != nil {
 		a.toast = "删除失败：" + err.Error()
 		return
 	}

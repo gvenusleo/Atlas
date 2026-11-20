@@ -41,7 +41,7 @@ func (a *App) unsavedDialog(c *ui.Context) {
 			save := ui.PrimaryButton(c, "保存").Clicked()
 			switch {
 			case save:
-				a.saveTab(tb, func() { ch.files.remove(tb) })
+				a.saveTab(ch, tb, func() { ch.files.remove(tb) })
 			case discard:
 				ch.files.remove(tb)
 			}

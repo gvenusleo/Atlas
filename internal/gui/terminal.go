@@ -30,6 +30,10 @@ func (a *App) toggleTerminal() {
 // newTerminal 在会话的工作目录开一个终端标签并切换过去；失败时错误显示在面板里。
 func (a *App) newTerminal(ch *chat) {
 	a.shells++
+	if a.worktreeBlocked(ch.cwd) || a.worktreeRecoveries[ch.id].Root != "" {
+		ch.termErr = "工作树不可用，请恢复后再打开终端"
+		return
+	}
 	// 会话的目录已经不存在时，shell 无法启动，改用主目录（空表示主目录）。
 	dir := ch.cwd
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {

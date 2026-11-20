@@ -44,6 +44,7 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 	if !a.leave() {
 		return false
 	}
+	a.worktrees = nil
 	a.showTasks, a.fromTasks = false, false
 	a.cwdGoneOpen, a.cwdGoneErr, a.reopenOpen = false, "", false
 	id := info.SessionID
@@ -75,15 +76,20 @@ func (a *App) askReopen(ch *chat) {
 
 // reopen 从数据库恢复会话与最近一页历史，保留界面的草稿、附件和本地面板。
 func (a *App) reopen(ch *chat) {
-	if ch.id == "" || ch.run.Running || ch.loading || ch.paging {
+	if ch.id == "" || ch.run.Running || ch.loading || ch.paging || a.worktreeBlocked(ch.cwd) {
 		return
 	}
 	ch.ready, ch.loading = false, true
-	id, gen := ch.id, ch.starts
+	id, gen, cwd := ch.id, ch.starts, ch.cwd
+	record := a.worktreeRecoveries[id]
 	go func() {
 		ctx := context.Background()
-		resp, err := a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
+		err := requireWorktreeRecovery(record, cwd)
+		var resp protocol.OpenSessionResponse
 		var history protocol.ListHistoryResponse
+		if err == nil {
+			resp, err = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
+		}
 		if err == nil {
 			history, err = a.service.ListHistory(ctx,
 				protocol.ListHistoryRequest{SessionID: id, Limit: historyPage})
@@ -95,7 +101,12 @@ func (a *App) reopen(ch *chat) {
 			ch.loading = false
 			if err != nil {
 				ch.err = err.Error()
-				a.askReopen(ch)
+				if errors.Is(err, fs.ErrNotExist) {
+					a.reopenOpen = false
+					a.askCwdGone(ch)
+				} else {
+					a.askReopen(ch)
+				}
 				return
 			}
 			ch.err, ch.seekSeq = "", 0
@@ -130,11 +141,16 @@ func (a *App) reload(ch *chat) {
 // 对话下方，发送时再试一次。窗口还没创建（启动时）先不做，创建窗口后再调用。
 // 之后又调用过 start（比如又换了工作目录）时，这次的响应已经过时：丢掉它，新建的会话也关掉。
 func (a *App) start(ch *chat) {
-	if a.win == nil {
+	if a.win == nil || a.worktreeBlocked(ch.cwd) {
 		return
 	}
 	ch.starts++
 	ch.choosing = false
+	if err := requireWorktreeRecovery(a.worktreeRecoveries[ch.id], ch.cwd); err != nil {
+		ch.err = err.Error()
+		a.askCwdGone(ch)
+		return
+	}
 	// 工作目录可能已变更，旧分支状态与 Git 目录监视需要重新建立。
 	ch.branch = branchState{}
 	ch.stopWatchHead()
@@ -190,11 +206,11 @@ func (a *App) start(ch *chat) {
 // askCwdGone 在会话的工作目录已不存在时打开恢复对话框；不是当前会话时只记下来，等用户
 // 进入这个会话时重新打开。后台任务不改该用户的视图。
 func (a *App) askCwdGone(ch *chat) {
-	if ch.job != nil || !cwdMissing(ch.cwd) {
+	if ch.job != nil || (!cwdMissing(ch.cwd) && a.worktreeRecoveries[ch.id].Root == "") {
 		return
 	}
 	ch.cwdGone = true
-	if a.current == ch {
+	if a.current == ch && !a.showTasks {
 		a.cwdGoneChat, a.cwdGoneErr, a.cwdGoneOpen = ch, "", true
 	}
 }
@@ -211,6 +227,9 @@ func cwdMissing(cwd string) bool {
 // createCwd 在会话原来的路径上建目录，建好后重新打开。只建一级：父目录不在时多半是磁盘
 // 没挂载，多建几级会造出一个空目录。失败时把原因留给对话框，用户改完可以再试。
 func (a *App) createCwd(ch *chat) {
+	if a.worktreeBlocked(ch.cwd) || a.worktreeRecoveries[ch.id].Root != "" {
+		return
+	}
 	done := func() {
 		ch.cwdGone, a.cwdGoneOpen, a.cwdGoneErr = false, false, ""
 		a.start(ch)
@@ -406,8 +425,13 @@ func (a *App) choose(ch *chat, id, value string) {
 // setCwd 给还没发过消息的新会话换工作目录：工作目录在建会话时就定了，所以丢掉原来的，
 // 按新目录再建一个。
 func (a *App) setCwd(ch *chat, cwd string) {
-	if !ch.fresh() {
+	if !ch.fresh() || a.worktreeBlocked(cwd) || !a.canChangeDirectory(ch) || ch.cwd == cwd {
 		return
+	}
+	ch.closePanels()
+	ch.files, ch.changes, ch.order, ch.expanded = nil, nil, nil, noPanel
+	if a.fileCreate != nil && a.fileCreate.ch == ch {
+		a.fileCreate = nil
 	}
 	ch.cwd, a.cwd = cwd, cwd
 	a.restart(ch)
@@ -474,6 +498,14 @@ func (a *App) closeSession(id string) {
 
 // send 记下按键时看到的轮次。运行中仍可继续输入，由 sendNext 按提交顺序交给核心。
 func (a *App) send(ch *chat, text string, nextTurn bool) bool {
+	if a.worktreeBlocked(ch.cwd) {
+		a.toast = "工作树正在维护，请稍后再试"
+		return false
+	}
+	if ch.cwdGone {
+		a.askCwdGone(ch)
+		return false
+	}
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" && len(ch.attachments) == 0 || !ch.canSend() {
 		return false
@@ -515,11 +547,12 @@ func (a *App) send(ch *chat, text string, nextTurn bool) bool {
 
 func (a *App) sendNext(ch *chat) {
 	submission := ch.submissions[0]
-	id, ready, gen := ch.id, ch.ready, ch.starts
+	id, ready, gen, cwd := ch.id, ch.ready, ch.starts, ch.cwd
+	record := a.worktreeRecoveries[id]
 	go func() {
 		ctx := context.Background()
-		var err error
-		if !ready {
+		err := requireWorktreeRecovery(record, cwd)
+		if err == nil && !ready {
 			var resp protocol.OpenSessionResponse
 			resp, err = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
 			if err == nil {
@@ -579,6 +612,15 @@ func (a *App) finish(ch *chat, err error) {
 
 // pickDir 让用户为尚未保存的新会话选择工作目录。
 func (a *App) pickDir(ch *chat) {
+	a.pickDirectory(ch, func(cwd string) {
+		d := &worktreePicker{ch: ch, starts: ch.starts, cwd: ch.cwd}
+		a.worktrees = d
+		a.useWorktree(d, cwd)
+	})
+}
+
+func (a *App) pickDirectory(ch *chat, apply func(string)) {
+	starts := ch.starts
 	options := mygo.OpenDialogOptions{
 		Parent: a.win, Title: "选择工作目录", DefaultPath: ch.cwd, Directory: true,
 	}
@@ -587,6 +629,10 @@ func (a *App) pickDir(ch *chat) {
 		if err != nil || len(paths) == 0 {
 			return
 		}
-		a.win.Update(func() { a.setCwd(ch, paths[0]) })
+		a.win.Update(func() {
+			if a.current == ch && !a.showTasks && ch.starts == starts && ch.fresh() {
+				apply(paths[0])
+			}
+		})
 	}()
 }

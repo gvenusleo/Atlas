@@ -162,8 +162,27 @@ func (a *App) system(c *ui.Context, t *ui.Theme) {
 			a.setPrefs(p)
 		})
 	})
+	a.worktreeDirectorySetting(c, t)
 	settingRow(c, "Atlas "+mygo.App.Version(), func() {
 		fillButton(c, t, nil, "检查更新…", updater.CheckForUpdates)
+	})
+}
+
+func (a *App) worktreeDirectorySetting(c *ui.Context, t *ui.Theme) {
+	cwd, _ := a.prefs.worktreeDirectory()
+	settingControls(c.Key("worktree-directory"), func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+			ui.Text(c, "工作树目录")
+			ui.Text(c, shortPath(cwd)).FontSize(smallSize).TextColor(t.TextMuted).
+				SingleLine().Tooltip(cwd)
+		})
+	}, func() {
+		ui.Row(c).Gap(8).Children(func() {
+			if a.prefs.WorktreeDir != "" {
+				fillButton(c, t, nil, "恢复默认", func() { a.setWorktreeDirectory("") })
+			}
+			fillButton(c, t, nil, "选择…", a.pickWorktreeDirectory)
+		})
 	})
 }
 
@@ -210,8 +229,12 @@ func (a *App) themeSwitch(c *ui.Context, t *ui.Theme) {
 
 // settingRow 画一项设置：左边是名称，右边是 control 画的控件。
 func settingRow(c *ui.Context, name string, control func()) {
+	settingControls(c, func() { ui.Text(c, name).Grow(1).MinWidth(0) }, control)
+}
+
+func settingControls(c *ui.Context, label, control func()) {
 	ui.Row(c).AlignItems(ui.Center).Gap(16).Children(func() {
-		ui.Text(c, name).Grow(1).MinWidth(0)
+		label()
 		control()
 	})
 }

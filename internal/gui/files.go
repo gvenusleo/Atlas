@@ -230,7 +230,7 @@ func (a *App) openFile(ch *chat, p string) {
 	}
 	fp.next++
 	tb := &fileTab{id: fp.next, path: abs, loading: true}
-	tb.onSave = func() { a.saveTab(tb, nil) }
+	tb.onSave = func() { a.saveTab(ch, tb, nil) }
 	fp.tabs = append(fp.tabs, tb)
 	fp.active, fp.bar.reveal = len(fp.tabs)-1, tb.id
 	go func() {

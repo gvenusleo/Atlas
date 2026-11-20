@@ -73,6 +73,47 @@ func (a *App) setPrefs(p prefs) {
 	}
 }
 
+func (p prefs) worktreeDirectory() (string, error) {
+	if filepath.IsAbs(p.WorktreeDir) {
+		return filepath.Clean(p.WorktreeDir), nil
+	}
+	dir, err := config.Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "worktrees"), nil
+}
+
+func (a *App) pickWorktreeDirectory() {
+	cwd, _ := a.prefs.worktreeDirectory()
+	if _, err := os.Stat(cwd); err != nil {
+		cwd, _ = config.Dir()
+	}
+	options := mygo.OpenDialogOptions{
+		Parent: a.win, Title: "选择工作树目录", DefaultPath: cwd, Directory: true,
+	}
+	gen := a.settings.gen
+	go func() {
+		paths, err := mygo.Dialog.Open(options)
+		a.win.Update(func() {
+			if a.settings.gen != gen || !a.settings.open {
+				return
+			}
+			if err != nil {
+				a.toast = "选择工作树目录失败：" + err.Error()
+			} else if len(paths) > 0 {
+				a.setWorktreeDirectory(paths[0])
+			}
+		})
+	}()
+}
+
+func (a *App) setWorktreeDirectory(cwd string) {
+	p := a.prefs
+	p.WorktreeDir = cwd
+	a.setPrefs(p)
+}
+
 // applyFonts 换上代码字体：全局的 codeFont 与终端的字体，以及 Markdown 的代码；编辑器与
 // 对比的字体在画它们时从 codeFont 取。界面字体在每帧的主题里取（见 applyTheme）。
 // 已打开的终端保持原来的字体，新开的终端用新字体。

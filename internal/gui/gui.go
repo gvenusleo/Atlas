@@ -81,10 +81,18 @@ type App struct {
 	cwdGoneErr  string
 	cwdGoneOpen bool
 
+	worktrees            *worktreePicker
+	creatingWorktree     bool
+	switchingBranches    map[string]string // Git 目录对应正在切换分支的工作目录
+	mutatingWorktree     string
+	mutatingWorktreeCwds []string
+	worktreeRecoveries   map[string]worktreeRecovery
+
 	reopenChat *chat
 	reopenOpen bool
 
 	fileCreate *fileCreateForm
+	fileWrites map[string]int // 文件或目录尚在写入，标签或表单关闭后仍需保留
 
 	unsaved   unsavedAsk // 关闭有未保存修改的文件标签时的确认
 	quitDirty int        // 等待确认退出时，有未保存修改的文件标签数
@@ -195,6 +203,7 @@ func newApp() *App {
 	useScheme(a.prefs.Palette)
 	a.applyFonts()
 	a.loadTasks()
+	a.loadWorktreeRecovery()
 	a.cwd, _ = os.UserHomeDir()
 	a.newChat()
 	return a
@@ -246,14 +255,19 @@ func (a *App) Receive(n protocol.Notification) {
 }
 
 // newChat 切换到一个新会话：先是空白的，会话在后台建好才能发送。
-func (a *App) newChat() {
-	if !a.leave() {
-		return
+func (a *App) newChat() { a.newChatAt(a.cwd) }
+
+func (a *App) newChatAt(cwd string) bool {
+	if a.worktreeBlocked(cwd) || !a.leave() {
+		return false
 	}
+	a.worktrees = nil
+	a.cwdGoneOpen, a.reopenOpen = false, false
 	a.showTasks, a.fromTasks = false, false
 	a.keys++
-	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: a.cwd}
+	a.current = &chat{key: "chat-" + strconv.Itoa(a.keys), cwd: cwd}
 	a.start(a.current)
+	return true
 }
 
 // toggleSidebar 显示或隐藏侧栏。

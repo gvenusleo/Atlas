@@ -14,21 +14,46 @@ var errChanged = errors.New("文件在磁盘上已变更")
 
 // saveTab 保存标签的文件，成功后调用 then（可为空）。写入在后台做；磁盘上的文件在打开或
 // 上次保存之后变过时不覆盖，标签上提示冲突，由用户选择重新加载还是保留自己的修改。
-func (a *App) saveTab(tb *fileTab, then func()) {
+func (a *App) saveTab(ch *chat, tb *fileTab, then func()) {
 	if tb.ed == nil || tb.saving {
+		return
+	}
+	path := tb.path
+	if a.worktreeRecoveries[ch.id].Root != "" || !a.beginFileWrite(path) {
+		tb.err = "工作树不可用，请稍后再试或先恢复工作树"
 		return
 	}
 	snap, stat := tb.ed.Buffer.Snapshot(), tb.stat
 	tb.saving, tb.err = true, ""
 	go func() {
-		st, err := writeFile(tb.path, snap, stat)
+		st, err := writeFile(path, snap, stat)
 		a.win.Update(func() {
+			a.endFileWrite(path)
 			tb.finishSave(snap.Version(), st, err)
 			if err == nil && then != nil {
 				then()
 			}
 		})
 	}()
+}
+
+func (a *App) beginFileWrite(path string) bool {
+	if a.worktreeBlocked(path) {
+		return false
+	}
+	if a.fileWrites == nil {
+		a.fileWrites = make(map[string]int)
+	}
+	a.fileWrites[path]++
+	return true
+}
+
+func (a *App) endFileWrite(path string) {
+	if a.fileWrites[path] <= 1 {
+		delete(a.fileWrites, path)
+		return
+	}
+	a.fileWrites[path]--
 }
 
 // writeFile 把 snap 写进 p：先写同目录的临时文件再改名，读者不会看到写了一半的文件，
