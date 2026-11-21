@@ -142,10 +142,10 @@ func (a *App) worktreeRemovalDialog(c *ui.Context, d *worktreePicker, p *worktre
 		return
 	}
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n%s\n\n检出目录将移入废纸篓，分支和会话历史会保留",
+	fmt.Fprintf(&message, "%s\n%s\n检出目录将移入废纸篓，分支和会话历史会保留",
 		p.entry.branch, shortPath(p.entry.cwd))
 	if len(p.refs) != 0 {
-		message.WriteString("\n\n关联会话")
+		message.WriteString("\n关联会话")
 		for _, ref := range p.refs {
 			name := ref.Title
 			if name == "" {

@@ -63,6 +63,11 @@ func (ch *chat) savingTab() bool {
 }
 
 func (a *App) worktreeUseReason(root string) string {
+	for cwd := range a.openingSessions {
+		if insideWorktree(root, cwd) {
+			return "请等待会话打开完成"
+		}
+	}
 	for _, task := range a.tasks.list {
 		if task.Enabled && insideWorktree(root, task.Cwd) {
 			return "请先停用定时任务「" + task.Name + "」"

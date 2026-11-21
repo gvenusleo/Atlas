@@ -88,8 +88,9 @@ type App struct {
 	mutatingWorktreeCwds []string
 	worktreeRecoveries   map[string]worktreeRecovery
 
-	reopenChat *chat
-	reopenOpen bool
+	reopenChat      *chat
+	reopenOpen      bool
+	openingSessions map[string]int // 工作目录对应尚未完成的核心会话打开请求
 
 	fileCreate *fileCreateForm
 	fileWrites map[string]int // 文件或目录尚在写入，标签或表单关闭后仍需保留
