@@ -79,7 +79,7 @@ func directoryMenuItem(c *ui.Context, t *ui.Theme, label string, run func()) ui.
 		row.Background(rowFill(t))
 	}
 	return row.OnClick(run).Children(func() {
-		ui.Text(c, label).FontSize(smallSize).SingleLine().MinWidth(0)
+		ui.Text(c, label).FontSize(textSize).SingleLine().MinWidth(0)
 	})
 }
 

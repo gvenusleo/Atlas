@@ -58,7 +58,7 @@ func pillSelect[T comparable](
 		ui.Text(c, name(*value)).FontSize(textSize).SingleLine()
 		ui.Icon(c, chevronDownIcon).FontSize(smallIconSize).TextColor(t.TextMuted)
 	})
-	dropdownOptions(c, t, sel, value, options, name, textSize)
+	dropdownOptions(c, t, sel, value, options, name)
 }
 
 // dialogHeader 画对话框的标题与右上角的关闭，边距与设置页的角落一致。

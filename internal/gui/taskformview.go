@@ -113,9 +113,14 @@ func dateField(c *ui.Context, t *ui.Theme, f *taskForm) {
 	})
 	ui.PopoverBase(c, trigger, &f.dateOpen, func(panel ui.Element) {
 		popupPanel(panel, t).Margin(6, 0, 0, 0)
-		if ui.Calendar(c, &f.at).Changed() {
-			f.dateOpen = false
-		}
+		// 月历从主题读取字号，日期文字从外层面板继承字号。
+		local := *t
+		local.FontSize = textSize
+		ui.Themed(c.Key("calendar-theme"), &local).Background(ui.Transparent).Children(func() {
+			if ui.Calendar(c.Key("calendar"), &f.at).Changed() {
+				f.dateOpen = false
+			}
+		})
 	})
 }
 

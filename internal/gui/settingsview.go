@@ -205,14 +205,14 @@ func (a *App) instructions(c *ui.Context, t *ui.Theme) {
 func (a *App) comboBox(
 	c *ui.Context, t *ui.Theme, label string, value *string, options []string, onChange func(),
 ) {
-	quietRows(c, t, func() {
-		local := *c.Theme()
-		local.Radius, local.Accent = popupRound-2, rowFill(t)
-		local.InactiveAccent = local.Accent // 原因见 quietRows
-		c.SetTheme(&local)
-		ui.Combobox(c.Key("settings-"+label), value, options).Label(label).
-			Width(comboWidth).Padding(3, 8).Radius(controlRound).FontSize(textSize).
-			OnChange(onChange)
+	local := *t
+	local.Radius, local.FontSize = popupRound-2, textSize
+	local.Accent, local.AccentText = rowFill(t), t.Text
+	local.InactiveAccent, local.SurfaceHover = local.Accent, local.Accent
+	// 候选列表是单独的浮层，需要随组合框继承局部主题。
+	ui.Themed(c.Key("settings-"+label), &local).Background(ui.Transparent).Children(func() {
+		ui.Combobox(c.Key("font"), value, options).Label(label).
+			Width(comboWidth).Padding(3, 8).Radius(controlRound).OnChange(onChange)
 	})
 }
 
