@@ -60,10 +60,17 @@ func (a *App) createEntry(f *fileCreateForm) {
 	}
 	rel := path.Join(f.parent, name)
 	abs, dir := filepath.Join(f.cwd, rel), f.dir
+	if a.worktreeRecoveries[f.ch.id].Root != "" || !a.beginFileWrite(abs) {
+		f.err = "工作树不可用，请稍后再试或先恢复工作树"
+		return
+	}
 	f.creating, f.err = true, ""
 	go func() {
 		err := createPath(abs, dir)
-		a.win.Update(func() { a.finishFileCreate(f, rel, err) })
+		a.win.Update(func() {
+			a.endFileWrite(abs)
+			a.finishFileCreate(f, rel, err)
+		})
 	}()
 }
 

@@ -23,9 +23,10 @@ const checkEvery = 30 * time.Second
 
 // taskRun 是任务的一次触发在 chat 上留下的记录：触发时任务的样子、触发点，以及标题改过没有。
 type taskRun struct {
-	task   schedule.Task
-	at     time.Time // 触发点；立即运行时是现在
-	titled bool
+	task    schedule.Task
+	at      time.Time // 触发点；立即运行时是现在
+	titled  bool
+	sending bool // 已建会话，第一条消息还在提交
 }
 
 // historyStep 是历史标签里每次多列出的条数。
@@ -85,6 +86,8 @@ func (a *App) saveTasks() {
 
 // openTasks 把主区换成定时任务视图，先看到列表。
 func (a *App) openTasks() {
+	a.worktrees = nil
+	a.cwdGoneOpen, a.reopenOpen = false, false
 	a.showTasks, a.tasks.form, a.tasks.detail = true, nil, ""
 	a.scopeHistory("")
 }
@@ -201,6 +204,10 @@ func (a *App) checkTasks() {
 // 上一次触发的会话还在运行时跳过这一次。
 func (a *App) runTask(task schedule.Task, at time.Time) {
 	p := &a.tasks
+	if a.worktreeBlocked(task.Cwd) {
+		p.errs[task.ID] = "工作树正在维护，已跳过这一次"
+		return
+	}
 	if prev := p.launched[task.ID]; prev != nil && prev.inFlight() {
 		p.errs[task.ID] = "上一次还在运行，已跳过这一次"
 		return
@@ -215,13 +222,14 @@ func (a *App) runTask(task schedule.Task, at time.Time) {
 
 // inFlight 报告会话还没结束：正在运行，或者还在建。
 func (ch *chat) inFlight() bool {
-	return ch.run.Running || ch.id == "" && ch.err == ""
+	return ch.run.Running || ch.job != nil && ch.job.sending || ch.id == "" && ch.err == ""
 }
 
 // sendTask 在任务会话建好之后换上任务指定的模型与思考深度，再发出用户消息；任何一步失败，
 // 这次触发作废。
 func (a *App) sendTask(ch *chat) {
 	task, id := ch.job.task, ch.id
+	ch.job.sending = true
 	go func() {
 		ctx := context.Background()
 		err := a.configureTask(ctx, id, task)
@@ -229,9 +237,12 @@ func (a *App) sendTask(ch *chat) {
 			_, err = a.service.SendPrompt(ctx, protocol.SendPromptRequest{
 				SessionID: id, Prompt: []protocol.ContentBlock{protocol.Text(task.Prompt)}})
 		}
-		if err != nil {
-			a.win.Update(func() { a.failTask(ch, err) })
-		}
+		a.win.Update(func() {
+			ch.job.sending = false
+			if err != nil {
+				a.failTask(ch, err)
+			}
+		})
 	}()
 }
 
@@ -287,6 +298,10 @@ func (a *App) setEnabled(id string, on bool) {
 		return
 	}
 	task := &a.tasks.list[i]
+	if on && a.worktreeBlocked(task.Cwd) {
+		a.toast = "工作树正在维护，请稍后再启用定时任务"
+		return
+	}
 	task.Enabled = on
 	if on {
 		task.Created, task.LastRun = time.Now(), time.Time{}
@@ -446,6 +461,10 @@ func (a *App) saveForm() {
 	task, err := p.form.task(time.Now())
 	if err != nil {
 		p.form.err = err.Error()
+		return
+	}
+	if a.worktreeBlocked(task.Cwd) {
+		p.form.err = "工作树正在维护，请稍后再保存定时任务"
 		return
 	}
 	same := func(old schedule.Task) bool { return old.ID == task.ID }

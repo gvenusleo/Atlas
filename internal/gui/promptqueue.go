@@ -155,11 +155,24 @@ func (a *App) deleteQueuedPrompt(ch *chat, item protocol.QueuedPrompt) {
 }
 
 func (a *App) resumePromptQueue(ch *chat) {
+	if a.worktreeBlocked(ch.cwd) {
+		a.toast = "工作树正在维护，请稍后再试"
+		return
+	}
+	if ch.cwdGone {
+		a.askCwdGone(ch)
+		return
+	}
 	ch.err = ""
 	ch.resuming = true
 	req := protocol.ResumePromptQueueRequest{SessionID: ch.id}
+	cwd := ch.cwd
+	record := a.worktreeRecoveries[ch.id]
 	go func() {
-		err := a.service.ResumePromptQueue(context.Background(), req)
+		err := requireWorktreeRecovery(record, cwd)
+		if err == nil {
+			err = a.service.ResumePromptQueue(context.Background(), req)
+		}
 		a.win.Update(func() {
 			if a.chats[req.SessionID] == ch {
 				ch.resuming = false

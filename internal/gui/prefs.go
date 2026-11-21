@@ -18,11 +18,12 @@ const prefsFile = "gui.json"
 // 界面字体用系统的，代码字体用 monoFamily，菜单栏里显示托盘图标（所以记的是隐藏，
 // 默认值才是零值）。
 type prefs struct {
-	Theme    mygo.ThemeSource `json:"theme,omitempty"`
-	Palette  string           `json:"palette,omitempty"`
-	UIFont   string           `json:"ui_font,omitempty"`
-	CodeFont string           `json:"code_font,omitempty"`
-	HideTray bool             `json:"hide_tray,omitzero"`
+	Theme       mygo.ThemeSource `json:"theme,omitempty"`
+	Palette     string           `json:"palette,omitempty"`
+	UIFont      string           `json:"ui_font,omitempty"`
+	CodeFont    string           `json:"code_font,omitempty"`
+	HideTray    bool             `json:"hide_tray,omitzero"`
+	WorktreeDir string           `json:"worktree_dir,omitempty"`
 }
 
 // loadPrefs 读取 dir 下的偏好。文件缺失、损坏或值不认识时用默认值，不阻止启动。

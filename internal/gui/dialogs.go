@@ -148,6 +148,7 @@ func (a *App) dialogs(c *ui.Context) {
 		a.remove(a.deleteID)
 	}
 	a.cwdGoneDialog(c)
+	a.worktreeDialogs(c)
 	a.reopenDialog(c)
 	a.unsavedDialog(c)
 	a.fileCreateDialog(c)
@@ -202,19 +203,25 @@ func (a *App) reopenDialog(c *ui.Context) {
 	})
 }
 
-// cwdGoneDialog 在会话的工作目录已不存在时让用户新建目录或删除会话。取消后会话仍然打不开，
-// 原因留在会话页上。
+// cwdGoneDialog 提供原工作树或普通目录的恢复入口；取消后仍可查看历史。
 func (a *App) cwdGoneDialog(c *ui.Context) {
 	ch := a.cwdGoneChat
-	if ch == nil || (ch.id != "" && a.chats[ch.id] != ch) {
+	if !a.cwdGoneOpen || ch == nil || a.current != ch || a.showTasks ||
+		(ch.id != "" && a.chats[ch.id] != ch) {
 		a.cwdGoneOpen = false
 		return
 	}
 	t := c.Theme()
+	record := a.worktreeRecoveries[ch.id]
 	compactModal(c, "missing-cwd", &a.cwdGoneOpen, func() {
-		ui.Text(c, "工作目录不存在").FontSize(dialogSize).Bold()
-		ui.Text(c, "工作目录 "+shortPath(ch.cwd)+" 已不存在。可以在原路径新建一个空目录，"+
-			"或删除这个会话；删除后无法恢复").TextColor(t.TextMuted).Width(360)
+		ui.Text(c, "工作目录不可用").FontSize(dialogSize).Bold()
+		message := "工作目录 " + shortPath(ch.cwd) + " 已不存在。可以在原路径新建一个空目录"
+		action := "新建目录"
+		if record.Root != "" {
+			message = "可以从原分支「" + record.Branch + "」将工作树恢复到 " + shortPath(record.Root)
+			action = "恢复工作树"
+		}
+		ui.Text(c, message).TextColor(t.TextMuted).Width(360)
 		if a.cwdGoneErr != "" {
 			ui.Text(c, a.cwdGoneErr).TextColor(t.Danger).Width(360)
 		}
@@ -222,15 +229,18 @@ func (a *App) cwdGoneDialog(c *ui.Context) {
 			cancel := ui.Button(c, "取消").Clicked()
 			del := false
 			if ch.id != "" {
-				del = ui.Button(c, "删除会话").Clicked()
+				del = ui.Button(c, "删除会话").Disabled(a.worktreeBlocked(ch.cwd)).Clicked()
 			}
-			rebuild := ui.PrimaryButton(c, "新建目录").Clicked()
+			rebuild := ui.PrimaryButton(c, action).
+				Disabled(a.worktreeBlocked(ch.cwd) || record.Root != "" && a.worktreeBusy()).Clicked()
 			switch {
+			case rebuild && record.Root != "":
+				a.restoreCwdWorktree(ch, record)
 			case rebuild:
 				a.createCwd(ch)
 			case del:
 				a.cwdGoneOpen, a.cwdGoneErr = false, ""
-				a.remove(ch.id)
+				a.deleteID, a.deleteOpen = ch.id, true
 			case cancel:
 				a.cwdGoneOpen, a.cwdGoneErr = false, ""
 			}

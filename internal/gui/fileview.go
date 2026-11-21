@@ -184,6 +184,7 @@ func (a *App) fileBody(c *ui.Context, t *ui.Theme, tb *fileTab) {
 		theme.Background = t.Background
 		tb.ed.Theme = theme
 		tb.ed.Font = codeFont
+		tb.ed.ReadOnly = a.worktreeBlocked(tb.path)
 		editor.View(c, tb.ed).Grow(1).MinHeight(0)
 	}
 }

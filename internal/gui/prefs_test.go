@@ -33,7 +33,7 @@ func TestPrefsFile(t *testing.T) {
 
 	want := prefs{
 		Theme: mygo.ThemeDark, Palette: "claude", UIFont: "Inter",
-		CodeFont: "Menlo", HideTray: true,
+		CodeFont: "Menlo", HideTray: true, WorktreeDir: filepath.Join(dir, "worktrees"),
 	}
 	if err := savePrefs(dir, want); err != nil {
 		t.Fatal(err)
