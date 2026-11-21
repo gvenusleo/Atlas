@@ -159,8 +159,7 @@ func (a *App) resumePromptQueue(ch *chat) {
 		a.toast = "工作树正在维护，请稍后再试"
 		return
 	}
-	if ch.cwdGone {
-		a.askCwdGone(ch)
+	if ch.cwdGone && a.askCwdGone(ch) {
 		return
 	}
 	ch.err = ""

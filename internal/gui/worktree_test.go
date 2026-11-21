@@ -1,11 +1,15 @@
 package gui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/egoist/mygo"
 
 	"github.com/gvenusleo/atlas/internal/protocol"
 )
@@ -68,17 +72,45 @@ func TestWorktreeRemovalPreservesFilesAndRecovery(t *testing.T) {
 		t.Fatalf("恢复记录未限定到原会话：%+v，%v", loaded, err)
 	}
 	assertWorktreePathReuse(t, saved, loaded, alias)
-	if err := restoreWorktree(t.Context(), saved, alias); err != nil {
+	if err := restoreWorktreeSession(t.Context(), dir, "old", alias, saved); err != nil {
 		t.Fatal(err)
 	}
 	if head := testGit(t, alias, "rev-parse", "HEAD"); head != record.Head {
 		t.Fatalf("恢复到错误的提交：%s", head)
 	}
-	if err := forgetWorktreeRecovery(dir, saved); err != nil {
-		t.Fatal(err)
-	}
 	if loaded, err := loadWorktreeRecoveries(dir); err != nil || len(loaded) != 0 {
 		t.Fatalf("恢复完成后仍有待恢复的会话：%+v，%v", loaded, err)
+	}
+}
+
+func TestWorktreeRecoveryKeepsOtherSessionRecords(t *testing.T) {
+	record, entry := testWorktreeRemoval(t)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(record.Root, alias); err != nil {
+		t.Fatal(err)
+	}
+	dir, kept := t.TempDir(), filepath.Join(t.TempDir(), "废纸篓")
+	refs := []protocol.SessionInfo{{SessionID: "root", Cwd: record.Root}, {SessionID: "alias", Cwd: alias}}
+	saved, err := persistAndTrashWorktree(t.Context(), record.Main, dir, record, entry, refs,
+		func(staged string) error { return os.Rename(staged, kept) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(testRepo(t), alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreWorktreeSession(t.Context(), dir, "root", record.Root, saved); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreWorktreeSession(t.Context(), dir, "alias", alias, saved); err == nil {
+		t.Fatal("恢复时接受了已指向其他仓库的符号链接")
+	}
+	loaded, err := loadWorktreeRecoveries(dir)
+	if err != nil || len(loaded) != 1 || loaded["alias"] != saved {
+		t.Fatalf("未校验的会话丢失了恢复记录：%+v，%v", loaded, err)
 	}
 }
 
@@ -167,6 +199,41 @@ func TestWorktreeCreateResultAfterSessionChange(t *testing.T) {
 	}
 }
 
+type blockedSessionOpen struct {
+	protocol.Service
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *blockedSessionOpen) OpenSession(
+	_ context.Context, _ protocol.OpenSessionRequest,
+) (protocol.OpenSessionResponse, error) {
+	close(s.entered)
+	<-s.release
+	return protocol.OpenSessionResponse{}, context.Canceled
+}
+
+func TestWorktreeRemovalWaitsForSessionOpen(t *testing.T) {
+	root := resolveWorktreePath(t.TempDir())
+	cwd := filepath.Join(root, "child")
+	if err := os.Mkdir(cwd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service := &blockedSessionOpen{entered: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(func() { close(service.release) })
+	ch := &chat{id: "opening", cwd: cwd}
+	a := &App{win: &mygo.Window{}, service: service, chats: map[string]*chat{ch.id: ch}}
+	a.start(ch)
+	select {
+	case <-service.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("未发起打开会话的请求")
+	}
+	if a.worktreeUseReason(root) == "" {
+		t.Fatal("历史加载结束后，仍在打开的会话未阻止移除")
+	}
+}
+
 func TestWorktreeRemovalGuardsInFlightOperations(t *testing.T) {
 	root := resolveWorktreePath(t.TempDir())
 	alias := filepath.Join(t.TempDir(), "alias")
@@ -176,7 +243,7 @@ func TestWorktreeRemovalGuardsInFlightOperations(t *testing.T) {
 	ch := &chat{cwd: alias, loading: true}
 	a := &App{chats: map[string]*chat{"active": ch}}
 	if a.worktreeUseReason(root) == "" {
-		t.Fatal("未拦截正在打开的会话")
+		t.Fatal("未拦截正在加载历史的会话")
 	}
 	ch.loading, ch.run.Running = false, true
 	if a.worktreeUseReason(root) == "" {

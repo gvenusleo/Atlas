@@ -156,6 +156,19 @@ func checkRestoredWorktree(ctx context.Context, record worktreeRecovery, cwd str
 	return nil
 }
 
+func restoreWorktreeSession(
+	ctx context.Context, dir, id, cwd string, record worktreeRecovery,
+) error {
+	if err := restoreWorktree(ctx, record, cwd); err != nil {
+		return err
+	}
+	return updateWorktreeRecoveries(dir, func(records map[string]worktreeRecovery) {
+		if records[id] == record {
+			delete(records, id)
+		}
+	})
+}
+
 func forgetWorktreeRecovery(dir string, record worktreeRecovery) error {
 	return updateWorktreeRecoveries(dir, func(records map[string]worktreeRecovery) {
 		maps.DeleteFunc(records, func(_ string, saved worktreeRecovery) bool {
@@ -168,24 +181,19 @@ func (a *App) restoreCwdWorktree(ch *chat, record worktreeRecovery) {
 	if a.worktreeBusy() {
 		return
 	}
-	cwd, starts := ch.cwd, ch.starts
+	id, cwd, starts := ch.id, ch.cwd, ch.starts
 	a.mutatingWorktree, a.cwdGoneErr = record.Root, ""
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), worktreeWriteTimeout)
 		defer cancel()
-		err := restoreWorktree(ctx, record, cwd)
+		dir, err := config.Dir()
 		if err == nil {
-			var dir string
-			dir, err = config.Dir()
-			if err == nil {
-				err = forgetWorktreeRecovery(dir, record)
-			}
+			err = restoreWorktreeSession(ctx, dir, id, cwd, record)
 		}
 		a.win.Update(func() {
 			a.mutatingWorktree = ""
 			if err == nil {
-				maps.DeleteFunc(a.worktreeRecoveries,
-					func(_ string, saved worktreeRecovery) bool { return saved == record })
+				delete(a.worktreeRecoveries, id)
 			}
 			if a.current != ch || ch.starts != starts || !a.cwdGoneOpen {
 				if err == nil {

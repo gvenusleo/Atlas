@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,11 +51,10 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 	id := info.SessionID
 	if ch := a.chats[id]; ch != nil {
 		a.current, ch.unread = ch, false
-		if ch.needsReopen {
-			a.askReopen(ch)
-		}
 		if ch.cwdGone { // 目录可能已经恢复，重新打开一次
 			a.start(ch)
+		} else if ch.needsReopen {
+			a.askReopen(ch)
 		}
 		return true
 	}
@@ -82,6 +82,7 @@ func (a *App) reopen(ch *chat) {
 	ch.ready, ch.loading = false, true
 	id, gen, cwd := ch.id, ch.starts, ch.cwd
 	record := a.worktreeRecoveries[id]
+	endOpen := a.trackSessionOpen(cwd)
 	go func() {
 		ctx := context.Background()
 		err := requireWorktreeRecovery(record, cwd)
@@ -95,6 +96,7 @@ func (a *App) reopen(ch *chat) {
 				protocol.ListHistoryRequest{SessionID: id, Limit: historyPage})
 		}
 		a.win.Update(func() {
+			endOpen()
 			if ch.starts != gen || ch.id != id || a.chats[id] != ch {
 				return
 			}
@@ -157,9 +159,11 @@ func (a *App) start(ch *chat) {
 	a.refreshBranch(ch, true)
 	gen, id := ch.starts, ch.id
 	req := protocol.NewSessionRequest{Cwd: ch.cwd}
-	if ch.job != nil {
+	launchTask := id == "" && ch.job != nil
+	if launchTask {
 		req.Type, req.OwnerID = protocol.SessionScheduled, ch.job.task.ID
 	}
+	endOpen := a.trackSessionOpen(req.Cwd)
 	go func() {
 		ctx := context.Background()
 		var options []protocol.ConfigOption
@@ -175,6 +179,7 @@ func (a *App) start(ch *chat) {
 			options, state = resp.ConfigOptions, resp.State
 		}
 		a.win.Update(func() {
+			endOpen()
 			switch {
 			case gen != ch.starts:
 				if err == nil && id != ch.id {
@@ -183,18 +188,17 @@ func (a *App) start(ch *chat) {
 				return
 			case err != nil:
 				ch.err = err.Error()
-				if errors.Is(err, fs.ErrNotExist) {
-					a.askCwdGone(ch)
-				}
-				if ch.job != nil {
+				if launchTask {
 					a.failTask(ch, err)
+				} else if errors.Is(err, fs.ErrNotExist) {
+					a.askCwdGone(ch)
 				}
 				return
 			}
 			ch.id, ch.err = id, ""
 			a.chats[id] = ch
 			ch.attach(options, state)
-			if ch.job != nil {
+			if launchTask {
 				a.sendTask(ch) // 后台触发的会话不改默认的工作目录
 				return
 			}
@@ -203,16 +207,27 @@ func (a *App) start(ch *chat) {
 	}()
 }
 
-// askCwdGone 在会话的工作目录已不存在时打开恢复对话框；不是当前会话时只记下来，等用户
-// 进入这个会话时重新打开。后台任务不改该用户的视图。
-func (a *App) askCwdGone(ch *chat) {
-	if ch.job != nil || (!cwdMissing(ch.cwd) && a.worktreeRecoveries[ch.id].Root == "") {
-		return
+// trackSessionOpen 按请求发起时的目录跟踪打开操作，切换目录或丢弃会话后也要等请求结束。
+func (a *App) trackSessionOpen(cwd string) func() {
+	if a.openingSessions == nil {
+		a.openingSessions = make(map[string]int)
 	}
-	ch.cwdGone = true
-	if a.current == ch && !a.showTasks {
+	a.openingSessions[cwd]++
+	return func() {
+		a.openingSessions[cwd]--
+		if a.openingSessions[cwd] == 0 {
+			delete(a.openingSessions, cwd)
+		}
+	}
+}
+
+// askCwdGone 确认工作目录是否仍需恢复。只在用户正在查看该会话时显示恢复对话框。
+func (a *App) askCwdGone(ch *chat) bool {
+	ch.cwdGone = a.worktreeRecoveries[ch.id].Root != "" || cwdMissing(ch.cwd)
+	if ch.cwdGone && a.current == ch && !a.showTasks {
 		a.cwdGoneChat, a.cwdGoneErr, a.cwdGoneOpen = ch, "", true
 	}
+	return ch.cwdGone
 }
 
 // cwdMissing 报告会话的工作目录是否已经不可用。空路径不算：拿不到路径时无从新建。
@@ -327,9 +342,15 @@ func (a *App) dropChat(id string) {
 	ch.closePanels()
 	delete(a.chats, id)
 	if a.current == ch {
-		showTasks := a.showTasks
+		showTasks, cwd := a.showTasks, a.cwd
+		if a.worktreeBlocked(cwd) {
+			cwd = ch.cwd
+			if cwdMissing(cwd) || cwd == "" || a.worktreeBlocked(cwd) {
+				cwd = filepath.Dir(a.mutatingWorktree)
+			}
+		}
 		a.current = nil
-		a.newChat()
+		a.newChatAt(cwd)
 		a.showTasks = showTasks
 	}
 }
@@ -453,7 +474,7 @@ func (a *App) restart(ch *chat) {
 // 会话只是重新订阅，并给出最新的配置项。定时任务的会话不用管。
 func (a *App) refreshOptions() {
 	for _, ch := range slices.Collect(maps.Values(a.chats)) {
-		if ch.job != nil || !ch.ready {
+		if ch.job != nil || !ch.ready || a.worktreeBlocked(ch.cwd) {
 			continue
 		}
 		if ch.fresh() {
@@ -461,14 +482,13 @@ func (a *App) refreshOptions() {
 			continue
 		}
 		id := ch.id
+		endOpen := a.trackSessionOpen(ch.cwd)
 		go func() {
 			resp, err := a.service.OpenSession(context.Background(),
 				protocol.OpenSessionRequest{SessionID: id})
-			if err != nil {
-				return
-			}
 			a.win.Update(func() {
-				if a.chats[id] == ch && ch.id == id {
+				endOpen()
+				if err == nil && a.chats[id] == ch && ch.id == id {
 					ch.options = resp.ConfigOptions
 				}
 			})
@@ -502,8 +522,7 @@ func (a *App) send(ch *chat, text string, nextTurn bool) bool {
 		a.toast = "工作树正在维护，请稍后再试"
 		return false
 	}
-	if ch.cwdGone {
-		a.askCwdGone(ch)
+	if ch.cwdGone && a.askCwdGone(ch) {
 		return false
 	}
 	trimmed := strings.TrimSpace(text)
