@@ -26,16 +26,21 @@ func Run(ctx context.Context, in Input, user UserMessage, emit func(Event)) []Me
 			if ctx.Err() != nil {
 				return r.added
 			}
+			prompt.InTurn = true
 			r.add(prompt)
 		}
 		if ctx.Err() != nil {
 			break
 		}
-		comp.prepareRequest(ctx, len(pending))
+		keepMessages := len(pending)
+		if requests == 1 {
+			keepMessages = 1
+		}
+		comp.prepareRequest(ctx, keepMessages)
 		if ctx.Err() != nil {
 			break
 		}
-		msg := streamResponse(ctx, r, func() bool { return comp.try(ctx) })
+		msg := streamResponse(ctx, r, keepMessages)
 		r.add(msg)
 		if isHardStop(msg.StopReason) {
 			break
@@ -111,37 +116,63 @@ func (r *run) add(m Message) {
 	r.emit(Event{Type: EventMessageEnd, Message: m})
 }
 
-// streamResponse 调用模型并发出开始与增量事件，补齐模型名、时间戳并检查终态；定稿由调用方 add。
-// onOverflow 在请求超出上下文窗口时调用，返回 true 表示已压缩、可以重发。
-func streamResponse(ctx context.Context, r *run, onOverflow func() bool) AssistantMessage {
+// streamResponse 调用模型并发出开始与增量事件，补齐模型名、时间戳并检查终态。
+// 超限后的临时摘要只在重发成功后保存，定稿由调用方另行保存。
+func streamResponse(ctx context.Context, r *run, keepMessages int) AssistantMessage {
 	r.emit(Event{Type: EventMessageStart, Message: AssistantMessage{
 		Model: r.Model.Ref, StopReason: StopReasonPending, Timestamp: time.Now(),
 	}})
+	var recovery SystemMessage
 	request := func() StreamRequest {
+		messages := r.Messages
+		if recovery.Content != "" {
+			messages = Fold(messages, recovery)
+		}
 		return StreamRequest{
 			Model:         r.Model.Ref,
 			SystemPrompt:  r.SystemPrompt,
-			Messages:      r.Messages,
+			Messages:      messages,
 			Tools:         r.Tools,
 			ThinkingLevel: r.Thinking,
 		}
 	}
-	emit := func(d Delta) { r.emit(Event{Type: EventDelta, Delta: d}) }
+	// 重发的回复在恢复摘要落库后一次交付，避免失败流污染实时界面。
+	var streamed bool
+	emit := func(d Delta) {
+		if recovery.Content == "" {
+			streamed = true
+			r.emit(Event{Type: EventDelta, Delta: d})
+		}
+	}
+	onOverflow := func() bool {
+		recovery, _ = prepareCompaction(ctx, r, len(r.Messages)-keepMessages)
+		if recovery.Content == "" {
+			return false
+		}
+		if streamed {
+			r.emit(Event{Type: EventRetry, Retry: RetryInfo{Attempt: 1, Max: 1, Error: "上下文超限"}})
+		}
+		return true
+	}
 	final := streamWithRetry(ctx, r, request, emit, onOverflow)
-
 	if final.StopReason == "" {
 		final.StopReason = StopReasonError
 		final.ErrorMessage = "StreamFn 违反契约：返回了空 StopReason 的消息"
+	}
+	if recovery.Content != "" {
+		if ctx.Err() != nil {
+			final = AssistantMessage{StopReason: StopReasonCanceled}
+		} else if !isHardStop(final.StopReason) {
+			r.add(recovery)
+		}
 	}
 	final.Model = r.Model.Ref
 	final.Timestamp = time.Now()
 	return final
 }
 
-// streamWithRetry 调用模型；暂时性的失败按策略退避后重试，失败的尝试整个作废：
-// 只返回最后一次的结果，所以中间的失败不会入历史，半截的工具调用也不会被执行。
-// 退避期间 ctx 取消则按取消收尾。上下文溢出时重试没用：onOverflow 非空就交给它压缩，
-// 它返回 true 就重发，只给一次机会。request 每次尝试时重新构造，因为压缩会改变上下文。
+// streamWithRetry 调用模型；暂时性的失败按策略退避后重试，失败的尝试整个作废。
+// 上下文溢出时，onOverflow 可以缩减上下文并重发一次。每次尝试都重新构造请求。
 func streamWithRetry(
 	ctx context.Context, r *run,
 	request func() StreamRequest, emit func(Delta), onOverflow func() bool,
@@ -154,7 +185,14 @@ func streamWithRetry(
 		}
 		switch {
 		case final.ErrorKind == ErrorKindContextOverflow:
-			if overflowed || onOverflow == nil || !onOverflow() {
+			if overflowed || onOverflow == nil {
+				return final
+			}
+			prepared := ctx.Err() == nil && onOverflow()
+			if ctx.Err() != nil {
+				return AssistantMessage{StopReason: StopReasonCanceled}
+			}
+			if !prepared {
 				return final
 			}
 			overflowed = true
