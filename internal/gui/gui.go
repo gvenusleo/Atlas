@@ -36,38 +36,39 @@ const (
 
 // App 持有桌面端的全部界面状态。
 type App struct {
-	service       protocol.Service
-	win           *mygo.Window
-	infos         []protocol.SessionInfo // 侧栏会话，按更新时间倒序
-	listed        bool                   // 会话列表至少读到过一次；之前列表为空不说明没有会话
-	listRefresh   int                    // 只接受最后一次发起的侧栏刷新结果
-	chats         map[string]*chat       // 已打开的会话，按会话 ID
-	current       *chat
-	cwd           string // 新会话默认的工作目录
-	keys          int
-	sidebarWidth  float32
-	shown         float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
-	md            markdown.Options
-	mdNote        markdown.Options // 面板里的小号 Markdown，如压缩的摘要
-	mdFile        markdown.Options // 文件面板里的 Markdown 预览
-	code          *editor.Theme    // 代码高亮，内容不变时沿用同一个指针，Markdown 才不会每帧重算
-	keyNav        bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
-	prefs         prefs
-	settings      settingsPage
-	tasks         tasksPage
-	showTasks     bool // 主区显示定时任务视图，而不是当前会话
-	fromTasks     bool // 当前会话是从定时任务视图打开的：标题栏的面包屑通向视图
-	crumb         int  // 面包屑上刚点的一项
-	launch        launcher
-	sections      map[string]*bool // 各目录分组是否展开，缺省为展开
-	more          map[string]bool  // 已点“显示更多”的目录分组
-	sideWidth     float32          // 右侧栏的宽度，各面板共用
-	stackHeight   float32          // 两个面板上下叠放时，上面那张卡片的高度；0 时各占一半
-	leftWidth     float32          // 三个面板时左列的宽度；0 时两列各占一半
-	shells        int              // 已创建的终端数，用作终端标签的标识
-	sidebarHidden bool
-	err           string
-	toast         string // 待显示的一次性提示，下一帧弹出后清空
+	service        protocol.Service
+	win            *mygo.Window
+	infos          []protocol.SessionInfo // 侧栏会话，按更新时间倒序
+	listed         bool                   // 会话列表至少读到过一次；之前列表为空不说明没有会话
+	listRefresh    int                    // 只接受最后一次发起的侧栏刷新结果
+	optionsRefresh int
+	chats          map[string]*chat // 已打开的会话，按会话 ID
+	current        *chat
+	cwd            string // 新会话默认的工作目录
+	keys           int
+	sidebarWidth   float32
+	shown          float32 // 侧栏展开程度：1 完全展开，0 完全收起，动画中取中间值
+	md             markdown.Options
+	mdNote         markdown.Options // 面板里的小号 Markdown，如压缩的摘要
+	mdFile         markdown.Options // 文件面板里的 Markdown 预览
+	code           *editor.Theme    // 代码高亮，内容不变时沿用同一个指针，Markdown 才不会每帧重算
+	keyNav         bool             // 侧栏正在用键盘操作：切换会话时输入框不抢走焦点
+	prefs          prefs
+	settings       settingsPage
+	tasks          tasksPage
+	showTasks      bool // 主区显示定时任务视图，而不是当前会话
+	fromTasks      bool // 当前会话是从定时任务视图打开的：标题栏的面包屑通向视图
+	crumb          int  // 面包屑上刚点的一项
+	launch         launcher
+	sections       map[string]*bool // 各目录分组是否展开，缺省为展开
+	more           map[string]bool  // 已点“显示更多”的目录分组
+	sideWidth      float32          // 右侧栏的宽度，各面板共用
+	stackHeight    float32          // 两个面板上下叠放时，上面那张卡片的高度；0 时各占一半
+	leftWidth      float32          // 三个面板时左列的宽度；0 时两列各占一半
+	shells         int              // 已创建的终端数，用作终端标签的标识
+	sidebarHidden  bool
+	err            string
+	toast          string // 待显示的一次性提示，下一帧弹出后清空
 
 	// 重命名与删除对话框的状态。
 	renameID, renameText string
@@ -217,42 +218,53 @@ func (a *App) Receive(n protocol.Notification) {
 		if ch == nil {
 			return
 		}
-		switch u := n.Update.(type) {
-		case protocol.SessionInfoUpdate:
-			ch.apply(u)
+		if ch.loading {
+			ch.pendingUpdates = append(ch.pendingUpdates, n)
+			return
+		}
+		a.applyNotification(ch, n)
+	})
+}
+
+func (a *App) applyNotification(ch *chat, n protocol.Notification) {
+	if n.Epoch != 0 && ch.epoch != 0 && n.Epoch != ch.epoch ||
+		n.Seq != 0 && n.Seq <= ch.historyEnd {
+		return
+	}
+	switch u := n.Update.(type) {
+	case protocol.SessionInfoUpdate:
+		ch.apply(u)
+		if ch.job != nil {
+			a.titleTask(ch)
+		} else {
+			a.refresh()
+		}
+	case protocol.RunStateUpdate:
+		if !ch.acceptsRunState(u) {
+			return
+		}
+		ch.apply(u)
+		if u.Invalidated {
+			ch.recoverQueue()
+			a.askReopen(ch)
+		}
+		if !u.Running {
+			// 普通会话出错时侧栏已经有红点。任务会话出错也标为未读。
+			ch.unread = ch != a.current && (ch.err == "" || ch.job != nil)
 			if ch.job != nil {
-				a.titleTask(ch)
+				a.refreshHistory()
 			} else {
 				a.refresh()
 			}
-		case protocol.RunStateUpdate:
-			if !ch.acceptsRunState(u) {
-				return
+			// Agent 可能用 git 提交或暂存过，文件监视看不到 .git 里的变化。
+			if ch.changes != nil && ch.panelOpen(changesPanel) {
+				a.refreshChanges(ch)
 			}
-			ch.apply(u)
-			if u.Invalidated {
-				ch.recoverQueue()
-				a.askReopen(ch)
-			}
-			if !u.Running {
-				// 在别的会话时结束的运行，回到这个会话之前标为未读。普通会话出错时侧栏上是红点，
-				// 不再标未读；任务会话不在侧栏里，出错的也标未读，侧栏的入口才会提示。
-				ch.unread = ch != a.current && (ch.err == "" || ch.job != nil)
-				if ch.job != nil {
-					a.refreshHistory()
-				} else {
-					a.refresh()
-				}
-				// Agent 可能用 git 提交或暂存过，文件监视看不到 .git 里的变化。
-				if ch.changes != nil && ch.panelOpen(changesPanel) {
-					a.refreshChanges(ch)
-				}
-				a.refreshBranch(ch, true)
-			}
-		default:
-			ch.apply(u)
+			a.refreshBranch(ch, true)
 		}
-	})
+	default:
+		ch.apply(u)
+	}
 }
 
 // newChat 切换到一个新会话：先是空白的，会话在后台建好才能发送。

@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"unicode/utf8"
@@ -71,17 +72,14 @@ func writeFile(ctx context.Context, cwd string, params jsontext.Value) (agent.To
 	}
 
 	path := resolvePath(cwd, args.Path)
-	info, err := os.Stat(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	target, err := inspectTarget(path)
+	if err != nil {
 		return agent.ToolResult{}, fmt.Errorf("%s 检查失败: %w", path, err)
 	}
-	if err == nil && !info.Mode().IsRegular() {
-		return agent.ToolResult{}, fmt.Errorf("%s 不是普通文件", path)
-	}
-	existed := err == nil
+	existed := target.info != nil
 	var old *string
-	if existed && info.Size() <= maxOldBytes {
-		old = readOld(path)
+	if existed && target.info.Size() <= maxOldBytes {
+		old = readOld(target.resolved)
 	}
 	if err := ctx.Err(); err != nil {
 		return agent.ToolResult{}, err
@@ -94,7 +92,10 @@ func writeFile(ctx context.Context, cwd string, params jsontext.Value) (agent.To
 		return agent.ToolResult{}, err
 	}
 
-	if err := os.WriteFile(path, []byte(*args.Content), 0644); err != nil {
+	if err := target.replace(ctx, func(file *os.File) error {
+		_, err := io.WriteString(file, *args.Content)
+		return err
+	}); err != nil {
 		return agent.ToolResult{}, fmt.Errorf("%s 写入失败: %w", path, err)
 	}
 

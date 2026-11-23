@@ -244,7 +244,7 @@ func (s *session) runTurn(
 				pendingIDs = pendingIDs[1:]
 			}
 		}
-		s.broadcast(tr.event(e, seq)...)
+		s.broadcastRecord(seq, tr.event(e, seq)...)
 		if queue != nil {
 			s.broadcast(*queue)
 		}

@@ -8,6 +8,8 @@ import (
 // Notification 是一条推给订阅者的更新。
 type Notification struct {
 	SessionID string `json:"sessionId"`
+	Epoch     uint64 `json:"epoch,omitzero"` // 会话重新加载后更换，丢弃上一个实例的在途更新
+	Seq       int64  `json:"seq,omitzero"`   // 产生更新的已保存记录序号
 	Update    Update `json:"update"`
 }
 
@@ -37,6 +39,14 @@ type AgentThoughtChunk struct {
 	MessageID string       `json:"messageId"`
 	Content   ContentBlock `json:"content"`
 }
+
+// AssistantMessageSaved 提供入库后的完整显示内容，供中途订阅的连接补齐回复。
+type AssistantMessageSaved struct {
+	MessageID string   `json:"messageId"`
+	Updates   []Update `json:"updates"`
+}
+
+func (AssistantMessageSaved) Type() string { return "assistant_message_saved" }
 
 // ToolKind 是工具调用的种类。
 type ToolKind string
@@ -75,6 +85,7 @@ type ToolCallUpdate struct {
 	ToolCallID string            `json:"toolCallId"`
 	Status     ToolStatus        `json:"status,omitempty"`
 	RawInput   jsontext.Value    `json:"rawInput,omitempty"`
+	InputDelta string            `json:"inputDelta,omitempty"` // 流式参数片段
 	Content    []ToolCallContent `json:"content,omitempty"`
 	// RawOutput 是工具附带的结构化数据，形状见 ReadDetails 等。
 	RawOutput jsontext.Value `json:"rawOutput,omitempty"`

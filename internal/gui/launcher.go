@@ -27,9 +27,10 @@ type launcher struct {
 	shownQuery string // 上一帧的 query，变了就让高亮回到第一行
 	gen        int    // 打开的次数，先前请求的会话列表据此作废
 	// infos 是启动器打开后读取的全部会话；结果返回之前用侧栏的。
-	infos     []protocol.SessionInfo
-	fileRanks memo[rankKey, []string]
-	results   []result // 上一帧列出的结果，按键作用于它
+	infos      []protocol.SessionInfo
+	sessionErr string
+	fileRanks  memo[rankKey, []string]
+	results    []result // 上一帧列出的结果，按键作用于它
 }
 
 // result 是启动器里的一项结果。

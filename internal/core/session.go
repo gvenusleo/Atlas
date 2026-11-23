@@ -22,8 +22,9 @@ import (
 
 // session 是一个加载了的会话。mu 保护内存状态，writeMu 使写库与对应的更新按顺序完成。
 type session struct {
-	id   string
-	core *Core
+	id    string
+	core  *Core
+	epoch uint64 // 同一会话卸载再加载时区分在途通知
 
 	mu           sync.Mutex
 	writeMu      sync.Mutex // 串行保存消息、修改配置与删除，首次写库时才能取到正确的配置
@@ -42,6 +43,7 @@ type session struct {
 	systemPrompt string
 	tools        []agent.Tool
 	skills       []skills.Skill
+	diagnostics  []string
 	messages     []agent.Message // 上下文 = Fold(历史)
 	// seqs 是上下文里每条消息在历史中的序号，与 messages 一一对应；压缩时用它定出新的上下文起点。
 	seqs        []int64
@@ -76,7 +78,7 @@ func (c *Core) create(
 	thinking, model := chooseModel(settings, "", "")
 	return &session{id: uuid.NewV7().String(), core: c, cwd: cwd, sessionType: sessionType,
 		ownerID: ownerID, model: model, thinking: thinking, systemPrompt: resources.SystemPrompt,
-		tools: toolset(cwd), skills: resources.Skills}, nil
+		tools: toolset(cwd), skills: resources.Skills, diagnostics: resources.Diagnostics}, nil
 }
 
 // checkSessionType 检查建会话请求里的类型与属主：类型缺省是普通会话；定时任务的会话必须有
@@ -144,6 +146,7 @@ func (c *Core) load(ctx context.Context, id string) (*session, error) {
 	}
 	s.model, s.thinking = model, thinking
 	s.systemPrompt, s.tools, s.skills = resources.SystemPrompt, toolset(info.Cwd), resources.Skills
+	s.diagnostics = resources.Diagnostics
 	return s, nil
 }
 
@@ -200,13 +203,17 @@ func toolset(cwd string) []agent.Tool {
 	return []agent.Tool{tools.Read(cwd), tools.Write(cwd), tools.Edit(cwd), tools.Shell(cwd)}
 }
 
-// subscribe 让 sub 收到这个会话的更新。
-func (s *session) subscribe(sub protocol.Subscriber) {
+// subscribe 让 sub 收到这个会话的更新，并在同一边界取得历史位置。
+func (s *session) subscribe(sub protocol.Subscriber, title string) (protocol.SessionState, int64, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.runState.Invalidated {
+		return protocol.SessionState{}, 0, protocol.ErrNotFound
+	}
 	if !slices.Contains(s.subscribers, sub) {
 		s.subscribers = append(s.subscribers, sub)
 	}
-	s.mu.Unlock()
+	return s.state(title), s.seq, nil
 }
 
 // unsubscribe 让 sub 不再收到更新。
@@ -234,12 +241,16 @@ func (s *session) idle() bool {
 
 // broadcast 把更新推送给每个订阅该会话的连接。
 func (s *session) broadcast(updates ...protocol.Update) {
+	s.broadcastRecord(0, updates...)
+}
+
+func (s *session) broadcastRecord(seq int64, updates ...protocol.Update) {
 	s.mu.Lock()
 	subs := slices.Clone(s.subscribers)
 	s.mu.Unlock()
 	for _, u := range updates {
 		for _, sub := range subs {
-			sub.Receive(protocol.Notification{SessionID: s.id, Update: u})
+			sub.Receive(protocol.Notification{SessionID: s.id, Epoch: s.epoch, Seq: seq, Update: u})
 		}
 	}
 }
@@ -252,12 +263,10 @@ func (s *session) newID() string {
 	return "m" + strconv.Itoa(s.ids)
 }
 
-// state 是会话现在的状态，打开会话时随响应给出。
+// state 是会话随打开响应给出的状态。调用方持有 mu。
 func (s *session) state(title string) protocol.SessionState {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return protocol.SessionState{Cwd: s.cwd, Title: title, Commands: commands(s.skills),
-		Usage: s.usage(), Run: s.runState, Queue: s.queueSnapshot()}
+	return protocol.SessionState{Epoch: s.epoch, Cwd: s.cwd, Title: title, Commands: commands(s.skills),
+		Diagnostics: s.diagnostics, Usage: s.usage(), Run: s.runState, Queue: s.queueSnapshot()}
 }
 
 // usage 是上下文的占用；调用方持有 mu。

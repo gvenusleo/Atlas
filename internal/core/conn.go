@@ -49,10 +49,8 @@ func (c *conn) NewSession(
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
-	c.core.adopt(s, c.sub)
-	return protocol.NewSessionResponse{
-		SessionID: s.id, ConfigOptions: options, State: s.state(""),
-	}, nil
+	state := c.core.adopt(s, c.sub)
+	return protocol.NewSessionResponse{SessionID: s.id, ConfigOptions: options, State: state}, nil
 }
 
 func (c *conn) OpenSession(
@@ -63,20 +61,7 @@ func (c *conn) OpenSession(
 		return protocol.OpenSessionResponse{}, err
 	}
 	defer end()
-	info, err := c.core.db.Get(ctx, req.SessionID)
-	if err != nil {
-		return protocol.OpenSessionResponse{}, mapStoreError(err)
-	}
-	s, err := c.core.open(ctx, req.SessionID, c.sub)
-	if err != nil {
-		return protocol.OpenSessionResponse{}, err
-	}
-	options, err := s.options()
-	if err != nil {
-		c.core.release(s, c.sub)
-		return protocol.OpenSessionResponse{}, err
-	}
-	return protocol.OpenSessionResponse{ConfigOptions: options, State: s.state(info.Title)}, nil
+	return c.core.open(ctx, req.SessionID, c.sub)
 }
 
 func (c *conn) ListSessions(
@@ -133,6 +118,11 @@ func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequ
 		return err
 	}
 	defer end()
+	unlock, err := c.core.lockSession(ctx, req.SessionID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	s, _ := c.core.lookup(req.SessionID)
 	if s != nil {
 		done, err := s.begin()
@@ -157,16 +147,13 @@ func (c *conn) DeleteSession(ctx context.Context, req protocol.DeleteSessionRequ
 }
 
 // CloseSession 取消这个连接对会话的订阅，不影响正在进行的一轮。
-func (c *conn) CloseSession(_ context.Context, req protocol.CloseSessionRequest) error {
+func (c *conn) CloseSession(ctx context.Context, req protocol.CloseSessionRequest) error {
 	end, err := c.core.begin()
 	if err != nil {
 		return err
 	}
 	defer end()
-	if s, err := c.session(req.SessionID); err == nil {
-		c.core.release(s, c.sub)
-	}
-	return nil
+	return c.core.release(ctx, req.SessionID, c.sub)
 }
 
 // RenameSession 修改标题；订阅该会话的连接都会收到新标题。不要求当前连接打开过它。

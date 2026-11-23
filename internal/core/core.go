@@ -30,14 +30,20 @@ type Core struct {
 	closing  bool
 	working  sync.WaitGroup // 进行中的请求与一轮，Close 等它们结束再关库
 	versions atomic.Uint64  // 运行和队列的标识与版本，重新加载会话时也单调递增
-	// opening 让打开与卸载串行：同一会话不会被加载两次，也不会有连接订阅到正在卸载的会话上。
-	opening sync.Mutex
+	opening  map[string]*sessionGate
+}
+
+// sessionGate 协调同一会话的生命周期，等待者也占用一个引用。
+type sessionGate struct {
+	ready chan struct{}
+	refs  int
 }
 
 // New 用打开的数据库建核心。
 func New(db *store.DB) *Core {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Core{db: db, ctx: ctx, cancel: cancel, sessions: make(map[string]*session)}
+	return &Core{db: db, ctx: ctx, cancel: cancel, sessions: make(map[string]*session),
+		opening: make(map[string]*sessionGate)}
 }
 
 // Connect 为一个客户端建连接：它订阅的会话的更新都推给 sub。
@@ -86,43 +92,104 @@ func (c *Core) lookup(id string) (*session, error) {
 	return nil, protocol.ErrNotFound
 }
 
-// open 让 sub 订阅会话并返回它；会话没加载就从库里加载。
-func (c *Core) open(ctx context.Context, id string, sub protocol.Subscriber) (*session, error) {
-	c.opening.Lock()
-	defer c.opening.Unlock()
+// lockSession 串行同一个会话的打开、关闭、删除和卸载。
+func (c *Core) lockSession(ctx context.Context, id string) (func(), error) {
+	c.mu.Lock()
+	gate := c.opening[id]
+	if gate == nil {
+		gate = &sessionGate{ready: make(chan struct{}, 1)}
+		gate.ready <- struct{}{}
+		c.opening[id] = gate
+	}
+	gate.refs++
+	c.mu.Unlock()
+	release := func() {
+		c.mu.Lock()
+		gate.refs--
+		if gate.refs == 0 {
+			delete(c.opening, id)
+		}
+		c.mu.Unlock()
+	}
+	select {
+	case <-ctx.Done():
+		release()
+		return nil, ctx.Err()
+	case <-gate.ready:
+		unlock := func() {
+			gate.ready <- struct{}{}
+			release()
+		}
+		if err := ctx.Err(); err != nil {
+			unlock()
+			return nil, err
+		}
+		return unlock, nil
+	}
+}
+
+// open 加载会话，并在订阅时取得当前状态和历史边界。
+func (c *Core) open(
+	ctx context.Context, id string, sub protocol.Subscriber,
+) (protocol.OpenSessionResponse, error) {
+	var response protocol.OpenSessionResponse
+	done, err := c.lockSession(ctx, id)
+	if err != nil {
+		return response, err
+	}
+	defer done()
+	info, err := c.db.Get(ctx, id)
+	if err != nil {
+		return response, mapStoreError(err)
+	}
 	s, err := c.lookup(id)
 	if err != nil {
 		if s, err = c.load(ctx, id); err != nil {
-			return nil, err
+			return response, err
 		}
 		c.register(s)
 	}
-	s.subscribe(sub)
-	return s, nil
+	options, err := s.options()
+	if err != nil {
+		if s.idle() {
+			c.forget(s)
+		}
+		return response, err
+	}
+	state, seq, err := s.subscribe(sub, info.Title)
+	return protocol.OpenSessionResponse{ConfigOptions: options, State: state, LastSeq: seq}, err
 }
 
 // adopt 登记新建的会话，并让 sub 订阅它。
-func (c *Core) adopt(s *session, sub protocol.Subscriber) {
-	c.opening.Lock()
-	defer c.opening.Unlock()
+func (c *Core) adopt(s *session, sub protocol.Subscriber) protocol.SessionState {
+	// 新会话的标识尚未公布；先登记订阅再将它写进会话表。
+	s.subscribers = []protocol.Subscriber{sub}
 	c.register(s)
-	s.subscribe(sub)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state("")
 }
 
 // release 取消订阅。运行结束、队列清空或配置更新后，会再次检查是否可以卸载。
-func (c *Core) release(s *session, sub protocol.Subscriber) {
-	c.opening.Lock()
-	defer c.opening.Unlock()
-	s.unsubscribe(sub)
-	if s.idle() {
-		c.forget(s)
+func (c *Core) release(ctx context.Context, id string, sub protocol.Subscriber) error {
+	done, err := c.lockSession(ctx, id)
+	if err != nil {
+		return err
 	}
+	defer done()
+	if s, err := c.lookup(id); err == nil {
+		s.unsubscribe(sub)
+		if s.idle() {
+			c.forget(s)
+		}
+	}
+	return nil
 }
 
 // unloadIfIdle 仅在会话没有订阅者、没有进行中的操作且队列为空时卸载。
 func (c *Core) unloadIfIdle(s *session) {
-	c.opening.Lock()
-	defer c.opening.Unlock()
+	done, _ := c.lockSession(context.Background(), s.id)
+	defer done()
 	if s.idle() {
 		c.forget(s)
 	}
@@ -131,7 +198,7 @@ func (c *Core) unloadIfIdle(s *session) {
 // register 登记一个加载了的会话。
 func (c *Core) register(s *session) {
 	version := c.versions.Add(1)
-	s.runState.Version, s.queue.Version = version, version
+	s.epoch, s.runState.Version, s.queue.Version = version, version, version
 	c.mu.Lock()
 	c.sessions[s.id] = s
 	c.mu.Unlock()

@@ -167,6 +167,7 @@ func (a *App) conversation(c *ui.Context, t *ui.Theme, ch *chat) {
 		a.titleBar(c, t, cmp.Or(ch.title, "新对话"))
 		ui.Box(c).Grow(1).Children(func() { a.messages(c, t, ch) })
 		column(c, 0, func() { a.drawRunStatus(c, t, ch) })
+		diagnosticsLine(c, t, ch)
 		errorLine(c, t, ch)
 		if ch.retry != "" {
 			column(c, 4, func() { ui.Text(c, ch.retry).TextColor(t.TextMuted).FontSize(textSize) })
@@ -183,8 +184,27 @@ func (a *App) welcome(c *ui.Context, t *ui.Theme, ch *chat) {
 			ui.Text(c, "今天想做点什么？").FontSize(titleSize).Padding(0, 0, 28).
 				TextAlign(ui.Center)
 			a.composer(c, t, ch)
+			diagnosticsLine(c, t, ch)
 			errorLine(c, t, ch)
 		})
+	})
+}
+
+func diagnosticsLine(c *ui.Context, t *ui.Theme, ch *chat) {
+	if len(ch.diagnostics) == 0 {
+		return
+	}
+	const title = "有指令或技能未加载"
+	column(c, 4, func() {
+		expandable(c.Key("resource-diagnostics"), t, &ch.diagnosticsOpen, title, false,
+			func() { ui.Text(c, title).TextColor(t.TextMuted).FontSize(smallSize) },
+			func() {
+				ui.Scroll(c).MaxHeight(120).Children(func() {
+					for _, message := range ch.diagnostics {
+						ui.Text(c, message).TextColor(t.TextMuted).FontSize(smallSize).Selectable()
+					}
+				})
+			})
 	})
 }
 

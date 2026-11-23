@@ -36,22 +36,39 @@ func Load() (*Settings, error) {
 // LoadFrom 读取 dir 下的 settings.json 并校验。文件缺失视为零配置；
 // 解析与校验错误必须带文件路径。
 func LoadFrom(dir string) (*Settings, error) {
+	s, _, err := LoadSnapshot(dir)
+	return s, err
+}
+
+// LoadSnapshot 返回解析后的设置与同一次读取的原始内容，供保存时检查冲突。
+func LoadSnapshot(dir string) (*Settings, []byte, error) {
 	path := filepath.Join(dir, SettingsFile)
 	s := &Settings{}
-	data, err := os.ReadFile(path)
+	data, err := readOptional(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return s, nil
-		}
-		return nil, fmt.Errorf("读取 %s 失败: %w", path, err)
+		return nil, nil, err
+	}
+	if data == nil {
+		return s, nil, nil
 	}
 	if err := json.Unmarshal(data, s); err != nil {
-		return nil, fmt.Errorf("解析 %s 失败: %w", path, err)
+		return nil, nil, fmt.Errorf("解析 %s 失败: %w", path, err)
 	}
 	if err := s.Validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return s, nil
+	return s, data, nil
+}
+
+func readOptional(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取 %s 失败: %w", path, err)
+	}
+	return data, nil
 }
 
 // Validate 校验格式类问题：model 两段式、api 取值合法。

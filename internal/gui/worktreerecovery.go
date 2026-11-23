@@ -206,7 +206,7 @@ func (a *App) restoreCwdWorktree(ch *chat, record worktreeRecovery) {
 				return
 			}
 			ch.cwdGone, a.cwdGoneOpen = false, false
-			a.start(ch)
+			a.openSaved(ch)
 		})
 	}()
 }

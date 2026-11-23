@@ -21,8 +21,7 @@ const (
 	maxImages = 6 // 一条消息最多带几张图片
 
 	// noImagesHint 在当前模型不接受图片时提示怎么打开。
-	noImagesHint = "当前模型没有声明图片输入：" +
-		"在 settings.json 里该模型的 modalities.input 加上 \"image\""
+	noImagesHint = "当前模型不接受图片。可在设置的「模型接入」中为此模型打开「接受图片」"
 )
 
 // imageExts 是可以当作图片的文件的扩展名（小写，不带点）。

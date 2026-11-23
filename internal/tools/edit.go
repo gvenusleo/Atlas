@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -119,7 +120,14 @@ func editFile(ctx context.Context, cwd string, params jsontext.Value) (agent.Too
 	}
 
 	path := resolvePath(cwd, args.Path)
-	data, err := readRegularFile(ctx, path)
+	target, err := inspectTarget(path)
+	if err != nil {
+		return agent.ToolResult{}, fmt.Errorf("%s 检查失败: %w", path, err)
+	}
+	if target.info == nil {
+		return agent.ToolResult{}, fmt.Errorf("%s 检查失败: %w", path, os.ErrNotExist)
+	}
+	data, err := readRegularFile(ctx, target.resolved)
 	if err != nil {
 		return agent.ToolResult{}, err
 	}
@@ -135,7 +143,10 @@ func editFile(ctx context.Context, cwd string, params jsontext.Value) (agent.Too
 		return agent.ToolResult{}, err
 	}
 
-	if err := os.WriteFile(path, []byte(output), 0644); err != nil {
+	if err := target.replace(ctx, func(file *os.File) error {
+		_, err := io.WriteString(file, output)
+		return err
+	}); err != nil {
 		return agent.ToolResult{}, fmt.Errorf("%s 写入失败: %w", path, err)
 	}
 

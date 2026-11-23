@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,10 +36,13 @@ const baseSystemPrompt = `你是名为 Atlas 的通用助手，通过工具和�
 - 同一事项冲突时，优先级从高到低为：用户会话中的明确要求、任务所在目录的指令、上层目录的指令、全局指令；不冲突的指令继续生效。
 - 处理工作目录的子目录前，检查目标路径上是否有尚未加载的 AGENTS.md，并用 read 读取。`
 
+const maxInstructionBytes = 10 << 20
+
 // Resources 是一次资源发现的结果，系统提示词和 skills 来自同一份快照。
 type Resources struct {
 	SystemPrompt string
 	Skills       []skills.Skill
+	Diagnostics  []string
 }
 
 // Build 在会话创建或恢复时组装系统提示词，并返回供会话和 App 共用的 skills 快照。
@@ -59,13 +63,11 @@ func Build(cwd string) (Resources, error) {
 		return Resources{}, fmt.Errorf("定位主目录失败: %w", err)
 	}
 
-	instructions, err := loadInstructions(home, cwd)
-	if err != nil {
-		return Resources{}, err
-	}
-	discoveredSkills, err := skills.Discover(cwd)
-	if err != nil {
-		return Resources{}, err
+	instructions, instructionErrors := loadInstructions(home, cwd)
+	discoveredSkills, skillErrors := skills.Discover(cwd, home)
+	var diagnostics []string
+	for _, err := range append(instructionErrors, skillErrors...) {
+		diagnostics = append(diagnostics, err.Error())
 	}
 	skillsPrompt, err := skills.FormatPrompt(discoveredSkills)
 	if err != nil {
@@ -90,15 +92,17 @@ func Build(cwd string) (Resources, error) {
 		return Resources{}, fmt.Errorf("运行环境生成失败: %w", err)
 	}
 	sections = append(sections, string(data))
-	return Resources{SystemPrompt: strings.Join(sections, "\n\n"), Skills: discoveredSkills}, nil
+	return Resources{SystemPrompt: strings.Join(sections, "\n\n"), Skills: discoveredSkills,
+		Diagnostics: diagnostics}, nil
 }
 
 // loadInstructions 先加载全局的 ~/.atlas/AGENTS.md，再按根目录到工作目录加载各级的 AGENTS.md。
-func loadInstructions(home, cwd string) ([]string, error) {
+func loadInstructions(home, cwd string) ([]string, []error) {
 	globalPath := filepath.Join(home, ".atlas", "AGENTS.md")
 	global, err := readInstruction(globalPath, "整个会话")
+	var diagnostics []error
 	if err != nil {
-		return nil, err
+		diagnostics = append(diagnostics, err)
 	}
 	var instructions []string
 	if global != "" {
@@ -120,18 +124,19 @@ func loadInstructions(home, cwd string) ([]string, error) {
 		}
 		instruction, err := readInstruction(path, dir)
 		if err != nil {
-			return nil, err
+			diagnostics = append(diagnostics, err)
+			continue
 		}
 		if instruction != "" {
 			instructions = append(instructions, instruction)
 		}
 	}
-	return instructions, nil
+	return instructions, diagnostics
 }
 
 // readInstruction 略过缺失或空文件；来源、作用范围和正文通过 XML 编码保留。
 func readInstruction(path, scope string) (string, error) {
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		// 只有路径本身不存在才略过，失效符号链接属于读取错误。
 		if _, statErr := os.Lstat(path); errors.Is(statErr, os.ErrNotExist) {
@@ -140,6 +145,24 @@ func readInstruction(path, scope string) (string, error) {
 	}
 	if err != nil {
 		return "", fmt.Errorf("读取 %s 失败: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s 不是普通文件", path)
+	}
+	if info.Size() > maxInstructionBytes {
+		return "", fmt.Errorf("%s 文件大小超过 10 MiB 限制", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("打开 %s 失败: %w", path, err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxInstructionBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("读取 %s 失败: %w", path, err)
+	}
+	if len(data) > maxInstructionBytes {
+		return "", fmt.Errorf("%s 文件大小超过 10 MiB 限制", path)
 	}
 	if !utf8.Valid(data) {
 		return "", fmt.Errorf("%s 不是 UTF-8 文本", path)

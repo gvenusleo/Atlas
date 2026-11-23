@@ -285,7 +285,7 @@ const (
 type Delta struct {
 	Type DeltaType
 	Text string
-	// ToolCall 是累积快照，Arguments 为已累积到目前的原始 JSON。
+	// 对于工具调用，Text 是本次收到的参数片段，ToolCall 携带标识和名称。
 	ToolCall ToolCall
 }
 
