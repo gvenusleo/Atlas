@@ -98,6 +98,9 @@ type chat struct {
 	list     ui.ListState
 	outline  outline // 会话大纲
 	mdImages markdownImages
+
+	lastWheelUp          time.Time
+	ignoreScrollMomentum bool // 点击「回到最新」后，忽略上一段滚动的惯性
 	promptDraft
 	submissions  []promptSubmission
 	failedDrafts []failedPrompt
