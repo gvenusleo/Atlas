@@ -374,9 +374,17 @@ func (ch *chat) apply(u protocol.Update) {
 func (ch *chat) finishAssistant(u protocol.AssistantMessageSaved) {
 	ch.endStream()
 	ch.retry = ""
+	toolIDs := make(map[string]bool)
+	for _, update := range u.Updates {
+		if call, ok := update.(protocol.ToolCall); ok {
+			toolIDs[call.ToolCallID] = true
+		}
+	}
 	var streamed []*item
 	ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
-		if it.msg != u.MessageID || it.kind == itemUser || it.kind == itemSkill {
+		// 中途订阅时，工具参数增量创建的占位卡可能缺少所属消息的 ID。
+		belongs := it.msg == u.MessageID || it.kind == itemTool && it.msg == "" && toolIDs[it.callID]
+		if !belongs || it.kind == itemUser || it.kind == itemSkill {
 			return false
 		}
 		streamed = append(streamed, it)

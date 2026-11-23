@@ -253,6 +253,10 @@ func (a *App) createCwd(ch *chat) {
 	}
 	done := func() {
 		ch.cwdGone, a.cwdGoneOpen, a.cwdGoneErr = false, false, ""
+		if ch.id == "" {
+			a.start(ch)
+			return
+		}
 		a.openSaved(ch)
 	}
 	err := os.Mkdir(ch.cwd, 0o755)
