@@ -44,7 +44,7 @@ jobs:
           test -d build/darwin-arm64/Atlas.app
           hdiutil verify "build/darwin-arm64/atlas-${version}-arm64.dmg"
   tools-windows:
-    name: Windows 工具回归
+    name: Windows shell 回归
     runs-on: windows-latest
     environment: ci
     steps:
@@ -52,5 +52,5 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: 测试文件替换与命令执行
+      - name: 测试命令超时与日志清理
         run: go test ./internal/tools -count=1
