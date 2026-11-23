@@ -62,7 +62,7 @@ func (t fileTarget) replace(ctx context.Context, write func(*os.File) error) err
 	defer os.Remove(path)
 	err = write(file)
 	if err == nil && t.info != nil {
-		err = file.Chmod(t.info.Mode().Perm())
+		err = t.copyMetadata(file)
 	}
 	if err = errors.Join(err, file.Close()); err != nil {
 		return err
@@ -74,20 +74,23 @@ func (t fileTarget) replace(ctx context.Context, write func(*os.File) error) err
 	if !t.matches(current) {
 		return fmt.Errorf("%s 在磁盘上已变更", t.path)
 	}
-	if t.info != nil {
-		// 原地写入会检查目标的写权限。替换前保留这项检查。
-		file, err := os.OpenFile(t.resolved, os.O_WRONLY, 0)
-		if err != nil {
-			return err
-		}
-		if err := file.Close(); err != nil {
-			return err
-		}
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return os.Rename(path, t.resolved)
+}
+
+func (t fileTarget) copyMetadata(file *os.File) error {
+	// 保留原地写入对目标写权限的检查，并通过打开的文件复制扩展属性。
+	original, err := os.OpenFile(t.resolved, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer original.Close()
+	if err := file.Chmod(t.info.Mode().Perm()); err != nil {
+		return err
+	}
+	return copyExtendedAttributes(original, file)
 }
 
 func (t fileTarget) matches(current fileTarget) bool {

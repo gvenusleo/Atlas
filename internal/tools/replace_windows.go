@@ -16,3 +16,6 @@ func hasOtherLinks(path string, _ fs.FileInfo) (bool, error) {
 	err = syscall.GetFileInformationByHandle(syscall.Handle(file.Fd()), &info)
 	return info.NumberOfLinks > 1, err
 }
+
+// copyExtendedAttributes 对应 Unix 扩展属性的复制步骤。
+func copyExtendedAttributes(_, _ *os.File) error { return nil }
