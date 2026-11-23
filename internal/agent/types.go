@@ -150,6 +150,7 @@ func (SystemMessage) Role() Role { return RoleSystem }
 type UserMessage struct {
 	Content   []Content `json:"content"`
 	Timestamp time.Time `json:"timestamp"`
+	InTurn    bool      `json:"in_turn,omitzero"` // 插入本轮的消息不会开启新一轮。
 }
 
 // Role 返回用户消息角色。

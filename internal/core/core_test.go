@@ -514,14 +514,41 @@ func TestImagesAndCompactionAcrossReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := resp.SessionID
+	started, release := make(chan struct{}), make(chan struct{})
+	stub(t, c, id, func(ctx context.Context, req agent.StreamRequest, emit func(agent.Delta)) agent.AssistantMessage {
+		if len(req.Messages) == 1 {
+			close(started)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+		return reply("好", nil)(ctx, req, emit)
+	})
+	if err := say(t, a, id, "较早的任务"); err != nil {
+		t.Fatal(err)
+	}
+	awaitPromptEvent(t, started)
+	runID := openPromptState(t, a, id).Run.RunID
+	if err := enqueue(t, a, id, runID, protocol.PromptInTurn, "同一轮的补充"); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	r.end(t)
+	if err := a.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: id}); err != nil {
+		t.Fatal(err)
+	}
+	openSession(t, a, id)
 	stub(t, c, id, reply("好", nil))
+	if err := say(t, a, id, "/compact"); !errors.Is(err, protocol.ErrNothingToCompact) {
+		t.Fatalf("只有一轮时压缩返回 %v，期望没有可压缩的内容", err)
+	}
 	image := protocol.Image("AQID", "image/png")
 	if _, err := a.SendPrompt(t.Context(), protocol.SendPromptRequest{
 		SessionID: id, Prompt: []protocol.ContentBlock{protocol.Text("看图"), image}}); err != nil {
 		t.Fatal(err)
 	}
 	r.end(t)
-	sayAndWait(t, a, r, id, "再说一句")
 
 	history, err := a.ListHistory(t.Context(),
 		protocol.ListHistoryRequest{SessionID: id, Limit: 10})
@@ -554,12 +581,112 @@ func TestImagesAndCompactionAcrossReopen(t *testing.T) {
 	}
 
 	openSession(t, a, id)
-	var seen int
-	stub(t, c, id, reply("四", &seen))
+	stub(t, c, id, func(
+		_ context.Context, req agent.StreamRequest, _ func(agent.Delta),
+	) agent.AssistantMessage {
+		if len(req.Messages) != 4 {
+			t.Errorf("重开后有 %d 条消息，期望摘要、最近一轮和新的用户消息", len(req.Messages))
+			return agent.AssistantMessage{StopReason: agent.StopReasonStop}
+		}
+		user, ok := req.Messages[1].(agent.UserMessage)
+		if !ok || agent.TextOf(user.Content) != "看图\n[图片]" || len(user.Content) != 2 {
+			t.Errorf("重开后未保留最近一轮的用户原文和图片：%#v", req.Messages[1])
+		} else if img, ok := user.Content[1].(agent.ImageContent); !ok || img.Data != image.Data {
+			t.Error("重开后未还原最近一轮的图片内容")
+		}
+		return agent.AssistantMessage{StopReason: agent.StopReasonStop}
+	})
 	sayAndWait(t, a, r, id, "继续")
-	// 上下文：摘要、保留的最后一条回复，加上这一轮的“继续”。
-	if seen != 3 {
-		t.Errorf("压缩后重新打开的请求有 %d 条消息，期望 3 条", seen)
+	history, err = a.ListHistory(t.Context(),
+		protocol.ListHistoryRequest{SessionID: id, Limit: 10})
+	if err != nil || !slices.ContainsFunc(history.Updates, func(u protocol.Update) bool {
+		chunk, ok := u.(protocol.UserMessageChunk)
+		return ok && chunk.Content.Text == "较早的任务"
+	}) {
+		t.Fatalf("压缩后未读回已摘要的历史：%v", err)
+	}
+}
+
+// 取消超限恢复时，最近一次成功压缩和待发消息仍可用。
+func TestCancelOverflowRecoveryPreservesSession(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	r := newRecorder()
+	client := c.Connect(r)
+	resp, err := client.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := resp.SessionID
+	stub(t, c, id, reply("摘要", nil))
+	sayAndWait(t, client, r, id, "已完成的任务")
+	sayAndWait(t, client, r, id, strings.Repeat("近", 2000))
+	if end := sayAndWait(t, client, r, id, "/compact"); end.Error != "" {
+		t.Fatalf("手动压缩失败：%+v", end)
+	}
+	before, err := c.db.Get(t.Context(), id)
+	if err != nil || before.ContextFrom <= 1 {
+		t.Fatalf("未保存手动压缩：%+v，%v", before, err)
+	}
+	assertFailedReplayPreservesContext(t, c, client, r, id, before.ContextFrom)
+	started := make(chan struct{})
+	var summaries int
+	stub(t, c, id, func(ctx context.Context, req agent.StreamRequest, _ func(agent.Delta)) agent.AssistantMessage {
+		if len(req.Tools) == 0 {
+			summaries++
+			if summaries == 2 {
+				close(started)
+				<-ctx.Done()
+				return agent.AssistantMessage{StopReason: agent.StopReasonCanceled}
+			}
+		}
+		return agent.AssistantMessage{StopReason: agent.StopReasonError,
+			ErrorKind: agent.ErrorKindContextOverflow, ErrorMessage: "上下文不足"}
+	})
+	if err := say(t, client, id, "继续"); err != nil {
+		t.Fatal(err)
+	}
+	awaitPromptEvent(t, started)
+	runID := openPromptState(t, client, id).Run.RunID
+	if err := enqueue(t, client, id, runID, protocol.PromptNextTurn, "待发"); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CancelTurn(t.Context(), protocol.CancelTurnRequest{SessionID: id, RunID: runID}); err != nil {
+		t.Fatal(err)
+	}
+	if end := r.end(t); end.StopReason != protocol.StopCancelled {
+		t.Fatalf("恢复取消后的状态：%+v", end)
+	}
+	queue := openPromptState(t, client, id).Queue
+	if !queue.Paused || len(queue.Items) != 1 || queue.Items[0].Prompt[0].Text != "待发" {
+		t.Fatalf("恢复取消后应保留待发消息：%+v", queue)
+	}
+	after, err := c.db.Get(t.Context(), id)
+	if err != nil || after.ContextFrom != before.ContextFrom {
+		t.Fatalf("恢复取消后应保留前次压缩的上下文起点：%+v，%v", after, err)
+	}
+}
+
+// 重发再次超限时，已生成的临时摘要不能改变持久化的上下文起点。
+func assertFailedReplayPreservesContext(t *testing.T, c *Core, client protocol.Service,
+	r *recorder, id string, contextFrom int64,
+) {
+	t.Helper()
+	var replies int
+	stub(t, c, id, func(_ context.Context, req agent.StreamRequest, _ func(agent.Delta)) agent.AssistantMessage {
+		if len(req.Tools) == 0 {
+			return agent.AssistantMessage{StopReason: agent.StopReasonStop,
+				Content: []agent.Content{agent.TextContent{Text: "临时摘要"}}}
+		}
+		replies++
+		return agent.AssistantMessage{StopReason: agent.StopReasonError,
+			ErrorKind: agent.ErrorKindContextOverflow, ErrorMessage: "上下文不足"}
+	})
+	if end := sayAndWait(t, client, r, id, "无法继续"); end.Error == "" || replies != 2 {
+		t.Fatalf("重发应超限且结束，请求次数 %d，状态 %+v", replies, end)
+	}
+	after, err := c.db.Get(t.Context(), id)
+	if err != nil || after.ContextFrom != contextFrom {
+		t.Fatalf("重发超限后应保留前次压缩的上下文起点：%+v，%v", after, err)
 	}
 }
 

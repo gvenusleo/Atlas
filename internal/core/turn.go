@@ -58,9 +58,6 @@ func (s *session) startTurn(blocks []protocol.ContentBlock) error {
 	case s.busy != nil:
 		s.mu.Unlock()
 		return protocol.ErrBusy
-	case kind == protocol.RunCompaction && !agent.Compactable(s.messages):
-		s.mu.Unlock()
-		return protocol.ErrNothingToCompact
 	}
 	t := s.reserveTurn(kind)
 	s.mu.Unlock()
@@ -102,6 +99,9 @@ func (s *session) prepareTurn(
 		MaxRequests: maxRequests, ReadModel: s.readModel}
 	s.mu.Unlock()
 	if t.kind == protocol.RunCompaction {
+		if !agent.Compactable(in.Messages, in.Model.ContextWindow) {
+			return agent.Input{}, agent.UserMessage{}, protocol.ErrNothingToCompact
+		}
 		return in, agent.UserMessage{}, t.ctx.Err()
 	}
 	checkImages := t.queued.ID != 0 && !in.Model.Images

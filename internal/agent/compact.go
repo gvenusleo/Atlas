@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -64,58 +65,78 @@ func limits(window int64) (reserve, keep int64) {
 	return reserve, keep
 }
 
-// compactor 记录一轮里压缩的状态：每次请求前最多试一次，失败过一次后这一轮不再试。
+// compactor 限制预压缩。提供方拒绝请求后的恢复由请求循环单独限制。
 type compactor struct {
-	r            *run
-	failed       bool
-	tried        bool // 这次请求前已经试过
-	keepMessages int  // 刚插入的用户消息须保留原文
+	r      *run
+	failed bool // 预压缩失败后，本轮不再主动压缩
 }
 
-// prepareRequest 按插入后的上下文决定是否压缩，并保留刚插入的消息。
+// prepareRequest 按新增用户消息后的上下文决定是否预压缩。
 func (c *compactor) prepareRequest(ctx context.Context, keepMessages int) {
-	c.tried, c.keepMessages = false, keepMessages
-	if window := c.r.Model.ContextWindow; window > 0 {
-		reserve, _ := limits(window)
-		if Tokens(c.r.Messages) > window-reserve {
-			c.try(ctx)
-		}
+	window := c.r.Model.ContextWindow
+	if c.failed || window <= 0 {
+		return
+	}
+	reserve, keep := limits(window)
+	if Tokens(c.r.Messages) > window-reserve {
+		cut := min(cutPoint(c.r.Messages, keep), len(c.r.Messages)-keepMessages)
+		c.failed = compact(ctx, c.r, cut)
 	}
 }
 
-// try 压缩一次；这次请求前试过、或这一轮里失败过时什么也不做。返回是否压缩了。
-func (c *compactor) try(ctx context.Context) bool {
-	if c.tried || c.failed {
-		return false
-	}
-	c.tried = true
-	compacted, failed := compact(ctx, c.r, autoKeep(c.r), c.keepMessages)
-	c.failed = failed
-	return compacted
-}
-
-// autoKeep 返回自动压缩时保留的最近消息量。
-func autoKeep(r *run) int64 {
-	window := r.Model.ContextWindow
-	if window <= 0 {
-		// 窗口未知（只会在请求溢出后走到这里）：以刚溢出的上下文大小为准，保留其中的一部分。
-		window = Tokens(r.Messages)
-	}
-	_, keep := limits(window)
-	return keep
-}
-
-// Compact 手动压缩：把除最后一条消息外的上下文换成摘要，返回新产生的消息；
-// 没有可压缩的内容时返回空。in 不被修改。
+// Compact 手动压缩较早的上下文，优先原样保留最近的完整轮次。in 不被修改。
 func Compact(ctx context.Context, in Input, emit func(Event)) []Message {
 	r := newRun(in, emit)
-	compact(ctx, r, 0, 0)
+	compact(ctx, r, manualCutPoint(in.Messages, in.Model.ContextWindow))
 	return r.added
 }
 
-// Compactable 报告上下文里有没有手动压缩可以压的内容。
-func Compactable(messages []Message) bool {
-	return cutPoint(messages, 0) >= 0
+// Compactable 报告按当前模型的窗口保留近期消息后，是否还有可压缩的内容。
+func Compactable(messages []Message, window int64) bool {
+	return canCut(messages, manualCutPoint(messages, window))
+}
+
+// manualCutPoint 在预算内优先保留完整轮次。短会话也可以单独压缩已经谈完的轮次。
+func manualCutPoint(messages []Message, window int64) int {
+	_, keep := limits(window)
+	var kept int64
+	lastBoundary, fittingBoundary := -1, -1
+	lastUser, fittingUser := -1, -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		kept += estimateMessage(message)
+		if isBoundary(message) {
+			if lastBoundary < 0 {
+				lastBoundary = i
+			}
+			if kept <= keep {
+				fittingBoundary = i
+			}
+		}
+		if user, ok := message.(UserMessage); ok && !user.InTurn {
+			if lastUser < 0 {
+				lastUser = i
+			}
+			if kept > keep {
+				break
+			}
+			fittingUser = i
+		}
+	}
+	switch {
+	case canCut(messages, fittingUser):
+		return fittingUser
+	case fittingUser >= 0:
+		return lastUser
+	case fittingBoundary >= 0:
+		return fittingBoundary
+	default:
+		return lastBoundary
+	}
+}
+
+func canCut(messages []Message, cut int) bool {
+	return cut > 0 && (cut != 1 || !isCompaction(messages[0]))
 }
 
 // Fold 把一条新记录并进上下文并返回新的上下文：压缩记录换成“摘要 + 它之前保留的 Kept 条”，
@@ -135,47 +156,65 @@ func Fold(messages []Message, m Message) []Message {
 	return append(messages, m)
 }
 
-// compact 把较早的上下文换成摘要，保留约 keep 个 token 的最近消息。没有可压缩的内容时
-// 什么也不发生；摘要失败时追加一条通知，继续使用原上下文。
-func compact(ctx context.Context, r *run, keep int64, keepMessages int) (compacted, failed bool) {
-	cut := min(cutPoint(r.Messages, keep), len(r.Messages)-keepMessages)
-	if cut <= 0 || cut == 1 && isCompaction(r.Messages[0]) {
-		return false, false
+// compact 摘要完成后立即安装，用于手动压缩和预压缩。
+func compact(ctx context.Context, r *run, cut int) (failed bool) {
+	message, failed := prepareCompaction(ctx, r, cut)
+	if message.Content != "" {
+		r.add(message)
+	}
+	return failed
+}
+
+// prepareCompaction 生成摘要，调用方决定何时安装。失败时记录通知，保留原上下文。
+func prepareCompaction(ctx context.Context, r *run, cut int) (SystemMessage, bool) {
+	if !canCut(r.Messages, cut) {
+		return SystemMessage{}, false
 	}
 	r.emit(Event{Type: EventCompactionStart})
 	summary, err := summarize(ctx, r, r.Messages[:cut])
+	if ctx.Err() != nil {
+		return SystemMessage{}, true // 界面在本轮结束时清除进行中的压缩提示。
+	}
 	if err != nil {
-		if ctx.Err() != nil {
-			return false, true // 用户取消了：不留通知，界面在这一轮结束时清掉占位行
-		}
 		r.add(SystemMessage{
 			Type:      SystemMessageTypeNotice,
 			Content:   "上下文压缩失败，已继续使用原上下文：" + err.Error(),
 			Timestamp: time.Now(),
 		})
-		return false, true
+		return SystemMessage{}, true
 	}
-	r.add(SystemMessage{
+	return SystemMessage{
 		Type: SystemMessageTypeCompaction, Content: summary,
 		Kept: len(r.Messages) - cut, Timestamp: time.Now(),
-	})
-	return true, false
+	}, false
 }
 
 // summarize 用同一个模型为 messages 写摘要：独立的一次请求，没有工具，增量不外发。
 func summarize(ctx context.Context, r *run, messages []Message) (string, error) {
-	conversation := "<conversation>\n" + transcript(messages) + "\n</conversation>\n\n"
-	prompt := UserMessage{
-		Content:   []Content{TextContent{Text: conversation + summaryInstructions}},
-		Timestamp: time.Now(),
-	}
+	const prefix = "<conversation>\n"
+	const suffix = "\n</conversation>\n\n" + summaryInstructions
+	conversation := strings.Join(transcript(messages, clipChars), "\n\n")
 	request := func() StreamRequest {
+		prompt := UserMessage{
+			Content:   []Content{TextContent{Text: prefix + conversation + suffix}},
+			Timestamp: time.Now(),
+		}
 		return StreamRequest{
 			Model: r.Model.Ref, SystemPrompt: summarySystemPrompt, Messages: []Message{prompt},
 			ThinkingLevel: r.Thinking,
 		}
 	}
-	final := streamWithRetry(ctx, r, request, func(Delta) {}, nil)
+	shrink := func() bool {
+		overhead := estimateText(summarySystemPrompt + prefix + suffix)
+		budget := (estimateText(conversation) - overhead) / 2
+		if budget <= 0 {
+			return false
+		}
+		conversation = shrinkTranscript(transcript(messages, clipChars/2), budget,
+			isCompaction(messages[0]))
+		return conversation != ""
+	}
+	final := streamWithRetry(ctx, r, request, func(Delta) {}, shrink)
 	summary := strings.TrimSpace(TextOf(final.Content))
 	switch {
 	case final.StopReason == StopReasonCanceled:
@@ -190,9 +229,11 @@ func summarize(ctx context.Context, r *run, messages []Message) (string, error) 
 	return summary, nil
 }
 
-// transcript 把消息排成纯文本，让摘要模型读的是一份记录而不是继续这场对话。
-// 思考不放进去；工具结果与工具参数各截到 clipChars 个字符。
-func transcript(messages []Message) string {
+const transcriptUser = "[用户]: "
+const transcriptInTurn = "[用户补充]: "
+
+// transcript 将消息排成文本。工具结果和参数只保留首尾，思考内容不参与摘要。
+func transcript(messages []Message, limit int) []string {
 	var parts []string
 	for _, m := range messages {
 		switch m := m.(type) {
@@ -202,7 +243,11 @@ func transcript(messages []Message) string {
 			}
 		case UserMessage:
 			if text := TextOf(m.Content); text != "" {
-				parts = append(parts, "[用户]: "+text)
+				label := transcriptUser
+				if m.InTurn {
+					label = transcriptInTurn
+				}
+				parts = append(parts, label+text)
 			}
 		case AssistantMessage:
 			if text := TextOf(m.Content); text != "" {
@@ -212,7 +257,7 @@ func transcript(messages []Message) string {
 			for _, block := range m.Content {
 				if call, ok := block.(ToolCall); ok {
 					calls = append(calls,
-						fmt.Sprintf("%s(%s)", call.Name, clip(string(call.Arguments))))
+						fmt.Sprintf("%s(%s)", call.Name, clip(string(call.Arguments), limit)))
 				}
 			}
 			if len(calls) > 0 {
@@ -220,11 +265,75 @@ func transcript(messages []Message) string {
 			}
 		case ToolResultMessage:
 			if text := TextOf(m.Content); text != "" {
-				parts = append(parts, "[工具结果]: "+clip(text))
+				parts = append(parts, "[工具结果]: "+clip(text, limit))
 			}
 		}
 	}
-	return strings.Join(parts, "\n\n")
+	return parts
+}
+
+// shrinkTranscript 先给最近任务的用户原文分配预算，再保留前次摘要和近期进展。
+func shrinkTranscript(parts []string, budget int64, hasSummary bool) string {
+	const omitted = "[已省略部分对话]"
+	budget -= estimateText(omitted) + 2
+	selected := make([]string, len(parts))
+	keep := func(i int, limit int64) {
+		if part := fitTranscriptPart(parts[i], min(limit, budget-2)); part != "" {
+			selected[i] = part
+			budget -= estimateText(part) + 2
+		}
+	}
+	task := len(parts) - 1
+	for task >= 0 && !strings.HasPrefix(parts[task], transcriptUser) {
+		task--
+	}
+	userBudget := budget / 2
+	before := budget
+	if task >= 0 {
+		keep(task, userBudget)
+	}
+	for i := len(parts) - 1; i > task && before-budget < userBudget; i-- {
+		if strings.HasPrefix(parts[i], transcriptInTurn) {
+			keep(i, userBudget-(before-budget))
+		}
+	}
+	start := 0
+	if hasSummary {
+		keep(0, budget/2)
+		start = 1
+	}
+	for i := len(parts) - 1; i >= start; i-- {
+		if selected[i] == "" {
+			keep(i, budget)
+			if selected[i] != parts[i] {
+				break
+			}
+		}
+	}
+	if !slices.ContainsFunc(selected[start:], func(part string) bool { return part != "" }) {
+		return ""
+	}
+	var result []string
+	omittedAdded := false
+	for _, part := range selected {
+		if part != "" {
+			result = append(result, part)
+		} else if !omittedAdded {
+			result = append(result, omitted)
+			omittedAdded = true
+		}
+	}
+	return strings.Join(result, "\n\n")
+}
+
+func fitTranscriptPart(part string, budget int64) string {
+	if budget <= 0 {
+		return ""
+	}
+	if estimateText(part) <= budget {
+		return part
+	}
+	return clip(part, int(budget)) // 单个字符的估算至多是一个 token。
 }
 
 // TextOf 连接内容里的文本；图片以占位文字表示。
@@ -241,13 +350,18 @@ func TextOf(content []Content) string {
 	return strings.Join(parts, "\n")
 }
 
-// clip 把 s 截到 clipChars 个字符。
-func clip(s string) string {
-	if utf8.RuneCountInString(s) <= clipChars {
+// clip 将长文本截到 limit 个字符，保留开头的背景和末尾的结论。
+func clip(s string, limit int) string {
+	if utf8.RuneCountInString(s) <= limit {
 		return s
 	}
+	const omitted = "\n[… 已省略中间内容]\n"
+	kept := limit - utf8.RuneCountInString(omitted)
+	if kept <= 0 {
+		return ""
+	}
 	runes := []rune(s)
-	return string(runes[:clipChars]) + fmt.Sprintf("\n[… 已省略 %d 个字符]", len(runes)-clipChars)
+	return string(runes[:kept/2]) + omitted + string(runes[len(runes)-(kept+1)/2:])
 }
 
 // cutPoint 返回压缩后保留的第一条消息的下标，没有可压缩的内容时返回 -1。
@@ -274,7 +388,7 @@ func cutPoint(messages []Message, keep int64) int {
 		}
 	}
 	// 切点前只剩此前的摘要时，没有新的内容可摘要。
-	if cut <= 0 || cut == 1 && isCompaction(messages[0]) {
+	if !canCut(messages, cut) {
 		return -1
 	}
 	return cut
