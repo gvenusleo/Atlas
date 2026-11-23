@@ -226,7 +226,7 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 	ch.list.FollowAnimation = &ui.Smooth
 	ch.seek(blocks)
 	a.loadOlder(ch)
-	ui.Column(c).Fill().ClipY().Children(func() {
+	ui.Column(c).Fill().ClipY().HandleInput(ch.handleMessageScroll).Children(func() {
 		ui.List(c, &ch.list, len(blocks), func(i int) {
 			// 留白随首末消息块滚动，避免把留白算进视口的最小高度。
 			var top, bottom float32
@@ -248,6 +248,28 @@ func (a *App) messages(c *ui.Context, t *ui.Theme, ch *chat) {
 			a.jumpToLatest(c, t, ch)
 		}
 	})
+}
+
+// handleMessageScroll 在跳到末尾后拦住仍在到达的向上滚动。
+func (ch *chat) handleMessageScroll(ev ui.InputEvent) bool {
+	if ev.Kind != ui.InputScroll || ev.DY == 0 || ev.DX == 0 && ev.Mods&ui.Shift != 0 {
+		return false
+	}
+	if ev.Momentum {
+		return ch.ignoreScrollMomentum && ev.DY < 0
+	}
+	// 普通滚轮事件没有惯性标记，按相邻事件的方向和间隔识别连续输入。
+	const wheelPause = 150 * time.Millisecond
+	lastWheelUp := ch.lastWheelUp
+	ch.lastWheelUp = time.Time{}
+	if !ev.Precise && ev.DY < 0 {
+		ch.lastWheelUp = ev.Time
+		if ch.ignoreScrollMomentum && ev.Time.Sub(lastWheelUp) < wheelPause {
+			return true
+		}
+	}
+	ch.ignoreScrollMomentum = false
+	return false
 }
 
 // edges 在消息列表的上下沿各铺一条带：背景色从边缘处的完全不透明，缓缓过渡到透明，
@@ -287,7 +309,10 @@ func (a *App) jumpToLatest(c *ui.Context, t *ui.Theme, ch *chat) {
 		if btn.Hovered() {
 			btn.Background(t.SurfaceHover)
 		}
-		btn.OnClick(ch.list.ScrollToEnd)
+		btn.OnClick(func() {
+			ch.ignoreScrollMomentum = true
+			ch.list.ScrollToEnd()
+		})
 		btn.Children(func() {
 			ui.Icon(c, arrowDownIcon).FontSize(iconSize).TextColor(t.TextMuted)
 		})
