@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -9,74 +10,146 @@ import (
 	"path/filepath"
 )
 
-// Save 校验 s 并写进 dir 下的 settings.json。键的顺序固定、带缩进，手工改过的文件重写后也不会
-// 来回变动；结构里没有的键不会保留。文件已经存在时保持它的权限。
-func Save(dir string, s *Settings) error {
+// KeyChange 描述凭据条目的前后状态，nil 表示条目不存在。
+type KeyChange struct {
+	Name          string
+	Before, After *string
+}
+
+// SaveSettings 检查设置和要改的凭据，再按新增凭据、设置、清理旧凭据的顺序写入。
+// 返回非空快照表示设置已保存，即使清理旧凭据失败。
+func SaveSettings(dir string, s *Settings, original []byte, changes ...KeyChange) ([]byte, error) {
 	path := filepath.Join(dir, SettingsFile)
 	if err := s.Validate(); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := checkSnapshot(path, original); err != nil {
+		return nil, err
+	}
+	auth := filepath.Join(dir, authFile)
+	var install, remove []KeyChange
+	if len(changes) != 0 {
+		keys, _, err := readKeys(auth)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkKeys(keys, changes); err != nil {
+			return nil, err
+		}
+		for _, change := range changes {
+			if change.After == nil {
+				remove = append(remove, change)
+			} else {
+				install = append(install, change)
+			}
+		}
+	}
+	if err := updateKeys(auth, install); err != nil {
+		return nil, err
 	}
 	perm := os.FileMode(0o644)
 	if info, err := os.Stat(path); err == nil {
 		perm = info.Mode().Perm()
 	}
-	return writeJSON(path, s, perm)
+	data, err := writeJSON(path, s, perm, original)
+	if err != nil {
+		for i := range install {
+			install[i].Before, install[i].After = install[i].After, install[i].Before
+		}
+		if rollback := updateKeys(auth, install); rollback != nil {
+			return nil, errors.Join(err, fmt.Errorf("恢复原 API key 失败: %w", rollback))
+		}
+		return nil, err
+	}
+	if err := updateKeys(auth, remove); err != nil {
+		return data, fmt.Errorf("设置已保存，清理旧 API key 失败: %w", err)
+	}
+	return data, nil
 }
 
-// SetAPIKey 把 provider 的凭据写进 dir 下的 auth.json，其余条目保持不变。文件不存在就新建；
-// 内容解析不了时不改，免得盖掉用户的东西。写出的文件权限固定为 0600。
-func SetAPIKey(dir, provider, key string) error {
-	return editKeys(dir, func(keys map[string]string) { keys[provider] = key })
-}
-
-// RemoveAPIKey 从 auth.json 里删掉 provider 的凭据；没有这个条目或文件时什么也不做。
-func RemoveAPIKey(dir, provider string) error {
-	return editKeys(dir, func(keys map[string]string) { delete(keys, provider) })
-}
-
-// editKeys 读出 auth.json 的全部条目，交给 edit 改，再写回去。
-func editKeys(dir string, edit func(map[string]string)) error {
-	path := filepath.Join(dir, authFile)
-	keys := map[string]string{}
-	data, err := os.ReadFile(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return fmt.Errorf("读取 %s 失败: %w", path, err)
-	default:
-		if err := json.Unmarshal(data, &keys); err != nil {
-			return fmt.Errorf("解析 %s 失败: %w", path, err)
+func checkKeys(keys map[string]string, changes []KeyChange) error {
+	for _, change := range changes {
+		key, exists := keys[change.Name]
+		if exists != (change.Before != nil) || exists && key != *change.Before {
+			return fmt.Errorf("服务 %q 的 API key 在磁盘上已变更，请重新打开设置页", change.Name)
 		}
 	}
-	edit(keys)
-	return writeJSON(path, keys, 0o600)
+	return nil
 }
 
-// writeJSON 把 v 写成带缩进的 JSON：先写同目录的临时文件再改名，读者不会看到写了一半的文件；
-// path 是符号链接时写它指向的文件，链接本身保留。
-func writeJSON(path string, v any, perm os.FileMode) error {
-	if real, err := filepath.EvalSymlinks(path); err == nil {
+func updateKeys(path string, changes []KeyChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	keys, original, err := readKeys(path)
+	if err != nil {
+		return err
+	}
+	if err := checkKeys(keys, changes); err != nil {
+		return err
+	}
+	changed := false
+	for _, change := range changes {
+		if change.After == nil {
+			if change.Before != nil {
+				delete(keys, change.Name)
+				changed = true
+			}
+		} else {
+			keys[change.Name] = *change.After
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	_, err = writeJSON(path, keys, 0o600, original)
+	return err
+}
+
+func checkSnapshot(path string, original []byte) error {
+	data, err := readOptional(path)
+	if err != nil {
+		return err
+	}
+	if (data == nil) != (original == nil) || !bytes.Equal(data, original) {
+		return fmt.Errorf("%s 在磁盘上已变更，请重新打开设置页", filepath.Base(path))
+	}
+	return nil
+}
+
+// writeJSON 在同目录写临时文件，再核对原始内容并替换。有效的符号链接保留。
+func writeJSON(path string, v any, perm os.FileMode, original []byte) ([]byte, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if err == nil {
 		path = real
 	}
 	data, err := json.Marshal(v, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
-		return fmt.Errorf("编码 %s 失败: %w", path, err)
+		return nil, fmt.Errorf("编码 %s 失败: %w", path, err)
 	}
+	data = append(data, '\n')
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+		return nil, err
 	}
 	tmp, err := os.CreateTemp(dir, ".atlas-config-*")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer os.Remove(tmp.Name()) // 改名成功之后它已经不在了
-	_, err = tmp.Write(append(data, '\n'))
+	defer os.Remove(tmp.Name())
+	_, err = tmp.Write(data)
 	if err == nil {
 		err = tmp.Chmod(perm)
 	}
-	if err = errors.Join(err, tmp.Close()); err == nil {
-		err = os.Rename(tmp.Name(), path)
+	if err = errors.Join(err, tmp.Close()); err != nil {
+		return nil, err
 	}
-	return err
+	if err := checkSnapshot(path, original); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return nil, err
+	}
+	return data, nil
 }

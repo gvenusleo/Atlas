@@ -130,7 +130,7 @@ type Subscriber interface {
 | 方法 | 做什么 |
 | --- | --- |
 | `NewSession{cwd, type?, ownerId?}` | 新建会话，返回 `sessionId`、配置项与当前状态。新会话先只存在于内存，保存第一条用户消息时才写库；工作目录此后不再改变。`type` 缺省是 `interactive`；`scheduled` 必须带 `ownerId`。类型与属主随会话保存，此后不变 |
-| `OpenSession{sessionId}` | 加载会话并订阅，返回配置项与当前状态，不回放历史；历史用 `ListHistory` 分页读取 |
+| `OpenSession{sessionId}` | 加载会话并订阅，返回配置项、当前状态与订阅时的历史末尾序号；历史用 `ListHistory` 分页读取 |
 | `ListSessions{cwd?, type?, ownerId?, cursor?, all?}` | 按更新时间倒序列出已保存的会话，返回 `sessionId`、`cwd`、`title`、`updatedAt`、`type`、`ownerId`。`type` 缺省为 `interactive`，`cwd` 和 `ownerId` 分别按工作目录和属主筛选。默认按游标分页，`all` 从同一数据库快照取全，不能与游标同时使用 |
 | `DeleteSession{sessionId}` | 删除空闲的会话；会话不存在时不报错 |
 | `CloseSession{sessionId}` | 取消当前连接的订阅。会话没有订阅者、空闲且队列为空时卸载 |
@@ -150,7 +150,7 @@ type Subscriber interface {
 
 立即发送前，核心检查会话是否空闲。开始一轮时检查工作目录并准备模型，没有可用模型时重新选择一次。单独发送 `/compact` 会压缩上下文。其他用户消息中，任意位置的 `/技能名` 都可以显式调用会话中的技能，两侧须是空白或消息边界。核心按首次出现的顺序将各技能的全文附在原文后，再运行。
 
-打开会话时，当前状态随响应一并给出（`state`，即 `protocol.SessionState`）：工作目录、标题、可用的命令（`compact` 与全部技能）、上下文占用、运行状态与队列快照，此后由更新推进。工作目录在会话中不变，技能随工作目录而定，因此命令不再单独推送更新。
+打开会话时，当前状态随响应一并给出（`state`，即 `protocol.SessionState`）：工作目录、标题、可用的命令（`compact` 与全部技能）、资源加载诊断、上下文占用、运行状态与队列快照，此后由更新推进。工作目录在会话中不变，技能随工作目录而定，因此命令不再单独推送更新。
 
 不支持更换工作目录：工作目录在新建会话时确定。需要换目录时，新建一个会话。
 
@@ -174,7 +174,7 @@ type Subscriber interface {
 | `user_message_chunk` | 用户消息保存后发出。发送消息的客户端同样在收到它之后才显示该消息 |
 | `agent_message_chunk`、`agent_thought_chunk` | 流式的文字与思考，同一条消息使用同一个 `messageId`。同一条回复中相邻的两段文字之间补一个空行，流式与回放保持一致 |
 | `tool_call` | 模型开始发出一个工具调用：`toolCallId`、`name`、`title`、`kind`、`rawInput`，状态为 `pending` |
-| `tool_call_update` | 参数继续流出（`rawInput`）、开始执行（`in_progress`）、结束（`completed` 或 `failed`，带 `content` 与 `rawOutput`） |
+| `tool_call_update` | 参数继续流出（`inputDelta`），开始执行（`in_progress`），结束（`completed` 或 `failed`，带 `content` 与 `rawOutput`） |
 | `usage_update` | 每条助手消息保存后发出：`used` 是上下文占用，`contextWindow` 是窗口大小 |
 | `compaction_update` | 压缩开始、完成（带摘要）、失败（带原因）、取消 |
 | `notice` | 通知，如压缩失败、达到上限 |
@@ -183,10 +183,11 @@ type Subscriber interface {
 | `run_state` | 报告一轮开始、结束或两轮之间的交接。运行中带 `runId`、`kind`、`since`，一轮结束时带 `previousRunId` 与 `stopReason` 或 `error` |
 | `prompt_queue_update` | 一份完整的待发队列快照，包含顺序、发送中状态、暂停状态和版本 |
 | `request_retry` | 一次模型请求失败，等待重试：`messageId`、第几次、等待多久、原因。客户端应丢弃这条消息已流出的内容 |
+| `assistant_message_saved` | 助手消息入库后的完整显示内容，用于替换流式内容，也供中途订阅的连接补齐回复 |
 
 工具的 `kind`：read 对应 `read`，write 与 edit 对应 `edit`，shell 对应 `execute`，其余对应 `other`。`rawOutput` 是工具附带的结构化数据（`ReadDetails`、`WriteDetails`、`EditDetails`），其形状由 `protocol` 定义，GUI 用它绘制 diff、行号与图片；其他客户端只依据 `title`、`content` 也能正常使用。
 
-所有更新都由核心中同一组转换函数，根据 `agent` 的事件与消息生成：实时运行时由事件生成，`OpenSession` 之后用 `ListHistory` 读取的历史由数据库中的记录生成，定稿的消息在两种情形下都经过同一个转换。客户端因此只有一条渲染路径。
+所有更新都由核心中同一组转换函数根据 `agent` 的事件与消息生成。实时运行时增量直接发布，定稿与历史回放使用同样的转换。助手定稿携带完整的文字、思考与工具调用，客户端用它替换对应消息已显示的增量。
 
 ### 错误
 
@@ -218,7 +219,7 @@ type Subscriber interface {
 2. 读取 `settings.json`，按“上次的模型 → 默认模型 → 清单中第一个可用的”选择模型。已有会话更换了模型的，保存新选择。没有任何可用模型或缺少凭据时不算失败，此时会话没有可用的模型，下次 `SendPrompt` 时再试一次。
 3. 按工作目录组装系统提示词、技能与工具。技能来自工作区与主目录的 `.atlas/skills`、`.agents/skills` 四处，同名时按工作区优先于主目录、`.atlas` 优先于 `.agents` 取第一个，其余跳过。已有会话的系统提示词与最后一份快照不同时，追加一份新快照。
 
-工作目录不存在、历史损坏时，加载失败并返回错误。新建的会话待配置项读取成功后才登记并归属于连接，失败时不会留下未完成的会话。
+工作目录不存在、历史损坏或设置无法读取时，加载失败并返回错误。指令文件只读取不超过 10 MiB 的普通文件。可选的指令文件或技能损坏时跳过该项，返回包含路径和原因的诊断。新建的会话待配置项读取成功后才登记并归属于连接，失败时不会留下未完成的会话。打开、关闭、删除与卸载按同一个会话标识协调，一个会话的加载不占用其他会话的协调入口。
 
 ### 一轮
 
@@ -240,7 +241,7 @@ type Subscriber interface {
 
 ### 多客户端与多进程
 
-- **同一进程**：一个会话只加载一次，所有订阅它的连接都收到每个更新。中途接入的客户端先获取历史（`ListHistory` 分页），再通过 `run_state` 得知会话是否在运行。对于正在流式输出的那条消息，接入之前已发出的部分，该客户端无法看到，待这条消息结束后，它才会出现在历史中。
+- **同一进程**：一个会话只加载一次，所有订阅它的连接都收到更新。订阅与取得历史末尾序号在同一临界区完成。已保存记录产生的实时更新带记录序号，客户端先读到该边界的历史，再应用未被历史覆盖的实时更新。对于正在流式输出的消息，接入之前的内容在定稿时补齐。
 - **不同进程**：各自加载各自的会话，彼此看不到实时更新。同时写入同一个会话是不支持的用法，一旦发生，由序号检查发现，后写入的一方得到 `ErrConflict`。
 
 ## agent：一轮运行
@@ -341,7 +342,7 @@ GUI 实现 `protocol.Subscriber`，把更新交给主线程。界面里只有两
 具体做法：
 
 - 新建会话：`NewSession`。更换工作目录：用新目录再调用一次 `NewSession`，并丢弃尚未发送过消息的旧会话。
-- 打开已有会话：`OpenSession`，同时用 `ListHistory` 读取最近一页；向上滚动时继续读取更早的页。工作目录不可用时历史照常能看，重新进入会话时会提示恢复。有工作树恢复记录时按 Git 工作树恢复，其他目录只在原路径创建一级目录。失败的原因留在对话框里。
+- 打开已有会话：`OpenSession` 后按返回的边界用 `ListHistory` 读取最近一页。等待期间保留实时更新，首次打开与恢复使用同一条历史衔接路径。向上滚动时继续读取更早的页。工作目录不可用时独立读历史，重新进入会话时会提示恢复。有工作树恢复记录时按 Git 工作树恢复，其他目录只在原路径创建一级目录。失败的原因留在对话框里。
 - 发送：调用 `SendPrompt`，运行中的投递方式由快捷键指定。队列由 `prompt_queue_update` 推进，对话由 `user_message_chunk` 推进。
 - 更换模型与思考深度：运行中也可调用 `SetConfigOption`，根据配置项更新重绘选择器。
 - 侧栏：`ListSessions`，在自身操作之后以及收到 `session_info_update` 时重新读取。按目录删除前，一次取全该工作目录中已保存的交互会话。用户确认后只删除清单中的会话，忙碌或删除失败的会话保留。
@@ -395,6 +396,7 @@ SendPrompt ──────────► 受理：占用会话，检查，�
 - **设置**：`settings.json` 只在加载、更换模型，以及 `SendPrompt` 时发现没有可用模型的情况下读取，结果只进入会话的模型，并经配置项告知客户端。程序里只有设置页的“模型接入”会写 `settings.json` 与 `auth.json`；保存后核心不会得到通知，由 `gui` 对已打开的会话再调用一次 `OpenSession`，取回最新的配置项。
 - **数据**：历史只在消息定稿时写库；上下文只由 `Fold` 推进；客户端的对话只由更新推进。
 - **状态**：运行与队列分别经 `run_state` 和 `prompt_queue_update` 告知客户端。
+- **shell**：命令缺省最多运行 30 分钟，截断的完整日志保留 7 天。
 
 ## 需要自动测试保证的行为
 

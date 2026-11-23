@@ -100,16 +100,19 @@ type OpenSessionRequest struct {
 type OpenSessionResponse struct {
 	ConfigOptions []ConfigOption `json:"configOptions"`
 	State         SessionState   `json:"state"`
+	LastSeq       int64          `json:"lastSeq,omitzero"`
 }
 
 // SessionState 是打开会话时它的当前状态，随响应给出，之后由更新推进。
 type SessionState struct {
-	Cwd      string         `json:"cwd"`
-	Title    string         `json:"title,omitempty"`
-	Commands []Command      `json:"commands,omitempty"`
-	Usage    Usage          `json:"usage"`
-	Run      RunStateUpdate `json:"run"`
-	Queue    PromptQueue    `json:"queue"`
+	Epoch       uint64         `json:"epoch,omitzero"`
+	Cwd         string         `json:"cwd"`
+	Title       string         `json:"title,omitempty"`
+	Commands    []Command      `json:"commands,omitempty"`
+	Diagnostics []string       `json:"diagnostics,omitempty"`
+	Usage       Usage          `json:"usage"`
+	Run         RunStateUpdate `json:"run"`
+	Queue       PromptQueue    `json:"queue"`
 }
 
 type ListSessionsRequest struct {

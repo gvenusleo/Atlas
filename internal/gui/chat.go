@@ -41,15 +41,16 @@ type item struct {
 	copiedAt time.Time // 最近一次点复制的时刻，用来短暂显示“已复制”
 	seq      int64     // 用户消息的记录序号
 
-	callID   string // 工具卡片：调用 ID、名称、参数与结果
-	shown    bool   // 一组步骤是否展开，记在组的第一项上
-	call     *callView
-	tool     string
-	args     string
-	result   string
-	details  jsontext.Value // 工具随结果附带的结构化数据
-	pictures []*picture     // 工具结果或用户消息里的图片
-	failed   bool
+	callID     string // 工具卡片：调用 ID、名称、参数与结果
+	shown      bool   // 一组步骤是否展开，记在组的第一项上
+	call       *callView
+	tool       string
+	args       string
+	argsStream *strings.Builder
+	result     string
+	details    jsontext.Value // 工具随结果附带的结构化数据
+	pictures   []*picture     // 工具结果或用户消息里的图片
+	failed     bool
 }
 
 // block 是对话中连续展示的一组显示项：一条用户消息，一次 run 的全部输出，或一个系统事件。
@@ -65,26 +66,32 @@ type chat struct {
 	cwd string // 会话的工作目录，建会话时定下
 
 	// 会话的视图。
-	ready     bool // 核心已经打开了这个会话
-	title     string
-	options   []protocol.ConfigOption
-	commands  []protocol.Command
-	usage     protocol.Usage
-	run       protocol.RunStateUpdate
-	queue     protocol.PromptQueue
-	items     []*item
-	streaming *item  // 正在流出的文字或思考
-	retry     string // 正在重试时的提示，下一个增量或这一轮结束时清掉
-	next      int
+	ready       bool // 核心已经打开了这个会话
+	title       string
+	options     []protocol.ConfigOption
+	commands    []protocol.Command
+	diagnostics []string
+	usage       protocol.Usage
+	run         protocol.RunStateUpdate
+	queue       protocol.PromptQueue
+	items       []*item
+	streaming   *item // 正在流出的文字或思考
+	streamText  strings.Builder
+	retry       string // 正在重试时的提示，下一个增量或这一轮结束时清掉
+	next        int
 
 	// 界面自己的状态。
-	needsReopen bool // 核心已使会话失效，错误只在恢复对话框中显示
+	needsReopen     bool // 核心已使会话失效，错误只在恢复对话框中显示
+	diagnosticsOpen bool
 
-	cwdGone bool  // 工作目录已不存在：由打开或发送的错误判断写入，只用来决定是否提示
-	starts  int   // 让核心打开它的次数，用来认出过时的响应，见 App.start
-	oldest  int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
-	loading bool  // 正在加载最近一页历史
-	paging  bool  // 正在加载更早的记录
+	cwdGone        bool  // 工作目录已不存在：由打开或发送的错误判断写入，只用来决定是否提示
+	starts         int   // 让核心打开它的次数，用来认出过时的响应，见 App.start
+	oldest         int64 // 已加载的最早一条记录的 Seq；大于 1 表示前面还有更早的记录
+	historyEnd     int64 // 打开时历史已经覆盖到的记录序号
+	epoch          uint64
+	pendingUpdates []protocol.Notification
+	loading        bool // 正在加载最近一页历史
+	paging         bool // 正在加载更早的记录
 	// seekSeq 是大纲要跳到的提问的记录序号：它还没加载时，一路加载到它为止，到了就滚过去；
 	// 0 表示没有。
 	seekSeq  int64
@@ -136,7 +143,8 @@ func (ch *chat) canSend() bool {
 
 // attach 记下核心打开会话时给的配置项与状态。
 func (ch *chat) attach(options []protocol.ConfigOption, state protocol.SessionState) {
-	ch.options, ch.commands = options, state.Commands
+	ch.options, ch.commands, ch.diagnostics = options, state.Commands, state.Diagnostics
+	ch.epoch = state.Epoch
 	ch.usage = state.Usage
 	ch.apply(state.Run)
 	ch.apply(protocol.PromptQueueUpdate{PromptQueue: state.Queue})
@@ -182,6 +190,7 @@ func (ch *chat) endStream() {
 	if ch.streaming != nil {
 		ch.streaming.done = true
 		ch.streaming = nil
+		ch.streamText.Reset()
 	}
 }
 
@@ -271,6 +280,7 @@ func (ch *chat) load(updates []protocol.Update, oldest int64) {
 	// 重建后历史边界可能前移，大纲需要按新的范围重新查询。
 	ch.outline = outline{gen: ch.outline.gen + 1}
 	ch.items, ch.streaming = nil, nil
+	ch.streamText.Reset()
 	for _, u := range updates {
 		ch.apply(u)
 	}
@@ -309,11 +319,15 @@ func (ch *chat) apply(u protocol.Update) {
 	case protocol.AgentMessageChunk:
 		ch.retry = ""
 		it := ch.stream(itemAssistant, u.MessageID)
-		it.text += u.Content.Text
-		it.at = u.At
+		ch.streamText.WriteString(u.Content.Text)
+		it.text, it.at = ch.streamText.String(), u.At
 	case protocol.AgentThoughtChunk:
 		ch.retry = ""
-		ch.stream(itemThinking, u.MessageID).text += u.Content.Text
+		it := ch.stream(itemThinking, u.MessageID)
+		ch.streamText.WriteString(u.Content.Text)
+		it.text = ch.streamText.String()
+	case protocol.AssistantMessageSaved:
+		ch.finishAssistant(u)
 	case protocol.ToolCall:
 		it := ch.tool(u.ToolCallID)
 		it.msg, it.tool, it.args = u.MessageID, u.Name, string(u.RawInput)
@@ -356,6 +370,43 @@ func (ch *chat) apply(u protocol.Update) {
 	}
 }
 
+// finishAssistant 用定稿补齐中途订阅时缺少的内容，同时保留匹配行的界面状态。
+func (ch *chat) finishAssistant(u protocol.AssistantMessageSaved) {
+	ch.endStream()
+	ch.retry = ""
+	toolIDs := make(map[string]bool)
+	for _, update := range u.Updates {
+		if call, ok := update.(protocol.ToolCall); ok {
+			toolIDs[call.ToolCallID] = true
+		}
+	}
+	var streamed []*item
+	ch.items = slices.DeleteFunc(ch.items, func(it *item) bool {
+		// 中途订阅时，工具参数增量创建的占位卡可能缺少所属消息的 ID。
+		belongs := it.msg == u.MessageID || it.kind == itemTool && it.msg == "" && toolIDs[it.callID]
+		if !belongs || it.kind == itemUser || it.kind == itemSkill {
+			return false
+		}
+		streamed = append(streamed, it)
+		return true
+	})
+	first := len(ch.items)
+	for _, update := range u.Updates {
+		ch.apply(update)
+	}
+	ch.endStream()
+	for _, it := range ch.items[first:] {
+		i := slices.IndexFunc(streamed, func(old *item) bool {
+			return old.kind == it.kind && old.callID == it.callID
+		})
+		if i >= 0 {
+			old := streamed[i]
+			it.id, it.open, it.shown, it.anchor = old.id, old.open, old.shown, old.anchor
+			streamed = slices.Delete(streamed, i, i+1)
+		}
+	}
+}
+
 func (ch *chat) acceptsRunState(u protocol.RunStateUpdate) bool {
 	return u.Version > ch.run.Version || u.Version == 0 && ch.run.Version == 0
 }
@@ -391,7 +442,15 @@ func (ch *chat) userChunk(u protocol.UserMessageChunk) {
 func (ch *chat) toolUpdate(u protocol.ToolCallUpdate) {
 	it := ch.tool(u.ToolCallID)
 	if u.RawInput != nil {
-		it.args = string(u.RawInput)
+		it.args, it.argsStream = string(u.RawInput), nil
+	}
+	if u.InputDelta != "" {
+		if it.argsStream == nil {
+			it.argsStream = &strings.Builder{}
+			it.argsStream.WriteString(it.args)
+		}
+		it.argsStream.WriteString(u.InputDelta)
+		it.args = it.argsStream.String()
 	}
 	switch u.Status {
 	case protocol.ToolCompleted, protocol.ToolFailed:

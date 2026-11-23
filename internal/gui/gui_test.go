@@ -65,3 +65,23 @@ func TestLiveAndReplayAgree(t *testing.T) {
 		t.Error("一轮结束后仍在运行")
 	}
 }
+
+// 中途接入时，工具参数增量可能早于本客户端看到的工具声明。
+func TestAssistantFinalizationKeepsHistoryOrder(t *testing.T) {
+	final := protocol.AssistantMessageSaved{MessageID: "m2", Updates: []protocol.Update{
+		protocol.AgentMessageChunk{MessageID: "m2", Content: protocol.Text("正文")},
+		protocol.ToolCall{ToolCallID: "c2", MessageID: "m2", Name: "read", RawInput: call},
+	}}
+	history := &chat{}
+	history.load([]protocol.Update{final}, 1)
+	ch := &chat{}
+	ch.apply(protocol.ToolCallUpdate{ToolCallID: "c2", InputDelta: `"a.go"}`})
+	id := ch.items[0].id
+	ch.apply(final)
+	if got := shape(ch); len(ch.items) != 2 || !slices.Equal(got, shape(history)) {
+		t.Fatalf("中途接入的定稿 = %q，历史 = %q", got, shape(history))
+	}
+	if ch.items[1].id != id {
+		t.Fatal("已显示的工具卡片丢失了原标识")
+	}
+}

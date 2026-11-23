@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -51,8 +52,8 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 	id := info.SessionID
 	if ch := a.chats[id]; ch != nil {
 		a.current, ch.unread = ch, false
-		if ch.cwdGone { // 目录可能已经恢复，重新打开一次
-			a.start(ch)
+		if ch.cwdGone && !ch.loading { // 目录可能已经恢复，重新打开一次
+			a.openSaved(ch)
 		} else if ch.needsReopen {
 			a.askReopen(ch)
 		}
@@ -61,8 +62,7 @@ func (a *App) openSession(info protocol.SessionInfo) bool {
 	a.keys++
 	ch := &chat{key: "chat-" + strconv.Itoa(a.keys), id: id, cwd: info.Cwd, title: info.Title}
 	a.chats[id], a.current = ch, ch
-	a.reload(ch)
-	a.start(ch)
+	a.openSaved(ch)
 	return true
 }
 
@@ -79,69 +79,84 @@ func (a *App) reopen(ch *chat) {
 	if ch.id == "" || ch.run.Running || ch.loading || ch.paging || a.worktreeBlocked(ch.cwd) {
 		return
 	}
-	ch.ready, ch.loading = false, true
+	a.openSaved(ch)
+}
+
+// openSaved 先订阅再按订阅边界读历史。即使会话打不开，历史也可以单独读取。
+func (a *App) openSaved(ch *chat) {
+	if ch.loading || ch.paging {
+		return
+	}
+	ch.ready, ch.loading, ch.choosing = false, true, false
+	ch.starts++
 	id, gen, cwd := ch.id, ch.starts, ch.cwd
-	record := a.worktreeRecoveries[id]
+	record, blocked := a.worktreeRecoveries[id], a.worktreeBlocked(cwd)
 	endOpen := a.trackSessionOpen(cwd)
 	go func() {
 		ctx := context.Background()
-		err := requireWorktreeRecovery(record, cwd)
+		openErr := requireWorktreeRecovery(record, cwd)
+		if blocked {
+			openErr = errors.New("工作树正在维护，请稍后再试")
+		}
 		var resp protocol.OpenSessionResponse
-		var history protocol.ListHistoryResponse
-		if err == nil {
-			resp, err = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
+		if openErr == nil {
+			resp, openErr = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
 		}
-		if err == nil {
-			history, err = a.service.ListHistory(ctx,
-				protocol.ListHistoryRequest{SessionID: id, Limit: historyPage})
+		req := protocol.ListHistoryRequest{SessionID: id, Limit: historyPage}
+		if openErr == nil {
+			req.Before = resp.LastSeq + 1
 		}
+		history, historyErr := a.service.ListHistory(ctx, req)
 		a.win.Update(func() {
 			endOpen()
 			if ch.starts != gen || ch.id != id || a.chats[id] != ch {
-				return
-			}
-			ch.loading = false
-			if err != nil {
-				ch.err = err.Error()
-				if errors.Is(err, fs.ErrNotExist) {
-					a.reopenOpen = false
-					a.askCwdGone(ch)
-				} else {
-					a.askReopen(ch)
+				if openErr == nil && a.chats[id] == nil {
+					a.closeSession(id)
 				}
 				return
 			}
-			ch.err, ch.seekSeq = "", 0
-			if a.reopenChat == ch {
-				a.reopenOpen = false
-			}
-			ch.attach(resp.ConfigOptions, resp.State)
-			ch.load(history.Updates, history.Oldest)
+			a.finishOpen(ch, resp, history, openErr, historyErr)
 		})
 	}()
 }
 
-// reload 从头读最近一页历史，重建对话。
-func (a *App) reload(ch *chat) {
-	ch.loading = true
-	id := ch.id
-	go func() {
-		history, err := a.service.ListHistory(context.Background(),
-			protocol.ListHistoryRequest{SessionID: id, Limit: historyPage})
-		a.win.Update(func() {
-			ch.loading = false
-			if err != nil {
-				ch.err = err.Error()
-				return
-			}
-			ch.load(history.Updates, history.Oldest)
-		})
-	}()
+func (a *App) finishOpen(
+	ch *chat, resp protocol.OpenSessionResponse, history protocol.ListHistoryResponse,
+	openErr, historyErr error,
+) {
+	pending := ch.pendingUpdates
+	ch.loading, ch.pendingUpdates = false, nil
+	ch.err = ""
+	if historyErr == nil {
+		ch.seekSeq = 0
+		ch.load(history.Updates, history.Oldest)
+		ch.historyEnd = resp.LastSeq
+	}
+	if openErr == nil {
+		if a.reopenChat == ch {
+			a.reopenOpen = false
+		}
+		ch.attach(resp.ConfigOptions, resp.State)
+		if a.current == ch {
+			a.cwd = ch.cwd
+		}
+		a.refreshBranch(ch, true)
+	} else if errors.Is(openErr, fs.ErrNotExist) {
+		if a.askCwdGone(ch) && a.reopenChat == ch {
+			a.reopenOpen = false
+		}
+	} else if ch.needsReopen {
+		a.askReopen(ch)
+	}
+	if err := cmp.Or(openErr, historyErr); err != nil {
+		ch.err = err.Error()
+	}
+	for _, n := range pending {
+		a.applyNotification(ch, n)
+	}
 }
 
-// start 让核心在后台打开会话：新会话新建，已有会话恢复。失败时历史照常显示，错误显示在
-// 对话下方，发送时再试一次。窗口还没创建（启动时）先不做，创建窗口后再调用。
-// 之后又调用过 start（比如又换了工作目录）时，这次的响应已经过时：丢掉它，新建的会话也关掉。
+// start 为新会话请求核心。工作目录变更后，旧请求返回的会话需要关闭。
 func (a *App) start(ch *chat) {
 	if a.win == nil || a.worktreeBlocked(ch.cwd) {
 		return
@@ -157,27 +172,16 @@ func (a *App) start(ch *chat) {
 	ch.branch = branchState{}
 	ch.stopWatchHead()
 	a.refreshBranch(ch, true)
-	gen, id := ch.starts, ch.id
+	gen := ch.starts
 	req := protocol.NewSessionRequest{Cwd: ch.cwd}
-	launchTask := id == "" && ch.job != nil
+	launchTask := ch.job != nil
 	if launchTask {
 		req.Type, req.OwnerID = protocol.SessionScheduled, ch.job.task.ID
 	}
 	endOpen := a.trackSessionOpen(req.Cwd)
 	go func() {
-		ctx := context.Background()
-		var options []protocol.ConfigOption
-		var state protocol.SessionState
-		var err error
-		if id == "" {
-			var resp protocol.NewSessionResponse
-			resp, err = a.service.NewSession(ctx, req)
-			id, options, state = resp.SessionID, resp.ConfigOptions, resp.State
-		} else {
-			var resp protocol.OpenSessionResponse
-			resp, err = a.service.OpenSession(ctx, protocol.OpenSessionRequest{SessionID: id})
-			options, state = resp.ConfigOptions, resp.State
-		}
+		resp, err := a.service.NewSession(context.Background(), req)
+		id := resp.SessionID
 		a.win.Update(func() {
 			endOpen()
 			switch {
@@ -197,12 +201,14 @@ func (a *App) start(ch *chat) {
 			}
 			ch.id, ch.err = id, ""
 			a.chats[id] = ch
-			ch.attach(options, state)
+			ch.attach(resp.ConfigOptions, resp.State)
 			if launchTask {
 				a.sendTask(ch) // 后台触发的会话不改默认的工作目录
 				return
 			}
-			a.cwd = state.Cwd
+			if a.current == ch {
+				a.cwd = resp.State.Cwd
+			}
 		})
 	}()
 }
@@ -247,7 +253,11 @@ func (a *App) createCwd(ch *chat) {
 	}
 	done := func() {
 		ch.cwdGone, a.cwdGoneOpen, a.cwdGoneErr = false, false, ""
-		a.start(ch)
+		if ch.id == "" {
+			a.start(ch)
+			return
+		}
+		a.openSaved(ch)
 	}
 	err := os.Mkdir(ch.cwd, 0o755)
 	switch {
@@ -282,12 +292,15 @@ func (a *App) loadOlder(ch *chat) {
 		limit = min(limit, int(ch.oldest-ch.seekSeq))
 	}
 	ch.paging = true
-	id, before := ch.id, ch.oldest
+	id, before, gen := ch.id, ch.oldest, ch.starts
 	go func() {
 		history, err := a.service.ListHistory(context.Background(),
 			protocol.ListHistoryRequest{SessionID: id, Before: before, Limit: limit})
 		a.win.Update(func() {
 			ch.paging = false
+			if ch.starts != gen || a.chats[id] != ch {
+				return
+			}
 			if err != nil {
 				ch.err, ch.oldest, ch.seekSeq = err.Error(), 0, 0 // 不再重试
 				return
@@ -321,13 +334,15 @@ func (a *App) loadAllSessions(gen int) {
 	go func() {
 		req := protocol.ListSessionsRequest{All: true}
 		list, err := a.service.ListSessions(context.Background(), req)
-		if err != nil {
-			return
-		}
 		a.win.Update(func() {
-			if a.launch.gen == gen {
-				a.launch.infos = list.Sessions
+			if !a.launch.open || a.launch.gen != gen {
+				return
 			}
+			if err != nil {
+				a.launch.sessionErr = "未能读取全部会话，搜索结果可能不全"
+				return
+			}
+			a.launch.infos = list.Sessions
 		})
 	}()
 }
@@ -468,31 +483,73 @@ func (a *App) restart(ch *chat) {
 	a.start(ch)
 }
 
-// refreshOptions 在设置里的模型清单变了之后，让已打开的会话的配置项（也就是模型下拉）跟上：
-// 配置项只在打开会话时读设置，不刷新的话，要等会话重新打开才看得到新加的模型。还没发过消息的
-// 新会话不在库里，没法重新打开，按原来的工作目录再建一个；其余的重新打开一次，核心对已加载的
-// 会话只是重新订阅，并给出最新的配置项。定时任务的会话不用管。
+// refreshOptions 在设置变更后让已打开的会话重新读取模型清单。
 func (a *App) refreshOptions() {
+	a.optionsRefresh++
+	gen := a.optionsRefresh
+	a.settings.models.refreshErr = ""
 	for _, ch := range slices.Collect(maps.Values(a.chats)) {
 		if ch.job != nil || !ch.ready || a.worktreeBlocked(ch.cwd) {
 			continue
 		}
 		if ch.fresh() {
-			a.restart(ch)
+			a.refreshDraftOptions(ch, gen)
 			continue
 		}
-		id := ch.id
+		id, epoch, starts := ch.id, ch.epoch, ch.starts
 		endOpen := a.trackSessionOpen(ch.cwd)
 		go func() {
 			resp, err := a.service.OpenSession(context.Background(),
 				protocol.OpenSessionRequest{SessionID: id})
 			a.win.Update(func() {
 				endOpen()
-				if err == nil && a.chats[id] == ch && ch.id == id {
-					ch.options = resp.ConfigOptions
+				if gen != a.optionsRefresh || a.chats[id] != ch || ch.starts != starts {
+					return
 				}
+				if err == nil && resp.State.Epoch != epoch {
+					a.askReopen(ch)
+					return
+				}
+				if err != nil {
+					a.modelRefreshFailed(err)
+					return
+				}
+				ch.options = resp.ConfigOptions
 			})
 		}()
+	}
+}
+
+// refreshDraftOptions 用最新设置重建还未发送的会话，建成之前保留原会话。
+func (a *App) refreshDraftOptions(ch *chat, gen int) {
+	id, starts, cwd := ch.id, ch.starts, ch.cwd
+	endOpen := a.trackSessionOpen(cwd)
+	go func() {
+		resp, err := a.service.NewSession(context.Background(), protocol.NewSessionRequest{Cwd: cwd})
+		a.win.Update(func() {
+			endOpen()
+			if gen != a.optionsRefresh || a.chats[id] != ch || ch.starts != starts || !ch.fresh() {
+				if err == nil {
+					a.closeSession(resp.SessionID)
+				}
+				return
+			}
+			if err != nil {
+				a.modelRefreshFailed(err)
+				return
+			}
+			delete(a.chats, id)
+			a.closeSession(id)
+			ch.id = resp.SessionID
+			a.chats[ch.id] = ch
+			ch.attach(resp.ConfigOptions, resp.State)
+		})
+	}()
+}
+
+func (a *App) modelRefreshFailed(err error) {
+	if a.settings.models.refreshErr == "" {
+		a.settings.models.refreshErr = "部分会话的模型列表未刷新：" + err.Error()
 	}
 }
 

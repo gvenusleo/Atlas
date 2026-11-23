@@ -53,7 +53,7 @@ func Shell(cwd string) agent.Tool {
 					"type":        "integer",
 					"minimum":     1,
 					"maximum":     shellMaxTimeoutSeconds,
-					"description": "超时秒数；省略时不设超时。",
+					"description": "超时秒数。省略时为 1800 秒。",
 				},
 			},
 			"required": []string{"command"},
@@ -66,7 +66,7 @@ func Shell(cwd string) agent.Tool {
 	}
 }
 
-// parseShellArgs 校验命令与可选超时，返回命令文本和超时秒数（0 表示不设超时）。
+// parseShellArgs 校验命令与可选超时，省略时采用最长的命令时限。
 func parseShellArgs(params jsontext.Value) (string, int64, error) {
 	var args shellArgs
 	if err := json.Unmarshal(params, &args); err != nil {
@@ -78,7 +78,7 @@ func parseShellArgs(params jsontext.Value) (string, int64, error) {
 	if strings.ContainsRune(args.Command, '\x00') {
 		return "", 0, errors.New("参数无效: command 不能包含 NUL")
 	}
-	var timeout int64
+	timeout := int64(shellMaxTimeoutSeconds)
 	if len(args.Timeout) > 0 {
 		if err := json.Unmarshal(args.Timeout, &timeout); err != nil {
 			return "", 0, fmt.Errorf("参数无效: timeout 必须是正整数秒: %w", err)
@@ -100,12 +100,8 @@ func runShell(ctx context.Context, cwd string, params jsontext.Value) (agent.Too
 		return agent.ToolResult{}, err
 	}
 
-	runCtx := ctx
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		defer cancel()
-	}
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
 
 	cmd, err := shellCommand(runCtx, command)
 	if err != nil {
@@ -113,16 +109,13 @@ func runShell(ctx context.Context, cwd string, params jsontext.Value) (agent.Too
 	}
 	cmd.Dir, cmd.Env = cwd, shellenv.Environ()
 
-	output, err := os.CreateTemp("", "atlas-shell-*.log")
+	output, err := createShellLog(time.Now())
 	if err != nil {
 		return agent.ToolResult{}, fmt.Errorf("创建命令日志失败: %w", err)
 	}
-	keepOutput := false
 	defer func() {
 		_ = output.Close()
-		if !keepOutput {
-			_ = os.Remove(output.Name())
-		}
+		_ = os.Remove(output.Name())
 	}()
 
 	// 直接连接文件，不使用管道，避免后代进程持有输出管道时阻塞 Wait。
@@ -133,12 +126,10 @@ func runShell(ctx context.Context, cwd string, params jsontext.Value) (agent.Too
 	}
 	runErr := cmd.Wait()
 
-	text, truncated, err := shellOutput(output)
-	if err != nil {
-		keepOutput = true
-		return agent.ToolResult{}, fmt.Errorf("读取命令输出失败，原始日志: %s: %w", output.Name(), err)
+	text, outputErr := finishShellOutput(output)
+	if outputErr != nil {
+		return agent.ToolResult{}, outputErr
 	}
-	keepOutput = truncated
 	if runErr != nil {
 		text += "\n\n[" + shellStatus(ctx, runCtx, runErr, timeout) + "]"
 	}
@@ -191,7 +182,7 @@ func shellOutput(file *os.File) (string, bool, error) {
 		if partial {
 			note = "末行超过 50 KiB，仅显示该行尾部。"
 		}
-		text += fmt.Sprintf("\n\n[%s 完整输出: %s]", note, file.Name())
+		text += "\n\n[" + note + "]"
 	}
 	return text, truncated, nil
 }

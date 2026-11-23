@@ -5,8 +5,6 @@ import (
 	"errors"
 	"maps"
 	"net/url"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,13 +30,14 @@ const (
 
 // modelsPage 是“模型接入”一类的状态。
 type modelsPage struct {
-	cfg     *config.Settings // 打开设置页时读到的，之后每次保存成功才换成新的；读不了时为空
-	stat    fileStat         // settings.json 现在的样子，用来发现别处的修改
-	keys    map[string]bool  // 各服务在 auth.json 里有没有 key
-	pick    string           // 默认模型下拉里选中的引用，空表示自动
-	loadErr string           // cfg 为空时，读不了的原因
-	saveErr string           // 最近一次保存失败的原因
-	form    *serviceForm     // 打开着的服务对话框
+	cfg        *config.Settings // 打开设置页时读到的，之后每次保存成功才换成新的；读不了时为空
+	snapshot   []byte           // 与 cfg 同时读取的原始内容，用于保存时检查冲突
+	keys       map[string]bool  // 各服务在 auth.json 里有没有 key
+	pick       string           // 默认模型下拉里选中的引用，空表示自动
+	loadErr    string           // cfg 为空时，读不了的原因
+	saveErr    string           // 最近一次保存失败的原因
+	refreshErr string
+	form       *serviceForm // 打开着的服务对话框
 }
 
 // loadModels 读入 settings.json 与各服务的 key 状态。文件不存在算零配置；读不了或校验不过时页面
@@ -50,30 +49,21 @@ func (a *App) loadModels() {
 		p.loadErr = err.Error()
 		return
 	}
-	cfg, err := config.LoadFrom(dir)
+	cfg, snapshot, err := config.LoadSnapshot(dir)
 	if err != nil {
 		p.loadErr = err.Error()
 		return
 	}
-	p.cfg, p.stat, p.pick = cfg, settingsStat(dir), cfg.Model
+	p.cfg, p.snapshot, p.pick = cfg, snapshot, cfg.Model
 	p.refreshKeys(dir)
-}
-
-// settingsStat 是 dir 下 settings.json 现在的样子；没有这个文件时是零值。
-func settingsStat(dir string) fileStat {
-	info, err := os.Stat(filepath.Join(dir, config.SettingsFile))
-	if err != nil {
-		return fileStat{}
-	}
-	return fileStat{info.ModTime(), info.Size()}
 }
 
 // refreshKeys 重新查各服务在 auth.json 里有没有 key。
 func (p *modelsPage) refreshKeys(dir string) {
 	p.keys = map[string]bool{}
+	keys, _ := config.ReadAPIKeys(dir)
 	for name := range p.cfg.Providers {
-		_, err := config.APIKey(dir, name)
-		p.keys[name] = err == nil
+		p.keys[name] = keys[name] != ""
 	}
 }
 
@@ -107,15 +97,11 @@ func (p *modelsPage) modelLabel(ref string) string {
 
 // commitModels 在设置的副本上做 edit 再保存；保存成功才换上副本。磁盘上的文件在读入之后被别处
 // 改过时不覆盖。
-func (a *App) commitModels(edit func(next *config.Settings)) error {
+func (a *App) commitModels(edit func(next *config.Settings), changes ...config.KeyChange) error {
 	p := &a.settings.models
 	dir, err := config.Dir()
 	if err != nil {
 		return err
-	}
-	info, err := os.Stat(filepath.Join(dir, config.SettingsFile))
-	if err == nil && !p.stat.same(info) {
-		return errors.New("settings.json 在磁盘上已变更，请重新打开设置页")
 	}
 	next := *p.cfg
 	next.Providers = maps.Clone(p.cfg.Providers)
@@ -123,10 +109,16 @@ func (a *App) commitModels(edit func(next *config.Settings)) error {
 		next.Providers = map[string]config.Provider{}
 	}
 	edit(&next)
-	if err := config.Save(dir, &next); err != nil {
+	snapshot, err := config.SaveSettings(dir, &next, p.snapshot, changes...)
+	if snapshot == nil {
+		p.refreshKeys(dir)
 		return err
 	}
-	p.cfg, p.stat, p.pick = &next, settingsStat(dir), next.Model
+	p.cfg, p.snapshot, p.pick = &next, snapshot, next.Model
+	p.refreshKeys(dir)
+	if err != nil {
+		a.toast = err.Error()
+	}
 	a.refreshOptions()
 	return nil
 }
@@ -149,9 +141,10 @@ type serviceForm struct {
 	api           config.WireAPI
 	apis          []config.WireAPI // 接口类型的各个选项
 	baseURL       string
-	key           string // API key 框里的内容，编辑时一开始是现有的 key
-	key0          string // 打开时读到的 key，没读到为空
-	showKey       bool   // API key 框显示明文；平时遮蔽
+	key           string            // API key 框里的内容，编辑时一开始是现有的 key
+	keys          map[string]string // 打开表单时读取，用于检查改名后的目标条目
+	keysErr       error
+	showKey       bool // API key 框显示明文；平时遮蔽
 	models        []*modelForm
 	next          int  // 给新加的模型行取不重复的键
 	confirmDelete bool // 点过一次“删除服务”，再点一次才删
@@ -383,8 +376,7 @@ func (f *serviceForm) provider(cfg *config.Settings) (string, config.Provider, e
 	return name, prov, nil
 }
 
-// saveService 保存服务表单。先写新的 key，再写 settings.json，最后才删不要的 key：中途失败最多
-// 多出一条没人用的 key，不会出现有服务而没有 key，也不会设置没保存、key 却先丢了。
+// saveService 保存设置与本次表单修改的凭据。
 func (a *App) saveService() {
 	p := &a.settings.models
 	f := p.form
@@ -393,14 +385,10 @@ func (a *App) saveService() {
 		f.err = err.Error()
 		return
 	}
-	dir, err := config.Dir()
+	renamed := f.orig != "" && f.orig != name
+	changes, err := f.keyChanges(name, renamed)
 	if err != nil {
 		f.err = err.Error()
-		return
-	}
-	renamed := f.orig != "" && f.orig != name
-	if err := f.writeKey(dir, name, renamed); err != nil {
-		f.err = "保存 API key 失败：" + err.Error()
 		return
 	}
 	renames := f.renamedModels()
@@ -421,53 +409,48 @@ func (a *App) saveService() {
 				next.Model = ""
 			}
 		}
-	})
+	}, changes...)
 	if err != nil {
 		f.err = "保存失败：" + err.Error()
 		return
 	}
-	if stale := f.staleKey(name, renamed); stale != "" {
-		if err := config.RemoveAPIKey(dir, stale); err != nil {
-			a.toast = "没能删掉 API key：" + err.Error()
-		}
-	}
-	p.refreshKeys(dir)
 	p.form = nil
 }
 
-// writeKey 把框里改过的 API key 写进 auth.json。框里一开始是打开时读到的 key（key0）：没动或
-// 清空了就不写；改名时新名下总要写上它。
-func (f *serviceForm) writeKey(dir, name string, renamed bool) error {
-	key := strings.TrimSpace(f.key)
-	if key == "" || (key == f.key0 && !renamed) {
-		return nil
+func (f *serviceForm) originalKey(name string) *string {
+	if value, ok := f.keys[name]; ok {
+		return new(value)
 	}
-	return config.SetAPIKey(dir, name, key)
+	return nil
 }
 
-// staleKey 是保存之后该从 auth.json 里删掉的 key 所属的服务，没有时为空：改名时是旧名，清空了
-// 框时是它自己。打开时读不到旧 key、又没填新的，就不去动它，免得删掉一个看不见的 key。
-func (f *serviceForm) staleKey(name string, renamed bool) string {
+func (f *serviceForm) keyChanges(name string, renamed bool) ([]config.KeyChange, error) {
 	key := strings.TrimSpace(f.key)
-	switch {
-	case renamed && (f.key0 != "" || key != ""):
-		return f.orig
-	case !renamed && key == "" && f.key0 != "":
-		return name
+	if f.keysErr != nil && (key != "" || renamed) {
+		return nil, f.keysErr
 	}
-	return ""
+	var changes []config.KeyChange
+	if key != "" && (renamed || key != f.keys[f.orig]) {
+		changes = append(changes, config.KeyChange{Name: name, Before: f.originalKey(name), After: new(key)})
+	}
+	if f.orig != "" && (renamed || key == "" && f.keys[f.orig] != "") {
+		changes = append(changes, config.KeyChange{Name: f.orig, Before: f.originalKey(f.orig)})
+	}
+	return changes, nil
 }
 
-// editService 打开服务 name 的表单，API key 框里是它现在的 key（读得到的话）。key 来自
-// auth.json，框里遮蔽显示，不进日志。
+// editService 打开服务表单，并保留用于检测凭据冲突的快照。
 func (a *App) editService(name string) {
 	p := &a.settings.models
-	f := formOfService(name, p.cfg.Providers[name])
-	if dir, err := config.Dir(); err == nil {
-		if key, err := config.APIKey(dir, name); err == nil {
-			f.key, f.key0 = key, key
-		}
+	f := newServiceForm()
+	if name != "" {
+		f = formOfService(name, p.cfg.Providers[name])
 	}
+	dir, err := config.Dir()
+	if err == nil {
+		f.keys, err = config.ReadAPIKeys(dir)
+	}
+	f.key, f.keysErr = f.keys[name], err
 	p.form = f
 }
 
@@ -479,23 +462,19 @@ func (a *App) deleteService() {
 		f.confirmDelete = true
 		return
 	}
+	if f.keysErr != nil {
+		f.err = "删除失败：" + f.keysErr.Error()
+		return
+	}
 	err := a.commitModels(func(next *config.Settings) {
 		delete(next.Providers, f.orig)
 		if strings.HasPrefix(next.Model, f.orig+"/") {
 			next.Model = ""
 		}
-	})
+	}, config.KeyChange{Name: f.orig, Before: f.originalKey(f.orig)})
 	if err != nil {
 		f.err = "删除失败：" + err.Error()
 		return
-	}
-	dir, err := config.Dir()
-	if err == nil {
-		err = config.RemoveAPIKey(dir, f.orig)
-		p.refreshKeys(dir)
-	}
-	if err != nil {
-		a.toast = "没能删掉 API key：" + err.Error()
 	}
 	p.form = nil
 }

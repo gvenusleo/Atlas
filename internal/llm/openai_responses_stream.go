@@ -5,11 +5,9 @@ package llm
 import (
 	"cmp"
 	"context"
-	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/egoist/mygo/netproxy"
 	"github.com/openai/openai-go/v3"
@@ -20,10 +18,9 @@ import (
 	"github.com/gvenusleo/atlas/internal/agent"
 )
 
-// pendingCall 保存单个工具调用的元信息与参数累积，仅用于实时快照。
+// pendingCall 保存工具调用的元信息，参数片段直接转交客户端。
 type pendingCall struct {
 	id, name string
-	args     strings.Builder
 }
 
 // OpenAIResponses 返回一个模型的 StreamFn：以 apiKey 连接 baseURL 上的 OpenAI Responses API，
@@ -148,13 +145,9 @@ func consume(
 				text := fmt.Sprintf("工具参数增量对应的调用 %q 尚未声明", ev.ItemID)
 				return nil, streamDetail{text: text}, true
 			}
-			p.args.WriteString(ev.Delta)
 			text = false
-			emit(agent.Delta{Type: agent.DeltaTypeToolCall, ToolCall: agent.ToolCall{
-				ID:        p.id,
-				Name:      p.name,
-				Arguments: jsontext.Value(p.args.String()),
-			}})
+			emit(agent.Delta{Type: agent.DeltaTypeToolCall, Text: ev.Delta,
+				ToolCall: agent.ToolCall{ID: p.id, Name: p.name}})
 		case "response.completed", "response.incomplete", "response.failed":
 			r := ev.Response
 			final = &r

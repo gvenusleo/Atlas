@@ -25,6 +25,9 @@ func (a *App) launcherDialog(c *ui.Context, t *ui.Theme) {
 		l.results = a.launcherResults()
 		input := a.launcherInput(c, t)
 		list, selected := a.launcherList(c, t, min(launcherHeight, height-top-launcherListReserve))
+		if l.sessionErr != "" {
+			ui.Text(c, l.sessionErr).FontSize(smallSize).TextColor(t.Warning).Padding(0, 16)
+		}
 		// 键盘焦点一直在输入框里：告诉读屏它控制下面的结果，↑↓ 停在的是哪一项。
 		input.Expanded(len(l.results) > 0).Controls(list).ActiveDescendant(selected)
 		launcherHelp(c, t)

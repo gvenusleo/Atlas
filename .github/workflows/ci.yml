@@ -21,7 +21,6 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # 与 mise run ci 一致，不跑 build。
       - name: 格式、vet、测试、漏洞扫描
         run: |
           test -z "$(gofmt -l .)"
@@ -29,3 +28,29 @@ jobs:
           go tool mygo vet .
           go test ./... -count=1 -race
           go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+  build-macos:
+    name: 构建 macOS 安装包
+    runs-on: macos-latest
+    environment: ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: 构建并验证安装包
+        run: |
+          go tool mygo build -platform darwin/arm64 -sign - -skip-notarize
+          version=$(jq -er .version mygo.json)
+          test -d build/darwin-arm64/Atlas.app
+          hdiutil verify "build/darwin-arm64/atlas-${version}-arm64.dmg"
+  tools-windows:
+    name: Windows shell 回归
+    runs-on: windows-latest
+    environment: ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: 测试命令超时与日志清理
+        run: go test ./internal/tools -count=1

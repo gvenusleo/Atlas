@@ -15,12 +15,11 @@ import (
 // translator 把一轮里的事件转成客户端更新：流式的增量直接转发，定稿的消息里没流出来的部分补上，
 // 其余定稿的消息与回放历史用同一个转换（updatesOf）。
 type translator struct {
-	s             *session
-	msg           string    // 正在回复的助手消息的 ID
-	at            time.Time // 它开始的时刻
-	text, thought bool      // 它流出过文字、思考
-	calls         map[string]bool
-	compaction    string // 进行中的压缩的 ID
+	s          *session
+	msg        string    // 正在回复的助手消息的 ID
+	at         time.Time // 它开始的时刻
+	calls      map[string]bool
+	compaction string // 进行中的压缩的 ID
 }
 
 // event 转换一个事件；seq 是定稿消息保存后的序号。
@@ -28,11 +27,11 @@ func (t *translator) event(e agent.Event, seq int64) []protocol.Update {
 	switch e.Type {
 	case agent.EventMessageStart:
 		t.msg, t.at = t.s.newID(), time.Now()
-		t.text, t.thought, t.calls = false, false, map[string]bool{}
+		t.calls = map[string]bool{}
 	case agent.EventDelta:
 		return t.delta(e.Delta)
 	case agent.EventRetry:
-		t.text, t.thought, t.calls = false, false, map[string]bool{}
+		t.calls = map[string]bool{}
 		return []protocol.Update{protocol.RequestRetryUpdate{
 			MessageID: t.msg, Attempt: e.Retry.Attempt, Max: e.Retry.Max,
 			Delay: e.Retry.Delay, Error: e.Retry.Error,
@@ -56,33 +55,32 @@ func (t *translator) event(e agent.Event, seq int64) []protocol.Update {
 func (t *translator) delta(d agent.Delta) []protocol.Update {
 	switch d.Type {
 	case agent.DeltaTypeText:
-		t.text = true
 		return []protocol.Update{protocol.AgentMessageChunk{
 			MessageID: t.msg, Content: protocol.Text(d.Text), At: t.at}}
 	case agent.DeltaTypeThinking:
-		t.thought = true
 		return []protocol.Update{protocol.AgentThoughtChunk{
 			MessageID: t.msg, Content: protocol.Text(d.Text)}}
 	case agent.DeltaTypeToolCall:
-		return []protocol.Update{t.call(d.ToolCall)}
+		call := d.ToolCall
+		update := protocol.ToolCallUpdate{ToolCallID: call.ID, InputDelta: d.Text}
+		if t.calls[call.ID] {
+			return []protocol.Update{update}
+		}
+		t.calls[call.ID] = true
+		return []protocol.Update{toolCall(call, t.msg), update}
 	}
 	return nil
-}
-
-// call 第一次见到一个调用时发出 tool_call，之后只更新它的参数。
-func (t *translator) call(call agent.ToolCall) protocol.Update {
-	if t.calls[call.ID] {
-		return protocol.ToolCallUpdate{ToolCallID: call.ID, RawInput: call.Arguments}
-	}
-	t.calls[call.ID] = true
-	return toolCall(call, t.msg)
 }
 
 // end 转换一条定稿的消息。
 func (t *translator) end(m agent.Message, seq int64) []protocol.Update {
 	switch m := m.(type) {
 	case agent.AssistantMessage:
-		return assistantUpdates(m, t.msg, t.text, t.thought, t.call)
+		if len(m.Content) == 0 {
+			return nil // 取消或请求失败时，保留之前已经显示的文字。
+		}
+		return []protocol.Update{protocol.AssistantMessageSaved{
+			MessageID: t.msg, Updates: assistantUpdates(m, t.msg)}}
 	case agent.SystemMessage:
 		if t.compaction == "" {
 			break
@@ -140,8 +138,8 @@ func updatesOf(m agent.Message, seq int64, id string) []protocol.Update {
 			out = append(out, chunk)
 		}
 	case agent.AssistantMessage:
-		call := func(c agent.ToolCall) protocol.Update { return toolCall(c, id) }
-		out = assistantUpdates(m, id, false, false, call)
+		out = []protocol.Update{protocol.AssistantMessageSaved{
+			MessageID: id, Updates: assistantUpdates(m, id)}}
 	case agent.ToolResultMessage:
 		update := protocol.ToolCallUpdate{ToolCallID: m.ToolCallID,
 			Status: protocol.ToolCompleted, RawOutput: m.Details}
@@ -165,13 +163,8 @@ func updatesOf(m agent.Message, seq int64, id string) []protocol.Update {
 	return out
 }
 
-// assistantUpdates 把一条定稿的助手消息转成更新：思考、文字与工具调用按原来的顺序，紧挨着的
-// 两块文字之间补空行，与流式时一致（见 llm）。text、thought 为真表示这类内容已经流出过，不再发；
-// call 转换工具调用。
-func assistantUpdates(
-	m agent.AssistantMessage, id string, text, thought bool,
-	call func(agent.ToolCall) protocol.Update,
-) []protocol.Update {
+// assistantUpdates 按定稿中的顺序生成显示内容，供实时定稿和历史回放共用。
+func assistantUpdates(m agent.AssistantMessage, id string) []protocol.Update {
 	var out []protocol.Update
 	afterText := false
 	for _, block := range m.Content {
@@ -180,21 +173,17 @@ func assistantUpdates(
 			if b.Thinking == "" {
 				continue // 空的思考不显示，也不隔开前后的文字
 			}
-			if !thought {
-				out = append(out, protocol.AgentThoughtChunk{
-					MessageID: id, Content: protocol.Text(b.Thinking)})
-			}
+			out = append(out, protocol.AgentThoughtChunk{
+				MessageID: id, Content: protocol.Text(b.Thinking)})
 		case agent.TextContent:
-			if !text {
-				s := b.Text
-				if afterText {
-					s = "\n\n" + s
-				}
-				out = append(out, protocol.AgentMessageChunk{MessageID: id,
-					Content: protocol.Text(s), At: m.Timestamp})
+			text := b.Text
+			if afterText {
+				text = "\n\n" + text
 			}
+			out = append(out, protocol.AgentMessageChunk{MessageID: id,
+				Content: protocol.Text(text), At: m.Timestamp})
 		case agent.ToolCall:
-			out = append(out, call(b))
+			out = append(out, toolCall(b, id))
 		}
 		_, afterText = block.(agent.TextContent)
 	}

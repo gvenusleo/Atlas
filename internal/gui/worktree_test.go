@@ -213,6 +213,12 @@ func (s *blockedSessionOpen) OpenSession(
 	return protocol.OpenSessionResponse{}, context.Canceled
 }
 
+func (s *blockedSessionOpen) ListHistory(
+	_ context.Context, _ protocol.ListHistoryRequest,
+) (protocol.ListHistoryResponse, error) {
+	return protocol.ListHistoryResponse{}, nil
+}
+
 func TestWorktreeRemovalWaitsForSessionOpen(t *testing.T) {
 	root := resolveWorktreePath(t.TempDir())
 	cwd := filepath.Join(root, "child")
@@ -223,7 +229,7 @@ func TestWorktreeRemovalWaitsForSessionOpen(t *testing.T) {
 	t.Cleanup(func() { close(service.release) })
 	ch := &chat{id: "opening", cwd: cwd}
 	a := &App{win: &mygo.Window{}, service: service, chats: map[string]*chat{ch.id: ch}}
-	a.start(ch)
+	a.openSaved(ch)
 	select {
 	case <-service.entered:
 	case <-time.After(3 * time.Second):

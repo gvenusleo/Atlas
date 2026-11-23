@@ -34,15 +34,7 @@ type Skill struct {
 
 // Discover 从工作区与主目录的 .atlas、.agents 目录发现技能，统一四个来源，按优先级从高到低
 // 依次扫描：工作区优先于主目录，同一处 .atlas 优先于 .agents。
-func Discover(cwd string) ([]Skill, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("定位主目录失败: %w", err)
-	}
-	cwd, err = filepath.Abs(cwd)
-	if err != nil {
-		return nil, fmt.Errorf("工作目录解析失败: %w", err)
-	}
+func Discover(cwd, home string) ([]Skill, []error) {
 	return Load(
 		filepath.Join(cwd, ".atlas", "skills"),
 		filepath.Join(cwd, ".agents", "skills"),
@@ -52,26 +44,22 @@ func Discover(cwd string) ([]Skill, error) {
 }
 
 // Load 按传入顺序扫描技能来源的子目录，按名称排序；缺失目录略过，同名技能保留首次加载的结果，
-// 加载失败时立即返回错误。
-func Load(dirs ...string) ([]Skill, error) {
+// 错误逐项返回，调用方仍可使用已经加载的技能。
+func Load(dirs ...string) ([]Skill, []error) {
 	var skills []Skill
+	var diagnostics []error
 	names := make(map[string]bool)
 	paths := make(map[string]bool)
 
 	for _, dir := range dirs {
-		root, err := filepath.Abs(dir)
-		if err != nil {
-			return nil, fmt.Errorf("%s 路径解析失败: %w", dir, err)
-		}
-		files, err := skillFiles(root)
-		if err != nil {
-			return nil, err
-		}
+		files, failures := skillFiles(dir)
+		diagnostics = append(diagnostics, failures...)
 
 		for _, path := range files {
 			realPath, err := filepath.EvalSymlinks(path)
 			if err != nil {
-				return nil, fmt.Errorf("%s 符号链接解析失败: %w", path, err)
+				diagnostics = append(diagnostics, fmt.Errorf("%s 符号链接解析失败: %w", path, err))
+				continue
 			}
 			if paths[realPath] {
 				continue
@@ -79,7 +67,8 @@ func Load(dirs ...string) ([]Skill, error) {
 
 			skill, err := loadSkill(path)
 			if err != nil {
-				return nil, fmt.Errorf("%s 加载失败: %w", path, err)
+				diagnostics = append(diagnostics, fmt.Errorf("%s 加载失败: %w", path, err))
+				continue
 			}
 			if names[skill.Name] {
 				continue
@@ -92,20 +81,23 @@ func Load(dirs ...string) ([]Skill, error) {
 	slices.SortFunc(skills, func(a, b Skill) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
-	return skills, nil
+	return skills, diagnostics
 }
 
 // skillFiles 返回 root 下各技能目录中的 SKILL.md 路径；目录缺失时返回空。
-func skillFiles(root string) ([]string, error) {
+func skillFiles(root string) ([]string, []error) {
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		if _, statErr := os.Lstat(root); errors.Is(statErr, os.ErrNotExist) {
+			return nil, nil
+		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s 扫描失败: %w", root, err)
+		return nil, []error{fmt.Errorf("%s 扫描失败: %w", root, err)}
 	}
 
 	var files []string
+	var diagnostics []error
 	for _, entry := range entries {
 		// 允许 skill 目录通过符号链接共享。
 		if strings.HasPrefix(entry.Name(), ".") ||
@@ -115,21 +107,23 @@ func skillFiles(root string) ([]string, error) {
 		dirPath := filepath.Join(root, entry.Name())
 		info, err := os.Stat(dirPath)
 		if err != nil {
-			return nil, fmt.Errorf("%s 检查失败: %w", dirPath, err)
+			diagnostics = append(diagnostics, fmt.Errorf("%s 检查失败: %w", dirPath, err))
+			continue
 		}
 		if !info.IsDir() {
 			continue
 		}
 
 		path := filepath.Join(dirPath, "SKILL.md")
-		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 			continue
 		} else if err != nil {
-			return nil, fmt.Errorf("%s 检查失败: %w", path, err)
+			diagnostics = append(diagnostics, fmt.Errorf("%s 检查失败: %w", path, err))
+			continue
 		}
 		files = append(files, path)
 	}
-	return files, nil
+	return files, diagnostics
 }
 
 // readSkillFile 统一校验普通文件、大小和 UTF-8，并返回文件的全部内容。

@@ -26,7 +26,7 @@ func (a *App) modelSettings(c *ui.Context, t *ui.Theme) {
 	})
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "模型服务").Grow(1).MinWidth(0)
-		fillButton(c, t, plusIcon, "添加服务", func() { p.form = newServiceForm() })
+		fillButton(c, t, plusIcon, "添加服务", func() { a.editService("") })
 	})
 	ui.Column(c).Gap(8).Children(func() {
 		for _, name := range p.providerNames() {
@@ -39,6 +39,12 @@ func (a *App) modelSettings(c *ui.Context, t *ui.Theme) {
 	}
 	if p.saveErr != "" {
 		ui.Text(c, p.saveErr).FontSize(textSize).TextColor(t.Danger)
+	}
+	if p.refreshErr != "" {
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, p.refreshErr).Grow(1).MinWidth(0).FontSize(textSize).TextColor(t.Warning)
+			ui.Button(c.Key("retry-model-refresh"), "重试").OnClick(a.refreshOptions)
+		})
 	}
 }
 
@@ -74,7 +80,7 @@ func wireAPIName(api config.WireAPI) string {
 	case config.WireAPIOpenAIResponses:
 		return "OpenAI Responses"
 	case config.WireAPIOpenAICompletions:
-		return "OpenAI Chat Completions"
+		return "OpenAI Chat Completions（当前版本不支持）"
 	case "":
 		return "未设置接口类型"
 	}

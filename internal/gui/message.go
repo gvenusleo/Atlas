@@ -27,16 +27,20 @@ func (a *App) block(c *ui.Context, t *ui.Theme, b block, final bool) {
 // 没有文字时这一行也占着高度：系统事件与只有步骤的一轮后面也要留出同样的空白，
 // 块与块的距离才一致，下一条用户消息不会贴着上一轮的最后一行。
 func (a *App) reply(c *ui.Context, t *ui.Theme, items []*item, final bool) {
-	text, at := replyText(items)
 	col := ui.Column(c)
-	hovered := col.Hovered()
+	shown := col.Hovered() && final
+	var text string
+	var at time.Time
+	if shown {
+		text, at = replyText(items)
+	}
 	col.Children(func() {
 		ui.Column(c).Gap(10).Children(func() {
 			for _, p := range parts(items) {
 				ui.Column(c.Key(p[0].id)).Children(func() { a.part(c, t, p) })
 			}
 		})
-		a.actions(c, t, items[0], at, text, hovered && final)
+		a.actions(c, t, items[0], at, text, shown)
 	})
 }
 

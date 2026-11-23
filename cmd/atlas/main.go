@@ -5,11 +5,13 @@ import (
 	"context"
 	"log"
 	"path/filepath"
+	"time"
 
 	"github.com/gvenusleo/atlas/internal/config"
 	"github.com/gvenusleo/atlas/internal/core"
 	"github.com/gvenusleo/atlas/internal/gui"
 	"github.com/gvenusleo/atlas/internal/store"
+	"github.com/gvenusleo/atlas/internal/tools"
 )
 
 func main() {
@@ -22,6 +24,11 @@ func main() {
 		log.Fatal(err)
 	}
 	c := core.New(db)
+	go func() {
+		if err := tools.PruneShellLogs(time.Now()); err != nil {
+			log.Printf("清理命令日志失败: %v", err)
+		}
+	}()
 	if err := gui.Run(c.Connect, c.Close); err != nil {
 		log.Fatal(err)
 	}

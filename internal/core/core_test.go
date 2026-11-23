@@ -22,6 +22,52 @@ import (
 	"github.com/gvenusleo/atlas/internal/store"
 )
 
+func TestBrokenResourcesDoNotBlockSessions(t *testing.T) {
+	c := open(t, home(t, settingsJSON))
+	cwd := t.TempDir()
+	entry, err := encode(agent.UserMessage{Content: []agent.Content{agent.TextContent{Text: "历史"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.db.Create(t.Context(), store.Info{ID: "saved", Cwd: cwd}, entry); err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		filepath.Join(os.Getenv("HOME"), ".atlas", "AGENTS.md"):     "\xff",
+		filepath.Join(cwd, ".atlas", "skills", "demo", "SKILL.md"):  "格式错误",
+		filepath.Join(cwd, ".agents", "skills", "demo", "SKILL.md"): "---\nname: demo\ndescription: 测试技能\n---\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(cwd, "missing"), filepath.Join(cwd, ".atlas", "skills", "broken")); err != nil {
+		t.Fatal(err)
+	}
+	client := c.Connect(newRecorder())
+	for _, kind := range []protocol.SessionType{protocol.SessionInteractive, protocol.SessionScheduled} {
+		req := protocol.NewSessionRequest{Cwd: cwd, Type: kind}
+		if kind == protocol.SessionScheduled {
+			req.OwnerID = "task"
+		}
+		created, err := client.NewSession(t.Context(), req)
+		if err != nil || !slices.ContainsFunc(created.State.Commands, func(cmd protocol.Command) bool {
+			return cmd.Name == "demo"
+		}) {
+			t.Fatalf("新建 %s 会话未加载有效技能：%+v，%v", kind, created.State.Commands, err)
+		}
+		if len(created.State.Diagnostics) != 3 {
+			t.Fatalf("应提示三项失败，收到：%q", created.State.Diagnostics)
+		}
+	}
+	if _, err := client.OpenSession(t.Context(), protocol.OpenSessionRequest{SessionID: "saved"}); err != nil {
+		t.Fatalf("打开已有会话失败：%v", err)
+	}
+}
+
 const settingsJSON = `{"model": "p/a", "providers": {"p": {"api": "openai-responses",
 	"base_url": "http://x", "models": {"a": {
 	"reasoning_options": [{"type": "effort", "values": ["low", "high"]}]}, "b": {}}}}}`
@@ -93,13 +139,27 @@ func (r *recorder) end(t *testing.T) protocol.RunStateUpdate {
 func (r *recorder) texts() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	saved := map[string]bool{}
+	for _, u := range r.updates {
+		if message, ok := u.(protocol.AssistantMessageSaved); ok {
+			saved[message.MessageID] = true
+		}
+	}
 	var out []string
 	for _, u := range r.updates {
 		switch u := u.(type) {
 		case protocol.UserMessageChunk:
 			out = append(out, "用户:"+u.Content.Text)
 		case protocol.AgentMessageChunk:
-			out = append(out, "助手:"+u.Content.Text)
+			if !saved[u.MessageID] {
+				out = append(out, "助手:"+u.Content.Text)
+			}
+		case protocol.AssistantMessageSaved:
+			for _, update := range u.Updates {
+				if chunk, ok := update.(protocol.AgentMessageChunk); ok {
+					out = append(out, "助手:"+chunk.Content.Text)
+				}
+			}
 		}
 	}
 	return out
