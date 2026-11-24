@@ -26,7 +26,9 @@ curl -fsSL https://github.com/gvenusleo/Atlas/releases/latest/download/install.s
 irm https://github.com/gvenusleo/Atlas/releases/latest/download/install.ps1 | iex
 ```
 
-macOS 的应用没有经过苹果公证，用浏览器下载的 `.dmg` 首次打开会被拦下：到“系统设置 → 隐私与安全性”点“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/Atlas.app`；一行命令安装不受影响。Windows 的安装包没有签名，SmartScreen 会警告，点“更多信息 → 仍要运行”。Linux 也可以用 `.deb`，由包管理器更新。已安装的应用会自动检查更新，也可以在设置页的“系统”里手动检查。
+macOS 的应用没有经过苹果公证，用浏览器下载的 `.dmg` 首次打开会被拦下。到“系统设置 → 隐私与安全性”点“仍要打开”，或执行 `xattr -dr com.apple.quarantine /Applications/Atlas.app`。一行命令安装不受影响。Windows 的安装包没有签名，SmartScreen 会警告，点“更多信息 → 仍要运行”。
+
+支持内置更新的安装包默认自动检查更新，也可以在设置页的“系统”里手动检查。Linux 的 `.deb` 由包管理器更新。
 
 ## 配置
 
@@ -60,9 +62,7 @@ macOS 的应用没有经过苹果公证，用浏览器下载的 `.dmg` 首次打
 }
 ```
 
-`model` 是新会话用的默认模型。模型必须在 `providers.*.models` 里声明，没有声明的视为不存在。
-打开已有会话时，上次用的模型还在、且受支持就接着用；否则退到默认模型，默认模型也不可用就用清单里
-第一个可用的，退到的模型会存进会话。在输入框下方换模型或思考深度，当场就应用并保存到会话。
+`model` 是新会话用的默认模型。模型须在 `providers.*.models` 里声明。打开已有会话时，优先使用上次保存的模型，其次用默认模型，再其次用清单里第一个可用的模型。打开时选定的模型会保存到会话。在输入框下方更换模型或思考深度后，新的选择会保存到会话，从下一次模型请求开始生效。
 
 模型的 `context_window`（上下文窗口，token）可选，建议填写。上下文接近窗口上限时，Atlas 会自动把较早的对话压缩成摘要，界面里的上下文占用圆环也依赖这个值。省略时，自动压缩只在模型报告上下文超限后触发。会话空闲时可单独发送 `/compact`，手动压缩会优先保留最近的完整轮次和附件原文，原始历史仍可回看。
 
@@ -99,27 +99,10 @@ macOS 的应用没有经过苹果公证，用浏览器下载的 `.dmg` 首次打
 
 ### 工具
 
-模型只有四个工具：read、write、edit、shell。Atlas 不接入 MCP：要用的外部能力写成技能
-（`.agents/skills`），教模型通过 shell 调用对应的命令行工具。同一轮里模型发出的多个调用，
-只读的（read）并发执行，会改动文件或运行命令的（write、edit、shell）按发出的顺序一个个执行。
+模型可以调用 read、write、edit、shell 四个工具。外部能力通过技能（`.agents/skills`）说明，模型再通过 shell 调用相应的命令行工具。Atlas 没有 MCP 接口。连续的只读调用（read）可以并发执行，write、edit 和 shell 按模型发出的顺序逐个执行。
 
 shell 命令默认最多运行 30 分钟，也可指定更短的超时。输出截断时，完整日志保留 7 天。
 
 ## 结构
 
-核心对外是一组自己的接口，桌面界面是它的客户端，以后的 ACP、WebSocket 入口也是。设计见 [docs/design.md](docs/design.md)。
-
-| 包 | 职责 |
-| --- | --- |
-| `internal/protocol` | 对客户端开放的接口与数据类型，不依赖其他包 |
-| `internal/core` | 核心：管理会话，是会话运行时数据的唯一权威，实现 `protocol.Service` |
-| `internal/gui` | 桌面界面，只通过 `protocol` 使用核心 |
-| `internal/agent` | 消息模型、一轮运行的循环、压缩与上下文折叠，不依赖其他包 |
-| `internal/llm` | 把 `agent.StreamFn` 落到具体的模型 API |
-| `internal/tools` | read、write、edit、shell 工具 |
-| `internal/imaging` | 整理要交给模型的图片：限制格式与大小，缩小，按 EXIF 方向转正 |
-| `internal/shellenv` | 向登录 shell 取环境，给 shell 工具用 |
-| `internal/systemprompt`、`internal/skills` | 系统提示词、指令与技能发现 |
-| `internal/config` | `settings.json` 与凭据读取 |
-| `internal/store` | SQLite 会话存储，只做存取 |
-| `internal/schedule` | 定时任务：类型、`schedule.json` 的存取与触发判定，不依赖其他包 |
+`cmd/atlas` 打开数据库、创建核心并启动桌面界面。包职责和依赖关系见[设计文档的分层一节](docs/design.md#分层)。
