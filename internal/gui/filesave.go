@@ -12,26 +12,33 @@ import (
 // errChanged 说明磁盘上的文件在打开之后变过，保存会盖掉别处的修改。
 var errChanged = errors.New("文件在磁盘上已变更")
 
-// saveTab 保存标签的文件，成功后调用 then（可为空）。写入在后台做；磁盘上的文件在打开或
-// 上次保存之后变过时不覆盖，标签上提示冲突，由用户选择重新加载还是保留自己的修改。
-func (a *App) saveTab(ch *chat, tb *fileTab, then func()) {
+// saveTab 在后台保存标签；then 接收无法安全关闭标签的原因，为空时可以关闭。
+// 磁盘上的文件已变更时不覆盖，保留标签上的冲突提示，交由用户处理。
+func (a *App) saveTab(ch *chat, tb *fileTab, then func(string)) {
 	if tb.ed == nil || tb.saving {
+		if then != nil {
+			then("文件无法保存或正在保存")
+		}
 		return
 	}
 	path := tb.path
 	if a.worktreeRecoveries[ch.id].Root != "" || !a.beginFileWrite(path) {
 		tb.err = "工作树不可用，请稍后再试或先恢复工作树"
+		if then != nil {
+			then(tb.err)
+		}
 		return
 	}
-	snap, stat := tb.ed.Buffer.Snapshot(), tb.stat
+	buf, stat, win := tb.ed.Buffer, tb.stat, a.win
+	snap := buf.Snapshot()
 	tb.saving, tb.err = true, ""
 	go func() {
 		st, err := writeFile(path, snap, stat)
-		a.win.Update(func() {
+		win.Update(func() {
 			a.endFileWrite(path)
-			tb.finishSave(snap.Version(), st, err)
-			if err == nil && then != nil {
-				then()
+			message := tb.finishSave(buf, snap.Version(), st, err)
+			if then != nil {
+				then(message)
 			}
 		})
 	}()
@@ -93,20 +100,24 @@ func writeFile(p string, snap editor.Snapshot, stat fileStat) (fileStat, error) 
 	return fileStat{info.ModTime(), info.Size()}, nil
 }
 
-// finishSave 记下一次保存的结果；version 是保存的那一版缓冲区。
-func (tb *fileTab) finishSave(version uint64, st fileStat, err error) {
+// finishSave 只有在写入的仍是当前缓冲区的当前版本时才标为已保存。
+func (tb *fileTab) finishSave(buf *editor.Buffer, version uint64, st fileStat, err error) string {
 	tb.saving = false
 	switch {
 	case errors.Is(err, errChanged):
 		tb.changed = true
+		return errChanged.Error()
 	case err != nil:
 		tb.err = "保存失败：" + err.Error()
+		return tb.err
 	default:
 		tb.stat, tb.changed, tb.gone = st, false, false
-		// 写的时候又改了的，仍然算没保存。
-		if tb.ed.Buffer.Version() == version {
-			tb.markSaved()
+		if tb.ed == nil || tb.ed.Buffer != buf || buf.Version() != version {
+			tb.saveDiverged = true
+			return "保存期间文件内容已变化"
 		}
+		tb.markSaved()
+		return ""
 	}
 }
 
@@ -165,6 +176,7 @@ func (tb *fileTab) reload(content tabContent, force bool) bool {
 		tb.changed = true
 	case tb.ed != nil && content.note == "" && content.img == nil:
 		tb.ed.Buffer.Reset(content.text)
+		tb.saveDiverged = false
 		tb.edited.forget()
 		tb.mdImages.forgetLocalImages()
 		tb.stat, tb.changed, tb.gone = content.stat, false, false

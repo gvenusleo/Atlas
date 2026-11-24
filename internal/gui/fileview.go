@@ -43,6 +43,7 @@ func (a *App) filesCard(c *ui.Context, t *ui.Theme, ch *chat, height float32) {
 // fileTabs 画卡片顶部的标签栏：左端是文件树开关，其后是打开的文件，右端是关闭按钮。
 func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 	fp := ch.files
+	busy := a.unsaved.ch != nil
 	items := make([]tabItem, len(fp.tabs))
 	for i, tb := range fp.tabs {
 		items[i] = tabItem{
@@ -52,7 +53,10 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 				fp.active, fp.bar.reveal = i, tb.id
 				a.syncTab(tb)
 			},
-			close: func() { a.closeFileTab(ch, tb) },
+			menu: func(m *ui.Menu) func() { return a.fileTabMenu(m, ch, tb, busy) },
+		}
+		if !busy {
+			items[i].close = func() { a.closeFileTab(ch, tb) }
 		}
 	}
 	ui.Row(c).Height(tabBarHeight(c)).AlignItems(ui.Center).Gap(2).Padding(0, tabInset).
@@ -61,10 +65,24 @@ func (a *App) fileTabs(c *ui.Context, t *ui.Theme, ch *chat) {
 		if len(items) == 0 {
 			ui.Text(c, "文件").FontSize(textSize).Padding(0, 6)
 		}
-		a.tabStrip(c, t, "file", items, fp.active, &fp.bar)
+		a.tabStrip(c.Key(&fp.bar), t, "file", items, fp.active, &fp.bar, func(from, gap int) {
+			fp.moveTab(fp.tabs[from], gap)
+		})
 		ui.Row(c).Grow(1)
 		a.cardActions(c, t, ch, filesPanel, "关闭文件面板", a.toggleFiles)
 	})
+}
+
+func (a *App) fileTabMenu(m *ui.Menu, ch *chat, tb *fileTab, busy bool) func() {
+	switch {
+	case m.Item("关闭").Disabled(busy).Chosen():
+		return func() { a.closeFileTab(ch, tb) }
+	case m.Item("关闭其他标签页").Disabled(busy || len(ch.files.tabs) < 2).Chosen():
+		return func() { a.closeFileTabs(ch, func(tab *fileTab) bool { return tab != tb }) }
+	case m.Item("关闭全部标签页").Disabled(busy).Chosen():
+		return func() { a.closeFileTabs(ch, func(*fileTab) bool { return true }) }
+	}
+	return nil
 }
 
 // fileContent 画内容区：没有标签时是说明，否则是当前标签的路径与内容。
