@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/loading"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/gvenusleo/atlas/internal/protocol"
@@ -86,9 +87,12 @@ func (a *App) sidebar(c *ui.Context, t *ui.Theme) {
 		if a.err != "" {
 			ui.Text(c, a.err).FontSize(smallSize).TextColor(t.Danger).Selectable().Padding(8)
 		}
-		// 只有一个图标，放在左下角；图标与上面各入口的图标左右居中对齐，离左边与离底边一样远。
-		ui.Row(c).Padding(4, 14, 14).Children(func() {
-			iconButton(c, t, settingsIcon, "设置", barButton, a.openSettings)
+		ui.Row(c).Padding(8).Gap(4).Children(func() {
+			iconButton(c.Key("settings"), t, settingsIcon, "设置", barButton, a.openSettings)
+			if a.hasUpdate {
+				iconButton(c.Key("update"), t, downloadIcon, "查看更新", barButton,
+					updater.CheckForUpdates)
+			}
 		})
 	})
 }

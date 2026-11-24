@@ -53,6 +53,7 @@ var (
 	restoreIcon     = icon("lucide/minimize-2")
 	searchIcon      = icon("lucide/search")
 	settingsIcon    = icon("lucide/settings")
+	downloadIcon    = icon("lucide/download")
 	paletteIcon     = icon("lucide/palette")
 	sunIcon         = icon("lucide/sun")
 	moonIcon        = icon("lucide/moon")

@@ -15,6 +15,7 @@ import (
 
 	"github.com/egoist/mygo"
 	_ "github.com/egoist/mygo/locales/zh-Hans"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/plugins/updater/native"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
@@ -67,6 +68,7 @@ type App struct {
 	leftWidth      float32          // 三个面板时左列的宽度；0 时两列各占一半
 	shells         int              // 已创建的终端数，用作终端标签的标识
 	sidebarHidden  bool
+	hasUpdate      bool
 	err            string
 	toast          string // 待显示的一次性提示，下一帧弹出后清空
 
@@ -151,6 +153,12 @@ func Run(
 			Content:              ui.View(a.view),
 		})
 		a.win.OnClose(a.closeWindow)
+		syncUpdate := func() {
+			a.hasUpdate = updater.AvailableVersion() != ""
+			a.win.Invalidate()
+		}
+		a.win.OnClosed(updater.OnChange(syncUpdate))
+		syncUpdate()
 		a.refresh()
 		a.start(a.current)
 		a.watchTasks()
