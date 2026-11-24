@@ -60,12 +60,13 @@ type fileTab struct {
 	note      string         // 不能预览的原因
 	position  *editor.Pos    // 异步读完后需要定位到的源码位置
 
-	onSave  func()   // 保存这个标签的文件，在编辑器里按 Cmd+S 时调用
-	stat    fileStat // 打开或保存时磁盘上的文件，用来发现外部修改
-	saving  bool     // 正在保存
-	changed bool     // 文件在磁盘上改过，而这里有未保存的修改
-	gone    bool     // 文件在磁盘上没了
-	err     string   // 最近一次保存失败的原因
+	onSave       func()   // 保存这个标签的文件，在编辑器里按 Cmd+S 时调用
+	stat         fileStat // 打开或保存时磁盘上的文件，用来发现外部修改
+	saving       bool     // 正在保存
+	saveDiverged bool     // 写入期间内容已变化，缓冲区的已保存基准不再可信
+	changed      bool     // 文件在磁盘上改过，而这里有未保存的修改
+	gone         bool     // 文件在磁盘上没了
+	err          string   // 最近一次保存失败的原因
 
 	render   bool                 // 显示渲染后的样子（Markdown 与 SVG 的预览、CSV 表格），否则是源码
 	anchor   string               // Markdown 预览里点过、还没滚过去的 #标题 链接
@@ -110,12 +111,14 @@ func (s fileStat) same(info fs.FileInfo) bool {
 
 // dirty 报告标签里有没保存的修改。逐帧要问，比较文本不便宜，所以按 version 缓存。
 func (tb *fileTab) dirty() bool {
-	return tb.ed != nil && tb.edited.get(tb.ed.Buffer.Version(), tb.ed.Buffer.Modified)
+	return tb.ed != nil && (tb.saveDiverged ||
+		tb.edited.get(tb.ed.Buffer.Version(), tb.ed.Buffer.Modified))
 }
 
 // markSaved 把缓冲区现在的文本当作已保存的。
 func (tb *fileTab) markSaved() {
 	tb.ed.Buffer.MarkSaved()
+	tb.saveDiverged = false
 	tb.edited.forget()
 }
 
@@ -273,6 +276,7 @@ func isMarkdown(p string) bool {
 // 显示渲染后的样子，Markdown 与纯文本自动换行。
 func (tb *fileTab) load(content tabContent) {
 	tb.loading, tb.note, tb.stat, tb.img = false, content.note, content.stat, content.img
+	tb.saveDiverged = false
 	tb.edited.forget() // 新的缓冲区，旧的缓存不能用
 	tb.md.forget()
 	tb.mdImages.forgetLocalImages()
@@ -316,17 +320,39 @@ func (tb *fileTab) showPosition(pos editor.Pos) {
 	}
 }
 
-// remove 关闭标签 tb。
-func (fp *filePanel) remove(tb *fileTab) {
+// moveTab 将标签移到原顺序的插入位置，不重建标签或切换活动文件。
+func (fp *filePanel) moveTab(tb *fileTab, gap int) {
+	i := slices.Index(fp.tabs, tb)
+	if i < 0 || gap < 0 || gap > len(fp.tabs) || gap == i || gap == i+1 {
+		return
+	}
+	active := fp.tabs[fp.active]
+	if gap > i {
+		gap--
+	}
+	fp.tabs = slices.Delete(fp.tabs, i, i+1)
+	fp.tabs = slices.Insert(fp.tabs, gap, tb)
+	fp.active = slices.Index(fp.tabs, active)
+}
+
+// removeTab 关闭标签。活动标签关闭后优先显示右邻，没有右邻时显示左邻。
+func (fp *filePanel) removeTab(tb *fileTab) {
 	i := slices.Index(fp.tabs, tb)
 	if i < 0 {
 		return
 	}
+	wasActive := i == fp.active
 	fp.tabs = slices.Delete(fp.tabs, i, i+1)
 	if i < fp.active {
 		fp.active--
 	}
 	fp.active = max(min(fp.active, len(fp.tabs)-1), 0)
+	if wasActive || fp.bar.reveal == tb.id {
+		fp.bar.reveal = 0
+		if len(fp.tabs) != 0 {
+			fp.bar.reveal = fp.tabs[fp.active].id
+		}
+	}
 }
 
 // activePath 返回当前标签的文件的绝对路径，没有标签时为空。

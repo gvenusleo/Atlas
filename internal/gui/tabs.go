@@ -22,10 +22,14 @@ type tabItem struct {
 	closeLabel string
 	pick       func()
 	close      func()
+	menu       func(*ui.Menu) func()
 }
 
 // tabFade 是标签栏一端渐隐的宽度。
-const tabFade = 24
+const (
+	tabFade = 24
+	tabGap  = 2
+)
 
 // tabBar 是一个标签栏要跨帧记住的状态。
 type tabBar struct {
@@ -38,13 +42,24 @@ type tabBar struct {
 // 不显示，改由两端的渐隐提示还有标签没露出来。
 func (a *App) tabStrip(
 	c *ui.Context, t *ui.Theme, prefix string, items []tabItem, active int, bar *tabBar,
+	move func(from, gap int),
 ) {
 	strip := ui.ScrollHorizontal(c).TrackScroll(&bar.scroll).Scrollbars(false).
-		Shrink(1).MinWidth(0).Gap(2).AlignItems(ui.Center)
+		Shrink(1).MinWidth(0).Gap(tabGap).AlignItems(ui.Center)
 	strip.HandleInput(func(ev ui.InputEvent) bool { return scrollSideways(&bar.scroll, ev) })
 	if fade, ok := tabFadeMask(c, &bar.scroll); ok {
 		strip.MaskLinearGradient(fade)
 	}
+	canDrag := move != nil && len(items) > 1
+	var drag tabDrag
+	if canDrag {
+		drag = trackTabDrag(c, strip, bar, items)
+	}
+	var rows []ui.Element
+	if drag.id != 0 {
+		rows = make([]ui.Element, 0, len(items))
+	}
+	var menuAction func()
 	strip.Children(func() {
 		for i, it := range items {
 			row := ui.Row(c.Key("tab-"+prefix+strconv.Itoa(it.id))).Height(tabHeight).
@@ -54,12 +69,35 @@ func (a *App) tabStrip(
 			}
 			if bar.reveal == it.id {
 				row.ScrollIntoView()
-				a.win.Update(func() { bar.reveal = 0 })
+				a.win.Update(func() {
+					if bar.reveal == it.id {
+						bar.reveal = 0
+					}
+				})
+			}
+			if it.menu != nil {
+				row.ContextMenu(func(m *ui.Menu) { menuAction = it.menu(m) })
 			}
 			hovered := it.dirty && row.Hovered()
-			row.Children(func() { tabBody(c, t, it, hovered) })
+			var payload tabDragValue
+			if canDrag {
+				payload = tabDragValue{bar, it.id}
+			}
+			row.Children(func() {
+				if tabBody(c, t, it, hovered, payload) {
+					row.Background(buttonFill(t))
+				}
+			})
+			if rows != nil {
+				rows = append(rows, row)
+			}
 		}
 	})
+	if menuAction != nil {
+		menuAction()
+	} else if rows != nil {
+		drag.applyTabDrag(rows, items, move)
+	}
 }
 
 // scrollSideways 把标签栏上以上下为主的滚动转成左右：横向滚动的行只认左右，只有上下滚轮的
@@ -92,8 +130,16 @@ func tabFadeMask(c *ui.Context, s *ui.ScrollState) (ui.LinearGradient, bool) {
 }
 
 // tabBody 画一个标签的内容：点文字部分选中它，右侧是关闭按钮。
-func tabBody(c *ui.Context, t *ui.Theme, it tabItem, hovered bool) {
+func tabBody(c *ui.Context, t *ui.Theme, it tabItem, hovered bool, drag tabDragValue) bool {
 	pick := ui.ButtonBase(c).Gap(6).AlignItems(ui.Center).Label(it.label)
+	var dragging bool
+	if drag.id != 0 {
+		pick.Drag(drag)
+		dragging = pick.Dragging()
+		if dragging {
+			pick.Background(pressFill(t)).Radius(controlRound).Opacity(0)
+		}
+	}
 	if it.dirty {
 		pick.Description("有未保存的修改")
 	}
@@ -109,7 +155,10 @@ func tabBody(c *ui.Context, t *ui.Theme, it tabItem, hovered bool) {
 	})
 	const closeSize = 18
 	closeButton := quietButton(c.Key("close"), t, it.closeLabel, it.close).
-		Size(closeSize, closeSize).Tooltip(it.closeLabel)
+		Size(closeSize, closeSize).Tooltip(it.closeLabel).Disabled(it.close == nil)
+	if dragging {
+		closeButton.Opacity(0)
+	}
 	showDot := it.dirty && !hovered && !closeButton.Focused()
 	closeButton.Children(func() {
 		if showDot {
@@ -119,6 +168,7 @@ func tabBody(c *ui.Context, t *ui.Theme, it tabItem, hovered bool) {
 		}
 		ui.Icon(c, closeIcon).FontSize(closeSize * 0.6).TextColor(t.TextMuted)
 	})
+	return dragging
 }
 
 // quietButton 是标签栏与卡片顶部的按钮的共同样式：平时没有底色，悬停与按下才有淡底；label

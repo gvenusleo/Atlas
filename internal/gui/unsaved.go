@@ -3,53 +3,98 @@ package gui
 import (
 	"fmt"
 	"maps"
-	"path/filepath"
 	"slices"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
-// unsavedAsk 是关闭有未保存修改的文件标签时的确认：哪个会话的哪个标签。
+// unsavedAsk 保存本次关闭操作的剩余标签，队首等待用户确认或保存完成。
 type unsavedAsk struct {
 	ch   *chat
-	tb   *fileTab
+	tabs []*fileTab
 	open bool
 }
 
-// closeFileTab 关闭标签；有未保存的修改时先问保存、不保存还是取消。
 func (a *App) closeFileTab(ch *chat, tb *fileTab) {
-	if !tb.dirty() {
-		ch.files.remove(tb)
-		return
-	}
-	a.unsaved = unsavedAsk{ch, tb, true}
+	a.closeFileTabs(ch, func(tab *fileTab) bool { return tab == tb })
 }
 
-// unsavedDialog 在关闭有未保存修改的文件标签时问：保存、不保存，还是取消。
-func (a *App) unsavedDialog(c *ui.Context) {
-	compactModal(c, "unsaved-file", &a.unsaved.open, func() {
-		ch, tb := a.unsaved.ch, a.unsaved.tb
-		if tb == nil {
+func (a *App) closeFileTabs(ch *chat, match func(*fileTab) bool) {
+	if a.unsaved.ch != nil {
+		return
+	}
+	a.unsaved.ch = ch
+	for _, tb := range ch.files.tabs {
+		if match(tb) {
+			a.unsaved.tabs = append(a.unsaved.tabs, tb)
+		}
+	}
+	a.continueClosingTabs()
+}
+
+func (a *App) continueClosingTabs() {
+	p := &a.unsaved
+	for len(p.tabs) != 0 {
+		tb := p.tabs[0]
+		if tb.saving {
+			a.finishClosingTab("文件正在保存，请保存完成后重试")
 			return
 		}
-		ui.Text(c, "要保存“"+filepath.Base(tb.path)+"”的修改吗？").FontSize(dialogSize).Bold()
+		if tb.dirty() {
+			p.open = true
+			return
+		}
+		p.ch.files.removeTab(tb)
+		p.tabs = p.tabs[1:]
+	}
+	*p = unsavedAsk{}
+}
+
+func (a *App) finishClosingTab(message string) {
+	p := &a.unsaved
+	if message != "" {
+		a.toast = relOrAbs(p.ch.cwd, p.tabs[0].path) + "：" + message
+	}
+	if message != "" || a.current != p.ch || a.showTasks {
+		*p = unsavedAsk{}
+		return
+	}
+	p.ch.files.removeTab(p.tabs[0])
+	p.tabs = p.tabs[1:]
+	a.continueClosingTabs()
+}
+
+// unsavedDialog 沿用单文件确认，让每个未保存的文件都能单独决定。
+func (a *App) unsavedDialog(c *ui.Context) {
+	p := &a.unsaved
+	if !p.open {
+		return
+	}
+	if a.current != p.ch || a.showTasks {
+		*p = unsavedAsk{}
+		return
+	}
+	tb := p.tabs[0]
+	compactModal(c, "unsaved-file", &p.open, func() {
+		if !p.open {
+			return
+		}
+		name := relOrAbs(p.ch.cwd, tb.path)
+		ui.Text(c, "要保存“"+name+"”的修改吗？").FontSize(dialogSize).Bold()
 		ui.Text(c, "不保存的话，这些修改会丢掉").TextColor(c.Theme().TextMuted)
 		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			cancel := ui.Button(c, "取消").Clicked()
-			discard := ui.Button(c, "不保存").Clicked()
-			save := ui.PrimaryButton(c, "保存").Clicked()
-			switch {
-			case save:
-				a.saveTab(ch, tb, func() { ch.files.remove(tb) })
-			case discard:
-				ch.files.remove(tb)
-			}
-			if cancel || discard || save {
-				a.unsaved.open = false
-			}
+			ui.Button(c, "取消").OnClick(func() { *p = unsavedAsk{} })
+			ui.Button(c, "不保存").OnClick(func() { a.finishClosingTab("") })
+			ui.PrimaryButton(c, "保存").OnClick(func() {
+				p.open = false
+				a.saveTab(p.ch, tb, a.finishClosingTab)
+			})
 		})
 	})
+	if !p.open { // 按 Esc 或点击遮罩时，MyGo 关闭对话框。
+		*p = unsavedAsk{}
+	}
 }
 
 // dirtyTabs 返回所有会话里有未保存修改的标签数。
